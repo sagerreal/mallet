@@ -13,13 +13,13 @@
   <meta property="og:image" content="assets/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
 
-  <!-- Favicon: amber stamp -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%231C1F23'/%3E%3Crect x='6' y='6' width='20' height='20' rx='2' fill='%23FFB200'/%3E%3Ctext x='16' y='22' font-family='Archivo,sans-serif' font-size='16' font-weight='900' text-anchor='middle' fill='%231C1F23'%3EM%3C/text%3E%3C/svg%3E" />
+  <!-- Favicon: Mallet sparkle mark -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B1A17'/%3E%3Cpath d='M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z' fill='%23FAF8F3'/%3E%3C/svg%3E" />
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <!-- Calendly widget CSS (loaded for book-a-demo popup) -->
   <link rel="stylesheet" href="https://assets.calendly.com/assets/external/widget.css" />
@@ -31,14 +31,19 @@
   <!-- ============================ NAV ============================ -->
   <header class="nav" id="top">
     <div class="wrap nav-inner">
-      <a class="wordmark" href="#top" aria-label="Mallet home">MALLET</a>
+      <a class="wordmark" href="#top" aria-label="Mallet home">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="30" height="30"><rect width="32" height="32" rx="8" fill="#1B1A17"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#FAF8F3"/></svg>
+        </span>
+        <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
+      </a>
       <nav class="nav-links" aria-label="Primary">
         <a href="#what">What it does</a>
         <a href="#why">Why Mallet</a>
       </nav>
       <div class="nav-cta">
-        <a class="btn-ghost js-book-demo" href="#demo">Book a demo</a>
-        <a class="btn-amber" href="#waitlist">Join the waitlist&nbsp;&rarr;</a>
+        <a class="btn-outline js-book-demo" href="#demo">Book a demo</a>
+        <a class="btn-primary" href="#waitlist">Join the waitlist&nbsp;&rarr;</a>
       </div>
     </div>
   </header>
@@ -52,8 +57,8 @@
         <h1 class="hero-el" data-step="2">Never miss a call.<br />Never miss a job.<span class="strike hero-el" data-step="3" aria-hidden="true"></span></h1>
         <p class="lede hero-el" data-step="4">Mallet answers your phone, books the work, builds the estimate, and runs your invoicing, dispatch, and timesheets&nbsp;&mdash; all in one place. Simple enough for one truck, powerful enough for the whole shop. And guaranteed <strong>half the price</strong> of Jobber or Housecall&nbsp;Pro.</p>
         <div class="hero-actions hero-el" data-step="5">
-          <a class="btn-amber lg" href="#waitlist">Join the waitlist&nbsp;&rarr;</a>
-          <a class="btn-ghost lg js-book-demo" href="#demo">Book a demo</a>
+          <a class="btn-primary lg" href="#waitlist">Join the waitlist&nbsp;&rarr;</a>
+          <a class="btn-outline lg js-book-demo" href="#demo">Book a demo</a>
         </div>
 
         <div class="video-frame hero-el" data-step="5" role="img" aria-label="Product demo video — coming soon">
@@ -200,7 +205,12 @@
   <!-- ============================ FOOTER ============================ -->
   <footer class="foot">
     <div class="wrap foot-inner">
-      <a class="wordmark" href="#top">MALLET</a>
+      <a class="wordmark foot-wordmark" href="#top">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="#FAF8F3"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#1B1A17"/></svg>
+        </span>
+        <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
+      </a>
       <p class="foot-tag">AI-native field service for the trades.</p>
       <p class="foot-meta">
         <span>&copy; 2026 Mallet. All rights reserved.</span>
