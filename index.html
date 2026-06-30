@@ -151,18 +151,23 @@
       </div>
     </section>
 
-    <!-- ===================== SEE IT WORK (interactive demos) ===================== -->
+    <!-- ===================== SEE IT WORK (embedded real product) ===================== -->
     <section class="trydemo" id="see-it">
       <div class="wrap">
         <p class="eyebrow" data-reveal>See it work</p>
-        <h2 class="sec-h">Click through the real flows.</h2>
-        <p class="sec-sub">No signup, no video. Tap the highlighted button and watch Mallet do the work.</p>
+        <h2 class="sec-h">The real product. Click around.</h2>
+        <p class="sec-sub">This is Mallet itself, loaded with a sample shop &mdash; poke at anything. No signup.</p>
         <div class="demo-tabs" data-reveal>
-          <button class="demo-tab on" type="button" data-flow="office" onclick="demoTab('office')">Lead &rarr; paid</button>
-          <button class="demo-tab" type="button" data-flow="frontdesk" onclick="demoTab('frontdesk')">AI answers the phone</button>
-          <button class="demo-tab" type="button" data-flow="field" onclick="demoTab('field')">Your crew, in the field</button>
+          <button class="demo-tab on" type="button" data-v="home" onclick="demoTab('home',this)">Office dashboard</button>
+          <button class="demo-tab" type="button" data-v="ops-schedule" onclick="demoTab('ops-schedule',this)">Dispatch board</button>
+          <button class="demo-tab" type="button" data-v="field" onclick="demoTab('field',this)">Field app</button>
+          <button class="demo-tab" type="button" data-v="money" onclick="demoTab('money',this)">Ask Mallet</button>
         </div>
-        <div class="demo-stage" id="demoStage" data-reveal></div>
+        <div class="demo-window" id="demoWindow" data-reveal>
+          <div class="dw-bar"><span class="dw-dots"><i></i><i></i><i></i></span><span class="dw-url">app.trymallet.com</span></div>
+          <iframe id="demoFrame" title="Mallet — live product demo" src="demo-app.html?v=home" loading="lazy"></iframe>
+        </div>
+        <p class="demo-note">Sample data (Rivera Plumbing) &mdash; it's the real app. Explore it, then <a href="#waitlist">claim your founding spot&nbsp;&rarr;</a></p>
       </div>
     </section>
 
