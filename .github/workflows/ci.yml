@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · test+coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint (incl. import-boundary gate)
+        run: pnpm lint
+
+      - name: Unit tests + coverage (≥80%)
+        run: pnpm coverage
+
+  # Integration tests (live Supabase RLS) are NOT run here — they need DB credentials and their
+  # modules load config at import. To enable once the leaked credentials are rotated: add repo
+  # secrets DATABASE_URL + APP_DATABASE_URL (+ the NEXT_PUBLIC_SUPABASE_* / SUPABASE_SERVICE_ROLE_KEY
+  # the config loader requires) and add a job that runs `pnpm test:int` with those in `env`.
