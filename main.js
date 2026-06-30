@@ -84,24 +84,3 @@
     document.body.appendChild(s);
   }
 })();
-
-/* Product-gallery lightbox — global (called from inline onclick in the gallery). */
-function lightbox(src, cap) {
-  var lb = document.getElementById('lightbox');
-  var img = document.getElementById('lbImg');
-  var fig = document.getElementById('lbCap');
-  if (!lb || !img) return;
-  img.src = src;
-  img.alt = (cap || '').replace(/<[^>]*>/g, '');
-  if (fig) fig.textContent = (cap || '').replace(/&amp;/g, '&').replace(/<[^>]*>/g, '');
-  lb.hidden = false;
-  document.body.style.overflow = 'hidden';
-}
-function closeLightbox(e) {
-  if (e && e.target && e.target.id === 'lbImg') return; // clicks on the image itself don't close
-  var lb = document.getElementById('lightbox');
-  if (!lb) return;
-  lb.hidden = true;
-  document.body.style.overflow = '';
-}
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeLightbox(); });
