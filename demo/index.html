@@ -959,6 +959,17 @@
   /* guided tour coach bubble — floats above the real screens it's driving */
   #tourCoach{position:fixed;right:16px;bottom:66px;left:auto;transform:none;z-index:99999;width:min(380px,92vw);background:var(--card);border:2px solid var(--green-600);border-radius:14px;box-shadow:0 14px 44px rgba(0,0,0,.30);padding:12px 14px;opacity:.97}
   #tourCoach:hover{opacity:1}
+  /* minimized: a small bar in the corner that keeps the ← N/M → controls (no keyboard needed — good for mobile recording) */
+  #tourCoach.mini{left:auto;right:14px;bottom:14px;width:auto;padding:5px 7px;border-radius:11px}
+  #tourCoach .tc-mini{display:flex;align-items:center;gap:7px}
+  #tourCoach .tc-mini .tc-mini-n{font-size:12px;font-weight:800;color:var(--green-700);min-width:36px;text-align:center}
+  #tourCoach .tc-mini .btn.sm{padding:5px 9px;min-width:34px}
+  @media(max-width:640px){
+    #tourCoach{left:10px;right:10px;bottom:10px;width:auto;padding:10px 12px}
+    #tourCoach:not(.mini) p{font-size:11.5px;max-height:26vh;overflow:auto}
+    #tourCoach h4{font-size:13.5px}
+    #tourCoach.mini{left:auto;right:12px;bottom:12px;width:auto}
+  }
   #tourCoach .tc-step{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--green-700)}
   #tourCoach h4{font-size:14.5px;margin:3px 0 4px}
   #tourCoach p{font-size:12.5px;color:var(--ink-3);line-height:1.5;margin:0}
@@ -7483,24 +7494,33 @@ function tourKey(e){
 }
 if(typeof document!=='undefined' && typeof window!=='undefined' && !window.__malletTourKeys){ window.__malletTourKeys=true; document.addEventListener('keydown', tourKey); }
 function curTour(){ return (state.tour && TOURS[state.tour.id]) || TOURS.job; }
-function startJobTour(){ if(!liveLeads().length && !state._sampleLoaded){ snapshotFresh(); loadSample(true); state._tourLoadedSample=true; } state.tour={id:'job', step:0, leadId:null}; tourStep(0); }
-function startEstimateTour(){ if(!liveLeads().length && !state._sampleLoaded){ snapshotFresh(); loadSample(true); state._tourLoadedSample=true; } state.tour={id:'estimate', step:0}; tourStep(0); }
+function startJobTour(){ if(!liveLeads().length && !state._sampleLoaded){ snapshotFresh(); loadSample(true); state._tourLoadedSample=true; } state.tour={id:'job', step:0, leadId:null}; state.tourMin=isMobile(); tourStep(0); }
+function startEstimateTour(){ if(!liveLeads().length && !state._sampleLoaded){ snapshotFresh(); loadSample(true); state._tourLoadedSample=true; } state.tour={id:'estimate', step:0}; state.tourMin=isMobile(); tourStep(0); }
 function tourStep(n){
   if(!state.tour) return;
   const steps=curTour().steps;
   n=Math.max(0,Math.min(steps.length-1,n)); state.tour.step=n;
   try{ steps[n].nav(); }catch(e){}
-  const c=$('tourCoach'); if(c){ c.innerHTML=tourCoachHtml(); c.style.display=state.tourHideCoach?'none':'block'; }
+  const c=$('tourCoach'); if(c){ c.innerHTML=tourCoachHtml(); c.classList.toggle('mini', !!state.tourMin); c.style.display=state.tourHideCoach?'none':'block'; }
 }
+function tourMinToggle(){ state.tourMin=!state.tourMin; const c=$('tourCoach'); if(c){ c.innerHTML=tourCoachHtml(); c.classList.toggle('mini', !!state.tourMin); } }
 function tourNext(){ if(state.tour) tourStep(state.tour.step+1); }
 function tourBack(){ if(state.tour) tourStep(state.tour.step-1); }
 function tourExit(){ state.tour=null; tourCloseOverlays(); setRole('owner'); const c=$('tourCoach'); if(c) c.style.display='none'; if(state._tourLoadedSample) restoreFresh(); state.module='sales'; state.view='home'; render(); }
 function tourCoachHtml(){
   const T=curTour(); const i=state.tour.step, n=T.steps.length, s=T.steps[i];
+  if(state.tourMin){
+    return `<div class="tc-mini">
+      ${i>0?`<button class="btn sm ghost" onclick="tourBack()" title="Back" aria-label="Back">←</button>`:''}
+      <span class="tc-mini-n">${i+1}/${n}</span>
+      ${i<n-1?`<button class="btn sm primary" onclick="tourNext()" title="Next" aria-label="Next">→</button>`:`<button class="btn sm primary" onclick="tourExit()" title="Finish">✓</button>`}
+      <button class="btn sm ghost" onclick="tourMinToggle()" title="Expand the narration" aria-label="Expand">⤢</button>
+    </div>`;
+  }
   return `<div class="tc-step">${T.label} · step ${i+1} of ${n}</div>
     <h4>${s.title.replace(/^\d+ · /,'')}</h4><p>${s.body}</p>
     <div class="tc-row"><span class="muted" style="font-size:11px">${T.sub}</span>
-      <span style="display:flex;gap:6px">${i>0?`<button class="btn sm ghost" onclick="tourBack()">← Back</button>`:''}<button class="btn sm ghost" onclick="tourHide()" title="Hide this bubble for clean recording — press h to toggle, arrow keys still step">Hide</button><button class="btn sm ghost" onclick="tourExit()">Exit</button>${i<n-1?`<button class="btn sm primary" onclick="tourNext()">Next →</button>`:`<button class="btn sm primary" onclick="tourExit()">Finish</button>`}</span></div>`;
+      <span style="display:flex;gap:6px">${i>0?`<button class="btn sm ghost" onclick="tourBack()">← Back</button>`:''}<button class="btn sm ghost" onclick="tourMinToggle()" title="Minimize to a small bar (keeps the Next/Back controls — good for recording on mobile)">Min</button><button class="btn sm ghost" onclick="tourExit()">Exit</button>${i<n-1?`<button class="btn sm primary" onclick="tourNext()">Next →</button>`:`<button class="btn sm primary" onclick="tourExit()">Finish</button>`}</span></div>`;
 }
 function gbbDraft(){
   const c=state.composer; const l=c.leadId?lead(c.leadId):null;
