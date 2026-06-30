@@ -14,6 +14,8 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:setup-role": "node --env-file=.env.local scripts/setup-app-role.mjs",
+    "db:rls-proof": "node --env-file=.env.local scripts/rls-proof.mjs",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

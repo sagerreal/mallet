@@ -8,7 +8,12 @@ const ConfigSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  // Owner connection (migrations / DDL). The `postgres` role has BYPASSRLS, so it is
+  // NEVER used for tenant-scoped runtime queries.
   DATABASE_URL: z.string().min(1),
+  // Runtime connection as the least-privilege `mallet_app` role (NOBYPASSRLS). All
+  // tenant data access goes through this so RLS is always enforced.
+  APP_DATABASE_URL: z.string().min(1),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

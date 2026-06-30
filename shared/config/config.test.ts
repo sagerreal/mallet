@@ -7,6 +7,7 @@ const validEnv = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
   SUPABASE_SERVICE_ROLE_KEY: "service",
   DATABASE_URL: "postgresql://localhost/db",
+  APP_DATABASE_URL: "postgresql://localhost/db",
 } as NodeJS.ProcessEnv;
 
 describe("loadConfig", () => {
