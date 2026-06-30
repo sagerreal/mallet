@@ -37,32 +37,42 @@
   }
 
   /* Book-a-demo: every .js-book-demo trigger opens the Calendly popup.
-     The scheduling URL is read once from the [data-calendly] element. */
+     Calendly's script + CSS are lazy-loaded on the FIRST click (keeps the page fast). */
   function wireCalendly() {
     var triggers = document.querySelectorAll('.js-book-demo');
     if (!triggers.length) return;
     var src = document.querySelector('[data-calendly]');
     var url = src ? (src.getAttribute('data-calendly') || '') : '';
     var configured = url && url.indexOf('MALLET_') !== 0;
+    var loaded = false;
 
-    function open(e) {
-      e.preventDefault();
-      if (configured && window.Calendly && typeof window.Calendly.initPopupWidget === 'function') {
-        window.Calendly.initPopupWidget({ url: url });
-      } else if (configured) {
-        window.open(url, '_blank', 'noopener');
-      } else {
-        location.hash = '#demo';
-      }
-    }
-    Array.prototype.forEach.call(triggers, function (t) { t.addEventListener('click', open); });
-
-    if (configured) {
+    function loadAssets() {
+      if (loaded) return; loaded = true;
+      var css = document.createElement('link');
+      css.rel = 'stylesheet'; css.href = 'https://assets.calendly.com/assets/external/widget.css';
+      document.head.appendChild(css);
       var s = document.createElement('script');
       s.src = 'https://assets.calendly.com/assets/external/widget.js';
       s.async = true;
       document.body.appendChild(s);
     }
+
+    function open(e) {
+      e.preventDefault();
+      if (!configured) { location.hash = '#demo'; return; }
+      loadAssets();
+      var tries = 0;
+      (function go() {
+        if (window.Calendly && typeof window.Calendly.initPopupWidget === 'function') {
+          window.Calendly.initPopupWidget({ url: url });
+        } else if (tries++ < 40) {
+          setTimeout(go, 100);
+        } else {
+          window.open(url, '_blank', 'noopener');
+        }
+      })();
+    }
+    Array.prototype.forEach.call(triggers, function (t) { t.addEventListener('click', open); });
   }
 
   /* Load Tally's embed script only if a real iframe (data-tally-src) is present. */
