@@ -19,7 +19,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -151,23 +151,20 @@
       </div>
     </section>
 
-    <!-- ===================== SEE IT WORK (embedded real product) ===================== -->
+    <!-- ===================== SEE IT WORK (interactive flow demo) ===================== -->
     <section class="trydemo" id="see-it">
       <div class="wrap">
         <p class="eyebrow" data-reveal>See it work</p>
-        <h2 class="sec-h">The real product. Click around.</h2>
-        <p class="sec-sub">This is Mallet itself, loaded with a sample shop &mdash; poke at anything. No signup.</p>
-        <div class="demo-tabs" data-reveal>
-          <button class="demo-tab on" type="button" data-v="home" onclick="demoTab('home',this)">Office dashboard</button>
-          <button class="demo-tab" type="button" data-v="ops-schedule" onclick="demoTab('ops-schedule',this)">Dispatch board</button>
-          <button class="demo-tab" type="button" data-v="field" onclick="demoTab('field',this)">Field app</button>
-          <button class="demo-tab" type="button" data-v="money" onclick="demoTab('money',this)">Ask Mallet</button>
-        </div>
-        <div class="demo-window" id="demoWindow" data-reveal>
+        <h2 class="sec-h">Watch a job go from call to cash.</h2>
+        <p class="sec-sub">The real Mallet UI &mdash; tap the glowing button and step through it. No signup.</p>
+        <div class="demo-window" data-reveal>
           <div class="dw-bar"><span class="dw-dots"><i></i><i></i><i></i></span><span class="dw-url">app.trymallet.com</span></div>
-          <iframe id="demoFrame" title="Mallet — live product demo" src="demo-app?v=home" loading="lazy"></iframe>
+          <div id="mfStage"></div>
         </div>
-        <p class="demo-note">Sample data (Rivera Plumbing) &mdash; it's the real app. Explore it, then <a href="#waitlist">claim your founding spot&nbsp;&rarr;</a></p>
+        <div class="demo-foot" data-reveal>
+          <div class="demo-dots" id="mfDots"></div>
+          <span class="demo-hint" id="mfHint">&uarr; tap the glowing button</span>
+        </div>
       </div>
     </section>
 
