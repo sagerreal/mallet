@@ -2,7 +2,9 @@
   "name": "mallet",
   "version": "0.0.0",
   "private": true,
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "packageManager": "pnpm@10.32.0",
   "scripts": {
     "dev": "next dev",
@@ -13,6 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:int": "vitest run --config vitest.integration.config.ts",
+    "coverage": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:setup-role": "node --env-file=.env.local scripts/setup-app-role.mjs",
@@ -39,14 +42,18 @@
     "@types/node": "^26.0.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^4.1.9",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.6.0",
     "eslint-config-next": "^16.2.9",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1",
     "vitest": "^4.1.9"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

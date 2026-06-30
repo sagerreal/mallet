@@ -80,3 +80,17 @@ describe("Lead.firstTouch", () => {
     expect(touched).toBe(lead);
   });
 });
+
+describe("Lead.markRead", () => {
+  it("clears the unread flag", () => {
+    const lead = unwrap(Lead.create(baseProps({ unread: true }))).markRead(
+      new Date("2026-06-03T00:00:00Z"),
+    );
+    expect(lead.props.unread).toBe(false);
+  });
+
+  it("is a no-op when already read", () => {
+    const lead = unwrap(Lead.create(baseProps({ unread: false })));
+    expect(lead.markRead(new Date("2026-06-03T00:00:00Z"))).toBe(lead);
+  });
+});
