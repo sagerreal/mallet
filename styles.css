@@ -122,6 +122,14 @@ strong{font-weight:700}
 .band-line strong{color:var(--amber-deep)}
 .band-sub{font-size:.98rem;color:var(--ink-soft);margin-top:.9rem;max-width:62ch;margin-left:auto;margin-right:auto}
 
+/* ======================= WHO IT'S FOR ======================= */
+.verticals{background:var(--paper);padding:4.5rem 0;border-top:1px solid var(--line)}
+.vert-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:2rem;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--line)}
+@media(max-width:760px){.vert-grid{grid-template-columns:repeat(2,1fr)}}
+.vert{display:flex;align-items:center;gap:.7rem;padding:1.05rem 1.25rem;background:var(--card);font-weight:600;font-size:.97rem;color:var(--ink)}
+.vert::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--amber);flex:none}
+.vert-foot{margin-top:1.3rem;font-size:.97rem;color:var(--ink-soft)}
+
 /* ============== SPOTLIGHT: TEXT THE AGENT ============== */
 .spotlight{background:var(--parchment);padding:5.5rem 0}
 .spotlight-inner{display:grid;grid-template-columns:1fr 1fr;gap:3.5rem;align-items:center}
