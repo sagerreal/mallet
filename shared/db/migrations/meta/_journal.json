@@ -15,6 +15,27 @@
       "when": 1782860382812,
       "tag": "0001_rls_tenant_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782861130489,
+      "tag": "0002_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782861136714,
+      "tag": "0003_users_rls_and_resolver",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782861403559,
+      "tag": "0004_leads_stage_check",
+      "breakpoints": true
     }
   ]
 }

@@ -25,3 +25,6 @@ export const db = drizzle(queryClient, { schema });
 
 export type Database = typeof db;
 export { schema };
+
+// Close the connection pool — for graceful shutdown and to let test runners exit cleanly.
+export const closeDb = (): Promise<void> => queryClient.end({ timeout: 5 });

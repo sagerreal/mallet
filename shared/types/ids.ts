@@ -41,3 +41,7 @@ export const Phone = {
     return ok(`+1${local}` as Phone);
   },
 };
+
+// Trusted cast for values already in E.164 (e.g. read back from the DB). Untrusted input must
+// go through Phone.parse instead.
+export const asPhone = (v: string): Phone => v as Phone;

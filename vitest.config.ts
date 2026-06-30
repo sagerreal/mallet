@@ -1,22 +1,15 @@
-import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
+import { malletAliases } from "./vitest.aliases";
 
-const root = import.meta.dirname;
-
+// Unit suite — hermetic, secret-free, CI-safe. Integration tests (*.int.test.ts) hit a live DB
+// and run under vitest.integration.config.ts instead, so they're excluded here.
 export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx"],
-    exclude: ["node_modules/**", ".next/**"],
+    exclude: ["node_modules/**", ".next/**", "**/*.int.test.ts"],
   },
   resolve: {
-    // Mirror the tsconfig path aliases (longest prefix first).
-    alias: [
-      { find: /^@mallet\/shared\/(.*)$/, replacement: resolve(root, "shared/$1") },
-      { find: /^@mallet\/platform\/(.*)$/, replacement: resolve(root, "platform/$1") },
-      { find: /^@mallet\/workflows\/(.*)$/, replacement: resolve(root, "workflows/$1") },
-      { find: /^@mallet\/(.*)$/, replacement: resolve(root, "modules/$1") },
-      { find: /^@\/(.*)$/, replacement: resolve(root, "$1") },
-    ],
+    alias: malletAliases(import.meta.dirname),
   },
 });

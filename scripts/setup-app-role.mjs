@@ -38,6 +38,19 @@ try {
       grant usage, select on sequences to mallet_app;
   `);
 
+  // The principal resolver is SECURITY DEFINER with its PUBLIC grant revoked — the app role
+  // must be explicitly allowed to call it. Idempotent; only run if the function exists yet.
+  await sql.unsafe(`
+    do $$ begin
+      if exists (
+        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'app_resolve_principal'
+      ) then
+        grant execute on function public.app_resolve_principal(uuid) to mallet_app;
+      end if;
+    end $$;
+  `);
+
   const [r] = await sql`
     select rolcanlogin, rolbypassrls from pg_roles where rolname = 'mallet_app'
   `;

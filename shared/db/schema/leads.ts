@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, text, integer, boolean, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  index,
+  uniqueIndex,
+  check,
+} from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 
 // A customer/lead in the pipeline. Every row carries org_id; RLS isolates by it.
@@ -30,5 +40,7 @@ export const leads = pgTable(
     uniqueIndex("leads_org_phone_uidx")
       .on(t.orgId, t.phoneE164)
       .where(sql`${t.deletedAt} is null and ${t.phoneE164} is not null`),
+    // Make invalid pipeline stages unrepresentable at the storage layer.
+    check("leads_stage_check", sql`${t.stage} in ('new', 'contacted', 'quote_sent', 'won', 'lost')`),
   ],
 );

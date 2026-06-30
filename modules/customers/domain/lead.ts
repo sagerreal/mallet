@@ -5,6 +5,17 @@ import { validation, ok, err } from "@mallet/shared/types";
 // stages (the prototype's draggable columns) are deferred (YAGNI) until a tenant needs them.
 export type LeadStage = "new" | "contacted" | "quote_sent" | "won" | "lost";
 
+export const LEAD_STAGES: readonly LeadStage[] = [
+  "new",
+  "contacted",
+  "quote_sent",
+  "won",
+  "lost",
+];
+
+export const isLeadStage = (value: string): value is LeadStage =>
+  (LEAD_STAGES as readonly string[]).includes(value);
+
 export interface LeadProps {
   readonly id: LeadId;
   readonly orgId: OrgId;
