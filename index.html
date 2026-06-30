@@ -151,6 +151,34 @@
       </div>
     </section>
 
+    <!-- ===================== SEE IT IN ACTION (gallery) ===================== -->
+    <section class="gallery" id="see-it">
+      <div class="wrap">
+        <p class="eyebrow" data-reveal>See it in action</p>
+        <h2 class="sec-h">This is the actual product.</h2>
+        <p class="sec-sub">Not mockups &mdash; real screens from Mallet. Tap any to take a closer look.</p>
+        <div class="shots" data-reveal>
+          <button class="shot" type="button" onclick="lightbox('assets/screen-home.jpg','The morning dashboard — your whole shop at a glance')">
+            <img src="assets/screen-home.jpg" alt="Mallet dashboard — the day's jobs, money, and what needs you" loading="lazy" />
+            <span class="shot-cap">The morning dashboard</span>
+          </button>
+          <button class="shot" type="button" onclick="lightbox('assets/screen-money.jpg','Ask Mallet to go get the money — it tallies unsigned quotes + unpaid invoices and chases them in one tap')">
+            <img src="assets/screen-money.jpg" alt="Mallet AI command — money in reach" loading="lazy" />
+            <span class="shot-cap">Ask Mallet to go get the money</span>
+          </button>
+          <button class="shot" type="button" onclick="lightbox('assets/screen-sched.jpg','The dispatch board — drag-and-drop the whole day across your crew')">
+            <img src="assets/screen-sched.jpg" alt="Mallet dispatch board" loading="lazy" />
+            <span class="shot-cap">Drag-and-drop dispatch</span>
+          </button>
+          <button class="shot" type="button" onclick="lightbox('assets/screen-cust.jpg','Customers &amp; pipeline — every lead, customer, and job in one place')">
+            <img src="assets/screen-cust.jpg" alt="Mallet customers and pipeline" loading="lazy" />
+            <span class="shot-cap">Customers &amp; pipeline</span>
+          </button>
+        </div>
+        <div class="cta-row"><a class="btn-primary lg" href="#waitlist">I want this &mdash; claim my founding spot&nbsp;&rarr;</a></div>
+      </div>
+    </section>
+
     <!-- ===================== CAPABILITY GRID ===================== -->
     <section class="caps">
       <div class="wrap">
@@ -333,6 +361,15 @@
       <p class="foot-meta"><span>&copy; 2026 Mallet. All rights reserved.</span></p>
     </div>
   </footer>
+
+  <!-- Lightbox for the product gallery -->
+  <div id="lightbox" class="lightbox" hidden onclick="closeLightbox(event)">
+    <button class="lb-close" type="button" aria-label="Close" onclick="closeLightbox(event)">&times;</button>
+    <figure class="lb-fig">
+      <img id="lbImg" src="" alt="" />
+      <figcaption id="lbCap"></figcaption>
+    </figure>
+  </div>
 
   <script src="main.js" defer></script>
 </body>
