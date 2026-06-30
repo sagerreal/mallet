@@ -46,6 +46,8 @@ strong{font-weight:700}
   letter-spacing:.15em;color:var(--ink-soft);display:inline-flex;align-items:center;gap:.55rem;margin-bottom:1.1rem;
 }
 .eyebrow::before{content:"";width:18px;height:2px;background:var(--amber);flex:none}
+.eyebrow.claim{font-size:.92rem;color:var(--ink);letter-spacing:.1em;font-weight:600;max-width:34ch;line-height:1.4;align-items:flex-start}
+.eyebrow.claim::before{margin-top:.55em}
 
 /* monoline icons */
 .ico{fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
