@@ -1,5 +1,6 @@
 import { loadConfig } from "@mallet/shared/config";
 import { withTenant } from "@mallet/shared/db/tx";
+import { OutboxEventBus } from "@mallet/shared/outbox";
 import { asOrgId, asInvoiceId } from "@mallet/shared/types";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
 import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
@@ -39,7 +40,10 @@ export async function POST(req: Request): Promise<Response> {
           enrichRequestContext({ orgId });
           await withTenant(asOrgId(orgId), async (tx) => {
             const repo = new DrizzleInvoiceRepository(tx, asOrgId(orgId));
-            const useCase = new RecordCardPaymentUseCase(repo, deps.bus, deps.clock, deps.ids);
+            // Emit through the outbox in the SAME tx so invoice.paid/recorded are durable and
+            // committed atomically with the ledger write (not the in-memory bus).
+            const bus = new OutboxEventBus(tx, asOrgId(orgId));
+            const useCase = new RecordCardPaymentUseCase(repo, bus, deps.clock, deps.ids);
             const r = await useCase.exec({
               orgId: asOrgId(orgId),
               invoiceId: asInvoiceId(invoiceId),

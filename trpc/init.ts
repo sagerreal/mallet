@@ -3,6 +3,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { withTenant } from "@mallet/shared/db/tx";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { OutboxEventBus } from "@mallet/shared/outbox";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
 import type { Principal, Role } from "@mallet/identity";
 import type { AppDeps } from "./deps";
@@ -57,7 +58,12 @@ const orgTx = t.middleware(({ ctx, next }) => {
   }
   // Tag the request context now that the tenant is known, so all downstream logs carry it.
   enrichRequestContext({ orgId: ctx.principal.orgId, userId: ctx.principal.userId });
-  return withTenant(ctx.principal.orgId, (tx) => next({ ctx: { tx } }));
+  const orgId = ctx.principal.orgId;
+  // Bind the event bus to THIS tx so a use-case's emits land in the outbox atomically with its
+  // state change (durable, and rolled back together on failure) — replacing the in-memory bus.
+  return withTenant(orgId, (tx) =>
+    next({ ctx: { tx, deps: { ...ctx.deps, bus: new OutboxEventBus(tx, orgId) } } }),
+  );
 });
 
 // Owner/office staff, inside their org transaction. The standard procedure for back-office data.
