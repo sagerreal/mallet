@@ -4,6 +4,7 @@ import { ListLeadsUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { ListInvoicesUseCase, DrizzleInvoiceRepository, SendInvoiceUseCase } from "@mallet/invoicing";
 import { ListEstimatesUseCase, DrizzleEstimateRepository, DraftEstimateUseCase } from "@mallet/quoting";
 import type { AgentTool, ToolContext, ToolOutcome } from "../domain/tool";
+import { ENTITY_NOT_FOUND } from "../domain/tool";
 
 // MCP-shaped tool registry: each tool reuses the SAME use-case the tRPC API calls, constructed from
 // the per-call tenant tx (one business-logic surface). Read tools run unattended; mutating:true tools
@@ -118,13 +119,18 @@ const quoteDraftTool: AgentTool = {
   // vanishes) between propose and confirm, the confirm gate refuses and asks for a fresh proposal.
   async fingerprint(input, ctx): Promise<string> {
     const parsed = quoteDraftInput.safeParse(input);
-    if (!parsed.success) return "invalid";
+    if (!parsed.success) return ENTITY_NOT_FOUND;
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
-    return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : "missing";
+    return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = quoteDraftInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
+    // Verify the customer exists (matches invoice_send's not-found handling) so a bad/typo'd leadId
+    // is a clean, self-correctable error rather than a masked FK-violation throw — this guards the
+    // in-process agent path too, not just the MCP propose-leg refusal.
+    const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
+    if (!lead) return { ok: false, error: `customer ${parsed.data.leadId} not found — use customer_list to find the right id` };
     const uc = new DraftEstimateUseCase(new DrizzleEstimateRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
     const result = await uc.exec({
       orgId: ctx.orgId,
@@ -151,9 +157,9 @@ const invoiceSendTool: AgentTool = {
   // or voided between propose and confirm, the confirm gate refuses rather than send stale terms.
   async fingerprint(input, ctx): Promise<string> {
     const parsed = invoiceSendInput.safeParse(input);
-    if (!parsed.success) return "invalid";
+    if (!parsed.success) return ENTITY_NOT_FOUND;
     const invoice = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
-    return invoice ? `invoice:${invoice.props.id}:${invoice.props.status}:${invoice.props.total}:${invoice.props.amountPaid}` : "missing";
+    return invoice ? `invoice:${invoice.props.id}:${invoice.props.status}:${invoice.props.total}:${invoice.props.amountPaid}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = invoiceSendInput.safeParse(input);

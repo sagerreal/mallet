@@ -31,6 +31,13 @@ export interface ToolContext {
 // model can self-correct — never an opaque code or a raw provider/DB message (no PII).
 export type ToolOutcome = { readonly ok: true; readonly summary: string } | { readonly ok: false; readonly error: string };
 
+// Sentinel a `fingerprint` returns when the referenced entity does not exist (or can't be read under
+// the tenant's RLS). Distinct from a null fingerprint (a tool that declares no fingerprint). The
+// confirm gate treats it as "no entity to act on" — a missing entity is refused at PROPOSE time
+// rather than minting a token that could only ever fail at confirm. Printable + prefixed so it can
+// never collide with a real fingerprint like `lead:<id>:<name>:<stage>`.
+export const ENTITY_NOT_FOUND = "__entity_not_found__";
+
 // A tool = the model-facing spec (name/description/JSON-schema — MCP-shaped) + a `mutating` flag that
 // drives human-approval gating + a handler that runs under a tenant tx. Read tools run unattended;
 // mutating tools (send money/messages, dispatch) pause for approval before the handler ever runs.

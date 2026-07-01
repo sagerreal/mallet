@@ -43,6 +43,11 @@ export type ProposalResult = { readonly ok: true; readonly token: string; readon
 // Mint a proposal inside the caller's tenant tx. Args are FROZEN here — confirmation executes
 // exactly these, so the summary the human reviewed is exactly what runs.
 export const createProposal = async (tx: TenantTx, input: ProposalInput): Promise<ProposalResult> => {
+  // Serialize proposal-minting per key so the count-then-insert cap can't be raced past by a burst
+  // of concurrent proposes (the cap is the storage-griefing bound). A transaction-scoped advisory
+  // lock releases at commit/rollback, so it's safe behind the transaction pooler (like the tx-local
+  // set_config in withTenant). Keyed on a stable hash of the key id in a private lock namespace.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.createdBy}), 6821)`);
   const [pending] = await tx
     .select({ n: count() })
     .from(toolConfirmations)
