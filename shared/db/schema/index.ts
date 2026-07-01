@@ -10,3 +10,4 @@ export * from "./invoices";
 export * from "./notifications";
 export * from "./outbox";
 export * from "./api-keys";
+export * from "./tool-confirmations";

@@ -28,14 +28,24 @@ const invalid = (issues: z.ZodError["issues"]): ToolOutcome => ({
 const listInput = z.object({ limit: z.number().int().min(1).max(50).optional() });
 const invoiceListInput = listInput.extend({ status: z.enum(["draft", "sent", "partial", "paid", "void"]).optional() });
 const estimateListInput = listInput.extend({ status: z.enum(["draft", "sent", "accepted", "declined"]).optional() });
+// Upper bounds keep a frozen proposal (and any model-supplied input) inside sane business limits —
+// a confirm-token can't commit an absurd 10,000-line or $10M-rate estimate.
 const quoteDraftInput = z.object({
   leadId: z.string().uuid(),
-  title: z.string().optional(),
+  title: z.string().max(200).optional(),
   taxBps: z.number().int().min(0).max(10_000).optional(),
   depBps: z.number().int().min(0).max(10_000).optional(),
   lines: z
-    .array(z.object({ description: z.string().min(1), quantity: z.number().positive(), rateCents: z.number().int().min(0), isOptional: z.boolean().optional() }))
-    .min(1),
+    .array(
+      z.object({
+        description: z.string().min(1).max(500),
+        quantity: z.number().positive().max(10_000),
+        rateCents: z.number().int().min(0).max(10_000_000),
+        isOptional: z.boolean().optional(),
+      }),
+    )
+    .min(1)
+    .max(100),
 });
 const invoiceSendInput = z.object({ invoiceId: z.string().uuid() });
 
@@ -43,6 +53,7 @@ const customerListTool: AgentTool = {
   name: "customer_list",
   description: "List the org's customers/leads (most recent first). Returns each customer's name, phone, stage, and id. Use the id to reference a customer in other tools.",
   inputSchema: jsonSchema(listInput),
+  input: listInput,
   mutating: false,
   async handle(input, ctx: ToolContext): Promise<ToolOutcome> {
     const parsed = listInput.safeParse(input);
@@ -62,6 +73,7 @@ const invoiceListTool: AgentTool = {
   name: "invoice_list",
   description: "List the org's invoices (most recent first), optionally filtered by status. Returns each invoice's number, status, total, and balance due, with its id.",
   inputSchema: jsonSchema(invoiceListInput),
+  input: invoiceListInput,
   mutating: false,
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = invoiceListInput.safeParse(input);
@@ -82,6 +94,7 @@ const estimateListTool: AgentTool = {
   name: "estimate_list",
   description: "List the org's estimates/quotes (most recent first), optionally filtered by status. Returns each estimate's number, status, and total, with its id.",
   inputSchema: jsonSchema(estimateListInput),
+  input: estimateListInput,
   mutating: false,
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = estimateListInput.safeParse(input);
@@ -99,7 +112,16 @@ const quoteDraftTool: AgentTool = {
   name: "quote_draft",
   description: "Draft a new estimate/quote for a customer (found via customer_list). Provide line items; tax and deposit are optional percentages in basis points (1000 = 10%). Creates a DRAFT — it is not sent to the customer until separately sent.",
   inputSchema: jsonSchema(quoteDraftInput),
+  input: quoteDraftInput,
   mutating: true,
+  // What the human approved is "a quote for THIS customer" — if the lead is renamed/re-staged (or
+  // vanishes) between propose and confirm, the confirm gate refuses and asks for a fresh proposal.
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = quoteDraftInput.safeParse(input);
+    if (!parsed.success) return "invalid";
+    const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
+    return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : "missing";
+  },
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = quoteDraftInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -123,7 +145,16 @@ const invoiceSendTool: AgentTool = {
   name: "invoice_send",
   description: "Mark an invoice as sent to the customer (found via invoice_list). This transitions the invoice to 'sent' and starts its payment terms.",
   inputSchema: jsonSchema(invoiceSendInput),
+  input: invoiceSendInput,
   mutating: true,
+  // The human approved sending THIS invoice at THIS total/status — if it was edited, paid against,
+  // or voided between propose and confirm, the confirm gate refuses rather than send stale terms.
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = invoiceSendInput.safeParse(input);
+    if (!parsed.success) return "invalid";
+    const invoice = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
+    return invoice ? `invoice:${invoice.props.id}:${invoice.props.status}:${invoice.props.total}:${invoice.props.amountPaid}` : "missing";
+  },
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = invoiceSendInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
