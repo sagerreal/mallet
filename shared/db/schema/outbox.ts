@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, text, jsonb, timestamp, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, jsonb, timestamp, integer, bigserial, index } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 
 // Transactional outbox: a domain event is written here IN THE SAME TX as the state change that
@@ -11,6 +11,11 @@ export const outbox = pgTable(
   "outbox",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Monotonic insert order. now()/created_at is transaction_timestamp() — CONSTANT within a tx —
+    // and the id is a random UUID, so neither can order two events emitted in the same tx (e.g.
+    // invoice.payment.recorded then invoice.paid). A sequence advances once per row, giving the relay
+    // a strict total order to dispatch by. Assigned by the DB on insert.
+    seq: bigserial("seq", { mode: "number" }).notNull(),
     orgId: uuid("org_id")
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
@@ -25,9 +30,10 @@ export const outbox = pgTable(
     lastError: text("last_error"),
   },
   (t) => [
-    // The relay's poll: oldest unpublished first. Partial index keeps it small as published rows pile up.
+    // The relay's poll: oldest unpublished first, ordered by the monotonic seq (a strict total order,
+    // unlike the tx-constant created_at). Partial index keeps it small as published rows pile up.
     index("outbox_unpublished_idx")
-      .on(t.createdAt)
+      .on(t.seq)
       .where(sql`${t.publishedAt} is null`),
     index("outbox_org_idx").on(t.orgId),
   ],

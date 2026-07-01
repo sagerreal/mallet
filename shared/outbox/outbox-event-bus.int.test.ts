@@ -89,6 +89,20 @@ suite("transactional outbox (write side, live RLS)", () => {
     expect(rows).toHaveLength(0); // the emit rolled back with the tx
   });
 
+  it("assigns a strictly increasing seq to events emitted in the same tx (recoverable order)", async () => {
+    // now()/created_at is tx-constant, so seq is the only key that orders two same-tx emits.
+    const tag = randomUUID();
+    await withTenant(asOrgId(orgAId), async (tx) => {
+      const bus = new OutboxEventBus(tx, asOrgId(orgAId));
+      await bus.emit({ name: `test.first.${tag}`, orgId: asOrgId(orgAId), payload: { n: 1 }, occurredAt: new Date("2026-07-01T00:00:00Z") });
+      await bus.emit({ name: `test.second.${tag}`, orgId: asOrgId(orgAId), payload: { n: 2 }, occurredAt: new Date("2026-07-01T00:00:00Z") });
+    });
+    const rows = await admin<{ event_name: string; seq: string }[]>`
+      select event_name, seq from outbox where event_name like ${"test.%." + tag} order by seq asc`;
+    expect(rows.map((r) => r.event_name)).toEqual([`test.first.${tag}`, `test.second.${tag}`]);
+    expect(Number(rows[1]!.seq)).toBeGreaterThan(Number(rows[0]!.seq)); // strict order despite equal created_at
+  });
+
   it("rejects an event stamped with a foreign org id (RLS WITH CHECK, fail-closed)", async () => {
     await expect(
       withTenant(asOrgId(orgAId), (tx) =>
