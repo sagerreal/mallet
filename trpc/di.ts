@@ -1,6 +1,6 @@
 import { loadConfig } from "@mallet/shared/config";
 import { db } from "@mallet/shared/db/client";
-import { createAuthProvider } from "@mallet/identity";
+import { createAuthProvider, createApiKeyAuthenticator } from "@mallet/identity";
 import { StripePaymentLinkGateway } from "@mallet/invoicing";
 import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import {
@@ -71,6 +71,7 @@ export const getAppDeps = (): AppDeps => {
       supabaseAnonKey: config.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       db,
     }),
+    apiKeyAuthenticator: createApiKeyAuthenticator(db),
     bus: new InMemoryEventBus(),
     clock: systemClock,
     ids: uuidGenerator,

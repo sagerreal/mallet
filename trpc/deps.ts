@@ -1,4 +1,4 @@
-import type { AuthProvider } from "@mallet/identity";
+import type { AuthProvider, ApiKeyVerifier } from "@mallet/identity";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
@@ -9,6 +9,8 @@ import type { Clock } from "@mallet/shared/types";
 // these (never construct adapters themselves), so tests substitute fakes freely.
 export interface AppDeps {
   readonly authProvider: AuthProvider;
+  // Per-tenant API-key auth for the remote MCP server (static Bearer keys → Principal).
+  readonly apiKeyAuthenticator: ApiKeyVerifier;
   readonly bus: EventBus;
   readonly clock: Clock;
   readonly ids: IdGenerator;
