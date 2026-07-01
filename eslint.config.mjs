@@ -24,6 +24,7 @@ export default [
   },
   {
     files: [
+      "lib/**/*.ts",
       "modules/**/*.ts",
       "shared/**/*.ts",
       "trpc/**/*.ts",

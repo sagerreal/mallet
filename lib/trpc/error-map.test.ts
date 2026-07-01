@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { userMessage } from "./error-map";
 
-const trpcError = (code: string) => ({ data: { code }, message: "raw server text" });
+const trpcError: (code: string) => { data: { code: string }; message: string } = (code) => ({ data: { code }, message: "raw server text" });
 
 describe("userMessage", () => {
   it("maps known TRPC codes to friendly copy and never echoes raw text for unknowns", () => {
