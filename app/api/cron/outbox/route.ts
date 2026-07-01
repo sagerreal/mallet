@@ -9,6 +9,10 @@ import { buildOutboxHandlers } from "@/trpc/outbox-registry";
 // draining. A plain Next route (not tRPC): no tenant context, no user — the relay re-scopes per row.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Give a tick room to finish so it isn't truncated mid-batch (honored on Vercel Pro; Hobby caps
+// lower). Not a correctness dependency — attempts are burned only on real failures, so a truncated
+// tick re-claims its rows next time without poisoning them — but it improves throughput.
+export const maxDuration = 60;
 
 // Constant-time comparison over fixed-length SHA-256 digests (so unequal lengths don't leak and
 // there's no early-exit timing oracle on the secret).

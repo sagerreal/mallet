@@ -44,7 +44,7 @@ suite("outbox cron route auth", () => {
     const res = await call({ authorization: `Bearer ${process.env.CRON_SECRET}` });
     expect(res.status).toBe(200);
     const summary = (await res.json()) as Record<string, number>;
-    for (const key of ["claimed", "published", "drainedNoOp", "failed", "poisoned", "tookMs"]) {
+    for (const key of ["claimed", "published", "drainedNoOp", "failed", "poisoned", "raced", "markErrors", "tookMs"]) {
       expect(typeof summary[key]).toBe("number");
     }
   });

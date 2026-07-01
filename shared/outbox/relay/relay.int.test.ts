@@ -74,6 +74,7 @@ suite("outbox relay (engine, live RLS)", () => {
     expect(summary.published).toBeGreaterThanOrEqual(2);
     expect(summary.drainedNoOp).toBeGreaterThanOrEqual(1);
     expect((await row(r1!.id))[0]!.published_at).not.toBeNull();
+    expect((await row(r1!.id))[0]!.attempts).toBe(0); // a successful dispatch never burns an attempt
     expect((await row(r2!.id))[0]!.published_at).not.toBeNull();
     expect((await row(rNo!.id))[0]!.published_at).not.toBeNull(); // drained
     // dispatched under the right tenant, oldest seq first

@@ -31,7 +31,9 @@ const ConfigSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   // Shared secret guarding the outbox relay cron route. Optional — the route 503s (fail-closed)
   // when unset, so the relay never runs unauthenticated. Vercel Cron sends it as a Bearer token.
-  CRON_SECRET: z.string().min(16).optional(),
+  // preprocess "" -> undefined so a blank env var (a common Vercel misconfig) degrades to the
+  // fail-closed 503 path instead of failing schema validation and 500-ing the ENTIRE app at boot.
+  CRON_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(16).optional()),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

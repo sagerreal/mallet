@@ -53,6 +53,20 @@ The claim's `WHERE attempts < maxAttempts` (default 8) excludes rows that burned
 - **True-outbox notification reshape** (the request only queues + emits `notification.requested`; the relay performs the send after commit and stamps sent/failed by id): the correct home for relay-owned send retry + the SMS dedupe token; a multi-file change, deferred.
 - **Lease / single-flight** (near-exactly-once under overlapping ticks), **Inngest** migration (event-driven concurrency/backoff/dead-letter/replay — the handler registry + disposition contracts port over unchanged), **dead-letter admin surface**, **backoff/jitter between retries**, **published-row archival**, **fan-out** (1 event → N handlers).
 
+## Review hardening (2026-07-01)
+
+The slice's adversarial review confirmed 9 findings (mostly overlapping). Fixed:
+
+- **`attempts` now increments on failure, not at claim (HIGH/MED — #1, #2, #4):** originally the claim statement burned an attempt for every claimed row, so a row that was **claimed but never dispatched** — a tick truncated by the function timeout, or a mark-write failure that aborted the batch tail — could reach the poison cap **without ever being delivered**. Now the claim is a plain `SELECT … FOR UPDATE SKIP LOCKED` and only `recordFailure` (a real dispatch failure/throw) increments `attempts`. A never-dispatched row keeps `attempts = 0` and stays re-claimable, so it can never become a never-delivered dead-letter. (A process-crash-loop guard — for a handler that repeatedly kills the process before `recordFailure` — is the deferred lease model; the pilot's only handler is an idempotent read.)
+- **Per-row guard so a mark-write blip can't strand the batch (HIGH — #1, #8):** the whole per-row body is wrapped in a try/catch that logs a distinct `markErrors` and continues, so an owner-conn drop / statement timeout on one row's mark no longer propagates out of the loop and abandons every remaining already-claimed row.
+- **Mark separated from dispatch classification (MED — #3, #9):** the success-path `markPublished` no longer runs inside the dispatch `try`, so a mark failure after a successful handler is not misattributed as a handler throw (`last_error="unhandled"`, counted `failed`). The disposition is decided (pure `dispositionFor`), then the mark runs under the outer per-row guard.
+- **Counters gated on affected-row count (LOW — #7):** `markPublished`/`recordFailure` return the affected count; under a concurrent race where the `published_at IS NULL` guard no-ops (a peer tick already published), the outcome is counted `raced` instead of over-counting `published`/`failed`, so `RelaySummary` reflects true per-tick outcomes.
+- **Empty-string `CRON_SECRET` no longer 500s the whole app (MED — #5):** `z.preprocess("" → undefined)` so a blank Vercel env var degrades to the intended fail-closed 503 at the cron boundary instead of failing config validation at boot (which `shared/db/client.ts`'s top-level `loadConfig` turns into an app-wide 500).
+- **`maxDuration = 60` on the route (MED — #4, defense-in-depth):** gives a tick room to finish (honored on Pro); not a correctness dependency now that a truncated tick doesn't poison.
+- **Accepted as-designed:** a *malformed* (too-short, non-empty) `CRON_SECRET` fails fast at boot (#6) — the documented config contract; the empty-string fix covers the realistic misconfig. Exactly-once under overlapping ticks stays deferred (lease model) — the contract is at-least-once + idempotent handlers.
+
+The pure decision logic (`dispositionFor`, `safeLastError`) is unit-tested; the DB-orchestration (`relay.ts`, `owner-client.ts`, the audit handler) is integration-tested (and excluded from the unit-coverage threshold like the repos).
+
 ## Consequences
 
 - The relay is a durable, correct, observable delivery mechanism that ships with **no customer-facing behavior change** — turning on auto-notify is a separate, reviewed, one-handler change.
