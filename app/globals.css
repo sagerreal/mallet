@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surfaces & ink — ported from elas-crm-prototype.html */
+  --color-bg: #fcfbf7;
+  --color-card: #fefefc;
+  --color-paper: #f1ede4;
+  --color-line: #eae4d7;
+  --color-ink: #15110b;
+  --color-ink-muted: #6b6455;
+  --color-accent: #1a1510;
+  --color-accent-fg: #ffffff;
+  --color-manila: #f7f0e1;
+  --color-manila-line: #e3d8c1;
+
+  /* Tones (text on bg pairs) */
+  --color-amber: #9a6700;
+  --color-amber-bg: #f2ead9;
+  --color-red: #b23a2a;
+  --color-red-bg: #f4e7e1;
+  --color-blue: #4a639e;
+  --color-blue-bg: #e9ecf3;
+  --color-green: #3d7a4e;
+  --color-green-bg: #e6efe3;
+
+  /* Shape */
+  --radius-card: 12px;
+  --radius-control: 9px;
+
+  /* Type — variables provided by next/font in layout.tsx */
+  --font-display: var(--font-space-grotesk);
+  --font-body: var(--font-inter);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
