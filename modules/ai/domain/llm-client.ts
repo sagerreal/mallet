@@ -57,8 +57,22 @@ export interface AssistantTurn {
   readonly usage: LlmUsage;
 }
 
+// A provider error mapped to a safe, domain-typed failure. The adapter catches the SDK's error
+// (which can carry provider status + body text) and throws THIS instead, so the loop/router never
+// surface raw provider detail and can react to `retryable` (429/5xx/network → retryable).
+export class LlmError extends Error {
+  constructor(
+    readonly retryable: boolean,
+    message = "the assistant is temporarily unavailable",
+  ) {
+    super(message);
+    this.name = "LlmError";
+  }
+}
+
 // One model round-trip: given the running conversation + tools, produce the next assistant turn.
-// The implementation owns streaming, prompt caching, adaptive thinking, and provider mapping.
+// The implementation owns streaming, prompt caching, adaptive thinking, and provider mapping, and
+// maps any provider error to LlmError.
 export interface LlmClient {
   next(request: LlmRequest): Promise<AssistantTurn>;
 }

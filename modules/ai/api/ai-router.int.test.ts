@@ -110,4 +110,11 @@ suite("ai agent tRPC entry (full stack, live RLS)", () => {
     const estimates = await admin<{ id: string; org_id: string }[]>`select id, org_id from estimates where org_id = ${orgAId}`;
     expect(estimates).toHaveLength(1); // the approved tool ran, scoped to org A
   });
+
+  it("rejects a malformed resume transcript with BAD_REQUEST (not a 500)", async () => {
+    const caller = appRouter.createCaller(ctxWith(orgAId, "owner", new ScriptedLlm([])));
+    // Well-formed JSON, structurally invalid AgentMessage (no kind/results).
+    await expect(caller.v1.ai.resume({ transcript: '[{"role":"user"}]', approvedToolUseIds: [] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.v1.ai.resume({ transcript: "not json", approvedToolUseIds: [] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
 });

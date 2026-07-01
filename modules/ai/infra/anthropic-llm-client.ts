@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { logger } from "@mallet/shared/observability";
+import { LlmError } from "../domain/llm-client";
 import type {
   LlmClient,
   LlmRequest,
@@ -33,16 +35,31 @@ export class AnthropicLlmClient implements LlmClient {
       ...(i === request.tools.length - 1 ? { cache_control: { type: "ephemeral" as const } } : {}),
     }));
 
-    const stream = this.client.messages.stream({
-      model: MODEL,
-      max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-      thinking: { type: "adaptive" },
-      ...(request.effort ? { output_config: { effort: request.effort } } : {}),
-      system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
-      tools: tools.length > 0 ? tools : undefined,
-      messages: request.messages.map(toMessageParam),
-    });
-    const message = await stream.finalMessage();
+    let message: Anthropic.Message;
+    try {
+      const stream = this.client.messages.stream({
+        model: MODEL,
+        max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
+        thinking: { type: "adaptive" },
+        ...(request.effort ? { output_config: { effort: request.effort } } : {}),
+        system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
+        tools: tools.length > 0 ? tools : undefined,
+        messages: request.messages.map(toMessageParam),
+      });
+      message = await stream.finalMessage();
+    } catch (error) {
+      // Map the SDK error to a safe, domain-typed failure. Log the provider detail server-side only
+      // (status/type/request-id — never the request body, which could carry customer data); the
+      // caller sees a generic, retryable-aware LlmError, not raw provider text.
+      if (error instanceof Anthropic.APIError) {
+        const status = error.status;
+        logger.error({ provider: "anthropic", status, type: error.name, requestId: error.requestID }, "anthropic.api_error");
+        const retryable = status === undefined || status === 429 || (typeof status === "number" && status >= 500);
+        throw new LlmError(retryable);
+      }
+      logger.error({ provider: "anthropic", err: error instanceof Error ? error.name : "unknown" }, "anthropic.unknown_error");
+      throw new LlmError(true);
+    }
 
     return {
       stopReason: mapStopReason(message.stop_reason),

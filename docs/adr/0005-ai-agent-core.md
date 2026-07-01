@@ -36,6 +36,15 @@ Tools are `mutating: true` (create/send/dispatch/charge) or read-only. Read tool
 - **Publish Mallet as an MCP server** (protocol endpoint + auth) so external hosts use the same registry — the immediate next slice.
 - **Streaming** the loop's progress to the UI (subscription/SSE), a **server-side session store** for approval-resume (today the transcript round-trips to the client as an opaque string — bounded risk: org is re-derived server-side + tools re-gate, so a tampered transcript can't cross tenants or bypass approval; a signed/stored session is the hardening), a **per-run cost budget** + beta task budgets, an **agent_tool_calls audit table**, **more tools** (scheduling/dispatch, payments, notifications) grown from real-task evals, **model tiering** (Haiku for cheap sub-steps), **tool-search/prompt-cache** hardening once the tool count grows, and the **field-tech + photo (vision)** entry (same loop, tech-scoped tools + system prompt).
 
+## Review hardening (2026-07-01)
+
+The slice's adversarial review confirmed 9 findings (deduped to 4). Fixed:
+
+- **Dangling `tool_use` on the cap synthesis (HIGH):** the loop alternates model-call / resolve iterations, so with an **odd** `maxIters` (the default was 15) a read-tool loop exits right after a model-call iteration that left an **unanswered** assistant `tool_use`. The final tool-less synthesis then sent that dangling `tool_use` with no matching `tool_result` → Anthropic 400 → a 500 on the exact wrap-up path meant to prevent a runaway. Fixed: `synthesizeFinal` answers any dangling `tool_use` with a synthetic error `tool_result` before the synthesis call. The unit test missed it because the fake LLM didn't validate `tool_use`/`tool_result` pairing — added a **validating fake** (throws on a dangling `tool_use`, like the real API) + an odd-`maxIters` regression test.
+- **Uncaught provider errors → opaque 500 (MED):** `llm.next()` throwing (429/5xx/network) propagated as an unhandled 500 (and, in dev, raw provider text). Fixed: the adapter catches the SDK error, logs the status/type/request-id **server-side only** (never the request body), and throws a domain **`LlmError { retryable }`**; the router maps it to `TOO_MANY_REQUESTS` / `BAD_GATEWAY` with a generic message.
+- **Unvalidated resume transcript (MED):** the resume transcript was cast without structural validation, so a malformed element threw a `TypeError` → 500. Fixed: a Zod schema mirroring the `AgentMessage` union validates it → clean `BAD_REQUEST` (regression test covers a malformed + a non-JSON transcript).
+- **Refusal on the synthesis turn (LOW):** the cap wrap-up didn't check `refusal` and reported it as `completed`. Fixed: `synthesizeFinal` returns `refused` on a refusal (regression test added).
+
 ## Consequences
 
 - The AI is **optional**: unset `ANTHROPIC_API_KEY` → `llmClient` is null → `v1.ai.*` returns `PRECONDITION_FAILED`.

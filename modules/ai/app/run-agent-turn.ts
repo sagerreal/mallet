@@ -137,13 +137,35 @@ export const runAgentTurn = async (params: RunAgentParams): Promise<AgentResult>
     return { status: "completed", text: textOf(turn.blocks), transcript: messages, usage };
   }
 
-  // Iteration cap: one final tool-LESS call so the user gets a wrap-up, not a dangling loop.
+  return synthesizeFinal(params, messages, usage); // iteration cap hit
+};
+
+// The cap wrap-up: one final tool-LESS call so the user gets a summary, not a dangling loop. If the
+// transcript ends in an unanswered assistant tool_use, answer each with a synthetic error result
+// FIRST — otherwise the request carries a dangling tool_use (no matching tool_result) and the API
+// rejects it (400). A refusal on the wrap-up is surfaced as refused, not a blank completion.
+const synthesizeFinal = async (
+  params: RunAgentParams,
+  messages: AgentMessage[],
+  priorUsage: LlmUsage,
+): Promise<AgentResult> => {
+  const tail = messages[messages.length - 1];
+  if (tail?.role === "assistant" && tail.blocks.some(isToolUse)) {
+    messages.push({
+      role: "user",
+      kind: "tool_results",
+      results: tail.blocks.filter(isToolUse).map((tu) => ({ toolUseId: tu.id, content: "tool-use limit reached; this tool was not run", isError: true })),
+    });
+  }
   const finalTurn = await params.llm.next({
     system: params.system,
     tools: [],
     messages: [...messages, { role: "user", kind: "text", text: "You have reached the tool-use limit for this task. Summarize what you did and what still needs doing." }],
     effort: "low",
   });
-  usage = addUsage(usage, finalTurn.usage);
+  const usage = addUsage(priorUsage, finalTurn.usage);
+  if (finalTurn.stopReason === "refusal") {
+    return { status: "refused", text: textOf(finalTurn.blocks) || "The request was declined.", transcript: messages, usage };
+  }
   return { status: "completed", text: textOf(finalTurn.blocks), transcript: messages, usage };
 };

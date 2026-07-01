@@ -7,8 +7,25 @@ import type { Principal } from "@mallet/identity";
 import type { AppDeps } from "@/trpc/deps";
 import { buildAgentTools } from "../infra/agent-tools";
 import { runAgentTurn, type AgentResult, type ExecuteTool, type ToolMeta } from "../app/run-agent-turn";
-import type { AgentMessage } from "../domain/llm-client";
+import { LlmError, type AgentMessage } from "../domain/llm-client";
 import type { ToolDeps } from "../domain/tool";
+
+// Structural validation of an untrusted resume transcript (round-tripped through the client). Mirrors
+// the AgentMessage union so a malformed element becomes a clean BAD_REQUEST, not a 500 deep in the
+// adapter. (Tenancy is already safe — org is re-derived server-side — this is input hygiene.)
+const assistantBlockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({ type: z.literal("thinking"), thinking: z.string(), signature: z.string() }),
+  z.object({ type: z.literal("redacted_thinking"), data: z.string() }),
+  z.object({ type: z.literal("tool_use"), id: z.string(), name: z.string(), input: z.unknown() }),
+]);
+const transcriptSchema = z.array(
+  z.union([
+    z.object({ role: z.literal("user"), kind: z.literal("text"), text: z.string() }),
+    z.object({ role: z.literal("user"), kind: z.literal("tool_results"), results: z.array(z.object({ toolUseId: z.string(), content: z.string(), isError: z.boolean().optional() })) }),
+    z.object({ role: z.literal("assistant"), kind: z.literal("assistant"), blocks: z.array(assistantBlockSchema) }),
+  ]),
+);
 
 // The unified agent's system prompt. Byte-identical across tenants (RLS scopes data at execution,
 // never by varying the prompt) so the cached prefix always hits. No org name / no timestamps.
@@ -74,9 +91,9 @@ export const createAiRouter = () =>
       .mutation(async ({ ctx, input }) => {
         let priorMessages: AgentMessage[];
         try {
-          const parsed = JSON.parse(input.transcript);
-          if (!Array.isArray(parsed)) throw new Error("not an array");
-          priorMessages = parsed as AgentMessage[];
+          const parsed = transcriptSchema.safeParse(JSON.parse(input.transcript));
+          if (!parsed.success) throw new Error("bad shape");
+          priorMessages = parsed.data as AgentMessage[];
         } catch {
           throw new TRPCError({ code: "BAD_REQUEST", message: "invalid transcript" });
         }
@@ -92,7 +109,7 @@ export const createAiRouter = () =>
 
 // Shared driver: builds the per-call tool executor (short withTenant tx + outbox-bound bus, org from
 // the verified principal) and runs the loop on the configured model.
-const drive = (
+const drive = async (
   ctx: { principal: Principal; deps: AppDeps },
   turn: { userMessage?: string; priorMessages?: AgentMessage[]; approvedToolUseIds?: string[]; deniedToolUseIds?: string[] },
 ): Promise<AgentResult> => {
@@ -115,15 +132,24 @@ const drive = (
       return tool.handle(input, { tx, orgId: ctx.principal.orgId, principal: ctx.principal, deps });
     });
   };
-  return runAgentTurn({
-    llm: ctx.deps.llmClient,
-    system: SYSTEM_PROMPT,
-    tools: meta,
-    execute,
-    effort: "high",
-    userMessage: turn.userMessage,
-    priorMessages: turn.priorMessages,
-    approvedToolUseIds: turn.approvedToolUseIds,
-    deniedToolUseIds: turn.deniedToolUseIds,
-  });
+  try {
+    return await runAgentTurn({
+      llm: ctx.deps.llmClient,
+      system: SYSTEM_PROMPT,
+      tools: meta,
+      execute,
+      effort: "high",
+      userMessage: turn.userMessage,
+      priorMessages: turn.priorMessages,
+      approvedToolUseIds: turn.approvedToolUseIds,
+      deniedToolUseIds: turn.deniedToolUseIds,
+    });
+  } catch (error) {
+    // A provider failure surfaces as a clean, retryable-aware error (not a raw 500). The adapter
+    // already logged the provider detail server-side.
+    if (error instanceof LlmError) {
+      throw new TRPCError({ code: error.retryable ? "TOO_MANY_REQUESTS" : "BAD_GATEWAY", message: "the AI assistant is temporarily unavailable — please try again" });
+    }
+    throw error;
+  }
 };

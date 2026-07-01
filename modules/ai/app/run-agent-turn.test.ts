@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { LlmClient, LlmRequest, AssistantTurn, AssistantBlock } from "../domain/llm-client";
+import { LlmError } from "../domain/llm-client";
 import type { ToolOutcome } from "../domain/tool";
 import { runAgentTurn, type ToolMeta } from "./run-agent-turn";
 
@@ -126,25 +127,52 @@ describe("runAgentTurn", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("caps runaway loops and returns a final tool-less synthesis", async () => {
-    // The model always asks for another read tool while tools are offered; the loop must stop at
-    // maxIters and make ONE final tool-LESS call (tools:[]) to synthesize.
+  // A fake that ALSO validates tool_use/tool_result pairing like the real Anthropic API — it throws
+  // if the transcript contains an assistant tool_use not immediately answered by a tool_results turn.
+  // This is what catches a dangling-tool_use synthesis request (the odd-maxIters bug).
+  const validatingAlwaysTool = (): LlmClient => {
     let n = 0;
-    const llm: LlmClient = {
+    return {
       async next(request: LlmRequest): Promise<AssistantTurn> {
+        request.messages.forEach((m, i) => {
+          if (m.role === "assistant" && m.blocks.some((b) => b.type === "tool_use")) {
+            const answer = request.messages[i + 1];
+            if (!(answer && answer.role === "user" && answer.kind === "tool_results")) {
+              throw new Error("400: assistant tool_use not answered by a tool_results turn");
+            }
+          }
+        });
         return request.tools.length === 0 ? text("final synthesis") : callTool(`t${(n += 1)}`, "customer_list", {});
       },
     };
+  };
+
+  it("caps runaway loops and its final synthesis request has no dangling tool_use (odd maxIters)", async () => {
+    // maxIters=3 (ODD) exits the loop right after a model-call iteration that left an unanswered
+    // assistant tool_use. The validating fake would throw a 400 on the synthesis request if the loop
+    // sent that dangling tool_use — so this both proves the cap and locks the dangling-tool_use fix.
     const { calls, execute } = recordingExecute();
-    const result = await runAgentTurn({ llm, system: "sys", tools: TOOLS, execute, userMessage: "loop", maxIters: 4 });
+    const result = await runAgentTurn({ llm: validatingAlwaysTool(), system: "sys", tools: TOOLS, execute, userMessage: "loop", maxIters: 3 });
     expect(result.status).toBe("completed");
     if (result.status === "completed") expect(result.text).toBe("final synthesis");
-    expect(calls.length).toBeLessThanOrEqual(4); // bounded — did not run away
+    expect(calls.length).toBeLessThanOrEqual(3); // bounded
   });
 
   it("surfaces a model refusal as a refused result", async () => {
     const llm = new FakeLlm([turn("refusal", [{ type: "text", text: "I can't help with that." }])]);
     const result = await runAgentTurn({ llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute, userMessage: "bad" });
     expect(result.status).toBe("refused");
+  });
+
+  it("surfaces a refusal on the final synthesis turn as refused (not a blank completion)", async () => {
+    // maxIters=1: the loop makes one tool call, then the tool-less synthesis is refused by the model.
+    const llm = new FakeLlm([callTool("t1", "customer_list", {}), turn("refusal", [{ type: "text", text: "Declined." }])]);
+    const result = await runAgentTurn({ llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute, userMessage: "x", maxIters: 1 });
+    expect(result.status).toBe("refused");
+  });
+
+  it("propagates a provider LlmError for the router to map (not swallowed)", async () => {
+    const llm: LlmClient = { next: async () => { throw new LlmError(true); } };
+    await expect(runAgentTurn({ llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute, userMessage: "x" })).rejects.toBeInstanceOf(LlmError);
   });
 });
