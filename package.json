@@ -29,7 +29,6 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.110.0",
-    "@tailwindcss/postcss": "^4.3.2",
     "@tanstack/react-query": "^5.101.2",
     "@trpc/client": "^11.18.0",
     "@trpc/react-query": "^11.18.0",
@@ -43,7 +42,6 @@
     "resend": "^6.16.0",
     "stripe": "^22.3.0",
     "superjson": "^2.2.6",
-    "tailwindcss": "^4.3.2",
     "twilio": "^6.0.2",
     "zod": "^4.4.3"
   },
@@ -62,7 +60,9 @@
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.1",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "@tailwindcss/postcss": "^4.3.2",
+    "tailwindcss": "^4.3.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

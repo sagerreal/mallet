@@ -10,8 +10,12 @@ export const getSessionPrincipal = async (): Promise<Principal | null> => {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) return null;
-  const result = await getAppDeps().authProvider.authenticate(token);
-  return result.ok ? result.value : null;
+  try {
+    const result = await getAppDeps().authProvider.authenticate(token);
+    return result.ok ? result.value : null;
+  } catch {
+    return null; // a transient auth-provider/network error must fail closed to re-auth, not a 500
+  }
 };
 
 // Layout guard: anonymous → login; authenticated-but-unprovisioned → welcome; wrong role → their
