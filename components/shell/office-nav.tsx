@@ -8,6 +8,7 @@ export const OFFICE_NAV = [
   { href: "/customers", label: "Customers" },
   { href: "/quotes", label: "Quotes" },
   { href: "/jobs", label: "Jobs" },
+  { href: "/money", label: "Money" },
   { href: "/settings", label: "Settings" },
 ];
 
