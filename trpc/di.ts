@@ -10,6 +10,7 @@ import {
   ChannelRouterNotificationSender,
 } from "@mallet/notifications";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
+import { logger } from "@mallet/shared/observability";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
@@ -45,6 +46,14 @@ export const getAppDeps = (): AppDeps => {
       config.TWILIO_FROM_NUMBER,
       systemClock,
     );
+  }
+  // Warn once at boot for any channel that fell back to the logging stub — so a partial-config
+  // deploy (e.g. email live, sms not) is visible in ops rather than silently logging "sent".
+  if (!byChannel.email) {
+    logger.warn("comms: email channel unconfigured (RESEND_API_KEY/EMAIL_FROM missing) — email notifications are logged, not sent");
+  }
+  if (!byChannel.sms) {
+    logger.warn("comms: sms channel unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM_NUMBER missing) — sms notifications are logged, not sent");
   }
   const notificationSender = new ChannelRouterNotificationSender(
     new LoggingNotificationSender(systemClock),
