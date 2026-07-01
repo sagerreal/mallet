@@ -1,7 +1,7 @@
 import { loadConfig } from "@mallet/shared/config";
 import { db } from "@mallet/shared/db/client";
 import { createAuthProvider } from "@mallet/identity";
-import { InMemoryEventBus } from "@mallet/shared/ports";
+import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 
@@ -21,6 +21,7 @@ export const getAppDeps = (): AppDeps => {
     }),
     bus: new InMemoryEventBus(),
     clock: systemClock,
+    ids: uuidGenerator,
   };
   return cached;
 };

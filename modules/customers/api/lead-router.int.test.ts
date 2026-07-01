@@ -4,7 +4,7 @@ import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
-import { InMemoryEventBus } from "@mallet/shared/ports";
+import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { closeDb } from "@mallet/shared/db/client";
 import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
@@ -27,7 +27,7 @@ const stubAuth: AuthProvider = {
 const ctxFor = (orgId: string, role: Role): Context => ({
   principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
   tx: null,
-  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock },
+  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator },
 });
 
 suite("customers tRPC router (full stack, live RLS)", () => {

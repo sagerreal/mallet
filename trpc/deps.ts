@@ -1,5 +1,5 @@
 import type { AuthProvider } from "@mallet/identity";
-import type { EventBus } from "@mallet/shared/ports";
+import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import type { Clock } from "@mallet/shared/types";
 
 // The application's outward dependencies, injected at the composition root. Use-cases receive
@@ -8,4 +8,5 @@ export interface AppDeps {
   readonly authProvider: AuthProvider;
   readonly bus: EventBus;
   readonly clock: Clock;
+  readonly ids: IdGenerator;
 }
