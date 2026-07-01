@@ -12,6 +12,7 @@ export { ApiKeyAuthenticator, createApiKeyAuthenticator, generateApiKey, hashApi
 export { createSupabaseTokenVerifier } from "./infra/supabase-token-verifier";
 export { SignupStore } from "./infra/signup-store";
 export type { SignupInput, ProvisionedOrg } from "./infra/signup-store";
+export { createIdentityRouter } from "./api/identity-router";
 
 export interface AuthProviderDeps {
   readonly supabaseUrl: string;
