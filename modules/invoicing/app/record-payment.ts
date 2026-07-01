@@ -68,8 +68,15 @@ export class RecordPaymentUseCase {
     if (!isOk(receipt)) return err(receipt.error);
 
     // Atomic increment (no lost update under concurrency) — NOT an in-memory read-modify-write.
-    const updated = await this.repo.applyPayment(cmd.invoiceId, cmd.amount);
+    // The UPDATE re-asserts the payable status under the row lock, so a void/pay committing between
+    // the read above and here is caught here rather than silently un-voiding the invoice.
+    const { applied, invoice: updated } = await this.repo.applyPayment(cmd.invoiceId, cmd.amount);
     if (!updated) return err(notFound("invoice"));
+    if (!applied) {
+      // Concurrent void/pay landed. Return an error to roll back the just-claimed ledger row —
+      // correct here because a manual settle moved no external money (unlike the card webhook path).
+      return err(conflict(`cannot record a payment on a ${updated.props.status} invoice`));
+    }
 
     await this.bus.emit({
       name: "invoice.payment.recorded",

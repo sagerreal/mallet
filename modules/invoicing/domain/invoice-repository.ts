@@ -13,6 +13,16 @@ export interface InvoiceFilter {
   readonly status?: InvoiceStatus;
 }
 
+// Outcome of an atomic applyPayment. `applied` is true iff the guarded UPDATE matched a payable
+// (sent|partial) row and incremented it; false means the invoice was concurrently paid/voided (or
+// never payable) and nothing was applied. `invoice` is the current invoice after the attempt, or
+// null iff it does not exist. Callers key off `applied`, NOT off `invoice` alone — a not-applied
+// invoice is still returned (now paid/void) and must be distinguished from an applied one.
+export interface ApplyResult {
+  readonly applied: boolean;
+  readonly invoice: Invoice | null;
+}
+
 export interface InvoiceRepository {
   nextNumber(): Promise<string>;
   // Upsert the header + diff the display lines. Does NOT touch the payments ledger (see
@@ -23,9 +33,10 @@ export interface InvoiceRepository {
   // Append a payment to the ledger, deduped on (org_id, idempotency_key) via ON CONFLICT DO
   // NOTHING RETURNING. true if this call applied it; false if the key was already used.
   insertPayment(orgId: OrgId, invoiceId: InvoiceId, payment: Payment): Promise<boolean>;
-  // Atomically increment amount_paid_cents and recompute status in one UPDATE (no lost updates
-  // under concurrency). Returns the re-hydrated invoice. Caller ensures status is sent|partial.
-  applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<Invoice | null>;
+  // Atomically increment amount_paid_cents and recompute status in ONE guarded UPDATE
+  // (WHERE status in ('sent','partial')): no lost updates under concurrency, and a payment that
+  // races a void/pay cannot resurrect the invoice. Returns whether it applied + the current invoice.
+  applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<ApplyResult>;
   findById(id: InvoiceId): Promise<Invoice | null>;
   findBySourceJob(jobId: JobId): Promise<Invoice | null>;
   list(page: CursorPage, filter?: InvoiceFilter): Promise<Paginated<Invoice>>;

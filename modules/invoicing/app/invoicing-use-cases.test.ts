@@ -24,7 +24,7 @@ import {
 } from "@mallet/shared/types";
 import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
-import type { InvoiceRepository, InvoiceFilter } from "../domain/invoice-repository";
+import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
 import type { Payment } from "../domain/payment";
 import type { JobReader, JobSummary } from "../domain/job-reader";
 import type {
@@ -79,16 +79,18 @@ class FakeInvoiceRepository implements InvoiceRepository {
     this.usedKeys.add(key);
     return true;
   }
-  async applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<Invoice | null> {
+  async applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<ApplyResult> {
     const inv = this.store.get(invoiceId);
-    if (!inv) return null;
+    if (!inv) return { applied: false, invoice: null };
+    // Mirror the SQL guard: only a payable (sent|partial) row is incremented.
+    if (inv.props.status !== "sent" && inv.props.status !== "partial") return { applied: false, invoice: inv };
     const p = inv.props;
     const amountPaid = money(p.amountPaid + amountCents);
     const remaining = Math.max(0, p.total - p.depositPaid - amountPaid);
     const updated = Invoice.create({ ...p, amountPaid, status: remaining === 0 ? "paid" : "partial" });
     if (!isOk(updated)) throw new Error(updated.error.message);
     this.store.set(invoiceId, updated.value);
-    return updated.value;
+    return { applied: true, invoice: updated.value };
   }
   async findById(id: InvoiceId): Promise<Invoice | null> {
     return this.store.get(id) ?? null;

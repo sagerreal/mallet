@@ -1,4 +1,7 @@
-import type { AuthProvider } from "@mallet/identity";
+import type { AuthProvider, ApiKeyVerifier } from "@mallet/identity";
+import type { PaymentLinkGateway } from "@mallet/invoicing";
+import type { NotificationSender } from "@mallet/notifications";
+import type { LlmClient } from "@mallet/ai";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import type { Clock } from "@mallet/shared/types";
 
@@ -6,7 +9,18 @@ import type { Clock } from "@mallet/shared/types";
 // these (never construct adapters themselves), so tests substitute fakes freely.
 export interface AppDeps {
   readonly authProvider: AuthProvider;
+  // Per-tenant API-key auth for the remote MCP server (static Bearer keys → Principal).
+  readonly apiKeyAuthenticator: ApiKeyVerifier;
   readonly bus: EventBus;
   readonly clock: Clock;
   readonly ids: IdGenerator;
+  // Card payments (Stripe). null when Stripe is unconfigured — card create self-disables.
+  readonly paymentLinkGateway: PaymentLinkGateway | null;
+  // Comms egress (email → Resend, sms → Twilio, per-channel fallback → logging stub). Optional:
+  // when omitted (e.g. in tests) callers fall back to the logging stub, so unconfigured comms
+  // degrade to a logged no-op rather than an error.
+  readonly notificationSender?: NotificationSender;
+  // The agent's model client (Anthropic). null when ANTHROPIC_API_KEY is unset — the AI agent
+  // self-disables (its tRPC procedure returns PRECONDITION_FAILED).
+  readonly llmClient: LlmClient | null;
 }

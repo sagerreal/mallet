@@ -21,7 +21,12 @@ export default defineConfig({
         "shared/db/migrations/**",
         "shared/db/schema/**",
         "shared/db/client.ts",
+        "shared/db/owner-client.ts",
         "shared/db/tx.ts",
+        // DB-orchestration infra covered by pnpm test:int (like the repos). The relay's PURE logic
+        // (disposition.ts, last-error.ts) stays counted and is unit-tested.
+        "shared/outbox/relay/relay.ts",
+        "modules/invoicing/app/invoice-paid-audit-handler.ts",
         "modules/**/infra/**",
         "modules/**/api/**",
       ],

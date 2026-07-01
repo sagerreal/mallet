@@ -27,7 +27,7 @@ const stubAuth: AuthProvider = {
 const ctxFor = (orgId: string, role: Role): Context => ({
   principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
   tx: null,
-  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator },
+  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator, paymentLinkGateway: null, llmClient: null , apiKeyAuthenticator: { authenticate: async () => null } },
 });
 
 suite("customers tRPC router (full stack, live RLS)", () => {
