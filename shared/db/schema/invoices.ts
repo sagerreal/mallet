@@ -1,0 +1,134 @@
+import { sql } from "drizzle-orm";
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  numeric,
+  timestamp,
+  index,
+  uniqueIndex,
+  unique,
+  check,
+  foreignKey,
+} from "drizzle-orm/pg-core";
+import { orgs } from "./orgs";
+import { leads } from "./leads";
+import { jobs } from "./jobs";
+
+// A bill for completed work. Total is a snapshot (from the source job); balance due is derived
+// from total − deposit − amount_paid, with amount_paid_cents denormalized here and maintained in
+// the same tx as each payment. Composite FKs keep every reference intra-org.
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    num: text("num").notNull(),
+    sourceJobId: uuid("source_job_id"),
+    leadId: uuid("lead_id").notNull(),
+    title: text("title"),
+    status: text("status").notNull().default("draft"),
+    totalCents: integer("total_cents").notNull().default(0),
+    depositPaidCents: integer("deposit_paid_cents").notNull().default(0),
+    amountPaidCents: integer("amount_paid_cents").notNull().default(0),
+    termsDays: integer("terms_days").notNull().default(7),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("invoices_org_id_uq").on(t.orgId, t.id),
+    foreignKey({
+      name: "invoices_lead_fk",
+      columns: [t.orgId, t.leadId],
+      foreignColumns: [leads.orgId, leads.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "invoices_source_job_fk",
+      columns: [t.orgId, t.sourceJobId],
+      foreignColumns: [jobs.orgId, jobs.id],
+    }),
+    index("invoices_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
+    index("invoices_org_status_due_idx").on(t.orgId, t.status, t.dueAt),
+    index("invoices_org_lead_idx").on(t.orgId, t.leadId),
+    uniqueIndex("invoices_org_num_uidx")
+      .on(t.orgId, t.num)
+      .where(sql`${t.deletedAt} is null`),
+    uniqueIndex("invoices_org_source_job_uidx")
+      .on(t.orgId, t.sourceJobId)
+      .where(sql`${t.sourceJobId} is not null and ${t.deletedAt} is null`),
+    check("invoices_status_check", sql`${t.status} in ('draft', 'sent', 'partial', 'paid', 'void')`),
+    check("invoices_total_check", sql`${t.totalCents} >= 0`),
+    check(
+      "invoices_deposit_check",
+      sql`${t.depositPaidCents} >= 0 and ${t.depositPaidCents} <= ${t.totalCents}`,
+    ),
+    check("invoices_amount_paid_check", sql`${t.amountPaidCents} >= 0`),
+    check("invoices_terms_check", sql`${t.termsDays} >= 0`),
+  ],
+);
+
+// Frozen display lines copied from the job/estimate. Composite FK for intra-org containment.
+export const invoiceLines = pgTable(
+  "invoice_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    invoiceId: uuid("invoice_id").notNull(),
+    sourceJobLineId: uuid("source_job_line_id"),
+    description: text("description").notNull(),
+    quantity: numeric("quantity", { precision: 12, scale: 2, mode: "number" }).notNull(),
+    rateCents: integer("rate_cents").notNull().default(0),
+    costCents: integer("cost_cents").notNull().default(0),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    foreignKey({
+      name: "invoice_lines_invoice_fk",
+      columns: [t.orgId, t.invoiceId],
+      foreignColumns: [invoices.orgId, invoices.id],
+    }).onDelete("cascade"),
+    index("invoice_lines_org_inv_idx").on(t.orgId, t.invoiceId),
+    check("invoice_lines_qty_check", sql`${t.quantity} >= 0`),
+    check("invoice_lines_rate_check", sql`${t.rateCents} >= 0`),
+    check("invoice_lines_cost_check", sql`${t.costCents} >= 0`),
+  ],
+);
+
+// Append-only payment ledger: NO updated_at / deleted_at, never mutated. Deduped on
+// (org_id, idempotency_key) so a retried payment never double-applies.
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    method: text("method").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    externalId: text("external_id"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "payments_invoice_fk",
+      columns: [t.orgId, t.invoiceId],
+      foreignColumns: [invoices.orgId, invoices.id],
+    }).onDelete("cascade"),
+    uniqueIndex("payments_org_idem_uidx").on(t.orgId, t.idempotencyKey),
+    index("payments_org_invoice_idx").on(t.orgId, t.invoiceId, t.receivedAt.desc()),
+    check("payments_amount_check", sql`${t.amountCents} > 0`),
+    check("payments_method_check", sql`${t.method} in ('card', 'ach', 'cash', 'check', 'card_terminal')`),
+  ],
+);

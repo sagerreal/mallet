@@ -1,0 +1,121 @@
+import { describe, it, expect } from "vitest";
+import {
+  asInvoiceId,
+  asOrgId,
+  asLeadId,
+  money,
+  zeroMoney,
+  isOk,
+} from "@mallet/shared/types";
+import { Invoice, type InvoiceProps } from "./invoice";
+import { Payment } from "./payment";
+
+const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
+  id: asInvoiceId("11111111-1111-1111-1111-111111111111"),
+  orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+  num: "INV-1000",
+  sourceJobId: null,
+  leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
+  title: "Deck rebuild",
+  status: "draft",
+  total: money(100_000),
+  depositPaid: zeroMoney,
+  amountPaid: zeroMoney,
+  payments: [],
+  lines: [],
+  termsDays: 7,
+  sentAt: null,
+  dueAt: null,
+  createdAt: new Date("2026-06-01T00:00:00Z"),
+  updatedAt: new Date("2026-06-01T00:00:00Z"),
+  ...overrides,
+});
+
+const make = (overrides: Partial<InvoiceProps> = {}): Invoice => {
+  const r = Invoice.create(props(overrides));
+  if (!isOk(r)) throw new Error(r.error.message);
+  return r.value;
+};
+
+const payment = (cents: number, key = "idem-key-123"): Payment => {
+  const r = Payment.create({
+    id: "p1",
+    amount: money(cents),
+    method: "cash",
+    idempotencyKey: key,
+    externalId: null,
+    receivedAt: new Date("2026-06-05T00:00:00Z"),
+  });
+  if (!isOk(r)) throw new Error(r.error.message);
+  return r.value;
+};
+
+const now = new Date("2026-06-10T00:00:00Z");
+
+describe("Invoice.create", () => {
+  it("rejects negative total, deposit>total, negative amountPaid, unknown status", () => {
+    expect(Invoice.create(props({ total: money(-1) })).ok).toBe(false);
+    expect(Invoice.create(props({ depositPaid: money(200_000) })).ok).toBe(false);
+    expect(Invoice.create(props({ amountPaid: money(-1) })).ok).toBe(false);
+    expect(Invoice.create(props({ status: "bogus" as never })).ok).toBe(false);
+  });
+});
+
+describe("Invoice.due", () => {
+  it("derives total - deposit - amountPaid, clamped at zero", () => {
+    expect(make({ total: money(100_000), depositPaid: money(20_000), amountPaid: money(30_000) }).due()).toBe(
+      50_000,
+    );
+    expect(make({ total: money(100_000), amountPaid: money(150_000) }).due()).toBe(0); // overpay clamps
+  });
+});
+
+describe("Invoice.send", () => {
+  it("stamps dueAt = sentAt + termsDays and is idempotent", () => {
+    const sent = make({ termsDays: 7 }).send(now);
+    expect(isOk(sent) && sent.value.props.status).toBe("sent");
+    if (isOk(sent)) {
+      expect(sent.value.props.dueAt?.toISOString()).toBe("2026-06-17T00:00:00.000Z");
+      const again = sent.value.send(new Date("2026-06-11T00:00:00Z"));
+      expect(isOk(again) && again.value).toBe(sent.value);
+    }
+  });
+});
+
+describe("Invoice.recordPayment", () => {
+  it("flips sent -> partial -> paid at a zero balance", () => {
+    const sent = make({ total: money(100_000) }).send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const partial = sent.value.recordPayment(payment(40_000, "key-aaaaaa1"), now);
+    expect(isOk(partial) && partial.value.props.status).toBe("partial");
+    if (!isOk(partial)) throw new Error("partial failed");
+    const paid = partial.value.recordPayment(payment(60_000, "key-bbbbbb2"), now);
+    expect(isOk(paid) && paid.value.props.status).toBe("paid");
+    if (isOk(paid)) expect(paid.value.due()).toBe(0);
+  });
+
+  it("rejects a payment on a void invoice", () => {
+    const voided = make().void(now);
+    if (!isOk(voided)) throw new Error("void failed");
+    expect(voided.value.recordPayment(payment(1_000), now).ok).toBe(false);
+  });
+});
+
+describe("Invoice.void", () => {
+  it("voids a non-paid invoice but not a paid one", () => {
+    expect(make({ status: "sent" }).void(now).ok).toBe(true);
+    const paid = make({ total: money(1_000), status: "paid", amountPaid: money(1_000) });
+    expect(paid.void(now).ok).toBe(false);
+  });
+});
+
+describe("Invoice.isOverdue", () => {
+  it("is true only for sent/partial past the due date", () => {
+    const sent = make({ status: "sent", dueAt: new Date("2026-06-05T00:00:00Z") });
+    expect(sent.isOverdue(now)).toBe(true);
+    const draft = make({ status: "draft", dueAt: new Date("2026-06-05T00:00:00Z") });
+    expect(draft.isOverdue(now)).toBe(false);
+    const notYetDue = make({ status: "sent", dueAt: new Date("2026-06-20T00:00:00Z") });
+    expect(notYetDue.isOverdue(now)).toBe(false);
+  });
+});
