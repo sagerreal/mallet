@@ -1,2 +1,18 @@
-// Public surface for the notifications module — the only import seam (architecture rule). Populated in later tasks.
-export {};
+// Public surface for the notifications module — the only sanctioned import seam (architecture rule).
+export { createNotificationRouter } from "./api/notification-router";
+export type {
+  Notification,
+  NotificationChannel,
+  NotificationStatus,
+  NotificationProps,
+} from "./domain/notification";
+export { NOTIFICATION_CHANNELS, NOTIFICATION_STATUSES } from "./domain/notification";
+export type { NotificationRepository } from "./domain/notification-repository";
+export type { NotificationSender } from "./domain/notification-sender";
+export type { ReminderTargetReader } from "./domain/reminder-target-reader";
+export { FollowUpPolicy } from "./domain/follow-up-policy";
+export { SendNotificationUseCase } from "./app/send-notification";
+export { SendInvoiceNotificationUseCase } from "./app/send-invoice-notification";
+export { AdvanceReminderUseCase } from "./app/advance-reminder";
+export { NextRemindersDueUseCase } from "./app/next-reminders-due";
+export { ListNotificationsUseCase } from "./app/list-notifications";

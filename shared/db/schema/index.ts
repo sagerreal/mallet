@@ -7,3 +7,4 @@ export * from "./estimates";
 export * from "./number-sequences";
 export * from "./jobs";
 export * from "./invoices";
+export * from "./notifications";
