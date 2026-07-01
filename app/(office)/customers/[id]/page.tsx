@@ -2,26 +2,27 @@
 import { use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/trpc/client";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatMoney, formatDateTime } from "@/lib/format";
 import { LEAD_STAGE_TONE, ESTIMATE_STATUS_TONE, JOB_STATUS_TONE } from "@/lib/labels";
-import { useCustomer } from "@/features/customers/hooks";
+import { useCustomer, useCustomerQuotes, useCustomerJobs } from "@/features/customers/hooks";
+import { userMessage } from "@/lib/trpc/error-map";
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const customer = useCustomer(id);
-  const quotes = api.v1.quoting.list.useQuery({ limit: 100 });
-  const jobs = api.v1.jobs.listByLead.useQuery({ leadId: id });
+  const quotes = useCustomerQuotes(id);
+  const jobs = useCustomerJobs(id);
 
   if (customer.isLoading) return <p className="text-sm text-ink-muted">Loading…</p>;
+  if (customer.isError) return <p className="text-sm text-red">{userMessage(customer.error)}</p>;
   if (!customer.data) return <p className="text-sm text-ink-muted">Customer not found.</p>;
   const c = customer.data;
-  const customerQuotes = (quotes.data?.items ?? []).filter((q) => q.leadId === id);
+  const customerQuotes = quotes.data ?? [];
 
   return (
     <div className="space-y-4">

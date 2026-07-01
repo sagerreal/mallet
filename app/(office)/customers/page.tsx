@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { LEAD_STAGE_TONE } from "@/lib/labels";
 import { useCustomers } from "@/features/customers/hooks";
 import { NewCustomerSheet } from "@/features/customers/new-customer-sheet";
+import { userMessage } from "@/lib/trpc/error-map";
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -20,7 +21,9 @@ export default function CustomersPage() {
     <div>
       <PageHeader title="Customers" action={<Button onClick={() => setCreating(true)}>New customer</Button>} />
       <NewCustomerSheet open={creating} onClose={() => setCreating(false)} />
-      {customers.isLoading ? (
+      {customers.isError ? (
+        <p className="text-sm text-red">{userMessage(customers.error)}</p>
+      ) : customers.isLoading ? (
         <p className="text-sm text-ink-muted">Loading…</p>
       ) : (
         <DataTable
