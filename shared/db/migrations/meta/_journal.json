@@ -120,6 +120,41 @@
       "when": 1782882848031,
       "tag": "0016_smiling_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782935026415,
+      "tag": "0017_nervous_joseph",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782935026827,
+      "tag": "0018_api_keys_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782937230990,
+      "tag": "0019_thin_serpent_society",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782937252830,
+      "tag": "0020_tool_confirmations_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782937572129,
+      "tag": "0021_eager_iron_monger",
+      "breakpoints": true
     }
   ]
 }

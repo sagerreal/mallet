@@ -6,7 +6,9 @@ import { DbPrincipalResolver } from "./infra/db-principal-resolver";
 
 export type { Principal, Role } from "./domain/principal";
 export { isRole, ROLES } from "./domain/principal";
-export type { AuthProvider, TokenVerifier, PrincipalResolver } from "./domain/auth-provider";
+export type { AuthProvider, TokenVerifier, PrincipalResolver, ApiKeyVerifier } from "./domain/auth-provider";
+// Static per-tenant API-key auth for the remote MCP server / programmatic access.
+export { ApiKeyAuthenticator, createApiKeyAuthenticator, generateApiKey, hashApiKey } from "./infra/api-key-authenticator";
 
 export interface AuthProviderDeps {
   readonly supabaseUrl: string;
