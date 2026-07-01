@@ -5,13 +5,16 @@ import { withTenant } from "@mallet/shared/db/tx";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
-import type { Principal, Role } from "@mallet/identity";
+import type { Principal, Role, VerifiedToken } from "@mallet/identity";
 import type { AppDeps } from "./deps";
 
 // Request context. `principal`/`tx` are null on the base context and narrowed to non-null by
 // the auth/org-tx middlewares, so a procedure built on `ownerOrOffice` sees them as present.
 export interface Context {
   readonly principal: Principal | null;
+  // Verified Supabase identity that has NO users-row yet (signup-in-progress). Set only when the
+  // token verifies but principal resolution fails; consumed exclusively by identity.signup.
+  readonly unmapped: VerifiedToken | null;
   readonly tx: TenantTx | null;
   readonly deps: AppDeps;
 }
@@ -77,3 +80,17 @@ export const ownerOrOffice = publicProcedure
 // agent uses this: it opens a fresh withTenant tx PER tool call (with an outbox-bound bus, exactly
 // like orgTx) around each action, never holding one tx across the multi-round-trip model loop.
 export const ownerOrOfficeNoTx = publicProcedure.use(requireAuth).use(requireRole(["owner", "office"]));
+
+// Authenticated Supabase identity, provisioned OR NOT — the signup entry point. Everything else
+// requires a full principal.
+const requireVerifiedIdentity = t.middleware(({ ctx, next }) => {
+  if (!ctx.principal && !ctx.unmapped) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "authentication required" });
+  }
+  return next();
+});
+export const authedNoPrincipal = publicProcedure.use(requireVerifiedIdentity);
+
+// Any org member (owner/office/tech), inside their org transaction — for surfaces every role uses
+// (identity.me, the field view).
+export const anyRole = publicProcedure.use(requireAuth).use(requireRole(["owner", "office", "tech"])).use(orgTx);

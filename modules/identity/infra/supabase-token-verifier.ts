@@ -1,15 +1,19 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { TokenVerifier } from "../domain/auth-provider";
+import type { TokenVerifier, VerifiedToken } from "../domain/auth-provider";
 
 // Verifies a Supabase access token by asking Supabase Auth who it belongs to. getUser validates
 // signature + expiry server-side and reflects revocation, which local JWT checks cannot.
 export class SupabaseTokenVerifier implements TokenVerifier {
   constructor(private readonly client: SupabaseClient) {}
 
-  async verify(accessToken: string): Promise<{ authUserId: string } | null> {
+  async verify(accessToken: string): Promise<VerifiedToken | null> {
     const { data, error } = await this.client.auth.getUser(accessToken);
     if (error || !data.user) return null;
-    return { authUserId: data.user.id };
+    return {
+      authUserId: data.user.id,
+      email: data.user.email ?? "",
+      orgNameHint: typeof data.user.user_metadata?.org_name === "string" ? data.user.user_metadata.org_name : null,
+    };
   }
 }
 

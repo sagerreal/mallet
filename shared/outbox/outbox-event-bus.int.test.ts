@@ -26,8 +26,9 @@ const stubAuth: AuthProvider = {
 
 const ctxFor = (orgId: string, role: Role): Context => ({
   principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
+  unmapped: null,
   tx: null,
-  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator, paymentLinkGateway: null, llmClient: null , apiKeyAuthenticator: { authenticate: async () => null } },
+  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator, paymentLinkGateway: null, llmClient: null, apiKeyAuthenticator: { authenticate: async () => null }, tokenVerifier: { verify: async () => null }, signupStore: { createOrgForUser: async () => { throw new Error("unused in this test"); } } },
 });
 
 suite("transactional outbox (write side, live RLS)", () => {
