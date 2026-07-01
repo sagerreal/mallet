@@ -1,5 +1,6 @@
 "use client";
 import { use, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,13 +11,16 @@ import { formatMoney } from "@/lib/format";
 import { ESTIMATE_STATUS_TONE } from "@/lib/labels";
 import { userMessage } from "@/lib/trpc/error-map";
 import { useQuote, useSendQuote, useAcceptQuote, useDeclineQuote } from "@/features/quotes/hooks";
+import { useCreateJobFromEstimate } from "@/features/jobs/hooks";
 
 export default function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const quote = useQuote(id);
   const send = useSendQuote();
   const accept = useAcceptQuote();
   const decline = useDeclineQuote();
+  const createJob = useCreateJobFromEstimate();
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +50,19 @@ export default function QuoteDetailPage({ params }: { params: Promise<{ id: stri
             {q.status === "sent" ? (
               <Button variant="danger" onClick={() => setDeclining(true)}>
                 Mark declined
+              </Button>
+            ) : null}
+            {q.status === "accepted" ? (
+              <Button
+                disabled={createJob.isPending}
+                onClick={() =>
+                  createJob.mutate(
+                    { estimateId: id },
+                    { onSuccess: (j) => router.push(`/jobs/${j.id}`), onError },
+                  )
+                }
+              >
+                Create job
               </Button>
             ) : null}
           </span>
