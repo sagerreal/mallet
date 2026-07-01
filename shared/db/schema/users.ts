@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, text, timestamp, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 
 // A member of an org. `auth_user_id` is the Supabase Auth user id (the JWT `sub`); it is the
@@ -23,5 +23,8 @@ export const users = pgTable(
     uniqueIndex("users_auth_user_uidx").on(t.authUserId),
     index("users_org_idx").on(t.orgId),
     check("users_role_check", sql`${t.role} in ('owner', 'office', 'tech')`),
+    // Composite-unique target so child tables (e.g. jobs.assignee_user_id) can FK on (org_id, id)
+    // and never point at another org's user.
+    unique("users_org_id_uq").on(t.orgId, t.id),
   ],
 );

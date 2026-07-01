@@ -40,6 +40,13 @@ export default [
     },
   },
   {
+    // tRPC router factories are a declarative list of thin procedures, not one imperative
+    // function — the per-procedure resolvers are what must stay small (and do). The aggregate
+    // length rule doesn't fit them.
+    files: ["modules/**/api/*-router.ts"],
+    rules: { "max-lines-per-function": "off" },
+  },
+  {
     // Tests legitimately reach into module internals and run long; relax the gates there.
     files: ["**/*.test.ts", "**/*.int.test.ts"],
     rules: {

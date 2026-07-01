@@ -57,6 +57,20 @@
       "when": 1782867904021,
       "tag": "0007_estimates_lead_composite_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782868799711,
+      "tag": "0008_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782868841065,
+      "tag": "0009_jobs_rls",
+      "breakpoints": true
     }
   ]
 }
