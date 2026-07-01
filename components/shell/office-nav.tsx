@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 export const OFFICE_NAV = [
   { href: "/dashboard", label: "Home" },
   { href: "/customers", label: "Customers" },
+  { href: "/quotes", label: "Quotes" },
   { href: "/settings", label: "Settings" },
 ];
 
