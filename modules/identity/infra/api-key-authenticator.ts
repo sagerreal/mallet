@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { Database } from "@mallet/shared/db/client";
+import { logger } from "@mallet/shared/observability";
 import { asUserId, asOrgId } from "@mallet/shared/types";
 import type { Principal } from "../domain/principal";
 import { isRole } from "../domain/principal";
@@ -38,7 +39,13 @@ export class ApiKeyAuthenticator implements ApiKeyVerifier {
     )) as unknown as KeyRow[];
     const row = rows[0];
     if (!row) return null;
-    if (!isRole(row.role)) throw new Error(`api_keys.role holds an unknown value: ${row.role}`);
+    // A resolved key whose role drifted outside the CHECK constraint is a data-integrity fault, not a
+    // valid credential. Fail closed (null → 401) per the ApiKeyVerifier contract rather than throwing
+    // a 500 out of the auth path. Log the key id (never the token/hash) so the drift is visible.
+    if (!isRole(row.role)) {
+      logger.warn({ apiKeyId: row.id, role: row.role }, "api key row has an out-of-range role; rejecting");
+      return null;
+    }
     return { userId: asUserId(row.id), orgId: asOrgId(row.org_id), role: row.role };
   }
 }
