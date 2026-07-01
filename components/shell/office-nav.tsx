@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 // Grows in Phase B/C: customers, quotes, jobs, money, assistant.
 export const OFFICE_NAV = [
   { href: "/dashboard", label: "Home" },
+  { href: "/customers", label: "Customers" },
   { href: "/settings", label: "Settings" },
 ];
 
