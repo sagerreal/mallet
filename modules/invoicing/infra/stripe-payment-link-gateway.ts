@@ -1,4 +1,5 @@
 import { ok, err, externalService, type Result, type ExternalServiceError } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 import type { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import type {
   PaymentLinkGateway,
@@ -31,7 +32,14 @@ export class StripePaymentLinkGateway implements PaymentLinkGateway {
       });
       return ok({ url: result.url, externalRef: result.sessionId });
     } catch (error) {
-      return err(externalService("stripe", error instanceof Error ? error.message : "stripe error", true));
+      // Log the raw provider detail server-side, but return a generic message: this AppError becomes
+      // the client-facing tRPC error (BAD_GATEWAY), and Stripe/resilience internals (masked-key auth
+      // errors, request ids, "circuit breaker is open") must not leak to office/owner users.
+      logger.error(
+        { err: error instanceof Error ? error.message : String(error), orgId: cmd.orgId, invoiceId: cmd.invoiceId },
+        "stripe.createCheckoutSession failed",
+      );
+      return err(externalService("stripe", "the payment provider is temporarily unavailable", true));
     }
   }
 }

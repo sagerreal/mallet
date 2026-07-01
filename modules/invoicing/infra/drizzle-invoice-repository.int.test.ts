@@ -18,7 +18,7 @@ import {
 } from "@mallet/shared/types";
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
-import { Invoice } from "../domain/invoice";
+import { Invoice, type InvoiceStatus } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
 import { Payment } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "./drizzle-invoice-repository";
@@ -31,6 +31,7 @@ interface InvOpts {
   total?: number;
   withLine?: boolean;
   num?: string;
+  status?: InvoiceStatus;
 }
 
 const buildInvoice = (orgId: OrgId, leadId: LeadId, o: InvOpts = {}): Invoice => {
@@ -49,6 +50,10 @@ const buildInvoice = (orgId: OrgId, leadId: LeadId, o: InvOpts = {}): Invoice =>
     if (!isOk(l)) throw new Error(l.error.message);
     lines.push(l.value);
   }
+  const status = o.status ?? "draft";
+  // A sent/partial/paid invoice must carry a sent/due date (the factory rejects a sent invoice
+  // without one) — set them whenever the status is past 'draft'.
+  const isSent = status !== "draft";
   const r = Invoice.create({
     id: asInvoiceId(randomUUID()),
     orgId,
@@ -56,15 +61,15 @@ const buildInvoice = (orgId: OrgId, leadId: LeadId, o: InvOpts = {}): Invoice =>
     sourceJobId: o.sourceJobId ?? null,
     leadId,
     title: "T",
-    status: "draft",
+    status,
     total: money(o.total ?? 0),
     depositPaid: zeroMoney,
     amountPaid: zeroMoney,
     payments: [],
     lines,
     termsDays: 7,
-    sentAt: null,
-    dueAt: null,
+    sentAt: isSent ? now : null,
+    dueAt: isSent ? new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) : null,
     createdAt: now,
     updatedAt: now,
   });
@@ -230,7 +235,7 @@ suite("DrizzleInvoiceRepository against live Supabase RLS", () => {
     const orgA = asOrgId(orgAId);
     const invId = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleInvoiceRepository(tx, orgA);
-      const inv = buildInvoice(orgA, asLeadId(leadAId), { total: 10_000, num: await repo.nextNumber() });
+      const inv = buildInvoice(orgA, asLeadId(leadAId), { total: 10_000, status: "sent", num: await repo.nextNumber() });
       await repo.save(inv);
       return inv.props.id;
     });
@@ -244,6 +249,34 @@ suite("DrizzleInvoiceRepository against live Supabase RLS", () => {
     expect(final?.props.amountPaid).toBe(10_000); // neither write lost
     expect(final?.props.status).toBe("paid");
     expect(final?.due()).toBe(0);
+  });
+
+  it("applyPayment does NOT resurrect a voided invoice (atomic status guard)", async () => {
+    // The void-vs-settlement race: a card payment settling on an invoice the office just voided must
+    // not clobber it back to 'paid'. applyPayment's WHERE re-asserts the payable status under the row
+    // lock, so it no-ops (applied:false) and the void stands.
+    const orgA = asOrgId(orgAId);
+    const invId = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      const inv = buildInvoice(orgA, asLeadId(leadAId), { total: 50_000, status: "sent", num: await repo.nextNumber() });
+      await repo.save(inv);
+      return inv.props.id;
+    });
+    // Void it (as VoidInvoiceUseCase does — a plain header save with status 'void', deleted_at null).
+    await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      const current = await repo.findById(invId);
+      const voided = current!.void(new Date("2026-06-05T00:00:00Z"));
+      if (!isOk(voided)) throw new Error("void failed");
+      await repo.save(voided.value);
+    });
+
+    const result = await withTenant(orgA, (tx) =>
+      new DrizzleInvoiceRepository(tx, orgA).applyPayment(invId, 50_000),
+    );
+    expect(result.applied).toBe(false); // guard rejected the write
+    expect(result.invoice?.props.status).toBe("void"); // still void, not resurrected
+    expect(result.invoice?.props.amountPaid).toBe(0); // no money applied
   });
 
   it("payment idempotency holds under CONCURRENT inserts (exactly one applies)", async () => {

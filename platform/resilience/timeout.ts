@@ -1,8 +1,10 @@
 import { TimeoutError } from "./errors";
 
-// Run an async operation under a hard deadline. The operation receives an AbortSignal so a
-// well-behaved client (fetch, the AWS/Stripe SDKs) can cancel in-flight work; either way the
-// caller's promise rejects with TimeoutError at the deadline.
+// Run an async operation under a hard deadline. The operation receives an AbortSignal so a client
+// that honors it (e.g. fetch) can cancel in-flight work. Clients that ignore the signal (the Stripe
+// SDK takes its own per-request `timeout` instead) still have the caller's promise reject with
+// TimeoutError at the deadline — but the underlying request only stops if the client aborts it, so
+// adapters wrapping such a client should ALSO set that client's own timeout to avoid orphaned work.
 export const withTimeout = async <T>(
   fn: (signal: AbortSignal) => Promise<T>,
   timeoutMs: number,

@@ -39,31 +39,45 @@ export class RecordCardPaymentUseCase {
     const claimed = await this.repo.insertPayment(cmd.orgId, cmd.invoiceId, payment.value);
     if (!claimed) return ok(await this.repo.findById(cmd.invoiceId));
 
-    const invoice = await this.repo.findById(cmd.invoiceId);
+    // Apply atomically. The UPDATE re-asserts the payable status under the row lock, so a void/pay
+    // landing between now and the write cannot be clobbered back to 'paid' (a stale in-memory guard
+    // could not prevent that — the webhook runs in its own tx, concurrent with the office).
+    const { applied, invoice } = await this.repo.applyPayment(cmd.invoiceId, cmd.amountCents);
     if (!invoice) return err(notFound("invoice"));
-    // Only apply to a payable invoice. If it was paid/void between session-create and settlement,
-    // the ledger row stands (real money) but we don't apply it (avoid un-voiding / double-paying) —
-    // it surfaces for manual reconciliation. This mirrors RecordPayment's payable-status guard.
-    if (invoice.props.status !== "sent" && invoice.props.status !== "partial") {
+    if (!applied) {
+      // The invoice was paid/void (already, or concurrently between session-create and settlement).
+      // The ledger row stands — real money that settled at Stripe — but is NOT applied (no
+      // un-voiding, no double-paying). Emit a distinct signal so it surfaces for manual
+      // reconciliation / refund instead of sitting silently indistinguishable from an applied row.
+      await this.bus.emit({
+        name: "invoice.payment.unapplied",
+        orgId: cmd.orgId,
+        payload: {
+          invoiceId: cmd.invoiceId,
+          amountCents: cmd.amountCents,
+          method: "card",
+          paymentIntentId: cmd.paymentIntentId,
+          invoiceStatus: invoice.props.status,
+        },
+        occurredAt: this.clock.now(),
+      });
       return ok(invoice);
     }
 
-    const updated = await this.repo.applyPayment(cmd.invoiceId, cmd.amountCents);
-    if (!updated) return err(notFound("invoice"));
     await this.bus.emit({
       name: "invoice.payment.recorded",
       orgId: cmd.orgId,
-      payload: { invoiceId: cmd.invoiceId, amountCents: cmd.amountCents, method: "card", dueCents: updated.due() },
+      payload: { invoiceId: cmd.invoiceId, amountCents: cmd.amountCents, method: "card", dueCents: invoice.due() },
       occurredAt: this.clock.now(),
     });
-    if (updated.props.status === "paid") {
+    if (invoice.props.status === "paid") {
       await this.bus.emit({
         name: "invoice.paid",
         orgId: cmd.orgId,
-        payload: { invoiceId: cmd.invoiceId, leadId: updated.props.leadId },
+        payload: { invoiceId: cmd.invoiceId, leadId: invoice.props.leadId },
         occurredAt: this.clock.now(),
       });
     }
-    return ok(updated);
+    return ok(invoice);
   }
 }

@@ -3,6 +3,12 @@ import { notFound, conflict, validation, ok, err, isOk } from "@mallet/shared/ty
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
 
+// Stripe's minimum charge for a USD Checkout Session. A balance below this is rejected by Stripe
+// with a deterministic 400, so we guard it here rather than send a request that can only fail (a
+// deterministic failure also counts toward the shared circuit breaker). Sub-minimum remainders are
+// collected by another method (cash/check).
+const STRIPE_MIN_CHARGE_CENTS = 50;
+
 export interface CreatePaymentCommand {
   readonly orgId: OrgId;
   readonly invoiceId: InvoiceId;
@@ -30,6 +36,14 @@ export class CreatePaymentUseCase {
     }
     const dueCents = invoice.due();
     if (dueCents <= 0) return err(validation("invoice has no balance due", "amount"));
+    if (dueCents < STRIPE_MIN_CHARGE_CENTS) {
+      return err(
+        validation(
+          `the balance due ($${(dueCents / 100).toFixed(2)}) is below the $${(STRIPE_MIN_CHARGE_CENTS / 100).toFixed(2)} card minimum`,
+          "amount",
+        ),
+      );
+    }
 
     const session = await this.gateway.createPaymentSession({
       orgId: cmd.orgId,

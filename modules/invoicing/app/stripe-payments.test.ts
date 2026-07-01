@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import type Stripe from "stripe";
+import Stripe from "stripe";
+import { TimeoutError } from "@mallet/platform/resilience";
+import { isRetriableStripeError } from "@mallet/platform/adapters/stripe/stripe-client";
 import {
   asOrgId,
   asLeadId,
@@ -21,7 +23,7 @@ import {
 import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
 import type { Payment } from "../domain/payment";
-import type { InvoiceRepository, InvoiceFilter } from "../domain/invoice-repository";
+import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
 import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
 import { CreatePaymentUseCase } from "./create-payment";
 import { RecordCardPaymentUseCase } from "./record-card-payment";
@@ -78,14 +80,16 @@ class FakeRepo implements InvoiceRepository {
     this.keys.add(p.props.idempotencyKey);
     return true;
   }
-  async applyPayment(_id: InvoiceId, amountCents: number): Promise<Invoice | null> {
+  async applyPayment(_id: InvoiceId, amountCents: number): Promise<ApplyResult> {
     const p = this.current.props;
+    // Mirror the SQL guard: only a payable (sent|partial) row is incremented.
+    if (p.status !== "sent" && p.status !== "partial") return { applied: false, invoice: this.current };
     const amountPaid = money(p.amountPaid + amountCents);
     const remaining = Math.max(0, p.total - p.depositPaid - amountPaid);
     const r = Invoice.create({ ...p, amountPaid, status: remaining === 0 ? "paid" : "partial" });
     if (!isOk(r)) throw new Error(r.error.message);
     this.current = r.value;
-    return r.value;
+    return { applied: true, invoice: r.value };
   }
   async nextNumber(): Promise<string> {
     return "INV-1";
@@ -133,6 +137,35 @@ describe("CreatePaymentUseCase", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("external_service");
   });
+
+  it("rejects a sub-minimum balance (below Stripe's $0.50 card minimum) as validation, without calling the gateway", async () => {
+    let called = false;
+    const spyGateway: PaymentLinkGateway = {
+      createPaymentSession: async () => {
+        called = true;
+        return ok({ url: "https://checkout.stripe.test/cs_x", externalRef: "cs_x" });
+      },
+    };
+    // total $1000, $999.70 already paid → 30c balance, > 0 but < 50c.
+    const inv = invoice({ status: "partial", amountPaid: money(99_970) });
+    const r = await new CreatePaymentUseCase(new FakeRepo(inv), spyGateway).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+    expect(called).toBe(false); // never reached Stripe → no deterministic 400, no breaker hit
+  });
+});
+
+describe("isRetriableStripeError", () => {
+  it("retries only transient failures; deterministic client errors fail on the first attempt", () => {
+    expect(isRetriableStripeError(new TimeoutError(10_000))).toBe(true);
+    expect(isRetriableStripeError(new Stripe.errors.StripeConnectionError({ message: "conn reset" }))).toBe(true);
+    expect(isRetriableStripeError(new Stripe.errors.StripeAPIError({ message: "500" }))).toBe(true);
+    expect(isRetriableStripeError(new Stripe.errors.StripeRateLimitError({ message: "429" }))).toBe(true);
+    // Deterministic — must NOT be retried (and thus not counted 3x toward the shared breaker):
+    expect(isRetriableStripeError(new Stripe.errors.StripeInvalidRequestError({ message: "bad" }))).toBe(false);
+    expect(isRetriableStripeError(new Stripe.errors.StripeAuthenticationError({ message: "no key" }))).toBe(false);
+    expect(isRetriableStripeError(new Error("unknown"))).toBe(false);
+  });
 });
 
 describe("RecordCardPaymentUseCase", () => {
@@ -154,6 +187,22 @@ describe("RecordCardPaymentUseCase", () => {
     await uc.exec({ orgId: ORG, invoiceId: asInvoiceId(INV), amountCents: 40_000, paymentIntentId: "pi_dup000001" });
     await uc.exec({ orgId: ORG, invoiceId: asInvoiceId(INV), amountCents: 40_000, paymentIntentId: "pi_dup000001" });
     expect(repo.current.props.amountPaid).toBe(40_000); // not 80000
+  });
+
+  it("does NOT apply to a non-payable invoice (voided) and emits invoice.payment.unapplied, not invoice.paid", async () => {
+    // The invoice was voided before the card settled. The ledger row is claimed (real money) but the
+    // atomic guard rejects the apply — no un-voiding, no paid event, and a distinct unapplied signal.
+    const repo = new FakeRepo(invoice({ status: "void" }));
+    const d = deps();
+    const uc = new RecordCardPaymentUseCase(repo, d.bus, d.clock, d.ids);
+    const r = await uc.exec({ orgId: ORG, invoiceId: asInvoiceId(INV), amountCents: 100_000, paymentIntentId: "pi_void00001" });
+    expect(isOk(r)).toBe(true);
+    expect(repo.current.props.amountPaid).toBe(0); // not applied
+    expect(repo.current.props.status).toBe("void"); // not resurrected
+    expect(d.bus.recorded.some((e) => e.name === "invoice.paid")).toBe(false);
+    expect(d.bus.recorded.some((e) => e.name === "invoice.payment.recorded")).toBe(false);
+    const unapplied = d.bus.recorded.find((e) => e.name === "invoice.payment.unapplied");
+    expect(unapplied?.payload).toMatchObject({ invoiceId: INV, amountCents: 100_000, paymentIntentId: "pi_void00001" });
   });
 });
 

@@ -1,10 +1,21 @@
 import Stripe from "stripe";
-import { call, CircuitBreaker } from "@mallet/platform/resilience";
+import { call, CircuitBreaker, TimeoutError } from "@mallet/platform/resilience";
 
 // The ONLY file that imports the Stripe SDK. Wraps the two calls the app needs behind a tiny
 // surface so use-cases/tests never touch the SDK directly. The create call goes through the
 // resilience wrapper (timeout + idempotent retry + per-service breaker); the Stripe Idempotency-Key
 // makes a retry return the SAME session rather than a duplicate charge.
+
+// Only TRANSIENT failures are worth retrying. A deterministic client error (bad request, auth,
+// declined card) fails identically on every attempt, so retrying it wastes round-trips AND — because
+// the breaker is shared process-wide (one StripeClient in the DI root) — counts N times toward the
+// circuit breaker, which could trip card payments for EVERY tenant. So those must throw on the first
+// attempt; we retry only timeouts, dropped connections, 5xx (StripeAPIError), and 429 (rate limit).
+export const isRetriableStripeError = (error: unknown): boolean =>
+  error instanceof TimeoutError ||
+  error instanceof Stripe.errors.StripeConnectionError ||
+  error instanceof Stripe.errors.StripeAPIError ||
+  error instanceof Stripe.errors.StripeRateLimitError;
 
 export interface CreateCheckoutParams {
   readonly amountCents: number;
@@ -56,9 +67,11 @@ export class StripeClient {
             success_url: params.successUrl,
             cancel_url: params.cancelUrl,
           },
-          { idempotencyKey: params.idempotencyKey },
+          // timeout: the SDK aborts ITS OWN socket at the deadline (v22 has no AbortSignal option),
+          // so a retry can't overlap a still-open request. idempotencyKey keeps retries money-safe.
+          { idempotencyKey: params.idempotencyKey, timeout: 10_000 },
         ),
-      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker },
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
     );
     if (!session.url) throw new Error("stripe returned a checkout session without a url");
     return { url: session.url, sessionId: session.id };

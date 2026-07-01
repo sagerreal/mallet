@@ -15,7 +15,7 @@ import {
 import type { Invoice } from "../domain/invoice";
 import type { InvoiceLine } from "../domain/invoice-line";
 import type { Payment } from "../domain/payment";
-import type { InvoiceRepository, InvoiceFilter } from "../domain/invoice-repository";
+import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
 import { toDomain } from "./invoice-mapper";
 
 const OPEN_STATUSES = ["sent", "partial"] as const;
@@ -74,19 +74,23 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
 
   // Atomically apply a payment to the denormalized header: increment amount_paid_cents and
   // recompute status IN ONE UPDATE, so concurrent distinct-key payments serialize on the row lock
-  // and never lose an update under READ COMMITTED. Mirrors Invoice.recordPayment's rule; callers
-  // guarantee the invoice is 'sent' or 'partial' first. Returns the re-hydrated aggregate.
-  async applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<Invoice | null> {
-    await this.tx.execute(sql`
+  // and never lose an update under READ COMMITTED. The WHERE re-asserts the payable status
+  // (sent|partial) under that lock — NOT a stale in-memory check — so a void/pay committing
+  // concurrently (e.g. a manual void racing a settling card webhook) can't be clobbered back to
+  // 'paid'. `applied` reflects whether a payable row matched; the row still stands for a not-applied
+  // payment (real money) so the caller can surface it for reconciliation rather than double-pay.
+  async applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<ApplyResult> {
+    const rows = (await this.tx.execute(sql`
       update invoices
       set amount_paid_cents = amount_paid_cents + ${amountCents},
           status = case
             when total_cents - deposit_paid_cents - (amount_paid_cents + ${amountCents}) <= 0
             then 'paid' else 'partial' end,
           updated_at = now()
-      where id = ${invoiceId} and deleted_at is null
-    `);
-    return this.findById(invoiceId);
+      where id = ${invoiceId} and deleted_at is null and status in ('sent', 'partial')
+      returning id
+    `)) as unknown as { id: string }[];
+    return { applied: rows.length > 0, invoice: await this.findById(invoiceId) };
   }
 
   async insertForJob(invoice: Invoice): Promise<boolean> {
