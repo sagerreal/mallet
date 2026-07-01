@@ -73,7 +73,13 @@ class FakeNotificationRepository implements NotificationRepository {
     const map = new Map<string, number[]>();
     for (const n of this.store.values()) {
       const p = n.props;
-      if (p.relatedType === relatedType && p.relatedId && ids.includes(p.relatedId) && p.reminderStage !== null) {
+      if (
+        p.relatedType === relatedType &&
+        p.relatedId &&
+        ids.includes(p.relatedId) &&
+        p.reminderStage !== null &&
+        p.status === "sent" // only DELIVERED stages count
+      ) {
         map.set(p.relatedId, [...(map.get(p.relatedId) ?? []), p.reminderStage]);
       }
     }
@@ -183,6 +189,23 @@ describe("SendNotificationUseCase", () => {
     expect(isOk(r) && r.value.props.status).toBe("failed");
     expect(bus.recorded.some((e) => e.name === "notification.sent")).toBe(false);
   });
+
+  it("a FAILED reminder stage is not counted as delivered (stays eligible for retry)", async () => {
+    const uc = new SendNotificationUseCase(repo, failingSender, bus, clock, seqIds());
+    await uc.exec({
+      orgId: ORG,
+      channel: "sms",
+      to: "+15551234567",
+      kind: "invoice_reminder",
+      body: "reminder",
+      relatedType: "invoice",
+      relatedId: INV,
+      reminderStage: 1,
+      idempotencyKey: `reminder:${INV}:1`,
+    });
+    const stages = await repo.sentReminderStages("invoice", [INV]);
+    expect(stages.get(INV) ?? []).not.toContain(1);
+  });
 });
 
 describe("AdvanceReminderUseCase", () => {
@@ -205,6 +228,19 @@ describe("AdvanceReminderUseCase", () => {
     const second = await advance.exec({ orgId: ORG, relatedType: "invoice", relatedId: INV });
     expect(isOk(second) && second.value).toBeNull();
     expect(sender.calls).toBe(1);
+  });
+
+  it("rejects estimate reminders in the pilot (no estimate template)", async () => {
+    const clock = new FixedClock(new Date("2026-06-10T00:00:00Z"));
+    const repo = new FakeNotificationRepository();
+    const bus = new InMemoryEventBus();
+    const sender = new CountingSender(clock);
+    const send = new SendNotificationUseCase(repo, sender, bus, clock, seqIds());
+    const advance = new AdvanceReminderUseCase(new FakeReader(null), repo, send, policy, clock);
+    const r = await advance.exec({ orgId: ORG, relatedType: "estimate", relatedId: INV });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+    expect(sender.calls).toBe(0);
   });
 
   it("no-ops for a paid target (sequence complete)", async () => {

@@ -31,8 +31,11 @@ export class FollowUpPolicy {
   ): number | null {
     if (sentAt === null || this.isSequenceComplete(status)) return null;
     const ageDays = (now.getTime() - sentAt.getTime()) / MS_PER_DAY;
+    // Monotonic: never return a stage <= the highest already sent, so the sequence never walks
+    // backward to a gentler message (a late first run still catches up to the most-overdue stage).
+    const maxSent = alreadySent.length ? Math.max(...alreadySent) : 0;
     for (const { stage, offsetDays } of this.stages) {
-      if (ageDays >= offsetDays && !alreadySent.includes(stage)) return stage;
+      if (ageDays >= offsetDays && stage > maxSent) return stage;
     }
     return null;
   }

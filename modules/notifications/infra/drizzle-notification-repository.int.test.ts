@@ -115,7 +115,9 @@ suite("DrizzleNotificationRepository against live Supabase RLS", () => {
     const orgA = asOrgId(orgAId);
     const out = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleNotificationRepository(tx, orgA);
-      await repo.insert(build(orgA, { relatedType: "invoice", relatedId: invAId, key: `reminder:${invAId}:1`, stage: 1 }));
+      const n = build(orgA, { relatedType: "invoice", relatedId: invAId, key: `reminder:${invAId}:1`, stage: 1 });
+      await repo.insert(n);
+      await repo.markSent(n.props.id, null, new Date("2026-06-05T00:00:00Z")); // only delivered stages count
       const map = await repo.sentReminderStages("invoice", [invAId]);
       return map.get(invAId) ?? [];
     });

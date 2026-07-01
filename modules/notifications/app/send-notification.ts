@@ -19,9 +19,13 @@ export interface SendNotificationCommand {
 
 // Send one message. Idempotent at the ledger: claim the key FIRST (ON CONFLICT DO NOTHING); a
 // duplicate key returns the existing row without re-sending. A sender failure is recorded as
-// status='failed' and returned as ok (graceful degradation — the request never hard-fails; a
-// future retry worker picks up failed/queued rows). This is intentionally different from payments,
-// where a gateway failure must roll back.
+// status='failed' and returned as ok (graceful degradation — the request never hard-fails). This
+// is intentionally different from payments, where a gateway failure must roll back.
+//
+// NOTE: a failed send is NOT auto-retried in the pilot. The deferred retry worker (Phase 2 Inngest)
+// will re-drive failed rows BY ID (the deterministic reminder key is already consumed, so a re-send
+// cannot go back through this claim path). Until then, a failed reminder stage stays eligible
+// (sentReminderStages counts only delivered stages) but a manual re-trigger returns the failed row.
 export class SendNotificationUseCase {
   constructor(
     private readonly repo: NotificationRepository,

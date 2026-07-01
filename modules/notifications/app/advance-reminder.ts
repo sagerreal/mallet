@@ -26,6 +26,11 @@ export class AdvanceReminderUseCase {
   ) {}
 
   async exec(cmd: AdvanceReminderCommand): Promise<Result<Notification | null, AppError>> {
+    // Pilot: only invoices have a reminder template. Estimate follow-ups need their own copy
+    // (no balance, not "Invoice"-worded) — reusing the invoice template would send a wrong message.
+    if (cmd.relatedType !== "invoice") {
+      return err(validation("reminders are only supported for invoices", "relatedType"));
+    }
     const target = await this.reader.findTarget(cmd.relatedType, cmd.relatedId);
     if (!target) return err(notFound("target"));
 

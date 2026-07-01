@@ -76,4 +76,10 @@ describe("FollowUpPolicy", () => {
     expect(policy.isSequenceComplete("accepted")).toBe(true);
     expect(policy.nextReminderDue("paid", sentAt, [], new Date("2026-06-20T00:00:00Z"))).toBeNull();
   });
+
+  it("never walks backward to a gentler stage after a catch-up send", () => {
+    // A late first run catches up to stage 2; a later tick must NOT then send stage 1.
+    expect(policy.nextReminderDue("sent", sentAt, [], new Date("2026-06-09T00:00:00Z"))).toBe(2);
+    expect(policy.nextReminderDue("sent", sentAt, [2], new Date("2026-06-20T00:00:00Z"))).toBeNull();
+  });
 });

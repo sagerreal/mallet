@@ -67,10 +67,18 @@ export class DrizzleNotificationRepository implements NotificationRepository {
     const map = new Map<string, number[]>();
     if (relatedIds.length === 0) return map;
     const col = relatedType === "invoice" ? notifications.relatedInvoiceId : notifications.relatedEstimateId;
+    // Only DELIVERED stages count — a 'failed' stage is not "sent", so it stays eligible (a retry
+    // worker re-drives failed rows by id; the deterministic reminder key is already consumed).
     const rows = await this.tx
       .select({ relatedId: col, stage: notifications.reminderStage })
       .from(notifications)
-      .where(and(inArray(col, [...relatedIds]), sql`${notifications.reminderStage} is not null`));
+      .where(
+        and(
+          inArray(col, [...relatedIds]),
+          sql`${notifications.reminderStage} is not null`,
+          eq(notifications.status, "sent"),
+        ),
+      );
     for (const row of rows) {
       if (row.relatedId === null || row.stage === null) continue;
       map.set(row.relatedId, [...(map.get(row.relatedId) ?? []), row.stage]);

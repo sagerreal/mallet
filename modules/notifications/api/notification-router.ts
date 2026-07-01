@@ -142,7 +142,8 @@ export const createNotificationRouter = () =>
       }),
 
     advanceReminder: ownerOrOffice
-      .input(z.object({ relatedType: relatedTypeEnum, relatedId: z.string().uuid() }))
+      // Pilot: invoice reminders only (estimate follow-ups need their own template).
+      .input(z.object({ relatedType: z.literal("invoice"), relatedId: z.string().uuid() }))
       .output(notificationDTO.nullable())
       .mutation(async ({ ctx, input }) => {
         const send = new SendNotificationUseCase(
