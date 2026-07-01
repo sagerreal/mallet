@@ -96,7 +96,7 @@ export const createNotificationRouter = () =>
         }
         const useCase = new SendNotificationUseCase(
           repoFor(ctx),
-          new LoggingNotificationSender(ctx.deps.clock),
+          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
@@ -124,7 +124,7 @@ export const createNotificationRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const send = new SendNotificationUseCase(
           repoFor(ctx),
-          new LoggingNotificationSender(ctx.deps.clock),
+          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
@@ -148,7 +148,7 @@ export const createNotificationRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const send = new SendNotificationUseCase(
           repoFor(ctx),
-          new LoggingNotificationSender(ctx.deps.clock),
+          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
