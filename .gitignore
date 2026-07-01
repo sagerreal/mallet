@@ -12,3 +12,7 @@ coverage/
 
 # build artifacts
 *.tsbuildinfo
+
+# playwright
+/test-results/
+/playwright-report/
