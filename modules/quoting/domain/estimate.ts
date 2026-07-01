@@ -43,6 +43,12 @@ export class EstimateLine {
     const description = props.description.trim();
     if (description.length === 0) return err(validation("line description is required", "description"));
     if (props.quantity < 0) return err(validation("line quantity cannot be negative", "quantity"));
+    // Quantity persists as numeric(12,2); reject any finer precision so the value used to derive
+    // money is identical before and after persistence (no silent round-trip drift). Epsilon-based
+    // to tolerate float representation (e.g. 0.01 * 100 !== 1 exactly).
+    if (Math.abs(props.quantity * 100 - Math.round(props.quantity * 100)) > 1e-9) {
+      return err(validation("line quantity supports at most 2 decimal places", "quantity"));
+    }
     if (props.rate < 0) return err(validation("line rate cannot be negative", "rate"));
     if (props.cost < 0) return err(validation("line cost cannot be negative", "cost"));
     return ok(new EstimateLine({ ...props, description }));

@@ -67,6 +67,12 @@ describe("EstimateLine", () => {
     // 2.5 units * 333c = 832.5 -> 833c
     expect(line({ quantity: 2.5, rate: money(333) }).amount()).toBe(833);
   });
+
+  it("accepts up to 2 decimal places but rejects finer precision (no persistence drift)", () => {
+    expect(EstimateLine.create({ ...line().props, quantity: 2.55 }).ok).toBe(true);
+    expect(EstimateLine.create({ ...line().props, quantity: 0.01 }).ok).toBe(true);
+    expect(EstimateLine.create({ ...line().props, quantity: 2.555 }).ok).toBe(false);
+  });
 });
 
 describe("Estimate.create", () => {

@@ -8,6 +8,7 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  unique,
   check,
 } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
@@ -42,5 +43,8 @@ export const leads = pgTable(
       .where(sql`${t.deletedAt} is null and ${t.phoneE164} is not null`),
     // Make invalid pipeline stages unrepresentable at the storage layer.
     check("leads_stage_check", sql`${t.stage} in ('new', 'contacted', 'quote_sent', 'won', 'lost')`),
+    // Composite-unique target so child tables (e.g. estimates) can FK on (org_id, id) and thereby
+    // never link across tenants.
+    unique("leads_org_id_uq").on(t.orgId, t.id),
   ],
 );

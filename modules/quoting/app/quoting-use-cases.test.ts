@@ -171,6 +171,13 @@ describe("Send / Accept / Decline use-cases", () => {
     expect(bus.recorded.some((e) => e.name === "estimate.sent")).toBe(true);
   });
 
+  it("re-sending an already-sent estimate does not re-emit estimate.sent", async () => {
+    const id = await seedSentEstimate();
+    const sender = new SendEstimateUseCase(repo, bus, clock);
+    await sender.exec({ estimateId: id }); // second send — should be a no-op
+    expect(bus.recorded.filter((e) => e.name === "estimate.sent")).toHaveLength(1);
+  });
+
   it("send returns notFound for a missing estimate", async () => {
     const r = await new SendEstimateUseCase(repo, bus, clock).exec({
       estimateId: asEstimateId("99999999-9999-9999-9999-999999999999"),

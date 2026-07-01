@@ -173,4 +173,21 @@ suite("DrizzleEstimateRepository against live Supabase RLS", () => {
     }
     expect(rejected).toBe(true);
   });
+
+  it("rejects an estimate in this org that references another org's lead (composite FK)", async () => {
+    // Correctly stamped org A (passes RLS WITH CHECK) but pointing at org B's lead — the composite
+    // FK (org_id, lead_id) -> leads(org_id, id) must reject it.
+    const orgA = asOrgId(orgAId);
+    const leadB = asLeadId(leadBId);
+    let rejected = false;
+    try {
+      await withTenant(orgA, async (tx) => {
+        const repo = new DrizzleEstimateRepository(tx, orgA);
+        await repo.save(draftEstimate(orgA, leadB, await repo.nextNumber(), [line("X", 1_000)]));
+      });
+    } catch {
+      rejected = true;
+    }
+    expect(rejected).toBe(true);
+  });
 });

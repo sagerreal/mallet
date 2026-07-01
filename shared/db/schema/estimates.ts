@@ -26,9 +26,9 @@ export const estimates = pgTable(
       .notNull()
       .references(() => orgs.id, { onDelete: "cascade" }),
     num: text("num").notNull(),
-    leadId: uuid("lead_id")
-      .notNull()
-      .references(() => leads.id, { onDelete: "cascade" }),
+    // FK enforced compositely on (org_id, lead_id) below — never a bare lead_id — so an estimate
+    // can only reference a lead in its OWN org.
+    leadId: uuid("lead_id").notNull(),
     title: text("title"),
     status: text("status").notNull().default("draft"),
     discBps: integer("disc_bps").notNull().default(0),
@@ -48,6 +48,14 @@ export const estimates = pgTable(
     // Target of the estimate_lines composite FK — a line can only reference (org_id, id) pairs
     // that exist, so it can never point at another tenant's estimate.
     unique("estimates_org_id_uq").on(t.orgId, t.id),
+    // Composite FK to leads(org_id, id): the referenced lead must share this estimate's org, so a
+    // tenant cannot attach an estimate to another org's lead (RI checks run owner-side, bypassing
+    // RLS — the composite key is what actually closes the hole).
+    foreignKey({
+      name: "estimates_lead_fk",
+      columns: [t.orgId, t.leadId],
+      foreignColumns: [leads.orgId, leads.id],
+    }).onDelete("cascade"),
     index("estimates_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
     index("estimates_org_lead_idx").on(t.orgId, t.leadId),
     uniqueIndex("estimates_org_num_uidx")
