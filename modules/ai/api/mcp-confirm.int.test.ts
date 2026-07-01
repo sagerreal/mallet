@@ -144,15 +144,75 @@ suite("MCP propose→confirm gate for mutating tools (live RLS)", () => {
     await admin`update leads set name = 'Karen Confirm' where id = ${leadAId}`; // restore for other tests
   });
 
-  it("caps outstanding proposals per key", async () => {
+  it("executes exactly ONE of two concurrent confirms of the same token (atomic single-use)", async () => {
+    const proposal = await callToolForPrincipal(principal, deps, "quote_draft", { leadId: leadAId, lines: LINES });
+    const token = tokenFrom(proposal);
+    const before = await estimateCount(orgAId);
+
+    // Two confirms fire in parallel, each in its own withTenant tx. The guarded UPDATE must let only
+    // one win; the loser blocks on the row lock, re-evaluates consumed_at, and matches zero rows.
+    const [a, b] = await Promise.all([
+      callToolForPrincipal(principal, deps, "quote_draft", { confirmToken: token, leadId: leadAId, lines: LINES }),
+      callToolForPrincipal(principal, deps, "quote_draft", { confirmToken: token, leadId: leadAId, lines: LINES }),
+    ]);
+    const succeeded = [a, b].filter((r) => !r.isError);
+    const refused = [a, b].filter((r) => r.isError && textOf(r).includes("invalid or expired"));
+    expect(succeeded).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect(await estimateCount(orgAId)).toBe(before + 1); // exactly one estimate, no double-execute
+  });
+
+  it("refuses at PROPOSE time when the referenced customer doesn't exist — no token minted", async () => {
+    const countRows = async (): Promise<number> =>
+      (await admin<{ n: number }[]>`select count(*)::int as n from tool_confirmations where org_id = ${orgAId}`)[0]!.n;
+    const before = await countRows();
+    const res = await callToolForPrincipal(principal, deps, "quote_draft", { leadId: randomUUID(), lines: LINES });
+    expect(res.isError).toBe(true);
+    expect(textOf(res)).toContain("not found");
+    expect(await countRows()).toBe(before); // nothing frozen for a proposal that could never execute
+  });
+
+  it("invoice_send: propose→confirm sends the invoice once; a total change between propose and confirm refuses (fingerprint drift)", async () => {
+    const [inv] = await admin<{ id: string }[]>`
+      insert into invoices (org_id, num, lead_id, total_cents) values (${orgAId}, 'INV-CONF-1', ${leadAId}, 50000) returning id`;
+    const invoiceId = inv!.id;
+
+    // Happy path: propose freezes status+total+amountPaid, confirm transitions draft→sent.
+    const proposal = await callToolForPrincipal(principal, deps, "invoice_send", { invoiceId });
+    expect(proposal.isError).toBeFalsy();
+    const [frozen] = await admin<{ fingerprint: string | null }[]>`
+      select fingerprint from tool_confirmations where org_id = ${orgAId} and tool = 'invoice_send' order by created_at desc limit 1`;
+    expect(frozen!.fingerprint).toContain("draft");
+    expect(frozen!.fingerprint).toContain("50000");
+
+    const confirmed = await callToolForPrincipal(principal, deps, "invoice_send", { confirmToken: tokenFrom(proposal), invoiceId });
+    expect(confirmed.isError).toBeFalsy();
+    const [sent] = await admin<{ status: string }[]>`select status from invoices where id = ${invoiceId}`;
+    expect(sent!.status).toBe("sent");
+
+    // Reset to draft, propose again, then EDIT the total before confirming → drift refusal.
+    await admin`update invoices set status = 'draft', sent_at = null where id = ${invoiceId}`;
+    const p2 = await callToolForPrincipal(principal, deps, "invoice_send", { invoiceId });
+    await admin`update invoices set total_cents = 999999 where id = ${invoiceId}`;
+    const drift = await callToolForPrincipal(principal, deps, "invoice_send", { confirmToken: tokenFrom(p2), invoiceId });
+    expect(drift.isError).toBe(true);
+    expect(textOf(drift)).toContain("changed");
+    const [stillDraft] = await admin<{ status: string }[]>`select status from invoices where id = ${invoiceId}`;
+    expect(stillDraft!.status).toBe("draft"); // never sent stale terms
+  });
+
+  it("caps outstanding proposals per key, but a key one below the cap can still propose", async () => {
     const griefer: Principal = { userId: asUserId(randomUUID()), orgId: asOrgId(orgAId), role: "owner" };
-    // Seed the cap directly (cheaper than N propose round-trips).
-    for (let i = 0; i < MAX_PENDING_PROPOSALS; i++) {
+    // Seed one BELOW the cap: a legitimate proposal must still succeed (boundary from below).
+    for (let i = 0; i < MAX_PENDING_PROPOSALS - 1; i++) {
       await admin`insert into tool_confirmations (org_id, token_hash, tool, args, summary, created_by, expires_at)
         values (${orgAId}, ${randomUUID()}, 'quote_draft', '{}', 'seed', ${griefer.userId}, now() + interval '3 minutes')`;
     }
-    const res = await callToolForPrincipal(griefer, deps, "quote_draft", { leadId: leadAId, lines: LINES });
-    expect(res.isError).toBe(true);
-    expect(textOf(res)).toContain("too many pending proposals");
+    const ok = await callToolForPrincipal(griefer, deps, "quote_draft", { leadId: leadAId, lines: LINES });
+    expect(ok.isError).toBeFalsy(); // at MAX-1 pending → this becomes the MAXth, allowed
+    // Now at the cap: the next proposal is refused.
+    const over = await callToolForPrincipal(griefer, deps, "quote_draft", { leadId: leadAId, lines: LINES });
+    expect(over.isError).toBe(true);
+    expect(textOf(over)).toContain("too many pending proposals");
   });
 });

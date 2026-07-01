@@ -30,7 +30,7 @@ const toolSpec = (t: AgentTool): Tool => {
       ...base.properties,
       confirmToken: {
         type: "string",
-        description: "Token from a prior proposal. Omit on the first call to receive a proposal + token (no action taken); repeat the call with confirmToken to execute it.",
+        description: "Token from a prior proposal. Omit on the first call to receive a proposal + token (no action taken); to execute, repeat the call with the SAME arguments plus this confirmToken.",
       },
     },
   };

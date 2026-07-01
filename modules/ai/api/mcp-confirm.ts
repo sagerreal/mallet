@@ -5,6 +5,7 @@ import type { JsonValue } from "@mallet/shared/ports";
 import type { Principal } from "@mallet/identity";
 import type { AppDeps } from "@/trpc/deps";
 import type { AgentTool, ToolContext } from "../domain/tool";
+import { ENTITY_NOT_FOUND } from "../domain/tool";
 import { describeProposal } from "../domain/proposal-summary";
 import { createProposal, consumeProposal, CONFIRMATION_TTL_MS } from "../infra/confirmation-store";
 
@@ -44,14 +45,23 @@ const propose = async (tool: AgentTool, args: Record<string, JsonValue>, princip
   withTenant(principal.orgId, async (tx) => {
     const parsed = tool.input.safeParse(args);
     if (!parsed.success) return invalidInput(tool.name, parsed.error.issues);
+    // Freeze the VALIDATED output, not the raw args — zod strips unknown keys, so the stored jsonb
+    // is bounded by the input schema (unknown-key storage griefing can't accumulate). Confirm
+    // re-parses this same value, so what-you-saw-is-what-runs is unchanged.
+    const frozen = parsed.data as Record<string, JsonValue>;
 
     const ctx = buildToolContext(tx, principal, deps);
-    const fingerprint = tool.fingerprint ? await tool.fingerprint(parsed.data, ctx) : null;
-    const summary = describeProposal(tool.name, args);
+    const fingerprint = tool.fingerprint ? await tool.fingerprint(frozen, ctx) : null;
+    // Refuse a missing entity at PROPOSE time rather than minting a token that could only fail at
+    // confirm (a masked FK throw, left infinitely retryable). No row is created.
+    if (fingerprint === ENTITY_NOT_FOUND) {
+      return text(`the record referenced by ${tool.name} was not found — check the id with the matching list tool`, true);
+    }
+    const summary = describeProposal(tool.name, frozen);
     const proposal = await createProposal(tx, {
       orgId: principal.orgId,
       tool: tool.name,
-      args,
+      args: frozen,
       summary,
       fingerprint,
       createdBy: principal.userId,
@@ -64,8 +74,8 @@ const propose = async (tool: AgentTool, args: Record<string, JsonValue>, princip
       [
         `NO ACTION TAKEN — confirmation required before ${tool.name} executes.`,
         `Proposal: ${summary}`,
-        `Show this proposal to the user and get their approval. To execute it, call ${tool.name} again with {"confirmToken": "${proposal.token}"}.`,
-        `The token is single-use, expires ${proposal.expiresAt.toISOString()}, and executes exactly the proposed arguments above (arguments sent with the confirm call are ignored).`,
+        `Show this proposal to the user and get their approval. To execute it, call ${tool.name} again with the SAME arguments plus "confirmToken": "${proposal.token}".`,
+        `The token is single-use, expires ${proposal.expiresAt.toISOString()}, and executes exactly the proposed arguments above (any arguments resent with the confirm call are ignored).`,
       ].join("\n"),
     );
   });

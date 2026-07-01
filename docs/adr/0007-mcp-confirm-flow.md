@@ -46,3 +46,13 @@ This is **not a hard human gate**. The token is in-band; an autonomous host — 
 - `AgentTool` gained `input` (the zod source of `inputSchema`, used for both propose- and confirm-time validation) and optional `fingerprint`.
 - New table `tool_confirmations` (migrations 0019/0021 + RLS 0020); store logic in `modules/ai/infra/confirmation-store.ts`; the gate in `modules/ai/api/mcp-confirm.ts`.
 - Verified by live-RLS integration tests: propose-freezes/no-execute, confirm-executes-frozen-args, single-use replay, expiry, cross-org (RLS), cross-principal (created_by), fingerprint drift (token consumed), pending cap; hermetic tests cover the role gate, throw containment on both paths, and token/summary purity.
+
+## Post-implementation adversarial review (2026-07-01)
+
+A 5-lens skeptic-verified review of the shipped code confirmed 7 findings (0 refuted-to-uncertain); all fixed in this slice:
+
+- **Freeze `parsed.data`, not raw args** (MEDIUM). Propose stored the *raw* argument object; zod strips unknown keys only from `.data`, so a valid key could bank unbounded junk-key jsonb (the storage-DoS the input bounds were meant to close). Now the validated output is frozen — schema bounds genuinely cap the stored row, and because confirm re-parses, what-you-saw-is-what-runs is unchanged.
+- **Missing entity refused at propose** (MEDIUM). A hallucinated/typo'd `leadId` minted a token that could only ever FK-throw at confirm (masked "internal error", token left retryable). `fingerprint` now returns a typed `ENTITY_NOT_FOUND` sentinel; propose refuses cleanly and mints nothing. Belt-and-braces: `quote_draft`'s handler also checks lead existence (matching `invoice_send`), so the in-process agent path gets a clean not-found too.
+- **Schema-valid confirm instruction** (MEDIUM). The proposal text told hosts to call with only `{confirmToken}`, which is invalid against the tool's own `required` fields — a strict host would reject it. Text (and the `confirmToken` property description) now say "repeat the SAME arguments plus confirmToken"; resent args are still ignored, so the guarantee is untouched.
+- **Pending-cap race closed** (LOW). The count-then-insert cap could be raced past by a concurrent burst; a per-key `pg_advisory_xact_lock` (xact-scoped, pooler-safe) now serializes minting per `created_by`.
+- **Test gaps closed** (MEDIUM×2, LOW): added a concurrent double-confirm atomicity test (exactly one executes), a full `invoice_send` propose→confirm lifecycle + total-drift refusal test, a propose-for-missing-customer refusal test, and a below-cap boundary assertion.
