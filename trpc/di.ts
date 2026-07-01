@@ -9,12 +9,14 @@ import {
   TwilioSmsSender,
   ChannelRouterNotificationSender,
 } from "@mallet/notifications";
+import { AnthropicLlmClient } from "@mallet/ai";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
 import type { NotificationSender, NotificationChannel } from "@mallet/notifications";
+import type { LlmClient } from "@mallet/ai";
 
 // Composition root for runtime dependencies. Built once and reused across requests (the auth
 // provider and DB pool are long-lived). The in-memory event bus is a placeholder until the
@@ -60,6 +62,9 @@ export const getAppDeps = (): AppDeps => {
     byChannel,
   );
 
+  // The agent's model client self-disables unless the Anthropic key is set.
+  const llmClient: LlmClient | null = config.ANTHROPIC_API_KEY ? new AnthropicLlmClient(config.ANTHROPIC_API_KEY) : null;
+
   cached = {
     authProvider: createAuthProvider({
       supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
@@ -71,6 +76,7 @@ export const getAppDeps = (): AppDeps => {
     ids: uuidGenerator,
     paymentLinkGateway,
     notificationSender,
+    llmClient,
   };
   return cached;
 };

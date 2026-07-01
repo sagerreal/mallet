@@ -71,3 +71,9 @@ export const ownerOrOffice = publicProcedure
   .use(requireAuth)
   .use(requireRole(["owner", "office"]))
   .use(orgTx);
+
+// Owner/office staff, authenticated + role-checked but WITHOUT the org transaction — for handlers
+// that manage their own short transactions rather than holding one open across slow work. The AI
+// agent uses this: it opens a fresh withTenant tx PER tool call (with an outbox-bound bus, exactly
+// like orgTx) around each action, never holding one tx across the multi-round-trip model loop.
+export const ownerOrOfficeNoTx = publicProcedure.use(requireAuth).use(requireRole(["owner", "office"]));

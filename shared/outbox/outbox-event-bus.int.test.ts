@@ -27,7 +27,7 @@ const stubAuth: AuthProvider = {
 const ctxFor = (orgId: string, role: Role): Context => ({
   principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
   tx: null,
-  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator, paymentLinkGateway: null },
+  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator, paymentLinkGateway: null, llmClient: null },
 });
 
 suite("transactional outbox (write side, live RLS)", () => {

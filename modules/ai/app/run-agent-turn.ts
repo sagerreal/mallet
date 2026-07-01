@@ -1,0 +1,149 @@
+import type {
+  LlmClient,
+  LlmToolSpec,
+  AgentMessage,
+  AssistantBlock,
+  ToolResultBlock,
+  LlmUsage,
+  Effort,
+} from "../domain/llm-client";
+import type { ToolOutcome } from "../domain/tool";
+
+// Model-facing tool metadata + the `mutating` gate. The loop is generic: it knows only these specs
+// and an `execute` fn — the concrete tool handlers (and their tenant tx) live in the composition root.
+export interface ToolMeta {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+  readonly mutating: boolean;
+}
+
+export type ExecuteTool = (name: string, input: unknown) => Promise<ToolOutcome>;
+
+export interface PendingAction {
+  readonly toolUseId: string;
+  readonly tool: string;
+  readonly input: unknown;
+}
+
+export interface RunAgentParams {
+  readonly llm: LlmClient;
+  readonly system: string;
+  readonly tools: readonly ToolMeta[];
+  readonly execute: ExecuteTool;
+  readonly userMessage?: string; // a fresh turn
+  readonly priorMessages?: readonly AgentMessage[]; // resume: prior transcript
+  readonly approvedToolUseIds?: readonly string[]; // resume: mutating tool_use ids the human approved
+  readonly deniedToolUseIds?: readonly string[]; // resume: ids the human declined (fed back as errors)
+  readonly effort?: Effort;
+  readonly maxIters?: number;
+}
+
+export type AgentResult =
+  | { readonly status: "completed"; readonly text: string; readonly transcript: AgentMessage[]; readonly usage: LlmUsage }
+  | {
+      readonly status: "needs_approval";
+      readonly assistantText: string;
+      readonly pending: PendingAction[];
+      readonly transcript: AgentMessage[];
+      readonly usage: LlmUsage;
+    }
+  | { readonly status: "refused"; readonly text: string; readonly transcript: AgentMessage[]; readonly usage: LlmUsage };
+
+const MAX_ITERS_DEFAULT = 15;
+
+const isToolUse = (b: AssistantBlock): b is Extract<AssistantBlock, { type: "tool_use" }> => b.type === "tool_use";
+
+type ToolUseBlock = Extract<AssistantBlock, { type: "tool_use" }>;
+type Resolution = { kind: "await"; awaiting: PendingAction[] } | { kind: "results"; results: ToolResultBlock[] };
+
+// Resolve one assistant tool_use turn: pause if any mutating tool is not yet approved/denied,
+// otherwise execute each tool and gather its result. Extracted from the loop to keep it simple.
+const resolvePending = async (
+  toolUses: readonly ToolUseBlock[],
+  tools: readonly ToolMeta[],
+  approved: ReadonlySet<string>,
+  denied: ReadonlySet<string>,
+  execute: ExecuteTool,
+): Promise<Resolution> => {
+  const metaOf = (name: string): ToolMeta | undefined => tools.find((t) => t.name === name);
+  const awaiting = toolUses.filter((tu) => metaOf(tu.name)?.mutating && !approved.has(tu.id) && !denied.has(tu.id));
+  if (awaiting.length > 0) {
+    return { kind: "await", awaiting: awaiting.map((tu) => ({ toolUseId: tu.id, tool: tu.name, input: tu.input })) };
+  }
+  const results: ToolResultBlock[] = [];
+  for (const tu of toolUses) {
+    if (!metaOf(tu.name)) {
+      results.push({ toolUseId: tu.id, content: `unknown tool: ${tu.name}`, isError: true });
+    } else if (denied.has(tu.id)) {
+      results.push({ toolUseId: tu.id, content: `the user declined to run ${tu.name}`, isError: true });
+    } else {
+      try {
+        const outcome = await execute(tu.name, tu.input);
+        results.push(outcome.ok ? { toolUseId: tu.id, content: outcome.summary } : { toolUseId: tu.id, content: outcome.error, isError: true });
+      } catch {
+        results.push({ toolUseId: tu.id, content: "the tool failed unexpectedly; try a different approach", isError: true });
+      }
+    }
+  }
+  return { kind: "results", results };
+};
+const textOf = (blocks: readonly AssistantBlock[]): string =>
+  blocks.filter((b): b is Extract<AssistantBlock, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n").trim();
+const addUsage = (a: LlmUsage, b: LlmUsage): LlmUsage => ({
+  inputTokens: a.inputTokens + b.inputTokens,
+  outputTokens: a.outputTokens + b.outputTokens,
+  cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+});
+
+// One agentic turn: call the model with the tools + running transcript, execute the tools it asks for,
+// feed results back, and loop until it stops asking (or a guard trips). A mutating tool never runs
+// without an explicit approval — the loop returns `needs_approval` and the caller resumes with the
+// approved tool_use ids. Fresh runs and resumes share ONE code path: a transcript that ends in an
+// unanswered assistant tool_use turn (a resume) is resolved first, exactly like a just-produced turn.
+export const runAgentTurn = async (params: RunAgentParams): Promise<AgentResult> => {
+  const specs: LlmToolSpec[] = params.tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+  const approved = new Set(params.approvedToolUseIds ?? []);
+  const denied = new Set(params.deniedToolUseIds ?? []);
+  const maxIters = params.maxIters ?? MAX_ITERS_DEFAULT;
+
+  const messages: AgentMessage[] = [...(params.priorMessages ?? [])];
+  if (params.userMessage) messages.push({ role: "user", kind: "text", text: params.userMessage });
+  let usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+
+  for (let i = 0; i < maxIters; i += 1) {
+    const last = messages[messages.length - 1];
+    const pendingTurn = last?.role === "assistant" && last.blocks.some(isToolUse) ? last : null;
+
+    if (pendingTurn) {
+      const resolution = await resolvePending(pendingTurn.blocks.filter(isToolUse), params.tools, approved, denied, params.execute);
+      if (resolution.kind === "await") {
+        return { status: "needs_approval", assistantText: textOf(pendingTurn.blocks), pending: resolution.awaiting, transcript: messages, usage };
+      }
+      messages.push({ role: "user", kind: "tool_results", results: resolution.results });
+      continue;
+    }
+
+    const turn = await params.llm.next({ system: params.system, tools: specs, messages, effort: params.effort });
+    usage = addUsage(usage, turn.usage);
+
+    if (turn.stopReason === "refusal") {
+      return { status: "refused", text: textOf(turn.blocks) || "The request was declined.", transcript: messages, usage };
+    }
+    messages.push({ role: "assistant", kind: "assistant", blocks: turn.blocks });
+    // Any tool_use (incl. a max_tokens turn cut off mid-tools) is resolved on the next iteration;
+    // otherwise (end_turn / stop_sequence / plain max_tokens) the turn is complete.
+    if (turn.blocks.some(isToolUse)) continue;
+    return { status: "completed", text: textOf(turn.blocks), transcript: messages, usage };
+  }
+
+  // Iteration cap: one final tool-LESS call so the user gets a wrap-up, not a dangling loop.
+  const finalTurn = await params.llm.next({
+    system: params.system,
+    tools: [],
+    messages: [...messages, { role: "user", kind: "text", text: "You have reached the tool-use limit for this task. Summarize what you did and what still needs doing." }],
+    effort: "low",
+  });
+  usage = addUsage(usage, finalTurn.usage);
+  return { status: "completed", text: textOf(finalTurn.blocks), transcript: messages, usage };
+};

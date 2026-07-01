@@ -1,6 +1,7 @@
 import type { AuthProvider } from "@mallet/identity";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
 import type { NotificationSender } from "@mallet/notifications";
+import type { LlmClient } from "@mallet/ai";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import type { Clock } from "@mallet/shared/types";
 
@@ -17,4 +18,7 @@ export interface AppDeps {
   // when omitted (e.g. in tests) callers fall back to the logging stub, so unconfigured comms
   // degrade to a logged no-op rather than an error.
   readonly notificationSender?: NotificationSender;
+  // The agent's model client (Anthropic). null when ANTHROPIC_API_KEY is unset — the AI agent
+  // self-disables (its tRPC procedure returns PRECONDITION_FAILED).
+  readonly llmClient: LlmClient | null;
 }
