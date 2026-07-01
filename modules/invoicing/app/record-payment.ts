@@ -1,7 +1,7 @@
 import type { OrgId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
 import { notFound, conflict, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
-import { Invoice } from "../domain/invoice";
+import type { Invoice } from "../domain/invoice";
 import { Payment, type PaymentMethod } from "../domain/payment";
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { PaymentGateway } from "../domain/payment-gateway";
@@ -30,9 +30,6 @@ export class RecordPaymentUseCase {
   async exec(cmd: RecordPaymentCommand): Promise<Result<Invoice, AppError>> {
     const invoice = await this.repo.findById(cmd.invoiceId);
     if (!invoice) return err(notFound("invoice"));
-    if (invoice.props.status === "void") {
-      return err(conflict("cannot record a payment on a void invoice"));
-    }
     if (cmd.amount <= 0) return err(validation("payment amount must be positive", "amount"));
 
     const payment = Payment.create({
@@ -45,11 +42,19 @@ export class RecordPaymentUseCase {
     });
     if (!isOk(payment)) return payment;
 
-    // Claim the idempotency key. If it was already used, return the current invoice unchanged.
+    // Claim the idempotency key FIRST. If it was already used, this is a retry — return the current
+    // invoice unchanged regardless of its status (a completed payment left it 'paid').
     const claimed = await this.repo.insertPayment(cmd.orgId, cmd.invoiceId, payment.value);
     if (!claimed) {
       const current = await this.repo.findById(cmd.invoiceId);
       return current ? ok(current) : err(notFound("invoice"));
+    }
+
+    // A genuinely new payment: money is tracked only after the invoice is sent — a draft has no due
+    // date (would be stranded in 'partial'), and a paid/void invoice takes no further payment.
+    // Returning err here rolls back the whole request tx, including the payment row just claimed.
+    if (invoice.props.status !== "sent" && invoice.props.status !== "partial") {
+      return err(conflict(`cannot record a payment on a ${invoice.props.status} invoice`));
     }
 
     // Settle. Manual = no-op success; the Stripe adapter charges here later.
@@ -62,29 +67,29 @@ export class RecordPaymentUseCase {
     });
     if (!isOk(receipt)) return err(receipt.error);
 
-    const updated = invoice.recordPayment(payment.value, this.clock.now());
-    if (!isOk(updated)) return updated;
-    await this.repo.save(updated.value);
+    // Atomic increment (no lost update under concurrency) — NOT an in-memory read-modify-write.
+    const updated = await this.repo.applyPayment(cmd.invoiceId, cmd.amount);
+    if (!updated) return err(notFound("invoice"));
 
     await this.bus.emit({
       name: "invoice.payment.recorded",
       orgId: cmd.orgId,
       payload: {
-        invoiceId: updated.value.props.id,
+        invoiceId: updated.props.id,
         amountCents: cmd.amount,
         method: cmd.method,
-        dueCents: updated.value.due(),
+        dueCents: updated.due(),
       },
       occurredAt: this.clock.now(),
     });
-    if (updated.value.props.status === "paid") {
+    if (updated.props.status === "paid") {
       await this.bus.emit({
         name: "invoice.paid",
         orgId: cmd.orgId,
-        payload: { invoiceId: updated.value.props.id, leadId: updated.value.props.leadId },
+        payload: { invoiceId: updated.props.id, leadId: updated.props.leadId },
         occurredAt: this.clock.now(),
       });
     }
-    return ok(updated.value);
+    return ok(updated);
   }
 }

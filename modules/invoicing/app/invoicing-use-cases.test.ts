@@ -79,6 +79,17 @@ class FakeInvoiceRepository implements InvoiceRepository {
     this.usedKeys.add(key);
     return true;
   }
+  async applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<Invoice | null> {
+    const inv = this.store.get(invoiceId);
+    if (!inv) return null;
+    const p = inv.props;
+    const amountPaid = money(p.amountPaid + amountCents);
+    const remaining = Math.max(0, p.total - p.depositPaid - amountPaid);
+    const updated = Invoice.create({ ...p, amountPaid, status: remaining === 0 ? "paid" : "partial" });
+    if (!isOk(updated)) throw new Error(updated.error.message);
+    this.store.set(invoiceId, updated.value);
+    return updated.value;
+  }
   async findById(id: InvoiceId): Promise<Invoice | null> {
     return this.store.get(id) ?? null;
   }
@@ -300,6 +311,26 @@ describe("Send / RecordPayment / Void use-cases", () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("external_service");
+  });
+
+  it("rejects a payment on a draft invoice (money is tracked only after sending)", async () => {
+    const drafted = await new DraftInvoiceUseCase(repo, bus, clock, seqIds()).exec({
+      orgId: ORG,
+      leadId: LEAD,
+      title: "Draft",
+      termsDays: 7,
+      lines: [{ description: "x", quantity: 1, rateCents: 50_000, costCents: 0 }],
+    });
+    if (!isOk(drafted)) throw new Error("draft failed");
+    const r = await new RecordPaymentUseCase(repo, new CountingManualGateway(clock), bus, clock, seqIds()).exec({
+      orgId: ORG,
+      invoiceId: drafted.value.props.id,
+      amount: money(10_000),
+      method: "cash",
+      idempotencyKey: "pay-key-draft1",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("conflict");
   });
 
   it("void rejects a paid invoice", async () => {

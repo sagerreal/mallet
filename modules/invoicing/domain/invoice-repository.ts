@@ -23,6 +23,9 @@ export interface InvoiceRepository {
   // Append a payment to the ledger, deduped on (org_id, idempotency_key) via ON CONFLICT DO
   // NOTHING RETURNING. true if this call applied it; false if the key was already used.
   insertPayment(orgId: OrgId, invoiceId: InvoiceId, payment: Payment): Promise<boolean>;
+  // Atomically increment amount_paid_cents and recompute status in one UPDATE (no lost updates
+  // under concurrency). Returns the re-hydrated invoice. Caller ensures status is sent|partial.
+  applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<Invoice | null>;
   findById(id: InvoiceId): Promise<Invoice | null>;
   findBySourceJob(jobId: JobId): Promise<Invoice | null>;
   list(page: CursorPage, filter?: InvoiceFilter): Promise<Paginated<Invoice>>;

@@ -224,6 +224,28 @@ suite("DrizzleInvoiceRepository against live Supabase RLS", () => {
     expect(paymentRejected).toBe(true);
   });
 
+  it("applyPayment is atomic under CONCURRENT distinct payments (no lost update)", async () => {
+    // Two distinct payments ($4000 + $6000) applied concurrently to a $10000 invoice must sum to
+    // $10000 and reach 'paid' — the atomic UPDATE increment serializes on the row lock.
+    const orgA = asOrgId(orgAId);
+    const invId = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      const inv = buildInvoice(orgA, asLeadId(leadAId), { total: 10_000, num: await repo.nextNumber() });
+      await repo.save(inv);
+      return inv.props.id;
+    });
+    const apply = (cents: number) =>
+      withTenant(orgA, (tx) => new DrizzleInvoiceRepository(tx, orgA).applyPayment(invId, cents));
+    await Promise.all([apply(4_000), apply(6_000)]);
+
+    const final = await withTenant(orgA, (tx) =>
+      new DrizzleInvoiceRepository(tx, orgA).findById(invId),
+    );
+    expect(final?.props.amountPaid).toBe(10_000); // neither write lost
+    expect(final?.props.status).toBe("paid");
+    expect(final?.due()).toBe(0);
+  });
+
   it("payment idempotency holds under CONCURRENT inserts (exactly one applies)", async () => {
     const orgA = asOrgId(orgAId);
     const invId = await withTenant(orgA, async (tx) => {

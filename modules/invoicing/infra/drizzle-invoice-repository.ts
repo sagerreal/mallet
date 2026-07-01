@@ -62,11 +62,31 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
   async save(invoice: Invoice): Promise<void> {
     const p = invoice.props;
     const columns = this.headerColumns(invoice);
+    // amount_paid_cents is owned exclusively by applyPayment's atomic increment — never written
+    // back here from an in-memory (possibly stale) value, or a concurrent payment would be lost.
+    const { amountPaidCents: _ownedByApplyPayment, ...updatable } = columns;
     await this.tx
       .insert(invoices)
       .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...columns })
-      .onConflictDoUpdate({ target: invoices.id, set: columns });
+      .onConflictDoUpdate({ target: invoices.id, set: updatable });
     await this.diffLines(invoice);
+  }
+
+  // Atomically apply a payment to the denormalized header: increment amount_paid_cents and
+  // recompute status IN ONE UPDATE, so concurrent distinct-key payments serialize on the row lock
+  // and never lose an update under READ COMMITTED. Mirrors Invoice.recordPayment's rule; callers
+  // guarantee the invoice is 'sent' or 'partial' first. Returns the re-hydrated aggregate.
+  async applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<Invoice | null> {
+    await this.tx.execute(sql`
+      update invoices
+      set amount_paid_cents = amount_paid_cents + ${amountCents},
+          status = case
+            when total_cents - deposit_paid_cents - (amount_paid_cents + ${amountCents}) <= 0
+            then 'paid' else 'partial' end,
+          updated_at = now()
+      where id = ${invoiceId} and deleted_at is null
+    `);
+    return this.findById(invoiceId);
   }
 
   async insertForJob(invoice: Invoice): Promise<boolean> {
