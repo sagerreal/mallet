@@ -29,6 +29,9 @@ const ConfigSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_FROM_NUMBER: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  // Shared secret guarding the outbox relay cron route. Optional — the route 503s (fail-closed)
+  // when unset, so the relay never runs unauthenticated. Vercel Cron sends it as a Bearer token.
+  CRON_SECRET: z.string().min(16).optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
