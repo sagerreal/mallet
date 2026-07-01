@@ -42,7 +42,7 @@ const stubAuth: AuthProvider = {
 const ctxWith = (orgId: string, role: Role, llmClient: LlmClient): Context => ({
   principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
   tx: null,
-  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator, paymentLinkGateway: null, llmClient },
+  deps: { authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator, paymentLinkGateway: null, llmClient, apiKeyAuthenticator: { authenticate: async () => null } },
 });
 
 suite("ai agent tRPC entry (full stack, live RLS)", () => {
