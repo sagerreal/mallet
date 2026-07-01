@@ -14,6 +14,12 @@ const ConfigSchema = z.object({
   // Runtime connection as the least-privilege `mallet_app` role (NOBYPASSRLS). All
   // tenant data access goes through this so RLS is always enforced.
   APP_DATABASE_URL: z.string().min(1),
+  // Stripe — all OPTIONAL. Without them the app boots and card payments simply self-disable
+  // (manual cash/check/terminal payments still work). Card create needs the secret key +
+  // PUBLIC_APP_URL (for hosted-checkout redirects); the webhook needs the signing secret.
+  STRIPE_SECRET_KEY: z.string().min(1).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+  PUBLIC_APP_URL: z.url().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

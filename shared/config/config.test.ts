@@ -19,4 +19,22 @@ describe("loadConfig", () => {
     const { DATABASE_URL: _omitted, ...incomplete } = validEnv;
     expect(() => loadConfig(incomplete as NodeJS.ProcessEnv)).toThrow(/DATABASE_URL/);
   });
+
+  it("boots with no Stripe vars (card payments self-disable)", () => {
+    const cfg = loadConfig(validEnv);
+    expect(cfg.STRIPE_SECRET_KEY).toBeUndefined();
+    expect(cfg.STRIPE_WEBHOOK_SECRET).toBeUndefined();
+  });
+
+  it("boots with the Stripe secret key but no webhook secret", () => {
+    const cfg = loadConfig({ ...validEnv, STRIPE_SECRET_KEY: "sk_test_x" } as NodeJS.ProcessEnv);
+    expect(cfg.STRIPE_SECRET_KEY).toBe("sk_test_x");
+    expect(cfg.STRIPE_WEBHOOK_SECRET).toBeUndefined();
+  });
+
+  it("fails fast on a malformed PUBLIC_APP_URL", () => {
+    expect(() =>
+      loadConfig({ ...validEnv, PUBLIC_APP_URL: "not-a-url" } as NodeJS.ProcessEnv),
+    ).toThrow(/PUBLIC_APP_URL/);
+  });
 });

@@ -10,6 +10,7 @@ import { DrizzleJobReader } from "../infra/drizzle-job-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
 import { CreateInvoiceFromJobUseCase } from "../app/create-invoice-from-job";
+import { CreatePaymentUseCase } from "../app/create-payment";
 import { SendInvoiceUseCase } from "../app/send-invoice";
 import { RecordPaymentUseCase } from "../app/record-payment";
 import { VoidInvoiceUseCase } from "../app/void-invoice";
@@ -232,6 +233,23 @@ export const createInvoiceRouter = () =>
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new VoidInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock);
         return toInvoiceDTO(orThrow(await useCase.exec({ invoiceId: asInvoiceId(input.invoiceId) })));
+      }),
+
+    // Create a Stripe-hosted payment link for the invoice balance (returns the URL to send the
+    // customer). Disabled with PRECONDITION_FAILED when Stripe is not configured.
+    createPayment: ownerOrOffice
+      .input(idInput)
+      .output(z.object({ url: z.string().url() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.paymentLinkGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
+        }
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new CreatePaymentUseCase(repo, ctx.deps.paymentLinkGateway);
+        const result = orThrow(
+          await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: asInvoiceId(input.invoiceId) }),
+        );
+        return { url: result.url };
       }),
 
     get: ownerOrOffice
