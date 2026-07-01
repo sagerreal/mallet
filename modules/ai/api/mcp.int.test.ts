@@ -45,10 +45,14 @@ suite("remote MCP server (tools + auth, live RLS)", () => {
     expect(JSON.stringify(res.content)).toContain("Karen MCP");
   });
 
-  it("does NOT expose mutating tools over MCP (they resolve to an unknown-tool error)", async () => {
-    const res = await callToolForPrincipal(principal, deps, "quote_draft", {}); // mutating:true → not exposed
+  it("gates mutating tools behind the server-enforced confirm flow (invalid input still refused up front)", async () => {
+    // mutating:true → the propose leg runs first; invalid args are refused before any proposal is minted.
+    const res = await callToolForPrincipal(principal, deps, "quote_draft", {});
     expect(res.isError).toBe(true);
-    expect(JSON.stringify(res.content)).toContain("unknown tool");
+    expect(JSON.stringify(res.content)).toContain("invalid input");
+    // Nothing was frozen for garbage input.
+    const rows = await admin`select id from tool_confirmations where org_id = ${orgAId}`;
+    expect(rows).toHaveLength(0);
   });
 
   it("returns an isError result for an unknown tool", async () => {

@@ -24,13 +24,13 @@
 
 This works **today** with the Claude Messages API MCP connector (`authorization_token`) and Cursor / VS Code / Claude Code (custom `Authorization` header). It does **not** target the Claude.ai / Claude Desktop *consumer* custom-connector UI, which requires full OAuth 2.1 — deferred.
 
-### 4. Read-only tools only; mutating tools held back (server-enforced, not a hint)
+### 4. Read-only tools only; mutating tools held back (server-enforced, not a hint) — *superseded by ADR 0007, which exposes mutating tools behind the confirm flow*
 
 The pilot exposes **only the read tools** (`customer_list`, `invoice_list`, `estimate_list`). Mutating tools (`quote_draft`, `invoice_send`) are **filtered out of the registry** for the MCP surface — a hard server-side filter, so they resolve to an unknown-tool error even if requested. Rationale: MCP tool annotations (`readOnlyHint`/`destructiveHint`) are **untrusted hints**, and a raw MCP host **is** the loop and may auto-approve — the in-process agent's human-approval gate does **not** exist on the raw MCP path. So Mallet must not rely on host confirmation for money/dispatch. We still set honest annotations for cooperative hosts (reads → `readOnlyHint: true`).
 
 ## Deferred
 
-- **A server-enforced propose→confirm-token flow** in the mutating use-cases (first call returns `isError` + a short-lived token + human summary; second call executes only with a valid token) — the follow-on that unblocks exposing `quote_draft`/`invoice_send` over MCP regardless of host behavior.
+- ~~**A server-enforced propose→confirm-token flow**~~ — **DONE, see ADR 0007** (with one refinement: the proposal reply is a normal result, not `isError` — hosts swallow/retry errors). Mutating tools are now exposed behind it.
 - **OAuth 2.1** resource-server support (DCR, PKCE, RFC 9728 metadata) — only needed for the Claude.ai/Desktop consumer UI; add additively behind the same `authenticateMcpRequest` seam (branch on token shape).
 - **Per-key rate limiting** (required before GA, not pilot-blocking for a few trusted keys), a **key-management UI** (pilot issues keys via the script), SSE/session resumability (stateless JSON responses suffice), and `last_used_at` updating.
 

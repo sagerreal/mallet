@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { OrgId, Clock } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import type { Principal } from "@mallet/identity";
@@ -33,10 +34,16 @@ export type ToolOutcome = { readonly ok: true; readonly summary: string } | { re
 // A tool = the model-facing spec (name/description/JSON-schema — MCP-shaped) + a `mutating` flag that
 // drives human-approval gating + a handler that runs under a tenant tx. Read tools run unattended;
 // mutating tools (send money/messages, dispatch) pause for approval before the handler ever runs.
+// `input` is the zod source of `inputSchema` — the propose→confirm gate validates against it BOTH at
+// proposal time and again at confirm (so a schema tightened between the two still applies).
+// `fingerprint` (mutating tools) snapshots the referenced entity's relevant state; the confirm gate
+// re-computes it and refuses to execute if the entity changed since the human saw the proposal.
 export interface AgentTool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
+  readonly input: z.ZodType;
   readonly mutating: boolean;
+  fingerprint?(input: unknown, ctx: ToolContext): Promise<string>;
   handle(input: unknown, ctx: ToolContext): Promise<ToolOutcome>;
 }
