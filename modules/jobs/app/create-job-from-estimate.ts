@@ -57,13 +57,14 @@ export class CreateJobFromEstimateUseCase {
     });
     if (!isOk(job)) return job;
 
-    try {
-      await this.repo.save(job.value);
-    } catch (error) {
-      // Lost a race to a concurrent create — return the winner rather than surfacing the conflict.
+    // Idempotent insert: DO NOTHING on conflict keeps the transaction valid (a raised unique
+    // violation would abort it, making any recovery query fail). If we lost the race, re-fetch and
+    // return the winner instead of surfacing a conflict.
+    const inserted = await this.repo.insertForEstimate(job.value);
+    if (!inserted) {
       const raced = await this.repo.findBySourceEstimate(cmd.estimateId);
       if (raced) return ok(raced);
-      throw error;
+      return err(conflict("a job already exists for this estimate"));
     }
 
     await this.bus.emit({

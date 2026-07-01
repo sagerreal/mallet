@@ -39,9 +39,9 @@ export class DrizzleJobRepository implements JobRepository {
     return `JOB-${allocated}`;
   }
 
-  async save(job: Job): Promise<void> {
+  private mutableColumns(job: Job) {
     const p = job.props;
-    const mutable = {
+    return {
       num: p.num,
       leadId: p.leadId,
       sourceEstimateId: p.sourceEstimateId,
@@ -58,10 +58,32 @@ export class DrizzleJobRepository implements JobRepository {
       notes: p.notes,
       updatedAt: p.updatedAt,
     };
+  }
+
+  async save(job: Job): Promise<void> {
+    const p = job.props;
+    const mutable = this.mutableColumns(job);
     await this.tx
       .insert(jobs)
       .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...mutable })
       .onConflictDoUpdate({ target: jobs.id, set: mutable });
+  }
+
+  // Idempotent create keyed on the source estimate: ON CONFLICT DO NOTHING (does NOT abort the
+  // surrounding transaction the way a raised unique-violation would), returning whether a row was
+  // inserted. A false result means an active job already exists for this estimate — the caller
+  // re-fetches it in the still-valid transaction. Matches the ensureCustomer pattern.
+  async insertForEstimate(job: Job): Promise<boolean> {
+    const p = job.props;
+    const inserted = await this.tx
+      .insert(jobs)
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...this.mutableColumns(job) })
+      .onConflictDoNothing({
+        target: [jobs.orgId, jobs.sourceEstimateId],
+        where: sql`source_estimate_id is not null and deleted_at is null`,
+      })
+      .returning({ id: jobs.id });
+    return inserted.length > 0;
   }
 
   async findById(id: JobId): Promise<Job | null> {

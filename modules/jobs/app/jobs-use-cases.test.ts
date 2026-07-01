@@ -55,6 +55,14 @@ class FakeJobRepository implements JobRepository {
   async save(job: Job): Promise<void> {
     this.store.set(job.props.id, job);
   }
+  async insertForEstimate(job: Job): Promise<boolean> {
+    const src = job.props.sourceEstimateId;
+    if (src && [...this.store.values()].some((j) => j.props.sourceEstimateId === src)) {
+      return false; // active job already exists for this estimate
+    }
+    this.store.set(job.props.id, job);
+    return true;
+  }
   async findById(id: JobId): Promise<Job | null> {
     return this.store.get(id) ?? null;
   }

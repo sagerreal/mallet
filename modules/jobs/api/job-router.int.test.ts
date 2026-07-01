@@ -84,6 +84,19 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     expect(listed.items.some((j) => j.id === job.id)).toBe(true);
   });
 
+  it("createFromEstimate is idempotent under CONCURRENT calls (same job, no abort)", async () => {
+    // Two separate withTenant transactions race on the same estimate. The loser's INSERT hits the
+    // partial unique via ON CONFLICT DO NOTHING (which does NOT abort its tx), so it re-fetches and
+    // returns the winner. Before the fix this threw a raw 23505/25P02.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const estimateId = await acceptedEstimateId(caller);
+    const [a, b] = await Promise.all([
+      caller.v1.jobs.createFromEstimate({ estimateId }),
+      caller.v1.jobs.createFromEstimate({ estimateId }),
+    ]);
+    expect(a.id).toBe(b.id); // both callers got the same job
+  });
+
   it("rejects createFromEstimate when the estimate is not accepted (CONFLICT)", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const drafted = await caller.v1.quoting.draft({
