@@ -19,3 +19,9 @@ export interface TokenVerifier {
 export interface PrincipalResolver {
   resolve(authUserId: string): Promise<Principal | null>;
 }
+
+// Resolves a static per-tenant API key (Bearer) directly to a Principal — the auth path for the
+// remote MCP server (external hosts can't mint Supabase JWTs). Returns null on any failure.
+export interface ApiKeyVerifier {
+  authenticate(bearerToken: string): Promise<Principal | null>;
+}
