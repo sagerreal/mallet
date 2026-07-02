@@ -12,10 +12,16 @@ export const createContext = async (opts: {
   const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
 
   let principal: Context["principal"] = null;
+  let unmapped: Context["unmapped"] = null;
   if (token) {
     const result = await opts.deps.authProvider.authenticate(token);
-    if (result.ok) principal = result.value;
+    if (result.ok) {
+      principal = result.value;
+    } else {
+      // Not provisioned yet (or invalid). A VALID token still identifies the auth user for signup.
+      unmapped = await opts.deps.tokenVerifier.verify(token);
+    }
   }
 
-  return { principal, tx: null, deps: opts.deps };
+  return { principal, unmapped, tx: null, deps: opts.deps };
 };

@@ -11,7 +11,7 @@ const PRINCIPAL: Principal = {
 };
 
 const verifierThatReturns = (authUserId: string | null): TokenVerifier => ({
-  verify: async () => (authUserId ? { authUserId } : null),
+  verify: async () => (authUserId ? { authUserId, email: "o@x.com", orgNameHint: null } : null),
 });
 
 const resolverThatReturns = (principal: Principal | null): PrincipalResolver => ({

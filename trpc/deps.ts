@@ -1,4 +1,4 @@
-import type { AuthProvider, ApiKeyVerifier } from "@mallet/identity";
+import type { AuthProvider, ApiKeyVerifier, TokenVerifier, SignupStore } from "@mallet/identity";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
@@ -23,4 +23,8 @@ export interface AppDeps {
   // The agent's model client (Anthropic). null when ANTHROPIC_API_KEY is unset — the AI agent
   // self-disables (its tRPC procedure returns PRECONDITION_FAILED).
   readonly llmClient: LlmClient | null;
+  // Signup-time collaborators: verify a token WITHOUT requiring an existing principal, and provision
+  // an org for a verified-but-unmapped auth user (SECURITY DEFINER seam).
+  readonly tokenVerifier: TokenVerifier;
+  readonly signupStore: Pick<SignupStore, "createOrgForUser">;
 }

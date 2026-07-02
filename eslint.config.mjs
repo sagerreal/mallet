@@ -24,11 +24,14 @@ export default [
   },
   {
     files: [
+      "lib/**/*.ts",
       "modules/**/*.ts",
       "shared/**/*.ts",
       "trpc/**/*.ts",
       "platform/**/*.ts",
       "app/**/*.{ts,tsx}",
+      "components/**/*.{ts,tsx}",
+      "features/**/*.{ts,tsx}",
     ],
     languageOptions: { parser: tseslint.parser, parserOptions: { sourceType: "module" } },
     rules: {

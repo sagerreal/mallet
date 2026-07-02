@@ -9,9 +9,15 @@ export interface AuthProvider {
 
 // Two collaborators the provider composes — each independently testable.
 
-// Verifies a token's signature/expiry and extracts the auth identity (the Supabase user id).
+// Verifies a token's signature/expiry and extracts the auth identity plus signup hints.
+export interface VerifiedToken {
+  readonly authUserId: string;
+  readonly email: string;
+  readonly orgNameHint: string | null; // user_metadata.org_name captured at auth signUp
+}
+
 export interface TokenVerifier {
-  verify(accessToken: string): Promise<{ authUserId: string } | null>;
+  verify(accessToken: string): Promise<VerifiedToken | null>;
 }
 
 // Maps a verified auth identity to its provisioned org membership. Returns null if the auth
