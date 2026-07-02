@@ -13,7 +13,7 @@
     --bg:#FCFBF7; --card:#FEFEFC; --paper:#F1EDE4; --line:#EAE4D7; --line-2:#F4F1E9;
     --amber:#9A6700; --amber-bg:#F2EAD9; --red:#B23A2A; --red-bg:#F4E7E1;
     --blue:#4A639E; --blue-bg:#E9ECF3; --purple:#7A6BA6; --purple-bg:#F2EAD9;
-    --radius:12px; --radius-sm:9px; --aiw:360px;
+    --radius:12px; --radius-sm:9px; --aiw:0px; /* AI is the command bar, not a side drawer — no reserved right column (overlays cover full width) */
     --shadow-sm:0 1px 2px rgba(43,39,32,.05);
     --shadow:0 1px 2px rgba(43,39,32,.05),0 4px 14px rgba(43,39,32,.06);
     --shadow-lg:0 16px 50px rgba(43,39,32,.15);
