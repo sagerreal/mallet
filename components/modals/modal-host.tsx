@@ -23,6 +23,8 @@ import { PriceBuilderModalContent } from "./price-builder-modal";
 import { StandardsModalContent } from "./standards-modal";
 import { InvoiceModalContent } from "./invoice-modal";
 import { TechJobModalContent } from "./tech-job-modal";
+import { CustQuoteModalContent } from "./cust-quote-modal";
+import { CustInvoiceModalContent } from "./cust-invoice-modal";
 import { Modal } from "./modal";
 import {
   VisitModalContent,
@@ -103,6 +105,14 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.TECH_JOB} onClose={close}>
         <TechJobModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.CUST_QUOTE} onClose={close}>
+        <CustQuoteModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.CUST_INVOICE} onClose={close}>
+        <CustInvoiceModalContent />
       </Modal>
     </>
   );

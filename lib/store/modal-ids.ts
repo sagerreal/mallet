@@ -22,6 +22,8 @@ export const MODAL = {
   STANDARDS: "standards",
   INVOICE: "invoice",
   TECH_JOB: "tech-job",
+  CUST_QUOTE: "cust-quote",
+  CUST_INVOICE: "cust-invoice",
 } as const;
 
 export type ModalId = (typeof MODAL)[keyof typeof MODAL];

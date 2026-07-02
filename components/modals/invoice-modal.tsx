@@ -27,7 +27,8 @@
 "use client";
 
 import { useState } from "react";
-import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead } from "@/lib/store/types";
 
@@ -732,6 +733,7 @@ function PaymentCard({ invoice, leads, due, onRecord }: PaymentCardProps) {
 export function InvoiceModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
+  const openModal = useOpenModal();
 
   const invoices = useAppStore((s) => s.invoices);
   const leads = useAppStore((s) => s.leads);
@@ -846,16 +848,20 @@ export function InvoiceModalContent() {
       {/* Take a payment — anything still owed */}
       {due > 0 ? <PaymentCard invoice={invoice} leads={leads} due={due} onRecord={record} /> : null}
 
-      {/* Footer — Done */}
+      {/* Footer — Preview as customer + Done */}
       <div
         style={{
           display: "flex",
           justifyContent: "flex-end",
+          gap: 10,
           marginTop: 14,
           borderTop: "1px solid var(--line)",
           paddingTop: 12,
         }}
       >
+        <button className="btn ghost" onClick={() => openModal(MODAL.CUST_INVOICE, { invoiceId: invoice.id })}>
+          Preview as customer
+        </button>
         <button className="btn primary" onClick={close}>
           Done
         </button>
