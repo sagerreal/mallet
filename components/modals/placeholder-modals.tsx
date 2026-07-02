@@ -38,28 +38,6 @@ export function CallModalContent() {
   );
 }
 
-// ---- Thread (SMS) modal ----------------------------------------------------
-
-export function ThreadModalContent() {
-  const activeModal = useActiveModal();
-  const close = useCloseModal();
-  const leads = useAppStore((s) => s.leads);
-  const leadId = activeModal?.params?.leadId as number | undefined;
-  const lead = leads.find((l) => l.id === leadId);
-
-  return (
-    <div>
-      <h2 className="modal-title">Messages{lead ? ` · ${lead.name}` : ""}</h2>
-      <div className="muted" style={{ marginTop: 12 }}>
-        SMS thread coming in a later slice.
-      </div>
-      <button className="btn ghost" style={{ marginTop: 24 }} onClick={close}>
-        Close
-      </button>
-    </div>
-  );
-}
-
 // ---- Visit booking modal ---------------------------------------------------
 
 export function VisitModalContent() {

@@ -11,10 +11,10 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { LeadModal } from "./lead-modal/lead-modal";
 import { NewCustomerModal } from "./new-customer-modal";
 import { SweepModalContent } from "./sweep-modal";
+import { ThreadModalContent } from "./thread-modal";
 import { Modal } from "./modal";
 import {
   CallModalContent,
-  ThreadModalContent,
   VisitModalContent,
   ComposerModalContent,
   CleanUpModalContent,
