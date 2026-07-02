@@ -2,24 +2,20 @@
 
 /**
  * Money page — pixel-faithful port of the prototype's vMoney / vInvoices.
- * Uses SAMPLE_INVOICES / SAMPLE_JOBS / SAMPLE_LEADS / SAMPLE_ESTIMATES
- * from lib/prototype-sample.ts.  No live hooks.  All backend actions are
- * console-logged stubs.
+ * Reads live data from the Zustand store (invoices / jobs / leads / estimates)
+ * so invoice-modal mutations reflect reactively. Wired actions open the invoice
+ * modal or mutate the store; financing / QuickBooks are deferred.
  *
  * Sub-tab pattern mirrors app/(office)/jobs/page.tsx.
- * Money values in SAMPLE_INVOICES are integer dollars (not cents) — the
- * prototype's fmt$() does `"$" + n.toLocaleString("en-US")`.
+ * Money values are integer dollars (not cents) — the prototype's fmt$() does
+ * `"$" + n.toLocaleString("en-US")`.
  */
 
 import { useState } from "react";
-import {
-  SAMPLE_INVOICES,
-  SAMPLE_JOBS,
-  SAMPLE_ESTIMATES,
-  SAMPLE_LEADS,
-  type SampleInvoice,
-  type SampleJob,
-} from "@/lib/prototype-sample";
+import { useRouter } from "next/navigation";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import type { Estimate, Invoice, Job, Lead } from "@/lib/store/types";
 
 // ---- helpers ported from prototype ------------------------------------------
 
@@ -29,30 +25,30 @@ function fmt$(n: number): string {
 }
 
 /** invPaid — sum of payment amounts */
-function invPaid(i: SampleInvoice): number {
+function invPaid(i: Invoice): number {
   return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
 }
 
 /** invDue — total − deposit − payments (floor 0) */
-function invDue(i: SampleInvoice): number {
+function invDue(i: Invoice): number {
   return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
 }
 
 /** invOver — unpaid past 7-day default (matches prototype) */
-function invOver(i: SampleInvoice): boolean {
+function invOver(i: Invoice): boolean {
   if (i.status === "draft" || invDue(i) <= 0) return false;
   return (i.age ?? 0) > 7;
 }
 
 /** invState — runtime status key (paid / partial / sent) */
-function invState(i: SampleInvoice): string {
+function invState(i: Invoice): string {
   if (invDue(i) <= 0) return "paid";
   if (invPaid(i) > 0) return "partial";
   return "sent";
 }
 
 /** invStatusKey — including draft and overdue (matches IST keys) */
-function invStatusKey(i: SampleInvoice): string {
+function invStatusKey(i: Invoice): string {
   if (i.status === "draft") return "draft";
   if (invOver(i)) return "over";
   return invState(i);
@@ -68,50 +64,47 @@ const IST: Record<string, { l: string; c: string; bg: string }> = {
 };
 
 /** liveInvs — non-archived invoices */
-function liveInvs(): SampleInvoice[] {
-  return SAMPLE_INVOICES.filter((i) => !i.archived);
+function liveInvs(invoices: Invoice[]): Invoice[] {
+  return invoices.filter((i) => !i.archived);
 }
 
-/** jobsReadyToInvoice — done jobs with no invoiceId */
-function jobsReadyToInvoice(): SampleJob[] {
-  return SAMPLE_JOBS.filter((j) => j.status === "done" && !(j as { invoiceId?: number }).invoiceId);
+/** jobsReadyToInvoice — done jobs no invoice references (Job has no invoiceId) */
+function jobsReadyToInvoice(jobs: Job[], invoices: Invoice[]): Job[] {
+  return jobs.filter((j) => j.status === "done" && !invoices.some((i) => i.jobId === j.id));
 }
 
 /** custName — resolve customer name from invoice */
-function invCustName(i: SampleInvoice): string {
-  const lead = SAMPLE_LEADS.find((l) => l.id === i.leadId);
+function invCustName(i: Invoice, leads: Lead[]): string {
+  const lead = leads.find((l) => l.id === i.leadId);
   return lead?.name ?? i.cust ?? "Customer";
 }
 
 /** custCard — look up saved card from the linked lead */
-function custCard(i: SampleInvoice): { brand: string; last4: string; via?: string } | null {
-  const lead = SAMPLE_LEADS.find((l) => l.id === i.leadId);
-  return (lead as { card?: { brand: string; last4: string; via?: string } })?.card ?? null;
+function custCard(i: Invoice, leads: Lead[]): { brand: string; last4: string; via?: string } | null {
+  const lead = leads.find((l) => l.id === i.leadId);
+  return lead?.card ?? null;
 }
 
 /** finKpis — KPI rollup (mirrors prototype's finKpis()) */
-function finKpis() {
-  const live = liveInvs().filter((i) => i.status !== "draft");
+function finKpis(invoices: Invoice[], jobs: Job[], estimates: Estimate[]) {
+  const live = liveInvs(invoices).filter((i) => i.status !== "draft");
   const collected = live.reduce((s, i) => s + invPaid(i) + (i.depPaid ?? 0), 0);
   const unpaidL = live.filter((i) => invDue(i) > 0);
   const overL = unpaidL.filter(invOver);
 
   // Sold · awaiting: accepted jobs not yet done and not yet invoiced
-  const awaitJobs = SAMPLE_JOBS.filter((j) => {
+  const awaitJobs = jobs.filter((j) => {
     if (j.status === "done") return false;
-    if ((j as { invoiceId?: number }).invoiceId) return false;
-    const linked = SAMPLE_ESTIMATES.find((e) => e.leadId === j.leadId && e.status === "accepted");
+    if (invoices.some((i) => i.jobId === j.id)) return false;
+    const linked = estimates.find((e) => e.leadId === j.leadId && e.status === "accepted");
     return !!linked;
   });
 
-  function jobPrice(j: SampleJob): number {
+  function jobPrice(j: Job): number {
     return (j.lines ?? []).reduce((s, l) => s + l.q * l.r, 0);
   }
 
-  const awaiting = awaitJobs.reduce(
-    (s, j) => s + Math.max(0, jobPrice(j)),
-    0
-  );
+  const awaiting = awaitJobs.reduce((s, j) => s + Math.max(0, jobPrice(j)), 0);
 
   return {
     collected,
@@ -122,13 +115,6 @@ function finKpis() {
     awaiting,
     awaitingN: awaitJobs.length,
   };
-}
-
-// ---- stubs ------------------------------------------------------------------
-
-function stub(action: string, ...args: unknown[]) {
-  // eslint-disable-next-line no-console
-  console.log(`[stub] ${action}`, ...args);
 }
 
 // ---- sub-tab types ----------------------------------------------------------
@@ -144,15 +130,65 @@ const SUB_TABS: Array<{ id: FinSubTab; label: string }> = [
 // vMoney — Money dashboard panel
 // ============================================================================
 
-function MoneyDashboard() {
-  const [autoRemind, setAutoRemind] = useState(true);
+function MoneyDashboard({ onGoInvoices }: { onGoInvoices: () => void }) {
+  const invoices = useAppStore((s) => s.invoices);
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const estimates = useAppStore((s) => s.estimates);
 
-  const k = finKpis();
-  const rdy = jobsReadyToInvoice();
-  const drafts = liveInvs().filter((i) => i.status === "draft");
-  const unpaid = liveInvs()
+  const openModal = useOpenModal();
+  const router = useRouter();
+  const addInvoice = useAppStore((s) => s.addInvoice);
+  const recordPayment = useAppStore((s) => s.recordPayment);
+  const updateInvoice = useAppStore((s) => s.updateInvoice);
+
+  const [autoRemind, setAutoRemind] = useState(true);
+  // Armed "charge card on file" — first tap arms, second tap charges.
+  const [armedCharge, setArmedCharge] = useState<number | null>(null);
+
+  const k = finKpis(invoices, jobs, estimates);
+  const rdy = jobsReadyToInvoice(jobs, invoices);
+  const drafts = liveInvs(invoices).filter((i) => i.status === "draft");
+  const unpaid = liveInvs(invoices)
     .filter((i) => i.status !== "draft" && invDue(i) > 0)
     .sort((a, b) => ((invOver(b) ? 1 : 0) - (invOver(a) ? 1 : 0)) || invDue(b) - invDue(a));
+
+  function openInvoice(i: Invoice) {
+    openModal(MODAL.INVOICE, { invoiceId: i.id });
+  }
+
+  function createFromJob(j: Job) {
+    const lead = leads.find((l) => l.id === j.leadId);
+    const total = (j.lines ?? []).reduce((s, l) => s + l.q * l.r, 0);
+    const inv = addInvoice({
+      jobId: j.id,
+      leadId: j.leadId,
+      cust: lead?.name ?? "",
+      phone: j.phone || (lead?.phone ?? ""),
+      title: j.title,
+      lines: (j.lines ?? []).map((l) => ({ d: l.d, q: l.q, r: l.r, c: l.c })),
+      total,
+      depPaid: 0,
+      payments: [],
+      status: "draft",
+      age: 0,
+      archived: false,
+    });
+    openModal(MODAL.INVOICE, { invoiceId: inv.id });
+  }
+
+  function chargeOnFile(i: Invoice) {
+    if (armedCharge !== i.id) {
+      setArmedCharge(i.id);
+      return;
+    }
+    recordPayment(i.id, { amt: invDue(i), when: "Just now", method: "card", onFile: true });
+    setArmedCharge(null);
+  }
+
+  function remindInvoice(i: Invoice) {
+    updateInvoice(i.id, { fu: { on: true, stage: Math.min((i.fu?.stage ?? 0) + 1, 2) } });
+  }
 
   /** Initials from a name (prototype's ini) */
   function ini(n: string): string {
@@ -203,7 +239,7 @@ function MoneyDashboard() {
         className="kpis"
         style={{ gridTemplateColumns: `repeat(${k.awaiting > 0 ? 4 : 3}, 1fr)` }}
       >
-        <div className="kpi" onClick={() => stub("go", "fin-invoices")}>
+        <div className="kpi" onClick={() => onGoInvoices()}>
           <div className="lbl">Outstanding</div>
           <div className="val">{fmt$(k.unpaid)}</div>
           <div className="hint">
@@ -212,7 +248,7 @@ function MoneyDashboard() {
         </div>
 
         {k.awaiting > 0 && (
-          <div className="kpi" onClick={() => stub("setModule", "operations")}>
+          <div className="kpi" onClick={() => router.push("/jobs")}>
             <div className="lbl">Sold · awaiting</div>
             <div className="val">{fmt$(k.awaiting)}</div>
             <div className="hint">
@@ -254,7 +290,6 @@ function MoneyDashboard() {
             checked={autoRemind}
             onChange={(e) => {
               setAutoRemind(e.target.checked);
-              stub("setAutoRemind", e.target.checked);
             }}
           />
           <i />
@@ -269,7 +304,7 @@ function MoneyDashboard() {
             Built from what was sold, plus any add-ons approved in the field.
           </p>
           {rdy.map((j) => {
-            const lead = SAMPLE_LEADS.find((l) => l.id === j.leadId);
+            const lead = leads.find((l) => l.id === j.leadId);
             const name = lead?.name ?? "Customer";
             const jobTotal = (j.lines ?? []).reduce((s, l) => s + l.q * l.r, 0);
             return (
@@ -283,7 +318,7 @@ function MoneyDashboard() {
                 </div>
                 <button
                   className="btn sm primary"
-                  onClick={() => stub("createInvoiceFromJob", j.id)}
+                  onClick={() => createFromJob(j)}
                 >
                   Create invoice
                 </button>
@@ -299,15 +334,15 @@ function MoneyDashboard() {
           <h3>Started, not sent</h3>
           {drafts.map((i) => (
             <div key={i.id} className="att-item">
-              <Javatar name={invCustName(i)} />
+              <Javatar name={invCustName(i, leads)} />
               <div className="att-body">
-                <b>{invCustName(i)}</b>
+                <b>{invCustName(i, leads)}</b>
                 <div className="why">
                   {i.num} · {i.title}
                 </div>
               </div>
               <span className="att-val">{fmt$(invDue(i))}</span>
-              <button className="btn sm primary" onClick={() => stub("openInvoice", i.id)}>
+              <button className="btn sm primary" onClick={() => openInvoice(i)}>
                 Finish &amp; send
               </button>
             </div>
@@ -323,16 +358,16 @@ function MoneyDashboard() {
             const over = invOver(i);
             const part = invPaid(i) > 0;
             const sent = i.fu && i.fu.on && i.fu.stage > 0;
-            const card = custCard(i);
+            const card = custCard(i, leads);
             const dotColor = over ? "var(--red)" : part ? "var(--amber)" : "var(--green-700)";
 
             return (
               <div key={i.id} className="att-item">
-                <Javatar name={invCustName(i)} />
+                <Javatar name={invCustName(i, leads)} />
                 <div className="att-body">
                   <b>
                     <Dot color={dotColor} />
-                    {invCustName(i)}
+                    {invCustName(i, leads)}
                   </b>
                   <div className="why">
                     {i.num} · sent {i.age === 0 ? "today" : `${i.age}d ago`}
@@ -345,20 +380,20 @@ function MoneyDashboard() {
                   {fmt$(invDue(i))}
                 </span>
                 <div className="att-actions">
-                  <button className="btn sm" onClick={() => stub("remindInvoice", i.id)}>
+                  <button className="btn sm" onClick={() => remindInvoice(i)}>
                     Remind
                   </button>
                   {card ? (
                     <button
                       className="btn sm primary"
-                      onClick={() => stub("chargeOnFile", i.id)}
+                      onClick={() => chargeOnFile(i)}
                     >
-                      Charge ···· {card.last4}
+                      {armedCharge === i.id ? "Confirm charge" : `Charge ···· ${card.last4}`}
                     </button>
                   ) : (
                     <button
                       className="btn sm primary"
-                      onClick={() => stub("openInvoice", i.id)}
+                      onClick={() => openInvoice(i)}
                     >
                       Take payment
                     </button>
@@ -382,15 +417,39 @@ function MoneyDashboard() {
 // ============================================================================
 
 function InvoicesList() {
+  const invoices = useAppStore((s) => s.invoices);
+  const leads = useAppStore((s) => s.leads);
+
+  const openModal = useOpenModal();
+  const addInvoice = useAppStore((s) => s.addInvoice);
+
   const [invQ, setInvQ] = useState("");
   const [invFiltersOpen, setInvFiltersOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
 
-  const allInvs = liveInvs();
+  const allInvs = liveInvs(invoices);
   const total = allInvs.length;
 
   // All distinct status keys present in the dataset
   const keys = [...new Set(allInvs.map(invStatusKey))];
+
+  function newInvoice() {
+    const inv = addInvoice({
+      jobId: null,
+      leadId: 0,
+      cust: "",
+      phone: "",
+      title: "New invoice",
+      lines: [],
+      total: 0,
+      depPaid: 0,
+      payments: [],
+      status: "draft",
+      age: 0,
+      archived: false,
+    });
+    openModal(MODAL.INVOICE, { invoiceId: inv.id });
+  }
 
   // Filter
   let rows = allInvs;
@@ -399,7 +458,7 @@ function InvoicesList() {
     rows = rows.filter(
       (i) =>
         i.num.toLowerCase().includes(q) ||
-        invCustName(i).toLowerCase().includes(q) ||
+        invCustName(i, leads).toLowerCase().includes(q) ||
         i.title.toLowerCase().includes(q)
     );
   }
@@ -423,13 +482,23 @@ function InvoicesList() {
       >
         <h1>Invoices</h1>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn ghost" onClick={() => stub("financeConnect")}>
+          <button
+            className="btn ghost"
+            onClick={() => {
+              // deferred: financing integration
+            }}
+          >
             Offer financing
           </button>
-          <button className="btn ghost" onClick={() => stub("qbConnect")}>
+          <button
+            className="btn ghost"
+            onClick={() => {
+              // deferred: QuickBooks integration
+            }}
+          >
             Connect QuickBooks
           </button>
-          <button className="btn primary" onClick={() => stub("newInvoice")}>
+          <button className="btn primary" onClick={() => newInvoice()}>
             + New invoice
           </button>
         </div>
@@ -511,11 +580,11 @@ function InvoicesList() {
                   <tr
                     key={i.id}
                     className="clickable"
-                    onClick={() => stub("openInvoice", i.id)}
+                    onClick={() => openModal(MODAL.INVOICE, { invoiceId: i.id })}
                   >
                     <td className="muted">{i.num}</td>
                     <td>
-                      <b>{invCustName(i)}</b>
+                      <b>{invCustName(i, leads)}</b>
                     </td>
                     <td>{i.title}</td>
                     <td>
@@ -574,10 +643,12 @@ function InvoicesList() {
 // ============================================================================
 
 export default function MoneyPage() {
+  const invoices = useAppStore((s) => s.invoices);
+  const jobs = useAppStore((s) => s.jobs);
   const [activeTab, setActiveTab] = useState<FinSubTab>("fin-money");
 
   // Badge: number of jobs ready to invoice
-  const rdyCount = jobsReadyToInvoice().length;
+  const rdyCount = jobsReadyToInvoice(jobs, invoices).length;
 
   return (
     <div>
@@ -621,7 +692,7 @@ export default function MoneyPage() {
       </div>
 
       {/* Panel */}
-      {activeTab === "fin-money" && <MoneyDashboard />}
+      {activeTab === "fin-money" && <MoneyDashboard onGoInvoices={() => setActiveTab("fin-invoices")} />}
       {activeTab === "fin-invoices" && <InvoicesList />}
     </div>
   );

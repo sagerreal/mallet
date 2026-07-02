@@ -160,12 +160,14 @@ export interface InvoiceLine {
   d: string;
   q: number;
   r: number;
+  c?: number;
 }
 
 export interface Payment {
   amt: number;
   when: string;
   method: string;
+  onFile?: boolean;
 }
 
 export interface Invoice {
@@ -176,7 +178,10 @@ export interface Invoice {
   cust: string;
   phone: string;
   title: string;
+  email?: string;
+  termsDays?: number | null;
   lines: InvoiceLine[];
+  pricing?: { disc: number; tax: number };
   total: number;
   depPaid: number;
   payments: Payment[];

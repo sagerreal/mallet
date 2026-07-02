@@ -20,6 +20,7 @@ export const MODAL = {
   EVISIT: "evisit",
   PRICE_BUILDER: "price-builder",
   STANDARDS: "standards",
+  INVOICE: "invoice",
 } as const;
 
 export type ModalId = (typeof MODAL)[keyof typeof MODAL];

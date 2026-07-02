@@ -12,6 +12,7 @@ import { createLeadsSlice, type LeadsSlice } from "./slices/leads-slice";
 import { createDataSlice, type DataSlice } from "./slices/data-slice";
 import { createEstimatesSlice, type EstimatesSlice } from "./slices/estimates-slice";
 import { createJobsSlice, type JobsSlice } from "./slices/jobs-slice";
+import { createInvoicesSlice, type InvoicesSlice } from "./slices/invoices-slice";
 import { createCallSlice, type CallSlice } from "./slices/call-slice";
 import { createTimesheetsSlice, type TimesheetsSlice } from "./slices/timesheets-slice";
 import { createChecklistsSlice, type ChecklistsSlice } from "./slices/checklists-slice";
@@ -21,6 +22,7 @@ export type AppStore = UISlice &
   DataSlice &
   EstimatesSlice &
   JobsSlice &
+  InvoicesSlice &
   CallSlice &
   TimesheetsSlice &
   ChecklistsSlice;
@@ -31,6 +33,7 @@ export const useAppStore = create<AppStore>()((...args) => ({
   ...createDataSlice(...args),
   ...createEstimatesSlice(...args),
   ...createJobsSlice(...args),
+  ...createInvoicesSlice(...args),
   ...createCallSlice(...args),
   ...createTimesheetsSlice(...args),
   ...createChecklistsSlice(...args),
