@@ -20,6 +20,7 @@ export default function FieldJobPage({ params }: { params: Promise<{ id: string 
   const onError = (err: unknown) => setError(userMessage(err));
 
   if (myDay.isLoading) return <p className="text-sm text-ink-muted">Loading…</p>;
+  if (myDay.isError) return <p className="text-sm text-red">{userMessage(myDay.error)}</p>;
   const job = (myDay.data?.items ?? []).find((j) => j.id === id);
   if (!job) {
     return (

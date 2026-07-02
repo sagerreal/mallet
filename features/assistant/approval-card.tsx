@@ -17,7 +17,7 @@ export function ApprovalCard({ pending, busy, onApprove, onDeny }: { pending: Pe
       <p className="font-medium text-amber">The assistant wants to take an action</p>
       {pending.map((p) => (
         <div key={p.toolUseId} className="mt-2 rounded-control bg-card p-3 text-sm">
-          <p className="font-medium">{p.tool.replace("_", " ")}</p>
+          <p className="font-medium">{p.tool.replaceAll("_", " ")}</p>
           <pre className="mt-1 whitespace-pre-wrap font-mono text-xs text-ink-muted">{summarizeArgs(p.argsJson)}</pre>
         </div>
       ))}
