@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { estTotal, type SampleEstimate } from "@/lib/prototype-sample";
 import { useEstimates, useLeads, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -77,6 +78,7 @@ type QuoteFilter = "" | "sent" | "accepted" | "draft" | "changes";
 export default function QuotesPage() {
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>("");
   const [quoteQ, setQuoteQ] = useState("");
+  const router = useRouter();
   const openModal = useOpenModal();
   const leads = useLeads();
   const estimates = useEstimates();
@@ -133,7 +135,7 @@ export default function QuotesPage() {
           <button className="btn ghost" disabled title="Quote clean-up coming with the New-quote slice">
             Clean up
           </button>
-          <button className="btn primary" onClick={() => openModal(MODAL.COMPOSER)}>
+          <button className="btn primary" onClick={() => router.push("/composer")}>
             + New quote
           </button>
         </div>

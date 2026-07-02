@@ -7,6 +7,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 
@@ -18,6 +19,7 @@ interface MenuItem {
 export function NewMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const openModal = useOpenModal();
 
   // Close when clicking outside
@@ -39,7 +41,7 @@ export function NewMenu() {
     },
     {
       label: "New quote",
-      action: () => { openModal(MODAL.COMPOSER); setOpen(false); },
+      action: () => { router.push("/composer"); setOpen(false); },
     },
   ];
 

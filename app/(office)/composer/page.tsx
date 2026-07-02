@@ -3,48 +3,28 @@
 /**
  * Composer page — pixel-faithful port of the prototype's vComposer().
  * Renders the "New quote" Good · Better · Best composer.
- * Uses SAMPLE_LEADS / SAMPLE_ESTIMATES from lib/prototype-sample.ts.
- * No live hooks. All sample values baked in.
+ * Wired to the Zustand app-store (leads + estimates). The markup mirrors the
+ * prototype; only the action handlers are live.
  *
  * Prototype reference: elas-crm-prototype.html lines 7031–7139.
  *
- * STUBS (visual / no-op):
- *   - composerPickCust(id)   — pick an existing lead from the search dropdown
- *   - composerNewCust(name)  — create a new customer on the fly
- *   - composerClearCust()    — change the selected customer
- *   - composerAccel('gbb')   — switch to 3-option GBB mode
- *   - composerAccel('ai')    — toggle AI draft panel
- *   - composerAccel('tmpl')  — toggle template panel
- *   - useTmpl(key)           — apply a template
- *   - aiDraft()              — AI drafts line items (simulated)
- *   - gbbDraft()             — AI builds Good/Better/Best (simulated)
- *   - gbbMakeRec(k)          — change recommended GBB tier
- *   - gbbEditTier(k)         — edit an individual GBB tier
- *   - gbbSingleInstead()     — revert GBB to single quote
- *   - setLineCost(i, val)    — update cost on a line
- *   - addLine()              — add a blank line
- *   - removeLine(i)          — remove a line
- *   - savePbLine(i)          — save line to pricebook
- *   - toggleOptLine(i)       — mark line optional
- *   - togglePhotoLine(i)     — attach photo to line
- *   - addPbToQuote(i)        — add pricebook item
- *   - setPricing(k, v)       — change disc/dep/tax
- *   - saveDraftComposer()    — save as draft
- *   - previewComposer()      — preview as customer
- *   - sendComposer()         — send the quote
- *   - descMic()              — dictate job description
- *   - sendComposerAll3()     — send all 3 GBB options
+ * Deferred (intentional no-ops — see inline comments):
+ *   - previewComposer()  — needs the customer-facing quote page
+ *   - savePbLine(i)      — needs a store pricebook
+ *   - descMic() / 🎤     — no speech API in the app yet
  */
 
 import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  SAMPLE_LEADS,
   SAMPLE_ESTIMATES,
   calcQuote,
   SAMPLE_BRAND,
-  type SampleLead,
   type SampleEstimateLine,
 } from "@/lib/prototype-sample";
+import { useLeads, useAppStore } from "@/lib/store/app-store";
+import type { Lead, Estimate, EstimateLine } from "@/lib/store/types";
+import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -52,21 +32,33 @@ function fmt$(n: number): string {
   return "$" + Math.round(n).toLocaleString("en-US");
 }
 
-// ---- stubs ------------------------------------------------------------------
+// ---- job-type + draft helpers (mirror the prototype) ------------------------
 
-function stub(action: string, ...args: unknown[]) {
-  // eslint-disable-next-line no-console
-  console.log(`[stub] ${action}`, ...args);
+/** Classify a free-text job description into a seed bucket. */
+function jobTypeOf(t: string): string {
+  const s = (t || "").toLowerCase();
+  if (/water heater|tankless|no hot water|pilot|heater/.test(s)) return "water heater";
+  if (/drain|clog|jet|sewer|camera|backup/.test(s)) return "drain";
+  if (/toilet/.test(s)) return "toilet";
+  return "general";
 }
 
-// ---- GBB seed data (mirrors prototype's GBB_SEEDS for "water heater") ------
+// Note: the former `stub(...)` console-log helper was removed — every action
+// is now either wired to the store or an explicit deferred no-op.
+
+// ---- GBB seed data (mirrors prototype's GBB_SEEDS) --------------------------
+
+/** A GBB tier line — extends the sample line with the AI-confidence flag. */
+interface GBBLine extends SampleEstimateLine {
+  lc?: boolean;
+}
 
 interface GBBTier {
   k: "good" | "better" | "best";
   name: string;
   title: string;
   note: string;
-  lines: SampleEstimateLine[];
+  lines: GBBLine[];
 }
 
 interface GBBDraft {
@@ -116,6 +108,166 @@ const WATER_HEATER_GBB: GBBDraft = {
     },
   ],
 };
+
+const DRAIN_GBB: GBBDraft = {
+  rec: "better",
+  opts: [
+    {
+      k: "good",
+      name: "Good",
+      title: "Clear the clog",
+      note: "Cable the line, water flowing again today.",
+      lines: [{ d: "Cable / snake the line", q: 1, r: 295 }],
+    },
+    {
+      k: "better",
+      name: "Better",
+      title: "Clear + see why",
+      note: "Jetting scours the pipe; the camera shows what caused it.",
+      lines: [
+        { d: "Hydro-jet the line", q: 1, r: 450 },
+        { d: "Camera inspection w/ locate", q: 1, r: 285, tune: true },
+      ],
+    },
+    {
+      k: "best",
+      name: "Best",
+      title: "Fix it for good",
+      note: "Adds the cleanout that makes every future clear cheap.",
+      lines: [
+        { d: "Hydro-jet the line", q: 1, r: 450 },
+        { d: "Camera inspection w/ locate", q: 1, r: 285 },
+        { d: "Install exterior cleanout", q: 1, r: 780, tune: true },
+      ],
+    },
+  ],
+};
+
+const TOILET_GBB: GBBDraft = {
+  rec: "better",
+  opts: [
+    {
+      k: "good",
+      name: "Good",
+      title: "Install yours",
+      note: "You buy the toilet, we set it right.",
+      lines: [
+        { d: "Install customer-supplied toilet", q: 1, r: 225 },
+        { d: "Wax-free seal + new bolts", q: 1, r: 45 },
+      ],
+    },
+    {
+      k: "better",
+      name: "Better",
+      title: "Supplied & installed",
+      note: "Toto Drake — the workhorse. Supplied, set, hauled away.",
+      lines: [
+        { d: "Toilet — Toto Drake, supplied & installed", q: 1, r: 460 },
+        { d: "Haul away old fixture", q: 1, r: 45, tune: true },
+      ],
+    },
+    {
+      k: "best",
+      name: "Best",
+      title: "Upgrade + stop future leaks",
+      note: "Comfort-height Toto + the shut-off valves that always fail, replaced now.",
+      lines: [
+        { d: "Toilet — Toto Drake II comfort height, supplied & installed", q: 1, r: 585 },
+        { d: "Replace angle stop + supply line", q: 1, r: 95, tune: true },
+        { d: "Haul away old fixture", q: 1, r: 45 },
+      ],
+    },
+  ],
+};
+
+/** Deep-clone a GBB draft so builder edits never mutate a shared seed. */
+function cloneGbb(g: GBBDraft): GBBDraft {
+  return {
+    rec: g.rec,
+    opts: g.opts.map((o) => ({ ...o, lines: o.lines.map((l) => ({ ...l })) })),
+  };
+}
+
+/**
+ * Pick the seed GBBDraft for a known job type, else build a generic 3-tier
+ * draft from the current builder lines (mirrors the prototype's gbbFor()).
+ */
+function gbbFor(type: string, baseLines: ComposerLine[]): GBBDraft {
+  if (type === "water heater") return cloneGbb(WATER_HEATER_GBB);
+  if (type === "drain") return cloneGbb(DRAIN_GBB);
+  if (type === "toilet") return cloneGbb(TOILET_GBB);
+
+  // Generic fallback — no seed for this type.
+  const filtered: GBBLine[] = baseLines
+    .filter((l) => (l.d ?? "").trim())
+    .map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0, lc: true }));
+  const base: GBBLine[] =
+    filtered.length > 0
+      ? filtered
+      : [{ d: "Labor & materials — as described", q: 1, r: 850, lc: true }];
+  const sum = base.reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
+
+  const good: GBBLine[] = base.map((l) => ({ ...l }));
+  const better: GBBLine[] = [
+    ...base.map((l) => ({ ...l })),
+    {
+      d: "Preventive maintenance & 12-mo protection",
+      q: 1,
+      r: Math.max(89, Math.round((sum * 0.12) / 10) * 10),
+      lc: true,
+      tune: true,
+    },
+  ];
+  const best: GBBLine[] = [
+    {
+      d: "Full replacement / upgrade (scoped on site)",
+      q: 1,
+      r: Math.round((sum * 1.8) / 10) * 10,
+      lc: true,
+    },
+  ];
+
+  return {
+    rec: "better",
+    opts: [
+      { k: "good", name: "Good", title: "The essentials", note: "Covers the job as described.", lines: good },
+      { k: "better", name: "Better", title: "Job + protection", note: "Adds maintenance so it lasts.", lines: better },
+      { k: "best", name: "Best", title: "Full upgrade", note: "Replace / upgrade — scoped on site.", lines: best },
+    ],
+  };
+}
+
+/**
+ * Build starter line items from a free-text description (mirrors the
+ * prototype's draftLinesFor()). Keyword → template lines, else generic.
+ */
+function draftLinesFor(desc: string): ComposerLine[] {
+  const s = (desc || "").toLowerCase();
+  let template: { d: string; q: number; r: number }[] | null = null;
+  if (/water heater|heater/.test(s)) template = TEMPLATES[0]?.lines ?? null;
+  else if (/drain|clog|jet/.test(s)) template = TEMPLATES[1]?.lines ?? null;
+  else if (/toilet/.test(s)) template = TEMPLATES[2]?.lines ?? null;
+
+  let lines: ComposerLine[];
+  if (template) {
+    // Deep-clone so we never share references with the template seed.
+    lines = template.map((l) => ({ d: l.d, q: l.q, r: l.r }));
+  } else {
+    lines = [
+      { d: "Labor — " + desc.slice(0, 48), q: 3, r: 170, c: 0 },
+      { d: "Materials (estimated)", q: 1, r: 350, c: 0 },
+    ];
+  }
+
+  // Contextual touch: two of something → qty 2 on matching lines.
+  if (s.includes("two") || s.includes("2 ")) {
+    lines = lines.map((l) =>
+      (l.d ?? "").toLowerCase().includes("toilet") ? { ...l, q: 2 } : l
+    );
+  }
+
+  return lines;
+}
 
 // ---- Pricebook items (mirrors prototype seed) -------------------------------
 
@@ -182,6 +334,7 @@ interface ComposerLine {
   opt?: boolean;
   photo?: boolean;
   tune?: boolean;
+  lc?: boolean;
 }
 
 type ComposerMode = "builder" | "gbb-prompt" | "gbb-review";
@@ -189,11 +342,12 @@ type ComposerMode = "builder" | "gbb-prompt" | "gbb-review";
 interface ComposerState {
   leadId: number | null;
   custQuery: string;
-  custMatches: SampleLead[];
+  custMatches: Lead[];
   mode: ComposerMode;
   lines: ComposerLine[];
   desc: string;
   aiOpen: boolean;
+  aiDrafted: boolean;
   tmplOpen: boolean;
   pbOpen: boolean;
   priceOpen: boolean;
@@ -204,16 +358,19 @@ interface ComposerState {
   terms: number | null;
   intro: string;
   gbb: GBBDraft | null;
+  gbbType?: string;
+  gbbEdit?: "good" | "better" | "best" | null;
 }
 
 const INITIAL_STATE: ComposerState = {
-  leadId: 5, // pre-select Sandy Whitfield for demo richness
+  leadId: null, // overridden from ?lead= in ComposerPage; else the customer picker shows
   custQuery: "",
   custMatches: [],
   mode: "builder",
   lines: [{ d: "", q: 1, r: 0 }],
   desc: "",
   aiOpen: false,
+  aiDrafted: false,
   tmplOpen: false,
   pbOpen: false,
   priceOpen: false,
@@ -224,6 +381,8 @@ const INITIAL_STATE: ComposerState = {
   terms: null,
   intro: "",
   gbb: null,
+  gbbType: undefined,
+  gbbEdit: null,
 };
 
 // ---- GBB tier total ---------------------------------------------------------
@@ -242,18 +401,34 @@ function pricingSummary(p: { disc: number; dep: number; tax: number }): string {
   return parts.join(" · ");
 }
 
+// ---- ComposerLine[] → EstimateLine[] (drop tune/lc; keep d,q,r,c,opt,photo) -
+
+function toEstimateLines(lines: ComposerLine[]): EstimateLine[] {
+  return lines.map((l) => {
+    const e: EstimateLine = { d: l.d, q: l.q, r: l.r };
+    if (l.c != null) e.c = l.c;
+    if (l.opt != null) e.opt = l.opt;
+    if (l.photo != null) e.photo = l.photo;
+    return e;
+  });
+}
+
 // ---- Customer selector component -------------------------------------------
 
 function CustomerSelector({
   state,
   onUpdate,
+  leads,
+  onNewCust,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
+  leads: Lead[];
+  onNewCust: () => void;
 }) {
-  const lead: SampleLead | null =
+  const lead: Lead | null =
     state.leadId != null
-      ? (SAMPLE_LEADS.find((l) => l.id === state.leadId) ?? null)
+      ? (leads.find((l) => l.id === state.leadId) ?? null)
       : null;
 
   if (lead) {
@@ -265,10 +440,7 @@ function CustomerSelector({
         <span
           className="linklike"
           style={{ marginLeft: 6 }}
-          onClick={() => {
-            onUpdate({ leadId: null, custQuery: "" });
-            stub("composerClearCust");
-          }}
+          onClick={() => onUpdate({ leadId: null, custQuery: "" })}
         >
           change
         </span>
@@ -278,14 +450,16 @@ function CustomerSelector({
 
   const q = (state.custQuery ?? "").trim().toLowerCase();
   const matches = q
-    ? SAMPLE_LEADS.filter(
-        (x) =>
-          !x.book &&
-          x.stage !== "Lost" &&
-          ((x.name ?? "") + " " + (x.job ?? ""))
-            .toLowerCase()
-            .includes(q)
-      ).slice(0, 6)
+    ? leads
+        .filter(
+          (x) =>
+            !x.book &&
+            x.stage !== "Lost" &&
+            ((x.name ?? "") + " " + (x.job ?? ""))
+              .toLowerCase()
+              .includes(q)
+        )
+        .slice(0, 6)
     : [];
 
   return (
@@ -322,10 +496,7 @@ function CustomerSelector({
             <div
               key={x.id}
               className="cmp-opt"
-              onClick={() => {
-                onUpdate({ leadId: x.id, custQuery: "" });
-                stub("composerPickCust", x.id);
-              }}
+              onClick={() => onUpdate({ leadId: x.id, custQuery: "" })}
             >
               <b>{x.name}</b>
               {x.job ? (
@@ -333,13 +504,7 @@ function CustomerSelector({
               ) : null}
             </div>
           ))}
-          <div
-            className="cmp-opt cmp-add"
-            onClick={() => {
-              onUpdate({ leadId: null, custQuery: state.custQuery });
-              stub("composerNewCust", state.custQuery);
-            }}
-          >
+          <div className="cmp-opt cmp-add" onClick={onNewCust}>
             + Add new customer: &quot;<b>{state.custQuery}</b>&quot;
           </div>
         </div>
@@ -353,9 +518,11 @@ function CustomerSelector({
 function GBBPromptMode({
   state,
   onUpdate,
+  selectedLead,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
+  selectedLead: Lead | null;
 }) {
   return (
     <div className="card">
@@ -376,9 +543,16 @@ function GBBPromptMode({
       <button
         className="btn primary"
         onClick={() => {
-          // STUB: in real app, AI calls gbbDraft() then sets c.gbb
-          onUpdate({ mode: "gbb-review", gbb: WATER_HEATER_GBB });
-          stub("gbbDraft");
+          // Pick the GBB seed by job type; recommended tier's lines seed the builder.
+          const type = jobTypeOf(state.desc + " " + (selectedLead?.job ?? ""));
+          const gbb = gbbFor(type, state.lines);
+          const rec = gbb.opts.find((o) => o.k === gbb.rec) ?? gbb.opts[0];
+          onUpdate({
+            mode: "gbb-review",
+            gbb,
+            gbbType: type,
+            lines: (rec?.lines ?? []).map((l) => ({ ...l })),
+          });
         }}
       >
         Build 3 options
@@ -386,7 +560,9 @@ function GBBPromptMode({
       <button
         className="btn"
         style={{ marginLeft: 8 }}
-        onClick={() => stub("descMic")}
+        onClick={() => {
+          // deferred: no speech API — dictate is a no-op for now
+        }}
         title="talk it instead of typing it"
       >
         🎤
@@ -403,9 +579,15 @@ function GBBPromptMode({
 function GBBReviewMode({
   state,
   onUpdate,
+  onEditTier,
+  onSendAll3,
+  onPreview,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
+  onEditTier: (k: "good" | "better" | "best") => void;
+  onSendAll3: () => void;
+  onPreview: () => void;
 }) {
   const g = state.gbb!;
   const lcN = g.opts.reduce(
@@ -500,17 +682,14 @@ function GBBReviewMode({
               >
                 <button
                   className="btn sm ghost"
-                  onClick={() => stub("gbbEditTier", o.k)}
+                  onClick={() => onEditTier(o.k)}
                 >
                   Edit
                 </button>
                 {!isRec && (
                   <button
                     className="btn sm ghost"
-                    onClick={() => {
-                      onUpdate({ gbb: { ...g, rec: o.k } });
-                      stub("gbbMakeRec", o.k);
-                    }}
+                    onClick={() => onUpdate({ gbb: { ...g, rec: o.k } })}
                   >
                     ★ Recommend this
                   </button>
@@ -533,24 +712,17 @@ function GBBReviewMode({
       >
         <span
           className="linklike"
-          onClick={() => {
-            onUpdate({ mode: "builder", gbb: null });
-            stub("gbbSingleInstead");
-          }}
+          onClick={() =>
+            onUpdate({ mode: "builder", gbb: null, gbbType: undefined, gbbEdit: null })
+          }
         >
           use a single quote instead
         </span>
         <span style={{ display: "flex", gap: 10 }}>
-          <button
-            className="btn ghost"
-            onClick={() => stub("previewComposer")}
-          >
+          <button className="btn ghost" onClick={onPreview}>
             Preview as customer
           </button>
-          <button
-            className="btn primary"
-            onClick={() => stub("sendComposerAll3")}
-          >
+          <button className="btn primary" onClick={onSendAll3}>
             Looks right — send all 3
           </button>
         </span>
@@ -564,13 +736,21 @@ function GBBReviewMode({
 function BuilderMode({
   state,
   onUpdate,
+  leads,
+  onSaveDraft,
+  onSend,
+  onPreview,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
+  leads: Lead[];
+  onSaveDraft: () => void;
+  onSend: () => void;
+  onPreview: () => void;
 }) {
-  const lead: SampleLead | null =
+  const lead: Lead | null =
     state.leadId != null
-      ? (SAMPLE_LEADS.find((l) => l.id === state.leadId) ?? null)
+      ? (leads.find((l) => l.id === state.leadId) ?? null)
       : null;
 
   const m = calcQuote(
@@ -607,13 +787,59 @@ function BuilderMode({
     onUpdate({
       lines: [...state.lines, { d: pb.d, q: 1, r: pb.r }],
     });
-    stub("addPbToQuote", pb.d);
+  }
+
+  // Return to the 3-option review: write current lines back into the edited
+  // tier, then restore the builder to the recommended tier's lines.
+  function backToAll3() {
+    const g = state.gbb;
+    const edited = state.gbbEdit;
+    if (!g || !edited) {
+      onUpdate({ mode: "gbb-review", gbbEdit: null });
+      return;
+    }
+    const nextGbb: GBBDraft = {
+      ...g,
+      opts: g.opts.map((o) =>
+        o.k === edited
+          ? {
+              ...o,
+              lines: state.lines.map((l) => ({
+                d: l.d,
+                q: l.q,
+                r: l.r,
+                ...(l.c != null ? { c: l.c } : {}),
+                ...(l.opt != null ? { opt: l.opt } : {}),
+                ...(l.photo != null ? { photo: l.photo } : {}),
+                ...(l.tune != null ? { tune: l.tune } : {}),
+                ...(l.lc != null ? { lc: l.lc } : {}),
+              })),
+            }
+          : o
+      ),
+    };
+    const rec = nextGbb.opts.find((o) => o.k === nextGbb.rec) ?? nextGbb.opts[0];
+    onUpdate({
+      mode: "gbb-review",
+      gbbEdit: null,
+      gbb: nextGbb,
+      lines: (rec?.lines ?? []).map((l) => ({ ...l })),
+    });
   }
 
   const priceSum = pricingSummary(state.pricing);
 
   return (
     <>
+      {state.gbbEdit && (
+        <div className="banner">
+          Editing the <b>{state.gbbEdit.toUpperCase()}</b> option — changes save
+          into that tier.{" "}
+          <span className="linklike" onClick={backToAll3}>
+            ← back to all 3
+          </span>
+        </div>
+      )}
       {/* Accelerators */}
       <div style={{ fontWeight: 700, fontSize: 13, margin: "2px 0 7px" }}>
         Build it
@@ -623,28 +849,19 @@ function BuilderMode({
       >
         <button
           className="btn qstart"
-          onClick={() => {
-            onUpdate({ mode: "gbb-prompt", gbb: null });
-            stub("composerAccel", "gbb");
-          }}
+          onClick={() => onUpdate({ mode: "gbb-prompt", gbb: null })}
         >
           3 options · Good · Better · Best
         </button>
         <button
           className={`btn qstart${state.aiOpen ? " primary" : ""}`}
-          onClick={() => {
-            onUpdate({ aiOpen: !state.aiOpen, tmplOpen: false });
-            stub("composerAccel", "ai");
-          }}
+          onClick={() => onUpdate({ aiOpen: !state.aiOpen, tmplOpen: false })}
         >
           ✦ Draft with AI
         </button>
         <button
           className={`btn qstart${state.tmplOpen ? " primary" : ""}`}
-          onClick={() => {
-            onUpdate({ tmplOpen: !state.tmplOpen, aiOpen: false });
-            stub("composerAccel", "tmpl");
-          }}
+          onClick={() => onUpdate({ tmplOpen: !state.tmplOpen, aiOpen: false })}
         >
           From a template
         </button>
@@ -663,13 +880,22 @@ function BuilderMode({
           </div>
           <button
             className="btn sm primary"
-            onClick={() => stub("aiDraft")}
+            onClick={() => {
+              if (!state.desc.trim()) return; // no-op on empty description
+              onUpdate({
+                lines: draftLinesFor(state.desc),
+                aiOpen: false,
+                aiDrafted: true,
+              });
+            }}
           >
             Draft lines
           </button>{" "}
           <button
             className="btn sm ghost"
-            onClick={() => stub("descMic")}
+            onClick={() => {
+              // deferred: no speech API — dictate is a no-op for now
+            }}
             title="talk it instead of typing it"
           >
             Dictate
@@ -700,13 +926,12 @@ function BuilderMode({
               <button
                 key={t.k}
                 className="tmpl"
-                onClick={() => {
+                onClick={() =>
                   onUpdate({
                     lines: t.lines.map((l) => ({ ...l })),
                     tmplOpen: false,
-                  });
-                  stub("useTmpl", t.k);
-                }}
+                  })
+                }
               >
                 {t.t}
                 <small>{t.sub}</small>
@@ -718,7 +943,17 @@ function BuilderMode({
 
       {/* Line items */}
       <div className="card">
-        <h3>Line items</h3>
+        <h3>
+          Line items
+          {state.aiDrafted && (
+            <span
+              className="pill"
+              style={{ background: "var(--purple-bg)", color: "var(--purple)" }}
+            >
+              AI draft — edit freely
+            </span>
+          )}
+        </h3>
         <table className="lineitems">
           <thead>
             <tr>
@@ -776,10 +1011,9 @@ function BuilderMode({
                       placeholder="—"
                       title="What you paid (owner-only) — set it and we suggest a price at your markup; margin shows itself."
                       style={{ width: 78 }}
-                      onChange={(e) => {
-                        updateLine(i, { c: +e.target.value || undefined });
-                        stub("setLineCost", i, e.target.value);
-                      }}
+                      onChange={(e) =>
+                        updateLine(i, { c: +e.target.value || undefined })
+                      }
                     />
                   </td>
                   <td style={{ textAlign: "right", fontWeight: 700 }}>
@@ -799,27 +1033,23 @@ function BuilderMode({
                         <button
                           className={`optchip${x.opt ? " on" : ""}`}
                           title="Optional add-on — the customer can add or skip this on their quote page"
-                          onClick={() => {
-                            updateLine(i, { opt: !x.opt });
-                            stub("toggleOptLine", i);
-                          }}
+                          onClick={() => updateLine(i, { opt: !x.opt })}
                         >
                           {x.opt ? "✓ Optional" : "Make optional"}
                         </button>{" "}
                         <button
                           className="btn sm ghost"
                           title="Attach a photo the customer sees beside this line"
-                          onClick={() => {
-                            updateLine(i, { photo: !x.photo });
-                            stub("togglePhotoLine", i);
-                          }}
+                          onClick={() => updateLine(i, { photo: !x.photo })}
                         >
                           {x.photo ? "✓ Photo" : "+ Photo"}
                         </button>{" "}
                         <button
                           className="btn sm ghost"
                           title="Save this line to your pricebook so you can reuse it"
-                          onClick={() => stub("savePbLine", i)}
+                          onClick={() => {
+                            // deferred: needs a store pricebook — no-op for now
+                          }}
                         >
                           Save to book
                         </button>{" "}
@@ -983,15 +1213,14 @@ function BuilderMode({
                 min={0}
                 value={state.pricing.disc || ""}
                 placeholder="0"
-                onChange={(e) => {
+                onChange={(e) =>
                   onUpdate({
                     pricing: {
                       ...state.pricing,
                       disc: Math.max(0, +e.target.value || 0),
                     },
-                  });
-                  stub("setPricing", "disc", e.target.value);
-                }}
+                  })
+                }
               />
             </div>
             <div className="field" style={{ flex: 1 }}>
@@ -1001,15 +1230,14 @@ function BuilderMode({
                 min={0}
                 value={state.pricing.dep || ""}
                 placeholder="0"
-                onChange={(e) => {
+                onChange={(e) =>
                   onUpdate({
                     pricing: {
                       ...state.pricing,
                       dep: Math.max(0, +e.target.value || 0),
                     },
-                  });
-                  stub("setPricing", "dep", e.target.value);
-                }}
+                  })
+                }
               />
             </div>
             <div className="field" style={{ flex: 1 }}>
@@ -1020,15 +1248,14 @@ function BuilderMode({
                 step={0.25}
                 value={state.pricing.tax || ""}
                 placeholder="0"
-                onChange={(e) => {
+                onChange={(e) =>
                   onUpdate({
                     pricing: {
                       ...state.pricing,
                       tax: Math.max(0, +e.target.value || 0),
                     },
-                  });
-                  stub("setPricing", "tax", e.target.value);
-                }}
+                  })
+                }
               />
             </div>
           </div>
@@ -1120,22 +1347,13 @@ function BuilderMode({
           marginTop: 16,
         }}
       >
-        <button
-          className="btn ghost"
-          onClick={() => stub("previewComposer")}
-        >
+        <button className="btn ghost" onClick={onPreview}>
           Preview
         </button>
-        <button
-          className="btn ghost"
-          onClick={() => stub("saveDraftComposer")}
-        >
+        <button className="btn ghost" onClick={onSaveDraft}>
           Save draft
         </button>
-        <button
-          className="btn primary"
-          onClick={() => stub("sendComposer")}
-        >
+        <button className="btn primary" onClick={onSend}>
           Send quote
         </button>
       </div>
@@ -1146,26 +1364,140 @@ function BuilderMode({
 // ---- Main page --------------------------------------------------------------
 
 export default function ComposerPage() {
-  const [cs, setCs] = useState<ComposerState>(INITIAL_STATE);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const leads = useLeads();
+  const addEstimate = useAppStore((s) => s.addEstimate);
+  const moveLeadStage = useAppStore((s) => s.moveLeadStage);
+  const addLeadNote = useAppStore((s) => s.addLeadNote);
+  const addLead = useAppStore((s) => s.addLead);
+
+  // Seed leadId from ?lead= once (read-only initializer so state edits persist).
+  const [cs, setCs] = useState<ComposerState>(() => {
+    const raw = searchParams.get("lead");
+    const parsed = raw != null ? Number(raw) : NaN;
+    const leadId = Number.isFinite(parsed) ? parsed : null;
+    return { ...INITIAL_STATE, leadId };
+  });
 
   function update(patch: Partial<ComposerState>) {
     setCs((prev) => ({ ...prev, ...patch }));
+  }
+
+  const selectedLead: Lead | null =
+    cs.leadId != null ? (leads.find((l) => l.id === cs.leadId) ?? null) : null;
+
+  // --- persistence helpers --------------------------------------------------
+
+  function hasRealLine(): boolean {
+    return cs.lines.some((l) => (l.d ?? "").trim());
+  }
+
+  function saveDraftComposer() {
+    if (!hasRealLine()) return; // nothing to save (no toast system — just return)
+    // Draft requires a lead because addEstimate needs a numeric leadId.
+    if (!selectedLead) return;
+    addEstimate({
+      leadId: selectedLead.id,
+      title: selectedLead.job || "Quote draft",
+      status: "draft",
+      age: 0,
+      viewed: false,
+      fu: { on: cs.fuOn, stage: 0 },
+      lines: toEstimateLines(cs.lines),
+      pricing: { ...cs.pricing },
+      validDays: cs.validDays,
+    });
+    router.push("/quotes");
+  }
+
+  function sendComposer() {
+    if (!selectedLead) return; // send requires a lead
+    const e: Estimate = addEstimate({
+      leadId: selectedLead.id,
+      title: selectedLead.job || "Quote",
+      status: "sent",
+      age: 0,
+      viewed: false,
+      fu: { on: cs.fuOn, stage: 0 },
+      lines: toEstimateLines(cs.lines),
+      pricing: { ...cs.pricing },
+      validDays: cs.validDays,
+    });
+    addLeadNote(selectedLead.id, {
+      type: "text",
+      from: "auto",
+      t: `Your quote ${e.num} is ready — view and approve.`,
+      when: "Just now",
+    });
+    if (
+      STAGE_ORDER.indexOf(selectedLead.stage as (typeof STAGE_ORDER)[number]) <
+      STAGE_ORDER.indexOf("Quote Sent")
+    ) {
+      moveLeadStage(selectedLead.id, "Quote Sent");
+    }
+    router.push("/pipeline");
+  }
+
+  function previewComposer() {
+    // deferred: customer preview page
+  }
+
+  function composerNewCust() {
+    const name = cs.custQuery.trim();
+    if (!name) return;
+    const lead = addLead({
+      name,
+      phone: "—",
+      source: "Added manually",
+      stage: "New customer",
+      job: "",
+    });
+    update({ leadId: lead.id, custQuery: "" });
+  }
+
+  function editTier(k: "good" | "better" | "best") {
+    const tier = cs.gbb?.opts.find((o) => o.k === k);
+    if (!tier) return;
+    update({
+      mode: "builder",
+      gbbEdit: k,
+      lines: tier.lines.map((l) => ({ ...l })),
+    });
   }
 
   return (
     <div>
       <h1>New quote</h1>
 
-      <CustomerSelector state={cs} onUpdate={update} />
+      <CustomerSelector
+        state={cs}
+        onUpdate={update}
+        leads={leads}
+        onNewCust={composerNewCust}
+      />
 
       {cs.mode === "gbb-prompt" && (
-        <GBBPromptMode state={cs} onUpdate={update} />
+        <GBBPromptMode state={cs} onUpdate={update} selectedLead={selectedLead} />
       )}
       {cs.mode === "gbb-review" && cs.gbb && (
-        <GBBReviewMode state={cs} onUpdate={update} />
+        <GBBReviewMode
+          state={cs}
+          onUpdate={update}
+          onEditTier={editTier}
+          onSendAll3={sendComposer}
+          onPreview={previewComposer}
+        />
       )}
       {cs.mode === "builder" && (
-        <BuilderMode state={cs} onUpdate={update} />
+        <BuilderMode
+          state={cs}
+          onUpdate={update}
+          leads={leads}
+          onSaveDraft={saveDraftComposer}
+          onSend={sendComposer}
+          onPreview={previewComposer}
+        />
       )}
     </div>
   );
