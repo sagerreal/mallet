@@ -152,6 +152,11 @@ export interface Job {
   acts: unknown[];
   visits: Visit[];
   checklist?: { name: string; items: ChecklistItem[] };
+  // Field close-out (tech done-block): what-was-done note shown on the invoice,
+  // and the "handed to the office to bill" flag.
+  completion?: string;
+  invRequested?: boolean;
+  expected?: number;
 }
 
 // ---- Invoice ---------------------------------------------------------------

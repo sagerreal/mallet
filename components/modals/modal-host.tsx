@@ -25,6 +25,7 @@ import { InvoiceModalContent } from "./invoice-modal";
 import { TechJobModalContent } from "./tech-job-modal";
 import { CustQuoteModalContent } from "./cust-quote-modal";
 import { CustInvoiceModalContent } from "./cust-invoice-modal";
+import { CloseOutModalContent } from "./close-out-modal";
 import { Modal } from "./modal";
 import {
   VisitModalContent,
@@ -113,6 +114,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.CUST_INVOICE} onClose={close}>
         <CustInvoiceModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.CLOSE_OUT} onClose={close} wide>
+        <CloseOutModalContent />
       </Modal>
     </>
   );

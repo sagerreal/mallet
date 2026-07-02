@@ -14,8 +14,11 @@
  *   - found-work / add-ons (aoSection)                     // deferred: found-work add-ons
  *   - interactive "Before you leave" capture (verifySection) — attached checklist
  *     renders READ-ONLY when present                       // deferred: interactive checklist capture
- *   - on-site close-out / collect (techDoneBlock)          // deferred: on-site close-out / collect
  *   - tech GBB + on-glass signature (openTechQuote / tq)   // deferred: tech GBB + on-glass signature
+ *
+ * The on-site close-out / collect HERO (techDoneBlock, prototype 5698-5760) now
+ * renders INLINE via DoneBlock when the job is done — replacing the slim
+ * "✓ Done · Reopen" line (a small Reopen affordance is kept beside it).
  */
 
 "use client";
@@ -24,10 +27,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   useActiveModal,
   useOpenModal,
+  useCloseModal,
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, Visit, Lead } from "@/lib/store/types";
+import type { Job, Visit, Lead, Invoice } from "@/lib/store/types";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -53,6 +57,16 @@ function fmt$(n: number): string {
 
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
+}
+
+/** invPaid — sum of payment amounts (prototype invPaid). */
+function invPaid(i: Invoice): number {
+  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
+}
+
+/** invDue — total − deposit − payments, floored at 0 (prototype invDue). */
+function invDue(i: Invoice): number {
+  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
 }
 
 /** priced → "install" (blue), unpriced job → "service" (brown), estimate → estimate (prototype jobMode, 4002). */
@@ -530,21 +544,174 @@ function NoteFeed({ job }: { job: Job }) {
   );
 }
 
+// ---- on-site close-out HERO (prototype techDoneBlock, 5698-5760) -----------
+// The "job done → get paid on site" block, shown when the job is done. Branches
+// on the invoice / due / card-on-file (mirrors the prototype's non-install path;
+// the install-specific split is deferred). "Take payment" opens the CLOSE_OUT
+// modal; charge-on-file records straight through recordPayment; send-to-office
+// flags invRequested. A small Reopen affordance sits above the card.
+
+interface DoneBlockProps {
+  job: Job;
+  lead: Lead | undefined;
+  invoice: Invoice | undefined;
+  onOpenCloseOut: () => void;
+  onOpenInvoice: (invoiceId: number) => void;
+  onChargeOnFile: () => void;
+  onSendToOffice: () => void;
+  onReopen: () => void;
+}
+
+function DoneBlock({
+  job,
+  lead,
+  invoice,
+  onOpenCloseOut,
+  onOpenInvoice,
+  onChargeOnFile,
+  onSendToOffice,
+  onReopen,
+}: DoneBlockProps) {
+  // a draft invoice may already exist (opened pay then backed out) — that must
+  // NOT remove the send-to-office option; due is read off it when present.
+  const due = invoice ? invDue(invoice) : jobTotal(job);
+  const card = lead?.card ?? null;
+
+  const reopen = (
+    <div style={{ display: "flex", justifyContent: "flex-end", margin: "14px 0 0" }}>
+      <button className="btn sm ghost" onClick={onReopen}>
+        ↩ Reopen
+      </button>
+    </div>
+  );
+
+  // Paid — a priced invoice fully settled.
+  if (invoice && (invoice.total ?? 0) > 0 && invDue(invoice) <= 0) {
+    return (
+      <>
+        {reopen}
+        <div className="tjpaid ok">
+          <div className="tjpaid-top">
+            <b>✓ Paid · {fmt$(invoice.total ?? 0)}</b>
+          </div>
+          <div className="tjpaid-sub">
+            <span className="linklike" onClick={() => onOpenInvoice(invoice.id)}>
+              receipt &amp; invoice
+            </span>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Handed to the office to bill.
+  if (job.invRequested) {
+    return (
+      <>
+        {reopen}
+        <div className="tjpaid ok">
+          <div className="tjpaid-top">
+            <b>✓ Sent to the office</b>
+          </div>
+          <div className="tjpaid-sub">
+            The office texts the customer a pay link ·{" "}
+            <span className="linklike" onClick={onOpenCloseOut}>
+              take payment instead
+            </span>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Due + card on file — charge it, take another way, or hand to the office.
+  if (due > 0 && card) {
+    return (
+      <>
+        {reopen}
+        <div className="tjpaid">
+          <div className="tjpaid-top">
+            <b>✓ Job done</b>
+            <span className="tjpaid-amt fig">{fmt$(due)}</span>
+          </div>
+          <button className="tjpaid-btn" onClick={onChargeOnFile}>
+            Charge {fmt$(due)} to {card.brand} ···· {card.last4}
+          </button>
+          <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
+            Take payment another way →
+          </button>
+          <button className="tjpaid-btn2" onClick={onSendToOffice}>
+            Send to the office to bill
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // Due, no card — take payment, or hand to the office.
+  if (due > 0) {
+    return (
+      <>
+        {reopen}
+        <div className="tjpaid">
+          <div className="tjpaid-top">
+            <b>✓ Job done</b>
+            <span className="tjpaid-amt fig">{fmt$(due)}</span>
+          </div>
+          <button className="tjpaid-btn" onClick={onOpenCloseOut}>
+            Take payment →
+          </button>
+          <button className="tjpaid-btn2" onClick={onSendToOffice}>
+            Send to the office to bill
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // No price yet — the office invoices it (opening close-out can set a bill).
+  return (
+    <>
+      {reopen}
+      <div className="tjpaid">
+        <div className="tjpaid-top">
+          <b>✓ Job done</b>
+        </div>
+        <div className="tjpaid-sub" style={{ marginBottom: 8 }}>
+          No price set — the office invoices it.
+        </div>
+        <button className="tjpaid-btn" onClick={onSendToOffice}>
+          Send to the office to bill
+        </button>
+        <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
+          Set a bill &amp; take payment →
+        </button>
+      </div>
+    </>
+  );
+}
+
 // ---- the modal body --------------------------------------------------------
 
 export function TechJobModalContent() {
   const activeModal = useActiveModal();
   const openModal = useOpenModal();
+  const close = useCloseModal();
 
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
+  const invoices = useAppStore((s) => s.invoices);
   const setVisitStatus = useAppStore((s) => s.setVisitStatus);
+  const updateJob = useAppStore((s) => s.updateJob);
+  const recordPayment = useAppStore((s) => s.recordPayment);
 
   const jobId = activeModal?.params?.jobId as number | undefined;
   const job = jobs.find((j) => j.id === jobId);
   if (!job) return null;
 
   const lead: Lead | undefined = leads.find((l) => l.id === job.leadId);
+  // the job's invoice links via invoice.jobId === job.id (NOT job.invoiceId).
+  const invoice: Invoice | undefined = invoices.find((i) => i.jobId === job.id);
   const custName = custNameOf(job, lead);
   const addr = job.addr || lead?.address || "";
   const quoted = jobQuoted(job);
@@ -557,7 +724,29 @@ export function TechJobModalContent() {
   function onVisitStatus(visitId: number, status: string) {
     if (!job) return;
     setVisitStatus(job.id, visitId, status);
-    // deferred: on-site close-out / collect (techDoneBlock payment flow on Done)
+  }
+
+  // ---- done-block handlers (prototype techChargeOnFile / techCollect /
+  //      sendForInvoicing) — compose existing store actions ------------------
+
+  function chargeOnFile() {
+    // charge the balance to the card on file — the "paid before they left" play.
+    if (!job || !invoice) return;
+    const card = lead?.card;
+    const dueNow = invDue(invoice);
+    if (dueNow <= 0 || !card) return;
+    recordPayment(invoice.id, { amt: dueNow, when: "Just now", method: "card", onFile: true });
+  }
+
+  function openCloseOut() {
+    if (!job) return;
+    openModal(MODAL.CLOSE_OUT, { jobId: job.id });
+  }
+
+  function sendToOffice() {
+    if (!job) return;
+    updateJob(job.id, { invRequested: true });
+    close();
   }
 
   function navigate() {
@@ -615,27 +804,20 @@ export function TechJobModalContent() {
         </div>
       )}
 
-      {/* 4. Field timer (hero when not done) — or the slim Done · Reopen line. */}
+      {/* 4. Field timer (hero when not done) — or the on-site close-out HERO. */}
       {done ? (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 8,
-            margin: "14px 0 2px",
+        <DoneBlock
+          job={job}
+          lead={lead}
+          invoice={invoice}
+          onOpenCloseOut={openCloseOut}
+          onOpenInvoice={(invoiceId) => openModal(MODAL.INVOICE, { invoiceId })}
+          onChargeOnFile={chargeOnFile}
+          onSendToOffice={sendToOffice}
+          onReopen={() => {
+            if (curVisit) onVisitStatus(curVisit.id, "scheduled");
           }}
-        >
-          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--green-700)" }}>✓ Done</span>
-          <button
-            className="btn sm ghost"
-            onClick={() => {
-              if (curVisit) onVisitStatus(curVisit.id, "scheduled");
-            }}
-          >
-            ↩ Reopen
-          </button>
-        </div>
+        />
       ) : curVisit ? (
         <FieldTimer key={curVisit.id} visit={curVisit} />
       ) : null}
