@@ -59,7 +59,7 @@ function VisitRow({ visit, leadId, techName }: VisitRowProps) {
       <div className="trig" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
         <button
           className="btn sm ghost"
-          onClick={() => openModal(MODAL.VISIT, { visitId: visit.id, leadId })}
+          onClick={() => openModal(MODAL.EVISIT, { leadId, visitId: visit.id })}
         >
           Open
         </button>

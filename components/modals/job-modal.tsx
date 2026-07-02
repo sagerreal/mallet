@@ -14,7 +14,10 @@
  * Deferred (surfaces not built yet):
  *   - the tech quote builder ("Build the price" / Edit) — a Field-area surface (tq)
  *   - the signed-agreement viewer (openSignedDoc)
- *   - smartPanel (skill-gap / conflict suggestions)
+ *   - smartPanel's ⏱ estimate line + split suggestion (need estJobHours →
+ *     pricebook/DUR_RULES the store doesn't seed); the dispatch suggestion IS built
+ *   - the checklist template picker / attached-checklist editor (need
+ *     state.verifyOn + state.checklists — only "+ Add a checklist" is built)
  *   - the skills-gap per-visit banner (needs suggestTechFor / techHasSkill)
  *   - the invoice modal (opened from the money pointer — Money-area task)
  */
@@ -494,6 +497,125 @@ function NoteFeed({ job }: { job: Job }) {
   );
 }
 
+// ---- smartPanel (prototype smartPanel, line 3880) --------------------------
+// Skill-gap / dispatch suggestion surface. The prototype gates three hints
+// behind state.opsAI flags: an estimated-hours line, a "split into N visits"
+// suggestion, and a "best fit crew" dispatch suggestion. The store carries no
+// opsAI flags and no pricebook/DUR_RULES, so:
+//   - deferred: the ⏱ estimate line and the split suggestion both need
+//     estJobHours(job), which reads the pricebook the store doesn't seed —
+//     render nothing for those two hints (degrade gracefully).
+//   - the dispatch suggestion is the hint that uses real store data
+//     (Tech.skills + this-day crew load), so it's replicated faithfully.
+// The .smartwrap / .smartsug markup + classes are kept exactly.
+
+const SKILL_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/hvac|furnace|condenser|mini.?split|heat pump|tune.?up|\bac\b|a\/c/i, "EPA 608 (HVAC)"],
+  [/panel|service upgrade|outlet|fixture|electrical|switch/i, "Electrical"],
+  [/backflow/i, "Backflow"],
+  [/\bgas\b/i, "Gas"],
+  [/drain|sewer|camera|jet|main line/i, "Drain / sewer"],
+  [/repipe|water heater|faucet|toilet|plumb/i, "Journeyman Plumber"],
+];
+
+/** The cert a job's title + line items imply (prototype jobNeededSkill, 3869). */
+function jobNeededSkill(job: Job): string | null {
+  const t = (job.title || "") + " " + (job.lines ?? []).map((l) => l.d).join(" ");
+  for (const [re, sk] of SKILL_RULES) if (re.test(t)) return sk;
+  return null;
+}
+
+/** Does a crew hold the needed cert, incl. the master→journeyman rollups (3870). */
+function techHasSkill(tc: Tech | undefined, sk: string | null): boolean {
+  if (!sk) return true;
+  if (!tc) return false;
+  const has = tc.skills ?? [];
+  if (has.includes(sk)) return true;
+  if (sk === "Journeyman Plumber" && has.includes("Master Plumber")) return true;
+  if (sk === "Electrical" && (has.includes("Master Electrician") || has.includes("Journeyman Electrician")))
+    return true;
+  return false;
+}
+
+/** Booked hours for a crew on a day, across all this job's placed visits (dayLoad, 3874). */
+function jobDayLoad(job: Job, techId: number, iso: string): number {
+  return (job.visits ?? [])
+    .filter((v) => v.techId === techId && v.date === iso)
+    .reduce((s, v) => s + v.dur, 0);
+}
+
+interface TechSuggestion {
+  tech: Tech;
+  skill: string | null;
+  reason: string;
+}
+
+/** Best-fit crew: cert-eligible (else any), lightest load that day (suggestTechFor, 3875). */
+function suggestTechFor(job: Job, techs: Tech[], iso: string): TechSuggestion | null {
+  const sk = jobNeededSkill(job);
+  const elig = techs.filter((t) => techHasSkill(t, sk));
+  const pool = elig.length ? elig : techs;
+  const sorted = [...pool].sort((a, b) => jobDayLoad(job, a.id, iso) - jobDayLoad(job, b.id, iso));
+  const t = sorted[0];
+  return t ? { tech: t, skill: sk, reason: `${sk ? sk + " · " : ""}lightest load ${colLabel(iso)}` } : null;
+}
+
+interface SmartPanelProps {
+  job: Job;
+  techs: Tech[];
+  onAssign: (techId: number) => void;
+}
+
+function SmartPanel({ job, techs, onAssign }: SmartPanelProps) {
+  // deferred: the ⏱ Mallet-estimate line and the split suggestion both need
+  // estJobHours (pricebook + DUR_RULES, not seeded in the store) — omitted.
+
+  // Dispatch suggestion — the hint that uses real store data (skills + load).
+  if (job.status === "done") return null;
+  const iso = job.visits?.[0]?.date ?? todayISO();
+  const sug = suggestTechFor(job, techs, iso);
+  if (!sug) return null;
+
+  return (
+    <div className="smartwrap">
+      <div className="smartsug">
+        Best fit: <b>{sug.tech.name}</b> <span className="muted">{sug.reason}</span>{" "}
+        <button className="btn sm primary" onClick={() => onAssign(sug.tech.id)}>
+          Assign
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---- job checklist block (prototype jobChecklistBlock, line 4859) ----------
+// Opt-in, office-attached checklist the crew runs before they leave. The
+// prototype gates the whole block behind state.verifyOn and its template
+// picker reads state.checklists — neither is in the store. So we render the
+// faithful "+ Add a checklist" entry point (exact markup + copy + .linklike);
+// the actual template attach / picker card is deferred (no template data yet).
+
+function JobChecklistBlock({ job }: { job: Job }) {
+  // deferred: checklist templates (state.checklists) and the attached-checklist
+  // editor aren't in the store — only the "+ Add a checklist" affordance is
+  // faithful here; clicking it is a no-op until template data exists.
+  return (
+    <div style={{ marginTop: 16 }}>
+      <span
+        className="linklike"
+        style={{ fontSize: 13, fontWeight: 700 }}
+        // deferred: checklist templates (no template data in store yet)
+        onClick={() => {}}
+      >
+        + Add a checklist
+      </span>{" "}
+      <span className="muted" style={{ fontSize: 11.5 }}>
+        — the crew runs it before they leave (optional, per job)
+      </span>
+    </div>
+  );
+}
+
 // ---- money pointer (prototype moneyPointer, line 6379) ---------------------
 // ONE anchored pointer — never the P&L. Opens the invoice if one exists,
 // otherwise a "Bill it in Money →" nudge once the work is done.
@@ -666,6 +788,18 @@ export function JobModalContent() {
     router.push("/money");
   }
 
+  // Assign the smartPanel-suggested crew (prototype assignSuggested, 3879):
+  // no visits yet → place one on that crew; otherwise move every visit to them.
+  function assignSuggested(techId: number) {
+    if (!job) return;
+    if (!(job.visits ?? []).length) {
+      const v = addVisit(job.id);
+      if (v) updateVisit(job.id, v.id, { date: todayISO(), techId, start: 9, status: "scheduled" });
+    } else {
+      (job.visits ?? []).forEach((v) => updateVisit(job.id, v.id, { techId }));
+    }
+  }
+
   function confirmDelete() {
     if (!deleteArmed) {
       setDeleteArmed(true);
@@ -792,7 +926,8 @@ export function JobModalContent() {
 
       {/* 8. View signed agreement — deferred (signed-doc viewer not built) */}
 
-      {/* 9. smartPanel — deferred (skill-gap / conflict suggestions) */}
+      {/* 9. smartPanel */}
+      <SmartPanel job={job} techs={techs} onAssign={assignSuggested} />
 
       {/* 10. Schedule */}
       <div
@@ -831,10 +966,13 @@ export function JobModalContent() {
       {/* 11. Note feed */}
       <NoteFeed job={job} />
 
-      {/* 12. Money pointer */}
+      {/* 12. Job checklist */}
+      <JobChecklistBlock job={job} />
+
+      {/* 13. Money pointer */}
       <MoneyPointer job={job} invoice={invoice} onGoToMoney={goToMoney} />
 
-      {/* 13. Footer */}
+      {/* 14. Footer */}
       <div
         style={{
           display: "flex",
