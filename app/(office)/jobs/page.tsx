@@ -7,6 +7,7 @@
  */
 
 import { useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { TODAY_ISO, dPlus } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -165,13 +166,6 @@ function unplacedEvisits(leads: Lead[]): Array<{ l: Lead; v: Visit }> {
 // ---- sub-tab types ---------------------------------------------------------
 
 type JobsSubTab = "jobs" | "schedule" | "today" | "timesheets";
-
-const SUB_TABS: Array<{ id: JobsSubTab; label: string }> = [
-  { id: "jobs", label: "Jobs" },
-  { id: "schedule", label: "Schedule" },
-  { id: "today", label: "Today" },
-  { id: "timesheets", label: "Timesheets" },
-];
 
 // ---- stubs -----------------------------------------------------------------
 
@@ -1847,12 +1841,17 @@ function TimesheetsPanel() {
 // Main page
 // ============================================================================
 
+const JOBS_TABS: readonly JobsSubTab[] = ["jobs", "schedule", "today", "timesheets"];
+
 export default function JobsPage() {
   const openModal = useOpenModal();
-  const jobs = useAppStore((s) => s.jobs);
-  const [activeTab, setActiveTab] = useState<JobsSubTab>("jobs");
-
-  const unscheduledCount = jobsUnscheduled(jobs).length;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // The sub-view is driven by the sidebar nav (?tab=…), not an in-content strip.
+  const tabParam = searchParams.get("tab");
+  const activeTab: JobsSubTab = JOBS_TABS.includes(tabParam as JobsSubTab)
+    ? (tabParam as JobsSubTab)
+    : "jobs";
 
   function handleOpenJob(id: number) {
     openModal(MODAL.JOB, { jobId: id });
@@ -1868,48 +1867,9 @@ export default function JobsPage() {
 
   return (
     <div>
-      {/* In-content sub-tab strip */}
-      <div
-        style={{
-          display: "flex",
-          gap: 2,
-          marginBottom: 22,
-          borderBottom: "1px solid var(--line)",
-          paddingBottom: 0,
-        }}
-      >
-        {SUB_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              background: "none",
-              border: "none",
-              padding: "8px 14px",
-              fontFamily: "inherit",
-              fontSize: 13.5,
-              fontWeight: activeTab === tab.id ? 700 : 500,
-              color: activeTab === tab.id ? "var(--ink)" : "var(--ink-2)",
-              cursor: "pointer",
-              borderBottom: activeTab === tab.id ? "2.5px solid var(--ink)" : "2.5px solid transparent",
-              marginBottom: -1,
-              borderRadius: 0,
-            }}
-          >
-            {tab.label}
-            {tab.id === "schedule" && unscheduledCount > 0 && (
-              <span className="cnt" style={{ marginLeft: 6 }}>
-                {unscheduledCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Panel */}
       {activeTab === "jobs" && <JobsList onOpenJob={handleOpenJob} onOpenNewJob={handleOpenNewJob} onOpenSweep={handleOpenSweep} onOpenStandards={() => openModal(MODAL.STANDARDS)} />}
       {activeTab === "schedule" && <SchedulePanel />}
-      {activeTab === "today" && <TodayPanel onGoSchedule={() => setActiveTab("schedule")} />}
+      {activeTab === "today" && <TodayPanel onGoSchedule={() => router.push("/jobs?tab=schedule")} />}
       {activeTab === "timesheets" && <TimesheetsPanel />}
     </div>
   );

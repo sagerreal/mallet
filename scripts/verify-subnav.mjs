@@ -2,20 +2,34 @@ import { chromium } from "@playwright/test";
 const base = "http://localhost:3000";
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1512, height: 950 } });
+const log = (s) => console.log("STEP:", s);
 await p.goto(base + "/login", { waitUntil: "networkidle" });
 await p.getByLabel("Email").fill("owner@e2e.mallet.test");
 await p.getByLabel("Password").fill("e2e-password-1");
 await p.getByRole("button", { name: "Sign in" }).click();
 await p.waitForURL((u) => !u.pathname.includes("/login"), { timeout: 30000 });
-await p.goto(base + "/customers", { waitUntil: "networkidle" });
+
+// Jobs subs + no in-content strip
+await p.goto(base + "/jobs", { waitUntil: "networkidle" });
 await p.waitForTimeout(700);
-const subs = await p.locator(".sidebar .navsub").allInnerTexts();
-console.log("STEP: customers sub-nav:", JSON.stringify(subs.map(s=>s.trim())));
-await p.screenshot({ path: "/tmp/subnav-1.png" });
-// click Pipeline sub
-await p.locator(".sidebar .navsub", { hasText: "Pipeline" }).click();
+const jsubs = (await p.locator(".sidebar .navsub").allInnerTexts()).map(s=>s.replace(/\s+/g," ").trim());
+log("jobs subs: " + JSON.stringify(jsubs));
+await p.locator(".sidebar .navsub", { hasText: "Schedule" }).click();
 await p.waitForTimeout(600);
-console.log("STEP: after Pipeline click URL:", new URL(p.url()).pathname);
-const active = await p.locator(".sidebar .navsub.active").innerText().catch(()=>"");
-console.log("STEP: active sub:", active.trim());
+const jurl = new URL(p.url()); log("after Schedule: " + jurl.pathname + jurl.search);
+const onBoard = await p.getByText("On the board").count();
+const activeSub = (await p.locator(".sidebar .navsub.active").innerText().catch(()=>"")).trim();
+log("schedule board visible=" + (onBoard>0) + ", active sub=" + activeSub);
+await p.screenshot({ path: "/tmp/subnav-jobs.png" });
+
+// Money subs
+await p.goto(base + "/money", { waitUntil: "networkidle" });
+await p.waitForTimeout(600);
+const msubs = (await p.locator(".sidebar .navsub").allInnerTexts()).map(s=>s.trim());
+log("money subs: " + JSON.stringify(msubs));
+await p.locator(".sidebar .navsub", { hasText: "Invoices" }).click();
+await p.waitForTimeout(600);
+const murl = new URL(p.url());
+const invList = await p.locator("h1", { hasText: "Invoices" }).count();
+log("after Invoices: " + murl.pathname + murl.search + ", invoices view=" + (invList>0));
 await b.close();

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useCustomers } from "@/features/customers/hooks";
 import { useJobs } from "@/features/jobs/hooks";
 import { useInvoices } from "@/features/invoices/hooks";
@@ -128,10 +128,16 @@ export function Sidebar() {
   const sentInvoices = useInvoices("sent");
   const partialInvoices = useInvoices("partial");
   const tasks = useAppStore((s) => s.tasks);
+  const storeJobs = useAppStore((s) => s.jobs);
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab");
 
   const isActive = (href: string) => pathname.startsWith(href);
   const customersActive = CUSTOMER_AREA.some((r) => pathname.startsWith(r));
+  const jobsActive = pathname.startsWith("/jobs");
+  const moneyActive = pathname.startsWith("/money");
   const openTaskCount = tasks.filter((t) => !t.done).length;
+  const unscheduledCount = storeJobs.filter((j) => !j.archived && j.status === "unscheduled").length;
 
   // Compute live counts
   const customerCount = customers.data?.items?.length ?? 0;
@@ -189,15 +195,32 @@ export function Sidebar() {
           icon={<JobsIcon />}
           label="Jobs"
           count={jobsCount > 0 ? jobsCount : undefined}
-          active={isActive("/jobs")}
+          active={jobsActive}
         />
+        {jobsActive && (
+          <div className="navsubs">
+            <NavSub
+              href="/jobs?tab=schedule"
+              label="Schedule"
+              count={unscheduledCount > 0 ? unscheduledCount : undefined}
+              active={tab === "schedule"}
+            />
+            <NavSub href="/jobs?tab=today" label="Today" active={tab === "today"} />
+            <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
+          </div>
+        )}
         <NavItem
           href="/money"
           icon={<MoneyIcon />}
           label="Money"
           count={moneyCount > 0 ? moneyCount : undefined}
-          active={isActive("/money")}
+          active={moneyActive}
         />
+        {moneyActive && (
+          <div className="navsubs">
+            <NavSub href="/money?tab=fin-invoices" label="Invoices" active={tab === "fin-invoices"} />
+          </div>
+        )}
 
         <div className="navsep" />
 

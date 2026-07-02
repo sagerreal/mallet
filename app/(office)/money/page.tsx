@@ -12,7 +12,7 @@
  */
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate, Invoice, Job, Lead } from "@/lib/store/types";
@@ -120,11 +120,6 @@ function finKpis(invoices: Invoice[], jobs: Job[], estimates: Estimate[]) {
 // ---- sub-tab types ----------------------------------------------------------
 
 type FinSubTab = "fin-money" | "fin-invoices";
-
-const SUB_TABS: Array<{ id: FinSubTab; label: string }> = [
-  { id: "fin-money", label: "Money" },
-  { id: "fin-invoices", label: "Invoices" },
-];
 
 // ============================================================================
 // vMoney — Money dashboard panel
@@ -642,57 +637,20 @@ function InvoicesList() {
 // Main page
 // ============================================================================
 
-export default function MoneyPage() {
-  const invoices = useAppStore((s) => s.invoices);
-  const jobs = useAppStore((s) => s.jobs);
-  const [activeTab, setActiveTab] = useState<FinSubTab>("fin-money");
+const FIN_TABS: readonly FinSubTab[] = ["fin-money", "fin-invoices"];
 
-  // Badge: number of jobs ready to invoice
-  const rdyCount = jobsReadyToInvoice(jobs, invoices).length;
+export default function MoneyPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Sub-view driven by the sidebar nav (?tab=…), not an in-content strip.
+  const tabParam = searchParams.get("tab");
+  const activeTab: FinSubTab = FIN_TABS.includes(tabParam as FinSubTab)
+    ? (tabParam as FinSubTab)
+    : "fin-money";
 
   return (
     <div>
-      {/* In-content sub-tab strip — matches Jobs page pattern exactly */}
-      <div
-        style={{
-          display: "flex",
-          gap: 2,
-          marginBottom: 22,
-          borderBottom: "1px solid var(--line)",
-          paddingBottom: 0,
-        }}
-      >
-        {SUB_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              background: "none",
-              border: "none",
-              padding: "8px 14px",
-              fontFamily: "inherit",
-              fontSize: 13.5,
-              fontWeight: activeTab === tab.id ? 700 : 500,
-              color: activeTab === tab.id ? "var(--ink)" : "var(--ink-2)",
-              cursor: "pointer",
-              borderBottom:
-                activeTab === tab.id ? "2.5px solid var(--ink)" : "2.5px solid transparent",
-              marginBottom: -1,
-              borderRadius: 0,
-            }}
-          >
-            {tab.label}
-            {tab.id === "fin-money" && rdyCount > 0 && (
-              <span className="cnt" style={{ marginLeft: 6 }}>
-                {rdyCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Panel */}
-      {activeTab === "fin-money" && <MoneyDashboard onGoInvoices={() => setActiveTab("fin-invoices")} />}
+      {activeTab === "fin-money" && <MoneyDashboard onGoInvoices={() => router.push("/money?tab=fin-invoices")} />}
       {activeTab === "fin-invoices" && <InvoicesList />}
     </div>
   );
