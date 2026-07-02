@@ -2,22 +2,15 @@
 
 /**
  * Jobs page — pixel-faithful port of the prototype's vJobs / vSchedule / vOpsHome / vTimesheets.
- * Uses SAMPLE_JOBS / SAMPLE_TECHS / SAMPLE_LEADS from lib/prototype-sample.ts.
- * No live hooks. All interactive actions are console-logged stubs.
+ * Reads live data from the Zustand store (jobs / techs / leads) so job-modal mutations
+ * reflect reactively. All interactive actions not yet wired are console-logged stubs.
  */
 
 import { useState } from "react";
-import {
-  SAMPLE_JOBS,
-  SAMPLE_TECHS,
-  SAMPLE_LEADS,
-  TODAY_ISO,
-  dPlus,
-  type SampleJob,
-  type SampleTech,
-} from "@/lib/prototype-sample";
-import { useOpenModal } from "@/lib/store/app-store";
+import { TODAY_ISO, dPlus } from "@/lib/prototype-sample";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import type { Job, Lead, Tech, Visit } from "@/lib/store/types";
 
 // ---- helpers ported from prototype ----------------------------------------
 
@@ -42,24 +35,28 @@ function svcMeta(key: string): SvcMeta {
   return SVC_META[key] ?? (SVC_META.service as SvcMeta);
 }
 
-function jobTotal(j: SampleJob): number {
+function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
 
-function jobNextVisit(j: SampleJob) {
+function jobNextVisit(j: Job): Visit | null {
   const placed = (j.visits ?? []).filter((v) => v.date && v.techId != null && v.start != null);
-  const future = placed.filter((v) => v.date >= TODAY_ISO);
-  if (future.length) return future.sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : (a.start ?? 0) - (b.start ?? 0)))[0];
-  return placed.sort((a, b) => (a.date > b.date ? 1 : -1))[0] ?? null;
+  const future = placed.filter((v) => (v.date ?? "") >= TODAY_ISO);
+  if (future.length) {
+    return future.sort((a, b) =>
+      (a.date ?? "") > (b.date ?? "") ? 1 : (a.date ?? "") < (b.date ?? "") ? -1 : (a.start ?? 0) - (b.start ?? 0)
+    )[0] as Visit;
+  }
+  return placed.sort((a, b) => ((a.date ?? "") > (b.date ?? "") ? 1 : -1))[0] ?? null;
 }
 
-function custName(j: SampleJob): string {
-  const lead = SAMPLE_LEADS.find((l) => l.id === j.leadId);
+function custName(j: Job, leads: Lead[]): string {
+  const lead = leads.find((l) => l.id === j.leadId);
   return lead?.name ?? (j as { cust?: string }).cust ?? "—";
 }
 
-function custPhone(j: SampleJob): string {
-  return j.phone || SAMPLE_LEADS.find((l) => l.id === j.leadId)?.phone || "";
+function custPhone(j: Job, leads: Lead[]): string {
+  return j.phone || leads.find((l) => l.id === j.leadId)?.phone || "";
 }
 
 function timeLabel(h: number): string {
@@ -87,21 +84,21 @@ function fmt$(n: number): string {
   return "$" + n.toLocaleString("en-US");
 }
 
-function liveJobs(): SampleJob[] {
-  return SAMPLE_JOBS.filter((j) => !j.archived);
+function liveJobs(jobs: Job[]): Job[] {
+  return jobs.filter((j) => !j.archived);
 }
 
-function jobsUnscheduled(): SampleJob[] {
-  return liveJobs().filter(
+function jobsUnscheduled(jobs: Job[]): Job[] {
+  return liveJobs(jobs).filter(
     (j) =>
       j.status !== "done" &&
       ((j.visits ?? []).length === 0 || (j.visits ?? []).some((v) => !(v.date && v.techId != null && v.start != null)))
   );
 }
 
-function visitsToday() {
-  const out: Array<{ j: SampleJob; v: (typeof SAMPLE_JOBS)[0]["visits"][0] }> = [];
-  liveJobs().forEach((j) =>
+function visitsToday(jobs: Job[]): Array<{ j: Job; v: Visit }> {
+  const out: Array<{ j: Job; v: Visit }> = [];
+  liveJobs(jobs).forEach((j) =>
     (j.visits ?? []).forEach((v) => {
       if (v.date === TODAY_ISO) out.push({ j, v });
     })
@@ -109,9 +106,9 @@ function visitsToday() {
   return out;
 }
 
-function dayLoad(techId: number, iso: string): number {
+function dayLoad(jobs: Job[], techId: number, iso: string): number {
   let total = 0;
-  liveJobs().forEach((j) =>
+  liveJobs(jobs).forEach((j) =>
     (j.visits ?? []).forEach((v) => {
       if (v.techId === techId && v.date === iso) total += v.dur ?? 0;
     })
@@ -119,11 +116,11 @@ function dayLoad(techId: number, iso: string): number {
   return total;
 }
 
-function techById(id: number): SampleTech | undefined {
-  return SAMPLE_TECHS.find((t) => t.id === id);
+function techById(techs: Tech[], id: number): Tech | undefined {
+  return techs.find((t) => t.id === id);
 }
 
-function jobMode(j: SampleJob): string {
+function jobMode(j: Job): string {
   if (j.svc === "estimate") return "estimate";
   const priced = (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
   return priced ? "install" : "service";
@@ -153,9 +150,15 @@ function stub(action: string, ...args: unknown[]) {
 
 interface JobsListProps {
   onOpenJob: (id: number) => void;
+  onOpenNewJob: () => void;
+  onOpenSweep: () => void;
 }
 
-function JobsList({ onOpenJob }: JobsListProps) {
+function JobsList({ onOpenJob, onOpenNewJob, onOpenSweep }: JobsListProps) {
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const techs = useAppStore((s) => s.techs);
+
   const [jobsQ, setJobsQ] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [colsOpen, setColsOpen] = useState(false);
@@ -175,13 +178,13 @@ function JobsList({ onOpenJob }: JobsListProps) {
     amount: { l: "Amount", right: true },
   };
 
-  const all = liveJobs();
+  const all = liveJobs(jobs);
   const q = jobsQ.toLowerCase();
   const { status: fStatus, type: fType, crew: fCrew } = jobFilters;
   const activeF = [fStatus, fType, fCrew].filter(Boolean).length;
 
   let rows = all.filter((j) => {
-    if (q && !(custName(j) + " " + (j.title ?? "") + " " + (j.addr ?? "") + " " + custPhone(j)).toLowerCase().includes(q))
+    if (q && !(custName(j, leads) + " " + (j.title ?? "") + " " + (j.addr ?? "") + " " + custPhone(j, leads)).toLowerCase().includes(q))
       return false;
     if (fStatus && j.status !== fStatus) return false;
     if (fType && jobMode(j) !== fType) return false;
@@ -189,12 +192,12 @@ function JobsList({ onOpenJob }: JobsListProps) {
     return true;
   });
 
-  if (jobSort.col === "customer") rows = [...rows].sort((a, b) => custName(a).localeCompare(custName(b)) * jobSort.dir);
+  if (jobSort.col === "customer") rows = [...rows].sort((a, b) => custName(a, leads).localeCompare(custName(b, leads)) * jobSort.dir);
   else if (jobSort.col === "amount") rows = [...rows].sort((a, b) => (jobTotal(a) - jobTotal(b)) * jobSort.dir);
   else if (jobSort.col === "next") {
     rows = [...rows].sort((a, b) => {
-      const ka = (() => { const nv = jobNextVisit(a); return nv ? nv.date + String(nv.start ?? 0).padStart(6, "0") : "~"; })();
-      const kb = (() => { const nv = jobNextVisit(b); return nv ? nv.date + String(nv.start ?? 0).padStart(6, "0") : "~"; })();
+      const ka = (() => { const nv = jobNextVisit(a); return nv ? (nv.date ?? "") + String(nv.start ?? 0).padStart(6, "0") : "~"; })();
+      const kb = (() => { const nv = jobNextVisit(b); return nv ? (nv.date ?? "") + String(nv.start ?? 0).padStart(6, "0") : "~"; })();
       return ka < kb ? -jobSort.dir : ka > kb ? jobSort.dir : 0;
     });
   } else {
@@ -221,11 +224,11 @@ function JobsList({ onOpenJob }: JobsListProps) {
   const statuses = [...new Set(all.map((j) => j.status))];
   const sortable = ["customer", "next", "amount"];
 
-  function renderCell(j: SampleJob, c: string): React.ReactNode {
+  function renderCell(j: Job, c: string): React.ReactNode {
     const nv = jobNextVisit(j);
     switch (c) {
       case "customer":
-        return <b>{custName(j)}</b>;
+        return <b>{custName(j, leads)}</b>;
       case "job": {
         const multi = (j.visits ?? []).length > 1;
         return (
@@ -248,9 +251,9 @@ function JobsList({ onOpenJob }: JobsListProps) {
         );
       }
       case "next":
-        return nv ? `${colLabel(nv.date)} ${timeLabel(nv.start)}` : <span className="muted">—</span>;
+        return nv ? `${colLabel(nv.date ?? "")} ${timeLabel(nv.start ?? 0)}` : <span className="muted">—</span>;
       case "crew": {
-        const tc = nv ? techById(nv.techId) : null;
+        const tc = nv && nv.techId != null ? techById(techs, nv.techId) : null;
         return tc ? (
           <span className="javatar" style={{ background: tc.color }}>
             {tc.initials}
@@ -268,9 +271,9 @@ function JobsList({ onOpenJob }: JobsListProps) {
         );
       }
       case "address":
-        return j.addr || SAMPLE_LEADS.find((l) => l.id === j.leadId)?.address || <span className="muted">—</span>;
+        return j.addr || leads.find((l) => l.id === j.leadId)?.address || <span className="muted">—</span>;
       case "phone":
-        return custPhone(j) || <span className="muted">—</span>;
+        return custPhone(j, leads) || <span className="muted">—</span>;
       case "amount":
         return fmt$(jobTotal(j));
       default:
@@ -286,10 +289,10 @@ function JobsList({ onOpenJob }: JobsListProps) {
           <button className="btn ghost" onClick={() => stub("openStandards")}>
             Checklist templates
           </button>
-          <button className="btn ghost" onClick={() => stub("openJobSweep")}>
+          <button className="btn ghost" onClick={onOpenSweep}>
             Clean up
           </button>
-          <button className="btn primary" onClick={() => stub("openNewJob")}>
+          <button className="btn primary" onClick={onOpenNewJob}>
             + New job
           </button>
         </div>
@@ -362,7 +365,7 @@ function JobsList({ onOpenJob }: JobsListProps) {
             <label>Crew</label>
             <select value={fCrew} onChange={(e) => setJobFilters((p) => ({ ...p, crew: e.target.value }))}>
               <option value="">Any</option>
-              {SAMPLE_TECHS.map((t) => (
+              {techs.map((t) => (
                 <option key={t.id} value={String(t.id)}>
                   {t.name}
                 </option>
@@ -440,7 +443,7 @@ function JobsList({ onOpenJob }: JobsListProps) {
                     ) : (
                       <>
                         No jobs yet —{" "}
-                        <span className="linklike" onClick={() => stub("openNewJob")}>
+                        <span className="linklike" onClick={onOpenNewJob}>
                           create one
                         </span>
                       </>
@@ -464,6 +467,10 @@ type SchedView = "day" | "week";
 
 function SchedulePanel() {
   const openModal = useOpenModal();
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const techs = useAppStore((s) => s.techs);
+
   const [schedView, setSchedView] = useState<SchedView>("day");
   const [schedDay, setSchedDay] = useState(TODAY_ISO);
   const [weekStart, setWeekStart] = useState(TODAY_ISO);
@@ -472,12 +479,6 @@ function SchedulePanel() {
     const out: string[] = [];
     for (let i = 0; i < 7; i++) out.push(dPlus(i));
     return out;
-  }
-
-  function addDays(iso: string, n: number): string {
-    const d = new Date(iso + "T12:00:00");
-    d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
   }
 
   const WPX = 78;
@@ -490,9 +491,9 @@ function SchedulePanel() {
     let END = bh.c;
 
     // expand window to include all visits
-    SAMPLE_JOBS.forEach((j) =>
+    jobs.forEach((j) =>
       (j.visits ?? []).forEach((v) => {
-        if (v.date === iso) {
+        if (v.date === iso && v.start != null) {
           START = Math.min(START, Math.floor(v.start));
           END = Math.max(END, Math.ceil(v.start + (v.dur ?? 1)));
         }
@@ -524,12 +525,12 @@ function SchedulePanel() {
         </div>
 
         {/* crew rows */}
-        {SAMPLE_TECHS.map((tc) => {
-          const vis = liveJobs()
+        {techs.map((tc) => {
+          const vis = liveJobs(jobs)
             .flatMap((j) => (j.visits ?? []).filter((v) => v.techId === tc.id && v.date === iso).map((v) => ({ j, v })))
             .sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0));
 
-          const load = dayLoad(tc.id, iso);
+          const load = dayLoad(jobs, tc.id, iso);
 
           return (
             <div key={tc.id} className="gv-row">
@@ -556,26 +557,26 @@ function SchedulePanel() {
                 ))}
                 {/* visit blocks */}
                 {vis.map(({ j, v }) => {
-                  const left = Math.max(0, (v.start - START) * WPX);
+                  const vStart = v.start ?? 0;
+                  const left = Math.max(0, (vStart - START) * WPX);
                   const w = Math.max(38, (v.dur ?? 1) * WPX - 4);
                   const mode = jobMode(j);
                   const m = svcMeta(mode);
-                  const dim = v.status === "done" ? "opacity:.55;" : "";
                   return (
                     <div
                       key={v.id}
                       className={`gv-block${m.est ? " est" : ""}`}
                       style={{ left, width: w, opacity: v.status === "done" ? 0.55 : 1 }}
                       onClick={(e) => { e.stopPropagation(); openModal(MODAL.JOB, { jobId: j.id }); }}
-                      title={`${custName(j)} — ${j.title} · ${timeLabel(v.start)}–${timeLabel(v.start + v.dur)}`}
+                      title={`${custName(j, leads)} — ${j.title} · ${timeLabel(vStart)}–${timeLabel(vStart + (v.dur ?? 0))}`}
                     >
                       <div className="gv-bt" style={{ color: m.c }}>
                         {m.word ?? m.tag}
                         {v.status === "done" ? " ✓" : ""}
                       </div>
-                      <div className="gv-bn">{custName(j)}</div>
+                      <div className="gv-bn">{custName(j, leads)}</div>
                       <div className="gv-btm">
-                        {timeLabel(v.start)}–{timeLabel(v.start + v.dur)}
+                        {timeLabel(vStart)}–{timeLabel(vStart + (v.dur ?? 0))}
                       </div>
                       <div className="gv-resize" onMouseDown={() => stub("blockResizeStart", v.id)} title="Drag to change the hours" />
                       <button
@@ -605,7 +606,7 @@ function SchedulePanel() {
         style={{ display: "grid", gridTemplateColumns: `repeat(${days.length}, minmax(0,1fr))`, gap: 8 }}
       >
         {days.map((iso) => {
-          const entries = liveJobs()
+          const entries = liveJobs(jobs)
             .flatMap((j) =>
               (j.visits ?? [])
                 .filter((v) => v.date === iso)
@@ -613,17 +614,18 @@ function SchedulePanel() {
             )
             .sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0));
 
-          const totalLoad = SAMPLE_TECHS.reduce((s, tc) => s + dayLoad(tc.id, iso), 0);
-          const dayCap = CAP * SAMPLE_TECHS.length;
+          const totalLoad = techs.reduce((s, tc) => s + dayLoad(jobs, tc.id, iso), 0);
+          const dayCap = CAP * techs.length;
 
           const body =
             entries.length === 0 ? (
               <div className="wk-empty">—</div>
             ) : (
               entries.map(({ j, v, techId }) => {
+                const vStart = v.start ?? 0;
                 const mode = jobMode(j);
                 const m = svcMeta(mode);
-                const tc = techById(techId);
+                const tc = techId != null ? techById(techs, techId) : undefined;
                 return (
                   <div
                     key={v.id}
@@ -634,9 +636,9 @@ function SchedulePanel() {
                     <div className="wk-bt" style={{ color: m.c }}>
                       {m.word ?? m.lbl}
                     </div>
-                    <div className="wk-nm">{custName(j)}</div>
+                    <div className="wk-nm">{custName(j, leads)}</div>
                     <div className="wk-tm">
-                      {timeLabel(v.start)}–{timeLabel(v.start + v.dur)}
+                      {timeLabel(vStart)}–{timeLabel(vStart + (v.dur ?? 0))}
                       {tc ? ` · ${tc.name.split(" ")[0]}` : ""}
                     </div>
                   </div>
@@ -664,7 +666,7 @@ function SchedulePanel() {
     );
   }
 
-  const uns = jobsUnscheduled();
+  const uns = jobsUnscheduled(jobs);
   const day = schedView === "day";
 
   const toggle = (
@@ -731,7 +733,7 @@ function SchedulePanel() {
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h1>Schedule</h1>
-        <button className="btn" onClick={() => stub("openNewJob")}>
+        <button className="btn" onClick={() => openModal(MODAL.NEW_JOB)}>
           + New job
         </button>
       </div>
@@ -752,7 +754,7 @@ function SchedulePanel() {
                   <button className="rail-addv" onClick={(e) => { e.stopPropagation(); stub("visitAddTray", j.id); }} title="Add another visit">
                     +
                   </button>
-                  <b style={{ fontSize: "13.5px" }}>{custName(j)}</b>
+                  <b style={{ fontSize: "13.5px" }}>{custName(j, leads)}</b>
                   <div className="muted" style={{ fontSize: "11.5px", margin: "2px 0 10px" }}>{j.title}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
                     <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
@@ -796,14 +798,18 @@ function SchedulePanel() {
 
 function TodayPanel() {
   const openModal = useOpenModal();
-  const tv = visitsToday();
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const techs = useAppStore((s) => s.techs);
+
+  const tv = visitsToday(jobs);
   const done = tv.filter(({ v }) => v.status === "done");
   const live = tv.filter(({ v }) => v.status === "enroute" || v.status === "onsite");
-  const uns = jobsUnscheduled();
+  const uns = jobsUnscheduled(jobs);
 
-  const byTech = SAMPLE_TECHS.map((tc) => ({
+  const byTech = techs.map((tc) => ({
     tc,
-    vs: liveJobs()
+    vs: liveJobs(jobs)
       .flatMap((j) => (j.visits ?? []).filter((v) => v.techId === tc.id && v.date === TODAY_ISO).map((v) => ({ j, v })))
       .sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0)),
   })).filter(({ vs }) => vs.length > 0);
@@ -838,7 +844,7 @@ function TodayPanel() {
         <div className="kpi">
           <div className="lbl">Crew working</div>
           <div className="val">{byTech.length}</div>
-          <div className="hint">of {SAMPLE_TECHS.length}</div>
+          <div className="hint">of {techs.length}</div>
         </div>
       </div>
 
@@ -859,7 +865,7 @@ function TodayPanel() {
                 style={{ background: "#fff", border: "1px solid var(--line)", marginRight: 6, cursor: "pointer" }}
                 onClick={() => openModal(MODAL.JOB, { jobId: j.id })}
               >
-                {custName(j)} · {j.title}
+                {custName(j, leads)} · {j.title}
               </span>
             ))}
           </div>
@@ -882,9 +888,9 @@ function TodayPanel() {
                   const m = svcMeta(mode);
                   return (
                     <div key={v.id} style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--line-2)", alignItems: "center" }}>
-                      <span className="agtime">{timeLabel(v.start)}</span>
+                      <span className="agtime">{timeLabel(v.start ?? 0)}</span>
                       <div style={{ flex: 1 }}>
-                        <b style={{ fontWeight: 600, fontSize: 13 }}>{custName(j)}</b>
+                        <b style={{ fontWeight: 600, fontSize: 13 }}>{custName(j, leads)}</b>
                         <div className="muted" style={{ fontSize: 12 }}>{j.title}</div>
                       </div>
                       <span className="stpill" style={{ color: s.c, background: s.bg }}>
@@ -914,7 +920,8 @@ function TodayPanel() {
 // ============================================================================
 
 function TimesheetsPanel() {
-  const [selectedTechId, setSelectedTechId] = useState<number>(SAMPLE_TECHS[0]?.id ?? 1);
+  const techs = useAppStore((s) => s.techs);
+  const [selectedTechId, setSelectedTechId] = useState<number>(techs[0]?.id ?? 1);
 
   // week label using TODAY_ISO as the week start reference
   function weekLabel(): string {
@@ -948,7 +955,7 @@ function TimesheetsPanel() {
 
       {/* Crew chips — shown even with no entries so you can select a tech */}
       <div className="ts-chips" style={{ marginTop: 16 }}>
-        {SAMPLE_TECHS.map((t) => (
+        {techs.map((t) => (
           <button
             key={t.id}
             className={`ts-chip${t.id === selectedTechId ? " sel" : ""}`}
@@ -970,7 +977,7 @@ function TimesheetsPanel() {
 
       {/* Selected tech timesheet card */}
       {(() => {
-        const tc = SAMPLE_TECHS.find((t) => t.id === selectedTechId);
+        const tc = techs.find((t) => t.id === selectedTechId);
         if (!tc) return null;
         return (
           <div className="card" style={{ marginTop: 12 }}>
@@ -1005,10 +1012,21 @@ function TimesheetsPanel() {
 
 export default function JobsPage() {
   const openModal = useOpenModal();
+  const jobs = useAppStore((s) => s.jobs);
   const [activeTab, setActiveTab] = useState<JobsSubTab>("jobs");
+
+  const unscheduledCount = jobsUnscheduled(jobs).length;
 
   function handleOpenJob(id: number) {
     openModal(MODAL.JOB, { jobId: id });
+  }
+
+  function handleOpenNewJob() {
+    openModal(MODAL.NEW_JOB);
+  }
+
+  function handleOpenSweep() {
+    openModal(MODAL.JOB_SWEEP);
   }
 
   return (
@@ -1042,9 +1060,9 @@ export default function JobsPage() {
             }}
           >
             {tab.label}
-            {tab.id === "schedule" && jobsUnscheduled().length > 0 && (
+            {tab.id === "schedule" && unscheduledCount > 0 && (
               <span className="cnt" style={{ marginLeft: 6 }}>
-                {jobsUnscheduled().length}
+                {unscheduledCount}
               </span>
             )}
           </button>
@@ -1052,7 +1070,7 @@ export default function JobsPage() {
       </div>
 
       {/* Panel */}
-      {activeTab === "jobs" && <JobsList onOpenJob={handleOpenJob} />}
+      {activeTab === "jobs" && <JobsList onOpenJob={handleOpenJob} onOpenNewJob={handleOpenNewJob} onOpenSweep={handleOpenSweep} />}
       {activeTab === "schedule" && <SchedulePanel />}
       {activeTab === "today" && <TodayPanel />}
       {activeTab === "timesheets" && <TimesheetsPanel />}
