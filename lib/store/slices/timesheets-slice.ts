@@ -1,14 +1,21 @@
 /**
  * lib/store/slices/timesheets-slice.ts
  * Timesheet entries (payroll punches) + mutations. Immutable updates only.
- * Seeded empty — the sample logs no time, so the empty state is faithful
- * (crew clock in from My day). Approved entries are locked: update/delete are
- * no-ops once approved. Mirrors the prototype's tsAddEntry / tsSetField /
- * tsDelEntry / tsApproveTech actions.
+ * Seeded from the prototype's SAMPLE_TIME_ENTRIES (the denormalized jobTitle is
+ * dropped — the store resolves the label from jobId). Approved entries are
+ * locked: update/delete are no-ops once approved. Mirrors the prototype's
+ * tsAddEntry / tsSetField / tsDelEntry / tsApproveTech actions.
  */
 
 import type { StateCreator } from "zustand";
+import { SAMPLE_TIME_ENTRIES } from "@/lib/prototype-sample";
 import type { TimeEntry } from "../types";
+
+// Sample entries carry a denormalized jobTitle for the prototype's inline port;
+// the store keeps only the normalized shape and resolves the label from jobId.
+const SEED_TIME_ENTRIES: TimeEntry[] = SAMPLE_TIME_ENTRIES.map(
+  ({ jobTitle: _jobTitle, ...e }) => ({ ...e })
+);
 
 // Fresh id counter for entries created in-session (mirrors state.nextId growth).
 let _nextEntryId = 7000;
@@ -22,7 +29,7 @@ export interface TimesheetsSlice {
 }
 
 export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], TimesheetsSlice> = (set) => ({
-  timeEntries: [],
+  timeEntries: SEED_TIME_ENTRIES,
 
   addTimeEntry: (techId, date) => {
     const entry: TimeEntry = {

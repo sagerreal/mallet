@@ -2,28 +2,19 @@
 
 /**
  * Messages page — pixel-faithful port of the prototype's vMessages() + aiPhone().
- * Uses SAMPLE_LEADS / SAMPLE_JOBS / SAMPLE_TECHS / TODAY_ISO from lib/prototype-sample.ts.
- * No live hooks. All interactive actions are console-logged stubs.
+ * Reads live leads from the Zustand app-store; the inbox lists leads that have
+ * SMS activity (a text act), unread first. Clicking a thread opens the real SMS
+ * thread modal. The AI-phone view stays a self-contained local mock.
  *
  * Prototype source: vMessages() lines 3740-3757, aiPhone() lines 3759-3787.
  */
 
 import { useState } from "react";
-import {
-  SAMPLE_LEADS,
-  SAMPLE_JOBS,
-  SAMPLE_TECHS,
-  TODAY_ISO,
-  type SampleLead,
-  type SampleTech,
-} from "@/lib/prototype-sample";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import type { Lead } from "@/lib/store/types";
 
 // ---- helpers ---------------------------------------------------------------
-
-function stub(action: string, ...args: unknown[]): void {
-  // eslint-disable-next-line no-console
-  console.log(`[stub] ${action}`, ...args);
-}
 
 function leadInitials(name: string): string {
   return (name ?? "?")
@@ -34,7 +25,7 @@ function leadInitials(name: string): string {
     .toUpperCase();
 }
 
-function lastMsg(l: SampleLead): string {
+function lastMsg(l: Lead): string {
   const acts = (l.acts ?? []).filter((x) => x.type === "text");
   if (acts.length) {
     const last = acts[acts.length - 1];
@@ -44,42 +35,17 @@ function lastMsg(l: SampleLead): string {
   return l.last ?? "";
 }
 
-/** Threads for a tech: customers with visits this week + anyone with unread messages */
-function techThreads(techId: number): SampleLead[] {
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(TODAY_ISO + "T12:00:00");
-    // Monday of this week
-    const dow = (d.getDay() + 6) % 7;
-    d.setDate(d.getDate() - dow + i);
-    return d.toISOString().slice(0, 10);
-  });
+/** True when a lead has any SMS (text) activity. */
+function hasSms(l: Lead): boolean {
+  return (l.acts ?? []).some((a) => a.type === "text");
+}
 
-  const ids = new Set<number>();
-  const out: SampleLead[] = [];
-
-  // Customers with visits this week assigned to this tech
-  SAMPLE_JOBS.filter((j) => !j.archived).forEach((j) => {
-    (j.visits ?? []).forEach((v) => {
-      if (v.techId === techId && weekDays.includes(v.date ?? "")) {
-        const lead = SAMPLE_LEADS.find((l) => l.id === j.leadId);
-        if (lead && !ids.has(lead.id)) {
-          ids.add(lead.id);
-          out.push(lead);
-        }
-      }
-    });
-  });
-
-  // Anyone who texted back (unread)
-  SAMPLE_LEADS.forEach((l) => {
-    if (l.unread && !ids.has(l.id)) {
-      ids.add(l.id);
-      out.push(l);
-    }
-  });
-
-  // Unread first
-  return out.sort((a, b) => (b.unread ? 1 : 0) - (a.unread ? 1 : 0));
+/** Threads = leads with SMS activity, unread first (stable otherwise). */
+function smsThreads(leads: Lead[]): Lead[] {
+  return leads
+    .filter(hasSms)
+    .slice()
+    .sort((a, b) => (b.unread ? 1 : 0) - (a.unread ? 1 : 0));
 }
 
 // ============================================================================
@@ -227,7 +193,7 @@ function AiPhone({ onBack }: AiPhoneProps) {
 // ============================================================================
 
 interface ThreadRowProps {
-  lead: SampleLead;
+  lead: Lead;
   onClick: () => void;
 }
 
@@ -266,11 +232,10 @@ function ThreadRow({ lead: l, onClick }: ThreadRowProps) {
 // ============================================================================
 
 export default function MessagesPage() {
-  const [aiOpen, setAiOpen] = useState(false);
-  const [myTech] = useState(1); // prototype: state.myTech = 1 (Mike Rivera)
+  const leads = useAppStore((s) => s.leads);
+  const openModal = useOpenModal();
 
-  const tc: SampleTech | undefined =
-    SAMPLE_TECHS.find((t) => t.id === myTech) ?? SAMPLE_TECHS[0];
+  const [aiOpen, setAiOpen] = useState(false);
 
   // Prototype: techCanText() — perms.techTexts is on by default
   const techCanText = true;
@@ -290,7 +255,8 @@ export default function MessagesPage() {
     return <AiPhone onBack={() => setAiOpen(false)} />;
   }
 
-  const threads = tc ? techThreads(tc.id) : [];
+  // Derived in the component body (never inside a selector).
+  const threads = smsThreads(leads);
 
   return (
     <>
@@ -328,7 +294,7 @@ export default function MessagesPage() {
           <ThreadRow
             key={l.id}
             lead={l}
-            onClick={() => stub("openThread", l.id)}
+            onClick={() => openModal(MODAL.THREAD, { leadId: l.id })}
           />
         ))}
 

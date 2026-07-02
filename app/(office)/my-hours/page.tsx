@@ -2,27 +2,18 @@
 
 /**
  * My Hours page — pixel-faithful port of the prototype's vMyTime().
- * Uses SAMPLE_TECHS / SAMPLE_TIME_ENTRIES from lib/prototype-sample.ts.
- * No live hooks. All interactive actions are console-logged stubs.
+ * Reads live techs / timeEntries (and jobs / leads for the row label) from the
+ * Zustand app-store. Interactive actions call the real time-entry store actions.
  *
  * Prototype source: vMyTime() lines 3716-3731, tsEntriesBlock() lines 3670-3678.
  */
 
 import { useState } from "react";
-import {
-  SAMPLE_TECHS,
-  SAMPLE_TIME_ENTRIES,
-  TODAY_ISO,
-  type SampleTech,
-  type SampleTimeEntry,
-} from "@/lib/prototype-sample";
+import { TODAY_ISO } from "@/lib/prototype-sample";
+import { useAppStore } from "@/lib/store/app-store";
+import type { Job, Lead, Tech, TimeEntry } from "@/lib/store/types";
 
 // ---- helpers ---------------------------------------------------------------
-
-function stub(action: string, ...args: unknown[]): void {
-  // eslint-disable-next-line no-console
-  console.log(`[stub] ${action}`, ...args);
-}
 
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + "T12:00:00");
@@ -41,7 +32,7 @@ function weekDates(wk: string): string[] {
   return Array.from({ length: 7 }, (_, i) => addDays(wk, i));
 }
 
-function tsHours(e: SampleTimeEntry): number {
+function tsHours(e: TimeEntry): number {
   if (!e.start || !e.end) return 0;
   const startParts = e.start.split(":").map(Number);
   const endParts = e.end.split(":").map(Number);
@@ -52,26 +43,24 @@ function tsHours(e: SampleTimeEntry): number {
   return Math.max(0, (eh + em / 60) - (sh + sm / 60));
 }
 
-function tsPaid(e: SampleTimeEntry): number {
+function tsPaid(e: TimeEntry): number {
   if (e.kind === "break") return 0;
   return tsHours(e);
 }
 
-function tsHrsLabel(h: number): string {
-  const H = Math.floor(h);
-  const M = Math.round((h - H) * 60);
-  return M ? `${H}h ${M}m` : `${H}h`;
-}
-
-function weekEntries(techId: number, wk: string): SampleTimeEntry[] {
+function weekEntries(entries: TimeEntry[], techId: number, wk: string): TimeEntry[] {
   const days = weekDates(wk);
-  return SAMPLE_TIME_ENTRIES.filter(
+  return entries.filter(
     (e) => e.techId === techId && days.includes(e.date)
   );
 }
 
-function rollup(techId: number, wk: string): { paid: number; ot: number; approved: boolean } {
-  const es = weekEntries(techId, wk);
+function rollup(
+  entries: TimeEntry[],
+  techId: number,
+  wk: string
+): { paid: number; ot: number; approved: boolean } {
+  const es = weekEntries(entries, techId, wk);
   const paid = es.reduce((s, e) => s + tsPaid(e), 0);
   const ot = Math.max(0, paid - 40);
   const approved = es.length > 0 && es.every((e) => e.status === "approved");
@@ -84,6 +73,16 @@ const TS_KINDS: Record<string, string> = {
   break: "Break",
   shop: "Shop",
 };
+
+/** Resolve the job-title label for an entry from the live jobs/leads (replaces
+ * the sample's denormalized jobTitle field). "" when no job is attached. */
+function entryJobTitle(e: TimeEntry, jobs: Job[], leads: Lead[]): string {
+  if (e.kind !== "job" || e.jobId == null) return "";
+  const j = jobs.find((job) => job.id === e.jobId);
+  if (!j) return "";
+  const lead = leads.find((l) => l.id === j.leadId);
+  return lead?.name ? `${j.title} · ${lead.name}` : j.title;
+}
 
 function dateLabel(iso: string): string {
   return new Date(iso + "T12:00:00").toLocaleDateString(undefined, {
@@ -105,10 +104,11 @@ function shortDateLabel(iso: string): string {
 // ============================================================================
 
 interface EntryRowProps {
-  entry: SampleTimeEntry;
+  entry: TimeEntry;
+  jobTitle: string;
 }
 
-function EntryRow({ entry: e }: EntryRowProps) {
+function EntryRow({ entry: e, jobTitle }: EntryRowProps) {
   const hrs = tsHours(e);
   const isJob = e.kind === "job";
   return (
@@ -120,7 +120,7 @@ function EntryRow({ entry: e }: EntryRowProps) {
         {TS_KINDS[e.kind] ?? e.kind}
       </span>
       <span className="ts-elabel" style={{ flex: 1, minWidth: 0 }}>
-        {isJob && e.jobTitle ? e.jobTitle : TS_KINDS[e.kind] ?? e.kind}
+        {isJob && jobTitle ? jobTitle : TS_KINDS[e.kind] ?? e.kind}
         {e.note ? <span className="muted"> · {e.note}</span> : null}
       </span>
       <span className="ts-etime">
@@ -139,10 +139,12 @@ function EntryRow({ entry: e }: EntryRowProps) {
 
 interface DayBlockProps {
   date: string;
-  entries: SampleTimeEntry[];
+  entries: TimeEntry[];
+  jobs: Job[];
+  leads: Lead[];
 }
 
-function DayBlock({ date, entries }: DayBlockProps) {
+function DayBlock({ date, entries, jobs, leads }: DayBlockProps) {
   const dayPaid = entries.reduce((s, e) => s + tsPaid(e), 0);
   return (
     <div className="ts-day">
@@ -151,7 +153,7 @@ function DayBlock({ date, entries }: DayBlockProps) {
         <span className="num">{dayPaid.toFixed(2)} h</span>
       </div>
       {entries.map((e) => (
-        <EntryRow key={e.id} entry={e} />
+        <EntryRow key={e.id} entry={e} jobTitle={entryJobTitle(e, jobs, leads)} />
       ))}
     </div>
   );
@@ -162,17 +164,20 @@ function DayBlock({ date, entries }: DayBlockProps) {
 // ============================================================================
 
 interface EntriesBlockProps {
+  entries: TimeEntry[];
   techId: number;
   wk: string;
+  jobs: Job[];
+  leads: Lead[];
 }
 
-function EntriesBlock({ techId, wk }: EntriesBlockProps) {
-  const es = weekEntries(techId, wk);
+function EntriesBlock({ entries, techId, wk, jobs, leads }: EntriesBlockProps) {
+  const es = weekEntries(entries, techId, wk);
   if (!es.length) {
     return <div className="empty-att">No entries this week.</div>;
   }
 
-  const byDay: Record<string, SampleTimeEntry[]> = {};
+  const byDay: Record<string, TimeEntry[]> = {};
   es.forEach((e) => {
     const arr = byDay[e.date] ?? [];
     byDay[e.date] = [...arr, e];
@@ -183,7 +188,7 @@ function EntriesBlock({ techId, wk }: EntriesBlockProps) {
   return (
     <>
       {days.map((d) => (
-        <DayBlock key={d} date={d} entries={byDay[d] ?? []} />
+        <DayBlock key={d} date={d} entries={byDay[d] ?? []} jobs={jobs} leads={leads} />
       ))}
     </>
   );
@@ -194,11 +199,17 @@ function EntriesBlock({ techId, wk }: EntriesBlockProps) {
 // ============================================================================
 
 export default function MyHoursPage() {
+  const techs = useAppStore((s) => s.techs);
+  const timeEntries = useAppStore((s) => s.timeEntries);
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const addTimeEntry = useAppStore((s) => s.addTimeEntry);
+
   const [myTech] = useState(1); // prototype: state.myTech = 1 (Mike Rivera)
   const [tsWeek, setTsWeek] = useState(() => weekStart(TODAY_ISO));
 
-  const tc: SampleTech | undefined =
-    SAMPLE_TECHS.find((t) => t.id === myTech) ?? SAMPLE_TECHS[0];
+  const tc: Tech | undefined =
+    techs.find((t) => t.id === myTech) ?? techs[0];
 
   if (!tc) {
     return (
@@ -210,24 +221,24 @@ export default function MyHoursPage() {
   }
 
   // Non-null capture for closures
-  const activeTech: SampleTech = tc;
+  const activeTech: Tech = tc;
 
-  const r = rollup(activeTech.id, tsWeek);
+  const r = rollup(timeEntries, activeTech.id, tsWeek);
   const thisWeek = weekStart(TODAY_ISO);
   const wkEnd = addDays(tsWeek, 6);
 
   function navWeek(delta: number): void {
-    stub("tsWeekNav", delta);
     setTsWeek((prev) => addDays(prev, delta * 7));
   }
 
   function goThisWeek(): void {
-    stub("tsWeekNav", "today");
     setTsWeek(thisWeek);
   }
 
   function addEntry(): void {
-    stub("tsAddEntry", activeTech.id);
+    // Adds a plain draft entry for the tech on the first day of the shown week.
+    // deferred: live clock (running start/stop entry) — out of scope here.
+    addTimeEntry(activeTech.id, tsWeek);
   }
 
   return (
@@ -269,7 +280,13 @@ export default function MyHoursPage() {
       </div>
 
       {/* Entries */}
-      <EntriesBlock techId={activeTech.id} wk={tsWeek} />
+      <EntriesBlock
+        entries={timeEntries}
+        techId={activeTech.id}
+        wk={tsWeek}
+        jobs={jobs}
+        leads={leads}
+      />
 
       {/* Approve / add */}
       {r.approved ? (
