@@ -1,6 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+
+// Route → breadcrumb, so the topbar reflects the current screen (like the prototype's crumb).
+const CRUMBS: Record<string, { section: string; label: string }> = {
+  "/dashboard": { section: "Customer", label: "Home" },
+  "/customers": { section: "Customer", label: "Customers" },
+  "/quotes": { section: "Customer", label: "Quotes" },
+  "/pipeline": { section: "Customer", label: "Pipeline" },
+  "/tasks": { section: "Customer", label: "Tasks" },
+  "/composer": { section: "Customer", label: "New quote" },
+  "/jobs": { section: "Customer", label: "Jobs" },
+  "/money": { section: "Customer", label: "Money" },
+  "/settings": { section: "Customer", label: "Settings" },
+  "/my-day": { section: "Field", label: "My day" },
+  "/my-hours": { section: "Field", label: "My hours" },
+  "/messages": { section: "Field", label: "Messages" },
+};
 
 const BellIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -34,7 +51,15 @@ interface TopbarProps {
   label?: string;
 }
 
-export function Topbar({ section = "Customer", label = "Home" }: TopbarProps) {
+export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) {
+  const pathname = usePathname();
+  // Longest-prefix match so nested routes (e.g. /customers/[id]) inherit the parent crumb.
+  const matched = Object.keys(CRUMBS)
+    .filter((route) => pathname === route || pathname.startsWith(route + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+  const crumb = matched ? CRUMBS[matched] : undefined;
+  const section = sectionProp ?? crumb?.section ?? "Customer";
+  const label = labelProp ?? crumb?.label ?? "Home";
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
