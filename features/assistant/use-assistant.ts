@@ -20,7 +20,7 @@ export function useAssistant() {
   const absorb = (result: { status: string; text: string; pending: PendingAction[]; transcript: string }) => {
     setTranscript(result.transcript);
     setPending(result.status === "needs_approval" ? result.pending : []);
-    const text = result.status === "refused" ? "I can't help with that request." : result.text;
+    const text = result.status === "refused" ? "I can't help with that request." : (result.text || "Done.");
     if (text) setItems((prev) => [...prev, { role: "assistant", text }]);
   };
   const fail = (err: unknown) => setError(userMessage(err));
@@ -34,11 +34,12 @@ export function useAssistant() {
   const resolveApprovals = (approved: boolean) => {
     if (!transcript) return;
     setError(null);
+    const snapshot = pending;
     const ids = pending.map((p) => p.toolUseId);
     setPending([]);
     resume.mutate(
       { transcript, approvedToolUseIds: approved ? ids : [], deniedToolUseIds: approved ? [] : ids },
-      { onSuccess: absorb, onError: fail },
+      { onSuccess: absorb, onError: (err) => { setPending(snapshot); fail(err); } },
     );
   };
 

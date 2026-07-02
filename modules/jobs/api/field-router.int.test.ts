@@ -142,4 +142,43 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     const started = await caller.v1.field.start({ jobId: jobBId });
     expect(started.status).toBe("in_progress");
   });
+
+  it("myDay returns scheduled jobs sorted by scheduledStart asc (not by insert order)", async () => {
+    // Seed a fresh tech so the ordering test is isolated from the jobs created in beforeAll.
+    const [orderTech] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role)
+      values (${orgId}, ${randomUUID()}, 'ordertech@field.test', 'tech')
+      returning id
+    `;
+    const orderTechId = orderTech!.id;
+
+    // T+2h job inserted FIRST (would come first if sorted by insert order / created_at).
+    const tPlus2 = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    // T+1h job inserted SECOND.
+    const tPlus1 = new Date(Date.now() + 1 * 60 * 60 * 1000).toISOString();
+
+    const [jobLater] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, scheduled_start)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-LATER', 'scheduled', 0, ${orderTechId}, ${tPlus2})
+      returning id
+    `;
+    const [jobEarlier] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, scheduled_start)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-EARLIER', 'scheduled', 0, ${orderTechId}, ${tPlus1})
+      returning id
+    `;
+
+    try {
+      const caller = appRouter.createCaller(ctxFor(orderTechId, orgId, "tech"));
+      const result = await caller.v1.field.myDay();
+
+      expect(result.items).toHaveLength(2);
+      // Earlier scheduledStart (T+1h, inserted second) must come before later (T+2h, inserted first).
+      expect(result.items[0]!.id).toBe(jobEarlier!.id);
+      expect(result.items[1]!.id).toBe(jobLater!.id);
+    } finally {
+      await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id})`;
+      await admin`delete from users where id = ${orderTechId}`;
+    }
+  });
 });

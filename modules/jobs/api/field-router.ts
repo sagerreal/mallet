@@ -34,7 +34,12 @@ export const createFieldRouter = () =>
       // Sequential on purpose: one tx = one connection.
       const inProgress = await useCase.exec({ page: toPage({ limit: 50, cursor: null }), filter: { ...mine, status: "in_progress" } });
       const scheduled = await useCase.exec({ page: toPage({ limit: 50, cursor: null }), filter: { ...mine, status: "scheduled" } });
-      return { items: [...inProgress.items, ...scheduled.items].map(toJobSummaryDTO) };
+      const byStart = (a: (typeof inProgress.items)[number], b: (typeof inProgress.items)[number]) => {
+        const av = a.props.scheduledStart ? a.props.scheduledStart.getTime() : Infinity;
+        const bv = b.props.scheduledStart ? b.props.scheduledStart.getTime() : Infinity;
+        return av - bv;
+      };
+      return { items: [...[...inProgress.items].sort(byStart), ...[...scheduled.items].sort(byStart)].map(toJobSummaryDTO) };
     }),
 
     start: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
