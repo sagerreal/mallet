@@ -1,18 +1,23 @@
 "use client";
 
+/**
+ * Home dashboard — pixel-faithful port of the prototype's vHome().
+ * KPIs, the Needs-attention list and Today's tasks all read LIVE from the
+ * Zustand store (leads / estimates / invoices / jobs / tasks / brand) and
+ * derive in the component body — never inside a selector (a selector that
+ * returns a new array crashes with "getServerSnapshot should be cached").
+ */
+
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  SAMPLE_BRAND,
-  SAMPLE_LEADS,
-  SAMPLE_ESTIMATES,
-  OWNER_FIRST,
-  SAMPLE_TASKS,
-  TODAY_ISO,
-  dPlus,
-  sampleKpis,
-  sampleFinKpis,
-  findLead,
-} from "@/lib/prototype-sample";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import { estTotal } from "@/lib/prototype-sample";
+import type { Estimate, Invoice, Job, Lead, Task } from "@/lib/store/types";
+
+// ---- constants (verbatim from prototype) ----
+const OWNER_FIRST = "Mike";
+const TODAY_ISO = "2026-07-01";
 
 // ---- Greeting helpers ----
 function timeGreeting(): string {
@@ -40,7 +45,66 @@ function formatEyebrowDate(orgName: string): string {
 
 // fmt$ equivalent: formats a plain dollar number (not cents)
 function fmt$(n: number): string {
-  return "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return "$" + Math.round(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+// ---- Money helpers (replicated locally — mirror money/page.tsx) ----
+function invPaid(i: Invoice): number {
+  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
+}
+
+function invDue(i: Invoice): number {
+  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
+}
+
+function invOver(i: Invoice): boolean {
+  if (i.status === "draft" || invDue(i) <= 0) return false;
+  return (i.age ?? 0) > 7;
+}
+
+// ---- Lead helpers ----
+function leadName(leads: Lead[], id: number | null | undefined): string {
+  if (id == null) return "";
+  return leads.find((l) => l.id === id)?.name ?? "";
+}
+
+/** The lead's estimate value (mirrors prototype leadVal): its estimate total, else its declared value. */
+function leadVal(lead: Lead, estimates: Estimate[]): number {
+  const est = lead.estId != null ? estimates.find((e) => e.id === lead.estId) : undefined;
+  if (est) return estTotal(est);
+  return lead.value ?? 0;
+}
+
+/** Job total from its line items (mirrors prototype jobPrice). */
+function jobPrice(job: Job): number {
+  return (job.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
+}
+
+// ---- KPI derivation (mirrors prototype kpis() / finKpis()) ----
+interface HomeKpis {
+  newLeads: number;
+  quotesOut: number;
+  quotesSum: number;
+  collected: number;
+  unpaid: number;
+}
+
+function deriveKpis(leads: Lead[], estimates: Estimate[], invoices: Invoice[]): HomeKpis {
+  // New this week: New customer stage, or Contacted & age<=7 (matches sampleKpis).
+  const newLeads = leads.filter(
+    (l) => l.stage === "New customer" || (l.stage === "Contacted" && l.age <= 7)
+  ).length;
+
+  const sentEsts = estimates.filter((e) => e.status === "sent");
+  const quotesOut = sentEsts.length;
+  const quotesSum = sentEsts.reduce((s, e) => s + estTotal(e), 0);
+
+  // Non-draft invoices → collected = Σ (payments + deposit); unpaid = Σ due on the unpaid ones.
+  const live = invoices.filter((i) => !i.archived && i.status !== "draft");
+  const collected = live.reduce((s, i) => s + invPaid(i) + (i.depPaid ?? 0), 0);
+  const unpaid = live.filter((i) => invDue(i) > 0).reduce((s, i) => s + invDue(i), 0);
+
+  return { newLeads, quotesOut, quotesSum, collected, unpaid };
 }
 
 // ---- Ticket (hero manila card) ----
@@ -162,7 +226,7 @@ function TourCards() {
             the tech clocks in &amp; asks the AI → invoice + auto-reminders.
           </div>
         </div>
-        {/* STUB: startJobTour() not wired — button is inert */}
+        {/* deferred: guided demo tours (separate feature) */}
         <button className="btn primary" disabled style={{ cursor: "not-allowed", opacity: 0.6 }}>
           Start tour
         </button>
@@ -199,7 +263,7 @@ function TourCards() {
             job — nobody typed a thing.
           </div>
         </div>
-        {/* STUB: startEstimateTour() not wired — button is inert */}
+        {/* deferred: guided demo tours (separate feature) */}
         <button className="btn primary" disabled style={{ cursor: "not-allowed", opacity: 0.6 }}>
           Start tour
         </button>
@@ -210,6 +274,10 @@ function TourCards() {
 
 // ---- Today tasks card ----
 function TodayCard() {
+  const tasks = useAppStore((s) => s.tasks);
+  const leads = useAppStore((s) => s.leads);
+  const taskDone = useAppStore((s) => s.taskDone);
+
   const today = TODAY_ISO;
   const overdue = (due: string) => due < today;
   const dueLabel = (due: string) => {
@@ -218,7 +286,7 @@ function TodayCard() {
     return due;
   };
 
-  const open = SAMPLE_TASKS.filter((t) => !t.done);
+  const open = tasks.filter((t) => !t.done);
 
   return (
     <div className="card">
@@ -227,7 +295,7 @@ function TodayCard() {
         <div className="empty-att">No tasks.</div>
       ) : (
         open.map((t) => {
-          const ln = t.leadId != null ? findLead(t.leadId) : null;
+          const nm = leadName(leads, t.leadId);
           const od = overdue(t.due);
           return (
             <div className="att-item" key={t.id}>
@@ -241,11 +309,10 @@ function TodayCard() {
                 <b style={{ fontWeight: 600 }}>{t.t}</b>
                 <div className="why">
                   {dueLabel(t.due)}
-                  {ln ? ` · ${ln.name}` : ""}
+                  {nm ? ` · ${nm}` : ""}
                 </div>
               </div>
-              {/* STUB: taskDone() not wired */}
-              <button className="btn sm ghost" disabled style={{ opacity: 0.5 }}>
+              <button className="btn sm ghost" onClick={() => taskDone(t.id)}>
                 Done
               </button>
             </div>
@@ -256,9 +323,12 @@ function TodayCard() {
   );
 }
 
-// ---- Needs attention — sample data version ----
-// The prototype computes 9 attention items from this dataset.
-// For the visual replica we render the most prominent ones matching the prototype output.
+// ---- Needs attention — store-derived + wired ----
+interface AttAction {
+  lbl: string;
+  fn: () => void;
+}
+
 interface AttItem {
   key: string;
   grp: number;
@@ -266,33 +336,209 @@ interface AttItem {
   bg: string;
   title: string;
   why: string;
-  actions: { lbl: string }[];
+  actions: AttAction[];
 }
 
-function buildSampleAttention(): AttItem[] {
-  const items: AttItem[] = [
-    // grp 1 — unread reply (Hector)
-    { key: "tx-4-1", grp: 1, val: 0, bg: "var(--blue-bg)", title: "Hector Ruiz", why: 'Replied · "Just sent both pics — the hallway one runs constantly btw"', actions: [{ lbl: "Open thread" }, { lbl: "View lead" }] },
-    // grp 1 — new lead Janet (age 0, no acts)
-    { key: "new-1", grp: 1, val: 0, bg: "var(--green-50)", title: "Janet Kim", why: "New lead · Water heater making banging noise", actions: [{ lbl: "Call now" }, { lbl: "View" }] },
-    // grp 2 — Sandy's quote viewed, 1 reminder sent
-    { key: "vw-101", grp: 2, val: 1450, bg: "var(--green-50)", title: "Sandy Whitfield", why: "Opened the quote · 4d ago · still warm", actions: [{ lbl: "Call" }, { lbl: "View quote" }] },
-    // grp 2 — Maria's quote viewed (age 1)
-    { key: "vw-102", grp: 2, val: 2880, bg: "var(--green-50)", title: "Maria Lopez", why: "Opened the quote · 1d ago · still warm", actions: [{ lbl: "Call" }, { lbl: "View quote" }] },
-    // grp 2 — Tom Webb invoice overdue 9d
-    { key: "inv-802-9", grp: 2, val: 640, bg: "var(--red-bg)", title: "Tom Webb", why: "Unpaid 9d overdue · INV-2042 · reminders sent", actions: [{ lbl: "Remind" }, { lbl: "Take payment" }] },
-    // grp 2 — unscheduled jobs
-    { key: "slot-902", grp: 2, val: 2150, bg: "var(--amber-bg)", title: "Linda Park", why: "Won · needs scheduling", actions: [{ lbl: "Pick a slot" }] },
-    { key: "slot-906", grp: 2, val: 340, bg: "var(--amber-bg)", title: "Lan Nguyen", why: "Won · needs scheduling", actions: [{ lbl: "Pick a slot" }] },
-    // grp 4 — tasks overdue/today
-    { key: "tk-1-" + dPlus(-1), grp: 4, val: 0, bg: "var(--red-bg)", title: "Send Hector the two toilet options with prices — he is picking between models", why: "Task overdue · Hector Ruiz", actions: [{ lbl: "Done" }, { lbl: "Open lead" }] },
-    { key: "tk-2-" + dPlus(0), grp: 4, val: 0, bg: "var(--amber-bg)", title: "Call Rob back — he is talking to his wife tonight", why: "Due today · Rob Alvarez", actions: [{ lbl: "Done" }, { lbl: "Open lead" }] },
-  ];
-  return items;
+const GRP_LABELS: Record<number, string> = {
+  1: "Answer now",
+  2: "Money on the table",
+  3: "Going cold",
+  4: "Promises",
+};
+
+/** Last "them" text on a lead (for the unread-reply why line). */
+function lastTheirText(lead: Lead): string {
+  const theirs = (lead.acts ?? []).filter((a) => a.type === "text" && a.from === "them");
+  const last = theirs[theirs.length - 1];
+  return last?.t ?? "New message";
+}
+
+// ---- attention builder — one small function per group, all store-derived ----
+interface AttSources {
+  leads: Lead[];
+  estimates: Estimate[];
+  invoices: Invoice[];
+  jobs: Job[];
+  tasks: Task[];
+}
+
+interface AttHandlers {
+  openModal: (id: (typeof MODAL)[keyof typeof MODAL], params?: Record<string, unknown>) => void;
+  updateInvoice: (id: number, patch: Partial<Invoice>) => void;
+  taskDone: (id: number) => void;
+  goJobs: () => void;
+}
+
+/** Group 1 — answer now: unread replies + brand-new leads. */
+function group1(src: AttSources, h: AttHandlers): AttItem[] {
+  const out: AttItem[] = [];
+  // 1a — unread reply (key carries reply count so a NEW reply re-surfaces)
+  for (const l of src.leads) {
+    if (l.archived || l.trash) continue;
+    const theirs = (l.acts ?? []).filter((a) => a.type === "text" && a.from === "them");
+    if (!l.unread) continue;
+    out.push({
+      key: `tx-${l.id}-${theirs.length}`,
+      grp: 1,
+      val: leadVal(l, src.estimates),
+      bg: "var(--blue-bg)",
+      title: l.name,
+      why: `Replied · "${lastTheirText(l)}"`,
+      actions: [
+        { lbl: "Open thread", fn: () => h.openModal(MODAL.THREAD, { leadId: l.id }) },
+        { lbl: "View lead", fn: () => h.openModal(MODAL.LEAD, { leadId: l.id }) },
+      ],
+    });
+  }
+  // 1b — brand-new uncontacted lead (New customer, age 0, no acts)
+  for (const l of src.leads) {
+    if (l.archived || l.trash) continue;
+    if (l.stage === "New customer" && l.age === 0 && !(l.acts ?? []).length) {
+      out.push({
+        key: `new-${l.id}`,
+        grp: 1,
+        val: leadVal(l, src.estimates),
+        bg: "var(--green-50)",
+        title: l.name,
+        why: `New lead${l.job ? " · " + l.job : ""}`,
+        actions: [
+          { lbl: "Call now", fn: () => h.openModal(MODAL.CALL, { leadId: l.id }) },
+          { lbl: "View", fn: () => h.openModal(MODAL.LEAD, { leadId: l.id }) },
+        ],
+      });
+    }
+  }
+  return out;
+}
+
+/** Group 2 — money on the table: viewed quotes, overdue invoices, unscheduled won jobs. */
+function group2(src: AttSources, h: AttHandlers): AttItem[] {
+  const out: AttItem[] = [];
+  // 2a — quote opened, still warm (sent + viewed)
+  for (const e of src.estimates) {
+    if (e.archived || e.trash) continue;
+    if (e.status !== "sent" || !e.viewed) continue;
+    const l = src.leads.find((x) => x.id === e.leadId);
+    if (!l || l.archived) continue;
+    out.push({
+      key: `vw-${e.id}`,
+      grp: 2,
+      val: estTotal(e),
+      bg: "var(--green-50)",
+      title: l.name,
+      why: `Opened the quote · ${e.age === 0 ? "today" : e.age + "d ago"} · still warm`,
+      actions: [
+        { lbl: "Call", fn: () => h.openModal(MODAL.CALL, { leadId: l.id }) },
+        { lbl: "View quote", fn: () => h.openModal(MODAL.EST, { estId: e.id }) },
+      ],
+    });
+  }
+  // 2b — overdue unpaid invoice (real money outranks quotes)
+  for (const i of src.invoices) {
+    if (i.archived) continue;
+    if (i.status === "draft" || !invOver(i)) continue;
+    const remindersSent = !!(i.fu && i.fu.on && i.fu.stage >= 2);
+    out.push({
+      key: `inv-${i.id}-${i.age}`,
+      grp: 2,
+      val: invDue(i),
+      bg: "var(--red-bg)",
+      title: i.cust,
+      why: `Unpaid ${i.age}d overdue · ${i.num}${remindersSent ? " · reminders sent" : ""}`,
+      actions: [
+        {
+          lbl: "Remind",
+          fn: () =>
+            h.updateInvoice(i.id, {
+              fu: { on: true, stage: Math.min((i.fu?.stage ?? 0) + 1, 2) },
+            }),
+        },
+        { lbl: "Take payment", fn: () => h.openModal(MODAL.INVOICE, { invoiceId: i.id }) },
+      ],
+    });
+  }
+  // 2c — won but never scheduled: won lead whose job is unscheduled (or has no scheduled job)
+  for (const l of src.leads) {
+    if (l.archived || l.trash) continue;
+    if (l.stage !== "Won") continue;
+    const jobs = src.jobs.filter((j) => j.leadId === l.id && !j.archived);
+    if (!jobs.length) continue; // no job yet → nothing to slot from here
+    const hasScheduled = jobs.some((j) => j.status !== "unscheduled");
+    if (hasScheduled) continue;
+    const job = jobs[0];
+    if (!job) continue;
+    out.push({
+      key: `slot-${job.id}`,
+      grp: 2,
+      val: jobPrice(job),
+      bg: "var(--amber-bg)",
+      title: l.name,
+      why: "Won · needs scheduling",
+      actions: [{ lbl: "Pick a slot", fn: h.goJobs }],
+    });
+  }
+  return out;
+}
+
+/** Group 4 — promises: open tasks due today or overdue. */
+function group4(src: AttSources, h: AttHandlers): AttItem[] {
+  const out: AttItem[] = [];
+  const today = TODAY_ISO;
+  for (const t of src.tasks) {
+    if (t.done) continue;
+    const isOverdue = t.due < today;
+    const isToday = t.due === today;
+    if (!isOverdue && !isToday) continue;
+    const nm = leadName(src.leads, t.leadId);
+    const actions: AttAction[] = [{ lbl: "Done", fn: () => h.taskDone(t.id) }];
+    if (t.leadId != null) {
+      const leadId = t.leadId;
+      actions.push({ lbl: "Open lead", fn: () => h.openModal(MODAL.LEAD, { leadId }) });
+    }
+    out.push({
+      key: `tk-${t.id}-${t.due}`,
+      grp: 4,
+      val: 0,
+      bg: isOverdue ? "var(--red-bg)" : "var(--amber-bg)",
+      title: t.t,
+      why: isOverdue
+        ? `Task overdue${nm ? " · " + nm : ""}`
+        : `Due today${nm ? " · " + nm : ""}`,
+      actions,
+    });
+  }
+  return out;
+}
+
+function buildAttention(src: AttSources, h: AttHandlers): AttItem[] {
+  const items = [...group1(src, h), ...group2(src, h), ...group4(src, h)];
+  // Stable group order, then dollars-first within a group (mirrors prototype sort).
+  return items.sort((a, b) => a.grp - b.grp || b.val - a.val);
 }
 
 function NeedsAttention() {
-  const items = buildSampleAttention();
+  const leads = useAppStore((s) => s.leads);
+  const estimates = useAppStore((s) => s.estimates);
+  const invoices = useAppStore((s) => s.invoices);
+  const jobs = useAppStore((s) => s.jobs);
+  const tasks = useAppStore((s) => s.tasks);
+  const openModal = useOpenModal();
+  const updateInvoice = useAppStore((s) => s.updateInvoice);
+  const taskDone = useAppStore((s) => s.taskDone);
+  const router = useRouter();
+
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const all = buildAttention(
+    { leads, estimates, invoices, jobs, tasks },
+    {
+      openModal,
+      updateInvoice,
+      taskDone,
+      goJobs: () => router.push("/jobs"),
+    }
+  );
+  const items = all.filter((a) => !dismissed.has(a.key));
   const totalVal = items.reduce((s, a) => s + (a.val ?? 0), 0);
 
   const accent = (bg: string) => {
@@ -301,13 +547,14 @@ function NeedsAttention() {
     return "";
   };
 
+  const dismiss = (key: string) =>
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+
   let lastGrp = 0;
-  const GRP_LABELS: Record<number, string> = {
-    1: "Answer now",
-    2: "Money on the table",
-    3: "Going cold",
-    4: "Promises",
-  };
 
   return (
     <div className="card" id="attCard">
@@ -317,69 +564,81 @@ function NeedsAttention() {
           {items.length} items{totalVal > 0 ? ` · $${totalVal.toLocaleString()} riding on them` : ""}
         </span>
       </h3>
-      {items.map((a) => {
-        const showHdr = a.grp !== lastGrp;
-        lastGrp = a.grp;
-        return (
-          <div key={a.key}>
-            {showHdr && (
-              <div
-                className="navlabel"
-                style={{ padding: `${lastGrp > 1 ? "12px" : "2px"} 0 4px` }}
-              >
-                {GRP_LABELS[a.grp]}
-              </div>
-            )}
-            <div className={`att-item`}>
-              <div className={`att-ico ${accent(a.bg)}`} style={{ background: a.bg }} />
-              <div className="att-body">
-                <b>{a.title}</b>
-                <div className="why">{a.why}</div>
-              </div>
-              <div className="att-actions">
-                {a.val > 0 && (
-                  <span className="att-val">${a.val.toLocaleString()}</span>
-                )}
-                {/* STUB: attention actions not wired to backend */}
-                {a.actions.map((act) => (
-                  <button key={act.lbl} className="btn sm" disabled style={{ opacity: 0.6 }}>
-                    {act.lbl}
+      {items.length === 0 ? (
+        <div className="empty-att">You&rsquo;re all caught up.</div>
+      ) : (
+        items.map((a) => {
+          const showHdr = a.grp !== lastGrp;
+          lastGrp = a.grp;
+          return (
+            <div key={a.key}>
+              {showHdr && (
+                <div
+                  className="navlabel"
+                  style={{ padding: `${lastGrp > 1 ? "12px" : "2px"} 0 4px` }}
+                >
+                  {GRP_LABELS[a.grp]}
+                </div>
+              )}
+              <div className={`att-item`}>
+                <div className={`att-ico ${accent(a.bg)}`} style={{ background: a.bg }} />
+                <div className="att-body">
+                  <b>{a.title}</b>
+                  <div className="why">{a.why}</div>
+                </div>
+                <div className="att-actions">
+                  {a.val > 0 && (
+                    <span className="att-val">${a.val.toLocaleString()}</span>
+                  )}
+                  {a.actions.map((act) => (
+                    <button key={act.lbl} className="btn sm" onClick={act.fn}>
+                      {act.lbl}
+                    </button>
+                  ))}
+                  <button
+                    className="att-nn"
+                    title="Not now"
+                    onClick={() => dismiss(a.key)}
+                  >
+                    ✕
                   </button>
-                ))}
-                <button className="att-nn" title="Not now" disabled style={{ opacity: 0.4 }}>
-                  ✕
-                </button>
+                </div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
     </div>
   );
 }
 
 // ---- Where wins come from ----
 function WinsFromCard() {
-  // Build live ROI from sample data (mirrors liveRoi())
+  const leads = useAppStore((s) => s.leads);
+  const estimates = useAppStore((s) => s.estimates);
+
+  // Build live ROI from store data (mirrors liveRoi())
   const by: Record<string, { src: string; leads: number; won: number; val: number }> = {};
   const row = (s: string) => {
-    if (!by[s]) by[s] = { src: s, leads: 0, won: 0, val: 0 };
-    return by[s];
+    const existing = by[s];
+    if (existing) return existing;
+    const created = { src: s, leads: 0, won: 0, val: 0 };
+    by[s] = created;
+    return created;
   };
 
   // count leads
-  for (const l of SAMPLE_LEADS) {
+  for (const l of leads) {
     const r = row(l.source || "—");
     r.leads++;
     if (l.stage === "Won") r.won++;
   }
   // count accepted estimate values
-  for (const e of SAMPLE_ESTIMATES) {
-    if (e.status !== "accepted" || !e.leadId) continue;
-    const l = findLead(e.leadId);
+  for (const e of estimates) {
+    if (e.status !== "accepted") continue;
+    const l = leads.find((x) => x.id === e.leadId);
     if (!l) continue;
-    const total = e.lines.reduce((s: number, ln: { q: number; r: number }) => s + ln.q * ln.r, 0);
-    row(l.source || "—").val += total;
+    row(l.source || "—").val += estTotal(e);
   }
 
   const rows = Object.values(by).sort(
@@ -418,23 +677,62 @@ function WinsFromCard() {
   );
 }
 
+// ---- AI Front Desk promo lockcard ----
+function FrontDeskCard() {
+  const router = useRouter();
+  const setToggle = useAppStore((s) => s.setToggle);
+
+  const turnOn = () => {
+    setToggle("frontDesk", true);
+    router.push("/settings");
+  };
+
+  return (
+    <div className="lockcard" style={{ marginBottom: "14px", position: "relative" }}>
+      <span className="lk">included · off</span>
+      <h4>Missed calls go to voicemail today</h4>
+      <div className="muted" style={{ fontSize: "12px" }}>
+        Most callers just dial the next name. Turn on the AI Front Desk: missed calls text
+        themselves back, parsed &amp; held — nothing books without your yes.{" "}
+        <span className="linklike" onClick={turnOn} style={{ cursor: "pointer" }}>
+          Turn it on →
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ---- Main page ----
 export default function DashboardPage() {
-  const kpis = sampleKpis();
-  const fin = sampleFinKpis();
+  const brand = useAppStore((s) => s.brand);
+  const leads = useAppStore((s) => s.leads);
+  const estimates = useAppStore((s) => s.estimates);
+  const invoices = useAppStore((s) => s.invoices);
+  const jobs = useAppStore((s) => s.jobs);
+  const tasks = useAppStore((s) => s.tasks);
+
+  const kpis = deriveKpis(leads, estimates, invoices);
+
+  // Attention count must match the rendered list — recompute the length here.
+  // (Actions are irrelevant to the count, so pass no-op handlers.)
+  const noop = () => {};
+  const attCount = buildAttention(
+    { leads, estimates, invoices, jobs, tasks },
+    { openModal: noop, updateInvoice: noop, taskDone: noop, goJobs: noop }
+  ).length;
 
   return (
     <div>
       {/* Hero ticket — matches prototype vHome() output */}
       <Ticket
-        orgName={SAMPLE_BRAND.name}
+        orgName={brand.name}
         firstName={OWNER_FIRST}
-        attCount={kpis.att}
-        unpaid={fin.unpaid}
-        newLeads={kpis.newWk}
-        quotesOut={kpis.awaitN}
-        quotesSum={kpis.awaitSum}
-        collected={fin.collected}
+        attCount={attCount}
+        unpaid={kpis.unpaid}
+        newLeads={kpis.newLeads}
+        quotesOut={kpis.quotesOut}
+        quotesSum={kpis.quotesSum}
+        collected={kpis.collected}
       />
 
       {/* Demo tour cards */}
@@ -447,18 +745,7 @@ export default function DashboardPage() {
           <NeedsAttention />
 
           {/* AI Front Desk promo lockcard */}
-          <div className="lockcard" style={{ marginBottom: "14px", position: "relative" }}>
-            <span className="lk">included · off</span>
-            <h4>Missed calls go to voicemail today</h4>
-            <div className="muted" style={{ fontSize: "12px" }}>
-              Most callers just dial the next name. Turn on the AI Front Desk: missed calls text
-              themselves back, parsed &amp; held — nothing books without your yes.{" "}
-              {/* STUB: turn-on action not wired */}
-              <span className="linklike" style={{ opacity: 0.5 }}>
-                Turn it on →
-              </span>
-            </div>
-          </div>
+          <FrontDeskCard />
         </div>
 
         <div>
