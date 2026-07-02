@@ -784,3 +784,50 @@ export function leadInitials(name: string): string {
     .slice(0, 2)
     .toUpperCase();
 }
+
+// ---------- time entries (added for My Hours / vMyTime port) ----------
+// The prototype seeds timeEntries:[] and calls seedTimesheets() for demo data.
+// These entries mirror the seed data from prototype's seedTimesheets() function
+// (lines 3631-3634), scoped to Monday of 2026-07-01's week (Mon 2026-06-29).
+
+export interface SampleTimeEntry {
+  id: number;
+  techId: number;
+  date: string;           // ISO date
+  kind: "job" | "travel" | "break" | "shop";
+  jobId: number | null;
+  jobTitle?: string;      // denormalized for display (not in prototype state, but simplifies the port)
+  start: string;          // "HH:MM"
+  end: string | null;     // "HH:MM" or null if running
+  note: string;
+  src: "clock" | "timer" | "manual";
+  status: "draft" | "approved";
+  running?: boolean;
+}
+
+// Monday of the week containing TODAY_ISO (2026-06-29)
+const WEEK_MON = "2026-06-29";
+
+function _wd(n: number): string {
+  const d = new Date(WEEK_MON + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+export const SAMPLE_TIME_ENTRIES: SampleTimeEntry[] = [
+  // Mike Rivera (tech 1) — Monday: repipe rough-in at Dave Chen's
+  { id: 5001, techId: 1, date: _wd(0), kind: "travel", jobId: null, start: "08:30", end: "09:00", note: "", src: "clock", status: "draft" },
+  { id: 5002, techId: 1, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "09:00", end: "13:00", note: "", src: "timer", status: "draft" },
+  { id: 5003, techId: 1, date: _wd(0), kind: "break", jobId: null, start: "13:00", end: "13:30", note: "Lunch", src: "clock", status: "draft" },
+  { id: 5004, techId: 1, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "13:30", end: "17:00", note: "", src: "timer", status: "draft" },
+  // Mike Rivera — Tuesday: estimate visit for Rob Alvarez
+  { id: 5005, techId: 1, date: _wd(1), kind: "travel", jobId: null, start: "10:45", end: "11:00", note: "", src: "clock", status: "draft" },
+  { id: 5006, techId: 1, date: _wd(1), kind: "job", jobId: null, jobTitle: "Estimate visit · Rob Alvarez", start: "11:00", end: "12:00", note: "Site visit", src: "timer", status: "draft" },
+  // Carlos Diaz (tech 2) — Monday: repipe rough-in (same job, different crew)
+  { id: 5007, techId: 2, date: _wd(0), kind: "travel", jobId: null, start: "08:15", end: "09:00", note: "", src: "clock", status: "draft" },
+  { id: 5008, techId: 2, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "09:00", end: "13:00", note: "", src: "timer", status: "approved" },
+  { id: 5009, techId: 2, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "13:30", end: "17:00", note: "", src: "timer", status: "approved" },
+  // Tasha Bell (tech 3) — Wednesday: AC tune-up
+  { id: 5010, techId: 3, date: _wd(2), kind: "travel", jobId: null, start: "09:45", end: "10:00", note: "", src: "clock", status: "draft" },
+  { id: 5011, techId: 3, date: _wd(2), kind: "job", jobId: 904, jobTitle: "AC tune-up · Rita Okafor", start: "10:00", end: "11:30", note: "", src: "timer", status: "draft" },
+];

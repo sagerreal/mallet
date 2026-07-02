@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Grows in Phase B/C: customers, quotes, jobs, money, assistant.
+// Office nav links + Field section
 export const OFFICE_NAV = [
   { href: "/dashboard", label: "Home" },
   { href: "/customers", label: "Customers" },
@@ -11,6 +11,12 @@ export const OFFICE_NAV = [
   { href: "/money", label: "Money" },
   { href: "/assistant", label: "Assistant" },
   { href: "/settings", label: "Settings" },
+];
+
+export const FIELD_NAV = [
+  { href: "/my-day", label: "My day" },
+  { href: "/my-hours", label: "My hours" },
+  { href: "/messages", label: "Messages" },
 ];
 
 export function OfficeNav() {
@@ -22,6 +28,10 @@ export function OfficeNav() {
       <nav className="hidden w-48 shrink-0 flex-col gap-1 border-r border-line p-3 md:flex">
         <p className="mb-2 px-3 font-display text-lg font-semibold">Mallet</p>
         {OFFICE_NAV.map((item) => (
+          <Link key={item.href} href={item.href} className={linkClass(item.href)}>{item.label}</Link>
+        ))}
+        <p className="mt-4 mb-1 px-3 text-xs font-bold uppercase tracking-widest text-ink-muted">Field</p>
+        {FIELD_NAV.map((item) => (
           <Link key={item.href} href={item.href} className={linkClass(item.href)}>{item.label}</Link>
         ))}
       </nav>

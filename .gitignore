@@ -17,3 +17,6 @@ coverage/
 /test-results/
 /playwright-report/
 .env*
+
+# agent worktrees / local tooling
+.claude/
