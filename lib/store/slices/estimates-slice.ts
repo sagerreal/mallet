@@ -19,6 +19,7 @@ export interface EstimatesSlice {
   estimates: Estimate[];
   addEstimate: (draft: Omit<Estimate, "id" | "num">) => Estimate;
   updateEstimate: (id: number, patch: Partial<Estimate>) => void;
+  restoreEstimate: (id: number) => void;
   deleteEstimate: (id: number) => void;
 }
 
@@ -34,6 +35,13 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice, [], [], Estimate
   updateEstimate: (id, patch) =>
     set((s) => ({
       estimates: s.estimates.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+    })),
+
+  restoreEstimate: (id) =>
+    set((s) => ({
+      estimates: s.estimates.map((e) =>
+        e.id === id ? { ...e, archived: false, trash: false } : e
+      ),
     })),
 
   deleteEstimate: (id) =>

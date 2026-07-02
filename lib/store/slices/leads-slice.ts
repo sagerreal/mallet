@@ -38,6 +38,7 @@ export interface LeadsSlice {
   moveLeadStage: (id: number, stage: string) => void;
   addLeadNote: (id: number, note: Omit<LeadNote, "id">) => void;
   archiveLead: (id: number) => void;
+  restoreLead: (id: number) => void;
   deleteLead: (id: number) => void;
 
   // Estimate-visit (evisit) placement on the schedule board.
@@ -92,6 +93,11 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   archiveLead: (id) =>
     set((s) => ({
       leads: s.leads.map((l) => (l.id === id ? { ...l, archived: true } : l)),
+    })),
+
+  restoreLead: (id) =>
+    set((s) => ({
+      leads: s.leads.map((l) => (l.id === id ? { ...l, archived: false } : l)),
     })),
 
   deleteLead: (id) =>

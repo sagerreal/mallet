@@ -16,6 +16,7 @@ import { createInvoicesSlice, type InvoicesSlice } from "./slices/invoices-slice
 import { createCallSlice, type CallSlice } from "./slices/call-slice";
 import { createTimesheetsSlice, type TimesheetsSlice } from "./slices/timesheets-slice";
 import { createChecklistsSlice, type ChecklistsSlice } from "./slices/checklists-slice";
+import { createSettingsSlice, type SettingsSlice } from "./slices/settings-slice";
 
 export type AppStore = UISlice &
   LeadsSlice &
@@ -25,7 +26,8 @@ export type AppStore = UISlice &
   InvoicesSlice &
   CallSlice &
   TimesheetsSlice &
-  ChecklistsSlice;
+  ChecklistsSlice &
+  SettingsSlice;
 
 export const useAppStore = create<AppStore>()((...args) => ({
   ...createUISlice(...args),
@@ -37,6 +39,7 @@ export const useAppStore = create<AppStore>()((...args) => ({
   ...createCallSlice(...args),
   ...createTimesheetsSlice(...args),
   ...createChecklistsSlice(...args),
+  ...createSettingsSlice(...args),
 }));
 
 // Convenience selectors — import these instead of reaching into the store directly
