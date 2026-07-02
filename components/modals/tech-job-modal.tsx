@@ -9,11 +9,13 @@
  * pauses / stops. Here the elapsed is LOCAL component state (ticks every 1s while
  * running) so the clock is live while the modal is open.
  *
- * Deferred chunks (faithful placeholders / comments below, each a later task):
- *   - work order fold (install scope, workOrderBlock)      // deferred: work order (install scope)
- *   - found-work / add-ons (aoSection)                     // deferred: found-work add-ons
- *   - interactive "Before you leave" capture (verifySection) — attached checklist
- *     renders READ-ONLY when present                       // deferred: interactive checklist capture
+ * Field-view chunks now ported (WorkOrderSec / FoundWorkSec / interactive
+ * ChecklistSec):
+ *   - work order fold (install scope, workOrderBlock 4649) → WorkOrderSec (5a)
+ *   - found-work / add-ons (aoSection 3826)                → FoundWorkSec (5b)
+ *   - interactive "Before you leave" capture (verifySection 4876) → ChecklistSec (5c)
+ *
+ * Still deferred:
  *   - tech GBB + on-glass signature (openTechQuote / tq)   // deferred: tech GBB + on-glass signature
  *
  * The on-site close-out / collect HERO (techDoneBlock, prototype 5698-5760) now
@@ -31,7 +33,15 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, Visit, Lead, Invoice } from "@/lib/store/types";
+import type {
+  Job,
+  Visit,
+  Lead,
+  Invoice,
+  Addon,
+  VerifyAns,
+  ChecklistItem,
+} from "@/lib/store/types";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -433,38 +443,468 @@ function PricingSec({ job, quoted, onPriceOnSite }: PricingSecProps) {
   );
 }
 
-// ---- attached checklist, READ-ONLY (prototype verifySection, deferred capture)
-// Renders when the job carries an office-attached checklist, mirroring the
-// job-modal attached view (○ / 📷 + text + "required"). Interactive capture
-// (tap to pass / photo / override) is the field-verify surface.
-// deferred: interactive checklist capture
+// ---- work order (prototype workOrderBlock, 4649-4669) ----------------------
+// A read-only "office-sold" scope handoff, install jobs only, not done, with
+// scope lines. Our JobLine has no `fee`, so scope = every non-empty `d` line.
+// The sold $ shows ONLY when techSeesPrice (the crew usually gets scope, no $).
 
-function ChecklistSec({ job }: { job: Job }) {
+const SCOPE_HEAD: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".05em",
+};
+
+interface WorkOrderSecProps {
+  job: Job;
+  seesPrice: boolean;
+}
+
+function WorkOrderSec({ job, seesPrice }: WorkOrderSecProps) {
+  const scope = (job.lines ?? []).filter((l) => (l.d ?? "").trim());
+  const photoN = (job.photos ?? []).length;
+
+  return (
+    <div className="fsec">
+      <div className="fsec-h">
+        <span>Work order</span>
+        <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>office-sold</span>
+      </div>
+      <div style={{ fontWeight: 700, fontSize: 15 }}>{job.title}</div>
+
+      {scope.length ? (
+        <>
+          <div className="muted" style={{ ...SCOPE_HEAD, margin: "13px 0 5px" }}>
+            Scope — what was sold
+          </div>
+          {scope.map((x, i) => (
+            <div
+              key={i}
+              style={{ fontSize: 13.5, padding: "3px 0", display: "flex", gap: 8, alignItems: "baseline" }}
+            >
+              <span style={{ color: "var(--green-700)" }}>✓</span>
+              <span style={{ flex: 1 }}>
+                {x.d}
+                {(x.q ?? 1) > 1 ? <span className="muted"> × {x.q}</span> : null}
+              </span>
+              {seesPrice && (
+                <span className="muted fig" style={{ fontSize: 12 }}>
+                  {fmt$((x.q ?? 1) * (x.r ?? 0))}
+                </span>
+              )}
+            </div>
+          ))}
+        </>
+      ) : null}
+
+      {job.special ? (
+        <div
+          style={{
+            marginTop: 11,
+            background: "#FFFBEF",
+            border: "1px solid var(--manila-line)",
+            borderRadius: 9,
+            padding: "9px 11px",
+          }}
+        >
+          <b style={{ fontSize: 12, color: "#b45309" }}>★ Homeowner&rsquo;s requests</b>
+          <div style={{ fontSize: 12.5, marginTop: 2 }}>{job.special}</div>
+        </div>
+      ) : null}
+
+      {job.prep ? (
+        <div style={{ fontSize: 12.5, marginTop: 9 }}>
+          <b>Bring:</b> {job.prep}
+        </div>
+      ) : null}
+
+      {photoN ? (
+        <div style={{ marginTop: 11 }}>
+          <span className="muted" style={SCOPE_HEAD}>
+            Site photos · {photoN}
+          </span>
+          <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
+            {Array.from({ length: Math.min(photoN, 4) }).map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 8,
+                  background: "var(--green-100)",
+                  border: "1px solid var(--manila-line)",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---- found work / add-ons (prototype aoSection, 3826-3837) -----------------
+// One .stage-row per addon: bold desc + ($r when techSeesPrice) + a status
+// stpill; proposed rows get "✓ Customer OK'd" / "✕". Below, an add-form with a
+// desc input + (price input when techSeesPrice) + Add. LOCAL controlled inputs.
+
+const AO_INPUT: React.CSSProperties = {
+  border: "1.5px solid var(--line)",
+  borderRadius: 8,
+  padding: "7px 9px",
+  fontFamily: "inherit",
+  fontSize: 13,
+};
+
+interface AddonStatusPillProps {
+  status: Addon["status"];
+}
+
+function AddonStatusPill({ status }: AddonStatusPillProps) {
+  if (status === "approved") {
+    return (
+      <span className="stpill" style={{ color: "var(--green-700)", background: "var(--green-50)" }}>
+        approved
+      </span>
+    );
+  }
+  if (status === "declined") {
+    return (
+      <span className="stpill" style={{ color: "var(--ink-3)", background: "var(--paper)" }}>
+        declined
+      </span>
+    );
+  }
+  return (
+    <span className="stpill" style={{ color: "var(--amber)", background: "var(--amber-bg)" }}>
+      awaiting OK
+    </span>
+  );
+}
+
+interface FoundWorkSecProps {
+  job: Job;
+  seesPrice: boolean;
+  addAddon: (jobId: number, draft: { d: string; r: number }) => Addon | null;
+  setAddonStatus: (jobId: number, addonId: number, status: Addon["status"]) => void;
+}
+
+function FoundWorkSec({ job, seesPrice, addAddon, setAddonStatus }: FoundWorkSecProps) {
+  const [desc, setDesc] = useState("");
+  const [price, setPrice] = useState("");
+
+  const addons = job.addons ?? [];
+  const awaiting = addons.filter((a) => a.status === "proposed").length;
+
+  function submit() {
+    const d = desc.trim();
+    if (!d) return;
+    addAddon(job.id, { d, r: +price || 0 });
+    setDesc("");
+    setPrice("");
+  }
+
+  return (
+    <div className="fsec">
+      <div className="fsec-h">
+        <span>Found work / add-ons</span>
+        <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
+          {addons.length}
+          {awaiting ? ` · ${awaiting} awaiting OK` : ""}
+        </span>
+      </div>
+
+      {addons.map((a) => (
+        <div key={a.id} className="stage-row">
+          <div style={{ flex: 1 }}>
+            <b style={{ fontWeight: 600 }}>{a.d}</b>
+            {seesPrice && <span className="muted"> · {fmt$(a.r)}</span>}
+          </div>
+          <AddonStatusPill status={a.status} />
+          {a.status === "proposed" && (
+            <>
+              <button
+                className="btn sm primary"
+                onClick={() => setAddonStatus(job.id, a.id, "approved")}
+              >
+                ✓ Customer OK&rsquo;d
+              </button>
+              <button className="btn sm ghost" onClick={() => setAddonStatus(job.id, a.id, "declined")}>
+                ✕
+              </button>
+            </>
+          )}
+        </div>
+      ))}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <input
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          placeholder="extra work found…"
+          style={{ flex: 2, minWidth: 140, ...AO_INPUT }}
+        />
+        {seesPrice && (
+          <input
+            type="number"
+            inputMode="decimal"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submit();
+            }}
+            placeholder="price $"
+            style={{ flex: "0 0 92px", ...AO_INPUT }}
+          />
+        )}
+        <button className="btn sm primary" onClick={submit}>
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---- attached checklist, INTERACTIVE (prototype verifySection, 4876-4897) --
+// The field "Before you leave" capture. Derives jobVerifyState(job) in the body
+// (never inside a selector): each item pairs the checklist item with its answer;
+// gaps = required + unanswered. Progress bar fills done/total (amber if gaps).
+// One row, one primary action: tap to pass / Photo to capture. N/A + declined
+// live behind a ⋯ kebab that expands in place (LOCAL expandedId state).
+
+interface VerifyRow {
+  it: ChecklistItem;
+  a: VerifyAns | undefined;
+}
+
+interface VerifyState {
+  items: VerifyRow[];
+  gaps: VerifyRow[];
+  done: number;
+  total: number;
+}
+
+/** jobVerifyState (prototype 4826) — derive in the component body, not a selector. */
+function jobVerifyState(job: Job): VerifyState | null {
   const cl = job.checklist;
   if (!cl) return null;
-  const items = (cl.items ?? []).filter((it) => (it.text ?? "").trim());
+  const ans = job.verify?.ans ?? {};
+  const items: VerifyRow[] = (cl.items ?? [])
+    .filter((it) => (it.text ?? "").trim())
+    .map((it) => ({ it, a: ans[it.id] }));
   if (!items.length) return null;
+  const gaps = items.filter((x) => !x.a && x.it.required);
+  return { items, gaps, done: items.filter((x) => x.a).length, total: items.length };
+}
+
+const OVERRIDE_REASONS = ["N/A", "Customer declined"] as const;
+
+const VROW_BASE: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 11,
+  padding: "10px 0",
+  borderTop: "1px solid var(--line)",
+  fontSize: 13.5,
+};
+
+interface ChecklistItemRowProps {
+  jobId: number;
+  row: VerifyRow;
+  expanded: boolean;
+  onCheck: () => void;
+  onPhoto: () => void;
+  onOverride: (reason: string) => void;
+  onUndo: () => void;
+  onToggleExpand: () => void;
+}
+
+// One verify row — answered (✓/⊘ + how + undo), or unanswered (tappable / Photo
+// + ⋯ override). Ported 1:1 from verifySection's `row(x)`.
+function ChecklistItemRow({
+  row,
+  expanded,
+  onCheck,
+  onPhoto,
+  onOverride,
+  onUndo,
+  onToggleExpand,
+}: ChecklistItemRowProps) {
+  const { it, a } = row;
+
+  if (a) {
+    const ov = a.st === "override";
+    const how = ov ? a.reason ?? "" : a.via === "photo" ? "photo" : "done";
+    return (
+      <div style={VROW_BASE}>
+        <span
+          style={{
+            width: 16,
+            flex: "none",
+            textAlign: "center",
+            fontWeight: 700,
+            color: ov ? "var(--ink-3)" : "var(--green-700)",
+          }}
+        >
+          {ov ? "⊘" : "✓"}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, color: "var(--ink-2)" }}>{it.text}</span>
+        <span className="muted" style={{ fontSize: 11.5, flex: "none" }}>
+          {how}
+        </span>
+        <span
+          className="linklike"
+          style={{ fontSize: 11, flex: "none", color: "var(--ink-3)" }}
+          onClick={onUndo}
+        >
+          undo
+        </span>
+      </div>
+    );
+  }
+
+  const glyph = (
+    <span
+      style={{
+        width: 16,
+        flex: "none",
+        textAlign: "center",
+        fontWeight: 700,
+        color: it.required ? "var(--amber)" : "var(--ink-3)",
+      }}
+    >
+      ○
+    </span>
+  );
+
+  const label = (
+    <span style={{ flex: 1, minWidth: 0 }}>
+      {it.text}
+      {!it.required && (
+        <span className="muted" style={{ fontSize: 11.5 }}>
+          {" "}
+          · optional
+        </span>
+      )}
+    </span>
+  );
+
+  const ctrl =
+    it.type === "photo" ? (
+      <button
+        className="btn sm ghost"
+        style={{ flex: "none", padding: "5px 14px" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onPhoto();
+        }}
+      >
+        Photo
+      </button>
+    ) : null;
+
+  const kebab = (
+    <span
+      className="linklike"
+      style={{ flex: "none", color: "var(--ink-3)", fontSize: 17, lineHeight: 1, padding: "0 5px", fontWeight: 800 }}
+      title="N/A or customer declined"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleExpand();
+      }}
+    >
+      ⋯
+    </span>
+  );
+
+  const expRow = expanded ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 11px 27px" }}>
+      {OVERRIDE_REASONS.map((r) => (
+        <button
+          key={r}
+          className="chip"
+          style={{ padding: "3px 11px", fontSize: 11.5 }}
+          onClick={() => onOverride(r)}
+        >
+          {r}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  // photo items keep the whole row un-tappable (the Photo button captures);
+  // check items make the whole row a tap target.
+  return (
+    <>
+      {it.type === "photo" ? (
+        <div style={VROW_BASE}>
+          {glyph}
+          {label}
+          {ctrl}
+          {kebab}
+        </div>
+      ) : (
+        <div style={{ ...VROW_BASE, cursor: "pointer" }} onClick={onCheck}>
+          {glyph}
+          {label}
+          {ctrl}
+          {kebab}
+        </div>
+      )}
+      {expRow}
+    </>
+  );
+}
+
+interface ChecklistSecProps {
+  job: Job;
+  checkItem: (jobId: number, itemId: number) => void;
+  overrideItem: (jobId: number, itemId: number, reason: string) => void;
+  uncheckItem: (jobId: number, itemId: number) => void;
+  addPhoto: (jobId: number) => void;
+}
+
+function ChecklistSec({ job, checkItem, overrideItem, uncheckItem, addPhoto }: ChecklistSecProps) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const vs = jobVerifyState(job);
+  if (!vs) return null;
+
+  const pct = Math.round((vs.done / vs.total) * 100);
+  const barColor = vs.gaps.length ? "var(--amber)" : "var(--green-700)";
 
   return (
     <div className="fsec">
       <div className="fsec-h">
         <span>Before you leave</span>
-      </div>
-      <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>
-        {cl.name}
-      </div>
-      {items.map((it) => (
-        <div key={it.id} className="stage-row" style={{ gap: 8, padding: "4px 0" }}>
-          <span style={{ color: it.required ? "var(--amber)" : "var(--ink-3)" }}>
-            {it.type === "photo" ? "📷" : "○"}
+        {job.checklist?.name ? (
+          <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
+            {job.checklist.name}
           </span>
-          <span style={{ flex: 1, fontSize: 13 }}>{it.text}</span>
-          {it.required && (
-            <span className="muted" style={{ fontSize: 11 }}>
-              required
-            </span>
-          )}
-        </div>
+        ) : null}
+      </div>
+      <div
+        style={{ height: 4, borderRadius: 2, background: "var(--line)", overflow: "hidden", margin: "0 0 4px" }}
+      >
+        <div style={{ height: "100%", width: `${pct}%`, background: barColor }} />
+      </div>
+      {vs.items.map((row) => (
+        <ChecklistItemRow
+          key={row.it.id}
+          jobId={job.id}
+          row={row}
+          expanded={expandedId === row.it.id}
+          onCheck={() => checkItem(job.id, row.it.id)}
+          onPhoto={() => addPhoto(job.id)}
+          onOverride={(reason) => {
+            overrideItem(job.id, row.it.id, reason);
+            setExpandedId(null);
+          }}
+          onUndo={() => uncheckItem(job.id, row.it.id)}
+          onToggleExpand={() => setExpandedId((cur) => (cur === row.it.id ? null : row.it.id))}
+        />
       ))}
     </div>
   );
@@ -704,6 +1144,15 @@ export function TechJobModalContent() {
   const setVisitStatus = useAppStore((s) => s.setVisitStatus);
   const updateJob = useAppStore((s) => s.updateJob);
   const recordPayment = useAppStore((s) => s.recordPayment);
+  // Money in the tech view is gated by this permission toggle (a scalar — safe
+  // to select directly; never derive an array in a selector).
+  const seesPrice = useAppStore((s) => s.toggles.techSeesPrice);
+  const addAddon = useAppStore((s) => s.addAddon);
+  const setAddonStatus = useAppStore((s) => s.setAddonStatus);
+  const checkVerifyItem = useAppStore((s) => s.checkVerifyItem);
+  const overrideVerifyItem = useAppStore((s) => s.overrideVerifyItem);
+  const uncheckVerifyItem = useAppStore((s) => s.uncheckVerifyItem);
+  const addJobPhoto = useAppStore((s) => s.addJobPhoto);
 
   const jobId = activeModal?.params?.jobId as number | undefined;
   const job = jobs.find((j) => j.id === jobId);
@@ -822,7 +1271,12 @@ export function TechJobModalContent() {
         <FieldTimer key={curVisit.id} visit={curVisit} />
       ) : null}
 
-      {/* deferred: work order (install scope) — the sold-install handoff fold. */}
+      {/* Work order (5a) — install job, not done, with scope lines (office-sold). */}
+      {jobMode(job) === "install" &&
+      !done &&
+      (job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
+        <WorkOrderSec job={job} seesPrice={seesPrice} />
+      ) : null}
 
       {/* 5. Your visit(s). */}
       <div className="fsec">
@@ -873,10 +1327,22 @@ export function TechJobModalContent() {
         />
       )}
 
-      {/* deferred: found-work add-ons (aoSection). */}
+      {/* Found work / add-ons (5b). */}
+      <FoundWorkSec
+        job={job}
+        seesPrice={seesPrice}
+        addAddon={addAddon}
+        setAddonStatus={setAddonStatus}
+      />
 
-      {/* 7. Before you leave — attached checklist, READ-ONLY. */}
-      <ChecklistSec job={job} />
+      {/* 7. Before you leave — attached checklist, INTERACTIVE (5c). */}
+      <ChecklistSec
+        job={job}
+        checkItem={checkVerifyItem}
+        overrideItem={overrideVerifyItem}
+        uncheckItem={uncheckVerifyItem}
+        addPhoto={addJobPhoto}
+      />
 
       {/* 8. Notes feed. */}
       <NoteFeed job={job} />

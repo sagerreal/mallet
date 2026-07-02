@@ -118,6 +118,28 @@ export interface JobLine {
   c?: number;
 }
 
+// Found-work / add-on discovered in the field (prototype j.addons[] — addAddon).
+// Proposed → approved (customer OK'd, bills) | declined. invSkip = left off the
+// current bill but kept on the job.
+export interface Addon {
+  id: number;
+  d: string;
+  q: number;
+  r: number;
+  c?: number;
+  status: "proposed" | "approved" | "declined";
+  when?: string;
+  invSkip?: boolean;
+}
+
+// One before-you-leave checklist answer (prototype j.verify.ans[itemId]).
+// pass = checked (via 'manual' tap or 'photo'); override = N/A / declined w/ reason.
+export interface VerifyAns {
+  st: "pass" | "override";
+  via?: string;
+  reason?: string;
+}
+
 export interface ChecklistItem {
   id: number;
   text: string;
@@ -145,10 +167,13 @@ export interface Job {
   status: string;
   archived: boolean;
   lines: JobLine[];
-  addons: unknown[];
+  addons: Addon[];
   photos: string[];
   notes: string;
   special?: string;
+  prep?: string;
+  // Before-you-leave checklist answers, keyed by checklist item id.
+  verify?: { ans: Record<number, VerifyAns> };
   acts: unknown[];
   visits: Visit[];
   checklist?: { name: string; items: ChecklistItem[] };

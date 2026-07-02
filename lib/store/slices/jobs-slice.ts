@@ -7,7 +7,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { Job, Visit } from "../types";
+import type { Job, Visit, Addon, VerifyAns } from "../types";
 import { SAMPLE_JOBS } from "@/lib/prototype-sample";
 
 const SEED_JOBS: Job[] = SAMPLE_JOBS.map((j) => ({
@@ -17,6 +17,12 @@ const SEED_JOBS: Job[] = SAMPLE_JOBS.map((j) => ({
 
 let _nextJobId = 900;
 let _nextVisitId = 9800;
+let _nextAuxId = 6000; // addons + other field-created ids (mirrors state.nextId)
+
+/** Immutably replace one job by id (mirrors the recurring map pattern). */
+function patchJob(jobs: Job[], id: number, fn: (j: Job) => Job): Job[] {
+  return jobs.map((j) => (j.id === id ? fn(j) : j));
+}
 
 /** True once a visit has crew + day + start (mirrors prototype vPlaced). */
 function isPlaced(v: Visit): boolean {
@@ -47,6 +53,22 @@ export interface JobsSlice {
   removeVisit: (jobId: number, visitId: number) => void;
   archiveJob: (id: number) => void;
   deleteJob: (id: number) => void;
+  // Found-work / add-ons (prototype addAddon / approveAddon / declineAddon).
+  addAddon: (jobId: number, draft: { d: string; r: number; c?: number }) => Addon | null;
+  setAddonStatus: (jobId: number, addonId: number, status: Addon["status"]) => void;
+  setAddonInvSkip: (jobId: number, addonId: number) => void;
+  // Before-you-leave checklist capture (prototype jobCheckItem / jobOverride /
+  // jobUncheck / jobPhoto).
+  checkVerifyItem: (jobId: number, itemId: number) => void;
+  overrideVerifyItem: (jobId: number, itemId: number, reason: string) => void;
+  uncheckVerifyItem: (jobId: number, itemId: number) => void;
+  addJobPhoto: (jobId: number) => void;
+}
+
+/** Set one verify answer immutably (mirrors prototype jobVerifySet). */
+function withVerify(job: Job, itemId: number, ans: VerifyAns): Job {
+  const prev = job.verify?.ans ?? {};
+  return { ...job, verify: { ans: { ...prev, [itemId]: ans } } };
 }
 
 export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set, get) => ({
@@ -120,4 +142,75 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
 
   deleteJob: (id) =>
     set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, archived: true } : j)) })),
+
+  addAddon: (jobId, draft) => {
+    const d = draft.d.trim();
+    if (!d) return null;
+    const addon: Addon = {
+      id: ++_nextAuxId,
+      d,
+      q: 1,
+      r: Math.max(0, draft.r || 0),
+      ...(draft.c != null ? { c: Math.max(0, draft.c) } : {}),
+      status: "proposed",
+      when: "Just now",
+    };
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => ({ ...j, addons: [...j.addons, addon] })),
+    }));
+    return addon;
+  },
+
+  setAddonStatus: (jobId, addonId, status) =>
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => ({
+        ...j,
+        addons: j.addons.map((a) => (a.id === addonId ? { ...a, status } : a)),
+      })),
+    })),
+
+  setAddonInvSkip: (jobId, addonId) =>
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => ({
+        ...j,
+        addons: j.addons.map((a) => (a.id === addonId ? { ...a, invSkip: true } : a)),
+      })),
+    })),
+
+  checkVerifyItem: (jobId, itemId) =>
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => withVerify(j, itemId, { st: "pass", via: "manual" })),
+    })),
+
+  overrideVerifyItem: (jobId, itemId, reason) =>
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => withVerify(j, itemId, { st: "override", reason })),
+    })),
+
+  uncheckVerifyItem: (jobId, itemId) =>
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => {
+        const ans = { ...(j.verify?.ans ?? {}) };
+        delete ans[itemId];
+        return { ...j, verify: { ans } };
+      }),
+    })),
+
+  // Push a field photo and auto-pass the next unanswered photo checklist item
+  // (mirrors prototype jobPhoto's checklist-matching side effect).
+  addJobPhoto: (jobId) =>
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => {
+        const photos = [...j.photos, ""];
+        const items = j.checklist?.items ?? [];
+        const ans = j.verify?.ans ?? {};
+        const nextPhoto = items.find((it) => it.type === "photo" && !ans[it.id]);
+        if (!nextPhoto) return { ...j, photos };
+        return {
+          ...j,
+          photos,
+          verify: { ans: { ...ans, [nextPhoto.id]: { st: "pass", via: "photo" } } },
+        };
+      }),
+    })),
 });
