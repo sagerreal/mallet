@@ -19,6 +19,7 @@ import { JobModalContent } from "./job-modal";
 import { NewJobModalContent } from "./new-job-modal";
 import { JobSweepModalContent } from "./job-sweep-modal";
 import { EvisitModalContent } from "./evisit-modal";
+import { PriceBuilderModalContent } from "./price-builder-modal";
 import { Modal } from "./modal";
 import {
   VisitModalContent,
@@ -83,6 +84,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.EVISIT} onClose={close}>
         <EvisitModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.PRICE_BUILDER} onClose={close} wide>
+        <PriceBuilderModalContent />
       </Modal>
     </>
   );

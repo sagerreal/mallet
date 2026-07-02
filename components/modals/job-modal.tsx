@@ -316,9 +316,10 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove }: VisitRowP
 
 interface PriceSummaryProps {
   job: Job;
+  onBuildPrice: () => void;
 }
 
-function PriceSummary({ job }: PriceSummaryProps) {
+function PriceSummary({ job, onBuildPrice }: PriceSummaryProps) {
   if (jobMode(job) === "estimate") return null;
   const hasLines = (job.lines ?? []).length > 0;
 
@@ -328,8 +329,7 @@ function PriceSummary({ job }: PriceSummaryProps) {
         <span
           className="linklike"
           style={{ fontSize: 13, fontWeight: 700 }}
-          // deferred: tech quote builder (tq) is a Field-area surface — no-op for now.
-          onClick={() => {}}
+          onClick={onBuildPrice}
         >
           ✦ Build the price →
         </span>{" "}
@@ -344,12 +344,7 @@ function PriceSummary({ job }: PriceSummaryProps) {
     <div className="card" style={{ margin: "14px 0 0", background: "var(--paper)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h3 style={{ fontSize: 13, margin: 0 }}>Price</h3>
-        <span
-          className="linklike"
-          style={{ fontSize: 12 }}
-          // deferred: tech quote builder (tq) is a Field-area surface — no-op for now.
-          onClick={() => {}}
-        >
+        <span className="linklike" style={{ fontSize: 12 }} onClick={onBuildPrice}>
           Edit
         </span>
       </div>
@@ -922,7 +917,7 @@ export function JobModalContent() {
       </div>
 
       {/* 7. Price summary — PRICE + Total only, never cost/margin/profit */}
-      <PriceSummary job={job} />
+      <PriceSummary job={job} onBuildPrice={() => openModal(MODAL.PRICE_BUILDER, { jobId: job.id })} />
 
       {/* 8. View signed agreement — deferred (signed-doc viewer not built) */}
 

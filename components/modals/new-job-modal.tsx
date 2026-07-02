@@ -28,8 +28,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useCloseModal, useLeads, useAppStore } from "@/lib/store/app-store";
-import type { Lead, Visit } from "@/lib/store/types";
+import { useCloseModal, useOpenModal, useLeads, useAppStore } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import type { Job, Lead, Visit } from "@/lib/store/types";
 
 // ---- constants (mirror prototype NJ_HOURS + SVC_META dot colors) ------------
 
@@ -71,6 +72,7 @@ function clampHours(h: number): number {
 
 export function NewJobModalContent() {
   const close = useCloseModal();
+  const openModal = useOpenModal();
   const leads = useLeads();
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
@@ -253,32 +255,35 @@ export function NewJobModalContent() {
     rows.forEach((v) => addVisit(created.id, v.h));
     // CHECKLIST: chosen before-you-leave template would attach to the job here —
     // deferred (no checklist template data in the store yet).
+    return created;
   }
 
-  /** Validate + create the job/estimate; returns true on success. */
-  function commit(): boolean {
+  /** Validate + create the job/estimate; returns the created Job (job types) or
+   *  null (estimate types create a lead+evisit; nothing to price). */
+  function commit(): { ok: boolean; job: Job | null } {
     const job = title.trim();
     if (!job) {
       setError("Add what the job is.");
-      return false;
+      return { ok: false, job: null };
     }
     if (njType === "estimate") {
       createEstimate(job);
-    } else {
-      createJob(job);
+      return { ok: true, job: null };
     }
-    return true;
+    return { ok: true, job: createJob(job) };
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (commit()) close();
+    if (commit().ok) close();
   }
 
   function handleBuildPrice() {
-    // Prototype opens the tech-quote builder after creating; that surface isn't
-    // wired here, so we just create the job then close. (deferred: price builder)
-    if (commit()) close();
+    // Create the job, then hand off to the price builder (prototype saveNewJob(true)).
+    const { ok, job } = commit();
+    if (!ok) return;
+    close();
+    if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
   }
 
   // ---- checklist summary label ----------------------------------------------
