@@ -3,6 +3,7 @@ import { guardRole } from "@/lib/auth/guard";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Topbar } from "@/components/shell/topbar";
 import { CommandBar } from "@/components/shell/command-bar";
+import { ModalHost } from "@/components/modals/modal-host";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
         </div>
       </div>
       <CommandBar />
+      <ModalHost />
     </div>
   );
 }

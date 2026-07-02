@@ -6,6 +6,7 @@ import { useCustomers } from "@/features/customers/hooks";
 import { useJobs } from "@/features/jobs/hooks";
 import { useInvoices } from "@/features/invoices/hooks";
 import { useMe } from "@/features/identity/hooks";
+import { NewMenu } from "@/components/shell/new-menu";
 
 // SVG icons matching the prototype
 const HomeIcon = () => (
@@ -134,11 +135,7 @@ export function Sidebar() {
       {/* Nav */}
       <div id="sidenav" style={{ flex: 1, overflowY: "auto", padding: "2px 10px 10px" }}>
         {/* + New button */}
-        <Link href="/customers" className="navnew" style={{ textDecoration: "none" }}>
-          <span className="plus">+</span>
-          <span>New</span>
-          <span className="nm-caret">▾</span>
-        </Link>
+        <NewMenu />
 
         {/* Main nav */}
         <NavItem href="/dashboard" icon={<HomeIcon />} label="Home" active={isActive("/dashboard")} />
