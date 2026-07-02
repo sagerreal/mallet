@@ -15,7 +15,10 @@ const useInvalidateJobs = () => {
 
 export const useJobs = (status?: JobStatus) => api.v1.jobs.list.useQuery({ limit: 50, status });
 export const useJob = (jobId: string) => api.v1.jobs.get.useQuery({ jobId });
-export const useCreateJobFromEstimate = () => api.v1.jobs.createFromEstimate.useMutation();
+export const useCreateJobFromEstimate = () => {
+  const i = useInvalidateJobs();
+  return api.v1.jobs.createFromEstimate.useMutation({ onSuccess: i });
+};
 export const useAssignJob = () => {
   const i = useInvalidateJobs();
   return api.v1.jobs.assign.useMutation({ onSuccess: i });

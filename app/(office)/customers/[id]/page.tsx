@@ -22,7 +22,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (customer.isError) return <p className="text-sm text-red">{userMessage(customer.error)}</p>;
   if (!customer.data) return <p className="text-sm text-ink-muted">Customer not found.</p>;
   const c = customer.data;
-  const customerQuotes = quotes.data ?? [];
+  const customerQuotes = quotes.data?.items ?? [];
 
   return (
     <div className="space-y-4">
@@ -34,33 +34,41 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
       </Card>
       <Card>
         <h2 className="mb-2 font-display font-semibold">Quotes</h2>
-        {customerQuotes.length === 0 ? <p className="text-sm text-ink-muted">No quotes yet.</p> : (
-          <ul className="space-y-1 text-sm">
-            {customerQuotes.map((q) => (
-              <li key={q.id}>
-                <Link className="flex justify-between rounded-control px-2 py-1.5 hover:bg-paper" href={`/quotes/${q.id}`}>
-                  <span>{q.num} — {q.title ?? "untitled"}</span>
-                  <span className="flex items-center gap-2"><Badge tone={ESTIMATE_STATUS_TONE[q.status] ?? "neutral"}>{q.status}</Badge>{formatMoney(q.total.cents)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        {quotes.isError
+          ? <p className="text-sm text-red">{userMessage(quotes.error)}</p>
+          : customerQuotes.length === 0
+            ? <p className="text-sm text-ink-muted">No quotes yet.</p>
+            : (
+              <ul className="space-y-1 text-sm">
+                {customerQuotes.map((q) => (
+                  <li key={q.id}>
+                    <Link className="flex justify-between rounded-control px-2 py-1.5 hover:bg-paper" href={`/quotes/${q.id}`}>
+                      <span>{q.num} — {q.title ?? "untitled"}</span>
+                      <span className="flex items-center gap-2"><Badge tone={ESTIMATE_STATUS_TONE[q.status] ?? "neutral"}>{q.status}</Badge>{formatMoney(q.total.cents)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
       </Card>
       <Card>
         <h2 className="mb-2 font-display font-semibold">Jobs</h2>
-        {(jobs.data?.items ?? []).length === 0 ? <p className="text-sm text-ink-muted">No jobs yet.</p> : (
-          <ul className="space-y-1 text-sm">
-            {(jobs.data?.items ?? []).map((j) => (
-              <li key={j.id}>
-                <Link className="flex justify-between rounded-control px-2 py-1.5 hover:bg-paper" href={`/jobs/${j.id}`}>
-                  <span>{j.num} — {j.title ?? "untitled"}</span>
-                  <span className="flex items-center gap-2"><Badge tone={JOB_STATUS_TONE[j.status] ?? "neutral"}>{j.status.replace("_", " ")}</Badge>{formatDateTime(j.scheduledStart)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        {jobs.isError
+          ? <p className="text-sm text-red">{userMessage(jobs.error)}</p>
+          : (jobs.data?.items ?? []).length === 0
+            ? <p className="text-sm text-ink-muted">No jobs yet.</p>
+            : (
+              <ul className="space-y-1 text-sm">
+                {(jobs.data?.items ?? []).map((j) => (
+                  <li key={j.id}>
+                    <Link className="flex justify-between rounded-control px-2 py-1.5 hover:bg-paper" href={`/jobs/${j.id}`}>
+                      <span>{j.num} — {j.title ?? "untitled"}</span>
+                      <span className="flex items-center gap-2"><Badge tone={JOB_STATUS_TONE[j.status] ?? "neutral"}>{j.status.replace("_", " ")}</Badge>{formatDateTime(j.scheduledStart)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
       </Card>
     </div>
   );

@@ -7,7 +7,7 @@ export const useCustomers = (stage?: "new" | "contacted" | "quote_sent" | "won" 
 export const useCustomer = (leadId: string) => api.v1.customers.get.useQuery({ leadId });
 
 export const useCustomerQuotes = (leadId: string) =>
-  api.v1.quoting.list.useQuery({ limit: 100 }, { select: (page) => page.items.filter((q) => q.leadId === leadId) });
+  api.v1.quoting.listByLead.useQuery({ leadId });
 
 export const useCustomerJobs = (leadId: string) => api.v1.jobs.listByLead.useQuery({ leadId });
 

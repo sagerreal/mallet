@@ -97,4 +97,36 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
       caller.v1.quoting.draft({ leadId: leadAId, lines: [{ description: "x", quantity: 1, rateCents: 1 }] }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  it("listByLead returns only that lead's estimates; cross-org RLS blocks other org", async () => {
+    // Create a second lead in org A to verify filtering works within the same org.
+    const [extraRow] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgAId}, 'Cust A extra') returning id`;
+    const leadExtraId = extraRow!.id;
+
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    // Draft an estimate for the primary lead (leadAId).
+    const estForA = await callerA.v1.quoting.draft({
+      leadId: leadAId,
+      lines: [{ description: "Paint", quantity: 1, rateCents: 20_000 }],
+    });
+
+    // Draft an estimate for the second lead — must not leak into leadAId results.
+    const estForExtra = await callerA.v1.quoting.draft({
+      leadId: leadExtraId,
+      lines: [{ description: "Clean", quantity: 1, rateCents: 8_000 }],
+    });
+
+    // listByLead scoped to leadAId returns estForA but not estForExtra.
+    const pageA = await callerA.v1.quoting.listByLead({ leadId: leadAId });
+    expect(pageA.items.some((e) => e.id === estForA.id)).toBe(true);
+    expect(pageA.items.every((e) => e.leadId === leadAId)).toBe(true);
+    expect(pageA.items.some((e) => e.id === estForExtra.id)).toBe(false);
+
+    // Org B caller sees nothing for leadAId (RLS).
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const pageB = await callerB.v1.quoting.listByLead({ leadId: leadAId });
+    expect(pageB.items).toHaveLength(0);
+  });
 });
