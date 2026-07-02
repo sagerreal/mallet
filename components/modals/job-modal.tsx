@@ -681,19 +681,16 @@ interface MoneyPointerProps {
   job: Job;
   invoice: Invoice | undefined;
   onGoToMoney: () => void;
+  onOpenInvoice: (invoiceId: number) => void;
 }
 
-function MoneyPointer({ job, invoice, onGoToMoney }: MoneyPointerProps) {
+function MoneyPointer({ job, invoice, onGoToMoney, onOpenInvoice }: MoneyPointerProps) {
   if (invoice && (invoice.total ?? 0) > 0) {
     const due = invDue(invoice);
     return (
       <div className="jmoney">
         <span>{due > 0 ? `${invoice.num} — ${fmt$(due)} due` : `✓ ${invoice.num} paid in full`}</span>
-        <span
-          className="linklike"
-          // TODO: open invoice modal (Money-area surface not built) — navigate to Money for now.
-          onClick={onGoToMoney}
-        >
+        <span className="linklike" onClick={() => onOpenInvoice(invoice.id)}>
           open invoice →
         </span>
       </div>
@@ -1027,7 +1024,12 @@ export function JobModalContent() {
       <JobChecklistBlock job={job} />
 
       {/* 13. Money pointer */}
-      <MoneyPointer job={job} invoice={invoice} onGoToMoney={goToMoney} />
+      <MoneyPointer
+        job={job}
+        invoice={invoice}
+        onGoToMoney={goToMoney}
+        onOpenInvoice={(invId) => { close(); openModal(MODAL.INVOICE, { invoiceId: invId }); }}
+      />
 
       {/* 14. Footer */}
       <div
