@@ -877,7 +877,7 @@ function SchedulePanel() {
 // vOpsHome — today's run panel
 // ============================================================================
 
-function TodayPanel() {
+function TodayPanel({ onGoSchedule }: { onGoSchedule: () => void }) {
   const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
@@ -901,7 +901,7 @@ function TodayPanel() {
       <div className="sub">Rivera Plumbing — today's work.</div>
 
       <div className="ops-grid">
-        <div className="kpi" onClick={() => stub("go", "ops-schedule")}>
+        <div className="kpi" onClick={() => onGoSchedule()}>
           <div className="lbl">Visits today</div>
           <div className="val">{tv.length}</div>
           <div className="hint">{live.length} in progress</div>
@@ -909,7 +909,7 @@ function TodayPanel() {
         <div
           className={`kpi${uns.length ? "" : ""}`}
           style={uns.length ? { borderColor: "var(--manila-line)", background: "var(--manila)" } : undefined}
-          onClick={() => stub("go", "ops-schedule")}
+          onClick={() => onGoSchedule()}
         >
           <div className="lbl">Need scheduling</div>
           <div className="val" style={uns.length ? { color: "var(--amber)" } : undefined}>
@@ -935,7 +935,7 @@ function TodayPanel() {
             ⚠ {uns.length} sold job{uns.length === 1 ? "" : "s"} still need a slot
           </b>{" "}
           — the hole every other tool leaves open.{" "}
-          <span className="linklike" onClick={() => stub("go", "ops-schedule")}>
+          <span className="linklike" onClick={() => onGoSchedule()}>
             Open the schedule →
           </span>
           <div style={{ marginTop: 8 }}>
@@ -1153,7 +1153,7 @@ export default function JobsPage() {
       {/* Panel */}
       {activeTab === "jobs" && <JobsList onOpenJob={handleOpenJob} onOpenNewJob={handleOpenNewJob} onOpenSweep={handleOpenSweep} />}
       {activeTab === "schedule" && <SchedulePanel />}
-      {activeTab === "today" && <TodayPanel />}
+      {activeTab === "today" && <TodayPanel onGoSchedule={() => setActiveTab("schedule")} />}
       {activeTab === "timesheets" && <TimesheetsPanel />}
     </div>
   );
