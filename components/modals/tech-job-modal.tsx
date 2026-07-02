@@ -14,9 +14,8 @@
  *   - work order fold (install scope, workOrderBlock 4649) → WorkOrderSec (5a)
  *   - found-work / add-ons (aoSection 3826)                → FoundWorkSec (5b)
  *   - interactive "Before you leave" capture (verifySection 4876) → ChecklistSec (5c)
- *
- * Still deferred:
- *   - tech GBB + on-glass signature (openTechQuote / tq)   // deferred: tech GBB + on-glass signature
+ *   - tech GBB + on-glass signature (openTechQuote / tq)   → TechQuoteModal
+ *     (opened via the Pricing section's "Price it on site →")
  *
  * The on-site close-out / collect HERO (techDoneBlock, prototype 5698-5760) now
  * renders INLINE via DoneBlock when the job is done — replacing the slim
@@ -1323,7 +1322,7 @@ export function TechJobModalContent() {
         <PricingSec
           job={job}
           quoted={quoted}
-          onPriceOnSite={() => openModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
+          onPriceOnSite={() => openModal(MODAL.TECH_QUOTE, { jobId: job.id })}
         />
       )}
 
@@ -1346,8 +1345,6 @@ export function TechJobModalContent() {
 
       {/* 8. Notes feed. */}
       <NoteFeed job={job} />
-
-      {/* deferred: tech GBB + on-glass signature (openTechQuote / tq builder). */}
     </div>
   );
 }

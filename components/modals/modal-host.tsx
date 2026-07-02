@@ -20,6 +20,7 @@ import { NewJobModalContent } from "./new-job-modal";
 import { JobSweepModalContent } from "./job-sweep-modal";
 import { EvisitModalContent } from "./evisit-modal";
 import { PriceBuilderModalContent } from "./price-builder-modal";
+import { TechQuoteModalContent } from "./tech-quote-modal";
 import { StandardsModalContent } from "./standards-modal";
 import { InvoiceModalContent } from "./invoice-modal";
 import { TechJobModalContent } from "./tech-job-modal";
@@ -94,6 +95,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.PRICE_BUILDER} onClose={close} wide>
         <PriceBuilderModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.TECH_QUOTE} onClose={close} wide>
+        <TechQuoteModalContent />
       </Modal>
 
       <Modal open={id === MODAL.STANDARDS} onClose={close} wide>

@@ -182,6 +182,8 @@ export interface Job {
   completion?: string;
   invRequested?: boolean;
   expected?: number;
+  // Set when the customer approved & signed a quote on the tech's tablet (tqSign).
+  approvedOnSite?: boolean;
 }
 
 // ---- Invoice ---------------------------------------------------------------
