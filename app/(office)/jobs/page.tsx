@@ -16,6 +16,8 @@ import {
   type SampleJob,
   type SampleTech,
 } from "@/lib/prototype-sample";
+import { useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 
 // ---- helpers ported from prototype ----------------------------------------
 
@@ -461,6 +463,7 @@ function JobsList({ onOpenJob }: JobsListProps) {
 type SchedView = "day" | "week";
 
 function SchedulePanel() {
+  const openModal = useOpenModal();
   const [schedView, setSchedView] = useState<SchedView>("day");
   const [schedDay, setSchedDay] = useState(TODAY_ISO);
   const [weekStart, setWeekStart] = useState(TODAY_ISO);
@@ -563,7 +566,7 @@ function SchedulePanel() {
                       key={v.id}
                       className={`gv-block${m.est ? " est" : ""}`}
                       style={{ left, width: w, opacity: v.status === "done" ? 0.55 : 1 }}
-                      onClick={(e) => { e.stopPropagation(); stub("openJob", j.id); }}
+                      onClick={(e) => { e.stopPropagation(); openModal(MODAL.JOB, { jobId: j.id }); }}
                       title={`${custName(j)} — ${j.title} · ${timeLabel(v.start)}–${timeLabel(v.start + v.dur)}`}
                     >
                       <div className="gv-bt" style={{ color: m.c }}>
@@ -626,7 +629,7 @@ function SchedulePanel() {
                     key={v.id}
                     className={`wk-item${m.est ? " est" : ""}`}
                     style={{ opacity: v.status === "done" ? 0.55 : 1 }}
-                    onClick={(e) => { e.stopPropagation(); stub("openJob", j.id); }}
+                    onClick={(e) => { e.stopPropagation(); openModal(MODAL.JOB, { jobId: j.id }); }}
                   >
                     <div className="wk-bt" style={{ color: m.c }}>
                       {m.word ?? m.lbl}
@@ -792,6 +795,7 @@ function SchedulePanel() {
 // ============================================================================
 
 function TodayPanel() {
+  const openModal = useOpenModal();
   const tv = visitsToday();
   const done = tv.filter(({ v }) => v.status === "done");
   const live = tv.filter(({ v }) => v.status === "enroute" || v.status === "onsite");
@@ -853,7 +857,7 @@ function TodayPanel() {
                 key={j.id}
                 className="pill"
                 style={{ background: "#fff", border: "1px solid var(--line)", marginRight: 6, cursor: "pointer" }}
-                onClick={() => stub("openJob", j.id)}
+                onClick={() => openModal(MODAL.JOB, { jobId: j.id })}
               >
                 {custName(j)} · {j.title}
               </span>
@@ -886,7 +890,7 @@ function TodayPanel() {
                       <span className="stpill" style={{ color: s.c, background: s.bg }}>
                         {s.l}
                       </span>
-                      <button className="btn sm" onClick={() => stub("openJob", j.id)}>
+                      <button className="btn sm" onClick={() => openModal(MODAL.JOB, { jobId: j.id })}>
                         Open
                       </button>
                     </div>
@@ -1000,10 +1004,11 @@ function TimesheetsPanel() {
 // ============================================================================
 
 export default function JobsPage() {
+  const openModal = useOpenModal();
   const [activeTab, setActiveTab] = useState<JobsSubTab>("jobs");
 
   function handleOpenJob(id: number) {
-    stub("openJob", id);
+    openModal(MODAL.JOB, { jobId: id });
   }
 
   return (

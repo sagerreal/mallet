@@ -22,7 +22,7 @@ function statusPillCls(status: string): string {
 }
 
 function formatDay(visit: Visit): string {
-  // Format: date + start hour
+  if (visit.date == null || visit.start == null) return "Not scheduled";
   const hour = visit.start;
   const ampm = hour >= 12 ? "pm" : "am";
   const displayHour = hour > 12 ? hour - 12 : hour;
@@ -82,7 +82,8 @@ export function VisitCard({ lead }: VisitCardProps) {
   const evisits = lead.evisits ?? [];
   if (evisits.length === 0) return null;
 
-  function techName(techId: number): string {
+  function techName(techId: number | null): string {
+    if (techId == null) return "Unassigned";
     return techs.find((t) => t.id === techId)?.name ?? `Tech ${techId}`;
   }
 

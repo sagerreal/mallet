@@ -23,9 +23,11 @@ export interface LeadNote {
 
 export interface Visit {
   id: number;
-  date: string;
-  techId: number;
-  start: number;
+  // Placement fields are null while a visit is "unscheduled" (in the To-schedule
+  // tray); set when dragged/placed on the board (crew + day + start).
+  date: string | null;
+  techId: number | null;
+  start: number | null;
   dur: number;
   status: string;
   scopeNotes?: string;
