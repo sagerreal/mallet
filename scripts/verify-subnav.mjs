@@ -1,0 +1,21 @@
+import { chromium } from "@playwright/test";
+const base = "http://localhost:3000";
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1512, height: 950 } });
+await p.goto(base + "/login", { waitUntil: "networkidle" });
+await p.getByLabel("Email").fill("owner@e2e.mallet.test");
+await p.getByLabel("Password").fill("e2e-password-1");
+await p.getByRole("button", { name: "Sign in" }).click();
+await p.waitForURL((u) => !u.pathname.includes("/login"), { timeout: 30000 });
+await p.goto(base + "/customers", { waitUntil: "networkidle" });
+await p.waitForTimeout(700);
+const subs = await p.locator(".sidebar .navsub").allInnerTexts();
+console.log("STEP: customers sub-nav:", JSON.stringify(subs.map(s=>s.trim())));
+await p.screenshot({ path: "/tmp/subnav-1.png" });
+// click Pipeline sub
+await p.locator(".sidebar .navsub", { hasText: "Pipeline" }).click();
+await p.waitForTimeout(600);
+console.log("STEP: after Pipeline click URL:", new URL(p.url()).pathname);
+const active = await p.locator(".sidebar .navsub.active").innerText().catch(()=>"");
+console.log("STEP: active sub:", active.trim());
+await b.close();

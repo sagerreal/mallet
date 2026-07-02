@@ -6,6 +6,7 @@ import { useCustomers } from "@/features/customers/hooks";
 import { useJobs } from "@/features/jobs/hooks";
 import { useInvoices } from "@/features/invoices/hooks";
 import { useMe } from "@/features/identity/hooks";
+import { useAppStore } from "@/lib/store/app-store";
 import { NewMenu } from "@/components/shell/new-menu";
 
 // SVG icons matching the prototype
@@ -99,6 +100,25 @@ function NavItem({ href, icon, label, count, active, inert }: NavItemProps) {
   );
 }
 
+interface NavSubProps {
+  href: string;
+  label: string;
+  count?: number;
+  active: boolean;
+}
+
+function NavSub({ href, label, count, active }: NavSubProps) {
+  return (
+    <Link href={href} className={`navsub${active ? " active" : ""}`}>
+      <span>{label}</span>
+      {count ? <span className="cnt">{count}</span> : null}
+    </Link>
+  );
+}
+
+// Routes that belong to the Customers group (its sidebar sub-nav).
+const CUSTOMER_AREA = ["/customers", "/pipeline", "/quotes", "/tasks"];
+
 export function Sidebar() {
   const pathname = usePathname();
   const me = useMe();
@@ -107,8 +127,11 @@ export function Sidebar() {
   const inProgressJobs = useJobs("in_progress");
   const sentInvoices = useInvoices("sent");
   const partialInvoices = useInvoices("partial");
+  const tasks = useAppStore((s) => s.tasks);
 
   const isActive = (href: string) => pathname.startsWith(href);
+  const customersActive = CUSTOMER_AREA.some((r) => pathname.startsWith(r));
+  const openTaskCount = tasks.filter((t) => !t.done).length;
 
   // Compute live counts
   const customerCount = customers.data?.items?.length ?? 0;
@@ -147,8 +170,20 @@ export function Sidebar() {
           icon={<PeopleIcon />}
           label="Customers"
           count={customerCount > 0 ? customerCount : undefined}
-          active={isActive("/customers")}
+          active={customersActive}
         />
+        {customersActive && (
+          <div className="navsubs">
+            <NavSub href="/pipeline" label="Pipeline" active={pathname.startsWith("/pipeline")} />
+            <NavSub href="/quotes" label="Quotes" active={pathname.startsWith("/quotes")} />
+            <NavSub
+              href="/tasks"
+              label="Tasks"
+              count={openTaskCount > 0 ? openTaskCount : undefined}
+              active={pathname.startsWith("/tasks")}
+            />
+          </div>
+        )}
         <NavItem
           href="/jobs"
           icon={<JobsIcon />}
