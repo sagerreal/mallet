@@ -471,9 +471,15 @@ function SchedulePanel() {
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
 
+  const placeVisit = useAppStore((s) => s.placeVisit);
+  const addVisit = useAppStore((s) => s.addVisit);
+  const updateVisit = useAppStore((s) => s.updateVisit);
+
   const [schedView, setSchedView] = useState<SchedView>("day");
   const [schedDay, setSchedDay] = useState(TODAY_ISO);
   const [weekStart, setWeekStart] = useState(TODAY_ISO);
+  // arm-then-tap placement: the visit currently waiting to be dropped on the board
+  const [placing, setPlacing] = useState<{ jobId: number; visitId: number } | null>(null);
 
   function weekDates(): string[] {
     const out: string[] = [];
@@ -483,6 +489,48 @@ function SchedulePanel() {
 
   const WPX = 78;
   const CAP = 8;
+
+  function firstUnplaced(j: Job): Visit | undefined {
+    return (j.visits ?? []).find((v) => !(v.date && v.techId != null && v.start != null));
+  }
+  // Tap "Schedule": arm the job's first unplaced visit (creating one if needed);
+  // tapping again disarms.
+  function armJob(j: Job) {
+    const v = firstUnplaced(j) ?? addVisit(j.id);
+    if (!v) return;
+    setPlacing((p) => (p && p.visitId === v.id ? null : { jobId: j.id, visitId: v.id }));
+  }
+  // Tap a board cell while armed → place the visit there (crew + day + start).
+  function cellTap(techId: number, iso: string, hour: number) {
+    if (!placing) return;
+    placeVisit(placing.jobId, placing.visitId, { techId, date: iso, start: hour });
+    setPlacing(null);
+  }
+  // "+" on a placed block: clone the visit (carry the hours) and arm it.
+  function cloneArm(jobId: number, dur: number) {
+    const nv = addVisit(jobId, dur);
+    if (nv) setPlacing({ jobId, visitId: nv.id });
+  }
+  // Drag the block's right edge to change its hours (Google-Calendar gesture).
+  function resizeStart(e: React.MouseEvent, jobId: number, v: Visit) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startDur = v.dur ?? 1;
+    function move(ev: MouseEvent) {
+      const nd = Math.max(0.25, Math.round((startDur + (ev.clientX - startX) / WPX) * 4) / 4);
+      updateVisit(jobId, v.id, { dur: nd });
+    }
+    function up() {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    }
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }
+
+  const armedJob = placing ? jobs.find((j) => j.id === placing.jobId) : null;
+  const armedName = armedJob ? custName(armedJob, leads) : "";
 
   function DayView() {
     const iso = schedDay;
@@ -550,9 +598,9 @@ function SchedulePanel() {
                 {hours.map((h) => (
                   <div
                     key={h}
-                    className="gv-cell"
+                    className={`gv-cell${placing ? " drop" : ""}`}
                     style={{ left: (h - START) * WPX, width: WPX, position: "absolute", top: 0, bottom: 0 }}
-                    onClick={() => stub("cellTap", tc.id, iso, h)}
+                    onClick={() => cellTap(tc.id, iso, h)}
                   />
                 ))}
                 {/* visit blocks */}
@@ -578,10 +626,10 @@ function SchedulePanel() {
                       <div className="gv-btm">
                         {timeLabel(vStart)}–{timeLabel(vStart + (v.dur ?? 0))}
                       </div>
-                      <div className="gv-resize" onMouseDown={() => stub("blockResizeStart", v.id)} title="Drag to change the hours" />
+                      <div className="gv-resize" onMouseDown={(e) => resizeStart(e, j.id, v)} title="Drag to change the hours" />
                       <button
                         className="gv-addv"
-                        onClick={(e) => { e.stopPropagation(); stub("visitCloneArm", j.id, v.id); }}
+                        onClick={(e) => { e.stopPropagation(); cloneArm(j.id, v.dur ?? 2); }}
                         title="Add another visit — same job, another day"
                       >
                         +
@@ -750,8 +798,8 @@ function SchedulePanel() {
               const m = svcMeta(mode);
               const totalHrs = (j.visits ?? []).filter((v) => !(v.date && v.techId != null)).reduce((s, v) => s + (v.dur ?? 0), 0) || 2;
               return (
-                <div key={j.id} className="railjob place" title="Drag onto the board, or tap Schedule then a slot">
-                  <button className="rail-addv" onClick={(e) => { e.stopPropagation(); stub("visitAddTray", j.id); }} title="Add another visit">
+                <div key={j.id} className={`railjob place${placing?.jobId === j.id ? " arm" : ""}`} title="Tap Schedule, then a slot on the board">
+                  <button className="rail-addv" onClick={(e) => { e.stopPropagation(); addVisit(j.id, 2); }} title="Add another visit">
                     +
                   </button>
                   <b style={{ fontSize: "13.5px" }}>{custName(j, leads)}</b>
@@ -763,8 +811,12 @@ function SchedulePanel() {
                     <span className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{hmLabel(totalHrs)}</span>
                   </div>
                   <div style={{ display: "flex", gap: 7 }}>
-                    <button className="btn primary sm" style={{ flex: 1, justifyContent: "center" }} onClick={(e) => { e.stopPropagation(); stub("toPlaceArm", j.id); }}>
-                      Schedule
+                    <button
+                      className={`btn sm${placing?.jobId === j.id ? " arm" : " primary"}`}
+                      style={{ flex: 1, justifyContent: "center" }}
+                      onClick={(e) => { e.stopPropagation(); armJob(j); }}
+                    >
+                      {placing?.jobId === j.id ? "Cancel" : "Schedule"}
                     </button>
                   </div>
                 </div>
@@ -775,6 +827,35 @@ function SchedulePanel() {
       ) : (
         <div className="rail" style={{ background: "var(--green-50)", borderColor: "#DDD7C9", marginBottom: 14 }}>
           <b style={{ fontSize: 13 }}>Everything sold is scheduled.</b>
+        </div>
+      )}
+
+      {placing && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            background: "var(--ink)",
+            color: "#fff",
+            borderRadius: 9,
+            padding: "11px 14px",
+            marginBottom: 11,
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          <span>
+            Tap a crew &amp; time on the board to place <b>{armedName}</b>
+          </span>
+          <span
+            className="linklike"
+            style={{ color: "#fff", textDecoration: "underline", flex: "none" }}
+            onClick={() => setPlacing(null)}
+          >
+            Cancel
+          </span>
         </div>
       )}
 
