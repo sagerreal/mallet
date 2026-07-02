@@ -10,7 +10,7 @@ import { useState } from "react";
 import { TODAY_ISO, dPlus } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, Lead, Tech, Visit } from "@/lib/store/types";
+import type { Job, Lead, Tech, TimeEntry, Visit } from "@/lib/store/types";
 
 // ---- helpers ported from prototype ----------------------------------------
 
@@ -188,9 +188,10 @@ interface JobsListProps {
   onOpenJob: (id: number) => void;
   onOpenNewJob: () => void;
   onOpenSweep: () => void;
+  onOpenStandards: () => void;
 }
 
-function JobsList({ onOpenJob, onOpenNewJob, onOpenSweep }: JobsListProps) {
+function JobsList({ onOpenJob, onOpenNewJob, onOpenSweep, onOpenStandards }: JobsListProps) {
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
@@ -322,7 +323,7 @@ function JobsList({ onOpenJob, onOpenNewJob, onOpenSweep }: JobsListProps) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <h1>Jobs</h1>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn ghost" onClick={() => stub("openStandards")}>
+          <button className="btn ghost" onClick={onOpenStandards}>
             Checklist templates
           </button>
           <button className="btn ghost" onClick={onOpenSweep}>
@@ -1099,89 +1100,745 @@ function TodayPanel({ onGoSchedule }: { onGoSchedule: () => void }) {
 // vTimesheets — timesheets panel
 // ============================================================================
 
+// Kind labels — mirror prototype TS_KINDS (order matters for the segment).
+const TS_KINDS: Record<string, string> = {
+  job: "Job",
+  travel: "Travel",
+  break: "Break",
+  shop: "Shop",
+};
+const TS_KIND_KEYS = ["job", "travel", "break", "shop"] as const;
+
+/** 'HH:MM' → decimal hours (mirrors prototype timeToH). */
+function timeToH(s: string): number {
+  const p = (s || "").split(":");
+  return (Number(p[0]) || 0) + (Number(p[1]) || 0) / 60;
+}
+
+/** decimal hours → 'HH:MM' (mirrors prototype hToTime). */
+function hToTime(h: number): string {
+  let hr = Math.floor(h);
+  let mn = Math.round((h - hr) * 60);
+  if (mn === 60) {
+    hr++;
+    mn = 0;
+  }
+  return String(hr).padStart(2, "0") + ":" + String(mn).padStart(2, "0");
+}
+
+/** ISO date + n days (mirrors prototype addDays). */
+function tsAddDays(iso: string, n: number): string {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Monday of the week containing `iso` (mirrors prototype tsWeekStart). */
+function tsWeekStart(iso: string): string {
+  const d = new Date(iso + "T12:00:00");
+  const dow = (d.getDay() + 6) % 7; // 0 = Monday
+  return tsAddDays(iso, -dow);
+}
+
+/** The 7 ISO dates of the week starting `mon` (Mon..Sun). */
+function tsWeekDates(mon: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => tsAddDays(mon, i));
+}
+
+/** Rounds money/hours to 2 dp (mirrors prototype tsMoney). */
+function tsMoney(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Worked hours for one entry (mirrors prototype tsHours). */
+function tsHours(e: TimeEntry): number {
+  if (!e || !e.end) return 0;
+  const d = timeToH(e.end) - timeToH(e.start);
+  return d > 0 ? Math.round(d * 100) / 100 : 0;
+}
+
+/** Paid hours — unpaid break excluded (mirrors prototype tsPaid). */
+function tsPaid(e: TimeEntry): number {
+  return e.kind === "break" ? 0 : tsHours(e);
+}
+
+/** This tech's entries for the given week (mirrors prototype tsWeekEntries). */
+function tsWeekEntries(entries: TimeEntry[], techId: number, weekDates: string[]): TimeEntry[] {
+  return entries.filter((e) => e.techId === techId && weekDates.includes(e.date));
+}
+
+/** Time-sorted copy (mirrors prototype tsSortEntries). */
+function tsSortEntries(es: TimeEntry[]): TimeEntry[] {
+  return es
+    .slice()
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : timeToH(a.start) - timeToH(b.start)));
+}
+
+interface TsRollup {
+  paid: number;
+  reg: number;
+  ot: number;
+  approved: boolean;
+  count: number;
+}
+
+/** Weekly rollup — HOURS only, payroll computes pay (mirrors prototype tsRollup). */
+function tsRollup(entries: TimeEntry[], techId: number, weekDates: string[]): TsRollup {
+  const es = tsWeekEntries(entries, techId, weekDates);
+  const paid = tsMoney(es.reduce((s, e) => s + tsPaid(e), 0));
+  const reg = Math.min(paid, 40);
+  const ot = tsMoney(Math.max(0, paid - 40));
+  const approved = es.length > 0 && es.every((e) => e.status === "approved");
+  return { paid, reg, ot, approved, count: es.length };
+}
+
+function tsJob(e: TimeEntry, jobs: Job[]): Job | undefined {
+  return e.jobId ? jobs.find((j) => j.id === e.jobId) : undefined;
+}
+
+/** Row label — job title · customer, or the fixed label for non-job kinds. */
+function tsLabel(e: TimeEntry, jobs: Job[], leads: Lead[]): string {
+  if (e.kind === "job") {
+    const j = tsJob(e, jobs);
+    if (!j) return "Job";
+    const cn = custName(j, leads);
+    return cn && cn !== "—" ? `${j.title} · ${cn}` : j.title;
+  }
+  const map: Record<string, string> = {
+    travel: "Travel between jobs",
+    break: "Lunch / break",
+    shop: "Shop · load-out & restock",
+  };
+  return map[e.kind] ?? TS_KINDS[e.kind] ?? e.kind;
+}
+
+/** 12h time label from decimal hours (mirrors prototype tsT12). */
+function tsT12(h: number): string {
+  if (h == null || Number.isNaN(h)) return "";
+  let hr = Math.floor(h);
+  let mn = Math.round((h - hr) * 60);
+  if (mn === 60) {
+    hr++;
+    mn = 0;
+  }
+  const ap = hr % 24 < 12 ? "am" : "pm";
+  let d = hr % 12;
+  if (d === 0) d = 12;
+  return `${d}:${String(mn).padStart(2, "0")}${ap}`;
+}
+
+/** 12h label from an 'HH:MM' string (mirrors prototype tsTimeLabel). */
+function tsTimeLabel(str: string | null): string {
+  return str ? tsT12(timeToH(str)) : "";
+}
+
+interface TsTimeOpt { h: number; t: string; label: string }
+/** 6:00am–8:00pm at 15-min steps (mirrors prototype tsTimeOpts). */
+function tsTimeOpts(): TsTimeOpt[] {
+  const out: TsTimeOpt[] = [];
+  for (let h = 6; h <= 20.0001; h = Math.round((h + 0.25) * 100) / 100) {
+    out.push({ h, t: hToTime(h), label: tsT12(h) });
+  }
+  return out;
+}
+
+/** Job ids this tech is scheduled on this week (mirrors tsTechWeekJobIds). */
+function tsTechWeekJobIds(jobs: Job[], techId: number, weekDates: string[]): Set<number> {
+  const ids = new Set<number>();
+  jobs.forEach((j) => {
+    if (j.archived) return;
+    (j.visits ?? []).forEach((v) => {
+      if (v.techId === techId && v.date != null && weekDates.includes(v.date)) ids.add(j.id);
+    });
+  });
+  return ids;
+}
+
+// ---- inline pickers (in-flow, no floating popover — matches prototype) -----
+
+interface TsKindSegProps { entry: TimeEntry; onPick: (kind: string) => void }
+function TsKindSeg({ entry, onPick }: TsKindSegProps) {
+  return (
+    <div className="ts-seg">
+      {TS_KIND_KEYS.map((k) => (
+        <button key={k} className={entry.kind === k ? "on" : ""} onClick={() => onPick(k)}>
+          {TS_KINDS[k]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface TsJobPickerProps {
+  entry: TimeEntry;
+  jobs: Job[];
+  leads: Lead[];
+  techs: Tech[];
+  weekDates: string[];
+  open: boolean;
+  onToggle: () => void;
+  onPick: (jobId: number) => void;
+}
+function TsJobPicker({ entry, jobs, leads, techs, weekDates, open, onToggle, onPick }: TsJobPickerProps) {
+  const [q, setQ] = useState("");
+  const cur = tsJob(entry, jobs);
+  const tc = techById(techs, entry.techId);
+  const who = tc ? tc.name.split(" ")[0] : "the crew";
+  const wk = tsTechWeekJobIds(jobs, entry.techId, weekDates);
+  const jobLabel = (j: Job) => {
+    const cn = custName(j, leads);
+    return cn && cn !== "—" ? `${j.title} · ${cn}` : j.title;
+  };
+  const matches = (j: Job) => {
+    const s = (j.title + " " + (custName(j, leads) || "")).toLowerCase();
+    return !q.trim() || s.indexOf(q.toLowerCase().trim()) >= 0;
+  };
+  const open_ = liveJobs(jobs);
+  const scoped = open_.filter((j) => wk.has(j.id) && matches(j));
+  const rest = open_.filter((j) => !wk.has(j.id)).slice(0, 60).filter(matches);
+  const opt = (j: Job) => (
+    <button
+      key={j.id}
+      className={`ts-opt ts-jobopt ${entry.jobId === j.id ? "sel" : ""}`}
+      onClick={() => onPick(j.id)}
+    >
+      {jobLabel(j)}
+    </button>
+  );
+  return (
+    <>
+      <button type="button" className={`ts-trig ${entry.jobId ? "" : "empty"}`} onClick={onToggle}>
+        <span className="cv">{entry.jobId && cur ? jobLabel(cur) : "Pick a job"}</span>
+        <span style={{ color: "var(--ink-3)" }}>▾</span>
+      </button>
+      {open && (
+        <div className="ts-list">
+          <input
+            className="ts-search"
+            placeholder="Search all jobs…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          {scoped.length > 0 && (
+            <>
+              <div className="grp">On {who}&rsquo;s schedule this week</div>
+              {scoped.map(opt)}
+            </>
+          )}
+          {rest.length > 0 && (
+            <>
+              <div className="grp">Other open jobs</div>
+              {rest.map(opt)}
+            </>
+          )}
+          {scoped.length === 0 && rest.length === 0 && <div className="grp">No open jobs</div>}
+        </div>
+      )}
+    </>
+  );
+}
+
+interface TsTimePickerProps {
+  entry: TimeEntry;
+  field: "start" | "end";
+  open: boolean;
+  onToggle: () => void;
+  onPick: (val: string) => void;
+}
+function TsTimePicker({ entry, field, open, onToggle, onPick }: TsTimePickerProps) {
+  const val = entry[field];
+  const cur = val ? tsTimeLabel(val) : field === "end" && entry.running ? "running" : "Set time";
+  return (
+    <>
+      <button type="button" className={`ts-trig ${val ? "" : "empty"}`} onClick={onToggle}>
+        <span className="cv">{cur}</span>
+        <span style={{ color: "var(--ink-3)" }}>▾</span>
+      </button>
+      {open && (
+        <div className="ts-list ts-timelist">
+          {tsTimeOpts().map((o) => (
+            <button
+              key={o.t}
+              className={`ts-opt ${val && Math.abs(timeToH(val) - o.h) < 0.001 ? "sel" : ""}`}
+              onClick={() => onPick(o.t)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// Which sub-picker is open inside the row editor ('kind'|'job'|'start'|'end').
+type TsPick = "job" | "start" | "end" | null;
+
+interface TsEditorProps {
+  entry: TimeEntry;
+  jobs: Job[];
+  leads: Lead[];
+  techs: Tech[];
+  weekDates: string[];
+  pick: TsPick;
+  onSetPick: (p: TsPick) => void;
+  onSetField: (field: keyof TimeEntry, val: string | number) => void;
+  onClose: () => void;
+}
+function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSetField, onClose }: TsEditorProps) {
+  return (
+    <div className="ts-editor">
+      <div className="ts-erow">
+        <label>Type</label>
+        <TsKindSeg
+          entry={entry}
+          onPick={(kind) => {
+            onSetPick(null);
+            onSetField("kind", kind);
+          }}
+        />
+      </div>
+      {entry.kind === "job" && (
+        <div className="ts-erow">
+          <label>Job</label>
+          <div className="ts-pickwrap">
+            <TsJobPicker
+              entry={entry}
+              jobs={jobs}
+              leads={leads}
+              techs={techs}
+              weekDates={weekDates}
+              open={pick === "job"}
+              onToggle={() => onSetPick(pick === "job" ? null : "job")}
+              onPick={(jobId) => {
+                onSetPick(null);
+                onSetField("jobId", jobId);
+              }}
+            />
+          </div>
+        </div>
+      )}
+      <div className="ts-erow">
+        <label>Time</label>
+        <div className="ts-times">
+          <div className="ts-timecol">
+            <div className="tl">In</div>
+            <TsTimePicker
+              entry={entry}
+              field="start"
+              open={pick === "start"}
+              onToggle={() => onSetPick(pick === "start" ? null : "start")}
+              onPick={(val) => {
+                onSetPick(null);
+                onSetField("start", val);
+              }}
+            />
+          </div>
+          <div className="ts-timecol">
+            <div className="tl">Out</div>
+            <TsTimePicker
+              entry={entry}
+              field="end"
+              open={pick === "end"}
+              onToggle={() => onSetPick(pick === "end" ? null : "end")}
+              onPick={(val) => {
+                onSetPick(null);
+                onSetField("end", val);
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <button className="btn sm primary" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface TsEntryRowProps {
+  entry: TimeEntry;
+  jobs: Job[];
+  leads: Lead[];
+  techs: Tech[];
+  weekDates: string[];
+  editing: boolean;
+  pick: TsPick;
+  onSetPick: (p: TsPick) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSetField: (field: keyof TimeEntry, val: string | number) => void;
+  onCloseEdit: () => void;
+}
+function TsEntryRow({
+  entry,
+  jobs,
+  leads,
+  techs,
+  weekDates,
+  editing,
+  pick,
+  onSetPick,
+  onEdit,
+  onDelete,
+  onSetField,
+  onCloseEdit,
+}: TsEntryRowProps) {
+  const appr = entry.status === "approved";
+  const isJob = entry.kind === "job";
+  const hasJob = !!tsJob(entry, jobs);
+  const timeStr = entry.running
+    ? `${tsTimeLabel(entry.start)}– running`
+    : entry.end
+      ? `${tsTimeLabel(entry.start)}–${tsTimeLabel(entry.end)}`
+      : tsTimeLabel(entry.start);
+  const lbl = isJob ? (hasJob ? tsLabel(entry, jobs, leads) : "— no job —") : tsLabel(entry, jobs, leads);
+  return (
+    <>
+      <div className={`ts-e ${appr ? "appr" : ""}${editing ? " editing" : ""}`}>
+        <span className={`ts-kind ${isJob ? "job" : ""}`}>{TS_KINDS[entry.kind]}</span>
+        <span className={`ts-elabel ${!isJob || !hasJob ? "muted" : ""}`}>{lbl}</span>
+        <span className="ts-etime">{timeStr}</span>
+        <span className="ts-ehrs">
+          {entry.running ? "··" : tsHours(entry).toFixed(2)}
+          {entry.kind === "break" && <span className="upd">unpaid</span>}
+        </span>
+        <span className="ts-eact">
+          {appr ? (
+            <span className="muted">✓</span>
+          ) : entry.running ? (
+            <span className="muted" style={{ fontSize: 11 }}>
+              live
+            </span>
+          ) : (
+            <>
+              <button className="ts-del" title="Edit" onClick={onEdit}>
+                ✎
+              </button>
+              <button className="ts-del" title="Delete entry" onClick={onDelete}>
+                ✕
+              </button>
+            </>
+          )}
+        </span>
+      </div>
+      {editing && (
+        <TsEditor
+          entry={entry}
+          jobs={jobs}
+          leads={leads}
+          techs={techs}
+          weekDates={weekDates}
+          pick={pick}
+          onSetPick={onSetPick}
+          onSetField={onSetField}
+          onClose={onCloseEdit}
+        />
+      )}
+    </>
+  );
+}
+
+interface TsEntriesBlockProps {
+  entries: TimeEntry[];
+  jobs: Job[];
+  leads: Lead[];
+  techs: Tech[];
+  weekDates: string[];
+  editId: number | null;
+  pick: TsPick;
+  onSetPick: (p: TsPick) => void;
+  onEdit: (id: number) => void;
+  onDelete: (id: number) => void;
+  onSetField: (id: number, field: keyof TimeEntry, val: string | number) => void;
+  onCloseEdit: () => void;
+}
+function TsEntriesBlock({
+  entries,
+  jobs,
+  leads,
+  techs,
+  weekDates,
+  editId,
+  pick,
+  onSetPick,
+  onEdit,
+  onDelete,
+  onSetField,
+  onCloseEdit,
+}: TsEntriesBlockProps) {
+  const es = tsSortEntries(entries);
+  if (!es.length) return <div className="empty-att">No entries this week.</div>;
+  const byDay = new Map<string, TimeEntry[]>();
+  es.forEach((e) => {
+    const arr = byDay.get(e.date) ?? [];
+    arr.push(e);
+    byDay.set(e.date, arr);
+  });
+  const days = weekDates.filter((d) => byDay.has(d));
+  return (
+    <>
+      {days.map((d) => {
+        const dayEntries = byDay.get(d) ?? [];
+        const dd = new Date(d + "T12:00:00");
+        const dp = tsMoney(dayEntries.reduce((s, e) => s + tsPaid(e), 0));
+        return (
+          <div className="ts-day" key={d}>
+            <div className="ts-dhdr">
+              <span>{dd.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</span>
+              <span className="num">{dp.toFixed(2)} h</span>
+            </div>
+            {dayEntries.map((e) => (
+              <TsEntryRow
+                key={e.id}
+                entry={e}
+                jobs={jobs}
+                leads={leads}
+                techs={techs}
+                weekDates={weekDates}
+                editing={editId === e.id}
+                pick={pick}
+                onSetPick={onSetPick}
+                onEdit={() => onEdit(e.id)}
+                onDelete={() => onDelete(e.id)}
+                onSetField={(field, val) => onSetField(e.id, field, val)}
+                onCloseEdit={onCloseEdit}
+              />
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// Fields the office is allowed to edit (mirrors prototype tsSetField whitelist).
+const TS_EDITABLE: ReadonlySet<string> = new Set(["kind", "jobId", "techId", "date", "start", "end", "note"]);
+
 function TimesheetsPanel() {
   const techs = useAppStore((s) => s.techs);
-  const [selectedTechId, setSelectedTechId] = useState<number>(techs[0]?.id ?? 1);
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const timeEntries = useAppStore((s) => s.timeEntries);
+  const addTimeEntry = useAppStore((s) => s.addTimeEntry);
+  const updateTimeEntry = useAppStore((s) => s.updateTimeEntry);
+  const deleteTimeEntry = useAppStore((s) => s.deleteTimeEntry);
+  const approveTechWeek = useAppStore((s) => s.approveTechWeek);
 
-  // week label using TODAY_ISO as the week start reference
-  function weekLabel(): string {
-    const start = new Date(TODAY_ISO + "T12:00:00");
-    const end = new Date(TODAY_ISO + "T12:00:00");
-    end.setDate(end.getDate() + 6);
-    const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    return `${fmt(start)} – ${fmt(end)}`;
+  // Week nav — local weekStart state, normalized to the Monday of TODAY's week.
+  const [weekStart, setWeekStart] = useState<string>(() => tsWeekStart(TODAY_ISO));
+  const [selectedTechId, setSelectedTechId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [pick, setPick] = useState<TsPick>(null);
+  const [crewQ, setCrewQ] = useState("");
+
+  const weekDates = tsWeekDates(weekStart);
+  const wkEnd = tsAddDays(weekStart, 6);
+  const thisWeek = tsWeekStart(TODAY_ISO);
+  const dl = (iso: string) =>
+    new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  const totals = techs.map((t) => tsRollup(timeEntries, t.id, weekDates));
+  const anyEntries = totals.some((r) => r.count > 0);
+  const totPaid = tsMoney(totals.reduce((s, r) => s + r.paid, 0));
+  const totOt = tsMoney(totals.reduce((s, r) => s + r.ot, 0));
+
+  // Selected tech: sticky choice if it still has a chip, else first-with-entries or first crew.
+  const selId =
+    selectedTechId != null && techs.some((t) => t.id === selectedTechId)
+      ? selectedTechId
+      : (techs.find((t, i) => (totals[i]?.count ?? 0) > 0) ?? techs[0])?.id ?? null;
+
+  function weekNav(delta: number) {
+    setWeekStart((w) => tsWeekStart(tsAddDays(w, delta * 7)));
+    setEditId(null);
+    setPick(null);
   }
 
-  const anyEntries = false; // no timeEntries in sample state; matches prototype's empty state
+  function handleSelect(id: number) {
+    setSelectedTechId(id);
+    setEditId(null);
+    setPick(null);
+  }
+
+  function handleEdit(id: number) {
+    const e = timeEntries.find((x) => x.id === id);
+    if (!e || e.status === "approved" || e.running) return;
+    setEditId((cur) => (cur === id ? null : id));
+    setPick(null);
+  }
+
+  function handleCloseEdit() {
+    setEditId(null);
+    setPick(null);
+  }
+
+  function handleSetField(id: number, field: keyof TimeEntry, val: string | number) {
+    if (!TS_EDITABLE.has(String(field))) return;
+    const e = timeEntries.find((x) => x.id === id);
+    if (!e || e.status === "approved") return;
+    if (field === "techId" || field === "jobId") {
+      const num = Number(val) || null;
+      updateTimeEntry(id, { [field]: num } as Partial<TimeEntry>);
+      return;
+    }
+    updateTimeEntry(id, { [field]: val } as Partial<TimeEntry>);
+  }
+
+  function handleAdd(techId: number) {
+    // Anchor a fresh draft on today if today is in view, else the week's Monday.
+    const day = weekDates.includes(TODAY_ISO) ? TODAY_ISO : weekStart;
+    addTimeEntry(techId, day);
+    setSelectedTechId(techId);
+  }
+
+  const selTech = selId != null ? techById(techs, selId) : undefined;
+  const crewFilter = crewQ.toLowerCase().trim();
 
   return (
     <>
       <h1>Timesheets</h1>
       <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0", flexWrap: "wrap" }}>
-        <button className="btn sm" onClick={() => stub("tsWeekNav", -1)}>
+        <button className="btn sm" onClick={() => weekNav(-1)}>
           ‹ Prev
         </button>
-        <b style={{ fontWeight: 700 }}>{weekLabel()}</b>
-        <button className="btn sm" onClick={() => stub("tsWeekNav", 1)}>
+        <b style={{ fontWeight: 700 }}>
+          {dl(weekStart)} – {dl(wkEnd)}
+        </b>
+        <button className="btn sm" onClick={() => weekNav(1)}>
           Next ›
         </button>
-      </div>
-
-      {anyEntries ? null : (
-        <div className="empty-att" style={{ marginTop: 14 }}>
-          No time logged this week — crew clock in from My day.
-        </div>
-      )}
-
-      {/* Crew chips — shown even with no entries so you can select a tech */}
-      <div className="ts-chips" style={{ marginTop: 16 }}>
-        {techs.map((t) => (
+        {weekStart !== thisWeek && (
           <button
-            key={t.id}
-            className={`ts-chip${t.id === selectedTechId ? " sel" : ""}`}
-            onClick={() => setSelectedTechId(t.id)}
+            className="btn sm ghost"
+            onClick={() => {
+              setWeekStart(thisWeek);
+              setEditId(null);
+              setPick(null);
+            }}
           >
-            <span
-              className="javatar"
-              style={{ background: t.color, width: 22, height: 22, fontSize: 9 }}
-            >
-              {t.initials}
-            </span>
-            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
-              <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{t.name.split(" ")[0]}</b>
-              <span className="muted" style={{ fontSize: 10.5 }}>—</span>
-            </span>
+            This week
           </button>
-        ))}
+        )}
+        {anyEntries && (
+          <>
+            <span style={{ flex: 1 }} />
+            <span className="muted" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+              {totPaid.toFixed(2)} paid h{totOt ? ` · ${totOt.toFixed(2)} OT` : ""}
+            </span>
+          </>
+        )}
       </div>
 
-      {/* Selected tech timesheet card */}
-      {(() => {
-        const tc = techs.find((t) => t.id === selectedTechId);
-        if (!tc) return null;
-        return (
-          <div className="card" style={{ marginTop: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-              <b style={{ fontWeight: 700, fontSize: 15 }}>
-                {tc.name} · this week
-              </b>
-              <span className="muted" style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
-                0.00 h
-              </span>
-              <span style={{ flex: 1 }} />
-              <button className="btn sm" onClick={() => stub("tsAddEntry", tc.id)}>
-                + Add entry
-              </button>
-              <button className="btn sm primary" onClick={() => stub("tsApproveTech", tc.id)}>
-                Approve
-              </button>
-            </div>
-            <div className="empty-att" style={{ paddingTop: 12 }}>
-              No entries yet — crew clocks in from My day.
-            </div>
+      {(
+        <>
+          {techs.length > 6 && (
+            <input
+              className="ts-tfilter"
+              placeholder="Filter crew…"
+              value={crewQ}
+              onChange={(e) => setCrewQ(e.target.value)}
+            />
+          )}
+          <div className="ts-chips">
+            {techs.map((t, i) => {
+              const r = totals[i];
+              const sel = t.id === selId;
+              if (crewFilter && !t.name.toLowerCase().includes(crewFilter)) return null;
+              return (
+                <button
+                  key={t.id}
+                  className={`ts-chip${sel ? " sel" : ""}`}
+                  onClick={() => handleSelect(t.id)}
+                >
+                  <span
+                    className="javatar"
+                    style={{ background: t.color, width: 22, height: 22, fontSize: 9 }}
+                  >
+                    {t.initials}
+                  </span>
+                  <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
+                    <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{t.name.split(" ")[0]}</b>
+                    <span className="muted" style={{ fontSize: 10.5 }}>
+                      {r && r.count
+                        ? `${r.paid.toFixed(1)}h${r.approved ? " · ✓" : " · draft"}`
+                        : "—"}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        );
-      })()}
+
+          {selTech &&
+            (() => {
+              const r = tsRollup(timeEntries, selTech.id, weekDates);
+              const locked = r.approved;
+              const es = tsWeekEntries(timeEntries, selTech.id, weekDates);
+              return (
+                <div className="card" style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+                    <b style={{ fontWeight: 700, fontSize: 15 }}>{selTech.name} · this week</b>
+                    <span className="muted" style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
+                      {r.paid.toFixed(2)} h{r.ot ? ` · ${r.ot.toFixed(2)} OT` : ""}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    {locked ? (
+                      <>
+                        <span
+                          className="pill"
+                          style={{
+                            background: "var(--green-50)",
+                            color: "var(--green-700)",
+                            border: "1px solid var(--green-100)",
+                          }}
+                        >
+                          ✓ Approved
+                        </span>
+                        <button
+                          className="btn sm ghost"
+                          onClick={() => {
+                            // Reopen: draft every approved entry this week for this tech.
+                            es.forEach((e) => {
+                              if (e.status === "approved") updateTimeEntry(e.id, { status: "draft" });
+                            });
+                          }}
+                        >
+                          Reopen
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="btn sm" onClick={() => handleAdd(selTech.id)}>
+                          + Add entry
+                        </button>
+                        <button className="btn sm primary" onClick={() => approveTechWeek(selTech.id, weekDates)}>
+                          Approve
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <TsEntriesBlock
+                    entries={es}
+                    jobs={jobs}
+                    leads={leads}
+                    techs={techs}
+                    weekDates={weekDates}
+                    editId={editId}
+                    pick={pick}
+                    onSetPick={setPick}
+                    onEdit={handleEdit}
+                    onDelete={deleteTimeEntry}
+                    onSetField={handleSetField}
+                    onCloseEdit={handleCloseEdit}
+                  />
+                </div>
+              );
+            })()}
+        </>
+      )}
     </>
   );
 }
@@ -1250,7 +1907,7 @@ export default function JobsPage() {
       </div>
 
       {/* Panel */}
-      {activeTab === "jobs" && <JobsList onOpenJob={handleOpenJob} onOpenNewJob={handleOpenNewJob} onOpenSweep={handleOpenSweep} />}
+      {activeTab === "jobs" && <JobsList onOpenJob={handleOpenJob} onOpenNewJob={handleOpenNewJob} onOpenSweep={handleOpenSweep} onOpenStandards={() => openModal(MODAL.STANDARDS)} />}
       {activeTab === "schedule" && <SchedulePanel />}
       {activeTab === "today" && <TodayPanel onGoSchedule={() => setActiveTab("schedule")} />}
       {activeTab === "timesheets" && <TimesheetsPanel />}

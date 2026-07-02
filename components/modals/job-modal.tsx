@@ -591,16 +591,78 @@ function SmartPanel({ job, techs, onAssign }: SmartPanelProps) {
 // the actual template attach / picker card is deferred (no template data yet).
 
 function JobChecklistBlock({ job }: { job: Job }) {
-  // deferred: checklist templates (state.checklists) and the attached-checklist
-  // editor aren't in the store — only the "+ Add a checklist" affordance is
-  // faithful here; clicking it is a no-op until template data exists.
+  const checklists = useAppStore((s) => s.checklists);
+  const updateJob = useAppStore((s) => s.updateJob);
+  const [picking, setPicking] = useState(false);
+  const templates = checklists.filter((c) => c.stage === "job");
+
+  // Already attached → show it (+ Remove).
+  if (job.checklist) {
+    return (
+      <div className="card" style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <h3 style={{ margin: 0, fontSize: 13 }}>Before you leave</h3>
+          <span
+            className="linklike"
+            style={{ fontSize: 12 }}
+            onClick={() => updateJob(job.id, { checklist: undefined })}
+          >
+            Remove
+          </span>
+        </div>
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>{job.checklist.name}</div>
+        {job.checklist.items.map((it) => (
+          <div key={it.id} className="stage-row" style={{ gap: 8, padding: "4px 0" }}>
+            <span style={{ color: it.required ? "var(--amber)" : "var(--ink-3)" }}>
+              {it.type === "photo" ? "📷" : "○"}
+            </span>
+            <span style={{ flex: 1, fontSize: 13 }}>{it.text}</span>
+            {it.required && <span className="muted" style={{ fontSize: 11 }}>required</span>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Picking a template.
+  if (picking) {
+    return (
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>Attach a checklist</h3>
+        {templates.length ? (
+          templates.map((c) => (
+            <div
+              key={c.id}
+              className="stage-row clickable"
+              style={{ cursor: "pointer" }}
+              onClick={() => {
+                updateJob(job.id, { checklist: { name: c.name, items: c.items } });
+                setPicking(false);
+              }}
+            >
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{c.name}</span>
+              <span className="muted" style={{ fontSize: 12 }}>{c.items.length} items</span>
+            </div>
+          ))
+        ) : (
+          <div className="muted" style={{ fontSize: 12 }}>
+            No templates yet — add one in Checklist templates.
+          </div>
+        )}
+        <span className="linklike" style={{ fontSize: 12 }} onClick={() => setPicking(false)}>
+          Cancel
+        </span>
+      </div>
+    );
+  }
+
+  // Entry point.
   return (
     <div style={{ marginTop: 16 }}>
       <span
         className="linklike"
         style={{ fontSize: 13, fontWeight: 700 }}
-        // deferred: checklist templates (no template data in store yet)
-        onClick={() => {}}
+        onClick={() => setPicking(true)}
       >
         + Add a checklist
       </span>{" "}

@@ -19,6 +19,7 @@ export const MODAL = {
   JOB_SWEEP: "job-sweep",
   EVISIT: "evisit",
   PRICE_BUILDER: "price-builder",
+  STANDARDS: "standards",
 } as const;
 
 export type ModalId = (typeof MODAL)[keyof typeof MODAL];

@@ -118,6 +118,22 @@ export interface JobLine {
   c?: number;
 }
 
+export interface ChecklistItem {
+  id: number;
+  text: string;
+  type: "check" | "photo";
+  required: boolean;
+}
+
+export interface Checklist {
+  id: number;
+  name: string;
+  trade: string;
+  stage: "job" | "scope";
+  match: string[];
+  items: ChecklistItem[];
+}
+
 export interface Job {
   id: number;
   leadId: number;
@@ -135,6 +151,7 @@ export interface Job {
   special?: string;
   acts: unknown[];
   visits: Visit[];
+  checklist?: { name: string; items: ChecklistItem[] };
 }
 
 // ---- Invoice ---------------------------------------------------------------
@@ -167,6 +184,26 @@ export interface Invoice {
   age: number;
   fu?: { on: boolean; stage: number };
   archived: boolean;
+}
+
+// ---- Time entry (Timesheets) -----------------------------------------------
+
+// A normalized payroll punch — mirrors the prototype's state.timeEntries[] shape.
+// Job time also rides on visits (job costing); these entries are the payroll
+// record of the same hours. HOURS only — payroll owns the wage.
+export interface TimeEntry {
+  id: number;
+  techId: number;
+  date: string; // ISO (YYYY-MM-DD)
+  kind: string; // 'job' | 'travel' | 'break' | 'shop'
+  jobId: number | null;
+  start: string; // 'HH:MM'
+  end: string | null;
+  note: string;
+  src: string; // 'manual' | 'clock' | 'timer'
+  status: string; // 'draft' | 'approved'
+  running?: boolean;
+  approvedAt?: number;
 }
 
 // ---- Misc ------------------------------------------------------------------
