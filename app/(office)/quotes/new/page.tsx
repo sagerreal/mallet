@@ -29,7 +29,8 @@ export default function NewQuotePage() {
     draft.mutate(
       {
         leadId,
-        title: title || undefined,
+        // Default to first line description so jobs inherit a readable title when none is set.
+        title: title || lines[0]?.description || undefined,
         taxBps: taxPct ? toBps(taxPct) : undefined,
         depBps: depPct ? toBps(depPct) : undefined,
         lines: lines.map((l) => ({

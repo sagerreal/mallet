@@ -10,7 +10,10 @@ const useInvalidateInvoices = () => {
 
 export const useInvoices = (status?: InvoiceStatus) => api.v1.invoicing.list.useQuery({ limit: 50, status });
 export const useInvoice = (invoiceId: string) => api.v1.invoicing.get.useQuery({ invoiceId });
-export const useCreateInvoiceFromJob = () => api.v1.invoicing.createFromJob.useMutation();
+export const useCreateInvoiceFromJob = () => {
+  const i = useInvalidateInvoices();
+  return api.v1.invoicing.createFromJob.useMutation({ onSuccess: i });
+};
 export const useSendInvoice = () => { const i = useInvalidateInvoices(); return api.v1.invoicing.send.useMutation({ onSuccess: i }); };
 export const useRecordPayment = () => { const i = useInvalidateInvoices(); return api.v1.invoicing.recordPayment.useMutation({ onSuccess: i }); };
 export const useVoidInvoice = () => { const i = useInvalidateInvoices(); return api.v1.invoicing.void.useMutation({ onSuccess: i }); };

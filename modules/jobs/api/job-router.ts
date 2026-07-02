@@ -3,7 +3,6 @@ import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asJobId, asLeadId, asEstimateId, asUserId, toPage } from "@mallet/shared/types";
-import { JOB_STATUSES, type Job, type JobStatus } from "../domain/job";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { DrizzleEstimateReader } from "../infra/drizzle-estimate-reader";
 import { ScheduleJobUseCase } from "../app/schedule-job";
@@ -14,40 +13,7 @@ import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
 import { CancelJobUseCase } from "../app/cancel-job";
 import { ListJobsUseCase } from "../app/list-jobs";
-
-const statusEnum = z.enum(JOB_STATUSES as unknown as [JobStatus, ...JobStatus[]]);
-const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
-
-const jobDTO = z.object({
-  id: z.string().uuid(),
-  num: z.string(),
-  leadId: z.string().uuid(),
-  sourceEstimateId: z.string().uuid().nullable(),
-  assigneeUserId: z.string().uuid().nullable(),
-  title: z.string().nullable(),
-  status: statusEnum,
-  scheduledStart: z.string().nullable(),
-  scheduledEnd: z.string().nullable(),
-  startedAt: z.string().nullable(),
-  completedAt: z.string().nullable(),
-  canceledAt: z.string().nullable(),
-  cancelReason: z.string().nullable(),
-  total: moneyDTO,
-  notes: z.string().nullable(),
-  createdAt: z.string(),
-});
-
-const jobSummaryDTO = z.object({
-  id: z.string().uuid(),
-  num: z.string(),
-  leadId: z.string().uuid(),
-  title: z.string().nullable(),
-  status: statusEnum,
-  assigneeUserId: z.string().uuid().nullable(),
-  scheduledStart: z.string().nullable(),
-  total: moneyDTO,
-  createdAt: z.string(),
-});
+import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO } from "./job-dto";
 
 const paginatedSummaryDTO = z.object({
   items: z.array(jobSummaryDTO),
@@ -84,46 +50,6 @@ const listByLeadInput = z.object({
   limit: z.number().int().positive().max(100).optional(),
   cursor: z.string().nullish(),
 });
-
-const money = (cents: number) => ({ cents, currency: "USD" as const });
-const iso = (d: Date | null) => d?.toISOString() ?? null;
-
-const toJobDTO = (job: Job) => {
-  const p = job.props;
-  return {
-    id: p.id,
-    num: p.num,
-    leadId: p.leadId,
-    sourceEstimateId: p.sourceEstimateId,
-    assigneeUserId: p.assigneeUserId,
-    title: p.title,
-    status: p.status,
-    scheduledStart: iso(p.scheduledStart),
-    scheduledEnd: iso(p.scheduledEnd),
-    startedAt: iso(p.startedAt),
-    completedAt: iso(p.completedAt),
-    canceledAt: iso(p.canceledAt),
-    cancelReason: p.cancelReason,
-    total: money(p.total),
-    notes: p.notes,
-    createdAt: p.createdAt.toISOString(),
-  };
-};
-
-const toSummaryDTO = (job: Job) => {
-  const p = job.props;
-  return {
-    id: p.id,
-    num: p.num,
-    leadId: p.leadId,
-    title: p.title,
-    status: p.status,
-    assigneeUserId: p.assigneeUserId,
-    scheduledStart: iso(p.scheduledStart),
-    total: money(p.total),
-    createdAt: p.createdAt.toISOString(),
-  };
-};
 
 // Layer 5: thin transport. Build org-scoped use-cases from the request's tx + ports, delegate,
 // map the result. No business logic here.
@@ -188,7 +114,7 @@ export const createJobRouter = () =>
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
           },
         });
-        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+        return { items: page.items.map(toJobSummaryDTO), nextCursor: page.nextCursor };
       }),
 
     listByLead: ownerOrOffice
@@ -200,7 +126,7 @@ export const createJobRouter = () =>
           asLeadId(input.leadId),
           toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         );
-        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+        return { items: page.items.map(toJobSummaryDTO), nextCursor: page.nextCursor };
       }),
 
     schedule: ownerOrOffice

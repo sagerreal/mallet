@@ -86,6 +86,11 @@ const listInput = z.object({
 
 const idInput = z.object({ estimateId: z.string().uuid() });
 const declineInput = z.object({ estimateId: z.string().uuid(), reason: z.string().min(1) });
+const listByLeadInput = z.object({
+  leadId: z.string().uuid(),
+  limit: z.number().int().positive().max(100).optional(),
+  cursor: z.string().nullish(),
+});
 const paginatedSummaryDTO = z.object({
   items: z.array(estimateSummaryDTO),
   nextCursor: z.string().nullable(),
@@ -194,6 +199,18 @@ export const createEstimateRouter = () =>
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
           filter: { status: input.status },
         });
+        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+      }),
+
+    listByLead: ownerOrOffice
+      .input(listByLeadInput)
+      .output(paginatedSummaryDTO)
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const page = await repo.listByLead(
+          asLeadId(input.leadId),
+          toPage({ limit: input.limit, cursor: input.cursor ?? null }),
+        );
         return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
       }),
 
