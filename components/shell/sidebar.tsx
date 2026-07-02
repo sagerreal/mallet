@@ -226,15 +226,12 @@ export function Sidebar() {
 
         <NavItem href="/settings" icon={<SettingsIcon />} label="Settings" active={isActive("/settings")} />
 
-        {/* FIELD section — owner-operator surfaces */}
+        {/* FIELD section — the tech/crew surfaces */}
         <div className="navsep" />
         <div className="navlabel">Field</div>
-        {/* My day — route not built yet; inert visually */}
-        <NavItem href="/my-day" icon={<MyDayIcon />} label="My day" inert />
-        {/* My hours — not yet built; inert */}
-        <NavItem href="/my-hours" icon={<ClockIcon />} label="My hours" inert />
-        {/* Messages — not yet built; inert */}
-        <NavItem href="/messages" icon={<ChatIcon />} label="Messages" inert />
+        <NavItem href="/my-day" icon={<MyDayIcon />} label="My day" active={isActive("/my-day")} />
+        <NavItem href="/my-hours" icon={<ClockIcon />} label="My hours" active={isActive("/my-hours")} />
+        <NavItem href="/messages" icon={<ChatIcon />} label="Messages" active={isActive("/messages")} />
       </div>
 
       {/* Account row */}

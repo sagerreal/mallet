@@ -2,29 +2,20 @@
 
 /**
  * My Day page — pixel-faithful port of the prototype's vMyDay().
- * Uses SAMPLE_JOBS / SAMPLE_TECHS / SAMPLE_LEADS / TODAY_ISO from lib/prototype-sample.ts.
- * No live hooks. All interactive actions are console-logged stubs.
+ * Reads live store data (jobs / leads / techs) and drives real actions:
+ * visit status → store, stop card → tech job view, call/directions wired.
+ * The time clock stays local for now (deferred: clock → timesheets time entries).
  *
  * Prototype source: vMyDay() lines 4329-4374.
  */
 
 import { useState } from "react";
-import {
-  SAMPLE_JOBS,
-  SAMPLE_TECHS,
-  SAMPLE_LEADS,
-  TODAY_ISO,
-  type SampleJob,
-  type SampleVisit,
-  type SampleTech,
-} from "@/lib/prototype-sample";
+import { TODAY_ISO } from "@/lib/prototype-sample";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import type { Job, Lead, Tech, Visit } from "@/lib/store/types";
 
 // ---- helpers ---------------------------------------------------------------
-
-function stub(action: string, ...args: unknown[]): void {
-  // eslint-disable-next-line no-console
-  console.log(`[stub] ${action}`, ...args);
-}
 
 function timeLabel(h: number): string {
   const hr = Math.floor(h);
@@ -43,20 +34,20 @@ function hmLabel(h: number): string {
   return `${hrs}h ${mins}m`;
 }
 
-function custName(j: SampleJob): string {
-  const lead = SAMPLE_LEADS.find((l) => l.id === j.leadId);
+function custName(j: Job, leads: Lead[]): string {
+  const lead = leads.find((l) => l.id === j.leadId);
   return lead?.name ?? "—";
 }
 
-function custPhone(j: SampleJob): string {
-  return j.phone || SAMPLE_LEADS.find((l) => l.id === j.leadId)?.phone || "";
+function custPhone(j: Job, leads: Lead[]): string {
+  return j.phone || leads.find((l) => l.id === j.leadId)?.phone || "";
 }
 
-function custAddr(j: SampleJob): string {
-  return j.addr || SAMPLE_LEADS.find((l) => l.id === j.leadId)?.address || "";
+function custAddr(j: Job, leads: Lead[]): string {
+  return j.addr || leads.find((l) => l.id === j.leadId)?.address || "";
 }
 
-function jobMode(j: SampleJob): "estimate" | "install" | "service" {
+function jobMode(j: Job): "estimate" | "install" | "service" {
   if (j.svc === "estimate") return "estimate";
   const priced = (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
   return priced ? "install" : "service";
@@ -90,19 +81,21 @@ function jst(status: string): { l: string; c: string; bg: string } {
 }
 
 interface TodayStop {
-  job: SampleJob;
-  visit: SampleVisit;
+  job: Job;
+  visit: Visit;
 }
 
-function todayStops(techId: number): TodayStop[] {
+function todayStops(jobs: Job[], techId: number): TodayStop[] {
   const out: TodayStop[] = [];
-  SAMPLE_JOBS.filter((j) => !j.archived).forEach((j) => {
-    (j.visits ?? []).forEach((v) => {
-      if (v.techId === techId && v.date === TODAY_ISO && v.start != null) {
-        out.push({ job: j, visit: v });
-      }
+  jobs
+    .filter((j) => !j.archived)
+    .forEach((j) => {
+      (j.visits ?? []).forEach((v) => {
+        if (v.techId === techId && v.date === TODAY_ISO && v.start != null) {
+          out.push({ job: j, visit: v });
+        }
+      });
     });
-  });
   return out.sort((a, b) => (a.visit.start ?? 0) - (b.visit.start ?? 0));
 }
 
@@ -124,30 +117,39 @@ function NavIcon() {
   );
 }
 
+function openDirections(addr: string): void {
+  window.open(
+    "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(addr),
+    "_blank"
+  );
+}
+
 // ============================================================================
 // Stop card — one visit row in the agenda
 // ============================================================================
 
 interface StopCardProps {
   stop: TodayStop;
-  visitStatus: Record<number, string>;
-  onStatusChange: (visitId: number, status: string) => void;
+  leads: Lead[];
+  setVisitStatus: (jobId: number, visitId: number, status: string) => void;
+  onOpenJob: (jobId: number) => void;
+  onCall: (leadId: number) => void;
 }
 
-function StopCard({ stop, visitStatus, onStatusChange }: StopCardProps) {
+function StopCard({ stop, leads, setVisitStatus, onOpenJob, onCall }: StopCardProps) {
   const { job: j, visit: v } = stop;
   const mode = jobMode(j);
   const meta = svcMeta(mode);
-  const curStatus = visitStatus[v.id] ?? v.status;
+  const curStatus = v.status;
   const s = jst(curStatus);
-  const nm = custName(j);
-  const addr = custAddr(j);
-  const ph = custPhone(j);
+  const nm = custName(j, leads);
+  const addr = custAddr(j, leads);
+  const ph = custPhone(j, leads);
   const title = j.title ?? "";
+  const lead = leads.find((l) => l.id === j.leadId);
 
   function changeStatus(newStatus: string): void {
-    stub("visitStatus", v.id, newStatus);
-    onStatusChange(v.id, newStatus);
+    setVisitStatus(j.id, v.id, newStatus);
   }
 
   const acts =
@@ -171,7 +173,7 @@ function StopCard({ stop, visitStatus, onStatusChange }: StopCardProps) {
       </>
     ) : curStatus === "onsite" ? (
       <>
-        <button className="btn sm primary" onClick={() => stub("visitTimerStart", v.id)}>
+        <button className="btn sm primary" onClick={() => onOpenJob(j.id)}>
           Start timer
         </button>
         <button className="btn sm" onClick={() => changeStatus("done")}>
@@ -185,7 +187,7 @@ function StopCard({ stop, visitStatus, onStatusChange }: StopCardProps) {
     );
 
   return (
-    <div className="md-stop" onClick={() => stub("openJob", j.id)}>
+    <div className="md-stop" onClick={() => onOpenJob(j.id)}>
       <div className="md-time">
         {timeLabel(v.start ?? 0)}–{timeLabel((v.start ?? 0) + (v.dur ?? 0))}
       </div>
@@ -204,13 +206,13 @@ function StopCard({ stop, visitStatus, onStatusChange }: StopCardProps) {
           {addr ? ` · ${addr}` : ""}
         </div>
         <div className="md-acts" onClick={(e) => e.stopPropagation()}>
-          {ph ? (
-            <button className="md-ic" title={`Call ${nm.split(" ")[0]}`} onClick={() => stub("jobCall", j.id)}>
+          {ph && lead ? (
+            <button className="md-ic" title={`Call ${nm.split(" ")[0]}`} onClick={() => onCall(lead.id)}>
               <PhoneIcon />
             </button>
           ) : null}
           {addr ? (
-            <button className="md-ic" title="Navigate" onClick={() => stub("openDirections", addr)}>
+            <button className="md-ic" title="Navigate" onClick={() => openDirections(addr)}>
               <NavIcon />
             </button>
           ) : null}
@@ -234,7 +236,7 @@ const TS_KINDS: Record<string, string> = {
 };
 
 interface ClockCardProps {
-  tech: SampleTech;
+  tech: Tech;
   clockState: "idle" | "travel" | "break" | "shop";
   onClockStart: (kind: "travel" | "break" | "shop") => void;
   onClockStop: () => void;
@@ -284,12 +286,18 @@ function ClockCard({ tech, clockState, onClockStart, onClockStop }: ClockCardPro
 // ============================================================================
 
 export default function MyDayPage() {
+  // Live store data — select raw arrays only (never a derived/filtered array).
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const techs = useAppStore((s) => s.techs);
+  const setVisitStatus = useAppStore((s) => s.setVisitStatus);
+  const openModal = useOpenModal();
+
   const [myTech, setMyTech] = useState(1);
-  const [visitStatus, setVisitStatus] = useState<Record<number, string>>({});
+  // Time clock stays local for now (deferred: clock → timesheets time entries).
   const [clockState, setClockState] = useState<"idle" | "travel" | "break" | "shop">("idle");
 
-  const tc: SampleTech | undefined =
-    SAMPLE_TECHS.find((t) => t.id === myTech) ?? SAMPLE_TECHS[0];
+  const tc: Tech | undefined = techs.find((t) => t.id === myTech) ?? techs[0];
 
   if (!tc) {
     return (
@@ -303,23 +311,27 @@ export default function MyDayPage() {
   }
 
   // Non-null capture for use in closures (TypeScript can't narrow through the early return into fn bodies)
-  const activeTech: SampleTech = tc;
+  const activeTech: Tech = tc;
 
-  const list = todayStops(activeTech.id);
+  const list = todayStops(jobs, activeTech.id);
   const totalH = list.reduce((s, e) => s + (e.visit.dur ?? 0), 0);
 
-  function handleStatusChange(visitId: number, status: string): void {
-    setVisitStatus((prev) => ({ ...prev, [visitId]: status }));
-  }
-
   function handleClockStart(kind: "travel" | "break" | "shop"): void {
-    stub("tsClockStart", activeTech.id, kind);
+    // deferred: clock → timesheets time entries
     setClockState(kind);
   }
 
   function handleClockStop(): void {
-    stub("tsClockStop", activeTech.id);
+    // deferred: clock → timesheets time entries
     setClockState("idle");
+  }
+
+  function openJob(jobId: number): void {
+    openModal(MODAL.TECH_JOB, { jobId });
+  }
+
+  function callLead(leadId: number): void {
+    openModal(MODAL.CALL, { leadId });
   }
 
   const lastStop = list[list.length - 1];
@@ -335,13 +347,12 @@ export default function MyDayPage() {
 
       {/* Crew selector chip bar (owner/office role) */}
       <div className="chips" style={{ marginBottom: 10 }}>
-        {SAMPLE_TECHS.map((t) => (
+        {techs.map((t) => (
           <button
             key={t.id}
             className={`chip ${t.id === activeTech.id ? "sel" : ""}`}
             onClick={() => {
               setMyTech(t.id);
-              setVisitStatus({});
               setClockState("idle");
             }}
           >
@@ -389,8 +400,10 @@ export default function MyDayPage() {
             <StopCard
               key={stop.visit.id}
               stop={stop}
-              visitStatus={visitStatus}
-              onStatusChange={handleStatusChange}
+              leads={leads}
+              setVisitStatus={setVisitStatus}
+              onOpenJob={openJob}
+              onCall={callLead}
             />
           ))
         ) : (
