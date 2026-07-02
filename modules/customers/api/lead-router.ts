@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { Phone, isOk, toPage } from "@mallet/shared/types";
+import { Phone, isOk, toPage, asLeadId } from "@mallet/shared/types";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
 import { ListLeadsUseCase } from "../app/list-leads";
@@ -84,6 +84,16 @@ export const createLeadRouter = () =>
           source: input.source ?? null,
         });
         return toLeadDTO(orThrow(result));
+      }),
+
+    get: ownerOrOffice
+      .input(z.object({ leadId: z.string().uuid() }))
+      .output(leadDTO)
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId);
+        const lead = await repo.findById(asLeadId(input.leadId));
+        if (!lead) throw new TRPCError({ code: "NOT_FOUND", message: "customer not found" });
+        return toLeadDTO(lead);
       }),
 
     list: ownerOrOffice

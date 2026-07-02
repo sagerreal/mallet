@@ -73,6 +73,31 @@ suite("customers tRPC router (full stack, live RLS)", () => {
     expect(listed.items).toHaveLength(0);
   });
 
+  it("a created customer is gettable by id", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.customers.create({ name: "Get Test User", phone: "(555) 123-9999" });
+    const fetched = await caller.v1.customers.get({ leadId: created.id });
+    expect(fetched.id).toBe(created.id);
+    expect(fetched.name).toBe("Get Test User");
+    expect(fetched.stage).toBe("new");
+  });
+
+  it("customers.get returns NOT_FOUND for a random uuid", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(caller.v1.customers.get({ leadId: randomUUID() })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("org B cannot get org A's customer (NOT_FOUND under RLS)", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await callerA.v1.customers.create({ name: "RLS Boundary Test" });
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    await expect(callerB.v1.customers.get({ leadId: created.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
   it("a tech is forbidden from the office customer API", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(caller.v1.customers.create({ name: "Nope" })).rejects.toMatchObject({

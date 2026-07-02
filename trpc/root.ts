@@ -1,7 +1,7 @@
 import { router } from "./init";
 import { createLeadRouter } from "@mallet/customers";
 import { createEstimateRouter } from "@mallet/quoting";
-import { createJobRouter } from "@mallet/jobs";
+import { createJobRouter, createFieldRouter } from "@mallet/jobs";
 import { createInvoiceRouter } from "@mallet/invoicing";
 import { createNotificationRouter } from "@mallet/notifications";
 import { createAiRouter } from "@mallet/ai";
@@ -15,6 +15,7 @@ export const appRouter = router({
     customers: createLeadRouter(),
     quoting: createEstimateRouter(),
     jobs: createJobRouter(),
+    field: createFieldRouter(),
     invoicing: createInvoiceRouter(),
     notifications: createNotificationRouter(),
     ai: createAiRouter(),
