@@ -10,7 +10,7 @@ import type { ModalId } from "./modal-ids";
 
 export interface LeadNote {
   id?: string;
-  type: "note" | "call" | "text" | "system";
+  type: "note" | "call" | "text" | "system" | "visit" | "ai";
   dir?: string;
   outcome?: string;
   dur?: string;
@@ -52,6 +52,7 @@ export interface Lead {
   lossReason?: string;
   evisits?: Visit[];
   acts?: LeadNote[];
+  notes?: string;
   card?: { brand: string; last4: string; via: string };
   archived?: boolean;
   trash?: boolean;

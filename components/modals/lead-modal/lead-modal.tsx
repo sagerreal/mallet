@@ -1,7 +1,8 @@
 /**
  * components/modals/lead-modal/lead-modal.tsx
- * Port of ovLead / openLead (§5.3).
- * Composes LeadHeader + LeadNotes + LeadStageBar.
+ * Faithful port of prototype ovLead / openLead (lines 6137-6202).
+ * Composes all 9 sections in exact prototype order.
+ * NO "Move stage" bar — stage lives in the header pill only.
  */
 
 "use client";
@@ -9,24 +10,128 @@
 import { Modal } from "../modal";
 import { LeadHeader } from "./lead-header";
 import { LeadNotes } from "./lead-notes";
-import { LeadStageBar } from "./lead-stage-bar";
+import { VisitCard } from "./visit-card";
+import { NextStepCard } from "./next-step-card";
+import { MoreDetails } from "./more-details";
 import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
+import { useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import type { Estimate } from "@/lib/store/types";
+
+/** Inline estimate total — keeps types clean without importing SampleEstimate helpers */
+function calcEstTotal(e: Estimate): number {
+  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
+  const disc = sub * ((e.pricing?.disc ?? 0) / 100);
+  const taxed = (sub - disc) * ((e.pricing?.tax ?? 0) / 100);
+  return sub - disc + taxed;
+}
+
+function statusStamp(status: string): string {
+  switch (status) {
+    case "accepted": return "Signed";
+    case "sent": return "Sent";
+    case "draft": return "Draft";
+    case "declined": return "Declined";
+    default: return status;
+  }
+}
+
+function statusStampCls(status: string): string {
+  switch (status) {
+    case "accepted": return "good";
+    case "sent": return "info";
+    case "draft": return "ink";
+    case "declined": return "bad";
+    default: return "ink";
+  }
+}
+
+interface QuotesCardProps {
+  estimates: Estimate[];
+  leadId: number;
+}
+
+function QuotesCard({ estimates, leadId }: QuotesCardProps) {
+  const openModal = useOpenModal();
+
+  if (estimates.length === 0) return null;
+
+  const title = estimates.length === 1 ? "Quote" : `${estimates.length} quotes`;
+
+  return (
+    <div className="card">
+      <h3>{title}</h3>
+      {estimates.map((e) => {
+        const total = calcEstTotal(e);
+        const isSigned = e.status === "accepted";
+        return (
+          <div
+            key={e.id}
+            className="stage-row"
+            style={{ cursor: "pointer" }}
+            onClick={() => openModal(MODAL.COMPOSER, { estimateId: e.id, leadId })}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                {e.num} — {e.title}
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                {isSigned
+                  ? `Signed — $${total.toLocaleString()}`
+                  : "Tap to open…"}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700 }}>
+                ${total.toLocaleString()}
+              </span>
+              <span className={`stamp ${statusStampCls(e.status)}`}>
+                {statusStamp(e.status)}
+              </span>
+              <span style={{ color: "var(--ink-3)" }}>&#8594;</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function LeadModal({ open }: { open: boolean }) {
   const close = useCloseModal();
   const activeModal = useActiveModal();
   const leads = useAppStore((s) => s.leads);
+  const estimates = useAppStore((s) => s.estimates);
 
   const leadId = activeModal?.params?.leadId as number | undefined;
   const lead = leads.find((l) => l.id === leadId);
 
+  // Estimates for this lead
+  const leadEstimates = lead
+    ? estimates.filter((e) => e.leadId === lead.id)
+    : [];
+
   return (
-    <Modal open={open} onClose={close}>
+    <Modal open={open} onClose={close} wide>
       {lead ? (
         <>
+          {/* 1. Header: avatar + editable name + pill row + action buttons */}
           <LeadHeader lead={lead} />
+
+          {/* 3. Quotes card — only if lead has estimates */}
+          <QuotesCard estimates={leadEstimates} leadId={lead.id} />
+
+          {/* 4. Visit card — only if lead has evisits */}
+          <VisitCard lead={lead} />
+
+          {/* 5. Notes timeline (request note from l.job + acts + composer) */}
           <LeadNotes lead={lead} />
-          <LeadStageBar lead={lead} />
+
+          {/* 6. Next step card */}
+          <NextStepCard lead={lead} />
+
+          {/* 8. More details reveal + 9. Footer */}
+          <MoreDetails lead={lead} />
         </>
       ) : (
         <p className="muted">Customer not found.</p>
