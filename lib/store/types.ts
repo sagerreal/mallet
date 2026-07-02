@@ -103,6 +103,8 @@ export interface Estimate {
   fu: { on: boolean; stage: number };
   lines: EstimateLine[];
   pricing?: { disc: number; dep: number; tax: number };
+  archived?: boolean;
+  trash?: boolean;
 }
 
 // ---- Job -------------------------------------------------------------------

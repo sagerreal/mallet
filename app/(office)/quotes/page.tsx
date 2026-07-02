@@ -9,12 +9,9 @@
  */
 
 import { useState } from "react";
-import {
-  liveEsts,
-  estTotal,
-  SAMPLE_LEADS,
-  type SampleEstimate,
-} from "@/lib/prototype-sample";
+import { estTotal, type SampleEstimate } from "@/lib/prototype-sample";
+import { useEstimates, useLeads, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -22,22 +19,11 @@ function fmt$(n: number): string {
   return "$" + Math.round(n).toLocaleString("en-US");
 }
 
-function findLead(leadId: number) {
-  return SAMPLE_LEADS.find((l) => l.id === leadId);
-}
-
 /** Mirrors prototype's isExpired(e) — expired when age > validDays */
 function isExpired(e: SampleEstimate): boolean {
   if (e.status !== "sent") return false;
   const vd = (e as SampleEstimate & { validDays?: number }).validDays ?? 14;
   return (e.age ?? 0) > vd;
-}
-
-// ---- stubs ------------------------------------------------------------------
-
-function stub(action: string, ...args: unknown[]) {
-  // eslint-disable-next-line no-console
-  console.log(`[stub] ${action}`, ...args);
 }
 
 // ---- status pill map (prototype's stPill) -----------------------------------
@@ -91,8 +77,12 @@ type QuoteFilter = "" | "sent" | "accepted" | "draft" | "changes";
 export default function QuotesPage() {
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>("");
   const [quoteQ, setQuoteQ] = useState("");
+  const openModal = useOpenModal();
+  const leads = useLeads();
+  const estimates = useEstimates();
 
-  const all = liveEsts();
+  const findLead = (leadId: number) => leads.find((l) => l.id === leadId);
+  const all = estimates.filter((e) => !e.archived) as unknown as SampleEstimate[];
 
   const sent = all.filter((e) => e.status === "sent");
   const acc  = all.filter((e) => e.status === "accepted");
@@ -139,10 +129,11 @@ export default function QuotesPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <h1>Quotes</h1>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn ghost" onClick={() => stub("openQuoteSweep")}>
+          {/* TODO: quote clean-up (openQuoteSweep) ships with the Composer slice */}
+          <button className="btn ghost" disabled title="Quote clean-up coming with the New-quote slice">
             Clean up
           </button>
-          <button className="btn primary" onClick={() => stub("startComposer")}>
+          <button className="btn primary" onClick={() => openModal(MODAL.COMPOSER)}>
             + New quote
           </button>
         </div>
@@ -250,7 +241,7 @@ export default function QuotesPage() {
                   <tr
                     key={e.id}
                     className="clickable"
-                    onClick={() => stub("openEst", e.id)}
+                    onClick={() => openModal(MODAL.EST, { estId: e.id })}
                   >
                     <td className="muted">{e.num}</td>
                     <td>

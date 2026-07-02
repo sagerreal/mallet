@@ -48,10 +48,9 @@ function statusStampCls(status: string): string {
 
 interface QuotesCardProps {
   estimates: Estimate[];
-  leadId: number;
 }
 
-function QuotesCard({ estimates, leadId }: QuotesCardProps) {
+function QuotesCard({ estimates }: QuotesCardProps) {
   const openModal = useOpenModal();
 
   if (estimates.length === 0) return null;
@@ -69,7 +68,7 @@ function QuotesCard({ estimates, leadId }: QuotesCardProps) {
             key={e.id}
             className="stage-row"
             style={{ cursor: "pointer" }}
-            onClick={() => openModal(MODAL.COMPOSER, { estimateId: e.id, leadId })}
+            onClick={() => openModal(MODAL.EST, { estId: e.id })}
           >
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13.5, fontWeight: 600 }}>
@@ -119,7 +118,7 @@ export function LeadModal({ open }: { open: boolean }) {
           <LeadHeader lead={lead} />
 
           {/* 3. Quotes card — only if lead has estimates */}
-          <QuotesCard estimates={leadEstimates} leadId={lead.id} />
+          <QuotesCard estimates={leadEstimates} />
 
           {/* 4. Visit card — only if lead has evisits */}
           <VisitCard lead={lead} />

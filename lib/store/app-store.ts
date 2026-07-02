@@ -10,14 +10,16 @@ import { create } from "zustand";
 import { createUISlice, type UISlice } from "./slices/ui-slice";
 import { createLeadsSlice, type LeadsSlice } from "./slices/leads-slice";
 import { createDataSlice, type DataSlice } from "./slices/data-slice";
+import { createEstimatesSlice, type EstimatesSlice } from "./slices/estimates-slice";
 import { createCallSlice, type CallSlice } from "./slices/call-slice";
 
-export type AppStore = UISlice & LeadsSlice & DataSlice & CallSlice;
+export type AppStore = UISlice & LeadsSlice & DataSlice & EstimatesSlice & CallSlice;
 
 export const useAppStore = create<AppStore>()((...args) => ({
   ...createUISlice(...args),
   ...createLeadsSlice(...args),
   ...createDataSlice(...args),
+  ...createEstimatesSlice(...args),
   ...createCallSlice(...args),
 }));
 

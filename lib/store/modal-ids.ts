@@ -12,6 +12,7 @@ export const MODAL = {
   COMPOSER: "composer",
   CLEAN_UP: "clean-up",
   SWEEP: "sweep",
+  EST: "est",
 } as const;
 
 export type ModalId = (typeof MODAL)[keyof typeof MODAL];

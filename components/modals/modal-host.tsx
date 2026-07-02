@@ -13,6 +13,7 @@ import { NewCustomerModal } from "./new-customer-modal";
 import { SweepModalContent } from "./sweep-modal";
 import { ThreadModalContent } from "./thread-modal";
 import { CallModalContent } from "./call-modal";
+import { EstimateModalContent } from "./estimate-modal";
 import { Modal } from "./modal";
 import {
   VisitModalContent,
@@ -53,6 +54,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.SWEEP} onClose={close}>
         <SweepModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.EST} onClose={close} wide>
+        <EstimateModalContent />
       </Modal>
     </>
   );

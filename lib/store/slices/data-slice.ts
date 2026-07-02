@@ -5,10 +5,9 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { Company, Estimate, Job, Invoice, Tech, User, Brand } from "../types";
+import type { Company, Job, Invoice, Tech, User, Brand } from "../types";
 import {
   SAMPLE_COMPANIES,
-  SAMPLE_ESTIMATES,
   SAMPLE_JOBS,
   SAMPLE_INVOICES,
   SAMPLE_TECHS,
@@ -18,7 +17,6 @@ import {
 
 export interface DataSlice {
   companies: Company[];
-  estimates: Estimate[];
   jobs: Job[];
   invoices: Invoice[];
   techs: Tech[];
@@ -28,7 +26,6 @@ export interface DataSlice {
 
 export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = () => ({
   companies: SAMPLE_COMPANIES.map((c) => ({ ...c })),
-  estimates: SAMPLE_ESTIMATES.map((e) => ({ ...e })),
   jobs: SAMPLE_JOBS.map((j) => ({ ...j })),
   invoices: SAMPLE_INVOICES.map((i) => ({ ...i })),
   techs: SAMPLE_TECHS.map((t) => ({ ...t })),
