@@ -206,3 +206,12 @@ export interface UIState {
   activeModal: ActiveModal | null;
   custSeg: "people" | "biz";
 }
+
+// ---- Active call (global call bar) -----------------------------------------
+
+export interface ActiveCall {
+  leadId: number;
+  sec: number;
+  notes: string;
+  phase: "live" | "ended";
+}

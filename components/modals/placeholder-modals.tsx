@@ -8,36 +8,6 @@
 
 import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
 
-// ---- Call modal ------------------------------------------------------------
-
-export function CallModalContent() {
-  const activeModal = useActiveModal();
-  const close = useCloseModal();
-  const leads = useAppStore((s) => s.leads);
-  const leadId = activeModal?.params?.leadId as number | undefined;
-  const lead = leads.find((l) => l.id === leadId);
-
-  return (
-    <div>
-      <h2 className="modal-title">Call{lead ? ` · ${lead.name}` : ""}</h2>
-      <p className="muted" style={{ marginTop: 8 }}>
-        {lead?.phone ?? "—"}
-      </p>
-      <div style={{ marginTop: 24, display: "flex", gap: 10 }}>
-        <button className="btn primary" onClick={close}>
-          Call from Mallet
-        </button>
-        <button className="btn ghost" onClick={close}>
-          Log a call
-        </button>
-      </div>
-      <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>
-        Full call sheet coming in a later slice.
-      </p>
-    </div>
-  );
-}
-
 // ---- Visit booking modal ---------------------------------------------------
 
 export function VisitModalContent() {

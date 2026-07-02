@@ -10,13 +10,15 @@ import { create } from "zustand";
 import { createUISlice, type UISlice } from "./slices/ui-slice";
 import { createLeadsSlice, type LeadsSlice } from "./slices/leads-slice";
 import { createDataSlice, type DataSlice } from "./slices/data-slice";
+import { createCallSlice, type CallSlice } from "./slices/call-slice";
 
-export type AppStore = UISlice & LeadsSlice & DataSlice;
+export type AppStore = UISlice & LeadsSlice & DataSlice & CallSlice;
 
 export const useAppStore = create<AppStore>()((...args) => ({
   ...createUISlice(...args),
   ...createLeadsSlice(...args),
   ...createDataSlice(...args),
+  ...createCallSlice(...args),
 }));
 
 // Convenience selectors — import these instead of reaching into the store directly
@@ -28,3 +30,4 @@ export const useEstimates = () => useAppStore((s) => s.estimates);
 export const useTasks = () => useAppStore((s) => s.tasks);
 export const useCustSeg = () => useAppStore((s) => s.custSeg);
 export const useSetCustSeg = () => useAppStore((s) => s.setCustSeg);
+export const useActiveCall = () => useAppStore((s) => s.activeCall);
