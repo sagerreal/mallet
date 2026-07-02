@@ -131,8 +131,7 @@ export default function QuotesPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <h1>Quotes</h1>
         <div style={{ display: "flex", gap: 8 }}>
-          {/* TODO: quote clean-up (openQuoteSweep) ships with the Composer slice */}
-          <button className="btn ghost" disabled title="Quote clean-up coming with the New-quote slice">
+          <button className="btn ghost" onClick={() => openModal(MODAL.QUOTE_SWEEP)}>
             Clean up
           </button>
           <button className="btn primary" onClick={() => router.push("/composer")}>

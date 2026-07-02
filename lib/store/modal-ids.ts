@@ -12,6 +12,7 @@ export const MODAL = {
   COMPOSER: "composer",
   CLEAN_UP: "clean-up",
   SWEEP: "sweep",
+  QUOTE_SWEEP: "quote-sweep",
   EST: "est",
 } as const;
 

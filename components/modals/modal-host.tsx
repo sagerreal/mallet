@@ -11,6 +11,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { LeadModal } from "./lead-modal/lead-modal";
 import { NewCustomerModal } from "./new-customer-modal";
 import { SweepModalContent } from "./sweep-modal";
+import { QuoteSweepModalContent } from "./quote-sweep-modal";
 import { ThreadModalContent } from "./thread-modal";
 import { CallModalContent } from "./call-modal";
 import { EstimateModalContent } from "./estimate-modal";
@@ -54,6 +55,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.SWEEP} onClose={close}>
         <SweepModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.QUOTE_SWEEP} onClose={close}>
+        <QuoteSweepModalContent />
       </Modal>
 
       <Modal open={id === MODAL.EST} onClose={close} wide>
