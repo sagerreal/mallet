@@ -54,6 +54,7 @@ export interface Lead {
   acts?: LeadNote[];
   notes?: string;
   card?: { brand: string; last4: string; via: string };
+  custom?: Record<string, string>;
   archived?: boolean;
   trash?: boolean;
 }

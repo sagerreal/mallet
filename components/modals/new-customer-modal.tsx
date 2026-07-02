@@ -51,7 +51,9 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
-  const [customFieldLabel, setCustomFieldLabel] = useState("");
+  const [customFields, setCustomFields] = useState<{ label: string; value: string }[]>([]);
+  const [cfLabel, setCfLabel] = useState("");
+  const [cfValue, setCfValue] = useState("");
   const [showAddField, setShowAddField] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +73,9 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setMoreOpen(false);
     setEmail("");
     setNotes("");
-    setCustomFieldLabel("");
+    setCustomFields([]);
+    setCfLabel("");
+    setCfValue("");
     setShowAddField(false);
     setError(null);
   }
@@ -105,9 +109,21 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       companyId: undefined,
       role: isBiz && bizName.trim() ? "Contact" : undefined,
       notes: notes.trim() || undefined,
+      custom: customFields.length
+        ? Object.fromEntries(customFields.map((f) => [f.label, f.value]))
+        : undefined,
     });
     reset();
     close();
+  }
+
+  function addCustomField() {
+    const label = cfLabel.trim();
+    if (!label) return;
+    setCustomFields((prev) => [...prev, { label, value: cfValue.trim() }]);
+    setCfLabel("");
+    setCfValue("");
+    setShowAddField(false);
   }
 
   function selectSource(s: string) {
@@ -126,7 +142,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           <label>Name</label>
           <input
             type="text"
-            placeholder="Janet Kim"
+            placeholder="Full name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
@@ -355,32 +371,41 @@ export function NewCustomerModal({ open }: { open: boolean }) {
               />
             </div>
 
+            {customFields.map((f, i) => (
+              <div className="cfrow" key={i}>
+                <input className="ro" readOnly value={f.label} />
+                <input
+                  value={f.value}
+                  placeholder="value"
+                  onChange={(e) =>
+                    setCustomFields((prev) =>
+                      prev.map((x, xi) => (xi === i ? { ...x, value: e.target.value } : x)),
+                    )
+                  }
+                />
+              </div>
+            ))}
             {showAddField ? (
               <div className="cfrow">
                 <input
                   type="text"
-                  placeholder="Field name"
-                  value={customFieldLabel}
-                  onChange={(e) => setCustomFieldLabel(e.target.value)}
+                  placeholder="field name"
+                  value={cfLabel}
+                  onChange={(e) => setCfLabel(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      setShowAddField(false);
-                      setCustomFieldLabel("");
-                    }
+                    if (e.key === "Enter") { e.preventDefault(); addCustomField(); }
+                    if (e.key === "Escape") { setShowAddField(false); setCfLabel(""); setCfValue(""); }
                   }}
                   autoFocus
                 />
-                <button
-                  type="button"
-                  className="btn sm primary"
-                  onClick={() => {
-                    if (customFieldLabel.trim()) {
-                      // For now just clear — custom fields stored locally in lead-modal
-                      setCustomFieldLabel("");
-                      setShowAddField(false);
-                    }
-                  }}
-                >
+                <input
+                  type="text"
+                  placeholder="value"
+                  value={cfValue}
+                  onChange={(e) => setCfValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomField(); } }}
+                />
+                <button type="button" className="btn sm primary" onClick={addCustomField}>
                   Add
                 </button>
               </div>

@@ -10,6 +10,7 @@ import { useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { LeadModal } from "./lead-modal/lead-modal";
 import { NewCustomerModal } from "./new-customer-modal";
+import { SweepModalContent } from "./sweep-modal";
 import { Modal } from "./modal";
 import {
   CallModalContent,
@@ -48,6 +49,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.CLEAN_UP} onClose={close}>
         <CleanUpModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.SWEEP} onClose={close}>
+        <SweepModalContent />
       </Modal>
     </>
   );

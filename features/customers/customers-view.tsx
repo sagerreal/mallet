@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { useLeads, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { ACTIVE_STAGES, STALE_AGE } from "@/features/pipeline/pipeline-constants";
 import { filterLeads, sortLeads } from "./customers-utils";
 import { CustomersToolbar } from "./customers-toolbar";
 import { CustomersFilters } from "./customers-filters";
@@ -36,6 +37,9 @@ export function CustomersView() {
   const filtered = filterLeads(all, q, stageFilter, sourceFilter);
   const sorted = sortLeads(filtered, sortCol, sortDir);
 
+  const staleCount = all.filter(
+    (l) => ACTIVE_STAGES.includes(l.stage) && l.age >= STALE_AGE
+  ).length;
   const allStages = [...new Set(all.map((l) => l.stage))];
   const allSources = [...new Set(all.map((l) => l.source).filter(Boolean))];
   const activeFilterCount = (stageFilter ? 1 : 0) + (sourceFilter ? 1 : 0);
@@ -66,7 +70,14 @@ export function CustomersView() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <h1>Customers</h1>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn ghost">Clean up</button>
+          <button className="btn ghost" onClick={() => openModal(MODAL.SWEEP)}>
+            Clean up
+            {staleCount > 0 && (
+              <span className="pill amber" style={{ marginLeft: 2 }}>
+                {staleCount}
+              </span>
+            )}
+          </button>
           <button className="btn primary" onClick={() => openModal(MODAL.NEW_CUSTOMER)}>
             + New customer
           </button>
