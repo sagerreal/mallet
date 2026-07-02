@@ -5,7 +5,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { Lead, LeadNote, Task } from "../types";
+import type { Lead, LeadNote, Task, Visit } from "../types";
 import {
   SAMPLE_LEADS,
   SAMPLE_TASKS,
@@ -39,6 +39,11 @@ export interface LeadsSlice {
   addLeadNote: (id: number, note: Omit<LeadNote, "id">) => void;
   archiveLead: (id: number) => void;
   deleteLead: (id: number) => void;
+
+  // Estimate-visit (evisit) placement on the schedule board.
+  updateEvisit: (leadId: number, visitId: number, patch: Partial<Visit>) => void;
+  placeEvisit: (leadId: number, visitId: number, at: { techId: number; date: string; start: number }) => void;
+  removeEvisit: (leadId: number, visitId: number) => void;
 
   taskDone: (id: number) => void;
   addTask: (draft: Omit<Task, "id" | "done">) => void;
@@ -92,6 +97,33 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   deleteLead: (id) =>
     set((s) => ({
       leads: s.leads.filter((l) => l.id !== id),
+    })),
+
+  updateEvisit: (leadId, visitId, patch) =>
+    set((s) => ({
+      leads: s.leads.map((l) =>
+        l.id === leadId
+          ? { ...l, evisits: (l.evisits ?? []).map((v) => (v.id === visitId ? { ...v, ...patch } : v)) }
+          : l
+      ),
+    })),
+
+  placeEvisit: (leadId, visitId, at) =>
+    set((s) => ({
+      leads: s.leads.map((l) =>
+        l.id === leadId
+          ? { ...l, evisits: (l.evisits ?? []).map((v) => (v.id === visitId ? { ...v, ...at } : v)) }
+          : l
+      ),
+    })),
+
+  removeEvisit: (leadId, visitId) =>
+    set((s) => ({
+      leads: s.leads.map((l) =>
+        l.id === leadId
+          ? { ...l, evisits: (l.evisits ?? []).filter((v) => v.id !== visitId) }
+          : l
+      ),
     })),
 
   taskDone: (id) =>

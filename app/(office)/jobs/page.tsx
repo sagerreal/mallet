@@ -126,6 +126,42 @@ function jobMode(j: Job): string {
   return priced ? "install" : "service";
 }
 
+// A job visit or an estimate visit (evisit) held for board placement.
+type Held = { kind: "job" | "evisit"; ownerId: number; visitId: number };
+
+interface BoardItem { kind: "job" | "evisit"; ownerId: number; name: string; mode: string; v: Visit }
+
+/** All placed visits (job + estimate) for one crew on one day, time-sorted. */
+function boardItemsFor(jobs: Job[], leads: Lead[], techId: number, iso: string): BoardItem[] {
+  const items: BoardItem[] = [];
+  liveJobs(jobs).forEach((j) =>
+    (j.visits ?? []).forEach((v) => {
+      if (v.techId === techId && v.date === iso)
+        items.push({ kind: "job", ownerId: j.id, name: custName(j, leads), mode: jobMode(j), v });
+    })
+  );
+  leads.forEach((l) => {
+    if (l.archived) return;
+    (l.evisits ?? []).forEach((v) => {
+      if (v.techId === techId && v.date === iso)
+        items.push({ kind: "evisit", ownerId: l.id, name: l.name, mode: "estimate", v });
+    });
+  });
+  return items.sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0));
+}
+
+/** Estimate visits awaiting a slot (prototype unplacedEvisits). */
+function unplacedEvisits(leads: Lead[]): Array<{ l: Lead; v: Visit }> {
+  const out: Array<{ l: Lead; v: Visit }> = [];
+  leads.forEach((l) => {
+    if (l.archived) return;
+    (l.evisits ?? []).forEach((v) => {
+      if (v.status !== "done" && !(v.date && v.techId != null && v.start != null)) out.push({ l, v });
+    });
+  });
+  return out;
+}
+
 // ---- sub-tab types ---------------------------------------------------------
 
 type JobsSubTab = "jobs" | "schedule" | "today" | "timesheets";
@@ -472,14 +508,16 @@ function SchedulePanel() {
   const techs = useAppStore((s) => s.techs);
 
   const placeVisit = useAppStore((s) => s.placeVisit);
+  const placeEvisit = useAppStore((s) => s.placeEvisit);
   const addVisit = useAppStore((s) => s.addVisit);
   const updateVisit = useAppStore((s) => s.updateVisit);
 
   const [schedView, setSchedView] = useState<SchedView>("day");
   const [schedDay, setSchedDay] = useState(TODAY_ISO);
   const [weekStart, setWeekStart] = useState(TODAY_ISO);
-  // arm-then-tap placement: the visit currently waiting to be dropped on the board
-  const [placing, setPlacing] = useState<{ jobId: number; visitId: number } | null>(null);
+  // A job visit or an estimate visit (evisit) held for placement on the board.
+  const [placing, setPlacing] = useState<Held | null>(null);
+  const [drag, setDrag] = useState<Held | null>(null);
 
   function weekDates(): string[] {
     const out: string[] = [];
@@ -493,23 +531,36 @@ function SchedulePanel() {
   function firstUnplaced(j: Job): Visit | undefined {
     return (j.visits ?? []).find((v) => !(v.date && v.techId != null && v.start != null));
   }
-  // Tap "Schedule": arm the job's first unplaced visit (creating one if needed);
-  // tapping again disarms.
+  function place(held: Held, techId: number, iso: string, hour: number) {
+    if (held.kind === "job") placeVisit(held.ownerId, held.visitId, { techId, date: iso, start: hour });
+    else placeEvisit(held.ownerId, held.visitId, { techId, date: iso, start: hour });
+  }
+  // Tap "Schedule": arm the job's first unplaced visit (creating one if needed).
   function armJob(j: Job) {
     const v = firstUnplaced(j) ?? addVisit(j.id);
     if (!v) return;
-    setPlacing((p) => (p && p.visitId === v.id ? null : { jobId: j.id, visitId: v.id }));
+    setPlacing((p) => (p && p.kind === "job" && p.visitId === v.id ? null : { kind: "job", ownerId: j.id, visitId: v.id }));
   }
-  // Tap a board cell while armed → place the visit there (crew + day + start).
+  // Tap "Schedule" on an estimate-visit tray card.
+  function armEvisit(leadId: number, visitId: number) {
+    setPlacing((p) => (p && p.kind === "evisit" && p.visitId === visitId ? null : { kind: "evisit", ownerId: leadId, visitId }));
+  }
+  // Tap a board cell while armed → place the held item there (crew + day + start).
   function cellTap(techId: number, iso: string, hour: number) {
     if (!placing) return;
-    placeVisit(placing.jobId, placing.visitId, { techId, date: iso, start: hour });
+    place(placing, techId, iso, hour);
     setPlacing(null);
+  }
+  // Drop a dragged card/block on a board cell.
+  function cellDrop(techId: number, iso: string, hour: number) {
+    if (!drag) return;
+    place(drag, techId, iso, hour);
+    setDrag(null);
   }
   // "+" on a placed block: clone the visit (carry the hours) and arm it.
   function cloneArm(jobId: number, dur: number) {
     const nv = addVisit(jobId, dur);
-    if (nv) setPlacing({ jobId, visitId: nv.id });
+    if (nv) setPlacing({ kind: "job", ownerId: jobId, visitId: nv.id });
   }
   // Drag the block's right edge to change its hours (Google-Calendar gesture).
   function resizeStart(e: React.MouseEvent, jobId: number, v: Visit) {
@@ -529,8 +580,14 @@ function SchedulePanel() {
     window.addEventListener("mouseup", up);
   }
 
-  const armedJob = placing ? jobs.find((j) => j.id === placing.jobId) : null;
-  const armedName = armedJob ? custName(armedJob, leads) : "";
+  const armedName = (() => {
+    if (!placing) return "";
+    if (placing.kind === "job") {
+      const j = jobs.find((x) => x.id === placing.ownerId);
+      return j ? custName(j, leads) : "";
+    }
+    return leads.find((l) => l.id === placing.ownerId)?.name ?? "";
+  })();
 
   function DayView() {
     const iso = schedDay;
@@ -574,11 +631,8 @@ function SchedulePanel() {
 
         {/* crew rows */}
         {techs.map((tc) => {
-          const vis = liveJobs(jobs)
-            .flatMap((j) => (j.visits ?? []).filter((v) => v.techId === tc.id && v.date === iso).map((v) => ({ j, v })))
-            .sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0));
-
-          const load = dayLoad(jobs, tc.id, iso);
+          const items = boardItemsFor(jobs, leads, tc.id, iso);
+          const load = items.reduce((s, it) => s + (it.v.dur ?? 0), 0);
 
           return (
             <div key={tc.id} className="gv-row">
@@ -598,42 +652,54 @@ function SchedulePanel() {
                 {hours.map((h) => (
                   <div
                     key={h}
-                    className={`gv-cell${placing ? " drop" : ""}`}
+                    className={`gv-cell${placing || drag ? " drop" : ""}`}
                     style={{ left: (h - START) * WPX, width: WPX, position: "absolute", top: 0, bottom: 0 }}
                     onClick={() => cellTap(tc.id, iso, h)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => cellDrop(tc.id, iso, h)}
                   />
                 ))}
-                {/* visit blocks */}
-                {vis.map(({ j, v }) => {
+                {/* visit blocks (jobs + estimate visits) */}
+                {items.map(({ kind, ownerId, name, mode, v }) => {
                   const vStart = v.start ?? 0;
                   const left = Math.max(0, (vStart - START) * WPX);
                   const w = Math.max(38, (v.dur ?? 1) * WPX - 4);
-                  const mode = jobMode(j);
                   const m = svcMeta(mode);
+                  const openIt = () =>
+                    kind === "job"
+                      ? openModal(MODAL.JOB, { jobId: ownerId })
+                      : openModal(MODAL.EVISIT, { leadId: ownerId, visitId: v.id });
                   return (
                     <div
-                      key={v.id}
+                      key={`${kind}-${v.id}`}
                       className={`gv-block${m.est ? " est" : ""}`}
                       style={{ left, width: w, opacity: v.status === "done" ? 0.55 : 1 }}
-                      onClick={(e) => { e.stopPropagation(); openModal(MODAL.JOB, { jobId: j.id }); }}
-                      title={`${custName(j, leads)} — ${j.title} · ${timeLabel(vStart)}–${timeLabel(vStart + (v.dur ?? 0))}`}
+                      draggable
+                      onDragStart={() => setDrag({ kind, ownerId, visitId: v.id })}
+                      onDragEnd={() => setDrag(null)}
+                      onClick={(e) => { e.stopPropagation(); openIt(); }}
+                      title={`${name} · ${timeLabel(vStart)}–${timeLabel(vStart + (v.dur ?? 0))}`}
                     >
                       <div className="gv-bt" style={{ color: m.c }}>
                         {m.word ?? m.tag}
                         {v.status === "done" ? " ✓" : ""}
                       </div>
-                      <div className="gv-bn">{custName(j, leads)}</div>
+                      <div className="gv-bn">{name}</div>
                       <div className="gv-btm">
                         {timeLabel(vStart)}–{timeLabel(vStart + (v.dur ?? 0))}
                       </div>
-                      <div className="gv-resize" onMouseDown={(e) => resizeStart(e, j.id, v)} title="Drag to change the hours" />
-                      <button
-                        className="gv-addv"
-                        onClick={(e) => { e.stopPropagation(); cloneArm(j.id, v.dur ?? 2); }}
-                        title="Add another visit — same job, another day"
-                      >
-                        +
-                      </button>
+                      {kind === "job" && (
+                        <>
+                          <div className="gv-resize" onMouseDown={(e) => resizeStart(e, ownerId, v)} title="Drag to change the hours" />
+                          <button
+                            className="gv-addv"
+                            onClick={(e) => { e.stopPropagation(); cloneArm(ownerId, v.dur ?? 2); }}
+                            title="Add another visit — same job, another day"
+                          >
+                            +
+                          </button>
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -654,37 +720,36 @@ function SchedulePanel() {
         style={{ display: "grid", gridTemplateColumns: `repeat(${days.length}, minmax(0,1fr))`, gap: 8 }}
       >
         {days.map((iso) => {
-          const entries = liveJobs(jobs)
-            .flatMap((j) =>
-              (j.visits ?? [])
-                .filter((v) => v.date === iso)
-                .map((v) => ({ j, v, techId: v.techId }))
-            )
+          const entries = techs
+            .flatMap((tc) => boardItemsFor(jobs, leads, tc.id, iso))
             .sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0));
 
-          const totalLoad = techs.reduce((s, tc) => s + dayLoad(jobs, tc.id, iso), 0);
+          const totalLoad = entries.reduce((s, it) => s + (it.v.dur ?? 0), 0);
           const dayCap = CAP * techs.length;
 
           const body =
             entries.length === 0 ? (
               <div className="wk-empty">—</div>
             ) : (
-              entries.map(({ j, v, techId }) => {
+              entries.map(({ kind, ownerId, name, mode, v }) => {
                 const vStart = v.start ?? 0;
-                const mode = jobMode(j);
                 const m = svcMeta(mode);
-                const tc = techId != null ? techById(techs, techId) : undefined;
+                const tc = v.techId != null ? techById(techs, v.techId) : undefined;
                 return (
                   <div
-                    key={v.id}
+                    key={`${kind}-${v.id}`}
                     className={`wk-item${m.est ? " est" : ""}`}
                     style={{ opacity: v.status === "done" ? 0.55 : 1 }}
-                    onClick={(e) => { e.stopPropagation(); openModal(MODAL.JOB, { jobId: j.id }); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (kind === "job") openModal(MODAL.JOB, { jobId: ownerId });
+                      else openModal(MODAL.EVISIT, { leadId: ownerId, visitId: v.id });
+                    }}
                   >
                     <div className="wk-bt" style={{ color: m.c }}>
                       {m.word ?? m.lbl}
                     </div>
-                    <div className="wk-nm">{custName(j, leads)}</div>
+                    <div className="wk-nm">{name}</div>
                     <div className="wk-tm">
                       {timeLabel(vStart)}–{timeLabel(vStart + (v.dur ?? 0))}
                       {tc ? ` · ${tc.name.split(" ")[0]}` : ""}
@@ -714,7 +779,11 @@ function SchedulePanel() {
     );
   }
 
-  const uns = jobsUnscheduled(jobs);
+  type TrayCard = { kind: "job"; j: Job } | { kind: "evisit"; l: Lead; v: Visit };
+  const trayCards: TrayCard[] = [
+    ...jobsUnscheduled(jobs).map((j) => ({ kind: "job" as const, j })),
+    ...unplacedEvisits(leads).map(({ l, v }) => ({ kind: "evisit" as const, l, v })),
+  ];
   const day = schedView === "day";
 
   const toggle = (
@@ -787,36 +856,66 @@ function SchedulePanel() {
       </div>
 
       {/* To-schedule tray */}
-      {uns.length > 0 ? (
+      {trayCards.length > 0 ? (
         <div className="rail" style={{ marginBottom: 14 }}>
           <b style={{ fontSize: 13 }}>
-            To schedule <span className="muted" style={{ fontWeight: 600 }}>· {uns.length}</span>
+            To schedule <span className="muted" style={{ fontWeight: 600 }}>· {trayCards.length}</span>
           </b>
           <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 8 }}>
-            {uns.map((j) => {
-              const mode = jobMode(j);
+            {trayCards.map((card) => {
+              const isJob = card.kind === "job";
+              const name = isJob ? custName(card.j, leads) : card.l.name;
+              const title = isJob ? card.j.title : card.l.job || "Estimate visit";
+              const mode = isJob ? jobMode(card.j) : "estimate";
               const m = svcMeta(mode);
-              const totalHrs = (j.visits ?? []).filter((v) => !(v.date && v.techId != null)).reduce((s, v) => s + (v.dur ?? 0), 0) || 2;
+              const hrs = isJob
+                ? (card.j.visits ?? []).filter((v) => !(v.date && v.techId != null)).reduce((s, v) => s + (v.dur ?? 0), 0) || 2
+                : card.v.dur ?? 2;
+              const armed = isJob
+                ? placing?.kind === "job" && placing.ownerId === card.j.id
+                : placing?.kind === "evisit" && placing.visitId === card.v.id;
+              const key = isJob ? `job-${card.j.id}` : `ev-${card.v.id}`;
+              function onSchedule() {
+                if (isJob) armJob(card.j);
+                else armEvisit(card.l.id, card.v.id);
+              }
+              function onDragStart() {
+                if (isJob) {
+                  const v = firstUnplaced(card.j) ?? addVisit(card.j.id);
+                  if (v) setDrag({ kind: "job", ownerId: card.j.id, visitId: v.id });
+                } else {
+                  setDrag({ kind: "evisit", ownerId: card.l.id, visitId: card.v.id });
+                }
+              }
               return (
-                <div key={j.id} className={`railjob place${placing?.jobId === j.id ? " arm" : ""}`} title="Tap Schedule, then a slot on the board">
-                  <button className="rail-addv" onClick={(e) => { e.stopPropagation(); addVisit(j.id, 2); }} title="Add another visit">
-                    +
-                  </button>
-                  <b style={{ fontSize: "13.5px" }}>{custName(j, leads)}</b>
-                  <div className="muted" style={{ fontSize: "11.5px", margin: "2px 0 10px" }}>{j.title}</div>
+                <div
+                  key={key}
+                  className={`railjob place${armed ? " arm" : ""}`}
+                  title="Drag onto the board, or tap Schedule then a slot"
+                  draggable
+                  onDragStart={onDragStart}
+                  onDragEnd={() => setDrag(null)}
+                >
+                  {isJob && (
+                    <button className="rail-addv" onClick={(e) => { e.stopPropagation(); addVisit(card.j.id, 2); }} title="Add another visit">
+                      +
+                    </button>
+                  )}
+                  <b style={{ fontSize: "13.5px" }}>{name}</b>
+                  <div className="muted" style={{ fontSize: "11.5px", margin: "2px 0 10px" }}>{title}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
                     <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
                       {m.lbl}
                     </span>
-                    <span className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{hmLabel(totalHrs)}</span>
+                    <span className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{hmLabel(hrs)}</span>
                   </div>
                   <div style={{ display: "flex", gap: 7 }}>
                     <button
-                      className={`btn sm${placing?.jobId === j.id ? " arm" : " primary"}`}
+                      className={`btn sm${armed ? " arm" : " primary"}`}
                       style={{ flex: 1, justifyContent: "center" }}
-                      onClick={(e) => { e.stopPropagation(); armJob(j); }}
+                      onClick={(e) => { e.stopPropagation(); onSchedule(); }}
                     >
-                      {placing?.jobId === j.id ? "Cancel" : "Schedule"}
+                      {armed ? "Cancel" : "Schedule"}
                     </button>
                   </div>
                 </div>
