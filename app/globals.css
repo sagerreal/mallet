@@ -1,39 +1,59 @@
 @import "tailwindcss";
 
+/* Design tokens live in prototype.css (:root block).
+   This file only maps next/font CSS variables → prototype token names,
+   and wires up a minimal Tailwind theme bridge so existing Tailwind utility
+   classes that reference colors keep working. */
+
 @theme {
-  /* Surfaces & ink — ported from elas-crm-prototype.html */
-  --color-bg: #fcfbf7;
-  --color-card: #fefefc;
-  --color-paper: #f1ede4;
-  --color-line: #eae4d7;
-  --color-ink: #15110b;
-  --color-ink-muted: #6b6455;
-  --color-accent: #1a1510;
-  --color-accent-fg: #ffffff;
-  --color-manila: #f7f0e1;
-  --color-manila-line: #e3d8c1;
-
-  /* Tones (text on bg pairs) */
-  --color-amber: #9a6700;
-  --color-amber-bg: #f2ead9;
-  --color-red: #b23a2a;
-  --color-red-bg: #f4e7e1;
-  --color-blue: #4a639e;
-  --color-blue-bg: #e9ecf3;
-  --color-green: #3d7a4e;
-  --color-green-bg: #e6efe3;
-
-  /* Shape */
-  --radius-card: 12px;
-  --radius-control: 9px;
-
-  /* Type — variables provided by next/font in layout.tsx */
+  /* Fonts — variables injected by next/font in layout.tsx */
   --font-display: var(--font-space-grotesk);
   --font-body: var(--font-inter);
+  --font-mono: var(--font-space-mono);
+
+  /* Color bridge: Tailwind utilities → prototype CSS vars */
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-paper: var(--paper);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-2);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--pri-fg);
+  --color-manila: var(--manila);
+  --color-manila-line: var(--manila-line);
+  --color-amber: var(--amber);
+  --color-amber-bg: var(--amber-bg);
+  --color-red: var(--red);
+  --color-red-bg: var(--red-bg);
+  --color-blue: var(--blue);
+  --color-blue-bg: var(--blue-bg);
+
+  /* Shape */
+  --radius-card: var(--radius);
+  --radius-control: var(--radius-sm);
 }
 
+/* Override: the prototype had a fixed AI sidebar (360px right margin) that
+   is retired in this app — the AI lives in the command bar instead. */
 body {
-  background: var(--color-bg);
-  color: var(--color-ink);
-  font-family: var(--font-body);
+  margin-right: 0 !important;
+  /* Wire next/font variables into prototype's font var names */
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Override: the prototype's --aiw was used for toast/overlay positioning;
+   neutralize it so popups don't offset into oblivion. */
+:root {
+  --aiw: 0px;
+}
+
+/* The prototype body line sets the font but Tailwind base may override it.
+   Ensure Space Grotesk resolves for .display / h1 elements. */
+.display,
+h1,
+.brand,
+.ticket h1,
+.modal h2 {
+  font-family: var(--font-space-grotesk), "Inter", -apple-system, sans-serif;
 }
