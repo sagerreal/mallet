@@ -28,8 +28,8 @@ import { CustQuoteModalContent } from "./cust-quote-modal";
 import { CustInvoiceModalContent } from "./cust-invoice-modal";
 import { CloseOutModalContent } from "./close-out-modal";
 import { Modal } from "./modal";
+import { VisitModalContent } from "./visit-modal";
 import {
-  VisitModalContent,
   ComposerModalContent,
   CleanUpModalContent,
 } from "./placeholder-modals";

@@ -1,34 +1,13 @@
 /**
  * components/modals/placeholder-modals.tsx
- * Lightweight placeholder contents for Call, Thread, Visit, Composer, CleanUp modals.
- * These open correctly (real modal, not a no-op) — full internals come in later slices.
+ * Lightweight placeholder contents for the Composer + CleanUp modals.
+ * These open correctly (real modal, not a no-op) — full internals come in later
+ * slices. (The Visit booking modal is now real — see visit-modal.tsx.)
  */
 
 "use client";
 
 import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
-
-// ---- Visit booking modal ---------------------------------------------------
-
-export function VisitModalContent() {
-  const activeModal = useActiveModal();
-  const close = useCloseModal();
-  const leads = useAppStore((s) => s.leads);
-  const leadId = activeModal?.params?.leadId as number | undefined;
-  const lead = leads.find((l) => l.id === leadId);
-
-  return (
-    <div>
-      <h2 className="modal-title">Book a visit{lead ? ` · ${lead.name}` : ""}</h2>
-      <div className="muted" style={{ marginTop: 12 }}>
-        Visit booking flow coming in a later slice.
-      </div>
-      <button className="btn ghost" style={{ marginTop: 24 }} onClick={close}>
-        Close
-      </button>
-    </div>
-  );
-}
 
 // ---- New quote composer modal ----------------------------------------------
 

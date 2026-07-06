@@ -42,6 +42,7 @@ export interface LeadsSlice {
   deleteLead: (id: number) => void;
 
   // Estimate-visit (evisit) placement on the schedule board.
+  addEvisit: (leadId: number, draft: Omit<Visit, "id">) => Visit;
   updateEvisit: (leadId: number, visitId: number, patch: Partial<Visit>) => void;
   placeEvisit: (leadId: number, visitId: number, at: { techId: number; date: string; start: number }) => void;
   removeEvisit: (leadId: number, visitId: number) => void;
@@ -105,6 +106,16 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
     set((s) => ({
       leads: s.leads.filter((l) => l.id !== id),
     })),
+
+  addEvisit: (leadId, draft) => {
+    const visit: Visit = { ...draft, id: nextLeadId() };
+    set((s) => ({
+      leads: s.leads.map((l) =>
+        l.id === leadId ? { ...l, evisits: [...(l.evisits ?? []), visit] } : l
+      ),
+    }));
+    return visit;
+  },
 
   updateEvisit: (leadId, visitId, patch) =>
     set((s) => ({

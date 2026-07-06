@@ -138,20 +138,33 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         />
       </label>
 
-      {/* Action buttons — primary is stage-aware (Call for a new lead, else New quote). */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {/* Action buttons — grouped by intent so it doesn't read as a flat wall:
+          CONTACT (Call / Text — quiet utilities) on the left, ADVANCE THE DEAL
+          (Book site visit / New quote — the workflow) on the right. One clear
+          stage-aware primary: Call for a brand-new lead, else New quote. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {/* Contact cluster */}
         <button
-          className={`btn sm${callIsPrimary ? " primary" : ""}`}
+          className={`btn sm${callIsPrimary ? " primary" : " ghost"}`}
           onClick={() => openModal(MODAL.CALL, { leadId: lead.id })}
         >
-          Call
+          <PhoneIcon /> Call
         </button>
         <button
-          className="btn sm"
+          className="btn sm ghost"
           onClick={() => openModal(MODAL.THREAD, { leadId: lead.id })}
         >
-          Text{lead.unread ? <span className="pill blue" style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10 }}>new</span> : null}
+          <ChatIcon /> Text
+          {lead.unread ? (
+            <span className="pill blue" style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10 }}>new</span>
+          ) : null}
         </button>
+
+        {/* Thin divider between contact and advance-the-deal clusters */}
+        <span
+          style={{ width: 1, alignSelf: "stretch", background: "var(--line)", margin: "3px 5px" }}
+          aria-hidden="true"
+        />
         {lead.stage !== "Won" && lead.stage !== "Lost" && (
           <button
             className="btn sm"
@@ -168,5 +181,22 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         </button>
       </div>
     </div>
+  );
+}
+
+// Small inline icons so Call / Text read as quick utilities, not heavy buttons.
+function PhoneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: "-2px" }} aria-hidden="true">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: "-2px" }} aria-hidden="true">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
   );
 }

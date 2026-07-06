@@ -75,7 +75,6 @@ export function TasksCard({ lead }: TasksCardProps) {
   const addTask = useAppStore((s) => s.addTask);
 
   const [taskText, setTaskText] = useState("");
-  const [taskDue, setTaskDue] = useState("");
 
   // Derive this lead's tasks in the component body (never inside a selector).
   const leadTasks = tasks.filter((t) => t.leadId === lead.id);
@@ -87,11 +86,10 @@ export function TasksCard({ lead }: TasksCardProps) {
     if (!trimmed) return;
     addTask({
       t: trimmed,
-      due: taskDue || new Date().toISOString().slice(0, 10),
+      due: new Date().toISOString().slice(0, 10),
       leadId: lead.id,
     });
     setTaskText("");
-    setTaskDue("");
   }
 
   return (
@@ -116,8 +114,8 @@ export function TasksCard({ lead }: TasksCardProps) {
         </div>
       )}
 
-      {/* Add a task — always available */}
-      <div className="cfrow" style={{ marginTop: 12, flexWrap: "wrap" }}>
+      {/* Add a task — one clean line: type it, hit Add */}
+      <div className="cfrow" style={{ marginTop: 12 }}>
         <input
           type="text"
           placeholder="Add a task — e.g. First call, send quote…"
@@ -126,12 +124,6 @@ export function TasksCard({ lead }: TasksCardProps) {
           onKeyDown={(e) => {
             if (e.key === "Enter") handleAddTask();
           }}
-        />
-        <input
-          type="date"
-          value={taskDue}
-          onChange={(e) => setTaskDue(e.target.value)}
-          aria-label="Task due date"
         />
         <button className="btn sm primary" onClick={handleAddTask} disabled={!taskText.trim()}>
           Add task

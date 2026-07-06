@@ -11,13 +11,6 @@ import { useEffect, useRef, useState } from "react";
 import { useAppStore, useActiveModal } from "@/lib/store/app-store";
 import type { Lead, LeadNote } from "@/lib/store/types";
 
-const CANNED_REPLIES = [
-  "Sounds good 👍",
-  "Could you do Thursday afternoon?",
-  "What would that run me roughly?",
-  "Yes please — go ahead.",
-];
-
 function firstName(name: string): string {
   return name.split(" ")[0] ?? name;
 }
@@ -90,27 +83,6 @@ export function ThreadModalContent() {
     setDraft("");
   }
 
-  function simReply() {
-    if (!lead) return;
-    const themCount = acts.filter((a) => a.type === "text" && a.from === "them").length;
-    addLeadNote(lead.id, {
-      type: "text",
-      from: "them",
-      t: CANNED_REPLIES[themCount % CANNED_REPLIES.length],
-      when: "Just now",
-    });
-  }
-
-  function simReplyAway() {
-    if (!lead) return;
-    addLeadNote(lead.id, {
-      type: "text",
-      from: "them",
-      t: "Hey — any update on this?",
-      when: "Just now",
-    });
-    updateLead(lead.id, { unread: true });
-  }
 
   return (
     <div>
@@ -124,7 +96,10 @@ export function ThreadModalContent() {
         {acts.length > 0 ? (
           acts.map((act, i) => <ThreadRow key={act.id ?? i} act={act} lead={lead} />)
         ) : (
-          <div className="tsys">No messages yet — say hi 👋</div>
+          <div className="thread-empty">
+            <div className="thread-empty-title">No messages yet</div>
+            <div className="thread-empty-sub">Send a text to start the conversation.</div>
+          </div>
         )}
       </div>
 
@@ -141,17 +116,6 @@ export function ThreadModalContent() {
           Send
         </button>
       </div>
-
-      <p className="muted" style={{ marginTop: 8, fontSize: 11.5 }}>
-        Prototype:{" "}
-        <span className="linklike" onClick={simReply}>
-          simulate a reply now
-        </span>{" "}
-        ·{" "}
-        <span className="linklike" onClick={simReplyAway}>
-          simulate a reply while you are away
-        </span>
-      </p>
     </div>
   );
 }
