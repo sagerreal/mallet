@@ -20,30 +20,14 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import { STAGE_PILL_CLS } from "@/lib/prototype-sample";
+import { StagePill } from "@/components/shared/stage-pill";
 import type { Company, Estimate, Lead } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
+import { pipeSum } from "@/lib/estimates";
 
-/** Estimate total — copied verbatim from lead-modal.tsx. */
-function calcEstTotal(e: Estimate): number {
-  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
-  const disc = sub * ((e.pricing?.disc ?? 0) / 100);
-  const taxed = (sub - disc) * ((e.pricing?.tax ?? 0) / 100);
-  return sub - disc + taxed;
-}
-
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 function firstName(name: string): string {
   return name.split(" ")[0] ?? name;
-}
-
-function pipeSum(contacts: Lead[], estimates: Estimate[], status: string): number {
-  const contactIds = new Set(contacts.map((l) => l.id));
-  return estimates
-    .filter((e) => e.status === status && contactIds.has(e.leadId))
-    .reduce((s, e) => s + calcEstTotal(e), 0);
 }
 
 interface LinkedLeadsCardProps {
@@ -72,9 +56,7 @@ function LinkedLeadsCard({ contacts, onOpenLead }: LinkedLeadsCardProps) {
                 {l.job || l.last || ""}
               </div>
             </div>
-            <span className={`stamp ${STAGE_PILL_CLS[l.stage] ?? "ink"}`}>
-              {l.stage}
-            </span>
+            <StagePill stage={l.stage} />
           </div>
         ))
       ) : (
@@ -101,9 +83,7 @@ function WorkHistoryCard({ contacts }: { contacts: Lead[] }) {
                 {l.name} · {l.last || ""}
               </div>
             </div>
-            <span className={`stamp ${STAGE_PILL_CLS[l.stage] ?? "ink"}`}>
-              {l.stage}
-            </span>
+            <StagePill stage={l.stage} />
           </div>
         ))
       ) : (
@@ -220,8 +200,9 @@ export function CompanyViewModalContent() {
         <h2>{company.name}</h2>
         <button
           className="btn primary"
-          // deferred: pre-link company
-          onClick={() => openModal(MODAL.NEW_CUSTOMER)}
+          // Pre-links the company: the New-customer modal seeds Business + the
+          // company name from this param, so the lead lands in Linked leads.
+          onClick={() => openModal(MODAL.NEW_CUSTOMER, { companyId: company.id })}
         >
           + New customer for {firstName(company.name)}
         </button>

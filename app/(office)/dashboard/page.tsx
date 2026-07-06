@@ -14,6 +14,8 @@ import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { estTotal } from "@/lib/prototype-sample";
 import type { Estimate, Invoice, Job, Lead, Task } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
+import { dueLabel } from "@/lib/task-dates";
 
 // ---- constants (verbatim from prototype) ----
 const OWNER_FIRST = "Mike";
@@ -43,10 +45,6 @@ function formatEyebrowDate(orgName: string): string {
   return result;
 }
 
-// fmt$ equivalent: formats a plain dollar number (not cents)
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
 
 // ---- Money helpers (replicated locally — mirror money/page.tsx) ----
 function invPaid(i: Invoice): number {
@@ -278,13 +276,7 @@ function TodayCard() {
   const leads = useAppStore((s) => s.leads);
   const taskDone = useAppStore((s) => s.taskDone);
 
-  const today = TODAY_ISO;
-  const overdue = (due: string) => due < today;
-  const dueLabel = (due: string) => {
-    if (due === today) return "Today";
-    if (overdue(due)) return `Overdue (${due})`;
-    return due;
-  };
+  const overdue = (due: string) => due < TODAY_ISO;
 
   const open = tasks.filter((t) => !t.done);
 

@@ -17,14 +17,7 @@ import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-stor
 import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
-
-/** Inline estimate total — keeps types clean without importing SampleEstimate helpers */
-function calcEstTotal(e: Estimate): number {
-  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
-  const disc = sub * ((e.pricing?.disc ?? 0) / 100);
-  const taxed = (sub - disc) * ((e.pricing?.tax ?? 0) / 100);
-  return sub - disc + taxed;
-}
+import { estTotal } from "@/lib/estimates";
 
 function statusStamp(status: string): string {
   switch (status) {
@@ -61,7 +54,7 @@ function QuotesCard({ estimates }: QuotesCardProps) {
     <div className="card">
       <h3>{title}</h3>
       {estimates.map((e) => {
-        const total = calcEstTotal(e);
+        const total = estTotal(e);
         const isSigned = e.status === "accepted";
         return (
           <div

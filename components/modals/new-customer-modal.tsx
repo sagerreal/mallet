@@ -9,9 +9,9 @@
 
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Modal } from "./modal";
-import { useCloseModal, useOpenModal, useAppStore } from "@/lib/store/app-store";
+import { useCloseModal, useOpenModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead } from "@/lib/store/types";
 
@@ -31,14 +31,29 @@ type VisitPurpose = "job" | "look" | null;
 export function NewCustomerModal({ open }: { open: boolean }) {
   const close = useCloseModal();
   const openModal = useOpenModal();
+  const activeModal = useActiveModal();
   const addLead = useAppStore((s) => s.addLead);
   const addJob = useAppStore((s) => s.addJob);
+  const companies = useAppStore((s) => s.companies);
+  const addCompany = useAppStore((s) => s.addCompany);
 
   // Core fields
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [isBiz, setIsBiz] = useState(false);
   const [bizName, setBizName] = useState("");
+
+  // Opened "for" a company (from the company modal) → pre-select Business and
+  // seed the business name so the new customer links to it (prototype quickAddForCo).
+  const paramCompanyId = activeModal?.params?.companyId as number | undefined;
+  useEffect(() => {
+    if (!open || paramCompanyId == null) return;
+    const co = companies.find((c) => c.id === paramCompanyId);
+    if (!co) return;
+    setIsBiz(true);
+    setBizName(co.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, paramCompanyId]);
 
   // Source picker state
   const [source, setSource] = useState<string>("");
@@ -116,11 +131,27 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
   /** Validate + create the lead (and a Job when the purpose is "job").
    *  Returns the created Job so "Build the price" can hand off to the builder. */
+  /** Business path: link (or create) the company — a typed business name is never
+   *  silently dropped (prototype saveQuickAdd). Case-insensitive bidirectional
+   *  match ("Crestview" ↔ "Crestview Property Mgmt"), create-if-missing. */
+  function resolveCompanyId(): number | undefined {
+    if (!isBiz) return undefined;
+    const nm = bizName.trim() || name.trim();
+    if (!nm) return undefined;
+    const k = nm.toLowerCase();
+    const match = companies.find((c) => {
+      const cn = c.name.toLowerCase();
+      return cn.includes(k) || k.includes(cn);
+    });
+    return (match ?? addCompany(nm)).id;
+  }
+
   function commit(): { ok: boolean; job: Job | null } {
     if (!name.trim()) {
       setError("Name is required.");
       return { ok: false, job: null };
     }
+    const companyId = resolveCompanyId();
     const lead = addLead({
       name: name.trim(),
       phone: phone.trim(),
@@ -129,8 +160,8 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       stage: "New customer",
       email: email.trim() || undefined,
       address: serviceAddr.trim() || undefined,
-      companyId: undefined,
-      role: isBiz && bizName.trim() ? "Contact" : undefined,
+      companyId,
+      role: companyId != null ? "Contact" : undefined,
       notes: notes.trim() || undefined,
       custom: customFields.length
         ? Object.fromEntries(customFields.map((f) => [f.label, f.value]))

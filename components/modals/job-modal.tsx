@@ -34,6 +34,7 @@ import {
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -57,9 +58,6 @@ function svcEdge(key: string): string {
   return (SVC_META[key] ?? SVC_META.service!).edge;
 }
 
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);

@@ -25,6 +25,7 @@ import {
 import { useLeads, useAppStore } from "@/lib/store/app-store";
 import type { Lead, Estimate, EstimateLine } from "@/lib/store/types";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
+import { fmt$ } from "@/lib/format";
 
 // ---- start-tile icons (soft line icons for the "how do you start" cards) ----
 function TileIcon({ children }: { children: React.ReactNode }) {
@@ -47,9 +48,6 @@ const ICO_PEN = (
 
 // ---- helpers ----------------------------------------------------------------
 
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 // ---- job-type + draft helpers (mirror the prototype) ------------------------
 

@@ -31,13 +31,10 @@ import { useState } from "react";
 import { useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Brand, Estimate, EstimateLine } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
 
 // ---- money helper (ported 1:1 from prototype fmt$) --------------------------
 
-/** fmt$ — integer dollars → "$N,NNN". */
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 // ---- GBB tier shape (prototype e.gbb — not persisted in the store) ----------
 //

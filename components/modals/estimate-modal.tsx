@@ -17,10 +17,9 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import type { Estimate } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
+import { isExpired } from "@/lib/estimates";
 
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
   sent: { cls: "info", label: "Sent" },
@@ -28,10 +27,6 @@ const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
   declined: { cls: "bad", label: "Declined" },
   draft: { cls: "ink", label: "Draft" },
 };
-
-function isExpired(e: Estimate): boolean {
-  return e.status === "sent" && e.age > (e.validDays ?? 14);
-}
 
 /** Sent-quote follow-up trail (prototype fuRows). */
 function FollowUpTrail({ e }: { e: Estimate }) {

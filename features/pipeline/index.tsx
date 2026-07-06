@@ -10,7 +10,7 @@ import { useState, useMemo } from "react";
 import { useLeads, useEstimates } from "@/lib/store/app-store";
 import { PipelineToolbar } from "./pipeline-toolbar";
 import { PipelineBoard } from "./pipeline-board";
-import { ACTIVE_STAGES, STALE_AGE } from "./pipeline-constants";
+import { ACTIVE_STAGES, isStaleLead } from "./pipeline-constants";
 
 export function PipelineView() {
   const leads = useLeads();
@@ -28,7 +28,7 @@ export function PipelineView() {
   const activeCount = activeLeads.length;
 
   const staleCount = useMemo(
-    () => activeLeads.filter((l) => l.age >= STALE_AGE).length,
+    () => activeLeads.filter(isStaleLead).length,
     [activeLeads]
   );
 
@@ -38,7 +38,6 @@ export function PipelineView() {
   return (
     <div>
       <PipelineToolbar
-        activeCount={activeCount}
         staleCount={staleCount}
         boardQ={boardQ}
         onBoardQ={setBoardQ}

@@ -11,37 +11,22 @@
 import { useState } from "react";
 import type { Lead, Task } from "@/lib/store/types";
 import { useAppStore } from "@/lib/store/app-store";
+import { TODAY_ISO } from "@/lib/prototype-sample";
+import { dueLabel } from "@/lib/task-dates";
 
 interface TasksCardProps {
   lead: Lead;
 }
 
-/** A round check control — filled green with ✓ when done, empty ring otherwise. */
+/** The same round check control the Tasks page uses (.tchk) — one styling system. */
 function TaskCheck({ done, onToggle }: { done: boolean; onToggle: () => void }) {
   return (
     <button
       type="button"
+      className={done ? "tchk done" : "tchk"}
       onClick={onToggle}
       aria-label={done ? "Reopen task" : "Mark task done"}
-      style={{
-        width: 20,
-        height: 20,
-        flexShrink: 0,
-        borderRadius: "50%",
-        border: `1.5px solid ${done ? "var(--green-700)" : "var(--line)"}`,
-        background: done ? "var(--green-700)" : "transparent",
-        color: "#fff",
-        fontSize: 12,
-        lineHeight: 1,
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 0,
-      }}
-    >
-      {done ? "✓" : ""}
-    </button>
+    />
   );
 }
 
@@ -61,7 +46,7 @@ function TaskRow({ task, onToggle }: { task: Task; onToggle: () => void }) {
         </div>
         {task.due && (
           <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-            Due {task.due}
+            Due {dueLabel(task.due)}
           </div>
         )}
       </div>
@@ -84,9 +69,11 @@ export function TasksCard({ lead }: TasksCardProps) {
   function handleAddTask() {
     const trimmed = taskText.trim();
     if (!trimmed) return;
+    // Due on the APP clock (frozen TODAY_ISO) — the wall clock would file this
+    // task under the wrong urgency group everywhere tasks render.
     addTask({
       t: trimmed,
-      due: new Date().toISOString().slice(0, 10),
+      due: TODAY_ISO,
       leadId: lead.id,
     });
     setTaskText("");

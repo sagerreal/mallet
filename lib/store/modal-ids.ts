@@ -9,7 +9,6 @@ export const MODAL = {
   CALL: "call",
   THREAD: "thread",
   VISIT: "visit",
-  COMPOSER: "composer",
   CLEAN_UP: "clean-up",
   SWEEP: "sweep",
   QUOTE_SWEEP: "quote-sweep",

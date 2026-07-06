@@ -53,7 +53,7 @@ interface TopbarProps {
 
 export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) {
   const pathname = usePathname();
-  // Longest-prefix match so nested routes (e.g. /customers/[id]) inherit the parent crumb.
+  // Longest-prefix match so nested routes inherit the parent crumb.
   const matched = Object.keys(CRUMBS)
     .filter((route) => pathname === route || pathname.startsWith(route + "/"))
     .sort((a, b) => b.length - a.length)[0];

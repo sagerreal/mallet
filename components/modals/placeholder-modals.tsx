@@ -19,7 +19,8 @@ export function CleanUpModalContent() {
   const lead = leads.find((l) => l.id === leadId);
 
   function handleArchive() {
-    if (leadId != null) archiveLead(leadId);
+    if (lead == null) return; // guarded below — never a silent no-op
+    archiveLead(lead.id);
     close();
   }
 
@@ -27,10 +28,17 @@ export function CleanUpModalContent() {
     <div>
       <h2 className="modal-title">Clean up{lead ? ` · ${lead.name}` : ""}</h2>
       <p className="muted" style={{ marginTop: 8 }}>
-        Mark as lost or archive this customer.
+        {lead
+          ? "Mark as lost or archive this customer."
+          : "No customer selected — close and pick one to clean up."}
       </p>
       <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
-        <button className="btn ghost bad" onClick={handleArchive}>
+        <button
+          className="btn ghost bad"
+          onClick={handleArchive}
+          disabled={lead == null}
+          style={lead == null ? { opacity: 0.45 } : undefined}
+        >
           Mark lost &amp; archive
         </button>
         <button className="btn ghost" onClick={close}>

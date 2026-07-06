@@ -23,12 +23,10 @@ export function PipelineLostBar({ lostLeads }: PipelineLostBarProps) {
   const overflow = lostLeads.length > MAX_NAMES ? " …" : "";
 
   return (
-    <div
-      className="lostbar"
-      onClick={() => {
-        // Info toast — no live toast system wired yet; interaction is NOTED.
-      }}
-    >
+    // Display-only: the prototype's click showed an informational toast; with no
+    // toast system the bar carries all its information inline, so it is not
+    // styled or wired as interactive.
+    <div className="lostbar" style={{ cursor: "default" }}>
       ✕ Lost ({lostLeads.length}) — {names}
       {overflow}
     </div>

@@ -8,10 +8,9 @@
 
 import type { Lead } from "@/lib/store/types";
 import { StagePill, SrcPill } from "@/components/shared/stage-pill";
+import { fmt$ } from "@/lib/format";
+import { pressable } from "@/lib/a11y";
 
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 interface LeadCellProps {
   lead: Lead;
@@ -66,7 +65,7 @@ interface LeadRowProps {
 
 export function LeadRow({ lead, visibleCols, value, onOpen }: LeadRowProps) {
   return (
-    <tr className="clickable" onClick={() => onOpen(lead.id)}>
+    <tr className="clickable" onClick={() => onOpen(lead.id)} {...pressable(() => onOpen(lead.id))}>
       {visibleCols.map((col) => (
         <td key={col}>
           <LeadCell lead={lead} col={col} value={value} />

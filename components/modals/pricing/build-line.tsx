@@ -17,6 +17,8 @@
 
 "use client";
 
+import { fmt$ } from "@/lib/format";
+
 // ---- builder line model (prototype state.tq[tier].lines) --------------------
 // A line is one of: 'book' (pricebook pick, fixed amt + carried cost),
 // 'custom' (one-off fixed amt), or 'tm' (time-&-material — hours × rate).
@@ -109,9 +111,6 @@ export function custLabel(
   return job.title || "Customer";
 }
 
-export function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 // ---- add-a-line builder menu (prototype tq.picking / tq.add) ---------------
 

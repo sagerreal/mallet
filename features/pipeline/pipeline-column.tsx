@@ -14,23 +14,9 @@ import {
   STAGE_LABEL,
   WON_WINDOW_DAYS,
 } from "./pipeline-constants";
+import { leadVal } from "./pipeline-utils";
 import type { DragHandlers } from "./use-lead-drag";
-
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
-
-function estTotal(e: Estimate): number {
-  const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
-  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
-  const disc = sub * ((p.disc ?? 0) / 100);
-  return (sub - disc) * (1 + (p.tax ?? 0) / 100);
-}
-
-function leadVal(lead: Lead, estimates: Estimate[]): number {
-  const e = estimates.find((e) => e.leadId === lead.id && e.status !== "draft");
-  return e ? estTotal(e) : (lead.value ?? 0);
-}
+import { fmt$ } from "@/lib/format";
 
 interface PipelineColumnProps {
   stage: string;
@@ -50,10 +36,9 @@ export function PipelineColumn({
   const staged = useMemo(() => {
     let ls = leads.filter((l) => l.stage === stage);
     if (stage === "Won") ls = ls.filter((l) => l.age <= WON_WINDOW_DAYS);
-    // flagged (overdue) float to top; within each group oldest-first
-    return [...ls].sort(
-      (a, b) => b.age - stageNorm(stage) - (a.age - stageNorm(stage))
-    );
+    // Oldest-first: flagged cards (age > stage norm) naturally float above
+    // healthy ones because their ages are strictly larger.
+    return [...ls].sort((a, b) => b.age - a.age);
   }, [leads, stage]);
 
   const sum = useMemo(

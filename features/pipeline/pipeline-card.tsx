@@ -7,37 +7,14 @@
 
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { Lead, Estimate } from "@/lib/store/types";
 import { MODAL } from "@/lib/store/modal-ids";
 import { useOpenModal } from "@/lib/store/app-store";
 import { stageNorm } from "./pipeline-constants";
+import { leadVal, isScopedNeedsQuote } from "./pipeline-utils";
 import type { DragHandlers } from "./use-lead-drag";
-
-// ---- helpers ----------------------------------------------------------------
-
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
-
-function estTotal(e: Estimate): number {
-  const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
-  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
-  const disc = sub * ((p.disc ?? 0) / 100);
-  return (sub - disc) * (1 + (p.tax ?? 0) / 100);
-}
-
-function leadVal(lead: Lead, estimates: Estimate[]): number {
-  const e = estimates.find((e) => e.leadId === lead.id && e.status !== "draft");
-  return e ? estTotal(e) : (lead.value ?? 0);
-}
-
-function isScopedNeedsQuote(lead: Lead, estimates: Estimate[]): boolean {
-  if (lead.stage === "Won" || lead.stage === "Lost") return false;
-  const visited = (lead.evisits ?? []).some(
-    (v) => (v as { scopeNotes?: string }).scopeNotes
-  );
-  return visited && !estimates.some((e) => e.leadId === lead.id);
-}
+import { fmt$ } from "@/lib/format";
 
 // ---- types ------------------------------------------------------------------
 
@@ -57,6 +34,7 @@ export function PipelineCard({
   dragHandlers,
 }: PipelineCardProps) {
   const openModal = useOpenModal();
+  const router = useRouter();
   const scoped = isScopedNeedsQuote(lead, estimates);
   const flagged = lead.age > stageNorm(lead.stage);
   const val = leadVal(lead, estimates);
@@ -110,7 +88,11 @@ export function PipelineCard({
     >
       <div className="nm">
         <span>
-          {lead.unread && <span style={{ color: "var(--blue)" }}> </span>}
+          {lead.unread && (
+            <span style={{ color: "var(--blue)", fontSize: 9, verticalAlign: 2 }} title="New text">
+              ●{" "}
+            </span>
+          )}
           {lead.name}
         </span>
         <span>{val ? fmt$(val) : ""}</span>
@@ -133,7 +115,7 @@ export function PipelineCard({
             className="btn primary sm"
             onClick={(e) => {
               e.stopPropagation();
-              openModal(MODAL.COMPOSER, { leadId: lead.id });
+              router.push(`/composer?lead=${lead.id}`);
             }}
           >
             Build quote

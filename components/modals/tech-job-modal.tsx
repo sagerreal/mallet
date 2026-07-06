@@ -32,6 +32,7 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { fmt$ } from "@/lib/format";
 import type {
   Job,
   Visit,
@@ -60,9 +61,6 @@ function svcMeta(key: string): SvcMeta {
   return SVC_META[key] ?? SVC_META.service!;
 }
 
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);

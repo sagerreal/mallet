@@ -16,13 +16,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate, Invoice, Job, Lead } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
 
 // ---- helpers ported from prototype ------------------------------------------
 
-/** fmt$  — integer dollars → "$N,NNN"  (prototype: fmt$=n=>"$"+n.toLocaleString("en-US")) */
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 /** invPaid — sum of payment amounts */
 function invPaid(i: Invoice): number {

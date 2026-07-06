@@ -31,13 +31,10 @@ import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/
 import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
 
 // ---- money helpers (ported 1:1 from money/page.tsx) ------------------------
 
-/** fmt$ — integer dollars → "$N,NNN" (prototype fmt$). */
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 /** invPaid — sum of payment amounts. */
 function invPaid(i: Invoice): number {

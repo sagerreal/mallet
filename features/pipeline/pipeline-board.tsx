@@ -8,6 +8,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import type { Lead, Estimate } from "@/lib/store/types";
 import { PipelineColumn } from "./pipeline-column";
 import { PipelineLostBar } from "./pipeline-lost-bar";
@@ -22,6 +24,7 @@ interface PipelineBoardProps {
 
 export function PipelineBoard({ leads, estimates, boardQ }: PipelineBoardProps) {
   const dragHandlers = useLeadDrag();
+  const openModal = useOpenModal();
 
   const q = boardQ.toLowerCase();
 
@@ -70,12 +73,13 @@ export function PipelineBoard({ leads, estimates, boardQ }: PipelineBoardProps) 
         onDrop={(e) => {
           e.preventDefault();
           e.currentTarget.classList.remove("hot");
+          // Capture the id BEFORE onDragEnd clears it, then open Clean-up on it.
+          const leadId = dragHandlers.getDragId();
           dragHandlers.onDragEnd();
-          // Clean-up modal with the dragged lead would fire here.
-          // Wire up when CLEAN_UP modal accepts a leadId param.
+          if (leadId != null) openModal(MODAL.CLEAN_UP, { leadId });
         }}
       >
-        Drop to clean up — mark Lost (with reason) or Archive
+        Drop to clean up — mark Lost or Archive
       </div>
     </>
   );

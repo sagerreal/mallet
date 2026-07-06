@@ -2,9 +2,6 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useCustomers } from "@/features/customers/hooks";
-import { useJobs } from "@/features/jobs/hooks";
-import { useInvoices } from "@/features/invoices/hooks";
 import { useMe } from "@/features/identity/hooks";
 import { useAppStore } from "@/lib/store/app-store";
 import { NewMenu } from "@/components/shell/new-menu";
@@ -122,13 +119,10 @@ const CUSTOMER_AREA = ["/customers", "/pipeline", "/quotes", "/tasks"];
 export function Sidebar() {
   const pathname = usePathname();
   const me = useMe();
-  const customers = useCustomers();
-  const scheduledJobs = useJobs("scheduled");
-  const inProgressJobs = useJobs("in_progress");
-  const sentInvoices = useInvoices("sent");
-  const partialInvoices = useInvoices("partial");
   const tasks = useAppStore((s) => s.tasks);
   const storeJobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const invoices = useAppStore((s) => s.invoices);
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
 
@@ -139,10 +133,13 @@ export function Sidebar() {
   const openTaskCount = tasks.filter((t) => !t.done).length;
   const unscheduledCount = storeJobs.filter((j) => !j.archived && j.status === "unscheduled").length;
 
-  // Compute live counts
-  const customerCount = customers.data?.items?.length ?? 0;
-  const jobsCount = (scheduledJobs.data?.items?.length ?? 0) + (inProgressJobs.data?.items?.length ?? 0);
-  const moneyCount = (sentInvoices.data?.items?.length ?? 0) + (partialInvoices.data?.items?.length ?? 0);
+  // Live counts from the store — the same source every page renders from, so the
+  // badges move with the lists (adding a customer bumps Customers, etc.).
+  const customerCount = leads.filter((l) => !l.archived).length;
+  const jobsCount = storeJobs.filter((j) => !j.archived && j.status !== "done").length;
+  const moneyCount = invoices.filter(
+    (i) => !i.archived && (i.status === "sent" || i.status === "partial")
+  ).length;
 
   // Account display
   const userObj = me.data;

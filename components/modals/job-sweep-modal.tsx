@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { useAppStore, useCloseModal } from "@/lib/store/app-store";
 import type { Job, Lead } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
 
 type SweepMode = "delete" | "archive";
 
@@ -26,9 +27,6 @@ function jstFor(status: string): { l: string; c: string; bg: string } {
   return JST[status] ?? { l: status, c: "var(--ink-2)", bg: "var(--paper)" };
 }
 
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);

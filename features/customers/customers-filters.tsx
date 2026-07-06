@@ -27,8 +27,8 @@ export function CustomersFilters({
   return (
     <div className="fpanel">
       <div className="field">
-        <label>Stage</label>
-        <select value={stageFilter} onChange={(e) => onStage(e.target.value)}>
+        <label htmlFor="cust-filter-stage">Stage</label>
+        <select id="cust-filter-stage" value={stageFilter} onChange={(e) => onStage(e.target.value)}>
           <option value="">Any</option>
           {stages.map((s) => (
             <option key={s}>{s}</option>
@@ -37,8 +37,8 @@ export function CustomersFilters({
       </div>
 
       <div className="field">
-        <label>Source</label>
-        <select value={sourceFilter} onChange={(e) => onSource(e.target.value)}>
+        <label htmlFor="cust-filter-source">Source</label>
+        <select id="cust-filter-source" value={sourceFilter} onChange={(e) => onSource(e.target.value)}>
           <option value="">Any</option>
           {sources.map((s) => (
             <option key={s}>{s}</option>
@@ -46,13 +46,14 @@ export function CustomersFilters({
         </select>
       </div>
 
-      <span
+      <button
+        type="button"
         className="linklike"
         onClick={onClear}
         style={{ alignSelf: "flex-end" }}
       >
         Clear all
-      </span>
+      </button>
     </div>
   );
 }

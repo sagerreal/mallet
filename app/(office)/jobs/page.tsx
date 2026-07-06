@@ -12,6 +12,7 @@ import { TODAY_ISO, dPlus } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Tech, TimeEntry, Visit } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
 
 // ---- helpers ported from prototype ----------------------------------------
 
@@ -81,9 +82,6 @@ function colLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
-function fmt$(n: number): string {
-  return "$" + n.toLocaleString("en-US");
-}
 
 function liveJobs(jobs: Job[]): Job[] {
   return jobs.filter((j) => !j.archived);

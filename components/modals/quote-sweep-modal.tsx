@@ -11,20 +11,11 @@ import { useState } from "react";
 import { useAppStore, useCloseModal } from "@/lib/store/app-store";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Estimate } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
+import { estTotal, isExpired } from "@/lib/estimates";
 
 type SweepMode = "delete" | "archive";
 
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
-
-function estTotal(e: Estimate): number {
-  return calcQuote(e.lines, e.pricing).total;
-}
-
-function isExpired(e: Estimate): boolean {
-  return e.status === "sent" && e.age > (e.validDays ?? 14);
-}
 
 /** Drafts, declined, superseded, or expired-sent = clutter worth clearing. */
 function isClutter(e: Estimate): boolean {
@@ -99,6 +90,7 @@ export function QuoteSweepModalContent() {
       <div className="sweeprow" key={e.id}>
         <input
           type="checkbox"
+          aria-label={`Select ${e.num} — ${e.title}`}
           checked={checked.has(e.id)}
           onChange={() => toggle(e.id)}
         />
@@ -117,9 +109,9 @@ export function QuoteSweepModalContent() {
       <h2>Clean up quotes</h2>
       <p className="muted" style={{ marginBottom: 10 }}>
         Check anything you want out of the way.{" "}
-        <span className="linklike" onClick={selectAll}>
+        <button type="button" className="linklike" onClick={selectAll}>
           Select all
-        </span>
+        </button>
       </p>
 
       <div style={{ maxHeight: 320, overflowY: "auto" }}>

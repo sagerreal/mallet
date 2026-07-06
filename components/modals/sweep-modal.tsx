@@ -9,15 +9,11 @@
 
 import { useState } from "react";
 import { useAppStore, useCloseModal } from "@/lib/store/app-store";
-import { ACTIVE_STAGES, STALE_AGE } from "@/features/pipeline/pipeline-constants";
+import { isStaleLead } from "@/features/pipeline/pipeline-constants";
 import { StagePill } from "@/components/shared/stage-pill";
 import type { Lead } from "@/lib/store/types";
 
 type SweepMode = "delete" | "archive" | "lost";
-
-function isStale(l: Lead): boolean {
-  return ACTIVE_STAGES.includes(l.stage) && l.age >= STALE_AGE;
-}
 
 export function SweepModalContent() {
   const close = useCloseModal();
@@ -30,8 +26,8 @@ export function SweepModalContent() {
   const [deleteArmed, setDeleteArmed] = useState(false);
 
   const live = leads.filter((l) => !l.archived);
-  const stale = live.filter(isStale);
-  const rest = live.filter((l) => !isStale(l));
+  const stale = live.filter(isStaleLead);
+  const rest = live.filter((l) => !isStaleLead(l));
 
   function toggle(id: number) {
     setChecked((prev) => {

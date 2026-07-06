@@ -32,11 +32,11 @@ import {
   AddMenu,
   LineRow,
   custLabel,
-  fmt$,
   lineAmt,
   linesTotal,
   seedLines,
 } from "./pricing/build-line";
+import { fmt$ } from "@/lib/format";
 
 // ---- tier model (prototype TQ_TIERS / state.tq) ----------------------------
 

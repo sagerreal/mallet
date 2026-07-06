@@ -12,29 +12,8 @@ import { TODAY_ISO } from "@/lib/prototype-sample";
 import type { Task } from "@/lib/store/types";
 import { useTasks, useLeads, useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-
-// ---- date helpers ----------------------------------------------------------
-
-function isOverdue(t: Task): boolean {
-  return !t.done && !!t.due && t.due < TODAY_ISO;
-}
-
-function dueLabel(iso: string): string {
-  if (iso === TODAY_ISO) return "Today";
-  const d = new Date(iso + "T12:00:00");
-  const today = new Date(TODAY_ISO + "T12:00:00");
-  const diff = Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (diff < 0) return `${Math.abs(diff)}d ago`;
-  if (diff === 1) return "Tomorrow";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-/** Tomorrow's ISO date — the default due for a new task. */
-function tomorrowISO(): string {
-  const d = new Date(TODAY_ISO + "T12:00:00");
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
+import { pressable } from "@/lib/a11y";
+import { isOverdue, dueLabel, tomorrowISO } from "@/lib/task-dates";
 
 // ---- Task row --------------------------------------------------------------
 
@@ -49,17 +28,21 @@ function TaskRow({ task, leadName, onToggle, onOpenLead }: TaskRowProps) {
   const overdue = isOverdue(task);
   const isToday = !overdue && task.due === TODAY_ISO;
   const dueCls = overdue ? "od" : isToday ? "now" : "";
-  const dueText = isToday ? "Today" : dueLabel(task.due);
+  const dueText = dueLabel(task.due);
   const clickable = task.leadId != null && !!leadName;
+  const openLead = () => {
+    if (task.leadId != null) onOpenLead(task.leadId);
+  };
 
   return (
     <div
       className={`trow${clickable ? " clickable" : ""}`}
-      onClick={clickable && task.leadId != null ? () => onOpenLead(task.leadId!) : undefined}
+      onClick={clickable ? openLead : undefined}
+      {...(clickable ? pressable(openLead) : {})}
     >
       <button
         className={`tchk${task.done ? " done" : ""}`}
-        title={task.done ? "Reopen" : "Mark done"}
+        aria-label={task.done ? "Reopen task" : "Mark task done"}
         onClick={(e) => {
           e.stopPropagation();
           onToggle(task.id);
@@ -150,6 +133,7 @@ export default function TasksPage() {
       <div className="taskadd" style={{ marginBottom: 18 }}>
         <input
           type="text"
+          aria-label="Add a task"
           placeholder="Add a task…"
           value={newText}
           onChange={(e) => setNewText(e.target.value)}
@@ -159,6 +143,7 @@ export default function TasksPage() {
         />
         <input
           type="date"
+          aria-label="Due date"
           title="Due date"
           value={newDue}
           min={TODAY_ISO}
@@ -195,7 +180,12 @@ export default function TasksPage() {
       {/* Done — collapsed */}
       {done.length > 0 && (
         <div className={`reveal${doneOpen ? " open" : ""}`} style={{ marginTop: 4 }}>
-          <div className="reveal-head" onClick={() => setDoneOpen((v) => !v)}>
+          <div
+            className="reveal-head"
+            aria-expanded={doneOpen}
+            onClick={() => setDoneOpen((v) => !v)}
+            {...pressable(() => setDoneOpen((v) => !v))}
+          >
             <span className="caret">▸</span> Done{" "}
             <span className="muted" style={{ fontWeight: 500 }}>— {done.length}</span>
           </div>

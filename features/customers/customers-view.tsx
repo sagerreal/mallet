@@ -10,23 +10,17 @@ import { useMemo, useState } from "react";
 import { useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
-import { ACTIVE_STAGES, STALE_AGE } from "@/features/pipeline/pipeline-constants";
+import { isStaleLead } from "@/features/pipeline/pipeline-constants";
 import { filterLeads, sortLeads } from "./customers-utils";
 import { CustomersToolbar } from "./customers-toolbar";
 import { CustomersFilters } from "./customers-filters";
 import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS } from "./customers-columns";
 import { LeadRow } from "./lead-row";
 import { CompaniesView } from "./companies-view";
+import { estTotal } from "@/lib/estimates";
+import { pressable } from "@/lib/a11y";
 
 const SORTABLE_COLS = new Set(["name", "age", "stage", "value"]);
-
-/** Quote total (subtotal of non-optional lines − discount% + tax%). */
-function estTotal(e: Estimate): number {
-  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
-  const disc = sub * ((e.pricing?.disc ?? 0) / 100);
-  const taxed = (sub - disc) * ((e.pricing?.tax ?? 0) / 100);
-  return sub - disc + taxed;
-}
 
 export function CustomersView() {
   const leads = useLeads();
@@ -67,9 +61,7 @@ export function CustomersView() {
         )
       : sortLeads(filtered, sortCol, sortDir);
 
-  const staleCount = all.filter(
-    (l) => ACTIVE_STAGES.includes(l.stage) && l.age >= STALE_AGE
-  ).length;
+  const staleCount = all.filter(isStaleLead).length;
   const allStages = [...new Set(all.map((l) => l.stage))];
   const allSources = [...new Set(all.map((l) => l.source).filter(Boolean))];
   const activeFilterCount = (stageFilter ? 1 : 0) + (sourceFilter ? 1 : 0);
@@ -173,6 +165,10 @@ export function CustomersView() {
                     className={sortable ? "sortable" : ""}
                     style={sortable ? { cursor: "pointer" } : undefined}
                     onClick={sortable ? () => toggleSort(col) : undefined}
+                    aria-sort={
+                      sortCol === col ? (sortDir === 1 ? "ascending" : "descending") : undefined
+                    }
+                    {...(sortable ? pressable(() => toggleSort(col)) : {})}
                   >
                     {ALL_COL_DEFS[col]?.l}{arrow}
                   </th>
@@ -196,9 +192,9 @@ export function CustomersView() {
                 <td colSpan={visible.length}>
                   <div className="empty-att">
                     Nothing matches —{" "}
-                    <span className="linklike" onClick={clearFilters}>
+                    <button type="button" className="linklike" onClick={clearFilters}>
                       clear the filters
-                    </span>
+                    </button>
                   </div>
                 </td>
               </tr>

@@ -33,6 +33,7 @@ export function CustomersToolbar({
     <div className="toolbar">
       <input
         type="text"
+        aria-label="Search customers"
         placeholder="Search name, phone, job, email…"
         value={q}
         onChange={(e) => onQ(e.target.value)}

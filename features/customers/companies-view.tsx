@@ -23,28 +23,12 @@ import {
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Company, Estimate, Lead } from "@/lib/store/types";
-
-/** Estimate total — copied verbatim from lead-modal.tsx. */
-function calcEstTotal(e: Estimate): number {
-  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
-  const disc = sub * ((e.pricing?.disc ?? 0) / 100);
-  const taxed = (sub - disc) * ((e.pricing?.tax ?? 0) / 100);
-  return sub - disc + taxed;
-}
-
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
+import { fmt$ } from "@/lib/format";
+import { pipeSum } from "@/lib/estimates";
+import { pressable } from "@/lib/a11y";
 
 function contactsOf(company: Company, leads: Lead[]): Lead[] {
   return leads.filter((l) => l.companyId === company.id && !l.archived);
-}
-
-function pipeSum(contacts: Lead[], estimates: Estimate[], status: string): number {
-  const contactIds = new Set(contacts.map((l) => l.id));
-  return estimates
-    .filter((e) => e.status === status && contactIds.has(e.leadId))
-    .reduce((s, e) => s + calcEstTotal(e), 0);
 }
 
 function sitesCount(company: Company, contacts: Lead[]): number {
@@ -168,7 +152,7 @@ export function CompaniesView() {
       <div className="toolbar">
         <input
           type="text"
-          placeholder="Search businesses…"
+          aria-label="Search businesses" placeholder="Search businesses…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -195,6 +179,7 @@ export function CompaniesView() {
                   key={row.company.id}
                   className="clickable"
                   onClick={() => openCompany(row.company.id)}
+                {...pressable(() => openCompany(row.company.id))}
                 >
                   <td>
                     <b>{row.company.name}</b>

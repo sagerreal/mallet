@@ -21,13 +21,10 @@
 import { useState } from "react";
 import { useAppStore, useActiveModal } from "@/lib/store/app-store";
 import type { Brand, Invoice, Job, Lead } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
 
 // ---- money helpers (ported 1:1 from money/page.tsx + invoice-modal.tsx) -----
 
-/** fmt$ — integer dollars → "$N,NNN" (prototype fmt$). */
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
 
 /** invPaid — sum of payment amounts (prototype invPaid). */
 function invPaid(i: Invoice): number {

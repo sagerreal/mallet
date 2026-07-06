@@ -12,8 +12,6 @@ export const STAGE_ORDER = [
   "Won",
 ] as const;
 
-export type Stage = (typeof STAGE_ORDER)[number];
-
 /** Stages that count as "active" for stale-detection and active-count. */
 export const ACTIVE_STAGES: readonly string[] = [
   "New customer",
@@ -44,6 +42,11 @@ export function stageNorm(stage: string): number {
 
 /** Age threshold (days) used to identify stale leads for the Clean-up badge. */
 export const STALE_AGE = 10;
+
+/** One stale-lead predicate for the Clean-up badge, sweep list and customers page. */
+export function isStaleLead(l: { stage: string; age: number; archived?: boolean }): boolean {
+  return !l.archived && ACTIVE_STAGES.includes(l.stage) && l.age >= STALE_AGE;
+}
 
 /** Won column only shows leads won within this many days. */
 export const WON_WINDOW_DAYS = 30;

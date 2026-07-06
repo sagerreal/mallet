@@ -1,31 +1,23 @@
 "use client";
 
 /**
- * Quotes page — pixel-faithful port of the prototype's vEstimates().
- * Uses SAMPLE_ESTIMATES / SAMPLE_LEADS from lib/prototype-sample.ts.
- * No live hooks. All interactive actions are console-logged stubs.
+ * Quotes page — store-backed port of the prototype's vEstimates().
+ * Reads estimates/leads from the Zustand store so mutations reflect reactively;
+ * actions are wired to MODAL.EST (row click), MODAL.QUOTE_SWEEP (clean up), and
+ * the /composer route (+ New quote). The changeReq/gbb/viewsN branches render
+ * only when a future flow sets those fields — deferred, not dead.
  *
  * Prototype reference: elas-crm-prototype.html lines 2774–2819.
  */
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { estTotal, type SampleEstimate } from "@/lib/prototype-sample";
 import { useEstimates, useLeads, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-
-// ---- helpers ----------------------------------------------------------------
-
-function fmt$(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
-}
-
-/** Mirrors prototype's isExpired(e) — expired when age > validDays */
-function isExpired(e: SampleEstimate): boolean {
-  if (e.status !== "sent") return false;
-  const vd = (e as SampleEstimate & { validDays?: number }).validDays ?? 14;
-  return (e.age ?? 0) > vd;
-}
+import type { Estimate } from "@/lib/store/types";
+import { fmt$ } from "@/lib/format";
+import { estTotal, isExpired } from "@/lib/estimates";
+import { pressable } from "@/lib/a11y";
 
 // ---- status pill map (prototype's stPill) -----------------------------------
 
@@ -41,8 +33,8 @@ const ST_PILL: Record<EstStatus, { cls: string; label: string }> = {
 
 // ---- follow-up cell (prototype's fu column logic) ---------------------------
 
-function FollowUpCell({ e }: { e: SampleEstimate }) {
-  const ext = e as SampleEstimate & { changeReq?: boolean; gbb?: boolean; viewsN?: number };
+function FollowUpCell({ e }: { e: Estimate }) {
+  const ext = e as Estimate & { changeReq?: boolean; gbb?: boolean; viewsN?: number };
 
   if (ext.changeReq && e.status === "sent") {
     return (
@@ -84,17 +76,17 @@ export default function QuotesPage() {
   const estimates = useEstimates();
 
   const findLead = (leadId: number) => leads.find((l) => l.id === leadId);
-  const all = estimates.filter((e) => !e.archived) as unknown as SampleEstimate[];
+  const all = estimates.filter((e) => !e.archived);
 
   const sent = all.filter((e) => e.status === "sent");
   const acc  = all.filter((e) => e.status === "accepted");
   const dr   = all.filter((e) => e.status === "draft");
   const cr   = all.filter(
-    (e) => (e as SampleEstimate & { changeReq?: boolean }).changeReq && e.status === "sent"
+    (e) => (e as Estimate & { changeReq?: boolean }).changeReq && e.status === "sent"
   );
 
   // apply filter
-  let shown: SampleEstimate[];
+  let shown: Estimate[];
   if (quoteFilter === "changes") {
     shown = cr;
   } else if (quoteFilter) {
@@ -153,9 +145,9 @@ export default function QuotesPage() {
                 : quoteFilter}
             </b>{" "}
             —{" "}
-            <span className="linklike" onClick={() => setQuoteFilter("")}>
+            <button type="button" className="linklike" onClick={() => setQuoteFilter("")}>
               show all
-            </span>
+            </button>
           </>
         ) : (
           "Tap a card to filter."
@@ -176,6 +168,7 @@ export default function QuotesPage() {
               ...(quoteFilter === "changes" ? { outline: "2px solid var(--purple)" } : {}),
             }}
             onClick={() => setQuoteFilter("changes")}
+            {...pressable(() => setQuoteFilter("changes"))}
           >
             <div className="lbl" style={{ color: "var(--purple)" }}>
               Changes requested
@@ -187,19 +180,19 @@ export default function QuotesPage() {
           </div>
         )}
 
-        <div className="kpi" style={kpiSel("sent")} onClick={() => setQuoteFilter("sent")}>
+        <div className="kpi" style={kpiSel("sent")} onClick={() => setQuoteFilter("sent")} {...pressable(() => setQuoteFilter("sent"))}>
           <div className="lbl">Awaiting response</div>
           <div className="val">{fmt$(sentSum)}</div>
           <div className="hint">{sent.length} out the door</div>
         </div>
 
-        <div className="kpi" style={kpiSel("accepted")} onClick={() => setQuoteFilter("accepted")}>
+        <div className="kpi" style={kpiSel("accepted")} onClick={() => setQuoteFilter("accepted")} {...pressable(() => setQuoteFilter("accepted"))}>
           <div className="lbl">Accepted this month</div>
           <div className="val">{fmt$(accSum)}</div>
           <div className="hint">{acc.length} wins</div>
         </div>
 
-        <div className="kpi" style={kpiSel("draft")} onClick={() => setQuoteFilter("draft")}>
+        <div className="kpi" style={kpiSel("draft")} onClick={() => setQuoteFilter("draft")} {...pressable(() => setQuoteFilter("draft"))}>
           <div className="lbl">Drafts</div>
           <div className="val">{dr.length}</div>
           <div className="hint">not sent yet — tap to see them</div>
@@ -210,8 +203,7 @@ export default function QuotesPage() {
       <div className="toolbar">
         <input
           type="text"
-          id="qQ"
-          placeholder="Search #, title, customer…"
+                    placeholder="Search #, title, customer…"
           value={quoteQ}
           onChange={(e) => setQuoteQ(e.target.value)}
         />
@@ -243,6 +235,7 @@ export default function QuotesPage() {
                     key={e.id}
                     className="clickable"
                     onClick={() => openModal(MODAL.EST, { estId: e.id })}
+                    {...pressable(() => openModal(MODAL.EST, { estId: e.id }))}
                   >
                     <td className="muted">{e.num}</td>
                     <td>
@@ -266,7 +259,8 @@ export default function QuotesPage() {
                 <td colSpan={6}>
                   <div className="empty-att">
                     Nothing matches —{" "}
-                    <span
+                    <button
+                      type="button"
                       className="linklike"
                       onClick={() => {
                         setQuoteQ("");
@@ -274,7 +268,7 @@ export default function QuotesPage() {
                       }}
                     >
                       show all
-                    </span>
+                    </button>
                   </div>
                 </td>
               </tr>

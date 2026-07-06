@@ -10,12 +10,13 @@ import { useCallback, useRef } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 
 export interface DragHandlers {
-  dragging: boolean;
   onDragStart: (e: React.DragEvent<HTMLElement>, leadId: number) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent<HTMLElement>) => void;
   onDragLeave: (e: React.DragEvent<HTMLElement>) => void;
   onDrop: (e: React.DragEvent<HTMLElement>, stage: string) => void;
+  /** The lead being dragged right now (read BEFORE onDragEnd clears it). */
+  getDragId: () => number | null;
 }
 
 export function useLeadDrag(): DragHandlers {
@@ -42,6 +43,7 @@ export function useLeadDrag(): DragHandlers {
 
   const onDragEnd = useCallback(() => {
     draggingRef.current = false;
+    dragIdRef.current = null; // never let a stale id act on a later native drop
     document.body.classList.remove("dragging");
     document.querySelectorAll<HTMLElement>(".col.dragover").forEach((el) => {
       el.classList.remove("dragover");
@@ -77,12 +79,14 @@ export function useLeadDrag(): DragHandlers {
     [leads, moveLeadStage, onDragEnd]
   );
 
+  const getDragId = useCallback(() => dragIdRef.current, []);
+
   return {
-    dragging: draggingRef.current,
     onDragStart,
     onDragEnd,
     onDragOver,
     onDragLeave,
     onDrop,
+    getDragId,
   };
 }
