@@ -7,8 +7,9 @@
 
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { Lead, Visit } from "@/lib/store/types";
-import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore, useOpenModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 
 interface VisitCardProps {
@@ -37,6 +38,14 @@ interface VisitRowProps {
 
 function VisitRow({ visit, leadId, techName }: VisitRowProps) {
   const openModal = useOpenModal();
+  const closeModal = useCloseModal();
+  const router = useRouter();
+
+  // "Quote" → the real composer, pre-populated with this customer.
+  function quote() {
+    closeModal();
+    router.push(`/composer?lead=${leadId}`);
+  }
 
   return (
     <div className="stage-row">
@@ -64,10 +73,7 @@ function VisitRow({ visit, leadId, techName }: VisitRowProps) {
           Open
         </button>
         {visit.status !== "done" && (
-          <button
-            className="btn sm"
-            onClick={() => openModal(MODAL.COMPOSER, { leadId, fromVisitId: visit.id })}
-          >
+          <button className="btn sm" onClick={quote}>
             Quote
           </button>
         )}

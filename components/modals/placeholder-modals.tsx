@@ -1,30 +1,12 @@
 /**
  * components/modals/placeholder-modals.tsx
- * Lightweight placeholder contents for the Composer + CleanUp modals.
- * These open correctly (real modal, not a no-op) — full internals come in later
- * slices. (The Visit booking modal is now real — see visit-modal.tsx.)
+ * The Clean-up (mark Lost / Archive) modal. (New quote → the /composer route;
+ * the Visit booking modal is real — see visit-modal.tsx.)
  */
 
 "use client";
 
 import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
-
-// ---- New quote composer modal ----------------------------------------------
-
-export function ComposerModalContent() {
-  const close = useCloseModal();
-  return (
-    <div>
-      <h2 className="modal-title">New quote</h2>
-      <div className="muted" style={{ marginTop: 12 }}>
-        Quote composer coming in a later slice.
-      </div>
-      <button className="btn ghost" style={{ marginTop: 24 }} onClick={close}>
-        Close
-      </button>
-    </div>
-  );
-}
 
 // ---- Clean-up (archive / mark lost) modal ----------------------------------
 

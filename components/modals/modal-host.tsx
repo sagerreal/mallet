@@ -29,10 +29,7 @@ import { CustInvoiceModalContent } from "./cust-invoice-modal";
 import { CloseOutModalContent } from "./close-out-modal";
 import { Modal } from "./modal";
 import { VisitModalContent } from "./visit-modal";
-import {
-  ComposerModalContent,
-  CleanUpModalContent,
-} from "./placeholder-modals";
+import { CleanUpModalContent } from "./placeholder-modals";
 
 export function ModalHost() {
   const activeModal = useActiveModal();
@@ -75,10 +72,6 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.VISIT} onClose={backToOpener}>
         <VisitModalContent />
-      </Modal>
-
-      <Modal open={id === MODAL.COMPOSER} onClose={close} wide>
-        <ComposerModalContent />
       </Modal>
 
       <Modal open={id === MODAL.CLEAN_UP} onClose={close}>

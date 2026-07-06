@@ -8,9 +8,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Lead } from "@/lib/store/types";
 import { STAGE_PILL_CLS, leadInitials } from "@/lib/prototype-sample";
-import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore, useOpenModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 
 interface LeadHeaderProps {
@@ -20,6 +21,16 @@ interface LeadHeaderProps {
 export function LeadHeader({ lead }: LeadHeaderProps) {
   const updateLead = useAppStore((s) => s.updateLead);
   const openModal = useOpenModal();
+  const closeModal = useCloseModal();
+  const router = useRouter();
+
+  // "New quote" → the real quote composer, pre-populated with this customer
+  // (the /composer route seeds its customer from ?lead=). Close the modal first
+  // so it doesn't float over the composer page.
+  function newQuote() {
+    closeModal();
+    router.push(`/composer?lead=${lead.id}`);
+  }
 
   const [nameVal, setNameVal] = useState(lead.name);
 
@@ -190,7 +201,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         )}
         <button
           className={`btn sm${callIsPrimary ? "" : " primary"}`}
-          onClick={() => openModal(MODAL.COMPOSER, { leadId: lead.id })}
+          onClick={newQuote}
         >
           New quote
         </button>
