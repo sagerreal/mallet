@@ -73,18 +73,30 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         />
       </div>
 
-      {/* Pill row: stage stamp + src pill + phone input */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        <span className={`stamp ${stageCls}`}>{lead.stage}</span>
-        {lead.source && <span className="pill src">{lead.source}</span>}
-        {lead.companyId && lead.role && (
-          <span className="pill gray">{lead.role}</span>
+      {/* Metadata line: soft stage pill (dot carries the color) · source · phone */}
+      <div className="lead-meta" style={{ marginBottom: 14 }}>
+        <span className={`stage-pill ${stageCls}`}>
+          <span className="dot" aria-hidden="true" />
+          {lead.stage}
+        </span>
+        {lead.source && (
+          <>
+            <span className="lead-meta-dot" aria-hidden="true">·</span>
+            <span className="lead-meta-src">{lead.source}</span>
+          </>
         )}
+        {lead.companyId && lead.role && (
+          <>
+            <span className="lead-meta-dot" aria-hidden="true">·</span>
+            <span className="lead-meta-src">{lead.role}</span>
+          </>
+        )}
+        <span className="lead-meta-dot" aria-hidden="true">·</span>
         <input
           className="lead-phone"
           type="tel"
           defaultValue={lead.phone}
-          placeholder="Phone"
+          placeholder="Add phone"
           onBlur={(e) => updateLead(lead.id, { phone: e.target.value })}
           aria-label="Customer phone"
         />
