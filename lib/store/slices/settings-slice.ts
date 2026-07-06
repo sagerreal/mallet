@@ -129,7 +129,7 @@ const SEED_SOURCES: string[] = [
 const SEED_TOGGLES: SettingsToggles = {
   techSeesPrice: true, // "Techs can see job prices" defaults on in the prototype
   techTexts: true, // "Techs can text customers" defaults on
-  frontDesk: false, // AI Front Desk starts Off
+  frontDesk: true, // the sample shop runs with the Front Desk ON (home Handoff story)
   scopeOn: false, // Visit checks start off
 };
 

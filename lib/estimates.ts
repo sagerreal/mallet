@@ -24,3 +24,17 @@ export function pipeSum(contacts: Lead[], estimates: Estimate[], status: string)
     .filter((e) => e.status === status && ids.has(e.leadId))
     .reduce((s, e) => s + estTotal(e), 0);
 }
+
+// ---- invoice money (same module so home + Finance audit to the same penny) ---
+
+import type { Invoice } from "@/lib/store/types";
+
+/** Sum of recorded payments. */
+export function invPaid(i: Invoice): number {
+  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
+}
+
+/** Balance still owed — total − deposit − payments, floored at 0. */
+export function invDue(i: Invoice): number {
+  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
+}

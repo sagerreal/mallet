@@ -11,6 +11,8 @@ import type { ModalId } from "./modal-ids";
 export interface LeadNote {
   id?: string;
   type: "note" | "call" | "text" | "system" | "visit" | "ai";
+  /** Happened on the Front Desk's overnight shift — feeds the home Handoff note. */
+  overnight?: boolean;
   dir?: string;
   outcome?: string;
   dur?: string;
@@ -286,6 +288,8 @@ export interface ActiveModal {
 export interface UIState {
   activeModal: ActiveModal | null;
   custSeg: "people" | "biz";
+  /** Home "Needs your OK" items the owner skipped — never lead again this session. */
+  dismissedAttention: string[];
 }
 
 // ---- Active call (global call bar) -----------------------------------------

@@ -36,7 +36,8 @@ export interface LeadsSlice {
   addLead: (draft: Omit<Lead, "id" | "age" | "last" | "acts" | "evisits">) => Lead;
   updateLead: (id: number, patch: Partial<Lead>) => void;
   moveLeadStage: (id: number, stage: string) => void;
-  addLeadNote: (id: number, note: Omit<LeadNote, "id">) => void;
+  addLeadNote: (id: number, note: Omit<LeadNote, "id">) => LeadNote;
+  removeLeadNote: (id: number, noteId: string) => void;
   archiveLead: (id: number) => void;
   restoreLead: (id: number) => void;
   deleteLead: (id: number) => void;
@@ -90,7 +91,16 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
           : l
       ),
     }));
+    return fullNote;
   },
+
+  // Powers the home queue's 30s Undo — removes exactly the note a Send appended.
+  removeLeadNote: (id, noteId) =>
+    set((s) => ({
+      leads: s.leads.map((l) =>
+        l.id === id ? { ...l, acts: (l.acts ?? []).filter((a) => a.id !== noteId) } : l
+      ),
+    })),
 
   archiveLead: (id) =>
     set((s) => ({

@@ -57,6 +57,7 @@ export interface SampleVisit {
 
 export interface SampleAct {
   type: string;
+  overnight?: boolean;
   dir?: string;
   outcome?: string;
   dur?: string;
@@ -291,9 +292,12 @@ export const SAMPLE_LEADS: SampleLead[] = [
     stage: "Quote Sent",
     age: 5,
     job: "40-gal water heater replacement",
-    last: "Quote sent yesterday",
+    last: "Opened the quote at 9:12pm",
     estId: 102,
     email: "mlopez415@gmail.com",
+    acts: [
+      { type: "ai", from: "auto", overnight: true, when: "9:12pm", t: "Maria opened quote Q-1043 — second look this week." },
+    ],
   },
   {
     id: 7,
@@ -408,6 +412,40 @@ export const SAMPLE_LEADS: SampleLead[] = [
     job: "Kitchen faucet install",
     last: "Booked direct — faucet",
     address: "77 Main St, Pleasanton",
+  },
+  {
+    // Caught & BOOKED by the AI Front Desk after close — the home Handoff's
+    // headline receipt. Transcript lives in the acts (open the thread to read it).
+    id: 15,
+    name: "Denise Wagner",
+    phone: "(925) 555-0148",
+    source: "AI Front Desk",
+    stage: "Won",
+    book: true,
+    age: 0,
+    job: "Garbage disposal replacement",
+    last: "Booked by the Front Desk — Thu 8:00 AM",
+    address: "1420 Vineyard Ave, Pleasanton",
+    acts: [
+      { type: "call", dir: "in", overnight: true, from: "auto", when: "8:47pm", dur: "3m", outcome: "Answered by Front Desk", t: "Missed-hours call answered. Disposal is jammed and leaking underneath — wants it swapped this week. Offered Thursday 8:00 AM, she took it.", notes: "Unit is a 12-year-old Badger; under-sink leak started yesterday." },
+      { type: "text", from: "auto", overnight: true, when: "8:51pm", t: "Hi Denise — Rivera Plumbing. You're booked for Thu 8:00 AM: garbage disposal replacement at 1420 Vineyard Ave. Reply here if anything changes." },
+      { type: "text", from: "them", overnight: true, when: "8:53pm", t: "Perfect, thank you! Gate code is 2214." },
+    ],
+  },
+  {
+    // Second overnight caller — message taken + booking link texted; not booked yet.
+    id: 16,
+    name: "Gary Simmons",
+    phone: "(925) 555-0121",
+    source: "AI Front Desk",
+    stage: "New customer",
+    age: 0,
+    job: "Leaky hose bib on the side of the house",
+    last: "Front Desk took the details · texted him the booking link",
+    acts: [
+      { type: "call", dir: "in", overnight: true, from: "auto", when: "9:38pm", dur: "2m", outcome: "Answered by Front Desk", t: "Evening call answered. Hose bib on the side of the house drips constantly — not urgent. Took his details and texted the booking link." },
+      { type: "text", from: "auto", overnight: true, when: "9:41pm", t: "Hi Gary — Rivera Plumbing. Grab a time that suits and we'll get that hose bib sorted: rivera.mallet.ai/book" },
+    ],
   },
 ];
 
@@ -608,6 +646,24 @@ export const SAMPLE_JOBS: SampleJob[] = [
     notes: "Customer supplying the faucet.",
     acts: [],
     visits: [],
+  },
+  {
+    // Booked overnight by the AI Front Desk (Denise Wagner) — Thu 8:00 AM.
+    id: 907,
+    leadId: 15,
+    svc: "service",
+    origin: "frontdesk",
+    title: "Garbage disposal replacement — Wagner",
+    addr: "1420 Vineyard Ave, Pleasanton",
+    phone: "(925) 555-0148",
+    status: "scheduled",
+    archived: false,
+    lines: [{ d: "Garbage disposal — supplied & installed (1/2 HP)", q: 1, r: 980, c: 420 }],
+    addons: [],
+    photos: [],
+    notes: "Gate code 2214. Under-sink leak — bring a pan liner.",
+    acts: [],
+    visits: [{ id: 9071, date: dPlus(2), techId: 2, start: 8, dur: 1.5, status: "scheduled" }],
   },
 ];
 
