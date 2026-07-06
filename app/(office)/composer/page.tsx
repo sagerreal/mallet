@@ -15,6 +15,7 @@
  */
 
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   SAMPLE_ESTIMATES,
@@ -753,6 +754,18 @@ function BuilderMode({
       ? (leads.find((l) => l.id === state.leadId) ?? null)
       : null;
 
+  // View-only: show/hide the owner "Your cost" column. Never touches the store
+  // — hiding only omits cells; entered costs live on in state.lines.
+  const [showCost, setShowCost] = useState(false);
+  // "Started building" — sticky once the user picks manual entry. AI/template
+  // seed real lines (isEmpty→false) which also shows the table; manual entry adds
+  // a blank row that isEmpty can't see, so it needs this flag to reveal the table.
+  const [manualStarted, setManualStarted] = useState(false);
+  // No real line description yet → still at the "Start this quote" chooser.
+  const isEmpty = !state.lines.some((l) => (l.d ?? "").trim());
+  // Show the table once there's a real line OR the user chose manual entry.
+  const showTable = !isEmpty || manualStarted;
+
   const m = calcQuote(
     state.lines.map((l) => ({
       d: l.d,
@@ -829,6 +842,17 @@ function BuilderMode({
 
   const priceSum = pricingSummary(state.pricing);
 
+  // Numbered small-caps eyebrow that teaches the send flow (2/3/4 live here;
+  // "1 · Who it's for" renders in the parent above CustomerSelector).
+  const eyebrowStyle: CSSProperties = {
+    fontWeight: 700,
+    fontSize: 11,
+    letterSpacing: ".04em",
+    textTransform: "uppercase",
+    color: "var(--muted)",
+    margin: "18px 0 8px",
+  };
+
   return (
     <>
       {state.gbbEdit && (
@@ -840,129 +864,199 @@ function BuilderMode({
           </span>
         </div>
       )}
-      {/* Accelerators */}
-      <div style={{ fontWeight: 700, fontSize: 13, margin: "2px 0 7px" }}>
-        Build it
-      </div>
-      <div
-        style={{ display: "flex", gap: 9, flexWrap: "wrap", margin: "0 0 16px" }}
-      >
-        <button
-          className="btn qstart"
-          onClick={() => onUpdate({ mode: "gbb-prompt", gbb: null })}
-        >
-          3 options · Good · Better · Best
-        </button>
-        <button
-          className={`btn qstart${state.aiOpen ? " primary" : ""}`}
-          onClick={() => onUpdate({ aiOpen: !state.aiOpen, tmplOpen: false })}
-        >
-          ✦ Draft with AI
-        </button>
-        <button
-          className={`btn qstart${state.tmplOpen ? " primary" : ""}`}
-          onClick={() => onUpdate({ tmplOpen: !state.tmplOpen, aiOpen: false })}
-        >
-          From a template
-        </button>
-      </div>
+      {/* 2 · What's on it */}
+      <div style={eyebrowStyle}>2 · What&apos;s on it</div>
 
-      {/* AI draft panel */}
-      {state.aiOpen && (
-        <div className="card" style={{ padding: 14, marginBottom: 14 }}>
-          <div className="field" style={{ marginBottom: 8 }}>
-            <textarea
-              rows={2}
-              placeholder="Describe the job — e.g. replace 40-gal gas water heater, haul away, bring to code"
-              value={state.desc}
-              onChange={(e) => onUpdate({ desc: e.target.value })}
-            />
-          </div>
-          <button
-            className="btn sm primary"
-            onClick={() => {
-              if (!state.desc.trim()) return; // no-op on empty description
-              onUpdate({
-                lines: draftLinesFor(state.desc),
-                aiOpen: false,
-                aiDrafted: true,
-              });
-            }}
-          >
-            Draft lines
-          </button>{" "}
-          <button
-            className="btn sm ghost"
-            onClick={() => {
-              // deferred: no speech API — dictate is a no-op for now
-            }}
-            title="talk it instead of typing it"
-          >
-            Dictate
-          </button>{" "}
-          <button
-            className="btn sm ghost"
-            onClick={() => onUpdate({ aiOpen: false })}
-          >
-            Cancel
-          </button>{" "}
-          <span
-            className="muted"
-            style={{ fontSize: 11, marginLeft: 8 }}
-          >
-            Drafted from your pricebook &amp; rates — every line editable
-          </span>
-        </div>
-      )}
-
-      {/* Template panel */}
-      {state.tmplOpen && (
-        <div className="card" style={{ padding: 14, marginBottom: 14 }}>
-          <div
-            className="tmpl-grid"
-            style={{ marginTop: 0 }}
-          >
-            {TEMPLATES.map((t) => (
-              <button
-                key={t.k}
-                className="tmpl"
-                onClick={() =>
-                  onUpdate({
-                    lines: t.lines.map((l) => ({ ...l })),
-                    tmplOpen: false,
-                  })
-                }
-              >
-                {t.t}
-                <small>{t.sub}</small>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Line items */}
+      {/* What's on the quote */}
       <div className="card">
-        <h3>
-          Line items
-          {state.aiDrafted && (
-            <span
-              className="pill"
-              style={{ background: "var(--purple-bg)", color: "var(--purple)" }}
-            >
-              AI draft — edit freely
-            </span>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <h3 style={{ margin: 0 }}>
+            What&apos;s on the quote
+            {state.aiDrafted && (
+              <span
+                className="pill"
+                style={{ background: "var(--purple-bg)", color: "var(--purple)", marginLeft: 8 }}
+              >
+                AI draft — edit freely
+              </span>
+            )}
+          </h3>
+          {showTable && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                className="btn sm ghost"
+                onClick={() => setShowCost((v) => !v)}
+              >
+                {showCost ? "Hide your cost" : "Show your cost"}
+              </button>
+              <button
+                className={`btn sm ghost${state.aiOpen ? " primary" : ""}`}
+                onClick={() => onUpdate({ aiOpen: !state.aiOpen, tmplOpen: false })}
+              >
+                ✦ Redraft with AI
+              </button>
+              <button
+                className={`btn sm ghost${state.tmplOpen ? " primary" : ""}`}
+                onClick={() => onUpdate({ tmplOpen: !state.tmplOpen, aiOpen: false })}
+              >
+                From a template
+              </button>
+            </div>
           )}
-        </h3>
+        </div>
+
+        {/* AI draft panel (in-flow, inside the card) */}
+        {state.aiOpen && (
+          <div className="card" style={{ padding: 14, margin: "14px 0" }}>
+            <div className="field" style={{ marginBottom: 8 }}>
+              <textarea
+                rows={2}
+                placeholder="Describe the job — e.g. replace 40-gal gas water heater, haul away, bring to code"
+                value={state.desc}
+                onChange={(e) => onUpdate({ desc: e.target.value })}
+              />
+            </div>
+            <button
+              className="btn sm primary"
+              onClick={() => {
+                if (!state.desc.trim()) return; // no-op on empty description
+                onUpdate({
+                  lines: draftLinesFor(state.desc),
+                  aiOpen: false,
+                  aiDrafted: true,
+                });
+              }}
+            >
+              Draft lines
+            </button>{" "}
+            <button
+              className="btn sm ghost"
+              onClick={() => {
+                // deferred: no speech API — dictate is a no-op for now
+              }}
+              title="talk it instead of typing it"
+            >
+              Dictate
+            </button>{" "}
+            <button
+              className="btn sm ghost"
+              onClick={() => onUpdate({ aiOpen: false })}
+            >
+              Cancel
+            </button>{" "}
+            <span
+              className="muted"
+              style={{ fontSize: 11, marginLeft: 8 }}
+            >
+              Drafted from your pricebook &amp; rates — every line editable
+            </span>
+            {!isEmpty && (
+              <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+                Replaces current lines
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Template panel (in-flow, inside the card) */}
+        {state.tmplOpen && (
+          <div className="card" style={{ padding: 14, margin: "14px 0" }}>
+            <div
+              className="tmpl-grid"
+              style={{ marginTop: 0 }}
+            >
+              {TEMPLATES.map((t) => (
+                <button
+                  key={t.k}
+                  className="tmpl"
+                  onClick={() =>
+                    onUpdate({
+                      lines: t.lines.map((l) => ({ ...l })),
+                      tmplOpen: false,
+                    })
+                  }
+                >
+                  {t.t}
+                  <small>{t.sub}</small>
+                </button>
+              ))}
+            </div>
+            {!isEmpty && (
+              <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+                Replaces current lines
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Empty state — the one place every entry point appears */}
+        {!showTable && (
+          <div style={{ padding: "6px 2px 2px" }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Start this quote</div>
+            <p className="muted" style={{ fontSize: 12, margin: "3px 0 12px" }}>
+              Pick how to build it — you can edit every line after.
+            </p>
+            <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+              <button
+                className={`btn qstart${state.aiOpen ? " primary" : ""}`}
+                onClick={() => onUpdate({ aiOpen: !state.aiOpen, tmplOpen: false })}
+              >
+                ✦ Draft with AI
+              </button>
+              <button
+                className={`btn qstart${state.tmplOpen ? " primary" : ""}`}
+                onClick={() => onUpdate({ tmplOpen: !state.tmplOpen, aiOpen: false })}
+              >
+                From a template
+              </button>
+            </div>
+            <div style={{ marginTop: 9 }}>
+              <button
+                className="btn sm ghost"
+                onClick={() => {
+                  setManualStarted(true);
+                  if (!state.lines.length) addLine();
+                }}
+              >
+                + Add lines manually
+              </button>
+            </div>
+            <div
+              style={{
+                borderTop: "1px solid var(--line)",
+                margin: "16px 0 10px",
+              }}
+            />
+            <div className="muted" style={{ fontSize: 12 }}>
+              Selling tiers?{" "}
+              <span
+                className="linklike"
+                onClick={() => onUpdate({ mode: "gbb-prompt", gbb: null })}
+              >
+                build three priced options instead
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Populated state — line-items table + footer + pricebook */}
+        {showTable && (
+          <>
         <table className="lineitems">
           <thead>
             <tr>
               <th style={{ width: "44%" }}>Description</th>
               <th>Qty</th>
               <th>Price</th>
-              <th>
-                Cost <span className="muted" style={{ fontWeight: 500 }}>· you</span>
-              </th>
+              {showCost && <th>Your cost</th>}
               <th style={{ textAlign: "right" }}>Amount</th>
               <th></th>
             </tr>
@@ -1004,21 +1098,23 @@ function BuilderMode({
                       }
                     />
                   </td>
-                  <td>
-                    <input
-                      type="number"
-                      value={x.c ?? ""}
-                      placeholder="—"
-                      title="What you paid (owner-only) — set it and we suggest a price at your markup; margin shows itself."
-                      style={{ width: 78 }}
-                      onChange={(e) =>
-                        updateLine(i, { c: +e.target.value || undefined })
-                      }
-                    />
-                  </td>
+                  {showCost && (
+                    <td>
+                      <input
+                        type="number"
+                        value={x.c ?? ""}
+                        placeholder="—"
+                        title="What you paid (owner-only) — set it and we suggest a price at your markup; margin shows itself."
+                        style={{ width: 78 }}
+                        onChange={(e) =>
+                          updateLine(i, { c: +e.target.value || undefined })
+                        }
+                      />
+                    </td>
+                  )}
                   <td style={{ textAlign: "right", fontWeight: 700 }}>
                     {fmt$(amt)}
-                    {margin !== null && (
+                    {showCost && margin !== null && (
                       <div
                         className="muted"
                         style={{ fontWeight: 500, fontSize: "10.5px" }}
@@ -1097,8 +1193,11 @@ function BuilderMode({
             ))}
           </div>
         )}
+          </>
+        )}
 
-        {/* Totals */}
+        {/* Totals — only once there's something to total */}
+        {showTable && (
         <div
           style={{
             display: "flex",
@@ -1136,62 +1235,11 @@ function BuilderMode({
             </span>
           ) : null}
         </div>
+        )}
       </div>
 
-      {/* Delivery card (only when a lead is selected) */}
-      {lead && (
-        <div className="card" style={{ borderColor: "#E6DCC4" }}>
-          <b style={{ fontSize: 13 }}>
-            Sends by text to {lead.phone ?? "their phone"}
-          </b>
-          <p
-            className="muted"
-            style={{
-              fontSize: 12,
-              margin: `3px 0 ${lead.email ? "0" : "8px"}`,
-            }}
-          >
-            They tap the link, see it, approve it — no inbox to dig
-            through, nothing blocks the send.
-            {lead.email ? ` A copy also goes to ${lead.email}.` : ""}
-          </p>
-          {!lead.email && (
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>
-                Also email a copy{" "}
-                <span className="muted">
-                  (optional — saves to{" "}
-                  {lead.name.split(" ")[0]}&apos;s record)
-                </span>
-              </label>
-              <input
-                type="email"
-                inputMode="email"
-                id="sendEmail"
-                placeholder={`${((lead?.name ?? "").split(" ")[0] ?? "").toLowerCase()}@email.com`}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Follow-up toggle */}
-      <div className="fu-toggle">
-        <div
-          className={`switch${state.fuOn ? "" : " off"}`}
-          onClick={() => onUpdate({ fuOn: !state.fuOn })}
-        />
-        <div>
-          <b>
-            Automatic follow-ups: {state.fuOn ? "on" : "off"}
-          </b>{" "}
-          <span className="muted" style={{ fontSize: 12 }}>
-            {state.fuOn
-              ? "— 2 reminders, then it flags you to call"
-              : "— you'll remind them yourself"}
-          </span>
-        </div>
-      </div>
+      {/* 3 · How it's priced */}
+      <div style={eyebrowStyle}>3 · How it&apos;s priced</div>
 
       {/* Pricing options reveal */}
       <div className={`reveal${state.priceOpen ? " open" : ""}`}>
@@ -1259,6 +1307,64 @@ function BuilderMode({
               />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 4 · After you send */}
+      <div style={eyebrowStyle}>4 · After you send</div>
+
+      {/* Delivery card (only when a lead is selected) */}
+      {lead && (
+        <div className="card" style={{ borderColor: "#E6DCC4" }}>
+          <b style={{ fontSize: 13 }}>
+            Sends by text to {lead.phone ?? "their phone"}
+          </b>
+          <p
+            className="muted"
+            style={{
+              fontSize: 12,
+              margin: `3px 0 ${lead.email ? "0" : "8px"}`,
+            }}
+          >
+            They tap the link, see it, approve it — no inbox to dig
+            through, nothing blocks the send.
+            {lead.email ? ` A copy also goes to ${lead.email}.` : ""}
+          </p>
+          {!lead.email && (
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>
+                Also email a copy{" "}
+                <span className="muted">
+                  (optional — saves to{" "}
+                  {lead.name.split(" ")[0]}&apos;s record)
+                </span>
+              </label>
+              <input
+                type="email"
+                inputMode="email"
+                id="sendEmail"
+                placeholder={`${((lead?.name ?? "").split(" ")[0] ?? "").toLowerCase()}@email.com`}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Follow-up toggle */}
+      <div className="fu-toggle">
+        <div
+          className={`switch${state.fuOn ? "" : " off"}`}
+          onClick={() => onUpdate({ fuOn: !state.fuOn })}
+        />
+        <div>
+          <b>
+            Automatic follow-ups: {state.fuOn ? "on" : "off"}
+          </b>{" "}
+          <span className="muted" style={{ fontSize: 12 }}>
+            {state.fuOn
+              ? "— 2 reminders, then it flags you to call"
+              : "— you'll remind them yourself"}
+          </span>
         </div>
       </div>
 
@@ -1469,6 +1575,21 @@ export default function ComposerPage() {
   return (
     <div>
       <h1>New quote</h1>
+
+      {cs.mode === "builder" && (
+        <div
+          style={{
+            fontWeight: 700,
+            fontSize: 11,
+            letterSpacing: ".04em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+            margin: "18px 0 8px",
+          }}
+        >
+          1 · Who it&apos;s for
+        </div>
+      )}
 
       <CustomerSelector
         state={cs}
