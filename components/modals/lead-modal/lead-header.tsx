@@ -39,8 +39,9 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
 
   return (
     <div style={{ marginBottom: 18 }}>
-      {/* Top row: avatar + name input */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+      {/* Header: avatar beside a column of name + metadata, both left-aligned
+          to each other; right padding keeps the editable name clear of the ✕. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <div
           className="avatar"
           style={{
@@ -59,47 +60,49 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         >
           {initials}
         </div>
-        <input
-          className="lead-name"
-          value={nameVal}
-          onChange={(e) => setNameVal(e.target.value)}
-          onBlur={saveName}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              (e.currentTarget as HTMLInputElement).blur();
-            }
-          }}
-          aria-label="Customer name"
-        />
-      </div>
+        <div style={{ flex: 1, minWidth: 0, paddingRight: 34 }}>
+          <input
+            className="lead-name"
+            value={nameVal}
+            onChange={(e) => setNameVal(e.target.value)}
+            onBlur={saveName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                (e.currentTarget as HTMLInputElement).blur();
+              }
+            }}
+            aria-label="Customer name"
+          />
 
-      {/* Metadata line: soft stage pill (dot carries the color) · source · phone */}
-      <div className="lead-meta" style={{ marginBottom: 14 }}>
-        <span className={`stage-pill ${stageCls}`}>
-          <span className="dot" aria-hidden="true" />
-          {lead.stage}
-        </span>
-        {lead.source && (
-          <>
+          {/* Metadata line: soft stage pill (dot carries the color) · source · phone */}
+          <div className="lead-meta" style={{ marginTop: 7 }}>
+            <span className={`stage-pill ${stageCls}`}>
+              <span className="dot" aria-hidden="true" />
+              {lead.stage}
+            </span>
+            {lead.source && (
+              <>
+                <span className="lead-meta-dot" aria-hidden="true">·</span>
+                <span className="lead-meta-src">{lead.source}</span>
+              </>
+            )}
+            {lead.companyId && lead.role && (
+              <>
+                <span className="lead-meta-dot" aria-hidden="true">·</span>
+                <span className="lead-meta-src">{lead.role}</span>
+              </>
+            )}
             <span className="lead-meta-dot" aria-hidden="true">·</span>
-            <span className="lead-meta-src">{lead.source}</span>
-          </>
-        )}
-        {lead.companyId && lead.role && (
-          <>
-            <span className="lead-meta-dot" aria-hidden="true">·</span>
-            <span className="lead-meta-src">{lead.role}</span>
-          </>
-        )}
-        <span className="lead-meta-dot" aria-hidden="true">·</span>
-        <input
-          className="lead-phone"
-          type="tel"
-          defaultValue={lead.phone}
-          placeholder="Add phone"
-          onBlur={(e) => updateLead(lead.id, { phone: e.target.value })}
-          aria-label="Customer phone"
-        />
+            <input
+              className="lead-phone"
+              type="tel"
+              defaultValue={lead.phone}
+              placeholder="Add phone"
+              onBlur={(e) => updateLead(lead.id, { phone: e.target.value })}
+              aria-label="Customer phone"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Service address — surfaced up top (field service lives or dies on the
@@ -158,13 +161,13 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         {/* Contact cluster */}
         <button
           className={`btn sm${callIsPrimary ? " primary" : " ghost"}`}
-          onClick={() => openModal(MODAL.CALL, { leadId: lead.id })}
+          onClick={() => openModal(MODAL.CALL, { leadId: lead.id, returnTo: MODAL.LEAD })}
         >
           <PhoneIcon /> Call
         </button>
         <button
           className="btn sm ghost"
-          onClick={() => openModal(MODAL.THREAD, { leadId: lead.id })}
+          onClick={() => openModal(MODAL.THREAD, { leadId: lead.id, returnTo: MODAL.LEAD })}
         >
           <ChatIcon /> Text
           {lead.unread ? (
@@ -180,7 +183,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         {lead.stage !== "Won" && lead.stage !== "Lost" && (
           <button
             className="btn sm"
-            onClick={() => openModal(MODAL.VISIT, { leadId: lead.id })}
+            onClick={() => openModal(MODAL.VISIT, { leadId: lead.id, returnTo: MODAL.LEAD })}
           >
             Book site visit
           </button>

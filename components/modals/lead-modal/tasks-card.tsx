@@ -96,12 +96,6 @@ export function TasksCard({ lead }: TasksCardProps) {
     <div className="card">
       <h3>Tasks</h3>
 
-      {openTasks.length === 0 && doneTasks.length === 0 && (
-        <p className="muted" style={{ fontSize: 13, margin: "4px 0 12px" }}>
-          Nothing to do yet — add a task to track what needs to happen.
-        </p>
-      )}
-
       {openTasks.map((t) => (
         <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} />
       ))}

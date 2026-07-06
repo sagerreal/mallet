@@ -74,6 +74,13 @@ export function VisitModalContent() {
 
   if (!lead) return null;
 
+  // Cancel / ✕ returns to the modal it was opened from (the lead), not a dead end.
+  function cancel() {
+    const returnTo = activeModal?.params?.returnTo as string | undefined;
+    if (returnTo === MODAL.LEAD && lead) openModal(MODAL.LEAD, { leadId: lead.id });
+    else close();
+  }
+
   function setType(p: Purpose) {
     setPurpose(p);
     // nudge the default duration to the visit kind (scope is quick, a job longer)
@@ -201,7 +208,7 @@ export function VisitModalContent() {
 
       {/* Footer */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
-        <button className="btn ghost" onClick={close}>
+        <button className="btn ghost" onClick={cancel}>
           Cancel
         </button>
         <button className="btn primary" onClick={book}>
