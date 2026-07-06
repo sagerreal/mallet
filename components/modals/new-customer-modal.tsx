@@ -11,7 +11,9 @@
 
 import { useState, type FormEvent } from "react";
 import { Modal } from "./modal";
-import { useCloseModal, useAppStore } from "@/lib/store/app-store";
+import { useCloseModal, useOpenModal, useAppStore } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import type { Job, Lead } from "@/lib/store/types";
 
 const SOURCES = [
   "Google",
@@ -28,7 +30,9 @@ type VisitPurpose = "job" | "look" | null;
 
 export function NewCustomerModal({ open }: { open: boolean }) {
   const close = useCloseModal();
+  const openModal = useOpenModal();
   const addLead = useAppStore((s) => s.addLead);
+  const addJob = useAppStore((s) => s.addJob);
 
   // Core fields
   const [name, setName] = useState("");
@@ -44,7 +48,6 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const [bookOpen, setBookOpen] = useState(false);
   const [jobDesc, setJobDesc] = useState("");
   const [visitPurpose, setVisitPurpose] = useState<VisitPurpose>(null);
-  const [price, setPrice] = useState("");
   const [serviceAddr, setServiceAddr] = useState("");
 
   // More details reveal
@@ -68,7 +71,6 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setBookOpen(false);
     setJobDesc("");
     setVisitPurpose(null);
-    setPrice("");
     setServiceAddr("");
     setMoreOpen(false);
     setEmail("");
@@ -92,13 +94,34 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     return "Add customer";
   }
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  /** Create a job for the new lead (mirrors the New job modal's createJob). */
+  function createJobForLead(lead: Lead): Job {
+    return addJob({
+      leadId: lead.id,
+      svc: "service",
+      origin: "manual",
+      title: jobDesc.trim() || lead.name,
+      addr: serviceAddr.trim() || lead.address || "",
+      phone: phone.trim(),
+      status: "unscheduled",
+      archived: false,
+      lines: [],
+      addons: [],
+      photos: [],
+      notes: notes.trim(),
+      acts: [],
+      visits: [],
+    });
+  }
+
+  /** Validate + create the lead (and a Job when the purpose is "job").
+   *  Returns the created Job so "Build the price" can hand off to the builder. */
+  function commit(): { ok: boolean; job: Job | null } {
     if (!name.trim()) {
       setError("Name is required.");
-      return;
+      return { ok: false, job: null };
     }
-    addLead({
+    const lead = addLead({
       name: name.trim(),
       phone: phone.trim(),
       job: jobDesc.trim() || "New customer",
@@ -113,8 +136,25 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         ? Object.fromEntries(customFields.map((f) => [f.label, f.value]))
         : undefined,
     });
+    const job = visitPurpose === "job" ? createJobForLead(lead) : null;
+    return { ok: true, job };
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!commit().ok) return;
     reset();
     close();
+  }
+
+  /** "✦ Build the price →" — create the customer + job, then open the same
+   *  price builder the crew uses (prototype saveNewJob(true) → jobBuildPrice). */
+  function handleBuildPrice() {
+    const { ok, job } = commit();
+    if (!ok) return;
+    reset();
+    close();
+    if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
   }
 
   function addCustomField() {
@@ -317,13 +357,26 @@ export function NewCustomerModal({ open }: { open: boolean }) {
               <div>
                 {visitPurpose === "job" && (
                   <div className="field">
-                    <label>Price (optional)</label>
-                    <input
-                      type="text"
-                      placeholder="optional — leave blank to price on site"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                    />
+                    <label>
+                      Price{" "}
+                      <span
+                        className="muted"
+                        style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
+                      >
+                        (optional)
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ width: "100%", justifyContent: "center" }}
+                      onClick={handleBuildPrice}
+                    >
+                      ✦ Build the price →
+                    </button>
+                    <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+                      Same builder your crew uses — or price later.
+                    </div>
                   </div>
                 )}
                 <div className="field">

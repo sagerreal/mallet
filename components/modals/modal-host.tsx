@@ -93,11 +93,12 @@ export function ModalHost() {
         <EvisitModalContent />
       </Modal>
 
-      <Modal open={id === MODAL.PRICE_BUILDER} onClose={close} wide>
+      {/* 560px — the prototype's tq sheet width; keeps the add-a-line tiles a 2×2 grid */}
+      <Modal open={id === MODAL.PRICE_BUILDER} onClose={close} maxWidth={560}>
         <PriceBuilderModalContent />
       </Modal>
 
-      <Modal open={id === MODAL.TECH_QUOTE} onClose={close} wide>
+      <Modal open={id === MODAL.TECH_QUOTE} onClose={close} maxWidth={560}>
         <TechQuoteModalContent />
       </Modal>
 

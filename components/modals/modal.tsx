@@ -14,9 +14,11 @@ interface ModalProps {
   children: ReactNode;
   /** "wide" adds the .wide class to the inner panel */
   wide?: boolean;
+  /** exact max-width override (px) — e.g. the 560px price/quote builder sheet */
+  maxWidth?: number;
 }
 
-export function Modal({ open, onClose, children, wide }: ModalProps) {
+export function Modal({ open, onClose, children, wide, maxWidth }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -35,7 +37,10 @@ export function Modal({ open, onClose, children, wide }: ModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`modal${wide ? " wide" : ""}`}>
+      <div
+        className={`modal${wide ? " wide" : ""}`}
+        style={maxWidth != null ? { maxWidth } : undefined}
+      >
         <button className="x" aria-label="Close" onClick={onClose}>
           ✕
         </button>
