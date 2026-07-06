@@ -197,9 +197,12 @@
   .tasklist{display:flex;flex-direction:column}
   .tsec{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:800;padding:15px 2px 5px}
   .tsec:first-child{padding-top:9px}
-  .trow{display:flex;align-items:center;gap:13px;padding:10px 2px;border-top:1px solid var(--line-2)}
+  .trow{display:flex;align-items:center;gap:13px;padding:11px 10px;margin:0 -10px;border-radius:10px;border-top:1px solid var(--line-2)}
   .tsec + .trow{border-top:none}
   .trow:hover .ttitle{color:var(--ink)}
+  /* a task tied to a customer is tappable → opens them */
+  .trow.clickable{cursor:pointer;transition:background .12s}
+  .trow.clickable:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
   .tchk{flex:0 0 auto;width:19px;height:19px;border-radius:50%;border:1.6px solid color-mix(in srgb,var(--ink) 34%,transparent);background:var(--card);cursor:pointer;display:flex;align-items:center;justify-content:center;color:transparent;font-size:11px;font-weight:800;line-height:1;padding:0;transition:border-color .12s,background .12s,color .12s}
   .tchk::after{content:'✓'}
   .tchk:hover{border-color:var(--accent);background:var(--green-50);color:var(--accent)}

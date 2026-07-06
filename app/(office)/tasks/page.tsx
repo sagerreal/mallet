@@ -1,201 +1,157 @@
 "use client";
 
 /**
- * Tasks page — pixel-faithful port of the prototype's vTasks().
- * Uses SAMPLE_TASKS / SAMPLE_LEADS from lib/prototype-sample.ts.
- * No live hooks. All interactive actions are console-logged stubs.
- *
- * Prototype reference: elas-crm-prototype.html lines 2822–2851.
- *
- * STUBS (visual / no-op):
- *   - taskDone(id)     — mark a task done (toggles done state)
- *   - addTask()        — create a new task from the input + date
- *   - openLead(id)     — navigate to a lead (from the lead pill)
+ * Tasks page (port of the prototype's vTasks) — the office's running to-do list,
+ * grouped by urgency (Overdue / Today / Coming up). Store-backed so it shares one
+ * source of truth with the per-lead Tasks card. A task tied to a customer is
+ * tappable → opens that customer, so "Call Rob back" is one tap from Rob.
  */
 
 import { useState } from "react";
-import {
-  SAMPLE_TASKS,
-  SAMPLE_LEADS,
-  TODAY_ISO,
-  dPlus,
-  type SampleTask,
-} from "@/lib/prototype-sample";
+import { TODAY_ISO } from "@/lib/prototype-sample";
+import type { Task } from "@/lib/store/types";
+import { useTasks, useLeads, useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 
-// ---- helpers ported from prototype -----------------------------------------
+// ---- date helpers ----------------------------------------------------------
 
-function todayISO(): string {
-  return TODAY_ISO;
-}
-
-function isOverdue(t: SampleTask): boolean {
-  return !t.done && !!t.due && t.due < todayISO();
+function isOverdue(t: Task): boolean {
+  return !t.done && !!t.due && t.due < TODAY_ISO;
 }
 
 function dueLabel(iso: string): string {
-  if (iso === todayISO()) return "Today";
+  if (iso === TODAY_ISO) return "Today";
   const d = new Date(iso + "T12:00:00");
-  const today = new Date(todayISO() + "T12:00:00");
-  const diff = Math.round(
-    (d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-  );
+  const today = new Date(TODAY_ISO + "T12:00:00");
+  const diff = Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   if (diff < 0) return `${Math.abs(diff)}d ago`;
   if (diff === 1) return "Tomorrow";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function leadName(leadId: number): string | null {
-  return SAMPLE_LEADS.find((l) => l.id === leadId)?.name ?? null;
+/** Tomorrow's ISO date — the default due for a new task. */
+function tomorrowISO(): string {
+  const d = new Date(TODAY_ISO + "T12:00:00");
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
-// ---- stubs ------------------------------------------------------------------
+// ---- Task row --------------------------------------------------------------
 
-function stub(action: string, ...args: unknown[]) {
-  // eslint-disable-next-line no-console
-  console.log(`[stub] ${action}`, ...args);
+interface TaskRowProps {
+  task: Task;
+  leadName: string | null;
+  onToggle: (id: number) => void;
+  onOpenLead: (leadId: number) => void;
 }
 
-// ---- Task row ---------------------------------------------------------------
-
-function TaskRow({
-  t,
-  onDone,
-}: {
-  t: SampleTask;
-  onDone: (id: number) => void;
-}) {
-  const overdue = isOverdue(t);
-  const isToday = !overdue && t.due === todayISO();
+function TaskRow({ task, leadName, onToggle, onOpenLead }: TaskRowProps) {
+  const overdue = isOverdue(task);
+  const isToday = !overdue && task.due === TODAY_ISO;
   const dueCls = overdue ? "od" : isToday ? "now" : "";
-  const dueText = t.due === todayISO() ? "Today" : dueLabel(t.due);
-  const lName = t.leadId != null ? leadName(t.leadId) : null;
-
-  if (t.done) {
-    return (
-      <div className="trow">
-        <span className="tchk done" title="Done" />
-        <div className="tmain">
-          <span className="ttitle">
-            <s className="muted">{t.t}</s>
-          </span>
-          {lName && (
-            <span
-              className="pill src"
-              style={{ cursor: "pointer" }}
-              onClick={() => stub("openLead", t.leadId)}
-            >
-              {lName}
-            </span>
-          )}
-        </div>
-        <span className="tdue">{dueLabel(t.due)}</span>
-      </div>
-    );
-  }
+  const dueText = isToday ? "Today" : dueLabel(task.due);
+  const clickable = task.leadId != null && !!leadName;
 
   return (
-    <div className="trow">
+    <div
+      className={`trow${clickable ? " clickable" : ""}`}
+      onClick={clickable && task.leadId != null ? () => onOpenLead(task.leadId!) : undefined}
+    >
       <button
-        className="tchk"
-        title="Mark done"
-        onClick={() => onDone(t.id)}
+        className={`tchk${task.done ? " done" : ""}`}
+        title={task.done ? "Reopen" : "Mark done"}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle(task.id);
+        }}
       />
       <div className="tmain">
-        <span className="ttitle">{t.t}</span>
-        {lName && (
-          <span
-            className="pill src"
-            style={{ cursor: "pointer" }}
-            onClick={() => stub("openLead", t.leadId)}
-          >
-            {lName}
-          </span>
-        )}
+        <span className="ttitle">
+          {task.done ? <s className="muted">{task.t}</s> : task.t}
+        </span>
+        {leadName && <span className="pill src">{leadName}</span>}
       </div>
       <span className={`tdue${dueCls ? " " + dueCls : ""}`}>{dueText}</span>
     </div>
   );
 }
 
-// ---- Section header ---------------------------------------------------------
+// ---- Section ---------------------------------------------------------------
 
-function TaskSection({
-  label,
-  tasks,
-  onDone,
-}: {
+interface TaskSectionProps {
   label: string;
-  tasks: SampleTask[];
-  onDone: (id: number) => void;
-}) {
+  tasks: Task[];
+  leadNameOf: (leadId: number | null) => string | null;
+  onToggle: (id: number) => void;
+  onOpenLead: (leadId: number) => void;
+}
+
+function TaskSection({ label, tasks, leadNameOf, onToggle, onOpenLead }: TaskSectionProps) {
   if (tasks.length === 0) return null;
   return (
     <>
       <div className="tsec">{label}</div>
       {tasks.map((t) => (
-        <TaskRow key={t.id} t={t} onDone={onDone} />
+        <TaskRow
+          key={t.id}
+          task={t}
+          leadName={leadNameOf(t.leadId)}
+          onToggle={onToggle}
+          onOpenLead={onOpenLead}
+        />
       ))}
     </>
   );
 }
 
-// ---- Main page --------------------------------------------------------------
+// ---- Page ------------------------------------------------------------------
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<SampleTask[]>(SAMPLE_TASKS);
+  const tasks = useTasks();
+  const leads = useLeads();
+  const addTask = useAppStore((s) => s.addTask);
+  const toggleTask = useAppStore((s) => s.toggleTask);
+  const openModal = useOpenModal();
+
   const [newText, setNewText] = useState("");
-  const [newDue, setNewDue] = useState(dPlus(1));
+  const [newDue, setNewDue] = useState(tomorrowISO());
   const [doneOpen, setDoneOpen] = useState(false);
 
-  function handleDone(id: number) {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: true } : t))
-    );
-    stub("taskDone", id);
-  }
+  // Derived in the body (never inside a selector).
+  const leadNameOf = (leadId: number | null): string | null =>
+    leadId == null ? null : (leads.find((l) => l.id === leadId)?.name ?? null);
 
   function handleAdd() {
     const text = newText.trim();
     if (!text) return;
-    const newTask: SampleTask = {
-      id: Date.now(),
-      t: text,
-      due: newDue,
-      leadId: null,
-      done: false,
-    };
-    setTasks((prev) => [...prev, newTask]);
+    addTask({ t: text, due: newDue || TODAY_ISO, leadId: null });
     setNewText("");
-    setNewDue(dPlus(1));
-    stub("addTask", newTask);
+    setNewDue(tomorrowISO());
+  }
+
+  function openLead(leadId: number) {
+    openModal(MODAL.LEAD, { leadId });
   }
 
   const open = tasks.filter((t) => !t.done);
   const od = open.filter(isOverdue);
-  const today = open.filter((t) => !isOverdue(t) && t.due === todayISO());
-  const later = open.filter((t) => !isOverdue(t) && t.due !== todayISO());
+  const today = open.filter((t) => !isOverdue(t) && t.due === TODAY_ISO);
+  const later = open.filter((t) => !isOverdue(t) && t.due !== TODAY_ISO);
   const done = tasks.filter((t) => t.done);
 
   return (
-    <div>
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 14,
-        }}
-      >
-        <h1>Tasks</h1>
-      </div>
+    <div style={{ maxWidth: 760 }}>
+      <h1 style={{ marginBottom: 4 }}>Tasks</h1>
+      <p className="muted" style={{ fontSize: 13, margin: "0 0 18px" }}>
+        Everything you owe a customer — what&apos;s late, what&apos;s today, what&apos;s coming.
+      </p>
 
-      {/* Add task card */}
-      <div className="card" style={{ padding: "13px 15px", marginBottom: 14 }}>
+      {/* Quick add — type it, hit Enter (or set a due date first) */}
+      <div className="card" style={{ padding: "10px 12px", marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             type="text"
-            placeholder="Add a task — e.g. order more yard signs"
+            placeholder="Add a task…"
             value={newText}
             onChange={(e) => setNewText(e.target.value)}
             onKeyDown={(e) => {
@@ -203,60 +159,69 @@ export default function TasksPage() {
             }}
             style={{
               flex: 1,
-              border: "1.5px solid var(--line)",
-              borderRadius: 9,
-              padding: "9px 11px",
+              border: "none",
+              background: "transparent",
+              padding: "8px 6px",
               fontFamily: "inherit",
-              fontSize: "13.5px",
+              fontSize: 14,
+              color: "var(--ink)",
+              outline: "none",
             }}
           />
-          <span className="muted" style={{ fontSize: 12, fontWeight: 600 }}>
-            Due
-          </span>
           <input
             type="date"
             className="taskmeta-in"
+            title="Due date"
             value={newDue}
-            min={todayISO()}
+            min={TODAY_ISO}
             onChange={(e) => setNewDue(e.target.value)}
           />
-          <button className="btn primary" onClick={handleAdd}>
-            + Add
+          <button
+            className="btn sm primary"
+            onClick={handleAdd}
+            disabled={!newText.trim()}
+            style={newText.trim() ? undefined : { opacity: 0.45 }}
+          >
+            Add
           </button>
         </div>
       </div>
 
-      {/* Task list card */}
-      <div className="card" style={{ padding: "8px 16px" }}>
-        {open.length > 0 ? (
+      {/* The list, grouped by urgency */}
+      {open.length > 0 ? (
+        <div className="card" style={{ padding: "6px 16px 12px" }}>
           <div className="tasklist">
-            <TaskSection label="⚠ Overdue" tasks={od} onDone={handleDone} />
-            <TaskSection label="Today" tasks={today} onDone={handleDone} />
-            <TaskSection label="Coming up" tasks={later} onDone={handleDone} />
+            <TaskSection label="⚠ Overdue" tasks={od} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
+            <TaskSection label="Today" tasks={today} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
+            <TaskSection label="Coming up" tasks={later} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
           </div>
-        ) : (
-          <div className="empty-att">
-            No open tasks — you&apos;re caught up.
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>You&apos;re all caught up</div>
+          <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
+            No open tasks. Add one above when something needs doing.
+          </p>
+        </div>
+      )}
 
-      {/* Done section */}
+      {/* Done — collapsed */}
       {done.length > 0 && (
-        <div className={`reveal${doneOpen ? " open" : ""}`}>
-          <div
-            className="reveal-head"
-            onClick={() => setDoneOpen((v) => !v)}
-          >
+        <div className={`reveal${doneOpen ? " open" : ""}`} style={{ marginTop: 4 }}>
+          <div className="reveal-head" onClick={() => setDoneOpen((v) => !v)}>
             <span className="caret">▸</span> Done{" "}
-            <span className="muted" style={{ fontWeight: 500 }}>
-              — {done.length}
-            </span>
+            <span className="muted" style={{ fontWeight: 500 }}>— {done.length}</span>
           </div>
           <div className="reveal-body">
             <div className="tasklist">
               {done.map((t) => (
-                <TaskRow key={t.id} t={t} onDone={handleDone} />
+                <TaskRow
+                  key={t.id}
+                  task={t}
+                  leadName={leadNameOf(t.leadId)}
+                  onToggle={toggleTask}
+                  onOpenLead={openLead}
+                />
               ))}
             </div>
           </div>
