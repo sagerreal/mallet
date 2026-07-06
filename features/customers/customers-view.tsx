@@ -6,9 +6,10 @@
 
 "use client";
 
-import { useState } from "react";
-import { useLeads, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
+import { useMemo, useState } from "react";
+import { useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import type { Estimate } from "@/lib/store/types";
 import { ACTIVE_STAGES, STALE_AGE } from "@/features/pipeline/pipeline-constants";
 import { filterLeads, sortLeads } from "./customers-utils";
 import { CustomersToolbar } from "./customers-toolbar";
@@ -17,13 +18,35 @@ import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS } from "./customers-column
 import { LeadRow } from "./lead-row";
 import { CompaniesView } from "./companies-view";
 
-const SORTABLE_COLS = new Set(["name", "age", "stage"]);
+const SORTABLE_COLS = new Set(["name", "age", "stage", "value"]);
+
+/** Quote total (subtotal of non-optional lines − discount% + tax%). */
+function estTotal(e: Estimate): number {
+  const sub = e.lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
+  const disc = sub * ((e.pricing?.disc ?? 0) / 100);
+  const taxed = (sub - disc) * ((e.pricing?.tax ?? 0) / 100);
+  return sub - disc + taxed;
+}
 
 export function CustomersView() {
   const leads = useLeads();
+  const estimates = useEstimates();
   const openModal = useOpenModal();
   const custSeg = useCustSeg();
   const setCustSeg = useSetCustSeg();
+
+  // $ on the table per customer: open (sent) quotes for active pipeline, else
+  // the won total once accepted, else nothing. Derived in the body (not a selector).
+  const valueByLead = useMemo(() => {
+    const m = new Map<number, number | null>();
+    for (const lead of leads) {
+      const es = estimates.filter((e) => e.leadId === lead.id);
+      const open = es.filter((e) => e.status === "sent").reduce((s, e) => s + estTotal(e), 0);
+      const won = es.filter((e) => e.status === "accepted").reduce((s, e) => s + estTotal(e), 0);
+      m.set(lead.id, open > 0 ? open : won > 0 ? won : null);
+    }
+    return m;
+  }, [leads, estimates]);
 
   const [q, setQ] = useState("");
   const [stageFilter, setStageFilter] = useState("");
@@ -36,7 +59,13 @@ export function CustomersView() {
 
   const all = leads.filter((l) => !l.archived);
   const filtered = filterLeads(all, q, stageFilter, sourceFilter);
-  const sorted = sortLeads(filtered, sortCol, sortDir);
+  const sorted =
+    sortCol === "value"
+      ? [...filtered].sort(
+          (a, b) =>
+            ((valueByLead.get(a.id) ?? -1) - (valueByLead.get(b.id) ?? -1)) * sortDir
+        )
+      : sortLeads(filtered, sortCol, sortDir);
 
   const staleCount = all.filter(
     (l) => ACTIVE_STAGES.includes(l.stage) && l.age >= STALE_AGE
@@ -158,6 +187,7 @@ export function CustomersView() {
                   key={lead.id}
                   lead={lead}
                   visibleCols={visible}
+                  value={valueByLead.get(lead.id) ?? null}
                   onOpen={(id) => openModal(MODAL.LEAD, { leadId: id })}
                 />
               ))

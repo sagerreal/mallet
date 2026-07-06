@@ -9,12 +9,17 @@
 import type { Lead } from "@/lib/store/types";
 import { StagePill, SrcPill } from "@/components/shared/stage-pill";
 
+function fmt$(n: number): string {
+  return "$" + Math.round(n).toLocaleString("en-US");
+}
+
 interface LeadCellProps {
   lead: Lead;
   col: string;
+  value: number | null;
 }
 
-function LeadCell({ lead, col }: LeadCellProps) {
+function LeadCell({ lead, col, value }: LeadCellProps) {
   switch (col) {
     case "name":
       return (
@@ -33,6 +38,12 @@ function LeadCell({ lead, col }: LeadCellProps) {
       return <SrcPill src={lead.source} />;
     case "stage":
       return <StagePill stage={lead.stage} />;
+    case "value":
+      return value != null ? (
+        <b className="fig">{fmt$(value)}</b>
+      ) : (
+        <span className="muted">—</span>
+      );
     case "latest":
       return <span className="muted">{lead.last ?? ""}</span>;
     case "age":
@@ -49,15 +60,16 @@ function LeadCell({ lead, col }: LeadCellProps) {
 interface LeadRowProps {
   lead: Lead;
   visibleCols: string[];
+  value: number | null;
   onOpen: (id: number) => void;
 }
 
-export function LeadRow({ lead, visibleCols, onOpen }: LeadRowProps) {
+export function LeadRow({ lead, visibleCols, value, onOpen }: LeadRowProps) {
   return (
     <tr className="clickable" onClick={() => onOpen(lead.id)}>
       {visibleCols.map((col) => (
         <td key={col}>
-          <LeadCell lead={lead} col={col} />
+          <LeadCell lead={lead} col={col} value={value} />
         </td>
       ))}
     </tr>
