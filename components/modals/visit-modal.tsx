@@ -1,9 +1,10 @@
 /**
  * components/modals/visit-modal.tsx
- * Functional "Book a visit" sheet (prototype openVisitSheet) — the real booking
- * flow off a lead: pick the type (Job vs Estimate visit), describe the work, set
- * day / crew / start / hours, and book it. Estimate visit → a scheduled evisit on
- * the lead; Job → a job with a scheduled visit. Then it opens the created record.
+ * "Book a visit" off a lead — mirrors the New-customer modal's book-a-visit flow
+ * (Job description → Job / Estimate-visit chips → Build the price [Job] → Service
+ * address), NOT a scheduling sheet. Creates an unscheduled Job (+ visit) or an
+ * unscheduled estimate visit on the lead; the crew, day & time are set later on
+ * the Schedule board — same as creating one from customer creation.
  */
 
 "use client";
@@ -16,35 +17,19 @@ import {
   useOpenModal,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import { TODAY_ISO } from "@/lib/prototype-sample";
-import type { Lead } from "@/lib/store/types";
-
-// ---- time + intent helpers (prototype hToTime / timeToH / qaPurposeGuess) ---
-
-function hToTime(h: number): string {
-  const hr = Math.floor(h);
-  const mn = Math.round((h - hr) * 60);
-  return `${String(hr).padStart(2, "0")}:${String(mn).padStart(2, "0")}`;
-}
-
-function timeToH(s: string): number {
-  const [hStr, mStr] = s.split(":");
-  const hr = Number(hStr) || 0;
-  const mn = Number(mStr) || 0;
-  return hr + mn / 60;
-}
+import type { Job, Lead } from "@/lib/store/types";
 
 /** Guess the visit type from the request wording (prototype qaPurposeGuess). */
-function guessPurpose(txt: string): "fix" | "look" {
+function guessPurpose(txt: string): "job" | "look" {
   const t = (txt || "").toLowerCase();
-  if (!t.trim()) return "fix";
+  if (!t.trim()) return "job";
   if (/looks like|maybe|not sure|might be|possibl|no idea|i think|\?|diagnos|take a look|come look|quote|estimate|bid|install|replace/.test(t)) {
     return "look";
   }
-  return "fix";
+  return "job";
 }
 
-type Purpose = "fix" | "look";
+type Purpose = "job" | "look";
 
 export function VisitModalContent() {
   const activeModal = useActiveModal();
@@ -52,25 +37,18 @@ export function VisitModalContent() {
   const openModal = useOpenModal();
 
   const leads = useAppStore((s) => s.leads);
-  const techs = useAppStore((s) => s.techs);
   const addEvisit = useAppStore((s) => s.addEvisit);
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
-  const placeVisit = useAppStore((s) => s.placeVisit);
   const updateLead = useAppStore((s) => s.updateLead);
 
   const leadId = activeModal?.params?.leadId as number | undefined;
   const lead: Lead | undefined = leads.find((l) => l.id === leadId);
 
-  const firstTechId = techs[0]?.id ?? 1;
   const initialPurpose = useMemo(() => guessPurpose(lead?.job ?? ""), [lead?.job]);
-
   const [purpose, setPurpose] = useState<Purpose>(initialPurpose);
   const [jobDesc, setJobDesc] = useState(lead?.job ?? "");
-  const [day, setDay] = useState<string>(TODAY_ISO);
-  const [techId, setTechId] = useState<number>(firstTechId);
-  const [start, setStart] = useState<number>(9);
-  const [dur, setDur] = useState<number>(initialPurpose === "look" ? 0.5 : 1.5);
+  const [addr, setAddr] = useState(lead?.address ?? "");
 
   if (!lead) return null;
 
@@ -81,40 +59,27 @@ export function VisitModalContent() {
     else close();
   }
 
-  function setType(p: Purpose) {
-    setPurpose(p);
-    // nudge the default duration to the visit kind (scope is quick, a job longer)
-    setDur(p === "look" ? 0.5 : 1.5);
+  /** Persist the edited job wording + address back onto the lead. */
+  function syncLead() {
+    if (!lead) return;
+    const patch: Partial<Lead> = {};
+    const d = jobDesc.trim();
+    if (d && d !== lead.job) patch.job = d;
+    const a = addr.trim();
+    if (a !== (lead.address ?? "")) patch.address = a;
+    if (Object.keys(patch).length) updateLead(lead.id, patch);
   }
 
-  function book() {
-    if (!lead) return;
-    const desc = jobDesc.trim() || lead.job || "Site visit";
-
-    if (purpose === "look") {
-      // Estimate visit — a scheduled evisit on the lead (scope first, quote after).
-      addEvisit(lead.id, {
-        date: day,
-        techId,
-        start,
-        dur,
-        status: "scheduled",
-        scopeNotes: desc,
-      });
-      updateLead(lead.id, { job: desc });
-      close();
-      openModal(MODAL.LEAD, { leadId: lead.id });
-      return;
-    }
-
-    // Job — a real job with a scheduled visit (diagnosed & priced on the visit).
+  /** Create the job (unscheduled) + an unplaced visit — same as the New-customer
+   *  "Create job" path; the crew & time get set on the Schedule board. */
+  function createJobForLead(): Job {
     const job = addJob({
-      leadId: lead.id,
+      leadId: lead!.id,
       svc: "service",
       origin: "manual",
-      title: desc,
-      addr: lead.address ?? "",
-      phone: lead.phone ?? "",
+      title: jobDesc.trim() || lead!.job || "Site visit",
+      addr: addr.trim() || lead!.address || "",
+      phone: lead!.phone ?? "",
       status: "unscheduled",
       archived: false,
       lines: [],
@@ -124,8 +89,35 @@ export function VisitModalContent() {
       acts: [],
       visits: [],
     });
-    const visit = addVisit(job.id, dur);
-    if (visit) placeVisit(job.id, visit.id, { techId, date: day, start });
+    addVisit(job.id); // unplaced — dragged onto the Schedule later
+    return job;
+  }
+
+  /** "✦ Build the price →" (Job only) — create the job, then hand off to the same
+   *  price builder the crew uses (mirrors New-customer handleBuildPrice). */
+  function buildPrice() {
+    syncLead();
+    const job = createJobForLead();
+    close();
+    openModal(MODAL.PRICE_BUILDER, { jobId: job.id, returnTo: MODAL.JOB });
+  }
+
+  function submit() {
+    syncLead();
+    if (purpose === "look") {
+      // Estimate visit — an unscheduled estimate visit on the lead (scope, then quote).
+      addEvisit(lead!.id, {
+        date: null,
+        techId: null,
+        start: null,
+        dur: 1,
+        status: "scheduled",
+        scopeNotes: jobDesc.trim(),
+      });
+      openModal(MODAL.LEAD, { leadId: lead!.id });
+      return;
+    }
+    const job = createJobForLead();
     close();
     openModal(MODAL.JOB, { jobId: job.id });
   }
@@ -133,77 +125,76 @@ export function VisitModalContent() {
   return (
     <div>
       <h2 style={{ marginBottom: 2 }}>Book a visit</h2>
-      <p className="muted" style={{ marginBottom: 12, fontSize: 12.5 }}>
+      <p className="muted" style={{ marginBottom: 14, fontSize: 12.5 }}>
         {lead.name}
-        {lead.job ? ` · ${lead.job}` : ""}
       </p>
 
-      {/* Type — Job (priced on the visit) vs Estimate visit (scope, then quote) */}
-      <div className="chips" style={{ marginBottom: 4 }}>
-        <button className={`chip${purpose === "fix" ? " sel" : ""}`} onClick={() => setType("fix")}>
-          Job
-        </button>
-        <button className={`chip${purpose === "look" ? " sel" : ""}`} onClick={() => setType("look")}>
-          Estimate visit
-        </button>
-      </div>
-      <p className="muted" style={{ fontSize: 11.5, marginBottom: 14 }}>
-        {purpose === "fix"
-          ? "Diagnosed & priced on the visit."
-          : "Scoped on site, then quoted — no job until they say yes."}
-      </p>
-
-      {/* What's the work */}
+      {/* Job description */}
       <div className="field">
-        <label>What&apos;s the work?</label>
+        <label>Job</label>
         <input
           type="text"
+          placeholder="water heater making noise"
           value={jobDesc}
-          placeholder="e.g. Water heater making noise"
           onChange={(e) => setJobDesc(e.target.value)}
         />
       </div>
 
-      {/* Day + Who goes */}
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: 10, display: "grid", marginTop: 4 }}>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Day</label>
-          <input type="date" value={day} min={TODAY_ISO} onChange={(e) => setDay(e.target.value)} />
-        </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Who goes</label>
-          <select value={techId} onChange={(e) => setTechId(Number(e.target.value))}>
-            {techs.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-                {t.sells ? " · sells" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Purpose — Job (priced on the visit) vs Estimate visit (scope, then quote) */}
+      <div className="chips" style={{ marginBottom: 4 }}>
+        <button
+          type="button"
+          className={`chip${purpose === "job" ? " sel" : ""}`}
+          onClick={() => setPurpose("job")}
+        >
+          Job
+        </button>
+        <button
+          type="button"
+          className={`chip${purpose === "look" ? " sel" : ""}`}
+          onClick={() => setPurpose("look")}
+        >
+          Estimate visit
+        </button>
       </div>
+      <p className="muted" style={{ fontSize: 11.5, marginBottom: 14 }}>
+        {purpose === "job"
+          ? "Diagnosed & priced on the visit."
+          : "Scoped on site, then quoted — no job until they say yes."}
+      </p>
 
-      {/* Start + Hours */}
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: 10, display: "grid", marginTop: 10 }}>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Start</label>
-          <input
-            type="time"
-            value={hToTime(start)}
-            step={900}
-            onChange={(e) => setStart(timeToH(e.target.value))}
-          />
+      {/* Price (Job only) — build it now with the crew's builder, or price later */}
+      {purpose === "job" && (
+        <div className="field">
+          <label>
+            Price{" "}
+            <span className="muted" style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>
+              (optional)
+            </span>
+          </label>
+          <button
+            type="button"
+            className="btn"
+            style={{ width: "100%", justifyContent: "center" }}
+            onClick={buildPrice}
+          >
+            ✦ Build the price →
+          </button>
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+            Same builder your crew uses — or price later.
+          </div>
         </div>
-        <div className="field" style={{ margin: 0 }}>
-          <label>Hours</label>
-          <input
-            type="number"
-            value={dur}
-            min={0.5}
-            step={0.5}
-            onChange={(e) => setDur(Math.max(0.5, Number(e.target.value) || 0.5))}
-          />
-        </div>
+      )}
+
+      {/* Service address */}
+      <div className="field">
+        <label>Service address</label>
+        <input
+          type="text"
+          placeholder="leave blank and we'll text for it"
+          value={addr}
+          onChange={(e) => setAddr(e.target.value)}
+        />
       </div>
 
       {/* Footer */}
@@ -211,8 +202,8 @@ export function VisitModalContent() {
         <button className="btn ghost" onClick={cancel}>
           Cancel
         </button>
-        <button className="btn primary" onClick={book}>
-          Book the visit →
+        <button className="btn primary" onClick={submit}>
+          {purpose === "look" ? "Book the estimate visit →" : "Create the job →"}
         </button>
       </div>
     </div>
