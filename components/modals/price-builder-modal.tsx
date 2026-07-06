@@ -32,7 +32,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, JobLine } from "@/lib/store/types";
 import type { PbItem, LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
 import {
@@ -54,6 +55,7 @@ import {
 export function PriceBuilderModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
+  const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const updateJob = useAppStore((s) => s.updateJob);
@@ -126,19 +128,26 @@ export function PriceBuilderModalContent() {
   // Commit the built lines straight to the job — no signature, no on-site
   // approval (the office set the price). Map to JobLine[] and drop zero lines.
 
+  // Close back to the job it came from (prototype tqClose re-opens openJob) —
+  // so ✕ / Back land on the job, never a dead-end blank list.
+  function returnToJob() {
+    if (job) openModal(MODAL.JOB, { jobId: job.id });
+    else close();
+  }
+
   function savePrice() {
     if (!job) return;
     const jobLines: JobLine[] = lines
       .map((l) => ({ d: l.d || "Line item", q: 1, r: lineAmt(l), c: l.c ?? 0 }))
       .filter((l) => l.r > 0);
     updateJob(job.id, { lines: jobLines });
-    close();
+    returnToJob();
   }
 
   return (
     <div>
       {/* Header — eyebrow + title (office single-tier: "Price the job") */}
-      <button className="x" onClick={close}>
+      <button className="x" onClick={returnToJob}>
         ✕
       </button>
       <div
@@ -211,8 +220,18 @@ export function PriceBuilderModalContent() {
         </div>
       )}
 
-      {/* Footer — office single-tier save (prototype tqSavePrice) */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+      {/* Footer — Back to the job + office single-tier save (prototype tqSavePrice) */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: 18,
+        }}
+      >
+        <button className="btn ghost" onClick={returnToJob}>
+          ← Back
+        </button>
         <button
           className="btn primary"
           onClick={savePrice}

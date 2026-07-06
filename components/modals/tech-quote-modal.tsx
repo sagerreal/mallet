@@ -20,7 +20,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import type { JobLine } from "@/lib/store/types";
 import type { PbItem, LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
 import {
@@ -219,6 +220,7 @@ function Eyebrow({ custName, onClose }: EyebrowProps) {
 export function TechQuoteModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
+  const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const updateJob = useAppStore((s) => s.updateJob);
@@ -354,13 +356,19 @@ export function TechQuoteModalContent() {
 
   const chosenTier: Tier = chosen ?? "better";
 
+  // Close back to the tech job view it was opened from (prototype tqClose → openJob).
+  function returnToJob() {
+    if (job) openModal(MODAL.TECH_JOB, { jobId: job.id });
+    else close();
+  }
+
   function sign() {
     if (!job) return;
     const jobLines: JobLine[] = tiers[chosenTier]
       .map((l) => ({ d: l.d || "Repair", q: 1, r: lineAmt(l) }))
       .filter((l) => l.r > 0);
     updateJob(job.id, { lines: jobLines, approvedOnSite: true });
-    close();
+    returnToJob();
   }
 
   const anyPriced = tierTotal("better") > 0 || tierTotal("good") > 0 || tierTotal("best") > 0;
@@ -371,7 +379,7 @@ export function TechQuoteModalContent() {
     const total = tierTotal(chosenTier);
     return (
       <div>
-        <Eyebrow custName={custName} onClose={close} />
+        <Eyebrow custName={custName} onClose={returnToJob} />
         <h2>Approve &amp; sign</h2>
 
         <div className="card" style={{ background: "var(--manila)" }}>
@@ -438,7 +446,7 @@ export function TechQuoteModalContent() {
     const firstName = custName.split(" ")[0] ?? custName;
     return (
       <div>
-        <Eyebrow custName={custName} onClose={close} />
+        <Eyebrow custName={custName} onClose={returnToJob} />
         <h2>Present — on glass</h2>
         <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
           Hand {firstName} the tablet — they pick:
@@ -490,7 +498,7 @@ export function TechQuoteModalContent() {
 
   return (
     <div>
-      <Eyebrow custName={custName} onClose={close} />
+      <Eyebrow custName={custName} onClose={returnToJob} />
       <h2 style={{ marginBottom: 14 }}>Build the price</h2>
 
       {/* tier chips (only better + opted-in tiers; each shows label · $total) */}

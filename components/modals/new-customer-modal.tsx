@@ -235,76 +235,42 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           </div>
         )}
 
-        {/* 5. Lead source — chip-style dropdown */}
+        {/* 5. Lead source — full-width field-style dropdown (prototype qa-srcbtn) */}
         <div className="field">
           <label>Lead source</label>
-          <div style={{ position: "relative" }}>
-            <div className="chips">
+          <button
+            type="button"
+            className={`qa-srcbtn${sourceOpen ? " open" : ""}`}
+            onClick={() => setSourceOpen((o) => !o)}
+          >
+            <span className={source ? "" : "ph"}>{source || "Select a source"}</span>
+            <span className="qa-srccaret">{sourceOpen ? "▲" : "▼"}</span>
+          </button>
+          {sourceOpen && (
+            <div className="qa-srclist">
+              {SOURCES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={`qa-srcopt${source === s ? " on" : ""}`}
+                  onClick={() => selectSource(s)}
+                >
+                  <span>{s}</span>
+                  {source === s ? <span className="qa-srcok">✓</span> : null}
+                </button>
+              ))}
               <button
                 type="button"
-                className={`chip${source ? " sel" : ""}`}
-                onClick={() => setSourceOpen((o) => !o)}
-              >
-                {source || "Select a source"} &#9660;
-              </button>
-            </div>
-            {sourceOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  left: 0,
-                  background: "var(--card)",
-                  border: "1.5px solid var(--line)",
-                  borderRadius: 10,
-                  boxShadow: "var(--shadow-sm)",
-                  zIndex: 10,
-                  minWidth: 200,
-                  padding: "6px 0",
+                className="qa-srcopt add"
+                onClick={() => {
+                  const custom = prompt("New source name:");
+                  if (custom?.trim()) selectSource(custom.trim());
                 }}
               >
-                {SOURCES.map((s) => (
-                  <div
-                    key={s}
-                    style={{
-                      padding: "9px 16px",
-                      fontSize: 13.5,
-                      cursor: "pointer",
-                      fontWeight: source === s ? 700 : 400,
-                      background: source === s ? "var(--green-100)" : "transparent",
-                    }}
-                    onClick={() => selectSource(s)}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.background =
-                        source === s ? "var(--green-100)" : "var(--manila-2)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLDivElement).style.background =
-                        source === s ? "var(--green-100)" : "transparent";
-                    }}
-                  >
-                    {s}
-                  </div>
-                ))}
-                <div
-                  style={{
-                    padding: "9px 16px",
-                    fontSize: 13,
-                    cursor: "pointer",
-                    color: "var(--ink-3)",
-                    borderTop: "1px solid var(--line-2)",
-                    marginTop: 4,
-                  }}
-                  onClick={() => {
-                    const custom = prompt("New source name:");
-                    if (custom?.trim()) selectSource(custom.trim());
-                  }}
-                >
-                  + Add a new source
-                </div>
-              </div>
-            )}
-          </div>
+                + Add a new source…
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 6. Book a visit reveal */}

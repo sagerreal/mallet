@@ -6,8 +6,8 @@
 
 "use client";
 
-import { useActiveModal, useCloseModal } from "@/lib/store/app-store";
-import { MODAL } from "@/lib/store/modal-ids";
+import { useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { MODAL, type ModalId } from "@/lib/store/modal-ids";
 import { LeadModal } from "./lead-modal/lead-modal";
 import { NewCustomerModal } from "./new-customer-modal";
 import { SweepModalContent } from "./sweep-modal";
@@ -37,7 +37,16 @@ import {
 export function ModalHost() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
+  const openModal = useOpenModal();
   const id = activeModal?.id;
+
+  // The price / tech-quote builders return to the job they were opened from on
+  // ✕ / backdrop / Escape (prototype tqClose re-opens the job), never a dead end.
+  const backToJob = (jobModalId: ModalId) => () => {
+    const jobId = activeModal?.params?.jobId;
+    if (typeof jobId === "number") openModal(jobModalId, { jobId });
+    else close();
+  };
 
   return (
     <>
@@ -94,11 +103,11 @@ export function ModalHost() {
       </Modal>
 
       {/* 560px — the prototype's tq sheet width; keeps the add-a-line tiles a 2×2 grid */}
-      <Modal open={id === MODAL.PRICE_BUILDER} onClose={close} maxWidth={560}>
+      <Modal open={id === MODAL.PRICE_BUILDER} onClose={backToJob(MODAL.JOB)} maxWidth={560}>
         <PriceBuilderModalContent />
       </Modal>
 
-      <Modal open={id === MODAL.TECH_QUOTE} onClose={close} maxWidth={560}>
+      <Modal open={id === MODAL.TECH_QUOTE} onClose={backToJob(MODAL.TECH_JOB)} maxWidth={560}>
         <TechQuoteModalContent />
       </Modal>
 
