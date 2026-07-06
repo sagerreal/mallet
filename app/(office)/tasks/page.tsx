@@ -146,45 +146,32 @@ export default function TasksPage() {
         Everything you owe a customer — what&apos;s late, what&apos;s today, what&apos;s coming.
       </p>
 
-      {/* Quick add — type it, hit Enter (or set a due date first) */}
-      <div className="card" style={{ padding: "10px 12px", marginBottom: 18 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
-            type="text"
-            placeholder="Add a task…"
-            value={newText}
-            onChange={(e) => setNewText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleAdd();
-            }}
-            style={{
-              flex: 1,
-              border: "none",
-              background: "transparent",
-              padding: "8px 6px",
-              fontFamily: "inherit",
-              fontSize: 14,
-              color: "var(--ink)",
-              outline: "none",
-            }}
-          />
-          <input
-            type="date"
-            className="taskmeta-in"
-            title="Due date"
-            value={newDue}
-            min={TODAY_ISO}
-            onChange={(e) => setNewDue(e.target.value)}
-          />
-          <button
-            className="btn sm primary"
-            onClick={handleAdd}
-            disabled={!newText.trim()}
-            style={newText.trim() ? undefined : { opacity: 0.45 }}
-          >
-            Add
-          </button>
-        </div>
+      {/* Quick add — one cohesive field: type it, hit Enter (due date optional) */}
+      <div className="taskadd" style={{ marginBottom: 18 }}>
+        <input
+          type="text"
+          placeholder="Add a task…"
+          value={newText}
+          onChange={(e) => setNewText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleAdd();
+          }}
+        />
+        <input
+          type="date"
+          title="Due date"
+          value={newDue}
+          min={TODAY_ISO}
+          onChange={(e) => setNewDue(e.target.value)}
+        />
+        <button
+          className="btn sm primary"
+          onClick={handleAdd}
+          disabled={!newText.trim()}
+          style={newText.trim() ? undefined : { opacity: 0.4 }}
+        >
+          Add
+        </button>
       </div>
 
       {/* The list, grouped by urgency */}

@@ -197,6 +197,12 @@
   .tasklist{display:flex;flex-direction:column}
   .tsec{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:800;padding:15px 2px 5px}
   .tsec:first-child{padding-top:9px}
+  /* quick-add: one cohesive field row (search-bar style), not floating parts */
+  .taskadd{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:12px;padding:6px 8px 6px 15px;background:var(--card);transition:border-color .12s,box-shadow .12s}
+  .taskadd:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
+  .taskadd input[type=text]{flex:1;min-width:0;border:none;background:transparent;font-family:inherit;font-size:14px;color:var(--ink);outline:none;padding:8px 0}
+  .taskadd input[type=text]::placeholder{color:var(--ink-3)}
+  .taskadd input[type=date]{border:none;background:transparent;font-family:inherit;font-size:12.5px;color:var(--ink-3);outline:none;padding:6px 4px}
   .trow{display:flex;align-items:center;gap:13px;padding:11px 10px;margin:0 -10px;border-radius:10px;border-top:1px solid var(--line-2)}
   .tsec + .trow{border-top:none}
   .trow:hover .ttitle{color:var(--ink)}
