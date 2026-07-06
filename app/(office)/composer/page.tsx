@@ -15,7 +15,6 @@
  */
 
 import { useState } from "react";
-import type { CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   SAMPLE_ESTIMATES,
@@ -842,17 +841,6 @@ function BuilderMode({
 
   const priceSum = pricingSummary(state.pricing);
 
-  // Numbered small-caps eyebrow that teaches the send flow (2/3/4 live here;
-  // "1 · Who it's for" renders in the parent above CustomerSelector).
-  const eyebrowStyle: CSSProperties = {
-    fontWeight: 700,
-    fontSize: 11,
-    letterSpacing: ".04em",
-    textTransform: "uppercase",
-    color: "var(--muted)",
-    margin: "18px 0 8px",
-  };
-
   return (
     <>
       {state.gbbEdit && (
@@ -864,11 +852,9 @@ function BuilderMode({
           </span>
         </div>
       )}
-      {/* 2 · What's on it */}
-      <div style={eyebrowStyle}>2 · What&apos;s on it</div>
 
-      {/* What's on the quote */}
-      <div className="card">
+      {/* Line items */}
+      <div className="card" style={{ marginTop: 18 }}>
         <div
           style={{
             display: "flex",
@@ -879,7 +865,7 @@ function BuilderMode({
           }}
         >
           <h3 style={{ margin: 0 }}>
-            What&apos;s on the quote
+            Line items
             {state.aiDrafted && (
               <span
                 className="pill"
@@ -999,10 +985,9 @@ function BuilderMode({
 
         {/* Empty state — the one place every entry point appears */}
         {!showTable && (
-          <div style={{ padding: "6px 2px 2px" }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Start this quote</div>
-            <p className="muted" style={{ fontSize: 12, margin: "3px 0 12px" }}>
-              Pick how to build it — you can edit every line after.
+          <div style={{ padding: "10px 2px 2px" }}>
+            <p className="muted" style={{ fontSize: 12.5, margin: "0 0 12px" }}>
+              Start with AI, a template, or by hand — you can edit every line after.
             </p>
             <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
               <button
@@ -1238,9 +1223,6 @@ function BuilderMode({
         )}
       </div>
 
-      {/* 3 · How it's priced */}
-      <div style={eyebrowStyle}>3 · How it&apos;s priced</div>
-
       {/* Pricing options reveal */}
       <div className={`reveal${state.priceOpen ? " open" : ""}`}>
         <div
@@ -1310,8 +1292,6 @@ function BuilderMode({
         </div>
       </div>
 
-      {/* 4 · After you send */}
-      <div style={eyebrowStyle}>4 · After you send</div>
 
       {/* Delivery card (only when a lead is selected) */}
       {lead && (
@@ -1575,21 +1555,6 @@ export default function ComposerPage() {
   return (
     <div>
       <h1>New quote</h1>
-
-      {cs.mode === "builder" && (
-        <div
-          style={{
-            fontWeight: 700,
-            fontSize: 11,
-            letterSpacing: ".04em",
-            textTransform: "uppercase",
-            color: "var(--muted)",
-            margin: "18px 0 8px",
-          }}
-        >
-          1 · Who it&apos;s for
-        </div>
-      )}
 
       <CustomerSelector
         state={cs}
