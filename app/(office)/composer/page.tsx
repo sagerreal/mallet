@@ -38,8 +38,8 @@ function TileIcon({ children }: { children: React.ReactNode }) {
 const ICO_AI = (
   <TileIcon><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z" /><path d="M19 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" /></TileIcon>
 );
-const ICO_TMPL = (
-  <TileIcon><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></TileIcon>
+const ICO_GBB = (
+  <TileIcon><path d="M12 2 2 7l10 5 10-5-10-5Z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></TileIcon>
 );
 const ICO_PEN = (
   <TileIcon><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></TileIcon>
@@ -908,12 +908,6 @@ function BuilderMode({
               >
                 ✦ Redraft with AI
               </button>
-              <button
-                className={`btn sm ghost${state.tmplOpen ? " primary" : ""}`}
-                onClick={() => onUpdate({ tmplOpen: !state.tmplOpen, aiOpen: false })}
-              >
-                From a template
-              </button>
             </div>
           )}
         </div>
@@ -971,37 +965,6 @@ function BuilderMode({
           </div>
         )}
 
-        {/* Template panel (in-flow, inside the card) */}
-        {state.tmplOpen && (
-          <div className="card" style={{ padding: 14, margin: "14px 0" }}>
-            <div
-              className="tmpl-grid"
-              style={{ marginTop: 0 }}
-            >
-              {TEMPLATES.map((t) => (
-                <button
-                  key={t.k}
-                  className="tmpl"
-                  onClick={() =>
-                    onUpdate({
-                      lines: t.lines.map((l) => ({ ...l })),
-                      tmplOpen: false,
-                    })
-                  }
-                >
-                  {t.t}
-                  <small>{t.sub}</small>
-                </button>
-              ))}
-            </div>
-            {!isEmpty && (
-              <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
-                Replaces current lines
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Empty state — pick how to start (big, inviting soft cards) */}
         {!showTable && (
           <div style={{ padding: "12px 2px 2px" }}>
@@ -1021,11 +984,11 @@ function BuilderMode({
               <button
                 type="button"
                 className="addtile"
-                onClick={() => onUpdate({ tmplOpen: !state.tmplOpen, aiOpen: false })}
+                onClick={() => onUpdate({ mode: "gbb-prompt", gbb: null })}
               >
-                <div className="addtile-ico">{ICO_TMPL}</div>
-                <div className="addtile-t">From a template</div>
-                <div className="addtile-s">Reuse a job you quote often</div>
+                <div className="addtile-ico">{ICO_GBB}</div>
+                <div className="addtile-t">Good, Better &amp; Best</div>
+                <div className="addtile-s">Three priced options they pick from</div>
               </button>
               <button
                 type="button"
@@ -1039,21 +1002,6 @@ function BuilderMode({
                 <div className="addtile-t">Add lines by hand</div>
                 <div className="addtile-s">Type each item yourself</div>
               </button>
-            </div>
-            <div
-              style={{
-                borderTop: "1px solid var(--line)",
-                margin: "18px 0 10px",
-              }}
-            />
-            <div className="muted" style={{ fontSize: 12 }}>
-              Selling tiers?{" "}
-              <span
-                className="linklike"
-                onClick={() => onUpdate({ mode: "gbb-prompt", gbb: null })}
-              >
-                build three priced options instead
-              </span>
             </div>
           </div>
         )}
