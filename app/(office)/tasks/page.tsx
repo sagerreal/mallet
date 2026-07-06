@@ -140,7 +140,7 @@ export default function TasksPage() {
   const done = tasks.filter((t) => t.done);
 
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div>
       <h1 style={{ marginBottom: 4 }}>Tasks</h1>
       <p className="muted" style={{ fontSize: 13, margin: "0 0 18px" }}>
         Everything you owe a customer — what&apos;s late, what&apos;s today, what&apos;s coming.
