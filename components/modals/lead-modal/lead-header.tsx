@@ -33,6 +33,10 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
   const stageCls = STAGE_PILL_CLS[lead.stage] ?? "ink";
   const initials = leadInitials(lead.name);
 
+  // Stage-aware primary action: a brand-new lead you haven't reached → the first
+  // move is to Call; once you're past that, quoting is the money action.
+  const callIsPrimary = lead.stage === "New customer";
+
   return (
     <div style={{ marginBottom: 18 }}>
       {/* Top row: avatar + name input */}
@@ -86,10 +90,58 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         />
       </div>
 
-      {/* Action buttons — no emojis, exactly as prototype */}
+      {/* Service address — surfaced up top (field service lives or dies on the
+          address); editable inline, not buried under "More details". */}
+      <label
+        className="lead-addr-row"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 14,
+          border: "1.5px solid var(--line)",
+          borderRadius: 10,
+          padding: "8px 11px",
+        }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          fill="none"
+          stroke="var(--ink-3)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ flexShrink: 0 }}
+          aria-hidden="true"
+        >
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+          <circle cx="12" cy="10" r="3" />
+        </svg>
+        <input
+          type="text"
+          defaultValue={lead.address ?? ""}
+          placeholder="Add service address"
+          onBlur={(e) => updateLead(lead.id, { address: e.target.value })}
+          aria-label="Service address"
+          style={{
+            flex: 1,
+            border: "none",
+            background: "transparent",
+            fontFamily: "inherit",
+            fontSize: 13.5,
+            color: "var(--ink)",
+            outline: "none",
+            padding: 0,
+          }}
+        />
+      </label>
+
+      {/* Action buttons — primary is stage-aware (Call for a new lead, else New quote). */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
-          className="btn sm"
+          className={`btn sm${callIsPrimary ? " primary" : ""}`}
           onClick={() => openModal(MODAL.CALL, { leadId: lead.id })}
         >
           Call
@@ -109,7 +161,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           </button>
         )}
         <button
-          className="btn sm primary"
+          className={`btn sm${callIsPrimary ? "" : " primary"}`}
           onClick={() => openModal(MODAL.COMPOSER, { leadId: lead.id })}
         >
           New quote

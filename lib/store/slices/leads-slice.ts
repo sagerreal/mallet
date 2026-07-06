@@ -47,6 +47,7 @@ export interface LeadsSlice {
   removeEvisit: (leadId: number, visitId: number) => void;
 
   taskDone: (id: number) => void;
+  toggleTask: (id: number) => void;
   addTask: (draft: Omit<Task, "id" | "done">) => void;
 }
 
@@ -135,6 +136,12 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   taskDone: (id) =>
     set((s) => ({
       tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: true } : t)),
+    })),
+
+  // Flip a task's done state — the lead-modal Tasks checkboxes (mark done / reopen).
+  toggleTask: (id) =>
+    set((s) => ({
+      tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),
     })),
 
   addTask: (draft) => {

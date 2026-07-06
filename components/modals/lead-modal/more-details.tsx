@@ -68,35 +68,18 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
           aria-expanded={open}
         >
           <span className="caret">&#9658;</span>
-          More details — email, address, business
+          More details — email, business
         </div>
         <div className="reveal-body">
-          {/* 2-col grid: Email + Service address */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "0 14px",
-            }}
-          >
-            <div className="field">
-              <label>Email</label>
-              <input
-                type="email"
-                placeholder="customer@email.com"
-                defaultValue={lead.email ?? ""}
-                onBlur={(e) => updateLead(lead.id, { email: e.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label>Service address</label>
-              <input
-                type="text"
-                placeholder="123 Main St, City"
-                defaultValue={lead.address ?? ""}
-                onBlur={(e) => updateLead(lead.id, { address: e.target.value })}
-              />
-            </div>
+          {/* Email (service address now lives up top in the header) */}
+          <div className="field">
+            <label>Email</label>
+            <input
+              type="email"
+              placeholder="customer@email.com"
+              defaultValue={lead.email ?? ""}
+              onBlur={(e) => updateLead(lead.id, { email: e.target.value })}
+            />
           </div>
 
           {/* Business / company */}
@@ -168,21 +151,25 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
         </div>
       </div>
 
-      {/* Footer */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid var(--line-2)" }}>
+      {/* Footer — both "get rid of it" paths grouped on the LEFT, away from the
+          bottom-right corner where the eye expects a confirm/primary action.
+          Clean up (Lost/Archive, reversible) is the button; Delete (permanent)
+          is a de-emphasized red link beside it. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 8, borderTop: "1px solid var(--line-2)" }}>
         <button
           className="btn ghost sm"
           onClick={() => openModal(MODAL.CLEAN_UP, { leadId: lead.id })}
         >
           Clean up — mark Lost or Archive
         </button>
-        <button
-          className="btn sm"
-          style={{ color: "var(--red)", borderColor: "var(--red)" }}
+        <span
+          className="linklike"
+          role="button"
+          style={{ color: "var(--red)", fontSize: 12.5, cursor: "pointer" }}
           onClick={handleDelete}
         >
           Delete
-        </button>
+        </span>
       </div>
     </>
   );

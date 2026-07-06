@@ -11,7 +11,7 @@ import { Modal } from "../modal";
 import { LeadHeader } from "./lead-header";
 import { LeadNotes } from "./lead-notes";
 import { VisitCard } from "./visit-card";
-import { NextStepCard } from "./next-step-card";
+import { TasksCard } from "./tasks-card";
 import { MoreDetails } from "./more-details";
 import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { useOpenModal } from "@/lib/store/app-store";
@@ -126,8 +126,8 @@ export function LeadModal({ open }: { open: boolean }) {
           {/* 5. Notes timeline (request note from l.job + acts + composer) */}
           <LeadNotes lead={lead} />
 
-          {/* 6. Next step card */}
-          <NextStepCard lead={lead} />
+          {/* 6. Tasks — add & track what needs to happen */}
+          <TasksCard lead={lead} />
 
           {/* 8. More details reveal + 9. Footer */}
           <MoreDetails lead={lead} />
