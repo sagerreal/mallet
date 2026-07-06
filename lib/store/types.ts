@@ -79,6 +79,9 @@ export interface Company {
   sites: unknown[];
   phone: string;
   email: string;
+  website?: string;
+  address?: string;
+  notes?: string;
 }
 
 // ---- Estimate / Quote ------------------------------------------------------

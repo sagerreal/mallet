@@ -16,6 +16,7 @@ import {
 
 // New invited users continue past the sample ids.
 let _nextUserId = 1000;
+let _nextCompanyId = 500;
 
 export interface UserDraft {
   name: string;
@@ -33,6 +34,9 @@ export interface DataSlice {
   updateUserRole: (id: number, role: string) => void;
   removeUser: (id: number) => void;
   inviteUser: (draft: UserDraft) => void;
+
+  addCompany: (name: string) => Company;
+  updateCompany: (id: number, patch: Partial<Company>) => void;
 }
 
 export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set) => ({
@@ -63,4 +67,21 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set)
     };
     set((s) => ({ users: [...s.users, newUser] }));
   },
+
+  addCompany: (name) => {
+    const company: Company = {
+      id: ++_nextCompanyId,
+      name: name.trim() || "New company",
+      sites: [],
+      phone: "",
+      email: "",
+    };
+    set((s) => ({ companies: [company, ...s.companies] }));
+    return company;
+  },
+
+  updateCompany: (id, patch) =>
+    set((s) => ({
+      companies: s.companies.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    })),
 });

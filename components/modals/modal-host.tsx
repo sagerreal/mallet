@@ -30,6 +30,7 @@ import { CloseOutModalContent } from "./close-out-modal";
 import { Modal } from "./modal";
 import { VisitModalContent } from "./visit-modal";
 import { CleanUpModalContent } from "./placeholder-modals";
+import { CompanyViewModalContent } from "./company-view-modal";
 
 export function ModalHost() {
   const activeModal = useActiveModal();
@@ -137,6 +138,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.CLOSE_OUT} onClose={close} wide>
         <CloseOutModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.COMPANY} onClose={close} wide>
+        <CompanyViewModalContent />
       </Modal>
     </>
   );

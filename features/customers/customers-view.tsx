@@ -15,6 +15,7 @@ import { CustomersToolbar } from "./customers-toolbar";
 import { CustomersFilters } from "./customers-filters";
 import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS } from "./customers-columns";
 import { LeadRow } from "./lead-row";
+import { CompaniesView } from "./companies-view";
 
 const SORTABLE_COLS = new Set(["name", "age", "stage"]);
 
@@ -64,6 +65,13 @@ export function CustomersView() {
     setSourceFilter("");
   }
 
+  // Companies segment renders its own list; the People segment falls through to
+  // the leads toolbar + table below. (Placed after every hook so the early return
+  // never changes hook order.)
+  if (custSeg === "biz") {
+    return <CompaniesView />;
+  }
+
   return (
     <div>
       {/* Header */}
@@ -85,18 +93,13 @@ export function CustomersView() {
       </div>
       <div className="sub">Everyone you might do work for.</div>
 
-      {/* Segment tabs */}
+      {/* Segment tabs — this branch only renders for the People segment, so the
+          People tab is always active and Companies is always inactive here. */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, marginTop: 12 }}>
-        <button
-          className={`btn sm${custSeg === "people" ? " primary" : " ghost"}`}
-          onClick={() => setCustSeg("people")}
-        >
+        <button className="btn sm primary" onClick={() => setCustSeg("people")}>
           People
         </button>
-        <button
-          className={`btn sm${custSeg === "biz" ? " primary" : " ghost"}`}
-          onClick={() => setCustSeg("biz")}
-        >
+        <button className="btn sm ghost" onClick={() => setCustSeg("biz")}>
           Companies
         </button>
       </div>

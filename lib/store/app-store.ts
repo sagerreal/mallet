@@ -47,6 +47,7 @@ export const useActiveModal = () => useAppStore((s) => s.activeModal);
 export const useOpenModal = () => useAppStore((s) => s.openModal);
 export const useCloseModal = () => useAppStore((s) => s.closeModal);
 export const useLeads = () => useAppStore((s) => s.leads);
+export const useCompanies = () => useAppStore((s) => s.companies);
 export const useEstimates = () => useAppStore((s) => s.estimates);
 export const useTasks = () => useAppStore((s) => s.tasks);
 export const useCustSeg = () => useAppStore((s) => s.custSeg);
