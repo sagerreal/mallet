@@ -29,7 +29,11 @@ interface SentEntry {
 }
 
 function clockNow(): string {
-  return new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  // Match the ledger's act-timestamp format exactly ("8:47pm") — one voice.
+  return new Date()
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    .toLowerCase()
+    .replace(" ", "");
 }
 
 // ---- one draft card ----------------------------------------------------------
@@ -254,31 +258,35 @@ export function OkQueue({ items, receipts }: { items: OkItem[]; receipts: Receip
           {receipts.map((r) => (
             <div key={r.key} className="ledgerrow">
               <b className="fig" style={{ whiteSpace: "nowrap" }}>{r.when}</b>
-              <span style={{ flex: 1, minWidth: 0 }}>{r.text}</span>
-              <button
-                type="button"
-                className="linklike"
-                style={{ fontSize: 12, whiteSpace: "nowrap" }}
-                onClick={() => openReceipt(r)}
-              >
-                {r.openLabel} ›
-              </button>
+              <span style={{ minWidth: 0 }}>
+                {r.text}
+                <span className="muted"> · </span>
+                <button
+                  type="button"
+                  className="linklike"
+                  style={{ fontSize: 12, whiteSpace: "nowrap" }}
+                  onClick={() => openReceipt(r)}
+                >
+                  {r.openLabel} ›
+                </button>
+              </span>
             </div>
           ))}
           {sent.map((e) => (
             <div key={e.key} className="ledgerrow">
               <b className="fig" style={{ whiteSpace: "nowrap" }}>{e.when}</b>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                ✓ sent to {e.leadFirst} — it&apos;s in the thread
+              <span style={{ minWidth: 0 }}>
+                {`✓ sent to ${e.leadFirst} — it's in the thread`}
+                <span className="muted"> · </span>
+                <button
+                  type="button"
+                  className="linklike"
+                  style={{ fontSize: 12, whiteSpace: "nowrap" }}
+                  onClick={() => handleUndo(e)}
+                >
+                  Undo · {Math.max(0, Math.ceil((e.expiresAt - Date.now()) / 1000))}s
+                </button>
               </span>
-              <button
-                type="button"
-                className="linklike"
-                style={{ fontSize: 12, whiteSpace: "nowrap" }}
-                onClick={() => handleUndo(e)}
-              >
-                Undo · {Math.max(0, Math.ceil((e.expiresAt - Date.now()) / 1000))}s
-              </button>
             </div>
           ))}
         </div>

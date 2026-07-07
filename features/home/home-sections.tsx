@@ -42,7 +42,9 @@ export function TodayStrip({ stops, booksSum, toSchedule, openSlot, money }: Tod
             {booksSum > 0 && (
               <span className="muted">
                 {" — "}
-                <b className="fig" style={{ color: "var(--ink)" }}>{fmt$(booksSum)}</b> on the books
+                <span style={{ whiteSpace: "nowrap" }}>
+                  <b className="fig" style={{ color: "var(--ink)" }}>{fmt$(booksSum)}</b> on the books
+                </span>
               </span>
             )}
           </>
