@@ -17,6 +17,17 @@ import { draftFor, softDraftFor } from "./drafts";
 
 const UNDO_MS = 30_000;
 
+/** Visual identity per card kind — money is amber, comms are blue, fresh is green. */
+const KIND_META: Record<
+  OkItem["kind"],
+  { chip: string; accent: string; bg: string; fg: string }
+> = {
+  "quote-viewed": { chip: "Quote follow-up", accent: "var(--amber)", bg: "var(--amber-bg)", fg: "var(--amber)" },
+  "invoice-overdue": { chip: "Overdue invoice", accent: "var(--red)", bg: "var(--red-bg)", fg: "var(--red)" },
+  reply: { chip: "Reply waiting", accent: "var(--blue)", bg: "var(--blue-bg)", fg: "var(--blue)" },
+  "new-lead": { chip: "New lead", accent: "var(--green-700)", bg: "var(--green-100)", fg: "var(--green-900)" },
+};
+
 interface SentEntry {
   item: OkItem;
   noteId: string;
@@ -50,12 +61,20 @@ function OkCard({
     }
   }
 
+  const meta = KIND_META[item.kind];
+
   return (
-    <div className="card" style={{ padding: "14px 16px", marginBottom: 10 }}>
+    <div
+      className="card"
+      style={{ padding: "14px 16px", marginBottom: 10, borderLeft: `3px solid ${meta.accent}` }}
+    >
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <b style={{ fontSize: 14 }}>{item.lead.name}</b>
         <span className="muted" style={{ fontSize: 12.5, flex: 1, minWidth: 0 }}>
           {item.situation}
+        </span>
+        <span className="pill" style={{ background: meta.bg, color: meta.fg, fontSize: 10.5 }}>
+          {meta.chip}
         </span>
         {item.value > 0 && <b className="fig">{fmt$(item.value)}</b>}
         <button
@@ -93,15 +112,16 @@ function OkCard({
         <div
           style={{
             margin: "10px 0 0",
-            background: "var(--paper)",
-            border: "1px solid var(--line)",
+            background: "var(--manila)",
+            border: "1px solid var(--manila-line)",
             borderRadius: 10,
             padding: "9px 12px",
             fontSize: 13,
             lineHeight: 1.5,
-            color: "var(--ink-2)",
+            color: "var(--manila-ink)",
           }}
         >
+          <span aria-hidden="true" style={{ opacity: 0.55, marginRight: 6 }}>✦</span>
           {text}
         </div>
       )}
@@ -216,20 +236,38 @@ export function OkQueue({ items }: { items: OkItem[] }) {
 
   if (items.length === 0 && sent.length === 0) return null;
 
+  const riding = items.reduce((s, it) => s + it.value, 0);
+
   return (
     <div style={{ marginTop: 16 }}>
       <div
         style={{
-          fontSize: 11,
-          fontWeight: 800,
-          textTransform: "uppercase",
-          letterSpacing: ".07em",
-          color: "var(--ink-3)",
-          marginBottom: 8,
+          display: "flex",
+          alignItems: "baseline",
+          gap: 10,
+          marginBottom: 2,
         }}
       >
-        Needs your OK{items.length > 0 ? ` · ${items.length}` : ""}
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: ".07em",
+            color: "var(--ink-3)",
+          }}
+        >
+          Needs your OK{items.length > 0 ? ` · ${items.length}` : ""}
+        </span>
+        {riding > 0 && (
+          <b className="fig" style={{ marginLeft: "auto", fontSize: 13 }}>
+            {fmt$(riding)} riding on these
+          </b>
+        )}
       </div>
+      <p className="muted" style={{ fontSize: 12, margin: "0 0 10px" }}>
+        ✦ Each one&apos;s already drafted — read it, tweak it, or just hit Send.
+      </p>
 
       {items.map((item) => (
         <OkCard

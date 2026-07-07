@@ -26,6 +26,8 @@ interface HandoffNoteProps {
   frontDeskOn: boolean;
   report: ShiftReport;
   needsOkCount: number;
+  /** Dollars riding on the OK queue — the VC-glance number. */
+  needsOkValue: number;
 }
 
 /** The overnight sentence — exact phrasing per what actually happened. */
@@ -72,7 +74,11 @@ export function HandoffNote({
   frontDeskOn,
   report,
   needsOkCount,
+  needsOkValue,
 }: HandoffNoteProps) {
+  // The scoreboard is EARNED: it only renders when the night produced something.
+  const showStrip = frontDeskOn && (report.busy || needsOkCount > 0);
+
   return (
     <div className="ticket">
       <div className="eyebrow">
@@ -90,6 +96,30 @@ export function HandoffNote({
           </span>
         )}
       </div>
+
+      {showStrip && (
+        <div className="daystrip" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+          <div className="daycell" style={{ cursor: "default" }}>
+            <div className="dl">Calls answered overnight</div>
+            <div className="dv">{report.callsAnswered}</div>
+          </div>
+          <div className="daycell" style={{ cursor: "default" }}>
+            <div className="dl">Booked while you slept</div>
+            <div className="dv">{report.booked ? fmt$(report.booked.value) : "—"}</div>
+          </div>
+          <div className="daycell" style={{ cursor: "default", borderRight: "none" }}>
+            <div className="dl">Waiting on your OK</div>
+            <div className="dv">
+              {needsOkValue > 0 ? fmt$(needsOkValue) : needsOkCount}
+              {needsOkValue > 0 && (
+                <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 6 }}>
+                  · {needsOkCount} {needsOkCount === 1 ? "draft" : "drafts"}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

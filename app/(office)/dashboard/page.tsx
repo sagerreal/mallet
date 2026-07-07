@@ -56,6 +56,7 @@ export default function DashboardPage() {
   const toSchedule = deriveToSchedule(jobs);
   const openSlot = deriveOpenSlot(jobs, leads);
   const money = deriveMoneyLine(estimates, invoices);
+  const queueValue = queue.reduce((s, it) => s + it.value, 0);
 
   // Ask-Mallet chips seeded from the top of the queue + sellable white space.
   const chips: { label: string; q?: string; href?: string }[] = [];
@@ -79,6 +80,7 @@ export default function DashboardPage() {
         frontDeskOn={frontDeskOn}
         report={report}
         needsOkCount={queue.length}
+        needsOkValue={queueValue}
       />
 
       <OkQueue items={queue} />

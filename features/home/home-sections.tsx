@@ -37,7 +37,7 @@ export function HandledList({ receipts }: { receipts: Receipt[] }) {
 
   return (
     <div style={{ marginTop: 18 }}>
-      <div style={SECTION_LABEL}>Already handled</div>
+      <div style={SECTION_LABEL}>Handled overnight — no action needed</div>
       {receipts.map((r) => (
         <div
           key={r.key}

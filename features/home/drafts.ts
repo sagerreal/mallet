@@ -18,9 +18,16 @@ export function draftFor(item: OkItem): string {
     case "quote-viewed": {
       const e = item.estimate;
       const total = e ? fmt$(estTotal(e)) : "";
-      return `Hi ${first} — Mike here from Rivera Plumbing. Saw you had a look at the quote${
+      // Two handwritten variants keyed by the quote id, so two adjacent cards
+      // never read as mail-merge.
+      if ((e?.id ?? 0) % 2 === 0) {
+        return `Hi ${first} — Mike here from Rivera Plumbing. Saw you had a look at the quote${
+          total ? ` (${total})` : ""
+        }. Happy to walk you through it or tweak anything — want me to give you a quick call?`;
+      }
+      return `Hi ${first} — Mike from Rivera Plumbing. That quote${
         total ? ` (${total})` : ""
-      }. Happy to walk you through it or tweak anything — want me to give you a quick call?`;
+      } is good whenever you are — want me to pencil you in this week, or is there anything you'd change first?`;
     }
     case "invoice-overdue": {
       const i = item.invoice;
