@@ -429,6 +429,28 @@
   .qa-dur{font-size:12.5px;color:var(--ink-2);display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
   .qa-dur b{color:var(--ink);font-weight:650}
   .qa-dur .linklike{font-size:12.5px}
+  /* ---- Handoff home: the figure that drains ---- */
+  .herofig{font-family:var(--font-mono);font-size:clamp(40px,6vw,64px);font-weight:700;letter-spacing:-.03em;line-height:1.05;color:var(--manila-ink);font-variant-numeric:tabular-nums;margin-top:10px}
+  /* the ONLY amber on the page — one accent, one meaning: this tap moves money */
+  .btn.approve{background:var(--amber);border-color:var(--amber);color:#FFF9EE;font-weight:700}
+  .btn.approve:hover{filter:brightness(1.08)}
+  /* the draft as a real outbound SMS bubble, ghost ink until it goes */
+  .okghost{border-radius:18px 18px 18px 4px;background:var(--manila);border:1px solid var(--manila-line);padding:10px 14px;font-size:13px;line-height:1.55;color:color-mix(in srgb,var(--manila-ink) 62%,var(--manila));transition:color .15s ease,transform .18s ease-out}
+  .okcard:hover .okghost,.okcard:focus-within .okghost{color:var(--manila-ink)}
+  /* send choreography: ink-in + nudge (180ms) → fold (260ms, delayed) */
+  .okwrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows .26s ease-in .18s,opacity .22s ease-in .18s}
+  .okwrap.leaving{grid-template-rows:0fr;opacity:0}
+  .okwrap>.okinner{overflow:hidden;min-height:0}
+  .okwrap.leaving .okghost{color:var(--manila-ink);transform:translateX(10px)}
+  .okskip{color:var(--ink-3);font-size:14px;opacity:.4;transition:opacity .12s}
+  .okcard:hover .okskip{opacity:1}
+  /* the ledger — timestamps ARE the section header */
+  .ledgerrow{display:flex;align-items:baseline;gap:10px;padding:6px 2px;font-size:13px;animation:ledgerin .18s ease-out}
+  @keyframes ledgerin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion: reduce){
+    .okwrap,.okghost{transition:none}
+    .ledgerrow{animation:none}
+  }
   /* linklike as a REAL button (keyboard-focusable) with identical visuals */
   button.linklike{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer}
   .qa-durin{width:56px;font-size:13.5px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;text-align:center;box-sizing:border-box}

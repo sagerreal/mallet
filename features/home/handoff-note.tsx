@@ -1,15 +1,16 @@
 /**
  * features/home/handoff-note.tsx
- * The hero: the Front Desk's morning note. Handwritten sentence bank over the
- * shift report — the note's size is EARNED (busy night → full note; quiet night
- * → one honest line; Front Desk off → an honest "your phone went to voicemail").
- * It never pads and never claims anything without a record behind it.
+ * The hero: one dollar figure — the money waiting on the owner's OK — as the
+ * grammatical SUBJECT of the Front Desk's note. No stat cells, no labels: the
+ * figure drains as drafts are sent (useAnimatedNumber chases the store), and at
+ * zero it becomes the sign-off. Every clause is a past-tense fact with a record
+ * behind it.
  */
 
 "use client";
 
 import Link from "next/link";
-import { fmt$ } from "@/lib/format";
+import { useAnimatedNumber } from "./use-animated-number";
 import type { ShiftReport } from "./derive";
 
 function timeGreeting(): string {
@@ -19,19 +20,13 @@ function timeGreeting(): string {
   return "Good evening";
 }
 
-interface HandoffNoteProps {
-  orgName: string;
-  ownerFirst: string;
-  dateLabel: string;
-  frontDeskOn: boolean;
-  report: ShiftReport;
-  needsOkCount: number;
-  /** Dollars riding on the OK queue — the VC-glance number. */
-  needsOkValue: number;
+const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+function countWord(n: number): string {
+  return COUNT_WORDS[n] ?? String(n);
 }
 
-/** The overnight sentence — exact phrasing per what actually happened. */
-function overnightSentence(r: ShiftReport, frontDeskOn: boolean): React.ReactNode {
+/** The night, as one factual clause. */
+function nightClause(r: ShiftReport, frontDeskOn: boolean): React.ReactNode {
   if (!frontDeskOn) {
     return (
       <>
@@ -42,29 +37,33 @@ function overnightSentence(r: ShiftReport, frontDeskOn: boolean): React.ReactNod
       </>
     );
   }
-  if (!r.busy) return <>Quiet night — nothing came in after close.</>;
+  if (!r.busy) return "Quiet night — nothing came in after close.";
 
-  const calls =
+  const answered =
     r.callsAnswered === 1
-      ? "A call came in after close — I answered it"
-      : `${r.callsAnswered} calls came in after close — I answered ${
-          r.callsAnswered === 2 ? "both" : "all " + r.callsAnswered
+      ? "A call came in after close — answered it"
+      : `${r.callsAnswered} calls came in after close — answered ${
+          r.callsAnswered === 2 ? "both" : "all " + countWord(r.callsAnswered)
         }`;
 
   if (r.booked) {
     return (
       <>
-        {calls} and <b>booked one</b> ({fmt$(r.booked.value)}, {r.booked.when}).
+        {answered} and <b>booked {r.booked.lead.name.split(" ")[0]}</b> for {r.booked.when}.
       </>
     );
   }
-  return <>{calls} and took the details.</>;
+  return `${answered} and took the details.`;
 }
 
-function needsOkSentence(n: number): string {
-  if (n === 0) return "Nothing needs your OK this morning.";
-  if (n === 1) return "One thing needs your OK.";
-  return `${n} things need your OK.`;
+interface HandoffNoteProps {
+  orgName: string;
+  ownerFirst: string;
+  dateLabel: string;
+  frontDeskOn: boolean;
+  report: ShiftReport;
+  queueCount: number;
+  queueValue: number;
 }
 
 export function HandoffNote({
@@ -73,11 +72,10 @@ export function HandoffNote({
   dateLabel,
   frontDeskOn,
   report,
-  needsOkCount,
-  needsOkValue,
+  queueCount,
+  queueValue,
 }: HandoffNoteProps) {
-  // The scoreboard is EARNED: it only renders when the night produced something.
-  const showStrip = frontDeskOn && (report.busy || needsOkCount > 0);
+  const shown = useAnimatedNumber(queueValue);
 
   return (
     <div className="ticket">
@@ -85,39 +83,34 @@ export function HandoffNote({
         {orgName.toUpperCase()} · {dateLabel}
       </div>
       <h1>
-        {timeGreeting()}, {ownerFirst}
+        {timeGreeting()}, {ownerFirst}.
       </h1>
-      <div className="thesis" style={{ maxWidth: 720 }}>
-        {overnightSentence(report, frontDeskOn)}{" "}
-        <b>{needsOkSentence(needsOkCount)}</b>
-        {frontDeskOn && report.busy && (
-          <span className="muted" style={{ fontSize: 12.5, marginLeft: 8, whiteSpace: "nowrap" }}>
-            — Front Desk
-          </span>
-        )}
-      </div>
 
-      {showStrip && (
-        <div className="daystrip" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
-          <div className="daycell" style={{ cursor: "default" }}>
-            <div className="dl">Calls answered overnight</div>
-            <div className="dv">{report.callsAnswered}</div>
-          </div>
-          <div className="daycell" style={{ cursor: "default" }}>
-            <div className="dl">Booked while you slept</div>
-            <div className="dv">{report.booked ? fmt$(report.booked.value) : "—"}</div>
-          </div>
-          <div className="daycell" style={{ cursor: "default", borderRight: "none" }}>
-            <div className="dl">Waiting on your OK</div>
-            <div className="dv">
-              {needsOkValue > 0 ? fmt$(needsOkValue) : needsOkCount}
-              {needsOkValue > 0 && (
-                <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 6 }}>
-                  · {needsOkCount} {needsOkCount === 1 ? "draft" : "drafts"}
-                </span>
-              )}
+      {queueCount > 0 ? (
+        <>
+          {queueValue > 0 && (
+            <div className="herofig" aria-label={`$${queueValue.toLocaleString("en-US")} waiting on your OK`}>
+              ${shown.toLocaleString("en-US")}
             </div>
+          )}
+          <div className="thesis" style={{ maxWidth: 680, marginTop: queueValue > 0 ? 4 : undefined }}>
+            {queueValue > 0 ? "is waiting on your OK — " : "Waiting on your OK: "}
+            {countWord(queueCount)} {queueCount === 1 ? "text" : "texts"} below, ready to send.{" "}
+            {nightClause(report, frontDeskOn)}
           </div>
+        </>
+      ) : (
+        <div className="thesis" style={{ maxWidth: 680 }}>
+          <b>Nothing&apos;s waiting on you. Go run the day.</b> {nightClause(report, frontDeskOn)}
+        </div>
+      )}
+
+      {frontDeskOn && report.busy && (
+        <div
+          className="muted"
+          style={{ textAlign: "right", fontSize: 12.5, marginTop: 10, color: "var(--manila-ink)", opacity: 0.55 }}
+        >
+          — Front Desk
         </div>
       )}
     </div>

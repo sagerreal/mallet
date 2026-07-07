@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * Home — "The Handoff". Every morning the Front Desk hands the owner a note like
- * a night-shift employee: what it did overnight (with receipts), what needs a
- * yes (drafted and ready to send), and what today looks like. Chosen over a
- * KPI dashboard after a research pass across agentic-UX, incumbent dashboards,
- * and trades-owner mornings — the screen leads with the agent's WORK, keeps
- * money auditable (same derivations as Quotes/Money), and never pads: the note's
- * size is earned by what actually happened.
+ * Home — "The Handoff", v3: the figure that drains.
+ * One dollar figure (the money waiting on the owner's OK) is the subject of the
+ * Front Desk's note. Below it: the drafts themselves — real outbound SMS bubbles
+ * in ghost ink, one amber Send from real. Sending is a witnessed state change:
+ * the bubble inks in, the card folds, a timestamped ledger line lands beside the
+ * overnight entries, and the figure drains (it derives from the store, so Undo
+ * refills it). No stat cells, no chips, no captions — the work IS the screen.
  *
- * All derivations live in features/home/derive.ts (pure, record-backed).
+ * Derivations: features/home/derive.ts. Drafts: features/home/drafts.ts.
  */
 
 import { TODAY_ISO } from "@/lib/prototype-sample";
@@ -26,9 +26,9 @@ import {
 } from "@/features/home/derive";
 import { HandoffNote } from "@/features/home/handoff-note";
 import { OkQueue } from "@/features/home/ok-queue";
-import { AskRow, EndMark, HandledList, TodayStrip } from "@/features/home/home-sections";
+import { AskRow, TodayStrip } from "@/features/home/home-sections";
 
-/** "WED JUL 1" from the app clock. */
+/** "WED, JUL 1" from the app clock. */
 function dateLabel(): string {
   return new Date(TODAY_ISO + "T12:00:00")
     .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
@@ -58,18 +58,13 @@ export default function DashboardPage() {
   const money = deriveMoneyLine(estimates, invoices);
   const queueValue = queue.reduce((s, it) => s + it.value, 0);
 
-  // Ask-Mallet chips seeded from the top of the queue + sellable white space.
-  const chips: { label: string; q?: string; href?: string }[] = [];
+  // The day's top move, folded into the ask-input's placeholder.
   const top = queue[0];
-  if (top) {
-    chips.push(
-      top.kind === "invoice-overdue"
-        ? { label: `Chase ${firstName(top.lead.name)}'s ${fmt$(top.value)}`, q: `Chase ${top.lead.name}'s ${fmt$(top.value)} invoice` }
-        : { label: `Follow up ${firstName(top.lead.name)}`, q: `Follow up with ${top.lead.name}` }
-    );
-  }
-  if (openSlot) chips.push({ label: "Fill the open afternoon", href: "/jobs?tab=schedule" });
-  chips.push({ label: "What should I do first?", q: "What should I do first this morning?" });
+  const suggestion = top
+    ? top.kind === "invoice-overdue"
+      ? `chase ${firstName(top.lead.name)}'s ${fmt$(top.value)}`
+      : `follow up ${firstName(top.lead.name)}`
+    : null;
 
   return (
     <div>
@@ -79,13 +74,11 @@ export default function DashboardPage() {
         dateLabel={dateLabel()}
         frontDeskOn={frontDeskOn}
         report={report}
-        needsOkCount={queue.length}
-        needsOkValue={queueValue}
+        queueCount={queue.length}
+        queueValue={queueValue}
       />
 
-      <OkQueue items={queue} />
-
-      <HandledList receipts={report.receipts} />
+      <OkQueue items={queue} receipts={report.receipts} />
 
       <TodayStrip
         stops={board.stops}
@@ -95,9 +88,7 @@ export default function DashboardPage() {
         money={money}
       />
 
-      <AskRow chips={chips} />
-
-      <EndMark queueEmpty={queue.length === 0} />
+      <AskRow suggestion={suggestion} />
     </div>
   );
 }

@@ -40,6 +40,8 @@ export function visitLabel(v: Visit): string {
 export interface Receipt {
   key: string;
   leadId: number;
+  /** When it happened — the real act's own timestamp ("8:47pm"), never invented. */
+  when: string;
   /** What the Front Desk did, past tense, with the record to prove it. */
   text: string;
   /** Where the proof lives. */
@@ -81,22 +83,24 @@ export function deriveShiftReport(leads: Lead[], jobs: Job[], estimates: Estimat
   for (const l of overnightLeads) {
     const acts = (l.acts ?? []).filter((a) => a.overnight);
     const isBooked = booked?.lead.id === l.id;
+    const call = acts.find((a) => a.type === "call");
     if (isBooked && booked) {
       receipts.push({
         key: `booked-${l.id}`,
         leadId: l.id,
-        text: `Booked ${l.name} — ${l.job.toLowerCase()}, ${booked.when}`,
+        when: call?.when ?? "overnight",
+        text: `booked ${l.name} — ${l.job.toLowerCase()}, ${booked.when} ($${Math.round(booked.value).toLocaleString("en-US")})`,
         open: { kind: "thread", id: l.id },
         openLabel: "transcript",
       });
       continue;
     }
-    const call = acts.find((a) => a.type === "call");
     if (call) {
       receipts.push({
         key: `call-${l.id}`,
         leadId: l.id,
-        text: `Answered ${l.name}'s call — took the details, texted the booking link`,
+        when: call.when ?? "overnight",
+        text: `answered ${l.name}'s call — took the details, texted the booking link`,
         open: { kind: "thread", id: l.id },
         openLabel: "thread",
       });
