@@ -232,6 +232,99 @@ describe("CreateInvoiceFromJobUseCase", () => {
     expect(isOk(first) && isOk(second) && first.value.props.id === second.value.props.id).toBe(true);
     expect(bus.recorded.filter((e) => e.name === "invoice.created")).toHaveLength(1);
   });
+
+  it("uses zeroMoney when the job totalCents is 0", async () => {
+    const zeroJob: JobSummary = { ...completeJob(), totalCents: 0 };
+    const uc = useCase(new FakeJobReader(zeroJob));
+    const result = await uc.exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      // total must be 0 (zeroMoney), not an error and not a positive amount
+      expect(result.value.props.total).toBe(0);
+    }
+    // The invoice.created event is emitted even for a zero-total job
+    expect(bus.recorded.some((e) => e.name === "invoice.created")).toBe(true);
+  });
+
+  it("race-condition path: insertForJob races and winner row is found by re-fetch", async () => {
+    // Simulate a race where another writer inserted first:
+    // - insertForJob returns false (conflict at the DB unique constraint)
+    // - the subsequent findBySourceJob sees the winner row that the other writer inserted
+    const winner = await (() => {
+      // Seed the invoice using a separate bus so the seed's invoice.created event
+      // does not pollute the shared bus we assert against below
+      const seedBus = new InMemoryEventBus();
+      const seedRepo = new FakeInvoiceRepository();
+      const seedUc = new CreateInvoiceFromJobUseCase(seedRepo, new FakeJobReader(completeJob()), seedBus, clock, seqIds());
+      return seedUc.exec({ orgId: ORG, jobId: JOB }).then((r) => {
+        if (!isOk(r)) throw new Error("seed failed");
+        return r.value;
+      });
+    })();
+
+    // Now build a repo that:
+    //   1. starts empty (findBySourceJob returns null on first call, simulating the window between
+    //      the initial check and the insert)
+    //   2. insertForJob always returns false (the other writer won the race)
+    //   3. findBySourceJob on the re-fetch returns the winner
+    class RaceRepo extends FakeInvoiceRepository {
+      private firstFindDone = false;
+      override async findBySourceJob(jobId: JobId): Promise<Invoice | null> {
+        if (!this.firstFindDone) {
+          this.firstFindDone = true;
+          return null; // pre-insert check: looks empty
+        }
+        return winner; // re-fetch after the failed insert: finds the winner
+      }
+      override async insertForJob(_invoice: Invoice): Promise<boolean> {
+        return false; // lost the race
+      }
+    }
+
+    const raceRepo = new RaceRepo();
+    const uc = new CreateInvoiceFromJobUseCase(raceRepo, new FakeJobReader(completeJob()), bus, clock, seqIds());
+    const result = await uc.exec({ orgId: ORG, jobId: JOB });
+
+    // Must return the winner row (ok), NOT a conflict error
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.id).toBe(winner.props.id);
+    }
+    // No invoice.created event emitted when we lost the race
+    expect(bus.recorded.filter((e) => e.name === "invoice.created")).toHaveLength(0);
+  });
+
+  it("race-condition path: insertForJob races and re-fetch also finds nothing → conflict error", async () => {
+    // Simulate a degenerate race where:
+    //   - insertForJob returns false (DB conflict)
+    //   - the re-fetch also returns null (winner was voided/deleted between insert and re-fetch)
+    class GhostRaceRepo extends FakeInvoiceRepository {
+      private firstFindDone = false;
+      override async findBySourceJob(_jobId: JobId): Promise<Invoice | null> {
+        if (!this.firstFindDone) {
+          this.firstFindDone = true;
+          return null; // pre-insert check: empty
+        }
+        return null; // re-fetch: also empty (ghost race)
+      }
+      override async insertForJob(_invoice: Invoice): Promise<boolean> {
+        return false; // lost the race
+      }
+    }
+
+    const ghostRepo = new GhostRaceRepo();
+    const uc = new CreateInvoiceFromJobUseCase(ghostRepo, new FakeJobReader(completeJob()), bus, clock, seqIds());
+    const result = await uc.exec({ orgId: ORG, jobId: JOB });
+
+    // Must return a conflict error, not crash and not return ok
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("conflict");
+      expect(result.error.message).toMatch(/already exists/i);
+    }
+    // No event emitted
+    expect(bus.recorded.filter((e) => e.name === "invoice.created")).toHaveLength(0);
+  });
 });
 
 describe("Send / RecordPayment / Void use-cases", () => {
@@ -347,6 +440,140 @@ describe("Send / RecordPayment / Void use-cases", () => {
     });
     const voided = await new VoidInvoiceUseCase(repo, bus, clock).exec({ invoiceId: id });
     expect(voided.ok).toBe(false);
+  });
+
+  it("void returns not_found when the invoice does not exist", async () => {
+    const uc = new VoidInvoiceUseCase(repo, bus, clock);
+    const r = await uc.exec({ invoiceId: asInvoiceId("ffffffff-ffff-ffff-ffff-ffffffffffff") });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("not_found");
+  });
+
+  it("void happy path: saves the updated invoice and emits invoice.voided for a live invoice", async () => {
+    const id = await seedSentInvoice();
+    const eventsBefore = bus.recorded.length;
+    const uc = new VoidInvoiceUseCase(repo, bus, clock);
+
+    const result = await uc.exec({ invoiceId: id });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+
+    // The returned invoice is now void.
+    expect(result.value.props.status).toBe("void");
+
+    // repo.save was called: the stored record must reflect void status.
+    const stored = await repo.findById(id);
+    expect(stored?.props.status).toBe("void");
+
+    // bus.emit was called with exactly one invoice.voided event carrying correct IDs.
+    const voidedEvents = bus.recorded.slice(eventsBefore).filter((e) => e.name === "invoice.voided");
+    expect(voidedEvents).toHaveLength(1);
+    const voidedEvent = voidedEvents[0]!;
+    expect(voidedEvent.payload.invoiceId).toBe(id);
+    expect(voidedEvent.payload.leadId).toBe(LEAD);
+  });
+
+  it("void is idempotent on an already-voided invoice: no repo.save and no event emitted", async () => {
+    const id = await seedSentInvoice();
+    const uc = new VoidInvoiceUseCase(repo, bus, clock);
+
+    // First void: live → void.
+    const first = await uc.exec({ invoiceId: id });
+    expect(isOk(first)).toBe(true);
+    if (!isOk(first)) return;
+    expect(first.value.props.status).toBe("void");
+
+    // Capture the stored object reference and bus length before the second call.
+    const storedBefore = await repo.findById(id);
+    const eventCountBefore = bus.recorded.length;
+
+    // Second void: already void → idempotent no-op (voided.value === invoice branch).
+    const second = await uc.exec({ invoiceId: id });
+    expect(isOk(second)).toBe(true);
+    if (!isOk(second)) return;
+    expect(second.value.props.status).toBe("void");
+
+    // repo.save must NOT have been called: the stored reference is unchanged.
+    const storedAfter = await repo.findById(id);
+    expect(storedAfter).toBe(storedBefore);
+
+    // bus.emit must NOT have been called: no new events.
+    expect(bus.recorded.length).toBe(eventCountBefore);
+  });
+
+  // Exercises record-payment.ts line 75-79: applyPayment returns applied=false with a non-null
+  // invoice — simulates a concurrent void/pay committing between the findById read and the
+  // guarded UPDATE inside applyPayment. The use-case must return a conflict error and must NOT
+  // emit any events.
+  it("returns conflict when applyPayment guard fires (concurrent void/pay race)", async () => {
+    const id = await seedSentInvoice();
+    const sentInvoice = await repo.findById(id);
+    if (!sentInvoice) throw new Error("setup: invoice not found");
+
+    // A thin repo override: findById and insertPayment behave normally (sent invoice is visible
+    // and the key is new), but applyPayment returns applied=false to simulate the race.
+    class RacingRepo extends FakeInvoiceRepository {
+      override async applyPayment(_invoiceId: InvoiceId, _amountCents: number): Promise<ApplyResult> {
+        // Return the sent invoice with applied=false — mirrors the SQL guard returning 0 rows.
+        return { applied: false, invoice: sentInvoice };
+      }
+    }
+
+    const raceRepo = new RacingRepo();
+    await raceRepo.save(sentInvoice); // seed so findById works
+
+    const gateway = new CountingManualGateway(clock);
+    const raceBus = new InMemoryEventBus();
+    const uc = new RecordPaymentUseCase(raceRepo, gateway, raceBus, clock, seqIds());
+    const r = await uc.exec({
+      orgId: ORG,
+      invoiceId: id,
+      amount: money(10_000),
+      method: "cash",
+      idempotencyKey: "pay-key-race1",
+    });
+
+    // Must be a conflict error, not a success or any other kind.
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("conflict");
+
+    // Gateway was called once (the key was new), but no events must have been emitted.
+    expect(gateway.calls).toBe(1);
+    expect(raceBus.recorded.some((e) => e.name === "invoice.payment.recorded")).toBe(false);
+    expect(raceBus.recorded.some((e) => e.name === "invoice.paid")).toBe(false);
+  });
+
+  // Exercises record-payment.ts line 74: applyPayment returns { applied: false, invoice: null }
+  // — the invoice row disappeared (e.g. hard-deleted) between the initial findById and the UPDATE.
+  it("returns not_found when applyPayment returns invoice=null (row disappeared)", async () => {
+    const id = await seedSentInvoice();
+    const sentInvoice = await repo.findById(id);
+    if (!sentInvoice) throw new Error("setup: invoice not found");
+
+    class DisappearedRepo extends FakeInvoiceRepository {
+      override async applyPayment(_invoiceId: InvoiceId, _amountCents: number): Promise<ApplyResult> {
+        return { applied: false, invoice: null };
+      }
+    }
+
+    const goneRepo = new DisappearedRepo();
+    await goneRepo.save(sentInvoice);
+
+    const gateway = new CountingManualGateway(clock);
+    const goneBus = new InMemoryEventBus();
+    const uc = new RecordPaymentUseCase(goneRepo, gateway, goneBus, clock, seqIds());
+    const r = await uc.exec({
+      orgId: ORG,
+      invoiceId: id,
+      amount: money(5_000),
+      method: "cash",
+      idempotencyKey: "pay-key-gone1",
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("not_found");
+    expect(goneBus.recorded.some((e) => e.name === "invoice.payment.recorded")).toBe(false);
   });
 });
 

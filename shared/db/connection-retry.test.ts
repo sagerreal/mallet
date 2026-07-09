@@ -51,4 +51,27 @@ describe("withConnectionRetry", () => {
     ).rejects.toThrow("duplicate key");
     expect(calls).toBe(1);
   });
+
+  it("throws the last transient error after exhausting attempts=1 (no retries)", async () => {
+    const err = pgError("connect_timeout");
+    await expect(
+      withConnectionRetry(async () => { throw err; }, { attempts: 1, sleep: noSleep }),
+    ).rejects.toBe(err);
+  });
+
+  it("uses realSleep (no sleep option) and still retries and succeeds", async () => {
+    // exercises the realSleep branch by omitting the sleep option entirely;
+    // use delayMs=0 so the test finishes immediately without a real 150 ms pause
+    let calls = 0;
+    const result = await withConnectionRetry(
+      async () => {
+        calls += 1;
+        if (calls < 2) throw pgError("timeout expired");
+        return "done";
+      },
+      { delayMs: 0 },
+    );
+    expect(result).toBe("done");
+    expect(calls).toBe(2);
+  });
 });

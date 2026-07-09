@@ -8,11 +8,20 @@
  *   2. Fire the matching v1.tasks mutation via trpcVanilla.
  *   3. On success, reconcile the returned TaskDTO (id stays stable — client-authored).
  *   4. On error, ROLL BACK to the pre-mutation snapshot and log (dev only).
+ *
+ * updateLead follows the same pattern for persistable scalar fields (name, phone,
+ * email, source, stage, unread, companyId, role, value→valueCents).
+ * Local-only fields (age, job, last, book, address, estId, acts, evisits) are
+ * updated in the store only — they have no column in the DB contract.
  */
 
 import type { StateCreator } from "zustand";
+import type { inferRouterInputs } from "@trpc/server";
+import type { AppRouter } from "@/trpc/root";
 import type { Lead, LeadNote, Task, Visit } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+
+type CustomerUpdateInput = inferRouterInputs<AppRouter>["v1"]["customers"]["update"];
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -25,6 +34,112 @@ function dtoToTask(dto: { id: string; text: string; dueDate: string | null; lead
     due: dto.dueDate,
     leadId: dto.leadId,
     done: dto.done,
+  };
+}
+
+// Fields in Lead that are ONLY local — they have no column in the DB contract
+// and must never be sent to v1.customers.update.
+const LOCAL_ONLY_KEYS = new Set<keyof Lead>(["age", "job", "last", "book", "address", "estId", "acts", "evisits"]);
+
+/** The shape expected by trpcVanilla.v1.customers.update.mutate */
+export type LeadUpdatePayload = CustomerUpdateInput;
+
+/**
+ * Builds the tRPC mutation payload from a Lead patch, including only the
+ * fields that are persisted in the DB.  Returns null when the patch contains
+ * ONLY local-only fields (e.g. { last }, { address }, { book }) — callers
+ * should skip the network call in that case.
+ */
+export function buildLeadUpdatePayload(
+  leadId: string,
+  patch: Partial<Lead>,
+): LeadUpdatePayload | null {
+  const payload: LeadUpdatePayload = { leadId };
+  let hasPersistedField = false;
+
+  for (const key of Object.keys(patch) as Array<keyof Lead>) {
+    if (LOCAL_ONLY_KEYS.has(key)) continue;
+
+    hasPersistedField = true;
+
+    if (key === "phone") {
+      // Map empty string → null (no phone on file)
+      const raw = patch.phone;
+      payload.phone = raw === "" ? null : (raw ?? null);
+    } else if (key === "email") {
+      // Map empty string → null
+      const raw = patch.email;
+      payload.email = raw === "" ? null : (raw ?? null);
+    } else if (key === "value") {
+      // Store keeps value in dollars; the DTO expects integer cents.
+      const dollars = patch.value;
+      if (dollars !== undefined) {
+        payload.valueCents = Math.round(dollars * 100);
+      }
+    } else if (key === "name") {
+      payload.name = patch.name;
+    } else if (key === "source") {
+      payload.source = patch.source;
+    } else if (key === "stage") {
+      // Store Lead.stage is a plain string; the router validates the enum server-side.
+      payload.stage = patch.stage as CustomerUpdateInput["stage"];
+    } else if (key === "unread") {
+      payload.unread = patch.unread;
+    } else if (key === "companyId") {
+      payload.companyId = patch.companyId ?? null;
+    } else if (key === "role") {
+      payload.role = patch.role;
+    }
+    // Remaining fields (notes, card, custom, lossReason, archived, trash) are either
+    // handled by dedicated mutations or are not yet wired to the DB — skip them.
+  }
+
+  return hasPersistedField ? payload : null;
+}
+
+/**
+ * Merges a leadDTO response back onto the current store lead, preserving all
+ * local-only fields (acts, evisits, age, job, last, book, address, estId).
+ * The DTO shape mirrors RouterOutputs["v1"]["customers"]["list"]["items"][number].
+ */
+function reconcileLeadFromDTO(
+  current: Lead,
+  dto: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    source: string | null;
+    stage: string;
+    value: { cents: number; currency: string };
+    unread: boolean;
+    companyId: string | null;
+    role: string | null;
+  },
+): Lead {
+  return {
+    // Start with current so any unknown fields are preserved.
+    ...current,
+    // Overwrite with authoritative values from the DTO.
+    name: dto.name,
+    phone: dto.phone ?? "",
+    email: dto.email ?? undefined,
+    source: dto.source ?? "",
+    stage: dto.stage,
+    value: dto.value.cents / 100,
+    unread: dto.unread,
+    companyId: dto.companyId ?? undefined,
+    role: dto.role ?? undefined,
+    // Explicitly re-pin ALL eight local-only fields so the contract is
+    // drift-safe regardless of what the spread above brings in from current.
+    age: current.age,
+    job: current.job,
+    last: current.last,
+    book: current.book,
+    address: current.address,
+    estId: current.estId,
+    acts: current.acts,
+    evisits: current.evisits,
   };
 }
 
@@ -78,10 +193,59 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
     return newLead;
   },
 
-  updateLead: (id, patch) =>
+  // ---------------------------------------------------------------------------
+  // updateLead — optimistic + persist + reconcile/rollback.
+  //
+  // Persistable fields (name, phone, email, source, stage, unread, companyId,
+  // role, value) are written to the DB via v1.customers.update.  Local-only
+  // fields (age, job, last, book, address, estId, acts, evisits) are updated
+  // in the store only — they have no column in the DB contract.
+  // If the patch contains ONLY local-only fields the network call is skipped.
+  // ---------------------------------------------------------------------------
+  updateLead: (id, patch) => {
+    // 1. Capture only the prior values of the patched keys — surgical rollback
+    //    so a concurrent edit to a different field on the same lead is not clobbered.
+    const priorLead = get().leads.find((l) => l.id === id);
+    const changedKeys = Object.keys(patch) as (keyof Lead)[];
+    // 2. Apply optimistic update immediately.
     set((s) => ({
       leads: s.leads.map((l) => (l.id === id ? { ...l, ...patch } : l)),
-    })),
+    }));
+    // 3. Build the mutation payload (null = only local-only fields → skip).
+    const mutPayload = buildLeadUpdatePayload(id, patch);
+    if (mutPayload === null) {
+      // Nothing persistable in this patch; local update is all we need.
+      return;
+    }
+    trpcVanilla.v1.customers.update
+      .mutate(mutPayload)
+      .then((dto) => {
+        // 4a. Reconcile: merge DTO onto the CURRENT lead (which may have
+        //     received further optimistic patches since this call started).
+        set((s) => ({
+          leads: s.leads.map((l) =>
+            l.id === id ? reconcileLeadFromDTO(l, dto) : l,
+          ),
+        }));
+      })
+      .catch((err: unknown) => {
+        // 4b. Field-level rollback: revert ONLY the keys this patch changed on
+        //     ONLY this lead.  Any concurrent edit to another field/lead is
+        //     left untouched.
+        set((s) => ({
+          leads: s.leads.map((l) => {
+            if (l.id !== id || !priorLead) return l;
+            const reverted = { ...l };
+            for (const k of changedKeys) (reverted as any)[k] = (priorLead as any)[k];
+            return reverted;
+          }),
+        }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] updateLead failed — rolled back", { id, patch, err });
+        }
+      });
+  },
 
   moveLeadStage: (id, stage) =>
     set((s) => ({

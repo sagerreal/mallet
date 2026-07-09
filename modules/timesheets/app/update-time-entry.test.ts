@@ -1,0 +1,377 @@
+/**
+ * Unit tests for UpdateTimeEntryUseCase.
+ *
+ * Covers:
+ *  - not-found branch (findById returns null)
+ *  - domain patch() failure propagated without saving
+ *  - all 8 optional-field undefined-vs-provided branches (jobId, workDate, kind, startTime,
+ *    endTime, note, src, running each fall back to entry.props when cmd field is undefined)
+ *  - happy path: save called with patched entry, ok result returned
+ */
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  asTimeEntryId,
+  asOrgId,
+  asUserId,
+  asJobId,
+  FixedClock,
+  isOk,
+  type TimeEntryId,
+} from "@mallet/shared/types";
+import { TimeEntry, type TimeEntryProps } from "../domain/time-entry";
+import type { TimeEntryRepository } from "../domain/time-entry-repository";
+import { UpdateTimeEntryUseCase, type UpdateTimeEntryCommand } from "./update-time-entry";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const ORG = asOrgId("22222222-2222-2222-2222-222222222222");
+const ENTRY_ID = asTimeEntryId("11111111-1111-1111-1111-111111111111");
+const USER_ID = asUserId("33333333-3333-3333-3333-333333333333");
+const JOB_ID = asJobId("44444444-4444-4444-4444-444444444444");
+
+const baseProps = (overrides: Partial<TimeEntryProps> = {}): TimeEntryProps => ({
+  id: ENTRY_ID,
+  orgId: ORG,
+  techUserId: USER_ID,
+  jobId: null,
+  workDate: "2026-07-07",
+  kind: "job",
+  startTime: "08:00",
+  endTime: "10:00",
+  note: "",
+  src: "manual",
+  status: "draft",
+  running: false,
+  approvedAt: null,
+  createdAt: new Date("2026-07-07T08:00:00Z"),
+  updatedAt: new Date("2026-07-07T08:00:00Z"),
+  ...overrides,
+});
+
+const makeEntry = (overrides: Partial<TimeEntryProps> = {}): TimeEntry => {
+  const result = TimeEntry.create(baseProps(overrides));
+  if (!result.ok) throw new Error(`test setup: TimeEntry.create failed: ${JSON.stringify(result.error)}`);
+  return result.value;
+};
+
+// ---------------------------------------------------------------------------
+// Minimal in-memory fake for TimeEntryRepository
+// ---------------------------------------------------------------------------
+
+class FakeTimeEntryRepository implements TimeEntryRepository {
+  private store = new Map<TimeEntryId, TimeEntry>();
+  readonly saveCalls: TimeEntry[] = [];
+
+  seed(entry: TimeEntry): void {
+    this.store.set(entry.props.id, entry);
+  }
+
+  async findById(id: TimeEntryId): Promise<TimeEntry | null> {
+    return this.store.get(id) ?? null;
+  }
+
+  async save(entry: TimeEntry): Promise<void> {
+    this.store.set(entry.props.id, entry);
+    this.saveCalls.push(entry);
+  }
+
+  // Remaining interface methods — not exercised by update-time-entry
+  async create(): Promise<TimeEntry> {
+    throw new Error("not implemented in fake");
+  }
+  async list(): Promise<{ items: TimeEntry[]; nextCursor: null }> {
+    return { items: [], nextCursor: null };
+  }
+  async remove(): Promise<number> {
+    return 0;
+  }
+  async approveWeek(): Promise<number> {
+    return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("UpdateTimeEntryUseCase — not-found branch", () => {
+  it("returns a not_found error when the entry does not exist", async () => {
+    const repo = new FakeTimeEntryRepository();
+    const clock = new FixedClock(new Date("2026-07-08T10:00:00Z"));
+    const useCase = new UpdateTimeEntryUseCase(repo, clock);
+
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("not_found");
+    expect(repo.saveCalls).toHaveLength(0);
+  });
+});
+
+describe("UpdateTimeEntryUseCase — patch() failure branch", () => {
+  it("returns the domain error without saving when patch() fails", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.seed(makeEntry({ startTime: "08:00", endTime: "10:00" }));
+    const clock = new FixedClock(new Date("2026-07-08T10:00:00Z"));
+    const useCase = new UpdateTimeEntryUseCase(repo, clock);
+
+    // Patching endTime to before startTime triggers a domain validation error
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, endTime: "07:00" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("validation");
+    // No save must have been called
+    expect(repo.saveCalls).toHaveLength(0);
+  });
+
+  it("returns a validation error when an invalid kind is provided", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.seed(makeEntry());
+    const clock = new FixedClock(new Date("2026-07-08T10:00:00Z"));
+    const useCase = new UpdateTimeEntryUseCase(repo, clock);
+
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, kind: "nope" as "job" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("validation");
+    expect(repo.saveCalls).toHaveLength(0);
+  });
+});
+
+describe("UpdateTimeEntryUseCase — optional-field undefined-vs-provided branches", () => {
+  let repo: FakeTimeEntryRepository;
+  let clock: FixedClock;
+  let useCase: UpdateTimeEntryUseCase;
+
+  beforeEach(() => {
+    repo = new FakeTimeEntryRepository();
+    clock = new FixedClock(new Date("2026-07-08T12:00:00Z"));
+    useCase = new UpdateTimeEntryUseCase(repo, clock);
+  });
+
+  it("falls back to entry.props.jobId when cmd.jobId is undefined", async () => {
+    repo.seed(makeEntry({ jobId: JOB_ID }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID }; // jobId not set
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.jobId).toBe(JOB_ID);
+  });
+
+  it("uses cmd.jobId when provided (overrides entry.props.jobId)", async () => {
+    repo.seed(makeEntry({ jobId: null }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, jobId: JOB_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.jobId).toBe(JOB_ID);
+  });
+
+  it("falls back to entry.props.workDate when cmd.workDate is undefined", async () => {
+    repo.seed(makeEntry({ workDate: "2026-06-15" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.workDate).toBe("2026-06-15");
+  });
+
+  it("uses cmd.workDate when provided", async () => {
+    repo.seed(makeEntry({ workDate: "2026-06-15" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, workDate: "2026-07-01" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.workDate).toBe("2026-07-01");
+  });
+
+  it("falls back to entry.props.kind when cmd.kind is undefined", async () => {
+    repo.seed(makeEntry({ kind: "travel" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.kind).toBe("travel");
+  });
+
+  it("uses cmd.kind when provided", async () => {
+    repo.seed(makeEntry({ kind: "job" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, kind: "break" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.kind).toBe("break");
+  });
+
+  it("falls back to entry.props.startTime when cmd.startTime is undefined", async () => {
+    repo.seed(makeEntry({ startTime: "09:00", endTime: "11:00" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.startTime).toBe("09:00");
+  });
+
+  it("uses cmd.startTime when provided", async () => {
+    repo.seed(makeEntry({ startTime: "08:00", endTime: "10:00" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, startTime: "09:00" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.startTime).toBe("09:00");
+  });
+
+  it("falls back to entry.props.endTime when cmd.endTime is undefined", async () => {
+    repo.seed(makeEntry({ startTime: "08:00", endTime: "10:00" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.endTime).toBe("10:00");
+  });
+
+  it("uses cmd.endTime when provided (including null for running timer)", async () => {
+    repo.seed(makeEntry({ startTime: "08:00", endTime: "10:00" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, endTime: null };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.endTime).toBeNull();
+  });
+
+  it("falls back to entry.props.note when cmd.note is undefined", async () => {
+    repo.seed(makeEntry({ note: "original note" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.note).toBe("original note");
+  });
+
+  it("uses cmd.note when provided", async () => {
+    repo.seed(makeEntry({ note: "old note" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, note: "new note" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.note).toBe("new note");
+  });
+
+  it("falls back to entry.props.src when cmd.src is undefined", async () => {
+    repo.seed(makeEntry({ src: "clock" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.src).toBe("clock");
+  });
+
+  it("uses cmd.src when provided", async () => {
+    repo.seed(makeEntry({ src: "manual" }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, src: "timer" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.src).toBe("timer");
+  });
+
+  it("falls back to entry.props.running when cmd.running is undefined", async () => {
+    repo.seed(makeEntry({ running: true, endTime: null }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.running).toBe(true);
+  });
+
+  it("uses cmd.running when provided", async () => {
+    repo.seed(makeEntry({ running: false }));
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, running: true, endTime: null };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.running).toBe(true);
+  });
+});
+
+describe("UpdateTimeEntryUseCase — happy path (save + log)", () => {
+  it("saves the patched entry and returns ok with the updated TimeEntry", async () => {
+    const repo = new FakeTimeEntryRepository();
+    const fixedNow = new Date("2026-07-08T14:00:00Z");
+    const clock = new FixedClock(fixedNow);
+    repo.seed(makeEntry({ note: "before" }));
+    const useCase = new UpdateTimeEntryUseCase(repo, clock);
+
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, note: "after" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+
+    // Correct field patched
+    expect(result.value.props.note).toBe("after");
+
+    // updatedAt bumped to clock.now()
+    expect(result.value.props.updatedAt.toISOString()).toBe(fixedNow.toISOString());
+
+    // save was called exactly once with the patched entry
+    expect(repo.saveCalls).toHaveLength(1);
+    expect(repo.saveCalls[0]?.props.note).toBe("after");
+
+    // Original entry ID preserved
+    expect(result.value.props.id).toBe(ENTRY_ID);
+  });
+
+  it("does not mutate the original entry (immutability)", async () => {
+    const repo = new FakeTimeEntryRepository();
+    const original = makeEntry({ note: "unchanged", kind: "job" });
+    repo.seed(original);
+    const clock = new FixedClock(new Date("2026-07-08T14:00:00Z"));
+    const useCase = new UpdateTimeEntryUseCase(repo, clock);
+
+    const cmd: UpdateTimeEntryCommand = { entryId: ENTRY_ID, note: "changed", kind: "travel" };
+    const result = await useCase.exec(cmd, ORG);
+
+    expect(isOk(result)).toBe(true);
+    // The original in-memory object must be unchanged
+    expect(original.props.note).toBe("unchanged");
+    expect(original.props.kind).toBe("job");
+  });
+
+  it("returns a TimeEntry instance (not a plain object) on success", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.seed(makeEntry());
+    const clock = new FixedClock(new Date("2026-07-08T14:00:00Z"));
+    const useCase = new UpdateTimeEntryUseCase(repo, clock);
+
+    const result = await useCase.exec({ entryId: ENTRY_ID }, ORG);
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value).toBeInstanceOf(TimeEntry);
+  });
+});

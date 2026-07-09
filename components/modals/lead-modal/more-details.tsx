@@ -75,6 +75,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
           <div className="field">
             <label>Email</label>
             <input
+              key={lead.email ?? ""}
               type="email"
               placeholder="customer@email.com"
               defaultValue={lead.email ?? ""}

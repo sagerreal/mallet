@@ -105,6 +105,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
             )}
             <span className="lead-meta-dot" aria-hidden="true">·</span>
             <input
+              key={lead.phone}
               className="lead-phone"
               type="tel"
               defaultValue={lead.phone}
