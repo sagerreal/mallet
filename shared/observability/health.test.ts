@@ -21,4 +21,13 @@ describe("readiness", () => {
     expect(report.status).toBe("error");
     expect(report.checks?.database).toEqual({ ok: false, error: "connection refused" });
   });
+
+  it("uses 'unknown error' when the probe rejects with a non-Error value", async () => {
+    const report = await readiness(async () => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw "plain string rejection";
+    });
+    expect(report.status).toBe("error");
+    expect(report.checks?.database).toEqual({ ok: false, error: "unknown error" });
+  });
 });

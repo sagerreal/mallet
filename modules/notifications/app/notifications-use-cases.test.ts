@@ -141,6 +141,24 @@ const invoiceTarget = (overrides: Partial<ReminderTarget> = {}): ReminderTarget 
   ...overrides,
 });
 
+// A repo that delegates everything to FakeNotificationRepository except for the
+// two methods that can be configured to return null, so we can exercise the
+// not-found branches in SendNotificationUseCase without reaching a real DB.
+class BreakableNotificationRepository extends FakeNotificationRepository {
+  public markFailedReturnsNull = false;
+  public markSentReturnsNull = false;
+
+  override async markFailed(id: string, error: string): Promise<Notification | null> {
+    if (this.markFailedReturnsNull) return null;
+    return super.markFailed(id, error);
+  }
+
+  override async markSent(id: string, externalId: string | null, sentAt: Date): Promise<Notification | null> {
+    if (this.markSentReturnsNull) return null;
+    return super.markSent(id, externalId, sentAt);
+  }
+}
+
 describe("SendNotificationUseCase", () => {
   let clock: FixedClock;
   let repo: FakeNotificationRepository;
@@ -205,6 +223,40 @@ describe("SendNotificationUseCase", () => {
     });
     const stages = await repo.sentReminderStages("invoice", [INV]);
     expect(stages.get(INV) ?? []).not.toContain(1);
+  });
+
+  it("returns a not-found error when markFailed returns null after a sender failure", async () => {
+    const breakable = new BreakableNotificationRepository();
+    breakable.markFailedReturnsNull = true;
+    const uc = new SendNotificationUseCase(breakable, failingSender, bus, clock, seqIds());
+
+    const r = await uc.exec(cmd("fail-notfound-key-001"));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe("not_found");
+      expect(r.error.message).toMatch(/notification/i);
+    }
+    // No notification.sent event must have been emitted
+    expect(bus.recorded.some((e) => e.name === "notification.sent")).toBe(false);
+  });
+
+  it("returns a not-found error when markSent returns null after a successful send", async () => {
+    const breakable = new BreakableNotificationRepository();
+    breakable.markSentReturnsNull = true;
+    const sender = new CountingSender(clock);
+    const uc = new SendNotificationUseCase(breakable, sender, bus, clock, seqIds());
+
+    const r = await uc.exec(cmd("sent-notfound-key-001"));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe("not_found");
+      expect(r.error.message).toMatch(/notification/i);
+    }
+    // Sender was called (send succeeded), but no event should be emitted
+    expect(sender.calls).toBe(1);
+    expect(bus.recorded.some((e) => e.name === "notification.sent")).toBe(false);
   });
 });
 

@@ -198,6 +198,82 @@ describe("CreateJobFromEstimateUseCase", () => {
     expect(isOk(first) && isOk(second) && first.value.props.id === second.value.props.id).toBe(true);
     expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
   });
+
+  it("uses zeroMoney when estimate totalCents is 0", async () => {
+    const zeroEstimate: EstimateSummary = { ...acceptedEstimate(), totalCents: 0 };
+    const r = await useCase(new FakeEstimateReader(zeroEstimate)).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.total).toBe(0);
+    }
+  });
+
+  it("insert-race: returns the winner when insertForEstimate loses the race but re-fetch succeeds", async () => {
+    // Simulate the concurrent double-call case: insertForEstimate signals DO NOTHING (false),
+    // but findBySourceEstimate returns the row committed by the winning concurrent request.
+    const winnerEstimate = acceptedEstimate();
+    // First call succeeds normally to build a winner job in the repo.
+    const uc = useCase(new FakeEstimateReader(winnerEstimate));
+    const winnerResult = await uc.exec({ orgId: ORG, estimateId: EST });
+    expect(isOk(winnerResult)).toBe(true);
+    if (!isOk(winnerResult)) return;
+    const winnerId = winnerResult.value.props.id;
+
+    // Build a repo that always returns false for insertForEstimate but still has the winner stored.
+    // Delegate all other methods to the real repo so nextNumber etc. work.
+    class RaceWinnerRepo extends FakeJobRepository {
+      override async insertForEstimate(_job: Job): Promise<boolean> {
+        return false; // simulate DO NOTHING — we "lost" the insert race
+      }
+      override async findBySourceEstimate(estimateId: EstimateId): Promise<Job | null> {
+        return repo.findBySourceEstimate(estimateId); // re-fetch returns the actual winner
+      }
+    }
+    const racingUc = new CreateJobFromEstimateUseCase(
+      new RaceWinnerRepo(),
+      new FakeEstimateReader(winnerEstimate),
+      bus,
+      clock,
+      seqIds(),
+    );
+    const raceResult = await racingUc.exec({ orgId: ORG, estimateId: EST });
+    expect(isOk(raceResult)).toBe(true);
+    if (isOk(raceResult)) {
+      expect(raceResult.value.props.id).toBe(winnerId);
+    }
+    // The losing racer must not emit a duplicate job.created event.
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
+  });
+
+  it("insert-race final conflict: returns conflict error when insertForEstimate returns false and re-fetch finds nothing", async () => {
+    // Edge case: insert returned false (DO NOTHING) but the row has since vanished from a
+    // subsequent read — surfaces a conflict error rather than silently succeeding or panicking.
+    class GhostRepo extends FakeJobRepository {
+      override async insertForEstimate(_job: Job): Promise<boolean> {
+        return false;
+      }
+      override async findBySourceEstimate(_estimateId: EstimateId): Promise<Job | null> {
+        return null;
+      }
+    }
+    const uc = new CreateJobFromEstimateUseCase(
+      new GhostRepo(),
+      new FakeEstimateReader(acceptedEstimate()),
+      bus,
+      clock,
+      seqIds(),
+    );
+    const r = await uc.exec({ orgId: ORG, estimateId: EST });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe("conflict");
+      expect(r.error.message).toMatch(/already exists/);
+    }
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(0);
+  });
 });
 
 describe("Job lifecycle use-cases", () => {

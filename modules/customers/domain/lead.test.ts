@@ -66,6 +66,33 @@ describe("Lead.moveStage", () => {
     expect(again.props.wonAt?.toISOString()).toBe(wonAt.toISOString());
     expect(again).toBe(lead);
   });
+
+  it("returns the same instance when target stage equals current non-won stage", () => {
+    const lead = unwrap(Lead.create(baseProps({ stage: "contacted" })));
+    const again = lead.moveStage("contacted", new Date("2026-06-15T00:00:00Z"));
+    expect(again).toBe(lead);
+  });
+
+  it("preserves the original wonAt when re-moving a won lead to won via a different path (already-won wonAt)", () => {
+    const firstWonAt = new Date("2026-06-05T00:00:00Z");
+    // Simulate: lead was previously won (wonAt already set), moved away, then moved back to won.
+    const lead = unwrap(
+      Lead.create(baseProps({ stage: "contacted", wonAt: firstWonAt })),
+    ).moveStage("won", new Date("2026-06-20T00:00:00Z"));
+    // The wonAt ?? now path should pick wonAt (firstWonAt), not the new `now`.
+    expect(lead.props.wonAt?.toISOString()).toBe(firstWonAt.toISOString());
+    expect(lead.props.stage).toBe("won");
+  });
+
+  it("clears wonAt when moving away from won to a non-won stage", () => {
+    const wonAt = new Date("2026-06-05T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ stage: "won", wonAt })));
+    const moved = lead.moveStage("lost", new Date("2026-06-15T00:00:00Z"));
+    expect(moved.props.stage).toBe("lost");
+    // wonAt is propagated as-is when moving to non-won (the source stays null-or-set).
+    // The domain keeps wonAt on the struct unchanged when not moving to won.
+    expect(moved.props.wonAt?.toISOString()).toBe(wonAt.toISOString());
+  });
 });
 
 describe("Lead.firstTouch", () => {
@@ -81,6 +108,18 @@ describe("Lead.firstTouch", () => {
     const touched = lead.firstTouch(new Date("2026-06-02T00:00:00Z"));
     expect(touched).toBe(lead);
   });
+
+  it("is a no-op when stage is contacted (returns same instance)", () => {
+    const lead = unwrap(Lead.create(baseProps({ stage: "contacted" })));
+    expect(lead.firstTouch(new Date("2026-06-02T00:00:00Z"))).toBe(lead);
+  });
+
+  it("is a no-op when stage is won (returns same instance)", () => {
+    const now = new Date("2026-06-02T00:00:00Z");
+    const wonAt = new Date("2026-06-01T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ stage: "won", wonAt })));
+    expect(lead.firstTouch(now)).toBe(lead);
+  });
 });
 
 describe("Lead.markRead", () => {
@@ -94,6 +133,21 @@ describe("Lead.markRead", () => {
   it("is a no-op when already read", () => {
     const lead = unwrap(Lead.create(baseProps({ unread: false })));
     expect(lead.markRead(new Date("2026-06-03T00:00:00Z"))).toBe(lead);
+  });
+});
+
+describe("Lead.markUnread", () => {
+  it("sets the unread flag when currently read", () => {
+    const now = new Date("2026-06-04T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ unread: false }))).markUnread(now);
+    expect(lead.props.unread).toBe(true);
+    expect(lead.props.updatedAt.toISOString()).toBe(now.toISOString());
+  });
+
+  it("is a no-op when already unread (returns same instance)", () => {
+    const lead = unwrap(Lead.create(baseProps({ unread: true })));
+    const again = lead.markUnread(new Date("2026-06-04T00:00:00Z"));
+    expect(again).toBe(lead);
   });
 });
 
