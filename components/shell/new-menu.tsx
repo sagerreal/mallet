@@ -65,7 +65,7 @@ export function NewMenu() {
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button
-        className="quickadd-btn"
+        className={`navnew${open ? " open" : ""}`}
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="true"
         aria-expanded={open}

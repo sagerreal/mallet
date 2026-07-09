@@ -1045,7 +1045,7 @@ describe("customer_create", () => {
     const leadId = randomUUID();
     mockClass(DrizzleLeadRepository, { ensureCustomer: vi.fn().mockResolvedValue({ lead: { props: { id: leadId, name: "Acme", stage: "new", orgId: "org-1" } }, created: true }) });
     mockClass(EnsureCustomerUseCase, {
-      exec: vi.fn().mockResolvedValue({ ok: true, value: { props: { id: leadId, name: "Acme", stage: "new" } } }),
+      exec: vi.fn().mockResolvedValue({ ok: true, value: { lead: { props: { id: leadId, name: "Acme", stage: "new" } }, created: true } }),
     });
 
     const result = await toolByName("customer_create").handle({ name: "Acme" }, makeCtx());

@@ -317,6 +317,120 @@ describe("updateLead integration (with trpcVanilla mock)", () => {
     expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.name).toBe("Before");
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// addTask — verify optimistic insertion and that create is called with the
+// correct payload including dueDate.
+// ---------------------------------------------------------------------------
+
+describe("addTask (with trpcVanilla mock)", () => {
+  // Grab the tasks.create mock so we can inspect calls.
+  let createMutate: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    // Re-import the mock to get the live vi.fn reference after each reset.
+    const { trpcVanilla } = await import("@/lib/trpc/vanilla");
+    createMutate = trpcVanilla.v1.tasks.create.mutate as ReturnType<typeof vi.fn>;
+    createMutate.mockReset();
+    createMutate.mockResolvedValue({
+      id: "task-uuid",
+      text: "Follow up",
+      dueDate: "2026-07-15",
+      leadId: "lead-111",
+      done: false,
+    });
+  });
+
+  it("adds task optimistically and calls create with the supplied dueDate", async () => {
+    const slice = makeSlice();
+
+    slice.state.addTask({
+      t: "Follow up",
+      due: "2026-07-15",
+      leadId: "lead-111",
+    });
+
+    // Optimistic insert — task is immediately visible in the store.
+    expect(slice.state.tasks).toHaveLength(1);
+    expect(slice.state.tasks[0]?.t).toBe("Follow up");
+    expect(slice.state.tasks[0]?.due).toBe("2026-07-15");
+    expect(slice.state.tasks[0]?.done).toBe(false);
+
+    // Mutation was called with the correct shape.
+    expect(createMutate).toHaveBeenCalledOnce();
+    const call = createMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.text).toBe("Follow up");
+    expect(call.dueDate).toBe("2026-07-15");
+    expect(call.leadId).toBe("lead-111");
+
+    // Wait for reconciliation.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Task is still present (id reconciled from DTO).
+    expect(slice.state.tasks).toHaveLength(1);
+  });
+
+  it("adds task with no due date — passes null to create", async () => {
+    createMutate.mockResolvedValue({
+      id: "task-uuid-2",
+      text: "No date task",
+      dueDate: null,
+      leadId: "lead-111",
+      done: false,
+    });
+
+    const slice = makeSlice();
+
+    // Pass empty string (as the component does when the date input is blank).
+    slice.state.addTask({
+      t: "No date task",
+      due: "",
+      leadId: "lead-111",
+    });
+
+    expect(createMutate).toHaveBeenCalledOnce();
+    const call = createMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    // Empty string is coerced to null by the slice (draft.due || null).
+    expect(call.dueDate).toBeNull();
+  });
+
+  it("rolls back the optimistic task on create failure", async () => {
+    createMutate.mockRejectedValue(new Error("server error"));
+
+    const slice = makeSlice();
+    slice.state.addTask({ t: "Fail task", due: "2026-08-01", leadId: "lead-111" });
+
+    // Optimistic insert visible before rejection.
+    expect(slice.state.tasks).toHaveLength(1);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Rolled back — task gone.
+    expect(slice.state.tasks).toHaveLength(0);
+  });
+});
+
+describe("updateLead integration (with trpcVanilla mock) — continued", () => {
+  beforeEach(() => {
+    mockMutate.mockReset();
+    mockMutate.mockResolvedValue({
+      id: "lead-111",
+      name: "Ada Lovelace",
+      phone: "+15550001234",
+      email: "ada@example.com",
+      source: "referral",
+      stage: "new",
+      value: { cents: 25000, currency: "USD" },
+      unread: false,
+      companyId: null,
+      role: null,
+      createdAt: new Date().toISOString(),
+    });
+  });
+
   it("field-level rollback: concurrent edit to a different field survives a failed first mutation", async () => {
     // Setup: lead starts with name="A" and phone="+1111"
     const slice = makeSlice();
