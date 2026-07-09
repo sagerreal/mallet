@@ -2,19 +2,20 @@
 
 /**
  * Messages page — pixel-faithful port of the prototype's vMessages() + aiPhone().
- * Reads live leads from the Zustand app-store; the inbox lists leads that have
- * SMS activity (a text act), unread first. Clicking a thread opens the real SMS
- * thread modal. The AI-phone view stays a self-contained local mock.
  *
- * Prototype source: vMessages() lines 3740-3757, aiPhone() lines 3759-3787.
+ * Layout:
+ *   1. Pinned "Mallet AI" crew card (unchanged — separate AI-logging surface).
+ *   2. Customer Inbox powered by v1.messaging.listConversations (live DB).
+ *
+ * Clicking a customer row opens the existing ThreadModal for that leadId.
  */
 
 import { useState } from "react";
-import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Lead } from "@/lib/store/types";
-
-// ---- helpers ---------------------------------------------------------------
+import { api } from "@/lib/trpc/client";
+import { shortWhen } from "@/lib/format";
+import { useMe } from "@/features/identity/hooks";
 
 function leadInitials(name: string): string {
   return (name ?? "?")
@@ -25,27 +26,11 @@ function leadInitials(name: string): string {
     .toUpperCase();
 }
 
-function lastMsg(l: Lead): string {
-  const acts = (l.acts ?? []).filter((x) => x.type === "text");
-  if (acts.length) {
-    const last = acts[acts.length - 1];
-    const t = last?.t ?? "";
-    return t.length > 64 ? t.slice(0, 64) + "…" : t;
-  }
-  return l.last ?? "";
-}
-
-/** True when a lead has any SMS (text) activity. */
-function hasSms(l: Lead): boolean {
-  return (l.acts ?? []).some((a) => a.type === "text");
-}
-
-/** Threads = leads with SMS activity, unread first (stable otherwise). */
-function smsThreads(leads: Lead[]): Lead[] {
-  return leads
-    .filter(hasSms)
-    .slice()
-    .sort((a, b) => (b.unread ? 1 : 0) - (a.unread ? 1 : 0));
+/** One-line snippet: outbound messages are prefixed with "You: ". */
+function snippet(body: string, direction: "inbound" | "outbound"): string {
+  const prefix = direction === "outbound" ? "You: " : "";
+  const full = prefix + body;
+  return full.length > 72 ? full.slice(0, 72) + "…" : full;
 }
 
 // ============================================================================
@@ -55,14 +40,20 @@ function smsThreads(leads: Lead[]): Lead[] {
 
 const AI_CONVO = [
   { who: "me" as const, t: "Heading to the Hernandez job" },
-  { who: "them" as const, t: "👍 En route to Two toilets · Sofia Hernandez — 318 Sycamore Rd. I texted her your ETA." },
+  {
+    who: "them" as const,
+    t: "👍 En route to Two toilets · Sofia Hernandez — 318 Sycamore Rd. I texted her your ETA.",
+  },
   { who: "me" as const, photo: true },
   { who: "me" as const, t: "all done — used 2 capacitors, 2.5 hrs on site" },
   {
     who: "them" as const,
     t: "✓ Logged to Two toilets — Hernandez:\n•  photo added to the job\n•  2.5 h on your timesheet\n•  2× capacitor added to materials\nReady to invoice. Reply UNDO to undo.",
   },
-  { who: "me" as const, t: "wait — that was the Okafor AC job, not Hernandez" },
+  {
+    who: "me" as const,
+    t: "wait — that was the Okafor AC job, not Hernandez",
+  },
   {
     who: "them" as const,
     t: "No problem — moved it to AC tune-up · Rita Okafor and reverted Hernandez. Anything else?",
@@ -189,18 +180,30 @@ function AiPhone({ onBack }: AiPhoneProps) {
 }
 
 // ============================================================================
-// Thread row
+// Customer conversation row
 // ============================================================================
 
-interface ThreadRowProps {
-  lead: Lead;
+interface ConversationRowProps {
+  leadId: string;
+  leadName: string;
+  lastBody: string;
+  lastDirection: "inbound" | "outbound";
+  lastAt: string;
+  unread: boolean;
   onClick: () => void;
 }
 
-function ThreadRow({ lead: l, onClick }: ThreadRowProps) {
+function ConversationRow({
+  leadName,
+  lastBody,
+  lastDirection,
+  lastAt,
+  unread,
+  onClick,
+}: ConversationRowProps) {
   return (
     <div
-      className={`msg-row ${l.unread ? "unread" : ""}`}
+      className={`msg-row${unread ? " unread" : ""}`}
       onClick={onClick}
     >
       <span
@@ -213,16 +216,102 @@ function ThreadRow({ lead: l, onClick }: ThreadRowProps) {
           color: "var(--ink-2)",
         }}
       >
-        {leadInitials(l.name)}
+        {leadInitials(leadName)}
       </span>
       <div className="msg-main">
         <div className="msg-nm">
-          {l.name}
-          {l.unread ? <span className="msg-dot" /> : null}
+          {leadName}
+          {unread ? <span className="msg-dot" /> : null}
         </div>
-        <div className="msg-snip">{lastMsg(l) || "No messages yet"}</div>
+        <div className="msg-snip">{snippet(lastBody, lastDirection)}</div>
       </div>
-      {l.phone ? <span className="msg-tm">{l.phone}</span> : null}
+      <span className="msg-tm">{shortWhen(lastAt)}</span>
+    </div>
+  );
+}
+
+// ============================================================================
+// Customer Inbox — live from v1.messaging.listConversations
+// ============================================================================
+
+function CustomerInbox() {
+  const openModal = useOpenModal();
+
+  const { data: conversations, isLoading } =
+    api.v1.messaging.listConversations.useQuery(undefined, {
+      staleTime: 15_000,
+      refetchOnWindowFocus: false,
+    });
+
+  if (isLoading) {
+    return (
+      <div className="empty-att" style={{ color: "var(--ink-3)" }}>
+        Loading…
+      </div>
+    );
+  }
+
+  if (!conversations || conversations.length === 0) {
+    return (
+      <div className="empty-att">
+        No customer messages yet — they&apos;ll appear here when a customer
+        texts your business number.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {conversations.map((c) => (
+        <ConversationRow
+          key={c.leadId}
+          leadId={c.leadId}
+          leadName={c.leadName}
+          lastBody={c.lastBody}
+          lastDirection={c.lastDirection}
+          lastAt={c.lastAt}
+          unread={c.unread}
+          onClick={() => openModal(MODAL.THREAD, { leadId: c.leadId })}
+        />
+      ))}
+    </>
+  );
+}
+
+// ============================================================================
+// Mallet AI pinned card — visible to all roles
+// ============================================================================
+
+interface MalletAiCardProps {
+  onClick: () => void;
+}
+
+function MalletAiCard({ onClick }: MalletAiCardProps) {
+  return (
+    <div
+      className="msg-row"
+      style={{ borderColor: "var(--ink)" }}
+      onClick={onClick}
+    >
+      <span
+        className="javatar"
+        style={{
+          width: 38,
+          height: 38,
+          fontSize: 17,
+          background: "var(--ink)",
+          color: "var(--paper)",
+        }}
+      >
+        ✦
+      </span>
+      <div className="msg-main">
+        <div className="msg-nm">Mallet AI</div>
+        <div className="msg-snip">
+          Text it to log work, photos &amp; hours — from any phone
+        </div>
+      </div>
+      <span className="msg-tm">try it ›</span>
     </div>
   );
 }
@@ -232,75 +321,28 @@ function ThreadRow({ lead: l, onClick }: ThreadRowProps) {
 // ============================================================================
 
 export default function MessagesPage() {
-  const leads = useAppStore((s) => s.leads);
-  const openModal = useOpenModal();
-
   const [aiOpen, setAiOpen] = useState(false);
-
-  // Prototype: techCanText() — perms.techTexts is on by default
-  const techCanText = true;
-
-  if (!techCanText) {
-    return (
-      <>
-        <h1>Messages</h1>
-        <div className="empty-att">
-          Texting from the field is off — ask the office to turn it on.
-        </div>
-      </>
-    );
-  }
+  const { data: me, isLoading: meLoading } = useMe();
 
   if (aiOpen) {
     return <AiPhone onBack={() => setAiOpen(false)} />;
   }
 
-  // Derived in the component body (never inside a selector).
-  const threads = smsThreads(leads);
+  // Only owner/office may see the customer inbox. While the role query is in
+  // flight we don't yet know the role, so hold off rendering the inbox to
+  // avoid a transient FORBIDDEN flash from CustomerInbox.
+  const canSeeInbox =
+    !meLoading && (me?.role === "owner" || me?.role === "office");
 
   return (
     <>
       <h1>Messages</h1>
       <div className="msg-list">
-        {/* Mallet AI row (always first) */}
-        <div
-          className="msg-row"
-          style={{ borderColor: "var(--ink)" }}
-          onClick={() => setAiOpen(true)}
-        >
-          <span
-            className="javatar"
-            style={{
-              width: 38,
-              height: 38,
-              fontSize: 17,
-              background: "var(--ink)",
-              color: "var(--paper)",
-            }}
-          >
-            ✦
-          </span>
-          <div className="msg-main">
-            <div className="msg-nm">Mallet AI</div>
-            <div className="msg-snip">
-              Text it to log work, photos &amp; hours — from any phone
-            </div>
-          </div>
-          <span className="msg-tm">try it ›</span>
-        </div>
+        {/* Mallet AI row — pinned first, visible to all roles */}
+        <MalletAiCard onClick={() => setAiOpen(true)} />
 
-        {/* Customer threads */}
-        {threads.map((l) => (
-          <ThreadRow
-            key={l.id}
-            lead={l}
-            onClick={() => openModal(MODAL.THREAD, { leadId: l.id })}
-          />
-        ))}
-
-        {threads.length === 0 ? (
-          <div className="empty-att">No messages yet.</div>
-        ) : null}
+        {/* Customer inbox — only for owner/office once role is confirmed */}
+        {canSeeInbox && <CustomerInbox />}
       </div>
     </>
   );

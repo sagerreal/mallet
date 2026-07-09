@@ -1,4 +1,32 @@
 // lib/format.ts — the ONLY place money/dates become strings (money is integer cents everywhere).
+
+/**
+ * Short relative timestamp used in conversation lists and message threads.
+ * Accepts an ISO string or a Date.
+ *   • Same day  → "9:04am"
+ *   • This week → "Tue 2:10pm"
+ *   • Older     → "Jul 7"
+ */
+export function shortWhen(isoOrDate: string | Date): string {
+  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return d
+      .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+      .toLowerCase();
+  }
+  if (diffDays < 7) {
+    const day = d.toLocaleDateString("en-US", { weekday: "short" });
+    const time = d
+      .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+      .toLowerCase();
+    return `${day} ${time}`;
+  }
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 export const formatMoney = (cents: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 

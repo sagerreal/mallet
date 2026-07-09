@@ -1,5 +1,6 @@
 import type { OrgId, LeadId, MessageId } from "@mallet/shared/types";
 import type { Message } from "./message";
+import type { MessageDirection } from "./message";
 
 export interface RecordOutboundInput {
   readonly id: string;
@@ -22,12 +23,27 @@ export interface RecordInboundInput {
   readonly providerSid: string | null;
 }
 
+// One row per lead: the lead's name/unread flag plus the most-recent non-deleted message.
+// Returned by listConversations(); sorted by lastAt DESC (newest thread first).
+export interface ConversationRow {
+  readonly leadId: LeadId;
+  readonly leadName: string;
+  readonly lastBody: string;
+  readonly lastDirection: MessageDirection;
+  readonly lastAt: Date;
+  readonly unread: boolean;
+}
+
 // Port for the messages persistence surface. All implementations are org-scoped.
 export interface MessageRepository {
   recordOutbound(input: RecordOutboundInput): Promise<Message>;
   recordInbound(input: RecordInboundInput): Promise<Message>;
   listByLead(leadId: LeadId, page: { limit: number; offset: number }): Promise<Message[]>;
   findById(id: MessageId): Promise<Message | null>;
+  // One efficient query — no N+1. Returns one ConversationRow per lead that has at least
+  // one non-deleted message, sorted newest-first. An optional leadId filter is reserved for
+  // a future tech-scoping pass; pass undefined (default) for all leads in the org.
+  listConversations(filter?: { leadId?: LeadId }): Promise<ConversationRow[]>;
 }
 
 // Unprivileged reader used by the inbound webhook to resolve which org owns a Twilio To-number.
