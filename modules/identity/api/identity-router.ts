@@ -5,6 +5,7 @@ import { orgs, users, orgInvites } from "@mallet/shared/db/schema";
 import { withTenant } from "@mallet/shared/db/tx";
 import { asOrgId, asUserId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
+import { loadConfig } from "@mallet/shared/config";
 import { router, authedNoPrincipal, anyRole, ownerOrOffice } from "@/trpc/init";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { ROLES } from "../domain/principal";
@@ -27,10 +28,15 @@ async function sendInviteEmail(email: string, orgId: string): Promise<InviteEmai
   try {
     const admin = getSupabaseAdmin();
 
-    // Determine the redirectTo URL. PUBLIC_APP_URL is set in production; fall back to a relative
-    // path that Supabase will expand using the Site URL configured in the project dashboard.
-    const appUrl = process.env.PUBLIC_APP_URL ?? "";
-    const redirectTo = appUrl ? `${appUrl}/auth/callback` : "/auth/callback";
+    // Determine the redirectTo URL. PUBLIC_APP_URL is read from the validated config singleton so
+    // it goes through Zod's z.url() check at boot rather than reaching here raw; fall back to a
+    // relative path that Supabase will expand using the Site URL configured in the project dashboard.
+    const appUrl = loadConfig().PUBLIC_APP_URL ?? "";
+    // After the invited user clicks the link, /auth/callback establishes the session, then
+    // forwards them to set-password so they can choose a password before entering the app.
+    // The `next` param is validated by safeNext inside the callback route (open-redirect guard).
+    const callbackBase = appUrl ? `${appUrl}/auth/callback` : "/auth/callback";
+    const redirectTo = `${callbackBase}?next=/auth/set-password`;
 
     const { error } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,
