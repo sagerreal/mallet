@@ -26,7 +26,7 @@ const createInput = z.object({
   // Client may author the id (mirrors createVisit pattern for optimistic UI).
   id: z.string().uuid().optional(),
   text: z.string().min(1).max(2000),
-  dueDate: z.string().nullable().optional(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   leadId: z.string().uuid().nullable().optional(),
 });
 
@@ -38,7 +38,7 @@ const setDoneInput = z.object({
 const updateInput = z.object({
   taskId: z.string().uuid(),
   text: z.string().min(1).max(2000).optional(),
-  dueDate: z.string().nullable().optional(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   leadId: z.string().uuid().nullable().optional(),
 });
 

@@ -60,6 +60,7 @@ export function TasksCard({ lead }: TasksCardProps) {
   const addTask = useAppStore((s) => s.addTask);
 
   const [taskText, setTaskText] = useState("");
+  const [taskDue, setTaskDue] = useState("");
 
   // Derive this lead's tasks in the component body (never inside a selector).
   const leadTasks = tasks.filter((t) => t.leadId === lead.id);
@@ -69,13 +70,14 @@ export function TasksCard({ lead }: TasksCardProps) {
   function handleAddTask() {
     const trimmed = taskText.trim();
     if (!trimmed) return;
-    // Due on the live clock — tasks are filed under today's date.
+    // Use the chosen date if set; fall back to today (preserving prior behaviour).
     addTask({
       t: trimmed,
-      due: todayISO(),
+      due: taskDue || todayISO(),
       leadId: lead.id,
     });
     setTaskText("");
+    setTaskDue("");
   }
 
   return (
@@ -94,8 +96,8 @@ export function TasksCard({ lead }: TasksCardProps) {
         </div>
       )}
 
-      {/* Add a task — one clean line: type it, hit Add */}
-      <div className="cfrow" style={{ marginTop: 12 }}>
+      {/* Add a task — text + optional due date + Add button, all in one row */}
+      <div className="cfrow" style={{ marginTop: 12, gap: 6 }}>
         <input
           type="text"
           placeholder="Add a task — e.g. First call, send quote…"
@@ -103,6 +105,28 @@ export function TasksCard({ lead }: TasksCardProps) {
           onChange={(e) => setTaskText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") handleAddTask();
+          }}
+          style={{ flex: 1 }}
+        />
+        <input
+          type="date"
+          value={taskDue}
+          onChange={(e) => setTaskDue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleAddTask();
+          }}
+          aria-label="Due date"
+          title="Due date (optional)"
+          style={{
+            width: 130,
+            flexShrink: 0,
+            fontSize: 12.5,
+            padding: "0 6px",
+            height: "var(--input-h, 34px)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius, 6px)",
+            background: "var(--surface)",
+            color: taskDue ? "var(--ink)" : "var(--ink-3)",
           }}
         />
         <button className="btn sm primary" onClick={handleAddTask} disabled={!taskText.trim()}>

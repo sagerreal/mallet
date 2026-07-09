@@ -28,6 +28,10 @@ const leadDTO = z.object({
   createdAt: z.string(),
 });
 
+// create extends the base DTO with a `created` flag so callers can distinguish a genuine
+// new insert from a dedupe hit (ON CONFLICT DO NOTHING returning the existing row).
+const createLeadDTO = leadDTO.extend({ created: z.boolean() });
+
 const createInput = z.object({
   name: z.string().min(1).max(255),
   phone: z.string().max(20).optional(),
@@ -177,7 +181,7 @@ export const createLeadRouter = () =>
 
     create: ownerOrOffice
       .input(createInput)
-      .output(leadDTO)
+      .output(createLeadDTO)
       .mutation(async ({ ctx, input }) => {
         let phone: Phone | null = null;
         if (input.phone) {
@@ -197,7 +201,12 @@ export const createLeadRouter = () =>
           companyId: input.companyId ? asCompanyId(input.companyId) : null,
           role: input.role ?? null,
         });
-        return toLeadDTO(orThrow(result));
+        const { lead, created } = orThrow(result);
+        logger.info(
+          { leadId: lead.props.id, orgId: ctx.principal.orgId, created },
+          created ? "lead.created" : "lead.deduped",
+        );
+        return { ...toLeadDTO(lead), created };
       }),
 
     get: ownerOrOffice

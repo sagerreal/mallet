@@ -39,13 +39,13 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
   const utils = api.useUtils();
   const createMutation = api.v1.customers.create.useMutation({
-    onSuccess() {
-      utils.v1.customers.list.invalidate();
-    },
     onError(err) {
       setError(err.message);
     },
   });
+
+  // Dedup message shown when the submitted phone matches an existing customer.
+  const [dedupLeadId, setDedupLeadId] = useState<string | null>(null);
 
   // Core fields
   const [name, setName] = useState("");
@@ -108,6 +108,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setCfValue("");
     setShowAddField(false);
     setError(null);
+    setDedupLeadId(null);
   }
 
   function handleClose() {
@@ -167,12 +168,27 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     createMutation.mutate(
       buildCreateInput(resolved?.companyId),
       {
-        onSuccess() {
+        onSuccess(data) {
+          if (!data.created) {
+            // Dedup hit — the phone matched an existing customer. Surface it instead of
+            // silently closing, which would leave the user wondering why nothing appeared.
+            setDedupLeadId(data.id);
+            return;
+          }
+          utils.v1.customers.list.invalidate();
           reset();
           close();
         },
       },
     );
+  }
+
+  function handleOpenExisting() {
+    if (!dedupLeadId) return;
+    const id = dedupLeadId;
+    reset();
+    close();
+    openModal(MODAL.LEAD, { leadId: id });
   }
 
   /** "✦ Build the price →" — create the customer + job, then open the price builder. */
@@ -187,6 +203,12 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       buildCreateInput(resolved?.companyId),
       {
         onSuccess(data) {
+          if (!data.created) {
+            // Dedup hit — show the inline message; don't start a job for someone else's number.
+            setDedupLeadId(data.id);
+            return;
+          }
+          utils.v1.customers.list.invalidate();
           const job: Job | null = visitPurpose === "job"
             ? addJob({
                 leadId: data.id,
@@ -526,12 +548,35 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           <p style={{ color: "var(--red)", fontSize: 13, margin: "0 0 12px" }}>{error}</p>
         )}
 
+        {/* Dedup notice — shown when the submitted phone already belongs to an existing customer */}
+        {dedupLeadId && (
+          <div style={{
+            background: "var(--surface-2, #f5f5f5)",
+            border: "1px solid var(--border, #e0e0e0)",
+            borderRadius: 8,
+            padding: "10px 14px",
+            marginBottom: 12,
+            fontSize: 13,
+          }}>
+            <p style={{ margin: "0 0 8px", color: "var(--text-1, #111)" }}>
+              A customer with that phone already exists.
+            </p>
+            <button
+              type="button"
+              className="btn primary sm"
+              onClick={handleOpenExisting}
+            >
+              Open their record
+            </button>
+          </div>
+        )}
+
         {/* 8. Footer */}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button type="button" className="btn ghost" onClick={handleClose} disabled={createMutation.isPending}>
             Cancel
           </button>
-          <button type="submit" className="btn primary" disabled={createMutation.isPending}>
+          <button type="submit" className="btn primary" disabled={createMutation.isPending || Boolean(dedupLeadId)}>
             {createMutation.isPending ? "Saving…" : submitLabel()}
           </button>
         </div>

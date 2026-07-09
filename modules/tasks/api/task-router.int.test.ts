@@ -206,6 +206,23 @@ suite("tasks tRPC router (full stack, live RLS)", () => {
     });
   });
 
+  // ── dueDate format validation ─────────────────────────────────────────────────
+
+  it("create rejects a malformed dueDate with BAD_REQUEST", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.tasks.create({ text: "Bad date", dueDate: "07/15/2026" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("update rejects a malformed dueDate with BAD_REQUEST", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.tasks.create({ text: "Good task" });
+    await expect(
+      caller.v1.tasks.update({ taskId: created.id, dueDate: "tomorrow" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   // ── filter: done ──────────────────────────────────────────────────────────────
 
   it("list with done=true only returns done tasks", async () => {

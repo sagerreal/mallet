@@ -303,7 +303,7 @@ export const customerCreateTool: AgentTool = {
       role: parsed.data.role ?? null,
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
-    const p = result.value.props;
+    const p = result.value.lead.props;
     return { ok: true, summary: `Customer "${p.name}" ready — stage ${p.stage} (id: ${p.id}).` };
   },
 };

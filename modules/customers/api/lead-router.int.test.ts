@@ -62,9 +62,29 @@ suite("customers tRPC router (full stack, live RLS)", () => {
     expect(created.name).toBe("Karen Doyle");
     expect(created.phone).toBe("+15554441212");
     expect(created.stage).toBe("new");
+    // Genuine new insert must surface created:true
+    expect(created.created).toBe(true);
 
     const listed = await caller.v1.customers.list({ limit: 50 });
     expect(listed.items.some((l) => l.id === created.id)).toBe(true);
+  });
+
+  it("create returns created:false when phone matches an existing customer", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const first = await caller.v1.customers.create({
+      name: "Dedup Alice",
+      phone: "(555) 777-8888",
+    });
+    expect(first.created).toBe(true);
+
+    // Same phone, different name — should dedup and return the existing record.
+    const second = await caller.v1.customers.create({
+      name: "Alice (again)",
+      phone: "(555) 777-8888",
+    });
+    expect(second.created).toBe(false);
+    expect(second.id).toBe(first.id);
+    expect(second.name).toBe(first.name); // original name preserved
   });
 
   it("a different org sees none of org A's customers", async () => {

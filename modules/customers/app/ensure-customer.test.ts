@@ -149,6 +149,10 @@ describe("EnsureCustomerUseCase", () => {
       role: null,
     });
     expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.created).toBe(true);
+      expect(r.value.lead.props.name).toBe("Karen Doyle");
+    }
     expect(bus.recorded).toHaveLength(1);
     expect(bus.recorded[0]?.name).toBe("customer.created");
   });
@@ -174,11 +178,25 @@ describe("EnsureCustomerUseCase", () => {
     });
     expect(first.ok && second.ok).toBe(true);
     if (first.ok && second.ok) {
-      expect(second.value.props.id).toBe(first.value.props.id);
+      // created flag: first is true, second is false (dedup hit)
+      expect(first.value.created).toBe(true);
+      expect(second.value.created).toBe(false);
+      expect(second.value.lead.props.id).toBe(first.value.lead.props.id);
     }
     const listed = await repo.list(toPage(), undefined);
     expect(listed.items).toHaveLength(1);
     expect(bus.recorded).toHaveLength(1); // only the first creation emitted
+  });
+
+  it("dedupes by phone but not by name alone: same name different phone = two records", async () => {
+    const r1 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null });
+    const r2 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null });
+    expect(r1.ok && r2.ok).toBe(true);
+    if (r1.ok && r2.ok) {
+      // No phone → no dedup key → two distinct records, both created:true
+      expect(r1.value.created).toBe(true);
+      expect(r2.value.created).toBe(true);
+    }
   });
 });
 

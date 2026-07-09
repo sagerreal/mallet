@@ -23,7 +23,7 @@ export class EnsureCustomerUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async exec(cmd: EnsureCustomerCommand): Promise<Result<Lead, AppError>> {
+  async exec(cmd: EnsureCustomerCommand): Promise<Result<{ lead: Lead; created: boolean }, AppError>> {
     const name = cmd.name.trim();
     if (name.length === 0) return err(validation("lead name is required", "name"));
 
@@ -45,6 +45,6 @@ export class EnsureCustomerUseCase {
       });
     }
 
-    return ok(lead);
+    return ok({ lead, created });
   }
 }
