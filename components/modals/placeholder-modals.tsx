@@ -15,7 +15,7 @@ export function CleanUpModalContent() {
   const close = useCloseModal();
   const archiveLead = useAppStore((s) => s.archiveLead);
   const leads = useAppStore((s) => s.leads);
-  const leadId = activeModal?.params?.leadId as number | undefined;
+  const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
 
   function handleArchive() {

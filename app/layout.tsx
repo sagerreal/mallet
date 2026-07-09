@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Inter, Space_Grotesk, Space_Mono } from "next/font/google";
 import { TrpcProvider } from "@/lib/trpc/provider";
@@ -16,6 +16,26 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   title: "Mallet",
   description: "AI-native operating system for service businesses.",
+  applicationName: "Mallet",
+  // Launch full-screen (no Safari chrome) when added to the iPhone home screen.
+  appleWebApp: {
+    capable: true,
+    title: "Mallet",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-icon.png",
+  },
+};
+
+// Edge-to-edge on notched phones (Capacitor/iOS) — CSS uses env(safe-area-inset-*)
+// to keep the topbar/tab-bar clear of the notch + home indicator.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#FCFBF7",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

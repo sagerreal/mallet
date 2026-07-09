@@ -6,6 +6,7 @@ export interface SignupInput {
   readonly authUserId: string;
   readonly email: string;
   readonly orgName: string;
+  readonly name: string | null;
 }
 
 export interface ProvisionedOrg {
@@ -24,7 +25,7 @@ export class SignupStore {
   async createOrgForUser(input: SignupInput): Promise<ProvisionedOrg> {
     const rows = await withConnectionRetry(() =>
       this.db.execute(
-        sql`select org_id, role from public.app_signup_create_org(${input.authUserId}, ${input.email}, ${input.orgName})`,
+        sql`select org_id, role from public.app_signup_create_org(${input.authUserId}, ${input.email}, ${input.orgName}, ${input.name})`,
       ),
     ) as unknown as { org_id: string; role: string }[];
     const row = rows[0];

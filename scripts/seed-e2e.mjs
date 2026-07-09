@@ -27,8 +27,9 @@ try {
 
   for (const u of USERS) {
     const authUserId = await ensureAuthUser(u.email);
-    await sql`insert into users (org_id, auth_user_id, email, role)
-      values (${org.id}, ${authUserId}, ${u.email}, ${u.role})
+    const isFieldCrew = u.role === "owner" || u.role === "tech";
+    await sql`insert into users (org_id, auth_user_id, email, role, is_field_crew)
+      values (${org.id}, ${authUserId}, ${u.email}, ${u.role}, ${isFieldCrew})
       on conflict (auth_user_id) do nothing`;
   }
 

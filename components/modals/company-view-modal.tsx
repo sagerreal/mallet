@@ -17,6 +17,7 @@ import {
   useLeads,
   useEstimates,
   useOpenModal,
+  useCloseModal,
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -32,7 +33,7 @@ function firstName(name: string): string {
 
 interface LinkedLeadsCardProps {
   contacts: Lead[];
-  onOpenLead: (id: number) => void;
+  onOpenLead: (id: string) => void;
 }
 
 function LinkedLeadsCard({ contacts, onOpenLead }: LinkedLeadsCardProps) {
@@ -168,9 +169,10 @@ export function CompanyViewModalContent() {
   const leads = useLeads();
   const estimates = useEstimates();
   const openModal = useOpenModal();
+  const closeModal = useCloseModal();
   const updateCompany = useAppStore((s) => s.updateCompany);
 
-  const companyId = activeModal?.params?.companyId as number | undefined;
+  const companyId = activeModal?.params?.companyId as string | undefined;
   const company = companies.find((c) => c.id === companyId);
 
   if (!company) {
@@ -198,14 +200,31 @@ export function CompanyViewModalContent() {
         }}
       >
         <h2>{company.name}</h2>
-        <button
-          className="btn primary"
-          // Pre-links the company: the New-customer modal seeds Business + the
-          // company name from this param, so the lead lands in Linked leads.
-          onClick={() => openModal(MODAL.NEW_CUSTOMER, { companyId: company.id })}
-        >
-          + New customer for {firstName(company.name)}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {company.archived ? (
+            <button className="btn ghost" onClick={() => updateCompany(company.id, { archived: false })}>
+              Restore
+            </button>
+          ) : (
+            <button
+              className="btn ghost"
+              onClick={() => {
+                updateCompany(company.id, { archived: true });
+                closeModal();
+              }}
+            >
+              Archive
+            </button>
+          )}
+          <button
+            className="btn primary"
+            // Pre-links the company: the New-customer modal seeds Business + the
+            // company name from this param, so the lead lands in Linked leads.
+            onClick={() => openModal(MODAL.NEW_CUSTOMER, { companyId: company.id })}
+          >
+            + New customer for {firstName(company.name)}
+          </button>
+        </div>
       </div>
 
       {contactLine ? (

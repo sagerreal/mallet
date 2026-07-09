@@ -22,7 +22,7 @@ export function dPlus(n: number): string {
 // ---------- type shapes ----------
 
 export interface SampleLead {
-  id: number;
+  id: string;
   name: string;
   phone: string;
   source: string;
@@ -32,7 +32,7 @@ export interface SampleLead {
   last: string;
   book?: boolean;
   unread?: boolean;
-  estId?: number;
+  estId?: string;
   email?: string;
   address?: string;
   companyId?: number;
@@ -45,12 +45,13 @@ export interface SampleLead {
 }
 
 export interface SampleVisit {
-  id: number;
+  id: string;
   date: string;
-  techId: number;
+  techId: string;
   start: number;
   dur: number;
   status: string;
+  onsiteAt?: string;
   scopeNotes?: string;
   photos?: string[];
 }
@@ -80,9 +81,9 @@ export interface SampleEstimateLine {
 }
 
 export interface SampleEstimate {
-  id: number;
+  id: string;
   num: string;
-  leadId: number;
+  leadId: string;
   title: string;
   status: string;
   age: number;
@@ -91,14 +92,8 @@ export interface SampleEstimate {
   fu: { on: boolean; stage: number };
   lines: SampleEstimateLine[];
   pricing?: { disc: number; dep: number; tax: number };
-}
-
-export interface SampleTask {
-  id: number;
-  t: string;
-  due: string;
-  leadId: number | null;
-  done?: boolean;
+  /** Customer opens of the quote page (oldest → newest). */
+  reads?: { when: string; daysAgo: number; live?: boolean; device?: number }[];
 }
 
 export interface SampleJobLine {
@@ -109,8 +104,8 @@ export interface SampleJobLine {
 }
 
 export interface SampleJob {
-  id: number;
-  leadId: number;
+  id: string;
+  leadId: string;
   svc: string;
   origin: string;
   title: string;
@@ -140,10 +135,10 @@ export interface SamplePayment {
 }
 
 export interface SampleInvoice {
-  id: number;
+  id: string;
   num: string;
-  jobId: number | null;
-  leadId: number;
+  jobId: string | null;
+  leadId: string;
   cust: string;
   phone: string;
   title: string;
@@ -157,26 +152,9 @@ export interface SampleInvoice {
   archived: boolean;
 }
 
-export interface SampleCompany {
-  id: number;
-  name: string;
-  sites: unknown[];
-  phone: string;
-  email: string;
-}
-
-export interface SampleUser {
-  id: number;
-  name: string;
-  role: string;
-  email: string;
-  mobile: string;
-  mobileVerified: boolean;
-  techId?: number;
-}
 
 export interface SampleTech {
-  id: number;
+  id: string;
   name: string;
   initials: string;
   color: string;
@@ -197,7 +175,7 @@ export interface SampleBrand {
 
 export const SAMPLE_LEADS: SampleLead[] = [
   {
-    id: 1,
+    id: "1",
     name: "Janet Kim",
     phone: "(925) 555-0142",
     source: "Google",
@@ -207,7 +185,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     last: "Came in via website form today",
   },
   {
-    id: 2,
+    id: "2",
     name: "Tom Brennan",
     phone: "(925) 555-0177",
     source: "Nextdoor / FB",
@@ -217,17 +195,28 @@ export const SAMPLE_LEADS: SampleLead[] = [
     last: "No contact yet",
   },
   {
-    id: 3,
+    id: "3",
     name: "Rob Alvarez",
     phone: "(510) 555-0199",
     source: "Referral",
     stage: "Contacted",
     age: 2,
     job: "Whole-house repipe, 1962 build",
-    last: "Site visit booked — today 11a, Mike",
+    last: "Site visit done — 11a today, Mike walked it",
     address: "88 Touriga Dr, Pleasanton",
+    // Mike walked it this morning — scoped, no quote yet: the estimate run's
+    // headline case (priced from these notes + the shop's last repipe).
     evisits: [
-      { id: 9501, date: TODAY_ISO, techId: 1, start: 11, dur: 1, status: "scheduled" },
+      {
+        id: "9501",
+        date: TODAY_ISO,
+        techId: "1",
+        start: 11,
+        dur: 1,
+        status: "done",
+        scopeNotes:
+          "1962 galvanized supply throughout, 3 bed / 2 bath. Attic and crawlspace access both fine. Full PEX repipe; drywall patches at ~6 points. Homeowner fine with a week of scheduling notice.",
+      },
     ],
     acts: [
       {
@@ -242,7 +231,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     ],
   },
   {
-    id: 4,
+    id: "4",
     name: "Hector Ruiz",
     phone: "(925) 555-0118",
     source: "Yard sign",
@@ -267,7 +256,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     ],
   },
   {
-    id: 5,
+    id: "5",
     name: "Sandy Whitfield",
     phone: "(925) 555-0163",
     source: "Repeat customer",
@@ -275,7 +264,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     age: 9,
     job: "Kitchen drain + install cleanout",
     last: "Quote sent 4 days ago",
-    estId: 101,
+    estId: "est-101",
     email: "sandy.whit@gmail.com",
     address: "218 Kottinger Dr, Pleasanton",
     acts: [
@@ -285,7 +274,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     ],
   },
   {
-    id: 6,
+    id: "6",
     name: "Maria Lopez",
     phone: "(415) 555-0151",
     source: "Google",
@@ -293,14 +282,14 @@ export const SAMPLE_LEADS: SampleLead[] = [
     age: 5,
     job: "40-gal water heater replacement",
     last: "Opened the quote at 9:12pm",
-    estId: 102,
+    estId: "est-102",
     email: "mlopez415@gmail.com",
     acts: [
       { type: "ai", from: "auto", overnight: true, when: "9:12pm", t: "Maria opened quote Q-1043 — second look this week." },
     ],
   },
   {
-    id: 7,
+    id: "7",
     name: "Dave Chen",
     phone: "(925) 555-0133",
     source: "Referral",
@@ -314,9 +303,9 @@ export const SAMPLE_LEADS: SampleLead[] = [
     card: { brand: "Visa", last4: "4242", via: "the deposit" },
     evisits: [
       {
-        id: 7011,
+        id: "7011",
         date: TODAY_ISO,
-        techId: 1,
+        techId: "1",
         start: 9,
         dur: 1,
         status: "scheduled",
@@ -327,7 +316,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     ],
   },
   {
-    id: 8,
+    id: "8",
     name: "Linda Park",
     phone: "(925) 555-0166",
     source: "Google",
@@ -339,7 +328,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     email: "lpark88@yahoo.com",
   },
   {
-    id: 9,
+    id: "9",
     name: "Gary Wolfe",
     phone: "(925) 555-0810",
     source: "Nextdoor / FB",
@@ -350,7 +339,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     lossReason: "Price",
   },
   {
-    id: 10,
+    id: "10",
     name: "Diane Foster",
     phone: "(925) 555-0190",
     source: "Referral",
@@ -362,10 +351,12 @@ export const SAMPLE_LEADS: SampleLead[] = [
     role: "Property manager",
     email: "diane@crestviewpm.com",
     address: "4012 Foothill Rd, Pleasanton",
+    // Walkthrough on the books — the estimate run holds her until it happens.
+    evisits: [{ id: "9502", date: dPlus(2), techId: "1", start: 9, dur: 1, status: "scheduled" }],
   },
   // book:true = customer-book records (direct-booked work)
   {
-    id: 11,
+    id: "11",
     name: "Sofia Hernandez",
     phone: "(925) 555-0150",
     source: "Repeat customer",
@@ -378,7 +369,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     card: { brand: "Visa", last4: "4242", via: "her $500 payment" },
   },
   {
-    id: 12,
+    id: "12",
     name: "Rita Okafor",
     phone: "(925) 555-0161",
     source: "Google",
@@ -390,7 +381,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     address: "90 Vineyard Ave, Pleasanton",
   },
   {
-    id: 13,
+    id: "13",
     name: "Tom Webb",
     phone: "(925) 555-0172",
     source: "Yard sign",
@@ -402,7 +393,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
     address: "12 Stanley Blvd, Pleasanton",
   },
   {
-    id: 14,
+    id: "14",
     name: "Lan Nguyen",
     phone: "(925) 555-0179",
     source: "Repeat customer",
@@ -416,7 +407,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
   {
     // Caught & BOOKED by the AI Front Desk after close — the home Handoff's
     // headline receipt. Transcript lives in the acts (open the thread to read it).
-    id: 15,
+    id: "15",
     name: "Denise Wagner",
     phone: "(925) 555-0148",
     source: "AI Front Desk",
@@ -434,7 +425,7 @@ export const SAMPLE_LEADS: SampleLead[] = [
   },
   {
     // Second overnight caller — message taken + booking link texted; not booked yet.
-    id: 16,
+    id: "16",
     name: "Gary Simmons",
     phone: "(925) 555-0121",
     source: "AI Front Desk",
@@ -447,23 +438,37 @@ export const SAMPLE_LEADS: SampleLead[] = [
       { type: "text", from: "auto", overnight: true, when: "9:41pm", t: "Hi Gary — Rivera Plumbing. Grab a time that suits and we'll get that hose bib sorted: rivera.mallet.ai/book" },
     ],
   },
+  {
+    // Work finished yesterday, never invoiced — the "done, not billed" leak.
+    // book:true keeps her off the Pipeline board; her money surfaces only on Jobs.
+    id: "17",
+    name: "Priya Shah",
+    phone: "(925) 555-0184",
+    source: "Referral",
+    stage: "Won",
+    book: true,
+    age: 1,
+    job: "Hose bib rebuild",
+    last: "Work done yesterday — Tasha",
+    address: "51 Kolln St, Pleasanton",
+    email: "priya.shah@gmail.com",
+  },
 ];
 
-export const SAMPLE_COMPANIES: SampleCompany[] = [
-  { id: 1, name: "Crestview Property Mgmt", sites: [], phone: "(925) 555-0400", email: "office@crestviewpm.com" },
-];
 
 export const SAMPLE_ESTIMATES: SampleEstimate[] = [
   {
-    id: 101,
+    id: "est-101",
     num: "Q-1042",
-    leadId: 5,
+    leadId: "5",
     title: "Kitchen drain + cleanout",
     status: "sent",
     age: 4,
     viewed: true,
     validDays: 14,
     fu: { on: true, stage: 1 },
+    // One read the day it landed, then silence — the cooling row.
+    reads: [{ when: "Fri", daysAgo: 3 }],
     lines: [
       { d: "Hydro-jet kitchen drain line", q: 1, r: 450 },
       { d: "Install exterior cleanout", q: 1, r: 780, photo: true },
@@ -472,14 +477,19 @@ export const SAMPLE_ESTIMATES: SampleEstimate[] = [
     ],
   },
   {
-    id: 102,
+    id: "est-102",
     num: "Q-1043",
-    leadId: 6,
+    leadId: "6",
     title: "40-gal gas water heater replacement",
     status: "sent",
     age: 1,
     viewed: true,
     fu: { on: true, stage: 0 },
+    // Two reads — the second at 9:12pm matches her overnight act on the lead.
+    reads: [
+      { when: "6:05pm", daysAgo: 1 },
+      { when: "9:12pm", daysAgo: 0 },
+    ],
     pricing: { disc: 0, dep: 30, tax: 0 },
     lines: [
       { d: "Remove & haul away existing unit", q: 1, r: 150 },
@@ -490,9 +500,9 @@ export const SAMPLE_ESTIMATES: SampleEstimate[] = [
     ],
   },
   {
-    id: 103,
+    id: "est-103",
     num: "Q-1044",
-    leadId: 4,
+    leadId: "4",
     title: "Two toilet replacements",
     status: "draft",
     age: 0,
@@ -501,9 +511,9 @@ export const SAMPLE_ESTIMATES: SampleEstimate[] = [
     lines: [{ d: "Toilet — Toto Drake, supplied & installed", q: 2, r: 460 }],
   },
   {
-    id: 104,
+    id: "est-104",
     num: "Q-1039",
-    leadId: 7,
+    leadId: "7",
     title: "Whole-house PEX repipe",
     status: "accepted",
     age: 14,
@@ -516,9 +526,9 @@ export const SAMPLE_ESTIMATES: SampleEstimate[] = [
     ],
   },
   {
-    id: 105,
+    id: "est-105",
     num: "Q-1037",
-    leadId: 8,
+    leadId: "8",
     title: "Water heater replacement",
     status: "accepted",
     age: 10,
@@ -528,17 +538,10 @@ export const SAMPLE_ESTIMATES: SampleEstimate[] = [
   },
 ];
 
-export const SAMPLE_TASKS: SampleTask[] = [
-  { id: 1, t: "Send Hector the two toilet options with prices — he is picking between models", due: dPlus(-1), leadId: 4 },
-  { id: 2, t: "Call Rob back — he is talking to his wife tonight", due: dPlus(0), leadId: 3 },
-  { id: 3, t: "Ask Dave Chen for a Google review now the repipe wrapped up", due: dPlus(4), leadId: 7 },
-  { id: 4, t: "Order more yard signs — down to the last two", due: dPlus(9), leadId: null },
-];
-
 export const SAMPLE_JOBS: SampleJob[] = [
   {
-    id: 901,
-    leadId: 7,
+    id: "901",
+    leadId: "7",
     svc: "install",
     origin: "accepted",
     title: "Whole-house PEX repipe",
@@ -558,13 +561,13 @@ export const SAMPLE_JOBS: SampleJob[] = [
       "Homeowner works nights — no start before 9am. Two indoor cats: keep the side gate shut. Leave the old copper for their scrap guy.",
     acts: [],
     visits: [
-      { id: 9011, date: TODAY_ISO, techId: 2, start: 9, dur: 4, status: "scheduled" },
-      { id: 9012, date: dPlus(2), techId: 2, start: 9, dur: 3, status: "scheduled" },
+      { id: "9011", date: TODAY_ISO, techId: "2", start: 9, dur: 4, status: "onsite", onsiteAt: "9:04" },
+      { id: "9012", date: dPlus(2), techId: "2", start: 9, dur: 3, status: "scheduled" },
     ],
   },
   {
-    id: 902,
-    leadId: 8,
+    id: "902",
+    leadId: "8",
     svc: "install",
     origin: "accepted",
     title: "Water heater replacement",
@@ -580,8 +583,8 @@ export const SAMPLE_JOBS: SampleJob[] = [
     visits: [],
   },
   {
-    id: 903,
-    leadId: 11,
+    id: "903",
+    leadId: "11",
     svc: "install",
     origin: "booked",
     title: "Two toilets — Hernandez",
@@ -594,11 +597,11 @@ export const SAMPLE_JOBS: SampleJob[] = [
     photos: [],
     notes: "Gate code 4412.",
     acts: [],
-    visits: [{ id: 9031, date: TODAY_ISO, techId: 1, start: 13, dur: 2, status: "scheduled" }],
+    visits: [{ id: "9031", date: TODAY_ISO, techId: "1", start: 13, dur: 2, status: "scheduled" }],
   },
   {
-    id: 904,
-    leadId: 12,
+    id: "904",
+    leadId: "12",
     svc: "service",
     origin: "booked",
     title: "AC tune-up — Okafor",
@@ -611,11 +614,11 @@ export const SAMPLE_JOBS: SampleJob[] = [
     photos: [],
     notes: "",
     acts: [],
-    visits: [{ id: 9041, date: dPlus(1), techId: 3, start: 10, dur: 1.5, status: "scheduled" }],
+    visits: [{ id: "9041", date: dPlus(1), techId: "3", start: 10, dur: 1.5, status: "scheduled" }],
   },
   {
-    id: 905,
-    leadId: 13,
+    id: "905",
+    leadId: "13",
     svc: "service",
     origin: "booked",
     title: "Drain camera — Webb",
@@ -628,11 +631,11 @@ export const SAMPLE_JOBS: SampleJob[] = [
     photos: [],
     notes: "",
     acts: [],
-    visits: [{ id: 9051, date: dPlus(2), techId: 2, start: 13, dur: 2, status: "scheduled" }],
+    visits: [{ id: "9051", date: dPlus(2), techId: "2", start: 13, dur: 2, status: "scheduled" }],
   },
   {
-    id: 906,
-    leadId: 14,
+    id: "906",
+    leadId: "14",
     svc: "install",
     origin: "accepted",
     title: "Faucet install — Nguyen",
@@ -649,8 +652,8 @@ export const SAMPLE_JOBS: SampleJob[] = [
   },
   {
     // Booked overnight by the AI Front Desk (Denise Wagner) — Thu 8:00 AM.
-    id: 907,
-    leadId: 15,
+    id: "907",
+    leadId: "15",
     svc: "service",
     origin: "frontdesk",
     title: "Garbage disposal replacement — Wagner",
@@ -663,16 +666,34 @@ export const SAMPLE_JOBS: SampleJob[] = [
     photos: [],
     notes: "Gate code 2214. Under-sink leak — bring a pan liner.",
     acts: [],
-    visits: [{ id: 9071, date: dPlus(2), techId: 2, start: 8, dur: 1.5, status: "scheduled" }],
+    visits: [{ id: "9071", date: dPlus(2), techId: "2", start: 8, dur: 1.5, status: "scheduled" }],
+  },
+  {
+    // Finished yesterday by Tasha, no invoice raised → "Done, not billed" on Jobs.
+    id: "908",
+    leadId: "17",
+    svc: "service",
+    origin: "accepted",
+    title: "Hose bib rebuild — Shah",
+    addr: "51 Kolln St, Pleasanton",
+    phone: "(925) 555-0184",
+    status: "done",
+    archived: false,
+    lines: [{ d: "Frost-free hose bib — supplied & rebuilt", q: 1, r: 480, c: 165 }],
+    addons: [],
+    photos: [],
+    notes: "",
+    acts: [],
+    visits: [{ id: "9081", date: dPlus(-1), techId: "3", start: 14, dur: 1, status: "done" }],
   },
 ];
 
 export const SAMPLE_INVOICES: SampleInvoice[] = [
   {
-    id: 801,
+    id: "inv-801",
     num: "INV-2041",
     jobId: null,
-    leadId: 12,
+    leadId: "12",
     cust: "Rita Okafor",
     phone: "(925) 555-0161",
     title: "AC seasonal tune-up",
@@ -685,10 +706,10 @@ export const SAMPLE_INVOICES: SampleInvoice[] = [
     archived: false,
   },
   {
-    id: 802,
+    id: "inv-802",
     num: "INV-2042",
     jobId: null,
-    leadId: 13,
+    leadId: "13",
     cust: "Tom Webb",
     phone: "(925) 555-0172",
     title: "Sewer camera + jet (April call-out)",
@@ -702,10 +723,10 @@ export const SAMPLE_INVOICES: SampleInvoice[] = [
     archived: false,
   },
   {
-    id: 803,
+    id: "inv-803",
     num: "INV-2043",
     jobId: null,
-    leadId: 11,
+    leadId: "11",
     cust: "Sofia Hernandez",
     phone: "(925) 555-0150",
     title: "Shut-off valve replacements",
@@ -719,17 +740,10 @@ export const SAMPLE_INVOICES: SampleInvoice[] = [
   },
 ];
 
-export const SAMPLE_USERS: SampleUser[] = [
-  { id: 1, name: "Mike Rivera", role: "owner", email: "mike@riveraplumbing.com", mobile: "(925) 555-0111", mobileVerified: true, techId: 1 },
-  { id: 2, name: "Dana Reyes", role: "office", email: "dana@riveraplumbing.com", mobile: "(925) 555-0122", mobileVerified: true },
-  { id: 3, name: "Carlos Diaz", role: "tech", email: "carlos@riveraplumbing.com", mobile: "(925) 555-0148", mobileVerified: true, techId: 2 },
-  { id: 4, name: "Tasha Bell", role: "tech", email: "tasha@riveraplumbing.com", mobile: "(925) 555-0159", mobileVerified: false, techId: 3 },
-];
-
 export const SAMPLE_TECHS: SampleTech[] = [
-  { id: 1, name: "Mike Rivera", initials: "MR", color: "#9C5B34", skills: ["Master Plumber", "Gas", "Backflow"], wage: 55, sells: true },
-  { id: 2, name: "Carlos Diaz", initials: "CD", color: "#1d4ed8", skills: ["Journeyman Plumber", "Drain / sewer"], wage: 42 },
-  { id: 3, name: "Tasha Bell", initials: "TB", color: "#b45309", skills: ["EPA 608 (HVAC)", "Electrical"], wage: 48 },
+  { id: "1", name: "Mike Rivera", initials: "MR", color: "#9C5B34", skills: ["Master Plumber", "Gas", "Backflow"], wage: 55, sells: true },
+  { id: "2", name: "Carlos Diaz", initials: "CD", color: "#1d4ed8", skills: ["Journeyman Plumber", "Drain / sewer"], wage: 42 },
+  { id: "3", name: "Tasha Bell", initials: "TB", color: "#b45309", skills: ["EPA 608 (HVAC)", "Electrical"], wage: 48 },
 ];
 
 export const SAMPLE_BRAND: SampleBrand = {
@@ -817,19 +831,15 @@ export function sampleFinKpis() {
 }
 
 /** Find a lead by id */
-export function findLead(id: number): SampleLead | undefined {
+export function findLead(id: string): SampleLead | undefined {
   return SAMPLE_LEADS.find((l) => l.id === id);
 }
 
 /** Find an estimate by id */
-export function findEst(id: number): SampleEstimate | undefined {
+export function findEst(id: string): SampleEstimate | undefined {
   return SAMPLE_ESTIMATES.find((e) => e.id === id);
 }
 
-/** Find a company by id */
-export function findCompany(id: number): SampleCompany | undefined {
-  return SAMPLE_COMPANIES.find((c) => c.id === id);
-}
 
 /** Lead initials for avatar */
 export function leadInitials(name: string): string {
@@ -841,49 +851,3 @@ export function leadInitials(name: string): string {
     .toUpperCase();
 }
 
-// ---------- time entries (added for My Hours / vMyTime port) ----------
-// The prototype seeds timeEntries:[] and calls seedTimesheets() for demo data.
-// These entries mirror the seed data from prototype's seedTimesheets() function
-// (lines 3631-3634), scoped to Monday of 2026-07-01's week (Mon 2026-06-29).
-
-export interface SampleTimeEntry {
-  id: number;
-  techId: number;
-  date: string;           // ISO date
-  kind: "job" | "travel" | "break" | "shop";
-  jobId: number | null;
-  jobTitle?: string;      // denormalized for display (not in prototype state, but simplifies the port)
-  start: string;          // "HH:MM"
-  end: string | null;     // "HH:MM" or null if running
-  note: string;
-  src: "clock" | "timer" | "manual";
-  status: "draft" | "approved";
-  running?: boolean;
-}
-
-// Monday of the week containing TODAY_ISO (2026-06-29)
-const WEEK_MON = "2026-06-29";
-
-function _wd(n: number): string {
-  const d = new Date(WEEK_MON + "T12:00:00");
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-export const SAMPLE_TIME_ENTRIES: SampleTimeEntry[] = [
-  // Mike Rivera (tech 1) — Monday: repipe rough-in at Dave Chen's
-  { id: 5001, techId: 1, date: _wd(0), kind: "travel", jobId: null, start: "08:30", end: "09:00", note: "", src: "clock", status: "draft" },
-  { id: 5002, techId: 1, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "09:00", end: "13:00", note: "", src: "timer", status: "draft" },
-  { id: 5003, techId: 1, date: _wd(0), kind: "break", jobId: null, start: "13:00", end: "13:30", note: "Lunch", src: "clock", status: "draft" },
-  { id: 5004, techId: 1, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "13:30", end: "17:00", note: "", src: "timer", status: "draft" },
-  // Mike Rivera — Tuesday: estimate visit for Rob Alvarez
-  { id: 5005, techId: 1, date: _wd(1), kind: "travel", jobId: null, start: "10:45", end: "11:00", note: "", src: "clock", status: "draft" },
-  { id: 5006, techId: 1, date: _wd(1), kind: "job", jobId: null, jobTitle: "Estimate visit · Rob Alvarez", start: "11:00", end: "12:00", note: "Site visit", src: "timer", status: "draft" },
-  // Carlos Diaz (tech 2) — Monday: repipe rough-in (same job, different crew)
-  { id: 5007, techId: 2, date: _wd(0), kind: "travel", jobId: null, start: "08:15", end: "09:00", note: "", src: "clock", status: "draft" },
-  { id: 5008, techId: 2, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "09:00", end: "13:00", note: "", src: "timer", status: "approved" },
-  { id: 5009, techId: 2, date: _wd(0), kind: "job", jobId: 901, jobTitle: "Whole-house PEX repipe · Dave Chen", start: "13:30", end: "17:00", note: "", src: "timer", status: "approved" },
-  // Tasha Bell (tech 3) — Wednesday: AC tune-up
-  { id: 5010, techId: 3, date: _wd(2), kind: "travel", jobId: null, start: "09:45", end: "10:00", note: "", src: "clock", status: "draft" },
-  { id: 5011, techId: 3, date: _wd(2), kind: "job", jobId: 904, jobTitle: "AC tune-up · Rita Okafor", start: "10:00", end: "11:30", note: "", src: "timer", status: "draft" },
-];

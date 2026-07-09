@@ -56,12 +56,6 @@ interface VisitRow {
   h: number;
 }
 
-// Module counter for generated evisit ids (prototype uses state.nextId; here we
-// start at 9700 to avoid colliding with the jobs-slice visit counter at 9800).
-let _nextEvisitId = 9700;
-function nextEvisitId(): number {
-  return _nextEvisitId++;
-}
 
 /** Round to the nearest quarter-hour, floored at 0.25 (prototype clamp). */
 function clampHours(h: number): number {
@@ -213,7 +207,7 @@ export function NewJobModalContent() {
       evisits: [
         ...existing,
         ...rows.map<Visit>((v) => ({
-          id: nextEvisitId(),
+          id: crypto.randomUUID(),
           date: null,
           techId: null,
           start: null,
@@ -235,7 +229,7 @@ export function NewJobModalContent() {
     const rows = resolvedVisits();
     const match = matchLead(customer.trim());
     const created = addJob({
-      leadId: match ? match.id : 0,
+      leadId: match ? match.id : "",
       svc: njType, // 'service'
       origin: "manual",
       title: job,

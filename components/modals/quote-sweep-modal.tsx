@@ -13,6 +13,7 @@ import { calcQuote } from "@/lib/prototype-sample";
 import type { Estimate } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { estTotal, isExpired } from "@/lib/estimates";
+import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
 
 type SweepMode = "delete" | "archive";
 
@@ -37,10 +38,10 @@ const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
 
 function StatusPill({ e }: { e: Estimate }) {
   if (e.status === "sent" && isExpired(e)) {
-    return <span className="pill red">Expired</span>;
+    return <SoftPill tone="bad">Expired</SoftPill>;
   }
   const s = STATUS_STAMP[e.status] ?? { cls: "ink", label: e.status };
-  return <span className={`stamp ${s.cls}`}>{s.label}</span>;
+  return <SoftPill tone={s.cls as PillTone}>{s.label}</SoftPill>;
 }
 
 export function QuoteSweepModalContent() {
@@ -50,14 +51,14 @@ export function QuoteSweepModalContent() {
   const updateEstimate = useAppStore((s) => s.updateEstimate);
   const deleteEstimate = useAppStore((s) => s.deleteEstimate);
 
-  const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const [deleteArmed, setDeleteArmed] = useState(false);
 
   const live = estimates.filter((e) => !e.archived);
   const clutter = live.filter(isClutter);
   const rest = live.filter((e) => !isClutter(e));
 
-  function toggle(id: number) {
+  function toggle(id: string) {
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);

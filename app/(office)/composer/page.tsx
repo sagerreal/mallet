@@ -17,7 +17,6 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  SAMPLE_ESTIMATES,
   calcQuote,
   SAMPLE_BRAND,
   type SampleEstimateLine,
@@ -357,7 +356,7 @@ interface ComposerLine {
 type ComposerMode = "builder" | "gbb-prompt" | "gbb-review";
 
 interface ComposerState {
-  leadId: number | null;
+  leadId: string | null;
   custQuery: string;
   custMatches: Lead[];
   mode: ComposerMode;
@@ -1433,8 +1432,7 @@ export default function ComposerPage() {
   // Seed leadId from ?lead= once (read-only initializer so state edits persist).
   const [cs, setCs] = useState<ComposerState>(() => {
     const raw = searchParams.get("lead");
-    const parsed = raw != null ? Number(raw) : NaN;
-    const leadId = Number.isFinite(parsed) ? parsed : null;
+    const leadId = raw != null && raw !== "" ? raw : null;
     return { ...INITIAL_STATE, leadId };
   });
 
@@ -1561,6 +1559,6 @@ export default function ComposerPage() {
   );
 }
 
-// Make SAMPLE_ESTIMATES import not tree-shake (referenced for completeness)
-void SAMPLE_ESTIMATES;
+// Keep SAMPLE_BRAND referenced so bundler doesn't tree-shake it (used in
+// composer seed defaults for title/brand watermarks in the preview pane).
 void SAMPLE_BRAND;

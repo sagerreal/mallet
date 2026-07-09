@@ -11,7 +11,7 @@
 import { useState } from "react";
 import type { Lead, Task } from "@/lib/store/types";
 import { useAppStore } from "@/lib/store/app-store";
-import { TODAY_ISO } from "@/lib/prototype-sample";
+import { todayISO } from "@/lib/clock";
 import { dueLabel } from "@/lib/task-dates";
 
 interface TasksCardProps {
@@ -69,11 +69,10 @@ export function TasksCard({ lead }: TasksCardProps) {
   function handleAddTask() {
     const trimmed = taskText.trim();
     if (!trimmed) return;
-    // Due on the APP clock (frozen TODAY_ISO) — the wall clock would file this
-    // task under the wrong urgency group everywhere tasks render.
+    // Due on the live clock — tasks are filed under today's date.
     addTask({
       t: trimmed,
-      due: TODAY_ISO,
+      due: todayISO(),
       leadId: lead.id,
     });
     setTaskText("");

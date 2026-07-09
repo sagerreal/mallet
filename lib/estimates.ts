@@ -7,9 +7,13 @@
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Estimate, Lead } from "@/lib/store/types";
 
-/** Quote total — subtotal of non-optional lines − discount% + tax% (calcQuote). */
+/**
+ * Quote total in dollars — uses cachedTotal (set by the hydrator from the list
+ * DTO) when full lines haven't been loaded yet; falls back to computing from
+ * lines once the modal has fetched the full estimate record.
+ */
 export function estTotal(e: Estimate): number {
-  return calcQuote(e.lines, e.pricing).total;
+  return e.cachedTotal ?? calcQuote(e.lines, e.pricing).total;
 }
 
 /** A sent quote past its validity window (default 14 days). */

@@ -35,6 +35,7 @@ import {
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { todayISO } from "@/lib/clock";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -99,10 +100,6 @@ function hToTime(h: number): string {
 function timeToH(s: string): number {
   const p = (s || "").split(":");
   return (Number(p[0]) || 0) + (Number(p[1]) || 0) / 60;
-}
-
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function colLabel(iso: string): string {
@@ -247,7 +244,7 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove }: VisitRowP
           <label>Crew</label>
           <select
             value={visit.techId ?? ""}
-            onChange={(e) => onUpdate({ techId: Number(e.target.value) })}
+            onChange={(e) => onUpdate({ techId: e.target.value || null })}
           >
             {techs.map((t) => (
               <option key={t.id} value={t.id}>
@@ -531,54 +528,10 @@ function techHasSkill(tc: Tech | undefined, sk: string | null): boolean {
 }
 
 /** Booked hours for a crew on a day, across all this job's placed visits (dayLoad, 3874). */
-function jobDayLoad(job: Job, techId: number, iso: string): number {
+function jobDayLoad(job: Job, techId: string, iso: string): number {
   return (job.visits ?? [])
     .filter((v) => v.techId === techId && v.date === iso)
     .reduce((s, v) => s + v.dur, 0);
-}
-
-interface TechSuggestion {
-  tech: Tech;
-  skill: string | null;
-  reason: string;
-}
-
-/** Best-fit crew: cert-eligible (else any), lightest load that day (suggestTechFor, 3875). */
-function suggestTechFor(job: Job, techs: Tech[], iso: string): TechSuggestion | null {
-  const sk = jobNeededSkill(job);
-  const elig = techs.filter((t) => techHasSkill(t, sk));
-  const pool = elig.length ? elig : techs;
-  const sorted = [...pool].sort((a, b) => jobDayLoad(job, a.id, iso) - jobDayLoad(job, b.id, iso));
-  const t = sorted[0];
-  return t ? { tech: t, skill: sk, reason: `${sk ? sk + " · " : ""}lightest load ${colLabel(iso)}` } : null;
-}
-
-interface SmartPanelProps {
-  job: Job;
-  techs: Tech[];
-  onAssign: (techId: number) => void;
-}
-
-function SmartPanel({ job, techs, onAssign }: SmartPanelProps) {
-  // deferred: the ⏱ Mallet-estimate line and the split suggestion both need
-  // estJobHours (pricebook + DUR_RULES, not seeded in the store) — omitted.
-
-  // Dispatch suggestion — the hint that uses real store data (skills + load).
-  if (job.status === "done") return null;
-  const iso = job.visits?.[0]?.date ?? todayISO();
-  const sug = suggestTechFor(job, techs, iso);
-  if (!sug) return null;
-
-  return (
-    <div className="smartwrap">
-      <div className="smartsug">
-        Best fit: <b>{sug.tech.name}</b> <span className="muted">{sug.reason}</span>{" "}
-        <button className="btn sm primary" onClick={() => onAssign(sug.tech.id)}>
-          Assign
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // ---- job checklist block (prototype jobChecklistBlock, line 4859) ----------
@@ -679,7 +632,7 @@ interface MoneyPointerProps {
   job: Job;
   invoice: Invoice | undefined;
   onGoToMoney: () => void;
-  onOpenInvoice: (invoiceId: number) => void;
+  onOpenInvoice: (invoiceId: string) => void;
 }
 
 function MoneyPointer({ job, invoice, onGoToMoney, onOpenInvoice }: MoneyPointerProps) {
@@ -713,8 +666,6 @@ function MoneyPointer({ job, invoice, onGoToMoney, onOpenInvoice }: MoneyPointer
 
 interface TypeFieldProps {
   job: Job;
-  multi: boolean;
-  onExpand: () => void;
   onSetSvc: (svc: string) => void;
 }
 
@@ -723,56 +674,39 @@ const TYPE_CHIPS: ReadonlyArray<{ t: string; lbl: string; sub: string }> = [
   ["service", "Job", "do the work — priced ahead or priced on site"],
 ].map(([t, lbl, sub]) => ({ t: t as string, lbl: lbl as string, sub: sub as string }));
 
-function TypeField({ job, multi, onExpand, onSetSvc }: TypeFieldProps) {
+/** Always the two-chip toggle — one look for Type everywhere. */
+function TypeField({ job, onSetSvc }: TypeFieldProps) {
   const isEst = job.svc === "estimate";
 
   return (
     <div className="field" style={{ marginTop: 12 }}>
       <label>Type</label>
-      {multi ? (
-        <div className="chips">
-          {TYPE_CHIPS.map(({ t, lbl, sub }) => {
-            const sel = (t === "estimate") === isEst;
-            return (
-              <button
-                key={t}
-                className={`chip ${sel ? "sel" : ""}`}
-                onClick={() => onSetSvc(t)}
-                title={sub}
-              >
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: 2,
-                    background: svcEdge(t),
-                    marginRight: 6,
-                    verticalAlign: "middle",
-                  }}
-                />
-                {lbl}
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13 }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 9,
-              height: 9,
-              borderRadius: 2,
-              background: svcEdge(jobMode(job)),
-            }}
-          />
-          <b>{isEst ? "Estimate" : "Job"}</b>
-          <span className="linklike" style={{ fontSize: 12 }} onClick={onExpand}>
-            change type
-          </span>
-        </div>
-      )}
+      <div className="chips">
+        {TYPE_CHIPS.map(({ t, lbl, sub }) => {
+          const sel = (t === "estimate") === isEst;
+          return (
+            <button
+              key={t}
+              className={`chip ${sel ? "sel" : ""}`}
+              onClick={() => onSetSvc(t)}
+              title={sub}
+            >
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: svcEdge(t),
+                  marginRight: 6,
+                  verticalAlign: "middle",
+                }}
+              />
+              {lbl}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -796,10 +730,9 @@ export function JobModalContent() {
   const removeVisit = useAppStore((s) => s.removeVisit);
   const deleteJob = useAppStore((s) => s.deleteJob);
 
-  const [typeExpand, setTypeExpand] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
 
-  const jobId = activeModal?.params?.jobId as number | undefined;
+  const jobId = activeModal?.params?.jobId as string | undefined;
   const job = jobs.find((j) => j.id === jobId);
   if (!job) return null;
 
@@ -816,10 +749,6 @@ export function JobModalContent() {
     if (ad > bd) return 1;
     return (a.start ?? 0) - (b.start ?? 0);
   });
-
-  // Type chips surface once >1 type is in use across live jobs, or on expand.
-  const typesInUse = new Set(jobs.filter((j) => !j.archived).map(jobMode));
-  const multiType = typesInUse.size > 1 || typeExpand;
 
   // Per-visit overlap check across THIS job's placed visits (visitConflict).
   function conflictsWith(v: Visit): boolean {
@@ -838,18 +767,6 @@ export function JobModalContent() {
   function goToMoney() {
     close();
     router.push("/money");
-  }
-
-  // Assign the smartPanel-suggested crew (prototype assignSuggested, 3879):
-  // no visits yet → place one on that crew; otherwise move every visit to them.
-  function assignSuggested(techId: number) {
-    if (!job) return;
-    if (!(job.visits ?? []).length) {
-      const v = addVisit(job.id);
-      if (v) updateVisit(job.id, v.id, { date: todayISO(), techId, start: 9, status: "scheduled" });
-    } else {
-      (job.visits ?? []).forEach((v) => updateVisit(job.id, v.id, { techId }));
-    }
   }
 
   function confirmDelete() {
@@ -955,12 +872,7 @@ export function JobModalContent() {
       </div>
 
       {/* 5. Type */}
-      <TypeField
-        job={job}
-        multi={multiType}
-        onExpand={() => setTypeExpand(true)}
-        onSetSvc={(svc) => setJobSvc(job.id, svc)}
-      />
+      <TypeField job={job} onSetSvc={(svc) => setJobSvc(job.id, svc)} />
 
       {/* 6. Service address */}
       <div className="field" style={{ marginTop: 12 }}>
@@ -978,10 +890,7 @@ export function JobModalContent() {
 
       {/* 8. View signed agreement — deferred (signed-doc viewer not built) */}
 
-      {/* 9. smartPanel */}
-      <SmartPanel job={job} techs={techs} onAssign={assignSuggested} />
-
-      {/* 10. Schedule */}
+      {/* 9. Schedule */}
       <div
         style={{
           display: "flex",

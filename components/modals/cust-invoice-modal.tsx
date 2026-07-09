@@ -238,7 +238,7 @@ export function CustInvoiceModalContent() {
   const recordPayment = useAppStore((s) => s.recordPayment);
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const invoiceId = activeModal?.params?.invoiceId as number | undefined;
+  const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
   if (!invoice) return null;
 

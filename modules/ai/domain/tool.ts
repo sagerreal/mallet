@@ -45,12 +45,17 @@ export const ENTITY_NOT_FOUND = "__entity_not_found__";
 // proposal time and again at confirm (so a schema tightened between the two still applies).
 // `fingerprint` (mutating tools) snapshots the referenced entity's relevant state; the confirm gate
 // re-computes it and refuses to execute if the entity changed since the human saw the proposal.
+// `enrichArgs` (optional, mutating tools only) runs at PROPOSE time AFTER zod validation, before the
+// args are frozen into storage. Use it to inject server-minted values (e.g. idempotency keys) that
+// must not come from the model. The returned object replaces the frozen args, so the confirm leg
+// re-parses and executes the same enriched value — no second mint, no double-action.
 export interface AgentTool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
   readonly input: z.ZodType;
   readonly mutating: boolean;
+  enrichArgs?(validated: Record<string, unknown>, ctx: ToolContext): Record<string, unknown>;
   fingerprint?(input: unknown, ctx: ToolContext): Promise<string>;
   handle(input: unknown, ctx: ToolContext): Promise<ToolOutcome>;
 }

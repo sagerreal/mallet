@@ -52,6 +52,7 @@ export class CreateJobFromEstimateUseCase {
       cancelReason: null,
       total,
       notes: null,
+      visits: [],
       createdAt: now,
       updatedAt: now,
     });

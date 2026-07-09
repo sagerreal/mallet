@@ -17,7 +17,7 @@ export function CallModalContent() {
   const leads = useAppStore((s) => s.leads);
   const startCall = useAppStore((s) => s.startCall);
   const addLeadNote = useAppStore((s) => s.addLeadNote);
-  const leadId = activeModal?.params?.leadId as number | undefined;
+  const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
 
   const [logging, setLogging] = useState(false);

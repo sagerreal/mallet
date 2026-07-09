@@ -18,6 +18,7 @@ import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
+import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
 
 function statusStamp(status: string): string {
   switch (status) {
@@ -77,9 +78,9 @@ function QuotesCard({ estimates }: QuotesCardProps) {
               <span style={{ fontSize: 13.5, fontWeight: 700 }}>
                 ${total.toLocaleString()}
               </span>
-              <span className={`stamp ${statusStampCls(e.status)}`}>
+              <SoftPill tone={statusStampCls(e.status) as PillTone}>
                 {statusStamp(e.status)}
-              </span>
+              </SoftPill>
               <span style={{ color: "var(--ink-3)" }}>&#8594;</span>
             </div>
           </div>
@@ -95,7 +96,7 @@ export function LeadModal({ open }: { open: boolean }) {
   const leads = useAppStore((s) => s.leads);
   const estimates = useAppStore((s) => s.estimates);
 
-  const leadId = activeModal?.params?.leadId as number | undefined;
+  const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
 
   // Estimates for this lead

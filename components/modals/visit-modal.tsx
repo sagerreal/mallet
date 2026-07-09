@@ -42,7 +42,7 @@ export function VisitModalContent() {
   const addVisit = useAppStore((s) => s.addVisit);
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const leadId = activeModal?.params?.leadId as number | undefined;
+  const leadId = activeModal?.params?.leadId as string | undefined;
   const lead: Lead | undefined = leads.find((l) => l.id === leadId);
 
   const initialPurpose = useMemo(() => guessPurpose(lead?.job ?? ""), [lead?.job]);

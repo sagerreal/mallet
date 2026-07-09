@@ -1,14 +1,38 @@
-import { asJobId, asOrgId, asLeadId, asEstimateId, asUserId, money } from "@mallet/shared/types";
-import { jobs } from "@mallet/shared/db/schema";
-import { Job, isJobStatus } from "../domain/job";
+import { asJobId, asOrgId, asLeadId, asEstimateId, asUserId, asVisitId, money } from "@mallet/shared/types";
+import { jobs, jobVisits } from "@mallet/shared/db/schema";
+import { Job, JobVisit, isJobStatus, isVisitStatus } from "../domain/job";
 
 export type JobRow = typeof jobs.$inferSelect;
+export type JobVisitRow = typeof jobVisits.$inferSelect;
 
-// Reconstruct the aggregate from a row. Corrupt data fails loud rather than coercing.
-export const toDomain = (row: JobRow): Job => {
+const toVisit = (row: JobVisitRow): JobVisit => {
+  if (!isVisitStatus(row.status)) {
+    throw new Error(`corrupt job_visit ${row.id}: unknown status "${row.status}"`);
+  }
+  const result = JobVisit.create({
+    id: asVisitId(row.id),
+    assigneeUserId: row.assigneeUserId ? asUserId(row.assigneeUserId) : null,
+    scheduledDate: row.scheduledDate ?? null,
+    scheduledStart: row.scheduledStart ?? null,
+    scheduledEnd: row.scheduledEnd ?? null,
+    status: row.status,
+    startedAt: row.startedAt ?? null,
+    completedAt: row.completedAt ?? null,
+    notes: row.notes ?? null,
+    position: row.position,
+  });
+  if (!result.ok) throw new Error(`corrupt job_visit ${row.id}: ${result.error.message}`);
+  return result.value;
+};
+
+// Reconstruct the aggregate from a header row + its (already deleted-filtered) visit rows.
+// Corrupt data fails loud rather than silently coercing (mirrors estimate-mapper).
+export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): Job => {
   if (!isJobStatus(row.status)) {
     throw new Error(`corrupt job ${row.id}: unknown status "${row.status}"`);
   }
+  const visits = [...visitRows].sort((a, b) => a.position - b.position).map(toVisit);
+
   const result = Job.create({
     id: asJobId(row.id),
     orgId: asOrgId(row.orgId),
@@ -26,6 +50,7 @@ export const toDomain = (row: JobRow): Job => {
     cancelReason: row.cancelReason,
     total: money(row.totalCents),
     notes: row.notes,
+    visits,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

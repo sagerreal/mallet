@@ -17,7 +17,6 @@ import { CallModalContent } from "./call-modal";
 import { EstimateModalContent } from "./estimate-modal";
 import { JobModalContent } from "./job-modal";
 import { NewJobModalContent } from "./new-job-modal";
-import { JobSweepModalContent } from "./job-sweep-modal";
 import { EvisitModalContent } from "./evisit-modal";
 import { PriceBuilderModalContent } from "./price-builder-modal";
 import { TechQuoteModalContent } from "./tech-quote-modal";
@@ -42,7 +41,7 @@ export function ModalHost() {
   // ✕ / backdrop / Escape (prototype tqClose re-opens the job), never a dead end.
   const backToJob = (jobModalId: ModalId) => () => {
     const jobId = activeModal?.params?.jobId;
-    if (typeof jobId === "number") openModal(jobModalId, { jobId });
+    if (typeof jobId === "string" && jobId.length > 0) openModal(jobModalId, { jobId });
     else close();
   };
 
@@ -51,7 +50,7 @@ export function ModalHost() {
   const backToOpener = () => {
     const returnTo = activeModal?.params?.returnTo as ModalId | undefined;
     const leadId = activeModal?.params?.leadId;
-    if (returnTo === MODAL.LEAD && typeof leadId === "number") {
+    if (returnTo === MODAL.LEAD && typeof leadId === "string" && leadId.length > 0) {
       openModal(MODAL.LEAD, { leadId });
     } else {
       close();
@@ -97,10 +96,6 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.NEW_JOB} onClose={close}>
         <NewJobModalContent />
-      </Modal>
-
-      <Modal open={id === MODAL.JOB_SWEEP} onClose={close}>
-        <JobSweepModalContent />
       </Modal>
 
       <Modal open={id === MODAL.EVISIT} onClose={close}>

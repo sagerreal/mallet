@@ -24,20 +24,22 @@ export interface LeadNote {
 }
 
 export interface Visit {
-  id: number;
+  id: string;
   // Placement fields are null while a visit is "unscheduled" (in the To-schedule
   // tray); set when dragged/placed on the board (crew + day + start).
   date: string | null;
-  techId: number | null;
+  techId: string | null;
   start: number | null;
   dur: number;
   status: string;
+  /** Clock stamp when the crew marked on site ("9:04") — powers the live dot. */
+  onsiteAt?: string;
   scopeNotes?: string;
   photos?: string[];
 }
 
 export interface Lead {
-  id: number;
+  id: string;
   name: string;
   phone: string;
   source: string;
@@ -47,10 +49,10 @@ export interface Lead {
   last: string;
   book?: boolean;
   unread?: boolean;
-  estId?: number;
+  estId?: string;
   email?: string;
   address?: string;
-  companyId?: number;
+  companyId?: string;
   role?: string;
   value?: number;
   lossReason?: string;
@@ -66,17 +68,17 @@ export interface Lead {
 // ---- Task ------------------------------------------------------------------
 
 export interface Task {
-  id: number;
+  id: string;
   t: string;
-  due: string;
-  leadId: number | null;
+  due: string | null;
+  leadId: string | null;
   done?: boolean;
 }
 
 // ---- Company ---------------------------------------------------------------
 
 export interface Company {
-  id: number;
+  id: string;
   name: string;
   sites: unknown[];
   phone: string;
@@ -84,6 +86,7 @@ export interface Company {
   website?: string;
   address?: string;
   notes?: string;
+  archived?: boolean;
 }
 
 // ---- Estimate / Quote ------------------------------------------------------
@@ -98,10 +101,22 @@ export interface EstimateLine {
   h?: number;
 }
 
+/** One customer open of the quote page — the telemetry unit the Rail renders. */
+export interface EstimateRead {
+  /** Clock stamp in the ledger voice ("9:12pm", "Fri"). */
+  when: string;
+  /** Business days ago (0 = today/last night) — drives cooling + recency. */
+  daysAgo: number;
+  /** Session currently open — the breathing dot. Dies on close. */
+  live?: boolean;
+  /** 2 = a phone that isn't the customer's (a forward). */
+  device?: number;
+}
+
 export interface Estimate {
-  id: number;
+  id: string;
   num: string;
-  leadId: number;
+  leadId: string;
   title: string;
   status: string;
   age: number;
@@ -110,6 +125,15 @@ export interface Estimate {
   fu: { on: boolean; stage: number };
   lines: EstimateLine[];
   pricing?: { disc: number; dep: number; tax: number };
+  /** Customer opens, oldest → newest. The customer is never told these exist. */
+  reads?: EstimateRead[];
+  /**
+   * Cached list-view total in DOLLARS — populated by the hydrator from the
+   * summary DTO's total.cents / 100. Used by estTotal() when full lines haven't
+   * been loaded yet (lines === []). Undefined for locally-created estimates
+   * (calcQuote over lines is authoritative instead).
+   */
+  cachedTotal?: number;
   archived?: boolean;
   trash?: boolean;
 }
@@ -162,8 +186,8 @@ export interface Checklist {
 }
 
 export interface Job {
-  id: number;
-  leadId: number;
+  id: string;
+  leadId: string;
   svc: string;
   origin: string;
   title: string;
@@ -208,10 +232,10 @@ export interface Payment {
 }
 
 export interface Invoice {
-  id: number;
+  id: string;
   num: string;
-  jobId: number | null;
-  leadId: number;
+  jobId: string | null;
+  leadId: string;
   cust: string;
   phone: string;
   title: string;
@@ -226,6 +250,12 @@ export interface Invoice {
   age: number;
   fu?: { on: boolean; stage: number };
   archived: boolean;
+  /**
+   * Whether the invoice exists in the DB ("db") or was created locally ("manual").
+   * Only "db" invoices fire network mutations for recordPayment, sendInvoice, archiveInvoice.
+   * Set to "db" on reconcile from a backend DTO.
+   */
+  origin?: "db" | "manual";
 }
 
 // ---- Time entry (Timesheets) -----------------------------------------------
@@ -234,11 +264,11 @@ export interface Invoice {
 // Job time also rides on visits (job costing); these entries are the payroll
 // record of the same hours. HOURS only — payroll owns the wage.
 export interface TimeEntry {
-  id: number;
-  techId: number;
+  id: string;
+  techId: string;
   date: string; // ISO (YYYY-MM-DD)
   kind: string; // 'job' | 'travel' | 'break' | 'shop'
-  jobId: number | null;
+  jobId: string | null;
   start: string; // 'HH:MM'
   end: string | null;
   note: string;
@@ -251,23 +281,13 @@ export interface TimeEntry {
 // ---- Misc ------------------------------------------------------------------
 
 export interface Tech {
-  id: number;
+  id: string;
   name: string;
   initials: string;
   color: string;
   skills: string[];
   wage: number;
   sells?: boolean;
-}
-
-export interface User {
-  id: number;
-  name: string;
-  role: string;
-  email: string;
-  mobile: string;
-  mobileVerified: boolean;
-  techId?: number;
 }
 
 export interface Brand {
@@ -290,12 +310,14 @@ export interface UIState {
   custSeg: "people" | "biz";
   /** Home "Needs your OK" items the owner skipped — never lead again this session. */
   dismissedAttention: string[];
+  /** A query handed to the command bar from elsewhere (e.g. the Home ask row). */
+  cmdSeed: string | null;
 }
 
 // ---- Active call (global call bar) -----------------------------------------
 
 export interface ActiveCall {
-  leadId: number;
+  leadId: string;
   sec: number;
   notes: string;
   phase: "live" | "ended";

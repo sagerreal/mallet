@@ -32,7 +32,7 @@ function formatDay(visit: Visit): string {
 
 interface VisitRowProps {
   visit: Visit;
-  leadId: number;
+  leadId: string;
   techName: string;
 }
 
@@ -88,7 +88,7 @@ export function VisitCard({ lead }: VisitCardProps) {
   const evisits = lead.evisits ?? [];
   if (evisits.length === 0) return null;
 
-  function techName(techId: number | null): string {
+  function techName(techId: string | null): string {
     if (techId == null) return "Unassigned";
     return techs.find((t) => t.id === techId)?.name ?? `Tech ${techId}`;
   }

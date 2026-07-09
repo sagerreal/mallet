@@ -6,9 +6,9 @@
  * every receipt opens the record it describes.
  */
 
-import { TODAY_ISO } from "@/lib/prototype-sample";
+import { todayISO } from "@/lib/clock";
 import { estTotal, invDue } from "@/lib/estimates";
-import type { Lead, Estimate, Invoice, Job, Tech, Visit } from "@/lib/store/types";
+import type { Lead, Estimate, Invoice, Job, Visit } from "@/lib/store/types";
 
 // ---- small shared helpers ----------------------------------------------------
 
@@ -39,13 +39,13 @@ export function visitLabel(v: Visit): string {
 
 export interface Receipt {
   key: string;
-  leadId: number;
+  leadId: string;
   /** When it happened — the real act's own timestamp ("8:47pm"), never invented. */
   when: string;
   /** What the Front Desk did, past tense, with the record to prove it. */
   text: string;
   /** Where the proof lives. */
-  open: { kind: "thread" | "estimate"; id: number };
+  open: { kind: "thread"; id: string } | { kind: "estimate"; id: number };
   openLabel: string;
 }
 
@@ -142,7 +142,7 @@ export function deriveOkQueue(
   dismissed: string[]
 ): OkItem[] {
   const out: OkItem[] = [];
-  const leadOf = (id: number) => leads.find((l) => l.id === id && !l.archived);
+  const leadOf = (id: string) => leads.find((l) => l.id === id && !l.archived);
 
   // Viewed, still-open quotes — strike while it's warm.
   for (const e of estimates) {
@@ -184,10 +184,13 @@ export function deriveOkQueue(
     });
   }
 
-  // Unanswered replies — acknowledgment drafted.
+  // Unanswered replies — acknowledgment drafted. Requires an ACTUAL inbound message (not merely
+  // unread — a proactively-added customer defaults to unread with nothing to reply to) and a phone
+  // to text back to.
   for (const l of leads) {
-    if (l.archived || !l.unread) continue;
+    if (l.archived || !l.unread || !l.phone) continue;
     const theirs = (l.acts ?? []).filter((a) => a.type === "text" && a.from === "them");
+    if (theirs.length === 0) continue;
     const last = theirs[theirs.length - 1];
     out.push({
       key: `okr-${l.id}-${theirs.length}`,
@@ -199,9 +202,10 @@ export function deriveOkQueue(
     });
   }
 
-  // Brand-new leads nobody has touched — the Front Desk drafts the first text.
+  // Brand-new leads nobody has touched — the Front Desk drafts the first text. Needs a phone to
+  // text (a customer added without a number can't be texted, so no draft).
   for (const l of leads) {
-    if (l.archived || l.stage !== "New customer" || l.book) continue;
+    if (l.archived || l.stage !== "New customer" || l.book || !l.phone) continue;
     const anyOutbound = (l.acts ?? []).some((a) => a.from === "us" || a.from === "auto");
     if (anyOutbound || l.unread) continue; // replies are their own card
     out.push({
@@ -220,60 +224,14 @@ export function deriveOkQueue(
     .slice(0, QUEUE_CAP);
 }
 
-// ---- today's board --------------------------------------------------------------
-
-export interface BoardStop {
-  key: string;
-  start: number;
-  label: string;
-  techName: string;
-}
-
-export function deriveTodayBoard(
-  jobs: Job[],
-  leads: Lead[],
-  techs: Tech[]
-): { stops: BoardStop[]; booksSum: number } {
-  const stops: BoardStop[] = [];
-  let booksSum = 0;
-  const techName = (id: number | null) =>
-    firstName(techs.find((t) => t.id === id)?.name ?? "crew");
-
-  for (const j of jobs) {
-    if (j.archived) continue;
-    for (const v of j.visits ?? []) {
-      if (v.date === TODAY_ISO && v.start != null) {
-        stops.push({ key: `j${j.id}-${v.id}`, start: v.start, label: j.title, techName: techName(v.techId) });
-        booksSum += jobTotal(j);
-        break; // count a job's value once even with multiple same-day visits
-      }
-    }
-  }
-  for (const l of leads) {
-    if (l.archived) continue;
-    for (const v of l.evisits ?? []) {
-      if (v.date === TODAY_ISO && v.start != null && v.status !== "done") {
-        stops.push({ key: `e${l.id}-${v.id}`, start: v.start, label: `${l.name} — site visit`, techName: techName(v.techId) });
-      }
-    }
-  }
-  stops.sort((a, b) => a.start - b.start);
-  return { stops, booksSum };
-}
-
-/** Won work with no placed visit yet — the "to schedule" line under TODAY. */
-export function deriveToSchedule(jobs: Job[]): { count: number; sum: number } {
-  const un = jobs.filter((j) => !j.archived && j.status === "unscheduled");
-  return { count: un.length, sum: un.reduce((s, j) => s + jobTotal(j), 0) };
-}
-
-/** Next weekday (within 5) whose afternoon is empty — sellable white space. */
+/** Next weekday (within 5) whose afternoon is empty — sellable white space.
+ *  (Used by the Counter's runs, not the home page.) */
 export function deriveOpenSlot(jobs: Job[], leads: Lead[]): string | null {
   const allVisits: Visit[] = [
     ...jobs.filter((j) => !j.archived).flatMap((j) => j.visits ?? []),
     ...leads.filter((l) => !l.archived).flatMap((l) => l.evisits ?? []),
   ];
-  const base = new Date(TODAY_ISO + "T12:00:00");
+  const base = new Date(todayISO() + "T12:00:00");
   for (let d = 1; d <= 5; d++) {
     const day = new Date(base);
     day.setDate(day.getDate() + d);
@@ -290,17 +248,3 @@ export function deriveOpenSlot(jobs: Job[], leads: Lead[]): string | null {
   return null;
 }
 
-// ---- the money line (same math the Money page derives from) ---------------------
-
-export function deriveMoneyLine(estimates: Estimate[], invoices: Invoice[]): {
-  quotesOut: number;
-  overdue: number;
-} {
-  const quotesOut = estimates
-    .filter((e) => !e.archived && !e.trash && e.status === "sent")
-    .reduce((s, e) => s + estTotal(e), 0);
-  const overdue = invoices
-    .filter((i) => !i.archived && (i.status === "sent" || i.status === "partial") && i.age >= OVERDUE_AGE)
-    .reduce((s, i) => s + invDue(i), 0);
-  return { quotesOut, overdue };
-}

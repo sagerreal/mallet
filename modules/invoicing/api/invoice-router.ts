@@ -88,17 +88,17 @@ const recordPaymentInput = z.object({
   idempotencyKey: z.string().min(8),
 });
 const listInput = z.object({
-  limit: z.number().int().positive().max(100).optional(),
+  limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   status: statusEnum.optional(),
 });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
-  limit: z.number().int().positive().max(100).optional(),
+  limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
 });
 const cursorInput = z.object({
-  limit: z.number().int().positive().max(100).optional(),
+  limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
 });
 

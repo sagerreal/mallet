@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, inArray, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, isNotNull, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { estimates, estimateLines } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import {
@@ -148,6 +148,35 @@ export class DrizzleEstimateRepository implements EstimateRepository {
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>> {
     return this.loadPage([isNull(estimates.deletedAt), eq(estimates.leadId, leadId)], page);
+  }
+
+  // Soft-delete (archive) the estimate. Returns the number of affected rows: 0 means not found or
+  // already archived. Single UPDATE + RETURNING — no prior findById needed (mirrors lead repo).
+  async archive(id: EstimateId, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(estimates)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(estimates.id, id), isNull(estimates.deletedAt)))
+      .returning();
+    return rows.length;
+  }
+
+  // Clear deleted_at on a soft-deleted estimate (restore). Returns the restored aggregate, or null
+  // if the estimate was not currently archived (already active or does not exist).
+  async restore(id: EstimateId, now: Date): Promise<Estimate | null> {
+    const rows = await this.tx
+      .update(estimates)
+      .set({ deletedAt: null, updatedAt: now })
+      .where(and(eq(estimates.id, id), isNotNull(estimates.deletedAt)))
+      .returning();
+    const row = rows[0];
+    if (!row) return null;
+    // Load lines separately (the header row from .returning() never carries line data).
+    const lineRows = await this.tx
+      .select()
+      .from(estimateLines)
+      .where(and(eq(estimateLines.estimateId, id), isNull(estimateLines.deletedAt)));
+    return toDomain(row, lineRows);
   }
 
   // Keyset-paginate estimate headers, then batch-load their lines in ONE query (no N+1) and

@@ -236,7 +236,7 @@ export function TechQuoteModalContent() {
     [laborRatesRaw],
   );
 
-  const jobId = activeModal?.params?.jobId as number | undefined;
+  const jobId = activeModal?.params?.jobId as string | undefined;
   const job = jobs.find((j) => j.id === jobId);
 
   // ---- LOCAL builder state (prototype state.tq) -----------------------------

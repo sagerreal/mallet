@@ -9,10 +9,18 @@ export class SupabaseTokenVerifier implements TokenVerifier {
   async verify(accessToken: string): Promise<VerifiedToken | null> {
     const { data, error } = await this.client.auth.getUser(accessToken);
     if (error || !data.user) return null;
+    const meta = data.user.user_metadata ?? {};
+    const name =
+      typeof meta.full_name === "string" && meta.full_name.trim()
+        ? meta.full_name.trim()
+        : typeof meta.name === "string" && meta.name.trim()
+          ? meta.name.trim()
+          : null;
     return {
       authUserId: data.user.id,
       email: data.user.email ?? "",
-      orgNameHint: typeof data.user.user_metadata?.org_name === "string" ? data.user.user_metadata.org_name : null,
+      orgNameHint: typeof meta.org_name === "string" ? meta.org_name : null,
+      name,
     };
   }
 }

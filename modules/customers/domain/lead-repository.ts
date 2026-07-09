@@ -1,4 +1,4 @@
-import type { LeadId, Phone, CursorPage, Paginated } from "@mallet/shared/types";
+import type { LeadId, CompanyId, Phone, CursorPage, Paginated } from "@mallet/shared/types";
 import type { Lead, LeadStage } from "./lead";
 
 // What a caller supplies to get-or-create a customer. The org is NEVER a parameter — it is
@@ -9,6 +9,8 @@ export interface EnsureCustomerInput {
   readonly phone: Phone | null;
   readonly email: string | null;
   readonly source: string | null;
+  readonly companyId: CompanyId | null;
+  readonly role: string | null;
 }
 
 export interface EnsureCustomerResult {
@@ -28,4 +30,8 @@ export interface LeadRepository {
   findById(id: LeadId): Promise<Lead | null>;
   list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>>;
   save(lead: Lead): Promise<void>;
+  // Returns the number of rows affected (0 = not found or already archived).
+  archive(id: LeadId, now: Date): Promise<number>;
+  // Returns the restored Lead if it was archived and is now active; null if it was already active.
+  restore(id: LeadId, now: Date): Promise<Lead | null>;
 }

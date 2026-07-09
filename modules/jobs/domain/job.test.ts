@@ -27,6 +27,7 @@ const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   cancelReason: null,
   total: zeroMoney,
   notes: null,
+  visits: [],
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,

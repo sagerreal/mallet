@@ -28,6 +28,12 @@ const ConfigSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_FROM_NUMBER: z.string().min(1).optional(),
+  // Optional override for the URL used in Twilio HMAC signature verification. Behind proxies that
+  // don't forward X-Forwarded-* headers, req.url may not match the externally-reachable URL that
+  // Twilio signed against. Set this to EXACTLY the webhook URL configured in the Twilio console
+  // (e.g. "https://trymallet.com/api/webhooks/twilio"). Vercel provides X-Forwarded-* so
+  // req.url is correct there and this can be left unset.
+  TWILIO_WEBHOOK_URL: z.url().optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   // Shared secret guarding the outbox relay cron route. Optional — the route 503s (fail-closed)
   // when unset, so the relay never runs unauthenticated. Vercel Cron sends it as a Bearer token.

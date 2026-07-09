@@ -1,0 +1,148 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import postgres from "postgres";
+import type { Sql } from "postgres";
+import { randomUUID } from "node:crypto";
+import { TRPCError } from "@trpc/server";
+import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
+import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
+import { closeDb } from "@mallet/shared/db/client";
+import type { AuthProvider, Principal, Role } from "@mallet/identity";
+import { appRouter } from "@/trpc/root";
+import type { Context } from "@/trpc/init";
+
+// Integration: exercise the full messaging stack via createCaller — auth gate, RBAC,
+// org-scoped transaction, use-case, Drizzle repo, and live RLS — without spinning up HTTP.
+// Proves org A messages are invisible to org B, and the send use-case rejects missing config.
+const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
+const suite = hasDb ? describe : describe.skip;
+
+const stubAuth: AuthProvider = {
+  authenticate: async () => {
+    throw new Error("authProvider should not be called in createCaller tests");
+  },
+};
+
+const ctxFor = (orgId: string, role: Role): Context => ({
+  principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
+  unmapped: null,
+  tx: null,
+  deps: {
+    authProvider: stubAuth,
+    bus: new InMemoryEventBus(),
+    clock: systemClock,
+    ids: uuidGenerator,
+    paymentLinkGateway: null,
+    llmClient: null,
+    apiKeyAuthenticator: { authenticate: async () => null },
+    tokenVerifier: { verify: async () => null },
+    signupStore: {
+      createOrgForUser: async () => {
+        throw new Error("unused in this test");
+      },
+    },
+  },
+});
+
+suite("messaging tRPC router (full stack, live RLS)", () => {
+  let admin: Sql;
+  let orgAId = "";
+  let orgBId = "";
+  let leadAId = "";
+
+  beforeAll(async () => {
+    admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
+
+    const [a] = await admin<{ id: string }[]>`
+      insert into orgs (name, twilio_number)
+      values ('MsgApi A ' || gen_random_uuid(), '+15005550006')
+      returning id`;
+    const [b] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('MsgApi B ' || gen_random_uuid()) returning id`;
+
+    orgAId = a!.id;
+    orgBId = b!.id;
+
+    // Insert a lead with a phone number in org A (used for listByLead).
+    const [lead] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name, phone_e164)
+      values (${orgAId}, 'Test Customer', '+15555550199')
+      returning id`;
+    leadAId = lead!.id;
+
+    // Insert a seed message directly (bypasses send so no Twilio call needed in CI).
+    await admin`
+      insert into messages (org_id, lead_id, direction, body, from_number, to_number, status)
+      values (${orgAId}, ${leadAId}, 'outbound', 'Hi from us', '+15005550006', '+15555550199', 'sent')`;
+  });
+
+  afterAll(async () => {
+    if (orgAId) {
+      await admin`delete from messages where org_id in (${orgAId}, ${orgBId})`;
+      await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
+    }
+    await admin.end({ timeout: 5 });
+    await closeDb();
+  });
+
+  // ── listByLead ────────────────────────────────────────────────────────────────
+
+  it("org A can list its own thread", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const thread = await caller.v1.messaging.listByLead({ leadId: leadAId });
+    expect(thread.length).toBeGreaterThanOrEqual(1);
+    expect(thread[0]!.direction).toBe("outbound");
+  });
+
+  it("org B cannot see org A's messages (RLS: empty result)", async () => {
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const thread = await callerB.v1.messaging.listByLead({ leadId: leadAId });
+    // RLS returns 0 rows for cross-org lead — not a 403, just empty (lead is scoped to A).
+    expect(thread).toHaveLength(0);
+  });
+
+  // ── send: config guard ────────────────────────────────────────────────────────
+  // The send procedure requires TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN in env.
+  // In CI without those vars, we expect PRECONDITION_FAILED rather than a live Twilio call.
+
+  it("send returns PRECONDITION_FAILED when Twilio is not configured", async () => {
+    // Only run this assertion when the Twilio vars are NOT set in the test environment.
+    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) return;
+
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.messaging.send({ leadId: leadAId, body: "Hello" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  // ── RBAC ──────────────────────────────────────────────────────────────────────
+
+  it("a tech cannot send messages (FORBIDDEN)", async () => {
+    const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    await expect(
+      callerTech.v1.messaging.send({ leadId: leadAId, body: "Hi" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("a tech cannot list thread (FORBIDDEN)", async () => {
+    const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    await expect(
+      callerTech.v1.messaging.listByLead({ leadId: leadAId }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // ── send: input validation ────────────────────────────────────────────────────
+
+  it("send rejects an empty body", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.messaging.send({ leadId: leadAId, body: "" }),
+    ).rejects.toBeInstanceOf(TRPCError);
+  });
+
+  it("send rejects a body over 1600 chars", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.messaging.send({ leadId: leadAId, body: "x".repeat(1601) }),
+    ).rejects.toBeInstanceOf(TRPCError);
+  });
+});

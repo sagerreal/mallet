@@ -26,6 +26,7 @@ import {
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Lead, Visit, Tech, Job } from "@/lib/store/types";
+import { todayISO } from "@/lib/clock";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -64,10 +65,6 @@ function hToTime(h: number): string {
 function timeToH(s: string): number {
   const p = (s || "").split(":");
   return (Number(p[0]) || 0) + (Number(p[1]) || 0) / 60;
-}
-
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function initialsOf(name: string): string {
@@ -113,7 +110,7 @@ type EviField = "date" | "techId" | "start" | "dur";
 /** Map eviSet's per-field rules to an immutable Visit patch. Unplaced → null. */
 function eviPatch(field: EviField, raw: string): Partial<Visit> {
   if (field === "date") return { date: raw || null };
-  if (field === "techId") return { techId: raw ? Number(raw) : null };
+  if (field === "techId") return { techId: raw || null };
   if (field === "start") return { start: raw ? timeToH(raw) : null };
   // dur — clamp to a 0.25h floor, snapped to the minute (prototype eviSet).
   return { dur: Math.max(0.25, Math.round((Number(raw) || 0.25) * 60) / 60) };
@@ -260,8 +257,8 @@ export function EvisitModalContent() {
   const techs = useAppStore((s) => s.techs);
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const leadId = activeModal?.params?.leadId as number | undefined;
-  const visitId = activeModal?.params?.visitId as number | undefined;
+  const leadId = activeModal?.params?.leadId as string | undefined;
+  const visitId = activeModal?.params?.visitId as string | undefined;
 
   const lead = leads.find((l) => l.id === leadId);
   const visit = lead?.evisits?.find((v) => v.id === visitId);

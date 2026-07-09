@@ -19,6 +19,7 @@ import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import type { Estimate } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { isExpired } from "@/lib/estimates";
+import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
 
 
 const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
@@ -77,7 +78,7 @@ export function EstimateModalContent() {
 
   const [deleteArmed, setDeleteArmed] = useState(false);
 
-  const estId = activeModal?.params?.estId as number | undefined;
+  const estId = activeModal?.params?.estId as string | undefined;
   const e = estimates.find((x) => x.id === estId);
   if (!e) return null;
   const lead = leads.find((l) => l.id === e.leadId);
@@ -116,7 +117,7 @@ export function EstimateModalContent() {
           </div>
         </div>
         <div>
-          <span className={`stamp ${stamp.cls}`}>{stamp.label}</span>
+          <SoftPill tone={stamp.cls as PillTone}>{stamp.label}</SoftPill>
         </div>
       </div>
 

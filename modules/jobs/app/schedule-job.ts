@@ -51,6 +51,7 @@ export class ScheduleJobUseCase {
       cancelReason: null,
       total: zeroMoney,
       notes: null,
+      visits: [],
       createdAt: now,
       updatedAt: now,
     });

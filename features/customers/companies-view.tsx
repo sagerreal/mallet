@@ -26,6 +26,8 @@ import type { Company, Estimate, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { pipeSum } from "@/lib/estimates";
 import { pressable } from "@/lib/a11y";
+import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
+import { ViewToggle } from "@/components/shared/view-toggle";
 
 function contactsOf(company: Company, leads: Lead[]): Lead[] {
   return leads.filter((l) => l.companyId === company.id && !l.archived);
@@ -65,10 +67,14 @@ export function CompaniesView() {
   const addCompany = useAppStore((s) => s.addCompany);
 
   const [q, setQ] = useState("");
+  const [archiveSet, setArchiveSet] = useState<CustomerArchiveSet>("active");
+
+  const setTotal = companies.filter((c) => (archiveSet === "active" ? !c.archived : Boolean(c.archived))).length;
 
   const rows = useMemo<CompanyRow[]>(() => {
     const query = q.trim().toLowerCase();
     return companies
+      .filter((c) => (archiveSet === "active" ? !c.archived : Boolean(c.archived)))
       .filter((c) => !query || c.name.toLowerCase().includes(query))
       .map((company) => {
         const contacts = contactsOf(company, leads);
@@ -81,15 +87,15 @@ export function CompaniesView() {
           sites: sitesCount(company, contacts),
         };
       });
-  }, [companies, leads, estimates, q]);
+  }, [companies, leads, estimates, q, archiveSet]);
 
-  function openCompany(id: number) {
+  function openCompany(id: string) {
     openModal(MODAL.COMPANY, { companyId: id });
   }
 
   function newCompany() {
-    const c = addCompany("New company");
-    openModal(MODAL.COMPANY, { companyId: c.id });
+    const { company } = addCompany("New company");
+    openModal(MODAL.COMPANY, { companyId: company.id });
   }
 
   function renderCell(row: CompanyRow, key: (typeof CO_COLS)[number]["key"]) {
@@ -112,16 +118,9 @@ export function CompaniesView() {
   return (
     <div>
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 4,
-        }}
-      >
+      <div className="pagehead">
         <h1>Customers</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="pagehead-acts">
           <button className="btn primary" onClick={newCompany}>
             + New company
           </button>
@@ -132,8 +131,13 @@ export function CompaniesView() {
         people &amp; sites.
       </div>
 
+      {/* Mobile-only: full-width primary action */}
+      <div className="mob-new">
+        <button className="btn primary" onClick={newCompany}>+ New company</button>
+      </div>
+
       {/* Segment tabs — toggling back to People must still work */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, marginTop: 12 }}>
+      <div className="segsw" style={{ marginBottom: 12, marginTop: 12 }}>
         <button
           className={`btn sm${custSeg === "people" ? " primary" : " ghost"}`}
           onClick={() => setCustSeg("people")}
@@ -148,22 +152,38 @@ export function CompaniesView() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="toolbar">
-        <input
-          type="text"
-          aria-label="Search businesses" placeholder="Search businesses…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+      <div className="mob-ctrl">
+        <div className="segctl">
+          <button className={custSeg === "people" ? "on" : ""} onClick={() => setCustSeg("people")}>People</button>
+          <button className={custSeg === "biz" ? "on" : ""} onClick={() => setCustSeg("biz")}>Companies</button>
+        </div>
+        <ViewToggle
+          value={archiveSet}
+          options={[{ value: "active" as const, label: "Active" }, { value: "archived" as const, label: "Archived" }]}
+          onChange={setArchiveSet}
+          ariaLabel="Show active or archived companies"
         />
-        <span className="muted" style={{ marginLeft: "auto" }}>
-          {rows.length} of {companies.length}
-        </span>
       </div>
+
+      <CustomersToolbar
+        archiveSet={archiveSet}
+        onArchiveSet={setArchiveSet}
+        q={q}
+        onQ={setQ}
+        filtersOpen={false}
+        onToggleFilters={() => {}}
+        colsOpen={false}
+        onToggleCols={() => {}}
+        activeFilterCount={0}
+        total={setTotal}
+        filtered={rows.length}
+        searchPlaceholder="Search businesses…"
+        showControls={false}
+      />
 
       {/* Table */}
       <div className="card" style={{ padding: "6px 14px" }}>
-        <table>
+        <table className="list-tbl">
           <thead>
             <tr>
               <th>Business</th>
@@ -181,18 +201,20 @@ export function CompaniesView() {
                   onClick={() => openCompany(row.company.id)}
                 {...pressable(() => openCompany(row.company.id))}
                 >
-                  <td>
+                  <td data-primary="">
                     <b>{row.company.name}</b>
                   </td>
                   {CO_COLS.map((col) => (
-                    <td key={col.key}>{renderCell(row, col.key)}</td>
+                    <td key={col.key} data-label={col.label}>{renderCell(row, col.key)}</td>
                   ))}
                 </tr>
               ))
             ) : (
               <tr>
                 <td colSpan={CO_COLS.length + 1}>
-                  <div className="empty-att">Nothing matches.</div>
+                  <div className="empty-att">
+                    {archiveSet === "archived" ? "No archived companies." : "Nothing matches."}
+                  </div>
                 </td>
               </tr>
             )}

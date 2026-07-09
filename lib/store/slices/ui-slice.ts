@@ -13,6 +13,9 @@ export interface UISlice extends UIState {
   setCustSeg: (seg: "people" | "biz") => void;
   dismissAttention: (key: string) => void;
   undismissAttention: (key: string) => void;
+  /** Hand a query to the command bar (it consumes the seed and focuses). */
+  seedCommand: (q: string) => void;
+  clearCmdSeed: () => void;
 }
 
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
@@ -20,6 +23,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   activeModal: null,
   custSeg: "people",
   dismissedAttention: [],
+  cmdSeed: null,
 
   // actions
   openModal: (id: ModalId, params?: Record<string, unknown>) =>
@@ -35,4 +39,7 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   // Undo path for a just-sent queue card — the item may lead again.
   undismissAttention: (key) =>
     set((s) => ({ dismissedAttention: s.dismissedAttention.filter((k) => k !== key) })),
+
+  seedCommand: (q) => set({ cmdSeed: q }),
+  clearCmdSeed: () => set({ cmdSeed: null }),
 });

@@ -15,7 +15,6 @@ export const MODAL = {
   EST: "est",
   JOB: "job",
   NEW_JOB: "new-job",
-  JOB_SWEEP: "job-sweep",
   EVISIT: "evisit",
   PRICE_BUILDER: "price-builder",
   STANDARDS: "standards",

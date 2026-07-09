@@ -53,7 +53,7 @@ export function NewMenu() {
       label: "New invoice",
       action: () => {
         const inv = addInvoice({
-          jobId: null, leadId: 0, cust: "", phone: "", title: "New invoice",
+          jobId: null, leadId: "", cust: "", phone: "", title: "New invoice",
           lines: [], total: 0, depPaid: 0, payments: [], status: "draft", age: 0, archived: false,
         });
         openModal(MODAL.INVOICE, { invoiceId: inv.id });

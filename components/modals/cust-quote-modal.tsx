@@ -27,11 +27,12 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Brand, Estimate, EstimateLine } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { clockNow } from "@/features/home/send";
 
 // ---- money helper (ported 1:1 from prototype fmt$) --------------------------
 
@@ -518,11 +519,24 @@ export function CustQuoteModalContent() {
   const leads = useAppStore((s) => s.leads);
   const brand = useAppStore((s) => s.brand);
   const updateEstimate = useAppStore((s) => s.updateEstimate);
+  const declineEstimate = useAppStore((s) => s.declineEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const estId = activeModal?.params?.estId as number | undefined;
+  const estId = activeModal?.params?.estId as string | undefined;
   const estimate = estimates.find((x) => x.id === estId);
+
+  // This surface IS the customer's phone in the sample world. Opening it records
+  // a read (live while the session is open — the Rail's breathing dot); closing
+  // ends it. The customer's own view changes by zero pixels — they are never
+  // told they were watched.
+  useEffect(() => {
+    if (estId == null) return;
+    const s = useAppStore.getState();
+    s.recordRead(estId, { when: clockNow(), daysAgo: 0, live: true });
+    return () => useAppStore.getState().endRead(estId);
+  }, [estId]);
+
   if (!estimate) return null;
 
   const lead = leads.find((l) => l.id === estimate.leadId);
@@ -534,8 +548,14 @@ export function CustQuoteModalContent() {
   // deferred: on-glass signature pad — the approval gesture is the signature.
   function approve(_total: number, selectedOptLines?: EstimateLine[]) {
     if (!estimate) return;
-    // Fold any customer-selected optional add-ons into the accepted quote so
-    // the accepted total reflects what they chose (prototype approveCust).
+    // Fold any customer-selected optional add-ons into the accepted quote so the
+    // accepted total reflects what they chose (prototype approveCust).
+    // When selectedOptLines is non-empty, pass the full final line set (fixed +
+    // selected add-ons) to updateEstimate. The slice converts store dollars to
+    // cents and forwards them as the optional `lines` payload to v1.quoting.accept,
+    // which commits them before marking the estimate accepted. The reconcile
+    // callback then overwrites the optimistic state with the backend's canonical
+    // accepted lines + computed total.
     if (selectedOptLines && selectedOptLines.length > 0) {
       const nextLines: EstimateLine[] = estimate.lines
         .filter((x) => !x.opt)
@@ -548,9 +568,11 @@ export function CustQuoteModalContent() {
   }
 
   // declineQuote(reason): mark declined, move the lead to Lost, record the reason.
+  // Uses declineEstimate (not updateEstimate) — the dedicated action wired to
+  // v1.quoting.decline, which requires an explicit reason string for persistence.
   function decline(reason: string) {
     if (!estimate) return;
-    updateEstimate(estimate.id, { status: "declined" });
+    declineEstimate(estimate.id, reason);
     if (lead) {
       moveLeadStage(lead.id, "Lost");
       updateLead(lead.id, { lossReason: reason });

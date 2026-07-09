@@ -1,7 +1,7 @@
 /**
  * lib/store/app-store.ts
- * Zustand store — composed from typed slices.
- * Data seeded from lib/prototype-sample; UI state ephemeral.
+ * Zustand store — composed from typed slices. Lead data populated at runtime
+ * by LeadsHydrator (tRPC); other domains still use prototype sample data.
  */
 
 "use client";

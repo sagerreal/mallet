@@ -14,6 +14,7 @@ const CRUMBS: Record<string, { section: string; label: string }> = {
   "/jobs": { section: "Customer", label: "Jobs" },
   "/money": { section: "Customer", label: "Money" },
   "/settings": { section: "Customer", label: "Settings" },
+  "/more": { section: "Customer", label: "More" },
   "/my-day": { section: "Field", label: "My day" },
   "/my-hours": { section: "Field", label: "My hours" },
   "/messages": { section: "Field", label: "Messages" },
@@ -93,11 +94,6 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
       <button className="iconbtn" onClick={toggleTheme} title="Light / dark">
         {theme === "light" ? <MoonIcon /> : <SunIcon />}
       </button>
-      <select className="rolesel" defaultValue="owner" title="Preview what each role sees">
-        <option value="owner">View as Owner</option>
-        <option value="office">View as Office</option>
-        <option value="tech">View as Tech</option>
-      </select>
       <button className="iconbtn" title="Notifications" style={{ position: "relative" }}>
         <BellIcon />
       </button>

@@ -15,11 +15,22 @@ const config = loadConfig();
 
 // `prepare: false` is required behind Supabase's transaction/session pooler (Supavisor),
 // which does not support the extended-query prepared-statement protocol across pooled conns.
-const queryClient = postgres(config.APP_DATABASE_URL, {
-  ssl: "require",
-  prepare: false,
-  max: 10,
-});
+//
+// Cache the pool on globalThis in development: Next.js Fast Refresh re-evaluates this module on
+// every hot reload, and a fresh postgres() each time would leak the old pool's connections until
+// Supabase's pooler limit (EMAXCONNSESSION) is hit. In production the module loads once per process,
+// so the cache is a no-op there.
+const globalForDb = globalThis as unknown as { _malletQueryClient?: ReturnType<typeof postgres> };
+
+const queryClient =
+  globalForDb._malletQueryClient ??
+  postgres(config.APP_DATABASE_URL, {
+    ssl: "require",
+    prepare: false,
+    max: 10,
+  });
+
+if (process.env.NODE_ENV !== "production") globalForDb._malletQueryClient = queryClient;
 
 export const db = drizzle(queryClient, { schema });
 

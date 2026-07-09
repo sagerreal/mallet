@@ -14,6 +14,7 @@ export interface VerifiedToken {
   readonly authUserId: string;
   readonly email: string;
   readonly orgNameHint: string | null; // user_metadata.org_name captured at auth signUp
+  readonly name: string | null; // user_metadata.full_name (Google) or name; null if not present
 }
 
 export interface TokenVerifier {

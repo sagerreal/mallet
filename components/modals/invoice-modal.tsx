@@ -32,45 +32,8 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
-
-// ---- money helpers (ported 1:1 from money/page.tsx) ------------------------
-
-
-/** invPaid — sum of payment amounts. */
-function invPaid(i: Invoice): number {
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-/** invDue — total − deposit − payments (floor 0). */
-function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
-
-// ---- invoice status pill (prototype invPill / invStatusKey + IST) ----------
-
-/** IST — invoice status table (prototype const IST, mirrored in money/page.tsx). */
-const IST: Record<string, { l: string; c: string; bg: string }> = {
-  paid: { l: "Paid", c: "var(--green-700)", bg: "var(--green-50)" },
-  partial: { l: "Part-paid", c: "var(--amber)", bg: "var(--amber-bg)" },
-  sent: { l: "Unpaid", c: "var(--blue)", bg: "var(--blue-bg)" },
-  draft: { l: "Draft", c: "var(--ink-3)", bg: "var(--paper)" },
-  over: { l: "Overdue", c: "var(--red)", bg: "var(--red-bg)" },
-};
-
-/** invOver — unpaid past the 7-day default (prototype invOver). */
-function invOver(i: Invoice): boolean {
-  if (i.status === "draft" || invDue(i) <= 0) return false;
-  return (i.age ?? 0) > 7;
-}
-
-/** invStatusKey — runtime status key incl. draft + overdue (prototype). */
-function invStatusKey(i: Invoice): string {
-  if (i.status === "draft") return "draft";
-  if (invOver(i)) return "over";
-  if (invDue(i) <= 0) return "paid";
-  if (invPaid(i) > 0) return "partial";
-  return "sent";
-}
+// Single source for invoice money math + status pill table (features/money).
+import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
 
 function StatusPill({ invoice }: { invoice: Invoice }) {
   const s = IST[invStatusKey(invoice)] ?? IST.draft!;
@@ -736,11 +699,12 @@ export function InvoiceModalContent() {
   const leads = useAppStore((s) => s.leads);
   const jobs = useAppStore((s) => s.jobs);
   const updateInvoice = useAppStore((s) => s.updateInvoice);
+  const archiveInvoice = useAppStore((s) => s.archiveInvoice);
   const setInvoiceLines = useAppStore((s) => s.setInvoiceLines);
   const recordPayment = useAppStore((s) => s.recordPayment);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
 
-  const invoiceId = activeModal?.params?.invoiceId as number | undefined;
+  const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
   if (!invoice) return null;
 
@@ -771,7 +735,7 @@ export function InvoiceModalContent() {
       if (matched.email) patch.email = matched.email;
     } else {
       // no live match — leave the typed name, clear the link (prototype sets leadId=null)
-      patch.leadId = 0;
+      patch.leadId = "";
     }
     updateInvoice(invoice.id, patch);
   }
@@ -856,6 +820,26 @@ export function InvoiceModalContent() {
           paddingTop: 12,
         }}
       >
+        {invoice.archived ? (
+          <button
+            className="btn ghost"
+            style={{ marginRight: "auto" }}
+            onClick={() => updateInvoice(invoice.id, { archived: false })}
+          >
+            Restore
+          </button>
+        ) : (
+          <button
+            className="btn ghost"
+            style={{ marginRight: "auto" }}
+            onClick={() => {
+              archiveInvoice(invoice.id);
+              close();
+            }}
+          >
+            Archive
+          </button>
+        )}
         <button className="btn ghost" onClick={() => openModal(MODAL.CUST_INVOICE, { invoiceId: invoice.id })}>
           Preview as customer
         </button>

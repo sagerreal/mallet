@@ -33,6 +33,7 @@ import {
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { fmt$ } from "@/lib/format";
+import { todayISO } from "@/lib/clock";
 import type {
   Job,
   Visit,
@@ -139,10 +140,6 @@ function startTimeStr(start: number): string {
   let h12 = hr % 12;
   if (!h12) h12 = 12;
   return `${h12}:${String(mn).padStart(2, "0")} ${hr < 12 ? "AM" : "PM"}`;
-}
-
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function initialsOf(name: string): string {
@@ -582,8 +579,8 @@ function AddonStatusPill({ status }: AddonStatusPillProps) {
 interface FoundWorkSecProps {
   job: Job;
   seesPrice: boolean;
-  addAddon: (jobId: number, draft: { d: string; r: number }) => Addon | null;
-  setAddonStatus: (jobId: number, addonId: number, status: Addon["status"]) => void;
+  addAddon: (jobId: string, draft: { d: string; r: number }) => Addon | null;
+  setAddonStatus: (jobId: string, addonId: number, status: Addon["status"]) => void;
 }
 
 function FoundWorkSec({ job, seesPrice, addAddon, setAddonStatus }: FoundWorkSecProps) {
@@ -709,7 +706,7 @@ const VROW_BASE: React.CSSProperties = {
 };
 
 interface ChecklistItemRowProps {
-  jobId: number;
+  jobId: string;
   row: VerifyRow;
   expanded: boolean;
   onCheck: () => void;
@@ -858,10 +855,10 @@ function ChecklistItemRow({
 
 interface ChecklistSecProps {
   job: Job;
-  checkItem: (jobId: number, itemId: number) => void;
-  overrideItem: (jobId: number, itemId: number, reason: string) => void;
-  uncheckItem: (jobId: number, itemId: number) => void;
-  addPhoto: (jobId: number) => void;
+  checkItem: (jobId: string, itemId: number) => void;
+  overrideItem: (jobId: string, itemId: number, reason: string) => void;
+  uncheckItem: (jobId: string, itemId: number) => void;
+  addPhoto: (jobId: string) => void;
 }
 
 function ChecklistSec({ job, checkItem, overrideItem, uncheckItem, addPhoto }: ChecklistSecProps) {
@@ -993,7 +990,7 @@ interface DoneBlockProps {
   lead: Lead | undefined;
   invoice: Invoice | undefined;
   onOpenCloseOut: () => void;
-  onOpenInvoice: (invoiceId: number) => void;
+  onOpenInvoice: (invoiceId: string) => void;
   onChargeOnFile: () => void;
   onSendToOffice: () => void;
   onReopen: () => void;
@@ -1151,7 +1148,7 @@ export function TechJobModalContent() {
   const uncheckVerifyItem = useAppStore((s) => s.uncheckVerifyItem);
   const addJobPhoto = useAppStore((s) => s.addJobPhoto);
 
-  const jobId = activeModal?.params?.jobId as number | undefined;
+  const jobId = activeModal?.params?.jobId as string | undefined;
   const job = jobs.find((j) => j.id === jobId);
   if (!job) return null;
 
@@ -1167,7 +1164,7 @@ export function TechJobModalContent() {
   const placed = (job.visits ?? []).filter(vPlaced);
   const curVisit = currentVisit(placed);
 
-  function onVisitStatus(visitId: number, status: string) {
+  function onVisitStatus(visitId: string, status: string) {
     if (!job) return;
     setVisitStatus(job.id, visitId, status);
   }

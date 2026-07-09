@@ -1,7 +1,8 @@
 /**
  * features/customers/customers-view.tsx
- * The Customers list UI (§4.3) — Person/Company tabs, toolbar, table.
- * Thin orchestrator — delegates to sub-components; filter/sort logic in customers-utils.
+ * The Customers (People) list — Person/Company tabs, a Jobs-style toolbar
+ * (Active/Archived toggle + search + Filters + Columns), and the table.
+ * Thin orchestrator — delegates to sub-components; filter/sort in customers-utils.
  */
 
 "use client";
@@ -12,7 +13,8 @@ import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
 import { isStaleLead } from "@/features/pipeline/pipeline-constants";
 import { filterLeads, sortLeads } from "./customers-utils";
-import { CustomersToolbar } from "./customers-toolbar";
+import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
+import { ViewToggle } from "@/components/shared/view-toggle";
 import { CustomersFilters } from "./customers-filters";
 import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS } from "./customers-columns";
 import { LeadRow } from "./lead-row";
@@ -32,7 +34,7 @@ export function CustomersView() {
   // $ on the table per customer: open (sent) quotes for active pipeline, else
   // the won total once accepted, else nothing. Derived in the body (not a selector).
   const valueByLead = useMemo(() => {
-    const m = new Map<number, number | null>();
+    const m = new Map<string, number | null>();
     for (const lead of leads) {
       const es = estimates.filter((e) => e.leadId === lead.id);
       const open = es.filter((e) => e.status === "sent").reduce((s, e) => s + estTotal(e), 0);
@@ -42,6 +44,7 @@ export function CustomersView() {
     return m;
   }, [leads, estimates]);
 
+  const [archiveSet, setArchiveSet] = useState<CustomerArchiveSet>("active");
   const [q, setQ] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
@@ -51,20 +54,20 @@ export function CustomersView() {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState(1);
 
-  const all = leads.filter((l) => !l.archived);
-  const filtered = filterLeads(all, q, stageFilter, sourceFilter);
+  const activeLeads = leads.filter((l) => !l.archived);
+  const shownSet = archiveSet === "active" ? activeLeads : leads.filter((l) => l.archived);
+  const filtered = filterLeads(shownSet, q, stageFilter, sourceFilter);
   const sorted =
     sortCol === "value"
       ? [...filtered].sort(
-          (a, b) =>
-            ((valueByLead.get(a.id) ?? -1) - (valueByLead.get(b.id) ?? -1)) * sortDir
+          (a, b) => ((valueByLead.get(a.id) ?? -1) - (valueByLead.get(b.id) ?? -1)) * sortDir
         )
       : sortLeads(filtered, sortCol, sortDir);
 
-  const staleCount = all.filter(isStaleLead).length;
-  const allStages = [...new Set(all.map((l) => l.stage))];
-  const allSources = [...new Set(all.map((l) => l.source).filter(Boolean))];
-  const activeFilterCount = (stageFilter ? 1 : 0) + (sourceFilter ? 1 : 0);
+  const staleCount = activeLeads.filter(isStaleLead).length;
+  const allStages = [...new Set(shownSet.map((l) => l.stage))];
+  const allSources = [...new Set(shownSet.map((l) => l.source).filter(Boolean))];
+  const activeFilterCount = (stageFilter ? 1 : 0) + (sourceFilter ? 1 : 0) + (custSeg !== "people" ? 1 : 0) + (archiveSet !== "active" ? 1 : 0);
   const visible = visibleCols.filter((c) => ALL_COL_DEFS[c]);
 
   function toggleSort(col: string) {
@@ -96,9 +99,9 @@ export function CustomersView() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+      <div className="pagehead">
         <h1>Customers</h1>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="pagehead-acts">
           <button className="btn ghost" onClick={() => openModal(MODAL.SWEEP)}>
             Clean up
             {staleCount > 0 && (
@@ -116,7 +119,7 @@ export function CustomersView() {
 
       {/* Segment tabs — this branch only renders for the People segment, so the
           People tab is always active and Companies is always inactive here. */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, marginTop: 12 }}>
+      <div className="segsw" style={{ marginBottom: 12, marginTop: 12 }}>
         <button className="btn sm primary" onClick={() => setCustSeg("people")}>
           People
         </button>
@@ -125,7 +128,14 @@ export function CustomersView() {
         </button>
       </div>
 
+      {/* Mobile-only: full-width primary action */}
+      <div className="mob-new">
+        <button className="btn primary" onClick={() => openModal(MODAL.NEW_CUSTOMER)}>+ New customer</button>
+      </div>
+
       <CustomersToolbar
+        archiveSet={archiveSet}
+        onArchiveSet={setArchiveSet}
         q={q}
         onQ={setQ}
         filtersOpen={filtersOpen}
@@ -133,27 +143,41 @@ export function CustomersView() {
         colsOpen={colsOpen}
         onToggleCols={() => setColsOpen((o) => !o)}
         activeFilterCount={activeFilterCount}
-        total={all.length}
+        total={shownSet.length}
         filtered={sorted.length}
       />
 
       {colsOpen && <CustomersColumns visible={visible} onToggle={toggleCol} />}
 
       {filtersOpen && (
-        <CustomersFilters
-          stageFilter={stageFilter}
-          sourceFilter={sourceFilter}
-          stages={allStages}
-          sources={allSources}
-          onStage={setStageFilter}
-          onSource={setSourceFilter}
-          onClear={clearFilters}
-        />
+        <>
+          <div className="mob-ctrl">
+            <div className="segctl">
+              <button className={custSeg === "people" ? "on" : ""} onClick={() => setCustSeg("people")}>People</button>
+              <button className={custSeg !== "people" ? "on" : ""} onClick={() => setCustSeg("biz")}>Companies</button>
+            </div>
+            <ViewToggle
+              value={archiveSet}
+              options={[{ value: "active" as const, label: "Active" }, { value: "archived" as const, label: "Archived" }]}
+              onChange={setArchiveSet}
+              ariaLabel="Show active or archived customers"
+            />
+          </div>
+          <CustomersFilters
+            stageFilter={stageFilter}
+            sourceFilter={sourceFilter}
+            stages={allStages}
+            sources={allSources}
+            onStage={setStageFilter}
+            onSource={setSourceFilter}
+            onClear={clearFilters}
+          />
+        </>
       )}
 
       {/* Table */}
       <div className="card" style={{ padding: "6px 14px" }}>
-        <table>
+        <table className="list-tbl">
           <thead>
             <tr>
               {visible.map((col) => {
@@ -165,9 +189,7 @@ export function CustomersView() {
                     className={sortable ? "sortable" : ""}
                     style={sortable ? { cursor: "pointer" } : undefined}
                     onClick={sortable ? () => toggleSort(col) : undefined}
-                    aria-sort={
-                      sortCol === col ? (sortDir === 1 ? "ascending" : "descending") : undefined
-                    }
+                    aria-sort={sortCol === col ? (sortDir === 1 ? "ascending" : "descending") : undefined}
                     {...(sortable ? pressable(() => toggleSort(col)) : {})}
                   >
                     {ALL_COL_DEFS[col]?.l}{arrow}
@@ -191,10 +213,16 @@ export function CustomersView() {
               <tr>
                 <td colSpan={visible.length}>
                   <div className="empty-att">
-                    Nothing matches —{" "}
-                    <button type="button" className="linklike" onClick={clearFilters}>
-                      clear the filters
-                    </button>
+                    {archiveSet === "archived" ? (
+                      "No archived customers."
+                    ) : (
+                      <>
+                        Nothing matches —{" "}
+                        <button type="button" className="linklike" onClick={clearFilters}>
+                          clear the filters
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

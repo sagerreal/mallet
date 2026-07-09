@@ -5,6 +5,8 @@ import {
   text,
   integer,
   timestamp,
+  date,
+  time,
   index,
   uniqueIndex,
   unique,
@@ -79,6 +81,49 @@ export const jobs = pgTable(
     check(
       "jobs_window_check",
       sql`${t.scheduledEnd} is null or ${t.scheduledStart} is null or ${t.scheduledEnd} >= ${t.scheduledStart}`,
+    ),
+  ],
+);
+
+// A single scheduled visit on a job. Composite FK (org_id, job_id) enforces intra-org
+// containment (mirrors estimate_lines). An unplaced visit has no date or assignee yet.
+export const jobVisits = pgTable(
+  "job_visits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    jobId: uuid("job_id").notNull(),
+    assigneeUserId: uuid("assignee_user_id"), // nullable — unplaced
+    scheduledDate: date("scheduled_date"), // nullable — no date yet; string "YYYY-MM-DD"
+    scheduledStart: time("scheduled_start"), // nullable; string "HH:MM:SS"
+    scheduledEnd: time("scheduled_end"), // nullable; string "HH:MM:SS"
+    status: text("status").notNull().default("pending"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    notes: text("notes"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Intra-org containment: a visit can only reference a job in its own org.
+    foreignKey({
+      name: "job_visits_job_fk",
+      columns: [t.orgId, t.jobId],
+      foreignColumns: [jobs.orgId, jobs.id],
+    }).onDelete("cascade"),
+    // Tenant-safe assignee: the referenced user must share this visit's org.
+    foreignKey({
+      name: "job_visits_assignee_fk",
+      columns: [t.orgId, t.assigneeUserId],
+      foreignColumns: [users.orgId, users.id],
+    }),
+    index("job_visits_org_job_idx").on(t.orgId, t.jobId),
+    index("job_visits_org_assignee_date_idx").on(t.orgId, t.assigneeUserId, t.scheduledDate),
+    check(
+      "job_visits_status_check",
+      sql`${t.status} in ('pending', 'in_progress', 'complete', 'canceled')`,
     ),
   ],
 );

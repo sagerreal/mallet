@@ -16,6 +16,7 @@ export default [
   {
     ignores: [
       ".next/**",
+      ".claude/**",
       "node_modules/**",
       "coverage/**",
       "shared/db/migrations/**",

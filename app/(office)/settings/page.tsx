@@ -11,19 +11,19 @@
  * React useState open/closed map.  The setwrap / setnav / setbody layout
  * is reproduced exactly with those class names (from prototype.css).
  *
- * Owner-only sections (pricing, booking) are gated behind ROLE = 'owner'.
- * This port hard-codes role = 'owner' (matches sample state.role).
+ * Office-only sections (pricing, booking) are gated behind ROLE = 'office'.
+ * Two roles exist: 'office' (the back office / boss — full access) and 'tech'
+ * (field crew, who never reach this page). This port hard-codes role = 'office'.
  */
 
 import { useState } from "react";
-import { SAMPLE_BRAND, SAMPLE_TECHS } from "@/lib/prototype-sample";
+import { SAMPLE_BRAND } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { User } from "@/lib/store/types";
+import { StagePill } from "@/components/shared/stage-pill";
+import { api } from "@/lib/trpc/client";
 
 // ---- sample state values mirrored from prototype's state -------------------
-
-const ROLE = "owner"; // state.role — owner sees all tabs
 
 const MALLET_NUMBER = "(925) 555-0100";
 
@@ -70,7 +70,7 @@ function FoldCard({ title, summary, defaultOpen = false, children }: FoldCardPro
     <div className={`foldcard${open ? " open" : ""}`}>
       <div className="fhead" onClick={() => setOpen((v) => !v)}>
         <span className="caret">▸</span>
-        <h3 dangerouslySetInnerHTML={{ __html: title }} />
+        <h3>{title}</h3>
         {summary && <span className="fsum">{summary}</span>}
       </div>
       <div className="fbody">{children}</div>
@@ -82,7 +82,7 @@ function FoldCard({ title, summary, defaultOpen = false, children }: FoldCardPro
 // Section: Workspace
 // ============================================================================
 
-function SecWorkspace() {
+function SecWorkspace({ role }: { role: string }) {
   return (
     <>
       <FoldCard title="Branding" summary={SAMPLE_BRAND.name}>
@@ -115,8 +115,12 @@ function SecWorkspace() {
         </div>
       </FoldCard>
 
-      {ROLE === "owner" && (
+      {(role === "owner" || role === "office") && (
         <>
+          <h3 className="setgrp" style={{ margin: "20px 0 10px" }}>
+            Your account
+          </h3>
+          <YourNameField />
           <h3 className="setgrp" style={{ margin: "20px 0 10px" }}>
             Team &amp; roles
           </h3>
@@ -128,94 +132,346 @@ function SecWorkspace() {
 }
 
 // ============================================================================
-// Team & roles
+// Your Name — prefilled from me query, saved via updateMe mutation
 // ============================================================================
 
-function TeamRow({ u }: { u: User }) {
-  const updateUserRole = useAppStore((s) => s.updateUserRole);
-  const removeUser = useAppStore((s) => s.removeUser);
-  const linkedTech = u.techId ? SAMPLE_TECHS.find((t) => t.id === u.techId) : null;
+function YourNameField() {
+  const { data: me } = api.v1.identity.me.useQuery();
+  const utils = api.useUtils();
+  const [name, setName] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const updateMe = api.v1.identity.updateMe.useMutation({
+    onSuccess: () => {
+      setSaved(true);
+      setSaveError(null);
+      utils.v1.identity.me.invalidate().catch(() => {});
+      utils.v1.identity.members.invalidate().catch(() => {});
+      setTimeout(() => setSaved(false), 2000);
+    },
+    onError: (err) => {
+      setSaveError(err.message);
+    },
+  });
+
+  const displayName = name ?? me?.name ?? "";
+
+  function handleSave() {
+    const trimmed = displayName.trim();
+    if (!trimmed) return;
+    setSaved(false);
+    setSaveError(null);
+    updateMe.mutate({ name: trimmed });
+  }
+
   return (
-    <div className="stage-row">
-      <div style={{ flex: 1 }}>
-        <b style={{ fontWeight: 700 }}>{u.name}</b>
-        <div className="muted" style={{ fontSize: "11.5px", marginTop: 3, display: "flex", gap: 14, flexWrap: "wrap" }}>
-          <span>{u.email} · login</span>
-          <span>
-            {u.mobile ? (
-              u.mobileVerified ? (
-                <>{u.mobile} · <span style={{ color: "var(--green-900)", fontWeight: 600 }}>verified ✓</span></>
-              ) : (
-                /* deferred: mobile verification flow */
-                <>{u.mobile} · <span className="linklike" onClick={() => {}}>verify</span></>
-              )
-            ) : (
-              /* deferred: add work phone flow */
-              <span className="linklike" onClick={() => {}}>+ add work phone</span>
-            )}
-          </span>
-        </div>
-        {linkedTech && (
-          <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-            Field crew · {linkedTech.skills.join(", ")}
-          </div>
-        )}
+    <FoldCard title="Your name" defaultOpen summary={me?.name ?? me?.email ?? ""}>
+      <div className="muted" style={{ fontSize: "11.5px", marginBottom: 8 }}>
+        Shown in greetings and on the dispatch board. Your login email stays unchanged.
       </div>
-      <select
-        className="tsel"
-        defaultValue={u.role}
-        onChange={(e) => updateUserRole(u.id, e.target.value)}
-      >
-        <option value="owner">Owner</option>
-        <option value="office">Office</option>
-        <option value="tech">Tech</option>
-      </select>
-      <button className="btn sm ghost" onClick={() => removeUser(u.id)}>
-        ✕
-      </button>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          type="text"
+          placeholder="e.g. Mike Rivera"
+          value={displayName}
+          onChange={(e) => { setName(e.target.value); setSaved(false); setSaveError(null); }}
+          style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }}
+        />
+        <button
+          className="btn primary"
+          disabled={updateMe.isPending || !displayName.trim()}
+          onClick={handleSave}
+        >
+          {updateMe.isPending ? "Saving…" : "Save"}
+        </button>
+        {saved && <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>Saved ✓</span>}
+      </div>
+      {saveError && (
+        <div style={{ color: "var(--red-700)", fontSize: 12, marginTop: 6 }}>{saveError}</div>
+      )}
+    </FoldCard>
+  );
+}
+
+// ============================================================================
+// Team & roles — consolidated onto real DB members (v1.identity.members)
+// ============================================================================
+
+type MemberItem = {
+  id: string;
+  email: string;
+  role: "owner" | "office" | "tech";
+  name: string | null;
+  isFieldCrew: boolean;
+};
+
+function MemberRow({ member }: { member: MemberItem }) {
+  const utils = api.useUtils();
+  const [roleError, setRoleError] = useState<string | null>(null);
+
+  const setFieldCrew = api.v1.identity.setMemberFieldCrew.useMutation({
+    onSuccess: () => { utils.v1.identity.members.invalidate().catch(() => {}); },
+  });
+
+  const setRole = api.v1.identity.setMemberRole.useMutation({
+    onSuccess: () => {
+      setRoleError(null);
+      utils.v1.identity.members.invalidate().catch(() => {});
+    },
+    onError: (err) => {
+      setRoleError(err.message);
+    },
+  });
+
+  return (
+    <div className="stage-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <b style={{ fontWeight: 700 }}>{member.name ?? member.email}</b>
+          <div className="muted" style={{ fontSize: "11.5px", marginTop: 2 }}>
+            {member.email}
+          </div>
+        </div>
+        <select
+          className="tsel"
+          value={member.role}
+          disabled={setRole.isPending}
+          onChange={(e) => {
+            const role = e.target.value as "owner" | "office" | "tech";
+            setRoleError(null);
+            setRole.mutate({ userId: member.id, role });
+          }}
+        >
+          <option value="owner">Owner</option>
+          <option value="office">Office</option>
+          <option value="tech">Tech</option>
+        </select>
+        <label className="switch" title="Schedulable field crew">
+          <input
+            type="checkbox"
+            checked={member.isFieldCrew}
+            disabled={setFieldCrew.isPending}
+            onChange={(e) => setFieldCrew.mutate({ userId: member.id, isFieldCrew: e.target.checked })}
+          />
+          <i />
+        </label>
+      </div>
+      {roleError && (
+        <div style={{ color: "var(--red-700)", fontSize: 12, paddingLeft: 2 }}>{roleError}</div>
+      )}
     </div>
   );
 }
 
+// ---- email validation helper -------------------------------------------------
+
+function looksLikeEmail(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+}
+
+// ---- InviteForm -------------------------------------------------------------
+
+type InviteStatus =
+  | { kind: "idle" }
+  | { kind: "email_sent" }
+  | { kind: "no_email"; reason: string | undefined };
+
+function InviteForm() {
+  const utils = api.useUtils();
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"owner" | "office" | "tech">("tech");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteStatus, setInviteStatus] = useState<InviteStatus>({ kind: "idle" });
+
+  const inviteMember = api.v1.identity.inviteMember.useMutation({
+    onSuccess: (data) => {
+      setEmail("");
+      setRole("tech");
+      setInviteError(null);
+      setInviteStatus(
+        data.emailSent
+          ? { kind: "email_sent" }
+          : { kind: "no_email", reason: data.emailReason },
+      );
+      utils.v1.identity.listInvites.invalidate().catch(() => {});
+      utils.v1.identity.members.invalidate().catch(() => {});
+      setTimeout(() => setInviteStatus({ kind: "idle" }), 4000);
+    },
+    onError: (err) => {
+      setInviteError(err.message);
+    },
+  });
+
+  const emailTrimmed = email.trim();
+  const canSubmit = emailTrimmed.length > 0 && looksLikeEmail(emailTrimmed) && !inviteMember.isPending;
+
+  function handleInvite() {
+    if (!canSubmit) return;
+    setInviteError(null);
+    setInviteStatus({ kind: "idle" });
+    inviteMember.mutate({ email: emailTrimmed, role });
+  }
+
+  function InviteConfirmation() {
+    if (inviteStatus.kind === "email_sent") {
+      return (
+        <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>
+          Invite email sent ✓
+        </span>
+      );
+    }
+    if (inviteStatus.kind === "no_email") {
+      return (
+        <span style={{ color: "var(--amber-700, #b45309)", fontSize: 12, fontWeight: 600 }}>
+          Invite created — ask them to sign up with this email
+        </span>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          type="email"
+          placeholder="teammate@email.com"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setInviteError(null); setInviteStatus({ kind: "idle" }); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleInvite(); }}
+          style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }}
+        />
+        <select
+          className="tsel"
+          value={role}
+          onChange={(e) => setRole(e.target.value as "owner" | "office" | "tech")}
+        >
+          <option value="tech">Tech</option>
+          <option value="office">Office</option>
+          <option value="owner">Owner</option>
+        </select>
+        <button
+          className="btn primary"
+          disabled={!canSubmit}
+          onClick={handleInvite}
+        >
+          {inviteMember.isPending ? "Inviting…" : "Invite"}
+        </button>
+        <InviteConfirmation />
+      </div>
+      {inviteError && (
+        <div style={{ color: "var(--red-700)", fontSize: 12, marginTop: 6 }}>{inviteError}</div>
+      )}
+      <div className="muted" style={{ fontSize: "11.5px", marginTop: 6 }}>
+        They&apos;ll receive an invite link. If they already have an account, ask them to sign in.
+      </div>
+    </div>
+  );
+}
+
+// ---- PendingInvitesList -----------------------------------------------------
+
+type InviteItem = {
+  id: string;
+  email: string;
+  role: "owner" | "office" | "tech";
+  status: string;
+  createdAt: Date;
+};
+
+function PendingInviteRow({ invite }: { invite: InviteItem }) {
+  const utils = api.useUtils();
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+
+  const revokeInvite = api.v1.identity.revokeInvite.useMutation({
+    onSuccess: () => {
+      setRevokeError(null);
+      utils.v1.identity.listInvites.invalidate().catch(() => {});
+    },
+    onError: (err) => {
+      setRevokeError(err.message);
+    },
+  });
+
+  return (
+    <div className="stage-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <span style={{ fontWeight: 600 }}>{invite.email}</span>
+          <span className="muted" style={{ fontSize: "11.5px", marginLeft: 8 }}>{cap(invite.role)} · pending</span>
+        </div>
+        <button
+          className="btn sm ghost"
+          disabled={revokeInvite.isPending}
+          onClick={() => revokeInvite.mutate({ inviteId: invite.id })}
+        >
+          {revokeInvite.isPending ? "…" : "Revoke"}
+        </button>
+      </div>
+      {revokeError && (
+        <div style={{ color: "var(--red-700)", fontSize: 12, paddingLeft: 2 }}>{revokeError}</div>
+      )}
+    </div>
+  );
+}
+
+function PendingInvitesList() {
+  const { data, isLoading } = api.v1.identity.listInvites.useQuery();
+
+  if (isLoading) {
+    return <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>Loading invites…</div>;
+  }
+
+  const items = data?.items ?? [];
+
+  if (items.length === 0) {
+    return (
+      <div className="muted" style={{ fontSize: "11.5px", padding: "6px 0" }}>
+        No pending invites.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      {items.map((invite) => (
+        <PendingInviteRow key={invite.id} invite={invite} />
+      ))}
+    </div>
+  );
+}
+
+// ---- TeamRolesBlock ---------------------------------------------------------
+
 function TeamRolesBlock() {
-  const users = useAppStore((s) => s.users);
-  const inviteUser = useAppStore((s) => s.inviteUser);
+  const { data, isLoading, isError } = api.v1.identity.members.useQuery();
   const setToggle = useAppStore((s) => s.setToggle);
   const techSeesPrice = useAppStore((s) => s.toggles.techSeesPrice);
   const techTexts = useAppStore((s) => s.toggles.techTexts);
 
-  const [invName, setInvName] = useState("");
-  const [invEmail, setInvEmail] = useState("");
-  const [invMobile, setInvMobile] = useState("");
-  const [invRole, setInvRole] = useState("office");
-
-  function handleInvite() {
-    inviteUser({ name: invName, email: invEmail, mobile: invMobile, role: invRole });
-    setInvName("");
-    setInvEmail("");
-    setInvMobile("");
-    setInvRole("office");
-  }
+  const memberCount = data?.items.length ?? 0;
+  const fieldCrewCount = data?.items.filter((m) => m.isFieldCrew).length ?? 0;
 
   return (
     <>
-      <FoldCard title="Your team" defaultOpen summary={`${users.length} people`}>
-        {users.map((u) => (
-          <TeamRow key={u.id} u={u} />
+      <FoldCard title="Your team" defaultOpen summary={isLoading ? "…" : `${memberCount} ${memberCount === 1 ? "person" : "people"}`}>
+        {isLoading && (
+          <div className="muted" style={{ fontSize: 12, padding: "8px 0" }}>Loading members…</div>
+        )}
+        {isError && (
+          <div className="muted" style={{ fontSize: 12, padding: "8px 0" }}>Could not load members.</div>
+        )}
+        {data?.items.map((member) => (
+          <MemberRow key={member.id} member={member} />
         ))}
-        <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", paddingTop: 14, borderTop: "1px solid var(--line)" }}>
-          <input id="invName" placeholder="name" value={invName} onChange={(e) => setInvName(e.target.value)} style={{ flex: 1, minWidth: 110, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
-          <input id="invEmail" placeholder="email · login" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} style={{ flex: 1, minWidth: 130, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
-          <input id="invMobile" placeholder="mobile · work phone" value={invMobile} onChange={(e) => setInvMobile(e.target.value)} style={{ flex: 1, minWidth: 130, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit" }} />
-          <select className="tsel" id="invRole" value={invRole} onChange={(e) => setInvRole(e.target.value)}>
-            <option value="office">Office</option>
-            <option value="tech">Tech</option>
-            <option value="owner">Owner</option>
-          </select>
-          <button className="btn primary" onClick={handleInvite}>+ Add</button>
+        <InviteForm />
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+          <div className="muted" style={{ fontSize: "11.5px", fontWeight: 600, marginBottom: 4 }}>Pending invites</div>
+          <PendingInvitesList />
         </div>
-        <div className="muted" style={{ fontSize: "11.5px", marginTop: 9 }}>
-          Add a Tech and they become schedulable field crew with the My Day app.
+        <div className="muted" style={{ fontSize: "11.5px", marginTop: 8 }}>
+          The toggle makes a member schedulable on the dispatch board ({fieldCrewCount} on now).
         </div>
       </FoldCard>
 
@@ -223,7 +479,7 @@ function TeamRolesBlock() {
         <div className="stage-row" style={{ borderTop: "none", marginTop: 0 }}>
           <div style={{ flex: 1 }}>
             <b>Techs can see job prices</b>
-            <div className="muted" style={{ fontSize: 12 }}>The job total only — your cost and margin stay owner-only.</div>
+            <div className="muted" style={{ fontSize: 12 }}>The job total only — your cost and margin stay office-only.</div>
           </div>
           <label className="switch">
             <input type="checkbox" checked={techSeesPrice} onChange={(e) => setToggle("techSeesPrice", e.target.checked)} />
@@ -386,17 +642,11 @@ function SecPipeline() {
 
   function StageRow({ s }: { s: string }) {
     const trigger = BUILTIN_STAGE_TRIGGERS[s] ?? "";
-    const pillCls =
-      s === "New customer" ? "stamp ink" :
-      s === "Contacted"    ? "stamp info" :
-      s === "Quote Sent"   ? "stamp warn" :
-      s === "Won"          ? "stamp good" :
-                             "stamp bad";
 
     return (
       <div className="stage-row">
         <span style={{ fontWeight: 700 }}>{s}</span>
-        <span className={pillCls}>{s}</span>
+        <StagePill stage={s} />
         <span className="trig">{trigger}</span>
         {/* deferred: custom stage rename (needs a stage model not in scope) */}
         <button className="btn sm ghost" onClick={() => {}}>Rename</button>
@@ -887,9 +1137,11 @@ interface SectionDef {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SetTab>("workspace");
+  const { data: me } = api.v1.identity.me.useQuery();
+  const role = me?.role ?? "office";
 
   const allSections = [
-    { k: "workspace" as SetTab, label: "Workspace",         body: <SecWorkspace /> },
+    { k: "workspace" as SetTab, label: "Workspace",         body: <SecWorkspace role={role} /> },
     { k: "sources"   as SetTab, label: "Lead sources",      body: <SecSources /> },
     { k: "pipeline"  as SetTab, label: "Pipeline",          body: <SecPipeline /> },
     { k: "pricing"   as SetTab, label: "Pricing & quotes", ownerOnly: true, body: <SecPricing /> },
@@ -897,7 +1149,7 @@ export default function SettingsPage() {
     { k: "fields"    as SetTab, label: "Custom fields",     body: <SecFields /> },
     { k: "archive"   as SetTab, label: "Archive",           body: <SecArchive /> },
   ] satisfies SectionDef[];
-  const sections: SectionDef[] = allSections.filter((s) => ROLE === "owner" || !s.ownerOnly);
+  const sections: SectionDef[] = allSections.filter((s) => role === "owner" || role === "office" || !s.ownerOnly);
 
   const tab = sections.some((s) => s.k === activeTab) ? activeTab : "workspace";
 

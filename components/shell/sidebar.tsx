@@ -1,10 +1,12 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { useMe } from "@/features/identity/hooks";
 import { useAppStore } from "@/lib/store/app-store";
 import { NewMenu } from "@/components/shell/new-menu";
+import { signOut } from "@/features/auth/hooks";
 
 // SVG icons matching the prototype
 const HomeIcon = () => (
@@ -114,11 +116,30 @@ function NavSub({ href, label, count, active }: NavSubProps) {
 }
 
 // Routes that belong to the Customers group (its sidebar sub-nav).
-const CUSTOMER_AREA = ["/customers", "/pipeline", "/quotes", "/tasks"];
+const CUSTOMER_AREA = ["/customers", "/pipeline", "/tasks"];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const me = useMe();
+  const [acctOpen, setAcctOpen] = useState(false);
+  const acctRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!acctOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (acctRef.current && !acctRef.current.contains(e.target as Node)) {
+        setAcctOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [acctOpen]);
+
+  async function handleSignOut() {
+    await signOut();
+    router.push("/login");
+  }
   const tasks = useAppStore((s) => s.tasks);
   const storeJobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
@@ -178,7 +199,6 @@ export function Sidebar() {
         {customersActive && (
           <div className="navsubs">
             <NavSub href="/pipeline" label="Pipeline" active={pathname.startsWith("/pipeline")} />
-            <NavSub href="/quotes" label="Quotes" active={pathname.startsWith("/quotes")} />
             <NavSub
               href="/tasks"
               label="Tasks"
@@ -202,7 +222,6 @@ export function Sidebar() {
               count={unscheduledCount > 0 ? unscheduledCount : undefined}
               active={tab === "schedule"}
             />
-            <NavSub href="/jobs?tab=today" label="Today" active={tab === "today"} />
             <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
           </div>
         )}
@@ -213,11 +232,6 @@ export function Sidebar() {
           count={moneyCount > 0 ? moneyCount : undefined}
           active={moneyActive}
         />
-        {moneyActive && (
-          <div className="navsubs">
-            <NavSub href="/money?tab=fin-invoices" label="Invoices" active={tab === "fin-invoices"} />
-          </div>
-        )}
 
         <div className="navsep" />
 
@@ -232,13 +246,40 @@ export function Sidebar() {
       </div>
 
       {/* Account row */}
-      <div className="sideacct">
-        <span className="avatar">{initials}</span>
-        <div className="who">
-          <b>{displayName}</b>
-          <span>{orgName}</span>
+      <div className="sideacct-wrap" ref={acctRef}>
+        {acctOpen && (
+          <div className="acct-menu">
+            <a
+              className="acct-menu-item"
+              href="mailto:support@trymallet.com"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setAcctOpen(false)}
+            >
+              Message support
+            </a>
+            <div className="acct-menu-sep" />
+            <button className="acct-menu-item acct-menu-signout" onClick={handleSignOut}>
+              Sign out
+            </button>
+          </div>
+        )}
+        <div
+          className={`sideacct${acctOpen ? " open" : ""}`}
+          role="button"
+          tabIndex={0}
+          aria-expanded={acctOpen}
+          aria-haspopup="menu"
+          onClick={() => setAcctOpen((v) => !v)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setAcctOpen((v) => !v); }}
+        >
+          <span className="avatar">{initials}</span>
+          <div className="who">
+            <b>{displayName}</b>
+            <span>{orgName}</span>
+          </div>
+          <span className={`acct-caret${acctOpen ? " up" : ""}`}>⌄</span>
         </div>
-        <span style={{ color: "var(--ink-3)", fontSize: "13px" }}>⌄</span>
       </div>
     </aside>
   );

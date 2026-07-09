@@ -1,36 +1,29 @@
 "use client";
 
 /**
- * Home — "The Handoff", v3: the figure that drains.
+ * Home — "The Handoff": the figure that drains.
  * One dollar figure (the money waiting on the owner's OK) is the subject of the
- * Front Desk's note. Below it: the drafts themselves — real outbound SMS bubbles
- * in ghost ink, one amber Send from real. Sending is a witnessed state change:
- * the bubble inks in, the card folds, a timestamped ledger line lands beside the
- * overnight entries, and the figure drains (it derives from the store, so Undo
- * refills it). No stat cells, no chips, no captions — the work IS the screen.
+ * Front Desk's note. Below it: THE PIPE — the shop's money flowing through the
+ * process (New → Quoted → Needs a slot → On the trucks → To bill → Owed →
+ * Collected), each figure a door into its page, leaks glowing amber at the exact
+ * stage. Then the drafts: real outbound SMS bubbles in ghost ink, one amber Send
+ * from real; sending drains the hero (Undo refills it).
  *
- * Derivations: features/home/derive.ts. Drafts: features/home/drafts.ts.
+ * Derivations: features/home/derive.ts + pipe.ts. Drafts: features/home/drafts.ts.
  */
 
-import { TODAY_ISO } from "@/lib/prototype-sample";
+import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
-import { fmt$ } from "@/lib/format";
-import {
-  deriveShiftReport,
-  deriveOkQueue,
-  deriveTodayBoard,
-  deriveToSchedule,
-  deriveOpenSlot,
-  deriveMoneyLine,
-  firstName,
-} from "@/features/home/derive";
+import { deriveShiftReport, deriveOkQueue } from "@/features/home/derive";
+import { deriveHomePipe } from "@/features/home/pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
+import { HomePipe } from "@/features/home/home-pipe";
 import { OkQueue } from "@/features/home/ok-queue";
-import { AskRow, TodayStrip } from "@/features/home/home-sections";
+import { useMe } from "@/features/identity/hooks";
 
-/** "WED, JUL 1" from the app clock. */
+/** "WED, JUL 8" from the live clock. */
 function dateLabel(): string {
-  return new Date(TODAY_ISO + "T12:00:00")
+  return new Date(todayISO() + "T12:00:00")
     .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
     .toUpperCase();
 }
@@ -41,35 +34,26 @@ export default function DashboardPage() {
   const invoices = useAppStore((s) => s.invoices);
   const jobs = useAppStore((s) => s.jobs);
   const techs = useAppStore((s) => s.techs);
-  const brand = useAppStore((s) => s.brand);
-  const users = useAppStore((s) => s.users);
   const frontDeskOn = useAppStore((s) => s.toggles.frontDesk);
   const dismissed = useAppStore((s) => s.dismissedAttention);
 
-  // ---- all derived in the body, never in a selector -------------------------
-  const owner = users.find((u) => u.role === "owner");
-  const ownerFirst = firstName(owner?.name ?? "there");
+  // ---- real identity — org name + owner's first name from the DB -----------
+  const me = useMe();
+  const orgName = me.data?.orgName ?? "My Business";
+  const ownerFirst =
+    (me.data?.name?.split(" ")[0]) ??
+    (me.data?.email?.split("@")[0]) ??
+    "there";
 
   const report = deriveShiftReport(leads, jobs, estimates);
   const queue = deriveOkQueue(leads, estimates, invoices, dismissed);
-  const board = deriveTodayBoard(jobs, leads, techs);
-  const toSchedule = deriveToSchedule(jobs);
-  const openSlot = deriveOpenSlot(jobs, leads);
-  const money = deriveMoneyLine(estimates, invoices);
   const queueValue = queue.reduce((s, it) => s + it.value, 0);
-
-  // The day's top move, folded into the ask-input's placeholder.
-  const top = queue[0];
-  const suggestion = top
-    ? top.kind === "invoice-overdue"
-      ? `chase ${firstName(top.lead.name)}'s ${fmt$(top.value)}`
-      : `follow up ${firstName(top.lead.name)}`
-    : null;
+  const pipe = deriveHomePipe({ leads, estimates, invoices, jobs, techs });
 
   return (
     <div>
       <HandoffNote
-        orgName={brand.name}
+        orgName={orgName}
         ownerFirst={ownerFirst}
         dateLabel={dateLabel()}
         frontDeskOn={frontDeskOn}
@@ -78,17 +62,9 @@ export default function DashboardPage() {
         queueValue={queueValue}
       />
 
-      <OkQueue items={queue} receipts={report.receipts} />
+      <HomePipe stages={pipe} />
 
-      <TodayStrip
-        stops={board.stops}
-        booksSum={board.booksSum}
-        toSchedule={toSchedule}
-        openSlot={openSlot}
-        money={money}
-      />
-
-      <AskRow suggestion={suggestion} />
+      <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />
     </div>
   );
 }

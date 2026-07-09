@@ -73,7 +73,7 @@ export function PriceBuilderModalContent() {
     [laborRatesRaw],
   );
 
-  const jobId = activeModal?.params?.jobId as number | undefined;
+  const jobId = activeModal?.params?.jobId as string | undefined;
   const job = jobs.find((j) => j.id === jobId);
 
   // builder line set — seeded once from the job's existing lines so re-opening

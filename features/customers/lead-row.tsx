@@ -8,6 +8,7 @@
 
 import type { Lead } from "@/lib/store/types";
 import { StagePill, SrcPill } from "@/components/shared/stage-pill";
+import { ALL_COL_DEFS } from "./customers-columns";
 import { fmt$ } from "@/lib/format";
 import { pressable } from "@/lib/a11y";
 
@@ -60,14 +61,14 @@ interface LeadRowProps {
   lead: Lead;
   visibleCols: string[];
   value: number | null;
-  onOpen: (id: number) => void;
+  onOpen: (id: string) => void;
 }
 
 export function LeadRow({ lead, visibleCols, value, onOpen }: LeadRowProps) {
   return (
     <tr className="clickable" onClick={() => onOpen(lead.id)} {...pressable(() => onOpen(lead.id))}>
       {visibleCols.map((col) => (
-        <td key={col}>
+        <td key={col} data-label={ALL_COL_DEFS[col]?.l} data-primary={col === "name" ? "" : undefined}>
           <LeadCell lead={lead} col={col} value={value} />
         </td>
       ))}

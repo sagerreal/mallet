@@ -11,7 +11,6 @@
  */
 
 import type { StateCreator } from "zustand";
-import { SAMPLE_LEADS } from "@/lib/prototype-sample";
 
 // ---- shapes ----------------------------------------------------------------
 
@@ -121,9 +120,16 @@ const SEED_VISIT_DUR: VisitDur = { scope: 0.5, repair: 1.5, install: 4 };
 const SEED_MARKUP = 35;
 const SEED_TRADE = "plumbing";
 
-// Sources derived from leads (prototype: state.sources = [...new Set(state.leads.map...)])
+// Canonical lead sources — static list, no longer derived from sample data.
 const SEED_SOURCES: string[] = [
-  ...new Set(SAMPLE_LEADS.map((l) => l.source).filter((s): s is string => Boolean(s))),
+  "Google",
+  "Referral",
+  "Nextdoor / Facebook",
+  "Repeat customer",
+  "Yard sign",
+  "Angi",
+  "Thumbtack",
+  "Yelp",
 ];
 
 const SEED_TOGGLES: SettingsToggles = {

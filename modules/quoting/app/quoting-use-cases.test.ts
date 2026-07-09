@@ -22,6 +22,7 @@ import { SendEstimateUseCase } from "./send-estimate";
 import { AcceptEstimateUseCase } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
 import { ListEstimatesUseCase } from "./list-estimates";
+import type { AcceptLineInput } from "./accept-estimate";
 
 const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
 const LEAD: LeadId = asLeadId("33333333-3333-3333-3333-333333333333");
@@ -39,6 +40,8 @@ const seqIds = (): IdGenerator => {
 
 class FakeEstimateRepository implements EstimateRepository {
   private readonly store = new Map<EstimateId, Estimate>();
+  // Track soft-deleted ids separately so archive/restore tests can verify state.
+  private readonly archived = new Set<EstimateId>();
   private seq = 1000;
 
   async nextNumber(): Promise<string> {
@@ -52,14 +55,17 @@ class FakeEstimateRepository implements EstimateRepository {
   }
 
   async findById(id: EstimateId): Promise<Estimate | null> {
+    if (this.archived.has(id)) return null;
     return this.store.get(id) ?? null;
   }
 
   async list(page: CursorPage, filter?: EstimateFilter): Promise<Paginated<Estimate>> {
-    let rows = [...this.store.values()].sort((a, b) => {
-      const t = b.props.createdAt.getTime() - a.props.createdAt.getTime();
-      return t !== 0 ? t : b.props.id.localeCompare(a.props.id);
-    });
+    let rows = [...this.store.values()]
+      .filter((e) => !this.archived.has(e.props.id))
+      .sort((a, b) => {
+        const t = b.props.createdAt.getTime() - a.props.createdAt.getTime();
+        return t !== 0 ? t : b.props.id.localeCompare(a.props.id);
+      });
     if (filter?.status) rows = rows.filter((e) => e.props.status === filter.status);
     if (page.cursor) {
       const cursor = decodeCursor(page.cursor);
@@ -79,6 +85,18 @@ class FakeEstimateRepository implements EstimateRepository {
 
   async listByLead(_leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>> {
     return this.list(page);
+  }
+
+  async archive(id: EstimateId, _now: Date): Promise<number> {
+    if (this.archived.has(id) || !this.store.has(id)) return 0;
+    this.archived.add(id);
+    return 1;
+  }
+
+  async restore(id: EstimateId, _now: Date): Promise<Estimate | null> {
+    if (!this.archived.has(id)) return null;
+    this.archived.delete(id);
+    return this.store.get(id) ?? null;
   }
 }
 
@@ -202,6 +220,167 @@ describe("Send / Accept / Decline use-cases", () => {
     expect(isOk(r) && r.value.props.status).toBe("declined");
     const event = bus.recorded.find((e) => e.name === "estimate.declined");
     expect(event?.payload).toMatchObject({ reason: "too expensive" });
+  });
+});
+
+describe("AcceptEstimateUseCase — accept-with-lines", () => {
+  let clock: FixedClock;
+  let repo: FakeEstimateRepository;
+  let bus: InMemoryEventBus;
+
+  const seedSent = async (): Promise<EstimateId> => {
+    const draft = new DraftEstimateUseCase(repo, bus, clock, seqIds());
+    const drafted = await draft.exec({
+      orgId: ORG,
+      leadId: LEAD,
+      title: null,
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      validDays: null,
+      lines: [
+        oneLine({ rateCents: 50_000 }),
+        oneLine({ description: "Optional add-on", rateCents: 10_000, isOptional: true }),
+      ],
+    });
+    if (!isOk(drafted)) throw new Error("draft failed");
+    const sent = await new SendEstimateUseCase(repo, bus, clock).exec({
+      estimateId: drafted.value.props.id,
+    });
+    if (!isOk(sent)) throw new Error("send failed");
+    return sent.value.props.id;
+  };
+
+  beforeEach(() => {
+    clock = new FixedClock(new Date("2026-06-01T00:00:00Z"));
+    repo = new FakeEstimateRepository();
+    bus = new InMemoryEventBus();
+  });
+
+  it("accepts without lines — behaves identically to before", async () => {
+    const id = await seedSent();
+    const r = await new AcceptEstimateUseCase(repo, bus, clock).exec({ estimateId: id });
+    expect(isOk(r) && r.value.props.status).toBe("accepted");
+    const event = bus.recorded.find((e) => e.name === "estimate.accepted");
+    // Only the non-optional line contributes (50_000 cents = $500).
+    expect(event?.payload).toMatchObject({ totalCents: 50_000 });
+  });
+
+  it("accept-with-lines commits the customer-selected line set and reflects the new total", async () => {
+    const id = await seedSent();
+
+    // Customer approves and includes the optional add-on ($100) along with the base line ($500).
+    const acceptedLines: AcceptLineInput[] = [
+      { description: "Labor", quantity: 1, rateCents: 50_000, costCents: 0, isOptional: false, needsPhoto: false },
+      { description: "Optional add-on", quantity: 1, rateCents: 10_000, costCents: 0, isOptional: false, needsPhoto: false },
+    ];
+    const r = await new AcceptEstimateUseCase(repo, bus, clock, seqIds()).exec({
+      estimateId: id,
+      lines: acceptedLines,
+    });
+
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+
+    expect(r.value.props.status).toBe("accepted");
+    // Both lines are now non-optional → subtotal = $600.
+    expect(r.value.subtotal()).toBe(60_000);
+    expect(r.value.total()).toBe(60_000);
+
+    const event = bus.recorded.find((e) => e.name === "estimate.accepted");
+    expect(event?.payload).toMatchObject({ totalCents: 60_000 });
+
+    // Verify the accepted lines are persisted in the repo.
+    const persisted = await repo.findById(id);
+    expect(persisted?.props.lines).toHaveLength(2);
+    expect(persisted?.props.lines.every((l) => !l.props.isOptional)).toBe(true);
+  });
+
+  it("accept-with-lines returns not_found for a missing estimate", async () => {
+    const r = await new AcceptEstimateUseCase(repo, bus, clock, seqIds()).exec({
+      estimateId: asEstimateId("99999999-9999-9999-9999-999999999999"),
+      lines: [{ description: "X", quantity: 1, rateCents: 100, costCents: 0, isOptional: false, needsPhoto: false }],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("not_found");
+  });
+});
+
+describe("EstimateRepository — archive / restore", () => {
+  let clock: FixedClock;
+  let repo: FakeEstimateRepository;
+  let bus: InMemoryEventBus;
+  // Shared id generator so multiple seedDraft() calls in one test produce distinct ids.
+  let ids: ReturnType<typeof seqIds>;
+
+  const seedDraft = async (): Promise<EstimateId> => {
+    const draft = new DraftEstimateUseCase(repo, bus, clock, ids);
+    const r = await draft.exec({
+      orgId: ORG,
+      leadId: LEAD,
+      title: null,
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      validDays: null,
+      lines: [oneLine()],
+    });
+    if (!isOk(r)) throw new Error("draft failed");
+    return r.value.props.id;
+  };
+
+  beforeEach(() => {
+    clock = new FixedClock(new Date("2026-06-01T00:00:00Z"));
+    repo = new FakeEstimateRepository();
+    bus = new InMemoryEventBus();
+    ids = seqIds();
+  });
+
+  it("archive hides the estimate from findById and returns count=1", async () => {
+    const id = await seedDraft();
+    const count = await repo.archive(id, clock.now());
+    expect(count).toBe(1);
+    const found = await repo.findById(id);
+    expect(found).toBeNull();
+  });
+
+  it("archive on an already-archived estimate returns count=0", async () => {
+    const id = await seedDraft();
+    await repo.archive(id, clock.now());
+    const count = await repo.archive(id, clock.now());
+    expect(count).toBe(0);
+  });
+
+  it("archive on a non-existent estimate returns count=0", async () => {
+    const count = await repo.archive(asEstimateId("99999999-9999-9999-9999-999999999999"), clock.now());
+    expect(count).toBe(0);
+  });
+
+  it("restore makes the estimate visible again via findById", async () => {
+    const id = await seedDraft();
+    await repo.archive(id, clock.now());
+    const restored = await repo.restore(id, clock.now());
+    expect(restored).not.toBeNull();
+    const found = await repo.findById(id);
+    expect(found).not.toBeNull();
+  });
+
+  it("restore on an active (non-archived) estimate returns null", async () => {
+    const id = await seedDraft();
+    const restored = await repo.restore(id, clock.now());
+    expect(restored).toBeNull();
+    // The estimate must still be accessible.
+    const found = await repo.findById(id);
+    expect(found).not.toBeNull();
+  });
+
+  it("list excludes archived estimates", async () => {
+    const id = await seedDraft();
+    await seedDraft(); // second, stays active
+    await repo.archive(id, clock.now());
+    const result = await repo.list(toPage({ limit: 10 }));
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.props.id).not.toBe(id);
   });
 });
 

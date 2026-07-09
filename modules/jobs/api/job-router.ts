@@ -40,7 +40,8 @@ const jobIdInput = z.object({ jobId: z.string().uuid() });
 const cancelInput = z.object({ jobId: z.string().uuid(), reason: z.string().min(1) });
 const fromEstimateInput = z.object({ estimateId: z.string().uuid() });
 const listInput = z.object({
-  limit: z.number().int().positive().max(100).optional(),
+  // 500 matches the leads endpoint cap and the frontend hydrator's pilot ceiling.
+  limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   status: statusEnum.optional(),
   assigneeUserId: z.string().uuid().optional(),

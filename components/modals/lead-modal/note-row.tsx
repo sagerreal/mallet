@@ -92,7 +92,7 @@ export function NoteRow({ entry }: NoteRowProps) {
  *   - l.acts[] → mapped by type
  */
 export function gatherNotes(lead: {
-  id: number;
+  id: string;
   name: string;
   job?: string;
   notes?: string;

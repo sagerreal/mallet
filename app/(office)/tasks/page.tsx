@@ -8,7 +8,7 @@
  */
 
 import { useState } from "react";
-import { TODAY_ISO } from "@/lib/prototype-sample";
+import { todayISO } from "@/lib/clock";
 import type { Task } from "@/lib/store/types";
 import { useTasks, useLeads, useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -20,13 +20,13 @@ import { isOverdue, dueLabel, tomorrowISO } from "@/lib/task-dates";
 interface TaskRowProps {
   task: Task;
   leadName: string | null;
-  onToggle: (id: number) => void;
-  onOpenLead: (leadId: number) => void;
+  onToggle: (id: string) => void;
+  onOpenLead: (leadId: string) => void;
 }
 
 function TaskRow({ task, leadName, onToggle, onOpenLead }: TaskRowProps) {
   const overdue = isOverdue(task);
-  const isToday = !overdue && task.due === TODAY_ISO;
+  const isToday = !overdue && task.due === todayISO();
   const dueCls = overdue ? "od" : isToday ? "now" : "";
   const dueText = dueLabel(task.due);
   const clickable = task.leadId != null && !!leadName;
@@ -64,9 +64,9 @@ function TaskRow({ task, leadName, onToggle, onOpenLead }: TaskRowProps) {
 interface TaskSectionProps {
   label: string;
   tasks: Task[];
-  leadNameOf: (leadId: number | null) => string | null;
-  onToggle: (id: number) => void;
-  onOpenLead: (leadId: number) => void;
+  leadNameOf: (leadId: string | null) => string | null;
+  onToggle: (id: string) => void;
+  onOpenLead: (leadId: string) => void;
 }
 
 function TaskSection({ label, tasks, leadNameOf, onToggle, onOpenLead }: TaskSectionProps) {
@@ -101,33 +101,34 @@ export default function TasksPage() {
   const [doneOpen, setDoneOpen] = useState(false);
 
   // Derived in the body (never inside a selector).
-  const leadNameOf = (leadId: number | null): string | null =>
+  const leadNameOf = (leadId: string | null): string | null =>
     leadId == null ? null : (leads.find((l) => l.id === leadId)?.name ?? null);
 
   function handleAdd() {
     const text = newText.trim();
     if (!text) return;
-    addTask({ t: text, due: newDue || TODAY_ISO, leadId: null });
+    addTask({ t: text, due: newDue || todayISO(), leadId: null });
     setNewText("");
     setNewDue(tomorrowISO());
   }
 
-  function openLead(leadId: number) {
+  function openLead(leadId: string) {
     openModal(MODAL.LEAD, { leadId });
   }
 
   const open = tasks.filter((t) => !t.done);
   const od = open.filter(isOverdue);
-  const today = open.filter((t) => !isOverdue(t) && t.due === TODAY_ISO);
-  const later = open.filter((t) => !isOverdue(t) && t.due !== TODAY_ISO);
+  const todayStr = todayISO();
+  const today = open.filter((t) => !isOverdue(t) && t.due === todayStr);
+  const later = open.filter((t) => !isOverdue(t) && t.due != null && t.due !== todayStr);
+  const noDue = open.filter((t) => !t.due);
   const done = tasks.filter((t) => t.done);
 
   return (
     <div>
-      <h1 style={{ marginBottom: 4 }}>Tasks</h1>
-      <p className="muted" style={{ fontSize: 13, margin: "0 0 18px" }}>
-        Everything you owe a customer — what&apos;s late, what&apos;s today, what&apos;s coming.
-      </p>
+      <div className="pagehead">
+        <h1>Tasks</h1>
+      </div>
 
       {/* Quick add — one cohesive field: type it, hit Enter (due date optional) */}
       <div className="taskadd" style={{ marginBottom: 18 }}>
@@ -146,7 +147,7 @@ export default function TasksPage() {
           aria-label="Due date"
           title="Due date"
           value={newDue}
-          min={TODAY_ISO}
+          min={todayISO()}
           onChange={(e) => setNewDue(e.target.value)}
         />
         <button
@@ -166,6 +167,7 @@ export default function TasksPage() {
             <TaskSection label="⚠ Overdue" tasks={od} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
             <TaskSection label="Today" tasks={today} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
             <TaskSection label="Coming up" tasks={later} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
+            <TaskSection label="No due date" tasks={noDue} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
           </div>
         </div>
       ) : (

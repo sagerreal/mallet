@@ -1,11 +1,11 @@
 /**
  * features/home/ok-queue.tsx
- * The drafts + the ledger. Each draft is the ACTUAL artifact — an outbound SMS
- * bubble in ghost ink, one amber Send from real. Sending is a witnessed state
- * change: the bubble inks in and slides (the text "goes"), the card folds shut,
- * a timestamped line materializes in the ledger beside the overnight entries,
- * and the hero figure drains (it derives from the store, so Undo refills it).
- * No chips, no captions, no headers — the artifacts carry the meaning.
+ * The drafts. Each draft is the ACTUAL artifact — an outbound SMS bubble in
+ * ghost ink, one amber Send from real. Sending is a witnessed state change:
+ * the bubble inks in and slides (the text "goes"), the card folds shut, a
+ * transient "✓ sent · Undo" line appears for 30s, and the hero figure drains
+ * (it derives from the store, so Undo refills it). No chips, no captions, no
+ * headers — the artifacts carry the meaning.
  */
 
 "use client";
@@ -13,8 +13,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import { firstName, type OkItem, type Receipt } from "./derive";
-import { draftFor, softDraftFor } from "./drafts";
+import { firstName, type OkItem } from "./derive";
+import { draftFor, softDraftFor, type DraftContext } from "./drafts";
+import { clockNow, commitOkSend } from "./send";
 
 const UNDO_MS = 30_000;
 /** Bubble inks in (180ms) → card folds (260ms, delayed 180ms) → dismiss. */
@@ -28,34 +29,28 @@ interface SentEntry {
   expiresAt: number;
 }
 
-function clockNow(): string {
-  // Match the ledger's act-timestamp format exactly ("8:47pm") — one voice.
-  return new Date()
-    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    .toLowerCase()
-    .replace(" ", "");
-}
-
 // ---- one draft card ----------------------------------------------------------
 
 function OkCard({
   item,
   leaving,
+  ctx,
   onSend,
   onSkip,
   onCall,
 }: {
   item: OkItem;
   leaving: boolean;
+  ctx: DraftContext;
   onSend: (item: OkItem, text: string) => void;
   onSkip: (item: OkItem) => void;
   onCall: (item: OkItem) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(() => draftFor(item));
+  const [text, setText] = useState(() => draftFor(item, ctx));
 
   function soften() {
-    setText(softDraftFor(item));
+    setText(softDraftFor(item, ctx));
     setEditing(true);
   }
 
@@ -133,16 +128,10 @@ function OkCard({
   );
 }
 
-// ---- the queue + the ledger ----------------------------------------------------
+// ---- the queue -------------------------------------------------------------------
 
-export function OkQueue({ items, receipts }: { items: OkItem[]; receipts: Receipt[] }) {
+export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftContext }) {
   const openModal = useOpenModal();
-  const addLeadNote = useAppStore((s) => s.addLeadNote);
-  const removeLeadNote = useAppStore((s) => s.removeLeadNote);
-  const updateLead = useAppStore((s) => s.updateLead);
-  const updateEstimate = useAppStore((s) => s.updateEstimate);
-  const updateInvoice = useAppStore((s) => s.updateInvoice);
-  const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const dismissAttention = useAppStore((s) => s.dismissAttention);
   const undismissAttention = useAppStore((s) => s.undismissAttention);
 
@@ -167,39 +156,12 @@ export function OkQueue({ items, receipts }: { items: OkItem[]; receipts: Receip
 
   function handleSend(item: OkItem, text: string) {
     // COMMIT — synchronous, before any animation. The message is real now.
-    const note = addLeadNote(item.lead.id, {
-      type: "text",
-      from: "auto",
-      when: "Just now",
-      t: text,
-    });
-
-    let revertKind: () => void = () => {};
-    if (item.kind === "quote-viewed" && item.estimate) {
-      const prevFu = item.estimate.fu;
-      const estId = item.estimate.id;
-      updateEstimate(estId, { fu: { on: true, stage: prevFu.stage + 1 } });
-      revertKind = () => updateEstimate(estId, { fu: prevFu });
-    } else if (item.kind === "invoice-overdue" && item.invoice) {
-      const prevFu = item.invoice.fu ?? { on: true, stage: 0 };
-      const invId = item.invoice.id;
-      updateInvoice(invId, { fu: { on: true, stage: prevFu.stage + 1 } });
-      revertKind = () => updateInvoice(invId, { fu: prevFu });
-    } else if (item.kind === "reply") {
-      const leadId = item.lead.id;
-      updateLead(leadId, { unread: false });
-      revertKind = () => updateLead(leadId, { unread: true });
-    } else if (item.kind === "new-lead") {
-      const leadId = item.lead.id;
-      moveLeadStage(leadId, "Contacted");
-      revertKind = () => moveLeadStage(leadId, "New customer");
-    }
+    // (Shared primitive: the Counter's sends run this exact code path.)
+    const undoSend = commitOkSend(item, text);
 
     // EXIT — bubble inks in + card folds, then the item leaves the queue
     // (which is what drains the hero figure) and the ledger line lands.
     setLeaving((prev) => new Set(prev).add(item.key));
-    const leadId = item.lead.id;
-    const noteId = note.id ?? "";
     timersRef.current.push(
       setTimeout(() => {
         dismissAttention(item.key);
@@ -216,8 +178,7 @@ export function OkQueue({ items, receipts }: { items: OkItem[]; receipts: Receip
             when: clockNow(),
             expiresAt: Date.now() + UNDO_MS,
             restore: () => {
-              removeLeadNote(leadId, noteId);
-              revertKind();
+              undoSend();
               undismissAttention(item.key);
             },
           },
@@ -231,13 +192,6 @@ export function OkQueue({ items, receipts }: { items: OkItem[]; receipts: Receip
     setSent((prev) => prev.filter((e) => e !== entry));
   }
 
-  function openReceipt(r: Receipt) {
-    if (r.open.kind === "thread") openModal(MODAL.THREAD, { leadId: r.open.id });
-    else openModal(MODAL.EST, { estId: r.open.id });
-  }
-
-  const hasLedger = receipts.length > 0 || sent.length > 0;
-
   return (
     <div style={{ marginTop: 18 }}>
       {items.map((item) => (
@@ -245,33 +199,16 @@ export function OkQueue({ items, receipts }: { items: OkItem[]; receipts: Receip
           key={item.key}
           item={item}
           leaving={leaving.has(item.key)}
+          ctx={ctx}
           onSend={handleSend}
           onSkip={(it) => dismissAttention(it.key)}
           onCall={(it) => openModal(MODAL.CALL, { leadId: it.lead.id })}
         />
       ))}
 
-      {/* THE LEDGER — overnight receipts and just-sent items, one primitive.
-          The timestamps are the section header. */}
-      {hasLedger && (
+      {/* Just-sent lines — transient (30s), each carrying its Undo. */}
+      {sent.length > 0 && (
         <div style={{ marginTop: items.length > 0 ? 16 : 0 }} aria-live="polite">
-          {receipts.map((r) => (
-            <div key={r.key} className="ledgerrow">
-              <b className="fig" style={{ whiteSpace: "nowrap" }}>{r.when}</b>
-              <span style={{ minWidth: 0 }}>
-                {r.text}
-                <span className="muted"> · </span>
-                <button
-                  type="button"
-                  className="linklike"
-                  style={{ fontSize: 12, whiteSpace: "nowrap" }}
-                  onClick={() => openReceipt(r)}
-                >
-                  {r.openLabel} ›
-                </button>
-              </span>
-            </div>
-          ))}
           {sent.map((e) => (
             <div key={e.key} className="ledgerrow">
               <b className="fig" style={{ whiteSpace: "nowrap" }}>{e.when}</b>

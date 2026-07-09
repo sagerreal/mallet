@@ -4,7 +4,12 @@
  * Stage keys match the prototype's state.leads[].stage values exactly.
  */
 
-/** All pipeline stages in board order (Lost is excluded from columns). */
+/**
+ * Canonical stage progression — the underlying lead state, still used by the
+ * composer, the estimate modal, and stage-advancement logic. The board no
+ * longer renders these as columns; it derives the three lanes (see
+ * pipeline-lanes.ts). Lost is excluded from the progression.
+ */
 export const STAGE_ORDER = [
   "New customer",
   "Contacted",
@@ -18,11 +23,6 @@ export const ACTIVE_STAGES: readonly string[] = [
   "Contacted",
   "Quote Sent",
 ];
-
-/** Column header label overrides (Won shows a 30-day window hint). */
-export const STAGE_LABEL: Record<string, string> = {
-  Won: "Won · 30d",
-};
 
 /**
  * Normal (healthy) age in days per stage before a card is flagged.

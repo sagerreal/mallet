@@ -22,14 +22,14 @@ export function SweepModalContent() {
   const deleteLead = useAppStore((s) => s.deleteLead);
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const [deleteArmed, setDeleteArmed] = useState(false);
 
   const live = leads.filter((l) => !l.archived);
   const stale = live.filter(isStaleLead);
   const rest = live.filter((l) => !isStaleLead(l));
 
-  function toggle(id: number) {
+  function toggle(id: string) {
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);

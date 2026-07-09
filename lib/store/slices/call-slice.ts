@@ -10,7 +10,7 @@ import type { ActiveCall } from "../types";
 
 export interface CallSlice {
   activeCall: ActiveCall | null;
-  startCall: (leadId: number) => void;
+  startCall: (leadId: string) => void;
   tickCall: () => void;
   setCallNotes: (notes: string) => void;
   markCallEnded: () => void;

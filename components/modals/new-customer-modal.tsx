@@ -13,7 +13,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Modal } from "./modal";
 import { useCloseModal, useOpenModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, Lead } from "@/lib/store/types";
+import { api } from "@/lib/trpc/client";
+import type { Job } from "@/lib/store/types";
 
 const SOURCES = [
   "Google",
@@ -32,10 +33,19 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const close = useCloseModal();
   const openModal = useOpenModal();
   const activeModal = useActiveModal();
-  const addLead = useAppStore((s) => s.addLead);
   const addJob = useAppStore((s) => s.addJob);
   const companies = useAppStore((s) => s.companies);
   const addCompany = useAppStore((s) => s.addCompany);
+
+  const utils = api.useUtils();
+  const createMutation = api.v1.customers.create.useMutation({
+    onSuccess() {
+      utils.v1.customers.list.invalidate();
+    },
+    onError(err) {
+      setError(err.message);
+    },
+  });
 
   // Core fields
   const [name, setName] = useState("");
@@ -45,19 +55,20 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
   // Opened "for" a company (from the company modal) → pre-select Business and
   // seed the business name so the new customer links to it (prototype quickAddForCo).
-  const paramCompanyId = activeModal?.params?.companyId as number | undefined;
+  const paramCompanyId = activeModal?.params?.companyId as string | undefined;
   useEffect(() => {
     if (!open || paramCompanyId == null) return;
     const co = companies.find((c) => c.id === paramCompanyId);
     if (!co) return;
     setIsBiz(true);
     setBizName(co.name);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, paramCompanyId]);
 
   // Source picker state
   const [source, setSource] = useState<string>("");
   const [sourceOpen, setSourceOpen] = useState(false);
+  const [showAddSource, setShowAddSource] = useState(false);
+  const [newSourceValue, setNewSourceValue] = useState("");
 
   // Book a visit reveal
   const [bookOpen, setBookOpen] = useState(false);
@@ -83,6 +94,8 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setBizName("");
     setSource("");
     setSourceOpen(false);
+    setShowAddSource(false);
+    setNewSourceValue("");
     setBookOpen(false);
     setJobDesc("");
     setVisitPurpose(null);
@@ -109,83 +122,95 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     return "Add customer";
   }
 
-  /** Create a job for the new lead (mirrors the New job modal's createJob). */
-  function createJobForLead(lead: Lead): Job {
-    return addJob({
-      leadId: lead.id,
-      svc: "service",
-      origin: "manual",
-      title: jobDesc.trim() || lead.name,
-      addr: serviceAddr.trim() || lead.address || "",
-      phone: phone.trim(),
-      status: "unscheduled",
-      archived: false,
-      lines: [],
-      addons: [],
-      photos: [],
-      notes: notes.trim(),
-      acts: [],
-      visits: [],
-    });
-  }
-
-  /** Validate + create the lead (and a Job when the purpose is "job").
-   *  Returns the created Job so "Build the price" can hand off to the builder. */
-  /** Business path: link (or create) the company — a typed business name is never
-   *  silently dropped (prototype saveQuickAdd). Case-insensitive bidirectional
-   *  match ("Crestview" ↔ "Crestview Property Mgmt"), create-if-missing. */
-  function resolveCompanyId(): number | undefined {
-    if (!isBiz) return undefined;
+  /**
+   * Resolves the company id for a business customer.
+   *
+   * For an existing (already-persisted) company match, returns { companyId, persisted: null }.
+   * For a brand-new company, returns { companyId, persisted: Promise<void> } — callers MUST
+   * await `persisted` before firing the lead insert to avoid an FK violation.
+   */
+  function resolveCompany(): { companyId: string; persisted: Promise<void> | null } | null {
+    if (!isBiz) return null;
     const nm = bizName.trim() || name.trim();
-    if (!nm) return undefined;
+    if (!nm) return null;
     const k = nm.toLowerCase();
     const match = companies.find((c) => {
       const cn = c.name.toLowerCase();
       return cn.includes(k) || k.includes(cn);
     });
-    return (match ?? addCompany(nm)).id;
+    if (match) return { companyId: match.id, persisted: null };
+    const { company, persisted } = addCompany(nm);
+    return { companyId: company.id, persisted };
   }
 
-  function commit(): { ok: boolean; job: Job | null } {
-    if (!name.trim()) {
-      setError("Name is required.");
-      return { ok: false, job: null };
-    }
-    const companyId = resolveCompanyId();
-    const lead = addLead({
+  /** Build the create-customer payload. Requires the companyId to be pre-resolved. */
+  function buildCreateInput(companyId: string | undefined) {
+    return {
       name: name.trim(),
-      phone: phone.trim(),
-      job: jobDesc.trim() || "New customer",
-      source: source || "Direct",
-      stage: "New customer",
+      phone: phone.trim() || undefined,
       email: email.trim() || undefined,
-      address: serviceAddr.trim() || undefined,
-      companyId,
+      source: source || undefined,
+      companyId: companyId ?? undefined,
+      // Prototype default: contacts linked to a company carry role "Contact".
       role: companyId != null ? "Contact" : undefined,
-      notes: notes.trim() || undefined,
-      custom: customFields.length
-        ? Object.fromEntries(customFields.map((f) => [f.label, f.value]))
-        : undefined,
-    });
-    const job = visitPurpose === "job" ? createJobForLead(lead) : null;
-    return { ok: true, job };
+    };
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!commit().ok) return;
-    reset();
-    close();
+    if (!name.trim()) { setError("Name is required."); return; }
+
+    const resolved = resolveCompany();
+    // Await company persistence before inserting the lead to avoid FK race.
+    if (resolved?.persisted) await resolved.persisted;
+
+    createMutation.mutate(
+      buildCreateInput(resolved?.companyId),
+      {
+        onSuccess() {
+          reset();
+          close();
+        },
+      },
+    );
   }
 
-  /** "✦ Build the price →" — create the customer + job, then open the same
-   *  price builder the crew uses (prototype saveNewJob(true) → jobBuildPrice). */
-  function handleBuildPrice() {
-    const { ok, job } = commit();
-    if (!ok) return;
-    reset();
-    close();
-    if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+  /** "✦ Build the price →" — create the customer + job, then open the price builder. */
+  async function handleBuildPrice() {
+    if (!name.trim()) { setError("Name is required."); return; }
+
+    const resolved = resolveCompany();
+    // Await company persistence before inserting the lead to avoid FK race.
+    if (resolved?.persisted) await resolved.persisted;
+
+    createMutation.mutate(
+      buildCreateInput(resolved?.companyId),
+      {
+        onSuccess(data) {
+          const job: Job | null = visitPurpose === "job"
+            ? addJob({
+                leadId: data.id,
+                svc: "service",
+                origin: "manual",
+                title: jobDesc.trim() || data.name,
+                addr: serviceAddr.trim() || "",
+                phone: data.phone ?? "",
+                status: "unscheduled",
+                archived: false,
+                lines: [],
+                addons: [],
+                photos: [],
+                notes: notes.trim(),
+                acts: [],
+                visits: [],
+              })
+            : null;
+          reset();
+          close();
+          if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+        },
+      },
+    );
   }
 
   function addCustomField() {
@@ -200,6 +225,14 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   function selectSource(s: string) {
     setSource(s);
     setSourceOpen(false);
+    setShowAddSource(false);
+    setNewSourceValue("");
+  }
+
+  function commitNewSource() {
+    const val = newSourceValue.trim().slice(0, 100);
+    if (val) selectSource(val);
+    else { setShowAddSource(false); setNewSourceValue(""); }
   }
 
   return (
@@ -290,16 +323,33 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                   {source === s ? <span className="qa-srcok">✓</span> : null}
                 </button>
               ))}
-              <button
-                type="button"
-                className="qa-srcopt add"
-                onClick={() => {
-                  const custom = prompt("New source name:");
-                  if (custom?.trim()) selectSource(custom.trim());
-                }}
-              >
-                + Add a new source…
-              </button>
+              {showAddSource ? (
+                <div className="cfrow" style={{ padding: "6px 12px" }}>
+                  <input
+                    type="text"
+                    placeholder="Source name"
+                    value={newSourceValue}
+                    maxLength={100}
+                    autoFocus
+                    onChange={(e) => setNewSourceValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); commitNewSource(); }
+                      if (e.key === "Escape") { setShowAddSource(false); setNewSourceValue(""); }
+                    }}
+                  />
+                  <button type="button" className="btn sm primary" onClick={commitNewSource}>
+                    Add
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="qa-srcopt add"
+                  onClick={() => setShowAddSource(true)}
+                >
+                  + Add a new source…
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -478,11 +528,11 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
         {/* 8. Footer */}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button type="button" className="btn ghost" onClick={handleClose}>
+          <button type="button" className="btn ghost" onClick={handleClose} disabled={createMutation.isPending}>
             Cancel
           </button>
-          <button type="submit" className="btn primary">
-            {submitLabel()}
+          <button type="submit" className="btn primary" disabled={createMutation.isPending}>
+            {createMutation.isPending ? "Saving…" : submitLabel()}
           </button>
         </div>
       </form>

@@ -193,6 +193,13 @@ export class Estimate {
     return ok(new Estimate({ ...this.p, lines, updatedAt: now }));
   }
 
+  // Replace the line set unconditionally — used at accept time to commit customer-selected
+  // optional add-ons before freezing the estimate. No status restriction; the caller (accept
+  // use-case) is responsible for ordering (withLinesForAccept → accept).
+  withLinesForAccept(lines: readonly EstimateLine[], now: Date): Estimate {
+    return new Estimate({ ...this.p, lines, updatedAt: now });
+  }
+
   get props(): EstimateProps {
     return this.p;
   }
