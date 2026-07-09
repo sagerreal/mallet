@@ -12,6 +12,7 @@ export type { NotificationSender } from "./domain/notification-sender";
 export { LoggingNotificationSender } from "./infra/logging-notification-sender";
 export { ResendEmailSender } from "./infra/resend-email-sender";
 export { TwilioSmsSender } from "./infra/twilio-sms-sender";
+export type { SmsTransport } from "./infra/twilio-sms-sender";
 export { ChannelRouterNotificationSender } from "./infra/channel-router-notification-sender";
 export type { ReminderTargetReader } from "./domain/reminder-target-reader";
 export { FollowUpPolicy } from "./domain/follow-up-policy";

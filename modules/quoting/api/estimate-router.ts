@@ -79,16 +79,22 @@ const draftInput = z.object({
 });
 
 const listInput = z.object({
-  limit: z.number().int().positive().max(100).optional(),
+  limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   status: statusEnum.optional(),
 });
 
 const idInput = z.object({ estimateId: z.string().uuid() });
+const acceptInput = z.object({
+  estimateId: z.string().uuid(),
+  /** Optional customer-tuned lines to commit before accepting. Sent as rateCents/costCents
+   *  (integer cents) — the client converts store dollars × 100 before calling. */
+  lines: z.array(lineInput).optional(),
+});
 const declineInput = z.object({ estimateId: z.string().uuid(), reason: z.string().min(1) });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
-  limit: z.number().int().positive().max(100).optional(),
+  limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
 });
 const paginatedSummaryDTO = z.object({
@@ -224,12 +230,52 @@ export const createEstimateRouter = () =>
       }),
 
     accept: ownerOrOffice
+      .input(acceptInput)
+      .output(estimateDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new AcceptEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+        return toEstimateDTO(
+          orThrow(
+            await useCase.exec({
+              estimateId: asEstimateId(input.estimateId),
+              lines: input.lines?.map((line) => ({
+                description: line.description,
+                quantity: line.quantity,
+                rateCents: line.rateCents,
+                costCents: line.costCents ?? 0,
+                isOptional: line.isOptional ?? false,
+                needsPhoto: line.needsPhoto ?? false,
+              })),
+            }),
+          ),
+        );
+      }),
+
+    archive: ownerOrOffice
+      .input(idInput)
+      .output(z.object({ ok: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const count = await repo.archive(asEstimateId(input.estimateId), ctx.deps.clock.now());
+        if (count === 0) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "estimate not found or already archived" });
+        }
+        return { ok: true };
+      }),
+
+    restore: ownerOrOffice
       .input(idInput)
       .output(estimateDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
-        const useCase = new AcceptEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toEstimateDTO(orThrow(await useCase.exec({ estimateId: asEstimateId(input.estimateId) })));
+        const now = ctx.deps.clock.now();
+        const restored = await repo.restore(asEstimateId(input.estimateId), now);
+        if (restored) return toEstimateDTO(restored);
+        // Already active — fall back to a fresh load so the caller always gets the current DTO.
+        const existing = await repo.findById(asEstimateId(input.estimateId));
+        if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "estimate not found" });
+        return toEstimateDTO(existing);
       }),
 
     decline: ownerOrOffice

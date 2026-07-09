@@ -51,12 +51,14 @@ suite("DrizzleLeadRepository against live Supabase RLS", () => {
 
     const result = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleLeadRepository(tx, orgA);
-      const first = await repo.ensureCustomer({ name: "Alice", phone, email: null, source: "web" });
+      const first = await repo.ensureCustomer({ name: "Alice", phone, email: null, source: "web", companyId: null, role: null });
       const second = await repo.ensureCustomer({
         name: "Alice (again)",
         phone,
         email: null,
         source: "phone",
+        companyId: null,
+        role: null,
       });
       const listed = await repo.list(toPage({ limit: 100 }));
       return { first, second, count: listed.items.length };
@@ -89,7 +91,7 @@ suite("DrizzleLeadRepository against live Supabase RLS", () => {
         // Construct the repo with org B's id while the tx is scoped to org A — the insert's
         // org_id won't match current_org_id(), so the WITH CHECK policy must reject it.
         const repo = new DrizzleLeadRepository(tx, asOrgId(orgBId));
-        await repo.ensureCustomer({ name: "Mallory", phone: null, email: null, source: null });
+        await repo.ensureCustomer({ name: "Mallory", phone: null, email: null, source: null, companyId: null, role: null });
       });
     } catch {
       rejected = true;

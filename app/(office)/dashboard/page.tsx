@@ -1,94 +1,70 @@
 "use client";
-import Link from "next/link";
-import { PageHeader } from "@/components/ui/page-header";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { formatMoney, formatDateTime } from "@/lib/format";
-import { JOB_STATUS_TONE } from "@/lib/labels";
-import { useJobs } from "@/features/jobs/hooks";
-import { useInvoices } from "@/features/invoices/hooks";
-import { useCustomers } from "@/features/customers/hooks";
-import { userMessage } from "@/lib/trpc/error-map";
 
-function Section({ title, href, children }: { title: string; href: string; children: React.ReactNode }) {
-  return (
-    <Card>
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-display font-semibold">{title}</h2>
-        <Link href={href} className="text-sm text-ink-muted underline">View all</Link>
-      </div>
-      {children}
-    </Card>
-  );
+/**
+ * Home — "The Handoff": the figure that drains.
+ * One dollar figure (the money waiting on the owner's OK) is the subject of the
+ * Front Desk's note. Below it: THE PIPE — the shop's money flowing through the
+ * process (New → Quoted → Needs a slot → On the trucks → To bill → Owed →
+ * Collected), each figure a door into its page, leaks glowing amber at the exact
+ * stage. Then the drafts: real outbound SMS bubbles in ghost ink, one amber Send
+ * from real; sending drains the hero (Undo refills it).
+ *
+ * Derivations: features/home/derive.ts + pipe.ts. Drafts: features/home/drafts.ts.
+ */
+
+import { todayISO } from "@/lib/clock";
+import { useAppStore } from "@/lib/store/app-store";
+import { deriveShiftReport, deriveOkQueue } from "@/features/home/derive";
+import { deriveHomePipe } from "@/features/home/pipe";
+import { HandoffNote } from "@/features/home/handoff-note";
+import { HomePipe } from "@/features/home/home-pipe";
+import { OkQueue } from "@/features/home/ok-queue";
+import { useMe } from "@/features/identity/hooks";
+
+/** "WED, JUL 8" from the live clock. */
+function dateLabel(): string {
+  return new Date(todayISO() + "T12:00:00")
+    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    .toUpperCase();
 }
 
 export default function DashboardPage() {
-  const scheduled = useJobs("scheduled");
-  const inProgress = useJobs("in_progress");
-  const sent = useInvoices("sent");
-  const partial = useInvoices("partial");
-  const customers = useCustomers();
+  const leads = useAppStore((s) => s.leads);
+  const estimates = useAppStore((s) => s.estimates);
+  const invoices = useAppStore((s) => s.invoices);
+  const jobs = useAppStore((s) => s.jobs);
+  const techs = useAppStore((s) => s.techs);
+  const frontDeskOn = useAppStore((s) => s.toggles.frontDesk);
+  const dismissed = useAppStore((s) => s.dismissedAttention);
 
-  const jobsError = scheduled.isError || inProgress.isError;
-  const invoicesError = sent.isError || partial.isError;
+  // ---- real identity — org name + owner's first name from the DB -----------
+  const me = useMe();
+  const orgName = me.data?.orgName ?? "My Business";
+  const ownerFirst =
+    (me.data?.name?.split(" ")[0]) ??
+    (me.data?.email?.split("@")[0]) ??
+    "there";
 
-  const upcoming = [...(inProgress.data?.items ?? []), ...(scheduled.data?.items ?? [])].slice(0, 5);
-  const unpaid = [...(partial.data?.items ?? []), ...(sent.data?.items ?? [])];
-  const outstanding = unpaid.reduce((sum, inv) => sum + inv.due.cents, 0);
+  const report = deriveShiftReport(leads, jobs, estimates);
+  const queue = deriveOkQueue(leads, estimates, invoices, dismissed);
+  const queueValue = queue.reduce((s, it) => s + it.value, 0);
+  const pipe = deriveHomePipe({ leads, estimates, invoices, jobs, techs });
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="Home" />
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Section title="Today's work" href="/jobs">
-          {jobsError
-            ? <p className="text-sm text-red">{userMessage(scheduled.error ?? inProgress.error)}</p>
-            : upcoming.length === 0
-              ? <p className="text-sm text-ink-muted">Nothing scheduled.</p>
-              : (
-                <ul className="space-y-1 text-sm">
-                  {upcoming.map((j) => (
-                    <li key={j.id}>
-                      <Link href={`/jobs/${j.id}`} className="flex justify-between rounded-control px-2 py-1.5 hover:bg-paper">
-                        <span>{j.num} — {j.title ?? "untitled"}</span>
-                        <span className="flex items-center gap-2"><Badge tone={JOB_STATUS_TONE[j.status] ?? "neutral"}>{j.status.replace("_", " ")}</Badge>{formatDateTime(j.scheduledStart)}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-        </Section>
-        <Section title={invoicesError ? "Outstanding" : `Waiting on ${formatMoney(outstanding)}`} href="/money">
-          {invoicesError
-            ? <p className="text-sm text-red">{userMessage(sent.error ?? partial.error)}</p>
-            : unpaid.length === 0
-              ? <p className="text-sm text-ink-muted">Nothing outstanding.</p>
-              : (
-                <ul className="space-y-1 text-sm">
-                  {unpaid.slice(0, 5).map((inv) => (
-                    <li key={inv.id}>
-                      <Link href={`/money/${inv.id}`} className="flex justify-between rounded-control px-2 py-1.5 hover:bg-paper">
-                        <span>{inv.num}</span><span>{formatMoney(inv.due.cents)}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-        </Section>
-        <Section title="Newest customers" href="/customers">
-          {customers.isError
-            ? <p className="text-sm text-red">{userMessage(customers.error)}</p>
-            : (customers.data?.items ?? []).length === 0
-              ? <p className="text-sm text-ink-muted">No customers yet.</p>
-              : (
-                <ul className="space-y-1 text-sm">
-                  {(customers.data?.items ?? []).slice(0, 5).map((c) => (
-                    <li key={c.id}><Link href={`/customers/${c.id}`} className="block rounded-control px-2 py-1.5 hover:bg-paper">{c.name}</Link></li>
-                  ))}
-                </ul>
-              )}
-        </Section>
-      </div>
+    <div>
+      <HandoffNote
+        orgName={orgName}
+        ownerFirst={ownerFirst}
+        dateLabel={dateLabel()}
+        frontDeskOn={frontDeskOn}
+        report={report}
+        queueCount={queue.length}
+        queueValue={queueValue}
+      />
+
+      <HomePipe stages={pipe} />
+
+      <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />
     </div>
   );
 }

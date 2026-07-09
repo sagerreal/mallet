@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
@@ -117,5 +117,86 @@ suite("ai agent tRPC entry (full stack, live RLS)", () => {
     // Well-formed JSON, structurally invalid AgentMessage (no kind/results).
     await expect(caller.v1.ai.resume({ transcript: '[{"role":"user"}]', approvedToolUseIds: [] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.v1.ai.resume({ transcript: "not json", approvedToolUseIds: [] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+});
+
+// ---- forged-approval-id input hygiene (no DB required) --------------------------
+//
+// These tests exercise the id cross-check that fires BEFORE drive() is called, so
+// no live database connection is needed. A structurally valid transcript containing
+// a tool_use block is round-tripped through the router; the id check either passes
+// (real id) or rejects (forged id) before any LLM or DB call is made.
+
+const validToolUseTranscript = JSON.stringify([
+  {
+    role: "assistant",
+    kind: "assistant",
+    blocks: [{ type: "tool_use", id: "real_id_abc", name: "quote_draft", input: {} }],
+  },
+]);
+
+// A minimal stub LLM and context that let the router proceed past auth/deps to the id check.
+const stubLlmNeverCalled: LlmClient = {
+  next: () => Promise.reject(new Error("LLM should not be called in forged-id tests")),
+};
+const stubOrgId = "00000000-0000-0000-0000-000000000001" as const;
+
+function noDbCtx(): Context {
+  const stubAuth: AuthProvider = {
+    authenticate: async () => { throw new Error("unused"); },
+  };
+  return {
+    principal: { userId: asUserId(randomUUID()), orgId: asOrgId(stubOrgId), role: "owner" } satisfies Principal,
+    unmapped: null,
+    tx: null,
+    deps: {
+      authProvider: stubAuth,
+      bus: new InMemoryEventBus(),
+      clock: systemClock,
+      ids: uuidGenerator,
+      paymentLinkGateway: null,
+      llmClient: stubLlmNeverCalled,
+      apiKeyAuthenticator: { authenticate: async () => null },
+      tokenVerifier: { verify: async () => null },
+      signupStore: { createOrgForUser: async () => { throw new Error("unused"); } },
+    },
+  };
+}
+
+describe("ai resume — forged approval id rejection", () => {
+  it("rejects a forged approvedToolUseId that is not in the transcript → BAD_REQUEST", async () => {
+    const caller = appRouter.createCaller(noDbCtx());
+    await expect(
+      caller.v1.ai.resume({
+        transcript: validToolUseTranscript,
+        approvedToolUseIds: ["FORGED_ID_NOT_IN_TRANSCRIPT"],
+        deniedToolUseIds: [],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "approved/denied id not found in transcript" });
+  });
+
+  it("rejects a forged deniedToolUseId that is not in the transcript → BAD_REQUEST", async () => {
+    const caller = appRouter.createCaller(noDbCtx());
+    await expect(
+      caller.v1.ai.resume({
+        transcript: validToolUseTranscript,
+        approvedToolUseIds: [],
+        deniedToolUseIds: ["ANOTHER_FORGED_ID"],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "approved/denied id not found in transcript" });
+  });
+
+  it("accepts a real approvedToolUseId that is present in the transcript (proceeds past the check)", async () => {
+    // The real id IS in the transcript — the check passes. drive() then calls
+    // withTenant which hits the DB. Since there's no DB here, it will throw a
+    // connection error — but importantly NOT a BAD_REQUEST forged-id error.
+    const caller = appRouter.createCaller(noDbCtx());
+    const result = caller.v1.ai.resume({
+      transcript: validToolUseTranscript,
+      approvedToolUseIds: ["real_id_abc"],
+      deniedToolUseIds: [],
+    });
+    // We expect it to fail (no DB), but NOT with the forged-id BAD_REQUEST.
+    await expect(result).rejects.not.toMatchObject({ message: "approved/denied id not found in transcript" });
   });
 });

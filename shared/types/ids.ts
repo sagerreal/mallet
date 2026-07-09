@@ -16,6 +16,9 @@ export type EstimateLineId = Brand<string, "EstimateLineId">;
 export type JobId = Brand<string, "JobId">;
 export type VisitId = Brand<string, "VisitId">;
 export type InvoiceId = Brand<string, "InvoiceId">;
+export type TaskId = Brand<string, "TaskId">;
+export type TimeEntryId = Brand<string, "TimeEntryId">;
+export type MessageId = Brand<string, "MessageId">;
 
 export const asOrgId = (v: string): OrgId => v as OrgId;
 export const asUserId = (v: string): UserId => v as UserId;
@@ -27,6 +30,9 @@ export const asEstimateLineId = (v: string): EstimateLineId => v as EstimateLine
 export const asJobId = (v: string): JobId => v as JobId;
 export const asVisitId = (v: string): VisitId => v as VisitId;
 export const asInvoiceId = (v: string): InvoiceId => v as InvoiceId;
+export const asTaskId = (v: string): TaskId => v as TaskId;
+export const asTimeEntryId = (v: string): TimeEntryId => v as TimeEntryId;
+export const asMessageId = (v: string): MessageId => v as MessageId;
 
 // Phone is a validated value object — E.164 (US). Parsed at the boundary from untrusted input.
 export type Phone = Brand<string, "Phone">;

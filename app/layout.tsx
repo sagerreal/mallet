@@ -1,20 +1,46 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Inter, Space_Grotesk } from "next/font/google";
+import { Inter, Space_Grotesk, Space_Mono } from "next/font/google";
 import { TrpcProvider } from "@/lib/trpc/provider";
 import "./globals.css";
+import "./prototype.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
+const spaceMono = Space_Mono({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-space-mono",
+});
 
 export const metadata: Metadata = {
   title: "Mallet",
   description: "AI-native operating system for service businesses.",
+  applicationName: "Mallet",
+  // Launch full-screen (no Safari chrome) when added to the iPhone home screen.
+  appleWebApp: {
+    capable: true,
+    title: "Mallet",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-icon.png",
+  },
+};
+
+// Edge-to-edge on notched phones (Capacitor/iOS) — CSS uses env(safe-area-inset-*)
+// to keep the topbar/tab-bar clear of the notch + home indicator.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#FCFBF7",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable}`}>
+    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} ${spaceMono.variable}`}>
       <body>
         <TrpcProvider>{children}</TrpcProvider>
       </body>

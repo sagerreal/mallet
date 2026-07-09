@@ -1,0 +1,1 @@
+CREATE INDEX "leads_org_created_active_idx" ON "leads" USING btree ("org_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "leads"."deleted_at" is null;

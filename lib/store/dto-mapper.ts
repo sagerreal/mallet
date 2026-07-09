@@ -1,0 +1,300 @@
+/**
+ * lib/store/dto-mapper.ts
+ * Shared DTO → store type mappers. Extracted from features/jobs/jobs-hydrator.tsx
+ * so jobs-slice can call them in reconcile callbacks after mutations resolve,
+ * without importing the React hydrator component.
+ *
+ * Also exports dtoEstimateToStore and dtoInvoiceToStore — the canonical mappers
+ * for estimate/invoice DTOs returned by mutation endpoints. Both the hydrators
+ * (estimates-hydrator, invoices-hydrator) and the slice reconcile paths MUST use
+ * these functions so money-unit conversions (cents ↔ dollars) stay in one place.
+ *
+ * Money unit rules (enforced here and nowhere else):
+ *   Store → Backend: dollars × 100, round to int → cents
+ *   Backend → Store: DTO.cents / 100 → dollars
+ *
+ * Only pure mapping logic lives here — no React, no tRPC, no side effects.
+ */
+
+import type { RouterOutputs } from "@/lib/trpc/client";
+import type { Estimate, Invoice, Job, TimeEntry, Visit } from "./types";
+import { JOB_ORIGIN } from "./hydrator-config";
+
+export type JobDTO = RouterOutputs["v1"]["visits"]["createVisit"];
+export type EstimateDTO = RouterOutputs["v1"]["quoting"]["draft"];
+export type InvoiceDTO = RouterOutputs["v1"]["invoicing"]["draft"];
+export type TimeEntryDTO = RouterOutputs["v1"]["timesheets"]["list"]["items"][number];
+type VisitDTO = JobDTO["visits"][number];
+
+// ---------------------------------------------------------------------------
+// Time helpers (duplicated in jobs-hydrator; exported from here for slices)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse "HH:MM" → fractional hour.  "09:30" → 9.5, null/bad → 0.
+ */
+export function hhmmToHour(hhmm: string | null | undefined): number {
+  if (!hhmm) return 0;
+  const parts = hhmm.split(":").map(Number);
+  const hh = parts[0];
+  const mm = parts[1];
+  if (hh === undefined || mm === undefined || !Number.isFinite(hh) || !Number.isFinite(mm)) return 0;
+  return hh + mm / 60;
+}
+
+/** Fractional hour → "HH:MM".  9.5 → "09:30", 14 → "14:00". */
+export function hourToHHMM(h: number): string {
+  const hh = Math.floor(h);
+  const mm = Math.round((h - hh) * 60);
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+/**
+ * Derive duration (hours) from scheduledStart / scheduledEnd strings.
+ * Falls back to defaultDur when either is absent or end ≤ start.
+ */
+export function hoursBetween(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  defaultDur = 2,
+): number {
+  if (start == null || start === "" || end == null || end === "") return defaultDur;
+  const s = hhmmToHour(start);
+  const e = hhmmToHour(end);
+  const diff = e - s;
+  return diff > 0 ? diff : defaultDur;
+}
+
+// ---------------------------------------------------------------------------
+// Status mappings
+// ---------------------------------------------------------------------------
+
+const BACKEND_VISIT_STATUS = {
+  PENDING: "pending",
+  IN_PROGRESS: "in_progress",
+  COMPLETE: "complete",
+  CANCELED: "canceled",
+} as const;
+
+const BACKEND_JOB_STATUS = {
+  SCHEDULED: "scheduled",
+  IN_PROGRESS: "in_progress",
+  COMPLETE: "complete",
+  CANCELED: "canceled",
+} as const;
+
+/** Store visit status → backend VisitStatus enum value. */
+export function storeStatusToBackend(
+  storeStatus: string,
+): "pending" | "in_progress" | "complete" | "canceled" {
+  if (storeStatus === "onsite") return "in_progress";
+  if (storeStatus === "done") return "complete";
+  // "scheduled" and anything unknown → pending
+  return "pending";
+}
+
+function toStoreVisitStatusInternal(s: string): string {
+  if (s === BACKEND_VISIT_STATUS.IN_PROGRESS) return "onsite";
+  if (s === BACKEND_VISIT_STATUS.COMPLETE) return "done";
+  return "scheduled";
+}
+
+function toStoreJobStatusInternal(s: string): string {
+  if (s === BACKEND_JOB_STATUS.COMPLETE || s === BACKEND_JOB_STATUS.CANCELED) return "done";
+  if (s === BACKEND_JOB_STATUS.SCHEDULED || s === BACKEND_JOB_STATUS.IN_PROGRESS) return "scheduled";
+  return "unscheduled";
+}
+
+// ---------------------------------------------------------------------------
+// DTO → store mappers (public)
+// ---------------------------------------------------------------------------
+
+function isPlacedVisit(v: Visit): boolean {
+  return !!(v.date && v.techId != null && v.start != null);
+}
+
+function recalcJobStatus(visits: Visit[]): string {
+  const placed = visits.filter(isPlacedVisit);
+  if (!placed.length) return "unscheduled";
+  if (placed.every((v) => v.status === "done")) return "done";
+  return "scheduled";
+}
+
+/** Map a single visitDTO to a store Visit. */
+export function toStoreVisit(v: VisitDTO): Visit {
+  return {
+    id: v.id,
+    techId: v.assigneeUserId ?? null,
+    date: v.scheduledDate ?? null,
+    start: v.scheduledStart ? hhmmToHour(v.scheduledStart) : null,
+    dur: hoursBetween(v.scheduledStart, v.scheduledEnd),
+    status: toStoreVisitStatusInternal(v.status),
+    ...(v.notes ? { scopeNotes: v.notes } : {}),
+  };
+}
+
+/**
+ * Map a full jobDTO (returned by all v1.visits mutations) to a store Job.
+ * Cancelled visits are filtered out — they are never shown on the board.
+ *
+ * The returned job carries `origin: "db"` so the slice can persist on
+ * subsequent operations.
+ */
+export function dtoJobToStoreJob(dto: JobDTO): Job {
+  const activeVisitDTOs = dto.visits.filter(
+    (v) => v.status !== BACKEND_VISIT_STATUS.CANCELED,
+  );
+  const visits = activeVisitDTOs.map(toStoreVisit);
+  const status = visits.length > 0
+    ? recalcJobStatus(visits)
+    : toStoreJobStatusInternal(dto.status);
+
+  return {
+    id: dto.id,
+    leadId: dto.leadId,
+    svc: "service",
+    origin: JOB_ORIGIN.DB,
+    title: dto.title ?? "Job",
+    addr: "",
+    phone: "",
+    status,
+    archived: false,
+    lines: [],
+    addons: [],
+    photos: [],
+    notes: dto.notes ?? "",
+    acts: [],
+    visits,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Estimate DTO → store (mutation reconcile path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a full estimateDTO (returned by draft/send/accept/decline mutations) to a
+ * store Estimate.
+ *
+ * Money: DTO carries integer cents; store uses dollars.
+ *   rate.cents / 100  → EstimateLine.r  (dollars)
+ *   cost.cents / 100  → EstimateLine.c  (dollars, omitted when 0)
+ *   discBps / 100     → pricing.disc    (percent, e.g. 10 for 10%)
+ *   taxBps  / 100     → pricing.tax
+ *   depBps  / 100     → pricing.dep
+ *   total.cents / 100 → cachedTotal     (dollars)
+ *
+ * @param dto - Full estimateDTO from the quoting router.
+ * @param priorFu - Preserve the existing client-local follow-up state (fu is not persisted).
+ */
+export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): Estimate {
+  return {
+    id: dto.id,
+    num: dto.num,
+    leadId: dto.leadId,
+    title: dto.title ?? "Quote",
+    status: dto.status,
+    age: 0,
+    // viewed: anything past draft was at minimum sent — customer has seen it.
+    viewed: dto.status !== "draft",
+    validDays: dto.validDays ?? undefined,
+    // fu is client-local; preserve the caller's value across the reconcile.
+    fu: priorFu,
+    lines: dto.lines.map((l) => ({
+      d: l.description,
+      q: l.quantity,
+      r: l.rate.cents / 100,                                  // cents → dollars
+      c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
+      opt: l.isOptional || undefined,
+      photo: l.needsPhoto || undefined,
+    })),
+    pricing: {
+      disc: dto.discBps / 100,   // basis points → percent (1000 bps = 10%)
+      tax: dto.taxBps / 100,
+      dep: dto.depBps / 100,
+    },
+    cachedTotal: dto.total.cents / 100,   // cents → dollars
+    reads: [],                             // client-local — not persisted
+    archived: false,
+    trash: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Invoice DTO → store (mutation reconcile path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a full invoiceDTO (returned by draft/send/recordPayment/void mutations) to a
+ * store Invoice.
+ *
+ * Money: DTO carries integer cents; store uses dollars.
+ *   total.cents / 100       → Invoice.total   (dollars)
+ *   depositPaid.cents / 100 → Invoice.depPaid (dollars)
+ *   payment.amount.cents / 100 → Payment.amt  (dollars)
+ *   line.rate.cents / 100   → InvoiceLine.r   (dollars)
+ *   line.cost.cents / 100   → InvoiceLine.c   (dollars, omitted when 0)
+ *
+ * Client-local fields (cust, phone, email) are not in the DTO; preserve them
+ * from the prior store record passed as `priorInv`.
+ *
+ * @param dto - Full invoiceDTO from the invoicing router.
+ * @param priorInv - Prior store record (used to preserve local-only fields).
+ */
+export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
+  return {
+    id: dto.id,
+    num: dto.num,
+    jobId: dto.sourceJobId,
+    leadId: dto.leadId,
+    // cust/phone/email are not in the DTO; money-derive falls back to leads[leadId].name.
+    cust: priorInv.cust,
+    phone: priorInv.phone,
+    email: priorInv.email,
+    title: dto.title ?? "Invoice",
+    status: dto.status,
+    total: dto.total.cents / 100,              // cents → dollars
+    depPaid: dto.depositPaid.cents / 100,      // cents → dollars
+    payments: dto.payments.map((p) => ({
+      amt: p.amount.cents / 100,               // cents → dollars
+      when: new Date(p.receivedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      method: p.method,
+    })),
+    termsDays: dto.termsDays,
+    lines: dto.lines.map((l) => ({
+      d: l.description,
+      q: l.quantity,
+      r: l.rate.cents / 100,                                  // cents → dollars
+      c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
+    })),
+    age: 0,
+    archived: dto.status === "void",
+    origin: "db",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// TimeEntry DTO → store (hydrator + mutation reconcile path)
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a timeEntryDTO (returned by list/create/update) to a store TimeEntry.
+ * The mapping is intentionally kept flat — no money conversions (timesheets
+ * deal in hours only).
+ */
+export function dtoToTimeEntry(dto: TimeEntryDTO): TimeEntry {
+  return {
+    id: dto.id,
+    techId: dto.techUserId,
+    date: dto.workDate,
+    kind: dto.kind,
+    jobId: dto.jobId,
+    start: dto.startTime,
+    end: dto.endTime,
+    note: dto.note,
+    src: dto.src,
+    status: dto.status,
+    running: dto.running,
+    approvedAt: dto.approvedAt ? Date.parse(dto.approvedAt) : undefined,
+  };
+}

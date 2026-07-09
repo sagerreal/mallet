@@ -1,0 +1,16 @@
+import { chromium } from "@playwright/test";
+const base = "http://localhost:3000";
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1512, height: 950 } });
+await p.goto(base + "/login", { waitUntil: "networkidle" });
+await p.getByLabel("Email").fill("owner@e2e.mallet.test");
+await p.getByLabel("Password").fill("e2e-password-1");
+await p.getByRole("button", { name: "Sign in" }).click();
+await p.waitForURL("**/dashboard", { timeout: 30000 });
+await p.waitForTimeout(800);
+await p.locator(".quickadd-btn").first().click();
+await p.waitForTimeout(400);
+await p.screenshot({ path: "/tmp/ix-newmenu-open.png" });
+const items = await p.getByText("New customer").first().isVisible();
+console.log("STEP: +New menu opened, 'New customer' item visible=" + items);
+await b.close();

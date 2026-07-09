@@ -1,0 +1,167 @@
+"use client";
+
+/**
+ * features/jobs/jobs-home.tsx
+ * The Jobs surface — a flat, sortable, filterable list (JobsListView). Built from
+ * the lifecycle bands so status + default order read by state. The toolbar mirrors
+ * Customers: search + Filters (Status incl. Archived, Crew) + Columns. Done+billed
+ * jobs auto-archive after a week and drop off here — reachable via Status → Archived.
+ * Header verdict = today's scheduled dollars. State lives in the store; this reads + renders.
+ */
+
+import { useState } from "react";
+import { useAppStore } from "@/lib/store/app-store";
+import type { Invoice, Job } from "@/lib/store/types";
+import { useAnimatedNumber } from "@/features/home/use-animated-number";
+import { custName } from "./jobs-helpers";
+import { jobCrewTech } from "./job-row";
+import { deriveOnTrucks, deriveJobBands, deriveArchivedBands, jobTotal, type JobBand } from "./today-derive";
+import type { Tech } from "@/lib/store/types";
+import { useJobsSort } from "./use-jobs-sort";
+import { JobsListView } from "./jobs-list-view";
+import { JobsToolbar } from "./jobs-toolbar";
+import { JobsFilters } from "./jobs-filters";
+import { JobsColumns } from "./jobs-columns";
+import { JOB_STATUS_FILTERS, DEFAULT_JOB_COLS, JOB_COL_ORDER, type JobColKey, type JobsArchiveSet } from "./jobs-list-config";
+
+export interface JobsHomeProps {
+  onOpenJob: (id: string) => void;
+  onOpenNewJob: () => void;
+}
+
+/** The bands to render for the current set (active vs archived) + Status filter,
+ *  plus the set total for the "N of M" count. */
+function selectBands(
+  filtered: Job[],
+  invoices: Invoice[],
+  archiveSet: JobsArchiveSet,
+  statusFilter: string
+): { bandsToShow: JobBand[]; total: number } {
+  if (archiveSet === "archived") {
+    const archived = deriveArchivedBands(filtered, invoices);
+    return { bandsToShow: archived, total: archived.reduce((s, b) => s + b.count, 0) };
+  }
+  const active = deriveJobBands(filtered, invoices);
+  const statusDef = JOB_STATUS_FILTERS.find((s) => s.value === statusFilter);
+  const bandsToShow = statusDef && statusDef.keys.length ? active.filter((b) => statusDef.keys.includes(b.key)) : active;
+  return { bandsToShow, total: active.reduce((s, b) => s + b.count, 0) };
+}
+
+/** Narrow each band's jobs to one crew (empty = all); drops emptied bands. */
+function applyCrew(bands: JobBand[], techs: Tech[], crewFilter: string): JobBand[] {
+  if (!crewFilter) return bands;
+  return bands
+    .map((b) => {
+      const jobs = b.jobs.filter((j) => jobCrewTech(b.key, j, techs)?.id === crewFilter);
+      return { ...b, jobs, count: jobs.length, sum: jobs.reduce((s, j) => s + jobTotal(j), 0) };
+    })
+    .filter((b) => b.jobs.length > 0);
+}
+
+export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const invoices = useAppStore((s) => s.invoices);
+  const techs = useAppStore((s) => s.techs);
+  const { sort, setSort } = useJobsSort();
+
+  const [archiveSet, setArchiveSet] = useState<JobsArchiveSet>("active");
+  const [jobsQ, setJobsQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [crewFilter, setCrewFilter] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [colsOpen, setColsOpen] = useState(false);
+  const [visibleCols, setVisibleCols] = useState<JobColKey[]>([...DEFAULT_JOB_COLS]);
+
+  const q = jobsQ.trim().toLowerCase();
+  const filtered = q
+    ? jobs.filter((j) =>
+        (custName(j, leads) + " " + (j.title ?? "") + " " + (j.addr ?? "")).toLowerCase().includes(q)
+      )
+    : jobs;
+
+  const shownTrucks = useAnimatedNumber(deriveOnTrucks(jobs));
+
+  const { bandsToShow, total } = selectBands(filtered, invoices, archiveSet, statusFilter);
+  const finalBands = applyCrew(bandsToShow, techs, crewFilter);
+  const shown = finalBands.reduce((s, b) => s + b.jobs.length, 0);
+  const activeFilterCount = (archiveSet === "active" && statusFilter ? 1 : 0) + (crewFilter ? 1 : 0);
+
+  function toggleCol(key: JobColKey) {
+    setVisibleCols((prev) =>
+      prev.includes(key) ? prev.filter((c) => c !== key) : JOB_COL_ORDER.filter((c) => prev.includes(c) || c === key)
+    );
+  }
+
+  function clearFilters() {
+    setJobsQ("");
+    setStatusFilter("");
+    setCrewFilter("");
+  }
+
+  const empty = jobs.length === 0;
+
+  return (
+    <div className="jh-wrap">
+      {/* grain desk — fixed, jobs-page only, behind content */}
+      <div className="jh-grain" aria-hidden="true" />
+
+      <div className="jh-head">
+        <div>
+          <h1>Jobs</h1>
+          <div className="jh-verdict">
+            <b className="jh-vfig mono">${shownTrucks.toLocaleString("en-US")}</b>
+            <span className="jh-vlbl">scheduled today</span>
+          </div>
+        </div>
+        <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>
+      </div>
+
+      <div className="mob-new">
+        <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>
+      </div>
+
+      <JobsToolbar
+        archiveSet={archiveSet}
+        onArchiveSet={setArchiveSet}
+        q={jobsQ}
+        onQ={setJobsQ}
+        filtersOpen={filtersOpen}
+        onToggleFilters={() => setFiltersOpen((o) => !o)}
+        colsOpen={colsOpen}
+        onToggleCols={() => setColsOpen((o) => !o)}
+        activeFilterCount={activeFilterCount}
+        total={total}
+        shown={shown}
+      />
+
+      {colsOpen && <JobsColumns visible={visibleCols} onToggle={toggleCol} />}
+
+      {filtersOpen && (
+        <JobsFilters
+          statusFilter={statusFilter}
+          crewFilter={crewFilter}
+          techs={techs}
+          onStatus={setStatusFilter}
+          onCrew={setCrewFilter}
+          onClear={clearFilters}
+          showStatus={archiveSet === "active"}
+        />
+      )}
+
+      {empty ? (
+        <div className="empty-att" style={{ padding: "24px 0" }}>
+          No jobs yet — <span className="linklike" onClick={onOpenNewJob}>create one</span>
+        </div>
+      ) : (
+        <JobsListView
+          bands={finalBands}
+          sort={sort}
+          onSort={setSort}
+          onOpenJob={onOpenJob}
+          visibleCols={visibleCols}
+        />
+      )}
+    </div>
+  );
+}

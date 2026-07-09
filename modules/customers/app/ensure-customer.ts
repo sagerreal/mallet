@@ -1,4 +1,4 @@
-import type { Phone, Result, AppError, Clock } from "@mallet/shared/types";
+import type { CompanyId, Phone, Result, AppError, Clock } from "@mallet/shared/types";
 import { validation, ok, err } from "@mallet/shared/types";
 import type { EventBus } from "@mallet/shared/ports";
 import type { Lead } from "../domain/lead";
@@ -9,6 +9,8 @@ export interface EnsureCustomerCommand {
   readonly phone: Phone | null;
   readonly email: string | null;
   readonly source: string | null;
+  readonly companyId: CompanyId | null;
+  readonly role: string | null;
 }
 
 // Get-or-create a customer. Validation lives here and in the domain factory; the repository
@@ -30,6 +32,8 @@ export class EnsureCustomerUseCase {
       phone: cmd.phone,
       email: cmd.email,
       source: cmd.source,
+      companyId: cmd.companyId,
+      role: cmd.role,
     });
 
     if (created) {

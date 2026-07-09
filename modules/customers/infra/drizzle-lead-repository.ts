@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import {
@@ -39,6 +39,8 @@ export class DrizzleLeadRepository implements LeadRepository {
         phoneE164: input.phone,
         email: input.email,
         source: input.source,
+        companyId: input.companyId,
+        role: input.role,
       })
       .onConflictDoNothing({
         target: [leads.orgId, leads.phoneE164],
@@ -115,8 +117,31 @@ export class DrizzleLeadRepository implements LeadRepository {
         valueCents: p.value,
         unread: p.unread,
         wonAt: p.wonAt,
+        companyId: p.companyId,
+        role: p.role,
         updatedAt: p.updatedAt,
       })
-      .where(eq(leads.id, p.id));
+      // Guard: org-scoped + non-deleted (defense in depth, mirrors company + task repos).
+      .where(and(eq(leads.id, p.id), eq(leads.orgId, this.orgId), isNull(leads.deletedAt)));
+  }
+
+  async archive(id: LeadId, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(leads)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(leads.id, id), isNull(leads.deletedAt)))
+      .returning();
+    return rows.length;
+  }
+
+  async restore(id: LeadId, now: Date): Promise<Lead | null> {
+    const rows = await this.tx
+      .update(leads)
+      .set({ deletedAt: null, updatedAt: now })
+      // Only restore rows that are currently soft-deleted; already-active rows produce no match.
+      .where(and(eq(leads.id, id), isNotNull(leads.deletedAt)))
+      .returning();
+    const row = rows[0];
+    return row ? toDomain(row) : null;
   }
 }

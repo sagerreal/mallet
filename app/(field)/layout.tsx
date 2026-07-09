@@ -1,18 +1,39 @@
 import type { ReactNode } from "react";
 import { guardRole } from "@/lib/auth/guard";
-import { SignOutButton } from "@/components/shell/sign-out-button";
+import { TimesheetsHydrator } from "@/features/timesheets/timesheets-hydrator";
+import { Sidebar } from "@/components/shell/sidebar";
+import { MobileTabs } from "@/components/shell/mobile-tabs";
+import { Topbar } from "@/components/shell/topbar";
+import { CommandBar } from "@/components/shell/command-bar";
+import { CallBar } from "@/components/shell/call-bar";
+import { ModalHost } from "@/components/modals/modal-host";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The Field shell — the technician's app. Phone-first: no office sidebar, just
+ * the top bar, the content, the Ask-Mallet bar, and the field tab bar (My day /
+ * My hours / Messages / More). Its guard admits techs (who live ONLY here) plus
+ * owner/office (an owner-operator who also works jobs). The office group's guard
+ * blocks techs and redirects them here, so a tech can never reach office pages.
+ */
 export default async function FieldLayout({ children }: { children: ReactNode }) {
-  await guardRole(["tech", "owner", "office"]); // techs live here; office roles may preview
+  await guardRole(["owner", "office", "tech"]);
   return (
-    <div className="mx-auto min-h-dvh max-w-md">
-      <header className="flex items-center justify-between border-b border-line p-4">
-        <p className="font-display text-lg font-semibold">Mallet</p>
-        <SignOutButton />
-      </header>
-      <main className="p-4">{children}</main>
+    <div className="appshell field-shell">
+      <div className="layout">
+        <Sidebar />
+        <div className="appmain">
+          <Topbar />
+          <div id="flashbar" />
+          <main id="main">{children}</main>
+        </div>
+      </div>
+      <CommandBar />
+      <CallBar />
+      <MobileTabs />
+      <ModalHost />
+      <TimesheetsHydrator />
     </div>
   );
 }

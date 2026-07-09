@@ -50,6 +50,7 @@ const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
     cancelReason: null,
     total: zeroMoney,
     notes: null,
+    visits: [],
     createdAt: now,
     updatedAt: now,
   });

@@ -108,4 +108,174 @@ suite("customers tRPC router (full stack, live RLS)", () => {
       expect(e).toBeInstanceOf(TRPCError);
     });
   });
+
+  // ── update ──────────────────────────────────────────────────────────────────
+
+  it("update happy path: name, valueCents, and stage are persisted", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.customers.create({
+      name: "Update Target",
+      phone: "(555) 700-0001",
+    });
+
+    const updated = await caller.v1.customers.update({
+      leadId: created.id,
+      name: "Updated Name",
+      valueCents: 25000,
+      stage: "contacted",
+    });
+
+    expect(updated.name).toBe("Updated Name");
+    expect(updated.value.cents).toBe(25000);
+    expect(updated.stage).toBe("contacted");
+
+    // Assert persistence: get and list both reflect the new values.
+    const fetched = await caller.v1.customers.get({ leadId: created.id });
+    expect(fetched.name).toBe("Updated Name");
+    expect(fetched.value.cents).toBe(25000);
+    expect(fetched.stage).toBe("contacted");
+
+    const listed = await caller.v1.customers.list({ limit: 50 });
+    const inList = listed.items.find((l) => l.id === created.id);
+    expect(inList).toBeDefined();
+    expect(inList!.name).toBe("Updated Name");
+  });
+
+  it("update rejects an invalid phone string with BAD_REQUEST", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.customers.create({ name: "Bad Phone Target" });
+
+    await expect(
+      caller.v1.customers.update({ leadId: created.id, phone: "not-a-phone" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("update rejects a name longer than 255 characters via input schema", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.customers.create({ name: "Bounds Test Target" });
+
+    const tooLong = "x".repeat(256);
+    await expect(
+      caller.v1.customers.update({ leadId: created.id, name: tooLong }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  // ── archive ──────────────────────────────────────────────────────────────────
+
+  it("archive-then-list: archived lead disappears from list and get returns NOT_FOUND", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.customers.create({ name: "Archive Me" });
+
+    const result = await caller.v1.customers.archive({ leadId: created.id });
+    expect(result.ok).toBe(true);
+
+    // Should not appear in the active list.
+    const listed = await caller.v1.customers.list({ limit: 500 });
+    expect(listed.items.some((l) => l.id === created.id)).toBe(false);
+
+    // get should surface NOT_FOUND for an archived lead.
+    await expect(caller.v1.customers.get({ leadId: created.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("archive not-found: archiving a random uuid throws NOT_FOUND", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.customers.archive({ leadId: randomUUID() }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  // ── restore ──────────────────────────────────────────────────────────────────
+
+  it("restore-then-list: restored lead reappears in list and get succeeds", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.customers.create({ name: "Restore Me" });
+    await caller.v1.customers.archive({ leadId: created.id });
+
+    const restored = await caller.v1.customers.restore({ leadId: created.id });
+    expect(restored.id).toBe(created.id);
+
+    // Should now appear in the active list again.
+    const listed = await caller.v1.customers.list({ limit: 500 });
+    expect(listed.items.some((l) => l.id === created.id)).toBe(true);
+
+    // get should succeed.
+    const fetched = await caller.v1.customers.get({ leadId: created.id });
+    expect(fetched.id).toBe(created.id);
+  });
+
+  // ── companyId + role round-trip ───────────────────────────────────────────────
+
+  it("create with companyId+role persists both fields", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    // First create a company so we have a valid FK target.
+    const company = await caller.v1.companies.create({ name: "Test Property Co" });
+
+    const lead = await caller.v1.customers.create({
+      name: "Jane Contact",
+      companyId: company.id,
+      role: "Property manager",
+    });
+
+    expect(lead.companyId).toBe(company.id);
+    expect(lead.role).toBe("Property manager");
+
+    // Verify round-trip via get.
+    const fetched = await caller.v1.customers.get({ leadId: lead.id });
+    expect(fetched.companyId).toBe(company.id);
+    expect(fetched.role).toBe("Property manager");
+  });
+
+  it("update can set and clear companyId+role", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const company = await caller.v1.companies.create({ name: "Update Company Target" });
+    const lead = await caller.v1.customers.create({ name: "Bob Contact" });
+
+    // Initially no company link.
+    expect(lead.companyId).toBeNull();
+    expect(lead.role).toBeNull();
+
+    // Set the link.
+    const linked = await caller.v1.customers.update({
+      leadId: lead.id,
+      companyId: company.id,
+      role: "Owner",
+    });
+    expect(linked.companyId).toBe(company.id);
+    expect(linked.role).toBe("Owner");
+
+    // Clear the link.
+    const cleared = await caller.v1.customers.update({
+      leadId: lead.id,
+      companyId: null,
+      role: null,
+    });
+    expect(cleared.companyId).toBeNull();
+    expect(cleared.role).toBeNull();
+  });
+
+  // ── cross-org isolation ───────────────────────────────────────────────────────
+
+  it("org B cannot update, archive, or restore org A's lead (NOT_FOUND via RLS)", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await callerA.v1.customers.create({ name: "Cross-Org RLS Guard" });
+
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+
+    await expect(
+      callerB.v1.customers.update({ leadId: created.id, name: "Should Fail" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    await expect(
+      callerB.v1.customers.archive({ leadId: created.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // restore: the lead is active under org A; org B sees nothing and gets NOT_FOUND.
+    await expect(
+      callerB.v1.customers.restore({ leadId: created.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
 });

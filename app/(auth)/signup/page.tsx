@@ -1,9 +1,6 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
 import { signUp } from "@/features/auth/hooks";
 
 export default function SignupPage() {
@@ -26,23 +23,41 @@ export default function SignupPage() {
 
   if (sent) {
     return (
-      <Card>
-        <p className="font-medium">Check your email</p>
-        <p className="mt-1 text-sm text-ink-muted">We sent a confirmation link. Open it, then sign in.</p>
-      </Card>
+      <>
+        <h1 className="auth-title">Check your email</h1>
+        <p className="auth-sub">We sent a confirmation link. Open it, then sign in.</p>
+        <div className="auth-links" style={{ justifyContent: "center" }}>
+          <Link href="/login">Back to sign in</Link>
+        </div>
+      </>
     );
   }
 
   return (
-    <Card>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Field label="Business name"><Input name="orgName" required maxLength={80} /></Field>
-        <Field label="Email"><Input name="email" type="email" required autoComplete="email" /></Field>
-        <Field label="Password"><Input name="password" type="password" required minLength={8} autoComplete="new-password" /></Field>
-        {error ? <p className="text-sm text-red">{error}</p> : null}
-        <Button type="submit" disabled={busy} className="w-full">Create account</Button>
-        <p className="text-center text-sm"><Link className="text-ink-muted underline" href="/login">Back to sign in</Link></p>
+    <>
+      <h1 className="auth-title">Create your account</h1>
+      <p className="auth-sub">Get your crew running in minutes.</p>
+      <form onSubmit={onSubmit}>
+        <label className="auth-field">
+          <span>Business name</span>
+          <input className="auth-input" name="orgName" required maxLength={80} placeholder="Rivera Plumbing" />
+        </label>
+        <label className="auth-field">
+          <span>Email</span>
+          <input className="auth-input" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
+        </label>
+        <label className="auth-field">
+          <span>Password</span>
+          <input className="auth-input" name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="8+ characters" />
+        </label>
+        {error && <p className="auth-error">{error}</p>}
+        <button className="auth-submit" type="submit" disabled={busy}>
+          {busy ? "Creating account…" : "Create account"}
+        </button>
       </form>
-    </Card>
+      <div className="auth-links" style={{ justifyContent: "center" }}>
+        <Link href="/login">Already have an account? Sign in</Link>
+      </div>
+    </>
   );
 }

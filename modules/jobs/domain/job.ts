@@ -4,6 +4,7 @@ import type {
   LeadId,
   EstimateId,
   UserId,
+  VisitId,
   Money,
   Result,
   ValidationError,
@@ -22,7 +23,64 @@ export const JOB_STATUSES: readonly JobStatus[] = [
 export const isJobStatus = (value: string): value is JobStatus =>
   (JOB_STATUSES as readonly string[]).includes(value);
 
+export type VisitStatus = "pending" | "in_progress" | "complete" | "canceled";
+
+export const JOB_VISIT_STATUSES: readonly VisitStatus[] = [
+  "pending",
+  "in_progress",
+  "complete",
+  "canceled",
+];
+
+export const isVisitStatus = (value: string): value is VisitStatus =>
+  (JOB_VISIT_STATUSES as readonly string[]).includes(value);
+
 const isTerminal = (status: JobStatus): boolean => status === "complete" || status === "canceled";
+
+export interface JobVisitProps {
+  readonly id: VisitId;
+  readonly assigneeUserId: UserId | null;
+  readonly scheduledDate: string | null; // ISO "YYYY-MM-DD", nullable when unplaced
+  readonly scheduledStart: string | null; // "HH:MM", nullable when unplaced
+  readonly scheduledEnd: string | null; // "HH:MM", nullable when unplaced
+  readonly status: VisitStatus;
+  readonly startedAt: Date | null;
+  readonly completedAt: Date | null;
+  readonly notes: string | null;
+  readonly position: number;
+}
+
+// A single scheduled visit on a job. Immutable value object (mirrors EstimateLine).
+export class JobVisit {
+  private constructor(private readonly p: JobVisitProps) {}
+
+  static create(props: JobVisitProps): Result<JobVisit, ValidationError> {
+    if (!isVisitStatus(props.status)) {
+      return err(validation(`unknown visit status: ${props.status}`, "status"));
+    }
+    if (
+      props.scheduledStart !== null &&
+      props.scheduledEnd !== null &&
+      props.scheduledEnd <= props.scheduledStart
+    ) {
+      return err(validation("visit scheduled end must be after start", "scheduledEnd"));
+    }
+    return ok(new JobVisit({ ...props }));
+  }
+
+  // A visit is placed when it has a date, an assignee, and a start time.
+  isPlaced(): boolean {
+    return (
+      this.p.scheduledDate !== null &&
+      this.p.assigneeUserId !== null &&
+      this.p.scheduledStart !== null
+    );
+  }
+
+  get props(): JobVisitProps {
+    return this.p;
+  }
+}
 
 export interface JobProps {
   readonly id: JobId;
@@ -41,6 +99,7 @@ export interface JobProps {
   readonly cancelReason: string | null;
   readonly total: Money; // integer cents, snapshot from the source estimate at creation
   readonly notes: string | null;
+  readonly visits: readonly JobVisit[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -69,6 +128,14 @@ export class Job {
       return err(validation("a canceled job requires a reason", "cancelReason"));
     }
     return ok(new Job({ ...props, num }));
+  }
+
+  // Replace the visit set — only allowed while the job is not yet terminal.
+  withVisits(visits: readonly JobVisit[], now: Date): Result<Job, ValidationError> {
+    if (isTerminal(this.p.status)) {
+      return err(validation("cannot modify visits on a completed or canceled job", "status"));
+    }
+    return ok(new Job({ ...this.p, visits, updatedAt: now }));
   }
 
   canStart(): boolean {

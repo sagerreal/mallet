@@ -1,0 +1,35 @@
+import { chromium } from "@playwright/test";
+const base = "http://localhost:3000";
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1512, height: 950 } });
+await p.goto(base + "/login", { waitUntil: "networkidle" });
+await p.getByLabel("Email").fill("owner@e2e.mallet.test");
+await p.getByLabel("Password").fill("e2e-password-1");
+await p.getByRole("button", { name: "Sign in" }).click();
+await p.waitForURL((u) => !u.pathname.includes("/login"), { timeout: 30000 });
+await p.goto(base + "/settings", { waitUntil: "networkidle" });
+await p.waitForTimeout(500);
+await p.locator(".setnav .navitem", { hasText: "Pricing" }).click();
+await p.waitForTimeout(400);
+const lr = p.locator(".foldcard").filter({ has: p.locator("input[placeholder='e.g. Apprentice, Weekend']") }).first();
+const before = await lr.locator(".stage-row").count();
+await p.locator("input[placeholder='e.g. Apprentice, Weekend']").fill("Weekend crew");
+await p.locator("input[placeholder='$/hr']").fill("210");
+await lr.getByRole("button", { name: "+ Add" }).click();
+await p.waitForTimeout(300);
+const after = await lr.locator(".stage-row").count();
+console.log("STEP: labor rows", before, "->", after);
+// add a source (Lead sources tab, Source list fold - expand via header)
+await p.locator(".setnav .navitem", { hasText: "Lead sources" }).click();
+await p.waitForTimeout(300);
+const src = p.locator(".foldcard").filter({ has: p.locator("input[placeholder='e.g. Home show, Truck wrap']") }).first();
+await src.locator(".fhead").click();  // Source list is not defaultOpen
+await p.waitForTimeout(200);
+const sBefore = await src.locator(".stage-row").count();
+await p.locator("input[placeholder='e.g. Home show, Truck wrap']").fill("Truck wrap ZZZ");
+await src.getByRole("button", { name: "+ Add" }).click();
+await p.waitForTimeout(300);
+const sAfter = await src.locator(".stage-row").count();
+console.log("STEP: source rows", sBefore, "->", sAfter);
+await p.screenshot({ path: "/tmp/settings-final.png", fullPage: true });
+await b.close();

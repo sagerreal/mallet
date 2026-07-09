@@ -48,9 +48,12 @@ const propose = async (tool: AgentTool, args: Record<string, JsonValue>, princip
     // Freeze the VALIDATED output, not the raw args — zod strips unknown keys, so the stored jsonb
     // is bounded by the input schema (unknown-key storage griefing can't accumulate). Confirm
     // re-parses this same value, so what-you-saw-is-what-runs is unchanged.
-    const frozen = parsed.data as Record<string, JsonValue>;
+    const validated = parsed.data as Record<string, JsonValue>;
 
     const ctx = buildToolContext(tx, principal, deps);
+    // Enrich before fingerprinting: server-minted values (e.g. idempotency keys) are injected here so
+    // they are stored alongside the other frozen args and replayed verbatim on confirm — no second mint.
+    const frozen = tool.enrichArgs ? ({ ...validated, ...tool.enrichArgs(validated, ctx) } as Record<string, JsonValue>) : validated;
     const fingerprint = tool.fingerprint ? await tool.fingerprint(frozen, ctx) : null;
     // Refuse a missing entity at PROPOSE time rather than minting a token that could only fail at
     // confirm (a masked FK throw, left infinitely retryable). No row is created.

@@ -2,9 +2,6 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
 import { signIn } from "@/features/auth/hooks";
 
 export default function LoginPage() {
@@ -26,17 +23,27 @@ export default function LoginPage() {
   };
 
   return (
-    <Card>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Field label="Email"><Input name="email" type="email" required autoComplete="email" /></Field>
-        <Field label="Password"><Input name="password" type="password" required autoComplete="current-password" /></Field>
-        {error ? <p className="text-sm text-red">{error}</p> : null}
-        <Button type="submit" disabled={busy} className="w-full">Sign in</Button>
-        <div className="flex justify-between text-sm">
-          <Link className="text-ink-muted underline" href="/forgot-password">Forgot password</Link>
-          <Link className="text-ink-muted underline" href="/signup">Create account</Link>
-        </div>
+    <>
+      <h1 className="auth-title">Welcome back</h1>
+      <p className="auth-sub">Sign in to your Mallet account.</p>
+      <form onSubmit={onSubmit}>
+        <label className="auth-field">
+          <span>Email</span>
+          <input className="auth-input" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
+        </label>
+        <label className="auth-field">
+          <span>Password</span>
+          <input className="auth-input" name="password" type="password" required autoComplete="current-password" placeholder="••••••••" />
+        </label>
+        {error && <p className="auth-error">{error}</p>}
+        <button className="auth-submit" type="submit" disabled={busy}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
       </form>
-    </Card>
+      <div className="auth-links">
+        <Link href="/forgot-password">Forgot password?</Link>
+        <Link href="/signup">Create account</Link>
+      </div>
+    </>
   );
 }

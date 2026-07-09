@@ -27,9 +27,10 @@ import { EnsureCustomerUseCase } from "./ensure-customer";
 import { ListLeadsUseCase } from "./list-leads";
 
 // In-memory test double. Mirrors the real repo's contract: org-scoped (it is constructed with
-// one orgId), dedupes on phone, keyset-paginates newest-first.
+// one orgId), dedupes on phone, keyset-paginates newest-first, and uses soft-delete (not hard).
 class FakeLeadRepository implements LeadRepository {
   private readonly store = new Map<LeadId, Lead>();
+  private readonly deletedIds = new Set<LeadId>();
 
   constructor(
     private readonly orgId: OrgId,
@@ -38,7 +39,10 @@ class FakeLeadRepository implements LeadRepository {
 
   async ensureCustomer(input: EnsureCustomerInput): Promise<EnsureCustomerResult> {
     if (input.phone !== null) {
-      const existing = [...this.store.values()].find((l) => l.props.phone === input.phone);
+      // Only match against active (non-deleted) rows.
+      const existing = [...this.store.values()].find(
+        (l) => !this.deletedIds.has(l.props.id) && l.props.phone === input.phone,
+      );
       if (existing) return { lead: existing, created: false };
     }
     const now = this.clock.now();
@@ -53,6 +57,8 @@ class FakeLeadRepository implements LeadRepository {
       value: zeroMoney,
       unread: true,
       wonAt: null,
+      companyId: input.companyId,
+      role: input.role,
       createdAt: now,
       updatedAt: now,
     });
@@ -62,14 +68,18 @@ class FakeLeadRepository implements LeadRepository {
   }
 
   async findById(id: LeadId): Promise<Lead | null> {
+    if (this.deletedIds.has(id)) return null;
     return this.store.get(id) ?? null;
   }
 
   async list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>> {
-    let rows = [...this.store.values()].sort((a, b) => {
-      const t = b.props.createdAt.getTime() - a.props.createdAt.getTime();
-      return t !== 0 ? t : b.props.id.localeCompare(a.props.id);
-    });
+    // Exclude soft-deleted rows.
+    let rows = [...this.store.values()]
+      .filter((l) => !this.deletedIds.has(l.props.id))
+      .sort((a, b) => {
+        const t = b.props.createdAt.getTime() - a.props.createdAt.getTime();
+        return t !== 0 ? t : b.props.id.localeCompare(a.props.id);
+      });
     if (filter?.stage) rows = rows.filter((l) => l.props.stage === filter.stage);
     if (filter?.unreadOnly) rows = rows.filter((l) => l.props.unread);
     if (page.cursor) {
@@ -91,6 +101,20 @@ class FakeLeadRepository implements LeadRepository {
   async save(lead: Lead): Promise<void> {
     this.store.set(lead.props.id, lead);
   }
+
+  // Returns 1 if the lead was active and is now archived; 0 if not found or already archived.
+  async archive(id: LeadId, _now: Date): Promise<number> {
+    if (!this.store.has(id) || this.deletedIds.has(id)) return 0;
+    this.deletedIds.add(id);
+    return 1;
+  }
+
+  // Returns the lead if it was archived and is now restored; null if it was already active.
+  async restore(id: LeadId, _now: Date): Promise<Lead | null> {
+    if (!this.deletedIds.has(id)) return null;
+    this.deletedIds.delete(id);
+    return this.store.get(id) ?? null;
+  }
 }
 
 const ORG = asOrgId("22222222-2222-2222-2222-222222222222");
@@ -109,7 +133,7 @@ describe("EnsureCustomerUseCase", () => {
   });
 
   it("rejects an empty name", async () => {
-    const r = await useCase.exec({ name: "   ", phone: null, email: null, source: null });
+    const r = await useCase.exec({ name: "   ", phone: null, email: null, source: null, companyId: null, role: null });
     expect(r.ok).toBe(false);
   });
 
@@ -121,6 +145,8 @@ describe("EnsureCustomerUseCase", () => {
       phone: phone.ok ? phone.value : null,
       email: null,
       source: "web",
+      companyId: null,
+      role: null,
     });
     expect(r.ok).toBe(true);
     expect(bus.recorded).toHaveLength(1);
@@ -135,12 +161,16 @@ describe("EnsureCustomerUseCase", () => {
       phone: sharedPhone,
       email: null,
       source: "web",
+      companyId: null,
+      role: null,
     });
     const second = await useCase.exec({
       name: "Karen (again)",
       phone: sharedPhone,
       email: null,
       source: "phone",
+      companyId: null,
+      role: null,
     });
     expect(first.ok && second.ok).toBe(true);
     if (first.ok && second.ok) {
@@ -160,7 +190,7 @@ describe("ListLeadsUseCase", () => {
     const ensure = new EnsureCustomerUseCase(repo, bus, clock);
 
     for (const name of ["A", "B", "C"]) {
-      await ensure.exec({ name, phone: null, email: null, source: null });
+      await ensure.exec({ name, phone: null, email: null, source: null, companyId: null, role: null });
       clock.advance(60_000);
     }
 

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, text, timestamp, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, timestamp, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 
 // A member of an org. `auth_user_id` is the Supabase Auth user id (the JWT `sub`); it is the
@@ -14,7 +14,9 @@ export const users = pgTable(
       .references(() => orgs.id, { onDelete: "cascade" }),
     authUserId: uuid("auth_user_id").notNull(),
     email: text("email").notNull(),
+    name: text("name"), // nullable — crew roster display name; existing rows/signup unaffected
     role: text("role").notNull().default("owner"),
+    isFieldCrew: boolean("is_field_crew").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

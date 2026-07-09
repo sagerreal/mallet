@@ -15,4 +15,10 @@ export interface EstimateRepository {
   findById(id: EstimateId): Promise<Estimate | null>;
   list(page: CursorPage, filter?: EstimateFilter): Promise<Paginated<Estimate>>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>>;
+  // Soft-delete (archive) an estimate by setting deleted_at. Returns the number of rows affected
+  // (0 = not found or already archived). Single UPDATE + RETURNING — no prior findById needed.
+  archive(id: EstimateId, now: Date): Promise<number>;
+  // Clear deleted_at on a soft-deleted estimate (restore). Returns the restored aggregate, or null
+  // if the estimate was not currently archived (already active or does not exist).
+  restore(id: EstimateId, now: Date): Promise<Estimate | null>;
 }

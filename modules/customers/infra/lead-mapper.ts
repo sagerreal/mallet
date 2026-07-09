@@ -1,4 +1,4 @@
-import { asLeadId, asOrgId, asPhone, money } from "@mallet/shared/types";
+import { asLeadId, asOrgId, asPhone, asCompanyId, money } from "@mallet/shared/types";
 import { leads } from "@mallet/shared/db/schema";
 import { Lead, isLeadStage } from "../domain/lead";
 
@@ -23,6 +23,8 @@ export const toDomain = (row: LeadRow): Lead => {
     value: money(row.valueCents),
     unread: row.unread,
     wonAt: row.wonAt,
+    companyId: row.companyId ? asCompanyId(row.companyId) : null,
+    role: row.role,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
