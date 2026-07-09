@@ -14,26 +14,10 @@ import { api } from "@/lib/trpc/client";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type { Lead, LeadNote } from "@/lib/store/types";
 import type { MessageDTO } from "@mallet/messaging";
+import { shortWhen } from "@/lib/format";
 
 function firstName(name: string): string {
   return name.split(" ")[0] ?? name;
-}
-
-/** Short label from a Date — "9:04am", "Tue 2:10pm", or "Jul 7" depending on recency. */
-function shortWhen(d: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) {
-    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
-  }
-  if (diffDays < 7) {
-    const day = d.toLocaleDateString("en-US", { weekday: "short" });
-    const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
-    return `${day} ${time}`;
-  }
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // ── Thread row types ──────────────────────────────────────────────────────────

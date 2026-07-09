@@ -100,6 +100,45 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     expect(thread).toHaveLength(0);
   });
 
+  // ── listConversations ─────────────────────────────────────────────────────────
+
+  it("returns one conversation row for org A (the seed message)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const conversations = await caller.v1.messaging.listConversations();
+    expect(conversations.length).toBeGreaterThanOrEqual(1);
+    // Find the row for our known lead.
+    const row = conversations.find((c) => c.leadId === leadAId);
+    expect(row).toBeDefined();
+    expect(row!.leadName).toBe("Test Customer");
+    expect(row!.lastDirection).toBe("outbound");
+    expect(row!.lastBody).toBe("Hi from us");
+    expect(typeof row!.lastAt).toBe("string"); // ISO string
+    expect(typeof row!.unread).toBe("boolean");
+  });
+
+  it("conversations are sorted newest-first (lastAt DESC)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const conversations = await caller.v1.messaging.listConversations();
+    const dates = conversations.map((c) => new Date(c.lastAt).getTime());
+    // Each element must be >= the next (newest-first).
+    for (let i = 0; i < dates.length - 1; i++) {
+      expect(dates[i]!).toBeGreaterThanOrEqual(dates[i + 1]!);
+    }
+  });
+
+  it("org B sees zero conversations (RLS org isolation)", async () => {
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const conversations = await callerB.v1.messaging.listConversations();
+    expect(conversations).toHaveLength(0);
+  });
+
+  it("a tech cannot list conversations (FORBIDDEN)", async () => {
+    const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    await expect(
+      callerTech.v1.messaging.listConversations(),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   // ── send: config guard ────────────────────────────────────────────────────────
   // The send procedure requires TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN in env.
   // In CI without those vars, we expect PRECONDITION_FAILED rather than a live Twilio call.

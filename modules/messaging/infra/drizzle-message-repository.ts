@@ -1,10 +1,11 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { messages, orgs, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { ownerDb } from "@mallet/shared/db/owner-client";
 import type { OrgId, LeadId, MessageId } from "@mallet/shared/types";
-import { asOrgId } from "@mallet/shared/types";
+import { asOrgId, asLeadId } from "@mallet/shared/types";
 import type { Message } from "../domain/message";
+import type { MessageDirection } from "../domain/message";
 import type {
   MessageRepository,
   RecordOutboundInput,
@@ -12,6 +13,7 @@ import type {
   OrgByNumberReader,
   LeadByPhoneReader,
   LeadUnreadMarker,
+  ConversationRow,
 } from "../domain/message-repository";
 import { toDomain } from "./message-mapper";
 import { DrizzleLeadRepository } from "@/modules/customers/infra/drizzle-lead-repository";
@@ -86,6 +88,67 @@ export class DrizzleMessageRepository implements MessageRepository {
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
+  }
+
+  // One efficient query — no N+1. Uses DISTINCT ON (lead_id) to select the most-recent
+  // non-deleted message per lead, then joins to leads for name + unread flag, then sorts
+  // the whole result by lastAt DESC. RLS scopes to the current org via withTenant; the
+  // explicit m.org_id = current_org_id() filter inside the subquery adds defense-in-depth
+  // (same pattern as DrizzleLeadByPhoneReader) so the tenant boundary is visible in the SQL.
+  // The optional leadId filter is a stub for a future tech-scoping pass.
+  async listConversations(filter?: { leadId?: LeadId }): Promise<ConversationRow[]> {
+    // Build the optional WHERE clause for the future lead-scoping pass.
+    // When filter.leadId is set we add `AND m.lead_id = <id>` inside the DISTINCT ON sub-select.
+    const leadFilter =
+      filter?.leadId != null
+        ? sql` AND m.lead_id = ${filter.leadId}`
+        : sql``;
+
+    // DISTINCT ON (m.lead_id) paired with ORDER BY m.lead_id, m.created_at DESC picks exactly
+    // the newest non-deleted message per lead. We wrap it in a sub-select so the outer query
+    // can sort by last_at without conflicting with the DISTINCT ON ordering constraint.
+    type ConversationRaw = {
+      leadId: string;
+      leadName: string;
+      lastBody: string;
+      lastDirection: string;
+      lastAt: Date;
+      unread: boolean;
+    };
+
+    const rows = await this.tx.execute<ConversationRaw>(sql`
+      SELECT
+        latest.lead_id    AS "leadId",
+        l.name            AS "leadName",
+        latest.body       AS "lastBody",
+        latest.direction  AS "lastDirection",
+        latest.created_at AS "lastAt",
+        l.unread          AS "unread"
+      FROM (
+        SELECT DISTINCT ON (m.lead_id)
+          m.lead_id,
+          m.body,
+          m.direction,
+          m.created_at
+        FROM messages m
+        WHERE m.lead_id IS NOT NULL
+          AND m.deleted_at IS NULL
+          AND m.org_id = current_org_id()
+          ${leadFilter}
+        ORDER BY m.lead_id, m.created_at DESC
+      ) AS latest
+      JOIN leads l ON l.id = latest.lead_id AND l.deleted_at IS NULL
+      ORDER BY latest.created_at DESC
+    `);
+
+    return rows.map((r) => ({
+      leadId: asLeadId(r.leadId),
+      leadName: r.leadName,
+      lastBody: r.lastBody,
+      lastDirection: r.lastDirection as MessageDirection,
+      lastAt: r.lastAt instanceof Date ? r.lastAt : new Date(r.lastAt),
+      unread: r.unread,
+    }));
   }
 }
 

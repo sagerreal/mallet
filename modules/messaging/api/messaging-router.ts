@@ -8,7 +8,30 @@ import { asLeadId } from "@mallet/shared/types";
 import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
 import { SendMessageUseCase } from "../app/send-message";
 import { ListThreadUseCase } from "../app/list-thread";
+import { ListConversationsUseCase } from "../app/list-conversations";
 import { messageDTO, toMessageDTO } from "./message-dto";
+import type { ConversationRow } from "../domain/message-repository";
+
+// Wire DTO for the conversations-list endpoint. One entry per lead thread, sorted newest-first.
+const conversationDTO = z.object({
+  leadId: z.string().uuid(),
+  leadName: z.string(),
+  lastBody: z.string(),
+  lastDirection: z.enum(["inbound", "outbound"]),
+  lastAt: z.string(), // ISO 8601
+  unread: z.boolean(),
+});
+
+export type ConversationDTO = z.infer<typeof conversationDTO>;
+
+const toConversationDTO = (row: ConversationRow): ConversationDTO => ({
+  leadId: row.leadId,
+  leadName: row.leadName,
+  lastBody: row.lastBody,
+  lastDirection: row.lastDirection,
+  lastAt: row.lastAt.toISOString(),
+  unread: row.unread,
+});
 
 const sendInput = z.object({
   leadId: z.string().uuid(),
@@ -110,5 +133,17 @@ export const createMessagingRouter = () =>
           offset: input.offset,
         });
         return thread.map(toMessageDTO);
+      }),
+
+    // List all customer conversation threads for the org, newest-first.
+    // One entry per lead (the lead's most-recent non-deleted message). Owner/office only;
+    // a future pass will add tech scoping by passing filter.leadId into the use-case.
+    listConversations: ownerOrOffice
+      .output(z.array(conversationDTO))
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleMessageRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ListConversationsUseCase(repo);
+        const rows = await useCase.exec({});
+        return rows.map(toConversationDTO);
       }),
   });
