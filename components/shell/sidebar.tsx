@@ -168,6 +168,13 @@ export function Sidebar() {
   const displayName = userObj?.email?.split("@")[0] ?? "You";
   const initials = displayName.split(/[._\-]+/).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase() || "ME";
 
+  // Derive role — undefined while the query is in-flight.
+  const role = me.data?.role as "owner" | "office" | "tech" | undefined;
+  const isTech = role === "tech";
+  // While role is still unknown (loading), show nothing in the nav body to
+  // prevent a flash of office items that a tech should never see.
+  const roleKnown = !me.isLoading;
+
   return (
     <aside className="sidebar">
       {/* Brand */}
@@ -181,68 +188,76 @@ export function Sidebar() {
 
       {/* Nav */}
       <div id="sidenav" style={{ flex: 1, overflowY: "auto", padding: "2px 10px 10px" }}>
-        {/* + New button */}
-        <NewMenu />
+        {roleKnown && (
+          <>
+            {/* Office-only: + New button + office nav items */}
+            {!isTech && (
+              <>
+                <NewMenu />
 
-        {/* Main nav */}
-        <NavItem href="/dashboard" icon={<HomeIcon />} label="Home" active={isActive("/dashboard")} />
+                <NavItem href="/dashboard" icon={<HomeIcon />} label="Home" active={isActive("/dashboard")} />
 
-        <div className="navsep" />
+                <div className="navsep" />
 
-        <NavItem
-          href="/customers"
-          icon={<PeopleIcon />}
-          label="Customers"
-          count={customerCount > 0 ? customerCount : undefined}
-          active={customersActive}
-        />
-        {customersActive && (
-          <div className="navsubs">
-            <NavSub href="/pipeline" label="Pipeline" active={pathname.startsWith("/pipeline")} />
-            <NavSub
-              href="/tasks"
-              label="Tasks"
-              count={openTaskCount > 0 ? openTaskCount : undefined}
-              active={pathname.startsWith("/tasks")}
-            />
-          </div>
+                <NavItem
+                  href="/customers"
+                  icon={<PeopleIcon />}
+                  label="Customers"
+                  count={customerCount > 0 ? customerCount : undefined}
+                  active={customersActive}
+                />
+                {customersActive && (
+                  <div className="navsubs">
+                    <NavSub href="/pipeline" label="Pipeline" active={pathname.startsWith("/pipeline")} />
+                    <NavSub
+                      href="/tasks"
+                      label="Tasks"
+                      count={openTaskCount > 0 ? openTaskCount : undefined}
+                      active={pathname.startsWith("/tasks")}
+                    />
+                  </div>
+                )}
+                <NavItem
+                  href="/jobs"
+                  icon={<JobsIcon />}
+                  label="Jobs"
+                  count={jobsCount > 0 ? jobsCount : undefined}
+                  active={jobsActive}
+                />
+                {jobsActive && (
+                  <div className="navsubs">
+                    <NavSub
+                      href="/jobs?tab=schedule"
+                      label="Schedule"
+                      count={unscheduledCount > 0 ? unscheduledCount : undefined}
+                      active={tab === "schedule"}
+                    />
+                    <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
+                  </div>
+                )}
+                <NavItem
+                  href="/money"
+                  icon={<MoneyIcon />}
+                  label="Money"
+                  count={moneyCount > 0 ? moneyCount : undefined}
+                  active={moneyActive}
+                />
+
+                <div className="navsep" />
+
+                <NavItem href="/settings" icon={<SettingsIcon />} label="Settings" active={isActive("/settings")} />
+
+                <div className="navsep" />
+              </>
+            )}
+
+            {/* FIELD section — visible to all roles; label hidden for tech (it's their only section) */}
+            {!isTech && <div className="navlabel">Field</div>}
+            <NavItem href="/my-day" icon={<MyDayIcon />} label="My day" active={isActive("/my-day")} />
+            <NavItem href="/my-hours" icon={<ClockIcon />} label="My hours" active={isActive("/my-hours")} />
+            <NavItem href="/messages" icon={<ChatIcon />} label="Messages" active={isActive("/messages")} />
+          </>
         )}
-        <NavItem
-          href="/jobs"
-          icon={<JobsIcon />}
-          label="Jobs"
-          count={jobsCount > 0 ? jobsCount : undefined}
-          active={jobsActive}
-        />
-        {jobsActive && (
-          <div className="navsubs">
-            <NavSub
-              href="/jobs?tab=schedule"
-              label="Schedule"
-              count={unscheduledCount > 0 ? unscheduledCount : undefined}
-              active={tab === "schedule"}
-            />
-            <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
-          </div>
-        )}
-        <NavItem
-          href="/money"
-          icon={<MoneyIcon />}
-          label="Money"
-          count={moneyCount > 0 ? moneyCount : undefined}
-          active={moneyActive}
-        />
-
-        <div className="navsep" />
-
-        <NavItem href="/settings" icon={<SettingsIcon />} label="Settings" active={isActive("/settings")} />
-
-        {/* FIELD section — the tech/crew surfaces */}
-        <div className="navsep" />
-        <div className="navlabel">Field</div>
-        <NavItem href="/my-day" icon={<MyDayIcon />} label="My day" active={isActive("/my-day")} />
-        <NavItem href="/my-hours" icon={<ClockIcon />} label="My hours" active={isActive("/my-hours")} />
-        <NavItem href="/messages" icon={<ChatIcon />} label="Messages" active={isActive("/messages")} />
       </div>
 
       {/* Account row */}

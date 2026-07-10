@@ -1,20 +1,26 @@
 "use client";
 
 /**
- * My Hours page — pixel-faithful port of the prototype's vMyTime().
- * Reads live techs / timeEntries (and jobs / leads for the row label) from the
- * Zustand app-store. Interactive actions call the real time-entry store actions.
+ * My Hours page — tech-scoped timesheet view.
  *
- * Prototype source: vMyTime() lines 3716-3731, tsEntriesBlock() lines 3670-3678.
+ * Fetches the caller's own time entries via v1.timesheets.list (anyRole; the
+ * router enforces caller-scoping for techs — it ignores any techUserId input and
+ * always uses ctx.principal.userId when role === "tech"). Does NOT depend on the
+ * office Zustand store (timesheets / techs), which is only hydrated under the
+ * ownerOrOffice layout.
+ *
+ * The page passes no techUserId — the server resolves the caller automatically.
+ * Week navigation is client-side pagination over the already-fetched items.
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { todayISO } from "@/lib/clock";
-import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
-import type { Job, Lead, Tech, TimeEntry } from "@/lib/store/types";
+import type { RouterOutputs } from "@/lib/trpc/client";
 
-// ---- helpers ---------------------------------------------------------------
+type TimeEntryDTO = RouterOutputs["v1"]["timesheets"]["list"]["items"][number];
+
+// ---- date helpers ----------------------------------------------------------
 
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + "T12:00:00");
@@ -22,67 +28,15 @@ function addDays(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Monday of the week containing iso (matches prototype tsWeekStart) */
+/** Monday of the week containing iso */
 function weekStart(iso: string): string {
   const d = new Date(iso + "T12:00:00");
-  const dow = (d.getDay() + 6) % 7; // 0=Mon
+  const dow = (d.getDay() + 6) % 7; // 0 = Mon
   return addDays(iso, -dow);
 }
 
 function weekDates(wk: string): string[] {
   return Array.from({ length: 7 }, (_, i) => addDays(wk, i));
-}
-
-function tsHours(e: TimeEntry): number {
-  if (!e.start || !e.end) return 0;
-  const startParts = e.start.split(":").map(Number);
-  const endParts = e.end.split(":").map(Number);
-  const sh = startParts[0] ?? 0;
-  const sm = startParts[1] ?? 0;
-  const eh = endParts[0] ?? 0;
-  const em = endParts[1] ?? 0;
-  return Math.max(0, (eh + em / 60) - (sh + sm / 60));
-}
-
-function tsPaid(e: TimeEntry): number {
-  if (e.kind === "break") return 0;
-  return tsHours(e);
-}
-
-function weekEntries(entries: TimeEntry[], techId: string, wk: string): TimeEntry[] {
-  const days = weekDates(wk);
-  return entries.filter(
-    (e) => e.techId === techId && days.includes(e.date)
-  );
-}
-
-function rollup(
-  entries: TimeEntry[],
-  techId: string,
-  wk: string
-): { paid: number; ot: number; approved: boolean } {
-  const es = weekEntries(entries, techId, wk);
-  const paid = es.reduce((s, e) => s + tsPaid(e), 0);
-  const ot = Math.max(0, paid - 40);
-  const approved = es.length > 0 && es.every((e) => e.status === "approved");
-  return { paid, ot, approved };
-}
-
-const TS_KINDS: Record<string, string> = {
-  job: "Job",
-  travel: "Travel",
-  break: "Break",
-  shop: "Shop",
-};
-
-/** Resolve the job-title label for an entry from the live jobs/leads (replaces
- * the sample's denormalized jobTitle field). "" when no job is attached. */
-function entryJobTitle(e: TimeEntry, jobs: Job[], leads: Lead[]): string {
-  if (e.kind !== "job" || e.jobId == null) return "";
-  const j = jobs.find((job) => job.id === e.jobId);
-  if (!j) return "";
-  const lead = leads.find((l) => l.id === j.leadId);
-  return lead?.name ? `${j.title} · ${lead.name}` : j.title;
 }
 
 function dateLabel(iso: string): string {
@@ -100,32 +54,66 @@ function shortDateLabel(iso: string): string {
   });
 }
 
-// ============================================================================
-// Entry row
-// ============================================================================
+// ---- time helpers -----------------------------------------------------------
 
-interface EntryRowProps {
-  entry: TimeEntry;
-  jobTitle: string;
+function tsHours(e: TimeEntryDTO): number {
+  if (!e.startTime || !e.endTime) return 0;
+  const [sh = 0, sm = 0] = e.startTime.split(":").map(Number);
+  const [eh = 0, em = 0] = e.endTime.split(":").map(Number);
+  return Math.max(0, eh + em / 60 - (sh + sm / 60));
 }
 
-function EntryRow({ entry: e, jobTitle }: EntryRowProps) {
+function tsPaid(e: TimeEntryDTO): number {
+  return e.kind === "break" ? 0 : tsHours(e);
+}
+
+// ---- week filter -----------------------------------------------------------
+
+function weekEntries(entries: TimeEntryDTO[], wk: string): TimeEntryDTO[] {
+  const days = new Set(weekDates(wk));
+  return entries.filter((e) => days.has(e.workDate));
+}
+
+function rollup(entries: TimeEntryDTO[], wk: string): { paid: number; ot: number; approved: boolean } {
+  const es = weekEntries(entries, wk);
+  const paid = es.reduce((s, e) => s + tsPaid(e), 0);
+  const ot = Math.max(0, paid - 40);
+  const approved = es.length > 0 && es.every((e) => e.status === "approved");
+  return { paid, ot, approved };
+}
+
+// ============================================================================
+// Sub-components
+// ============================================================================
+
+const TS_KIND_LABELS: Record<string, string> = {
+  job: "Job",
+  travel: "Travel",
+  break: "Break",
+  shop: "Shop",
+};
+
+interface EntryRowProps {
+  entry: TimeEntryDTO;
+}
+
+function EntryRow({ entry: e }: EntryRowProps) {
   const hrs = tsHours(e);
-  const isJob = e.kind === "job";
+  const kindLabel = TS_KIND_LABELS[e.kind] ?? e.kind;
   return (
     <div className="ts-e">
       <span
-        className={`ts-kind ${isJob ? "job" : ""}`}
+        className={`ts-kind ${e.kind === "job" ? "job" : ""}`}
         style={{ flex: "none", width: 56, textAlign: "center" }}
       >
-        {TS_KINDS[e.kind] ?? e.kind}
+        {kindLabel}
       </span>
       <span className="ts-elabel" style={{ flex: 1, minWidth: 0 }}>
-        {isJob && jobTitle ? jobTitle : TS_KINDS[e.kind] ?? e.kind}
+        {kindLabel}
         {e.note ? <span className="muted"> · {e.note}</span> : null}
       </span>
       <span className="ts-etime">
-        {e.start}–{e.end ?? "—"}
+        {e.startTime}–{e.endTime ?? "—"}
       </span>
       <span className="ts-ehrs" style={{ fontVariantNumeric: "tabular-nums" }}>
         {hrs.toFixed(2)} h
@@ -134,18 +122,12 @@ function EntryRow({ entry: e, jobTitle }: EntryRowProps) {
   );
 }
 
-// ============================================================================
-// Day block
-// ============================================================================
-
 interface DayBlockProps {
   date: string;
-  entries: TimeEntry[];
-  jobs: Job[];
-  leads: Lead[];
+  entries: TimeEntryDTO[];
 }
 
-function DayBlock({ date, entries, jobs, leads }: DayBlockProps) {
+function DayBlock({ date, entries }: DayBlockProps) {
   const dayPaid = entries.reduce((s, e) => s + tsPaid(e), 0);
   return (
     <div className="ts-day">
@@ -154,34 +136,26 @@ function DayBlock({ date, entries, jobs, leads }: DayBlockProps) {
         <span className="num">{dayPaid.toFixed(2)} h</span>
       </div>
       {entries.map((e) => (
-        <EntryRow key={e.id} entry={e} jobTitle={entryJobTitle(e, jobs, leads)} />
+        <EntryRow key={e.id} entry={e} />
       ))}
     </div>
   );
 }
 
-// ============================================================================
-// Entries block (mirrors tsEntriesBlock)
-// ============================================================================
-
-interface EntriesBlockProps {
-  entries: TimeEntry[];
-  techId: string;
+interface WeekEntriesProps {
+  entries: TimeEntryDTO[];
   wk: string;
-  jobs: Job[];
-  leads: Lead[];
 }
 
-function EntriesBlock({ entries, techId, wk, jobs, leads }: EntriesBlockProps) {
-  const es = weekEntries(entries, techId, wk);
+function WeekEntries({ entries, wk }: WeekEntriesProps) {
+  const es = weekEntries(entries, wk);
   if (!es.length) {
-    return <div className="empty-att">No entries this week.</div>;
+    return <div className="empty-att">No hours logged yet.</div>;
   }
 
-  const byDay: Record<string, TimeEntry[]> = {};
+  const byDay: Record<string, TimeEntryDTO[]> = {};
   es.forEach((e) => {
-    const arr = byDay[e.date] ?? [];
-    byDay[e.date] = [...arr, e];
+    byDay[e.workDate] = [...(byDay[e.workDate] ?? []), e];
   });
 
   const days = weekDates(wk).filter((d) => byDay[d]);
@@ -189,7 +163,7 @@ function EntriesBlock({ entries, techId, wk, jobs, leads }: EntriesBlockProps) {
   return (
     <>
       {days.map((d) => (
-        <DayBlock key={d} date={d} entries={byDay[d] ?? []} jobs={jobs} leads={leads} />
+        <DayBlock key={d} date={d} entries={byDay[d] ?? []} />
       ))}
     </>
   );
@@ -200,57 +174,40 @@ function EntriesBlock({ entries, techId, wk, jobs, leads }: EntriesBlockProps) {
 // ============================================================================
 
 export default function MyHoursPage() {
-  const techs = useAppStore((s) => s.techs);
-  const timeEntries = useAppStore((s) => s.timeEntries);
-  const jobs = useAppStore((s) => s.jobs);
-  const leads = useAppStore((s) => s.leads);
-  const addTimeEntry = useAppStore((s) => s.addTimeEntry);
+  // v1.timesheets.list — server auto-scopes to caller when role === "tech".
+  // Fetch a wide window (180 days back → today) so week-navigation works client-side.
+  const today = todayISO();
+  const fromDate = addDays(today, -84); // 12 weeks back
+  const toDate = addDays(today, 7);     // this week + 1 for safety
 
-  const { data: me } = api.v1.identity.me.useQuery();
+  const { data, isLoading } = api.v1.timesheets.list.useQuery(
+    { fromDate, toDate, limit: 500 },
+    { staleTime: 60_000 },
+  );
 
-  // Start empty; an effect resolves to the logged-in user once identity loads.
-  const [selected, setSelected] = useState<string>("");
-  useEffect(() => {
-    if (!me) return;
-    // Prefer the logged-in user if they are field crew, else fall back to first tech.
-    const selfId = me.userId;
-    const resolved = techs.find((t) => t.id === selfId)?.id ?? techs[0]?.id ?? "";
-    setSelected(resolved);
-  }, [me, techs]);
-
-  const [tsWeek, setTsWeek] = useState(() => weekStart(todayISO()));
-
-  const tc: Tech | undefined = techs.find((t) => t.id === selected) ?? techs[0];
-
-  if (!tc) {
-    return (
-      <>
-        <h1>My hours</h1>
-        <div className="empty-att">No crew yet.</div>
-      </>
-    );
-  }
-
-  // Non-null capture for closures
-  const activeTech: Tech = tc;
-
-  const r = rollup(timeEntries, activeTech.id, tsWeek);
-  const thisWeek = weekStart(todayISO());
-  const wkEnd = addDays(tsWeek, 6);
+  const [tsWeek, setTsWeek] = useState(() => weekStart(today));
 
   function navWeek(delta: number): void {
     setTsWeek((prev) => addDays(prev, delta * 7));
   }
 
   function goThisWeek(): void {
-    setTsWeek(thisWeek);
+    setTsWeek(weekStart(today));
   }
 
-  function addEntry(): void {
-    // Adds a plain draft entry for the tech on the first day of the shown week.
-    // deferred: live clock (running start/stop entry) — out of scope here.
-    addTimeEntry(activeTech.id, tsWeek);
+  if (isLoading) {
+    return (
+      <>
+        <h1>My hours</h1>
+        <div className="muted" style={{ marginTop: 16 }}>Loading…</div>
+      </>
+    );
   }
+
+  const entries = data?.items ?? [];
+  const thisWeek = weekStart(today);
+  const r = rollup(entries, tsWeek);
+  const wkEnd = addDays(tsWeek, 6);
 
   return (
     <>
@@ -290,16 +247,10 @@ export default function MyHoursPage() {
         </span>
       </div>
 
-      {/* Entries */}
-      <EntriesBlock
-        entries={timeEntries}
-        techId={activeTech.id}
-        wk={tsWeek}
-        jobs={jobs}
-        leads={leads}
-      />
+      {/* Entries for the selected week */}
+      <WeekEntries entries={entries} wk={tsWeek} />
 
-      {/* Approve / add */}
+      {/* Approval status */}
       {r.approved ? (
         <span
           className="pill"
@@ -313,13 +264,7 @@ export default function MyHoursPage() {
         >
           ✓ Approved — locked
         </span>
-      ) : (
-        <div style={{ marginTop: 8 }}>
-          <button className="btn sm" onClick={addEntry}>
-            + Add entry
-          </button>
-        </div>
-      )}
+      ) : null}
     </>
   );
 }
