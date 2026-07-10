@@ -56,6 +56,7 @@ export class DrizzleJobRepository implements JobRepository {
       cancelReason: p.cancelReason,
       totalCents: p.total,
       notes: p.notes,
+      svc: p.svc,
       updatedAt: p.updatedAt,
     };
   }
@@ -104,6 +105,24 @@ export class DrizzleJobRepository implements JobRepository {
       .insert(jobVisits)
       .values({ id: vp.id, orgId, jobId, createdAt: updatedAt, ...columns })
       .onConflictDoUpdate({ target: jobVisits.id, set: columns });
+  }
+
+  // Plain insert for a manually-created (non-estimate) job. Reuses save() so visits (if any)
+  // persist too; the client-authored id makes this idempotent under retry.
+  async insertManual(job: Job): Promise<void> {
+    await this.save(job);
+  }
+
+  // Soft-delete a job. Returns rows affected (0 = not found / already archived).
+  // WHERE includes org_id for tenant safety (belt-and-suspenders alongside RLS) and
+  // deleted_at IS NULL so a double-archive is a no-op rather than a timestamp clobber.
+  async archive(id: JobId, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(jobs)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(jobs.id, id), eq(jobs.orgId, this.orgId), isNull(jobs.deletedAt)))
+      .returning({ id: jobs.id });
+    return rows.length;
   }
 
   // Idempotent create keyed on the source estimate: ON CONFLICT DO NOTHING (does NOT abort the
