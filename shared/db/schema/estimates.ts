@@ -40,6 +40,11 @@ export const estimates = pgTable(
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     declinedAt: timestamp("declined_at", { withTimezone: true }),
     declineReason: text("decline_reason"),
+    // Unguessable URL-safe token for the customer-facing public quote page (no login required).
+    // Generated at draft time; null only for estimates created before the migration (backfilled).
+    publicToken: text("public_token"),
+    // Stamped the first time a customer opens the public quote link. Idempotent; never updated.
+    firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -61,6 +66,12 @@ export const estimates = pgTable(
     uniqueIndex("estimates_org_num_uidx")
       .on(t.orgId, t.num)
       .where(sql`${t.deletedAt} is null`),
+    // Partial unique index: public_token must be globally unique when present. NULL rows (pre-migration
+    // estimates without a token) are excluded — PostgreSQL nulls are always distinct in unique indexes,
+    // but the explicit WHERE makes the intent clear and keeps the index compact.
+    uniqueIndex("estimates_public_token_uidx")
+      .on(t.publicToken)
+      .where(sql`${t.publicToken} is not null`),
     check("estimates_status_check", sql`${t.status} in ('draft', 'sent', 'accepted', 'declined')`),
     check("estimates_disc_bps_check", sql`${t.discBps} between 0 and 10000`),
     check("estimates_tax_bps_check", sql`${t.taxBps} >= 0`),

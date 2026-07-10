@@ -1,8 +1,14 @@
+import { randomBytes } from "node:crypto";
 import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
 import { asEstimateId, asEstimateLineId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
+
+// Generate an unguessable, URL-safe token for the public quote page.
+// 32 random bytes = 256 bits of entropy, hex-encoded = 64 characters.
+// This is generated at draft time and never changes.
+const generatePublicToken = (): string => randomBytes(32).toString("hex");
 
 export interface EstimateLineInput {
   readonly description: string;
@@ -79,6 +85,7 @@ export class DraftEstimateUseCase {
       acceptedAt: null,
       declinedAt: null,
       declineReason: null,
+      publicToken: generatePublicToken(),
       lines: built,
       createdAt: now,
       updatedAt: now,

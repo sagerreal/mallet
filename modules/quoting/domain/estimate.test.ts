@@ -46,6 +46,7 @@ const estimate = (overrides: Partial<EstimateProps> = {}): Estimate => {
     acceptedAt: null,
     declinedAt: null,
     declineReason: null,
+    publicToken: null,
     lines: [line()],
     createdAt: new Date("2026-06-01T00:00:00Z"),
     updatedAt: new Date("2026-06-01T00:00:00Z"),

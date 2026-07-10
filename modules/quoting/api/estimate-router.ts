@@ -45,6 +45,10 @@ const estimateDTO = z.object({
   acceptedAt: z.string().nullable(),
   declinedAt: z.string().nullable(),
   declineReason: z.string().nullable(),
+  // The unguessable public_token generated at draft time. Exposed here so the send screen
+  // can construct the customer-facing link /q/<token>. Never exposed to end-customers via
+  // this authed endpoint — they receive only the link, not the ability to enumerate tokens.
+  publicToken: z.string().nullable(),
   createdAt: z.string(),
 });
 
@@ -138,6 +142,7 @@ const toEstimateDTO = (estimate: Estimate) => {
     acceptedAt: p.acceptedAt?.toISOString() ?? null,
     declinedAt: p.declinedAt?.toISOString() ?? null,
     declineReason: p.declineReason,
+    publicToken: p.publicToken ?? null,
     createdAt: p.createdAt.toISOString(),
   };
 };

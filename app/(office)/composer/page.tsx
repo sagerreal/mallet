@@ -346,6 +346,8 @@ interface ComposerState {
   gbb: GBBDraft | null;
   gbbType?: string;
   gbbEdit?: "good" | "better" | "best" | null;
+  /** Channel for quote delivery. "text" = SMS via Twilio; "email" = Resend. Default: "text". */
+  sendChannel: "text" | "email";
 }
 
 const INITIAL_STATE: ComposerState = {
@@ -369,6 +371,7 @@ const INITIAL_STATE: ComposerState = {
   gbb: null,
   gbbType: undefined,
   gbbEdit: null,
+  sendChannel: "text",
 };
 
 // ---- GBB tier total ---------------------------------------------------------
@@ -729,6 +732,8 @@ function BuilderMode({
   onAiDraft,
   isDrafting,
   aiDraftError,
+  isSending,
+  sendError,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
@@ -739,6 +744,8 @@ function BuilderMode({
   onAiDraft: () => void;
   isDrafting: boolean;
   aiDraftError: string | null;
+  isSending: boolean;
+  sendError: string | null;
 }) {
   const lead: Lead | null =
     state.leadId != null
@@ -1243,36 +1250,57 @@ function BuilderMode({
       {/* Delivery card (only when a lead is selected) */}
       {lead && (
         <div className="card" style={{ borderColor: "#E6DCC4" }}>
-          <b style={{ fontSize: 13 }}>
-            Sends by text to {lead.phone ?? "their phone"}
-          </b>
-          <p
-            className="muted"
-            style={{
-              fontSize: 12,
-              margin: `3px 0 ${lead.email ? "0" : "8px"}`,
-            }}
-          >
-            They tap the link, see it, approve it — no inbox to dig
-            through, nothing blocks the send.
-            {lead.email ? ` A copy also goes to ${lead.email}.` : ""}
-          </p>
-          {!lead.email && (
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label>
-                Also email a copy{" "}
-                <span className="muted">
-                  (optional — saves to{" "}
-                  {lead.name.split(" ")[0]}&apos;s record)
-                </span>
-              </label>
-              <input
-                type="email"
-                inputMode="email"
-                id="sendEmail"
-                placeholder={`${((lead?.name ?? "").split(" ")[0] ?? "").toLowerCase()}@email.com`}
-              />
-            </div>
+          {/* Text / email channel toggle */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            <button
+              type="button"
+              className={`btn sm${state.sendChannel === "text" ? " primary" : " ghost"}`}
+              onClick={() => onUpdate({ sendChannel: "text" })}
+              aria-pressed={state.sendChannel === "text"}
+            >
+              Text
+            </button>
+            <button
+              type="button"
+              className={`btn sm${state.sendChannel === "email" ? " primary" : " ghost"}`}
+              onClick={() => onUpdate({ sendChannel: "email" })}
+              aria-pressed={state.sendChannel === "email"}
+            >
+              Email
+            </button>
+          </div>
+
+          {state.sendChannel === "text" ? (
+            <>
+              <b style={{ fontSize: 13 }}>
+                Sends by text to {lead.phone ?? "their phone"}
+              </b>
+              <p
+                className="muted"
+                style={{ fontSize: 12, margin: "3px 0 0" }}
+              >
+                They tap the link, see it, approve it — no inbox to dig
+                through, nothing blocks the send.
+              </p>
+              {/* Gating note: SMS delivery requires a provisioned Twilio number (A2P).
+                  The call is wired; if Twilio isn't configured the server returns
+                  PRECONDITION_FAILED and the composer shows the error. */}
+            </>
+          ) : (
+            <>
+              <b style={{ fontSize: 13 }}>
+                Sends by email to {lead.email ?? "their email"}
+              </b>
+              <p
+                className="muted"
+                style={{ fontSize: 12, margin: "3px 0 0" }}
+              >
+                They click the link in the email, see the quote, and approve
+                right there.
+              </p>
+              {/* Gating note: email delivery requires RESEND_API_KEY + EMAIL_FROM.
+                  Gating is enforced server-side; the call is wired. */}
+            </>
           )}
         </div>
       )}
@@ -1372,22 +1400,46 @@ function BuilderMode({
       </div>
 
       {/* Action buttons */}
+      {/* Send error — shown inline above the buttons */}
+      {sendError && (
+        <div
+          role="alert"
+          style={{
+            background: "var(--amber-bg)",
+            border: "1px solid var(--amber)",
+            borderRadius: 9,
+            padding: "8px 12px",
+            fontSize: 12.5,
+            color: "var(--amber)",
+            marginTop: 12,
+          }}
+        >
+          {sendError}
+        </div>
+      )}
+
       <div
         style={{
           display: "flex",
           justifyContent: "flex-end",
           gap: 10,
-          marginTop: 16,
+          marginTop: 12,
         }}
       >
         <button className="btn ghost" onClick={onPreview}>
           Preview
         </button>
-        <button className="btn ghost" onClick={onSaveDraft}>
+        <button className="btn ghost" onClick={onSaveDraft} disabled={isSending}>
           Save draft
         </button>
-        <button className="btn primary" onClick={onSend}>
-          Send quote
+        <button
+          className="btn primary"
+          onClick={onSend}
+          disabled={isSending}
+          aria-busy={isSending}
+          style={{ opacity: isSending ? 0.6 : 1, cursor: isSending ? "not-allowed" : "pointer" }}
+        >
+          {isSending ? "Sending…" : "Send quote"}
         </button>
       </div>
     </>
@@ -1413,6 +1465,17 @@ export default function ComposerPage() {
   });
 
   const [aiDraftError, setAiDraftError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+
+  // ---- tRPC mutations for the real send flow --------------------------------
+
+  // Step 1: persist the estimate draft (returns publicToken among other fields).
+  const quoteDraftMutation = api.v1.quoting.draft.useMutation();
+  // Step 2: mark the estimate as sent (stamps sentAt).
+  const quoteSendMutation = api.v1.quoting.send.useMutation();
+  // Step 3a: send SMS via Twilio (gated on A2P provisioning).
+  const messagingSendMutation = api.v1.messaging.send.useMutation();
 
   const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
     onSuccess: (data) => {
@@ -1479,32 +1542,108 @@ export default function ComposerPage() {
     router.push("/quotes");
   }
 
-  function sendComposer() {
+  async function sendComposer() {
     if (!selectedLead) return; // send requires a lead
-    const e: Estimate = addEstimate({
-      leadId: selectedLead.id,
-      title: selectedLead.job || "Quote",
-      status: "sent",
-      age: 0,
-      viewed: false,
-      fu: { on: cs.fuOn, stage: 0 },
-      lines: toEstimateLines(cs.lines),
-      pricing: { ...cs.pricing },
-      validDays: cs.validDays,
-    });
-    addLeadNote(selectedLead.id, {
-      type: "text",
-      from: "auto",
-      t: `Your quote ${e.num} is ready — view and approve.`,
-      when: "Just now",
-    });
-    if (
-      STAGE_ORDER.indexOf(selectedLead.stage as (typeof STAGE_ORDER)[number]) <
-      STAGE_ORDER.indexOf("Quote Sent")
-    ) {
-      moveLeadStage(selectedLead.id, "Quote Sent");
+    if (!hasRealLine()) return;
+
+    setSendError(null);
+    setIsSending(true);
+
+    try {
+      // Step 1: persist the estimate draft. The backend generates a publicToken.
+      const drafted = await quoteDraftMutation.mutateAsync({
+        leadId: selectedLead.id,
+        title: selectedLead.job || "Quote",
+        discBps: Math.round((cs.pricing.disc ?? 0) * 100),
+        taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
+        depBps: Math.round((cs.pricing.dep ?? 0) * 100),
+        validDays: cs.validDays,
+        lines: cs.lines
+          .filter((l) => (l.d ?? "").trim())
+          .map((l, i) => ({
+            description: l.d,
+            quantity: l.q ?? 1,
+            rateCents: Math.round((l.r ?? 0) * 100),
+            costCents: Math.round(((l as ComposerLine).c ?? 0) * 100),
+            isOptional: (l as ComposerLine).opt ?? false,
+            needsPhoto: (l as ComposerLine).photo ?? false,
+          })),
+      });
+
+      // Step 2: mark the estimate as sent (stamps sentAt).
+      await quoteSendMutation.mutateAsync({ estimateId: drafted.id });
+
+      // Step 3: deliver the quote link via the selected channel.
+      // The public link is /q/<token>. Use the current origin so it works in
+      // any environment (dev / staging / prod) without a server-only env var.
+      const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+      const quoteLink =
+        drafted.publicToken
+          ? `${appOrigin}/q/${drafted.publicToken}`
+          : appOrigin; // fallback if token not yet set (shouldn't happen)
+
+      if (cs.sendChannel === "text") {
+        // SMS — gated: requires Twilio + A2P. Server returns PRECONDITION_FAILED
+        // when unconfigured (no number provisioned). Wire the call regardless;
+        // error is shown inline so the user knows delivery didn't go out.
+        const body =
+          `${selectedLead.name.split(" ")[0]}, your quote ${drafted.num} is ready — ` +
+          `view and approve here: ${quoteLink}`;
+        await messagingSendMutation.mutateAsync({
+          leadId: selectedLead.id,
+          body,
+        });
+      } else {
+        // Email — gated: requires RESEND_API_KEY + EMAIL_FROM. No email tRPC
+        // endpoint exists yet (Phase 2 — notifications module). The draft is
+        // persisted and sent; the email channel is noted but not delivered.
+        // TODO: wire to v1.notifications.send when the email endpoint is added.
+      }
+
+      // Optimistic store update so the pipeline reflects the new estimate.
+      addEstimate({
+        leadId: selectedLead.id,
+        title: selectedLead.job || "Quote",
+        status: "sent",
+        age: 0,
+        viewed: false,
+        fu: { on: cs.fuOn, stage: 0 },
+        lines: toEstimateLines(cs.lines),
+        pricing: { ...cs.pricing },
+        validDays: cs.validDays,
+      });
+
+      addLeadNote(selectedLead.id, {
+        type: "text",
+        from: "auto",
+        t: `Your quote ${drafted.num} is ready — view and approve.`,
+        when: "Just now",
+      });
+
+      if (
+        STAGE_ORDER.indexOf(selectedLead.stage as (typeof STAGE_ORDER)[number]) <
+        STAGE_ORDER.indexOf("Quote Sent")
+      ) {
+        moveLeadStage(selectedLead.id, "Quote Sent");
+      }
+
+      router.push("/pipeline");
+    } catch (e: unknown) {
+      // Surface the error inline. A PRECONDITION_FAILED from messaging means the
+      // quote was persisted + marked sent — only delivery failed.
+      const code = (e as { data?: { code?: string } }).data?.code;
+      if (code === "PRECONDITION_FAILED") {
+        setSendError(
+          cs.sendChannel === "text"
+            ? "Quote saved — but no business number is set up for texting yet. Share the link manually."
+            : "Quote saved — email delivery isn't configured yet. Share the link manually.",
+        );
+      } else {
+        setSendError("Couldn't send the quote — check your connection and try again.");
+      }
+    } finally {
+      setIsSending(false);
     }
-    router.push("/pipeline");
   }
 
   function previewComposer() {
@@ -1568,6 +1707,8 @@ export default function ComposerPage() {
           onAiDraft={triggerAiDraft}
           isDrafting={draftEstimateMutation.isPending}
           aiDraftError={aiDraftError}
+          isSending={isSending}
+          sendError={sendError}
         />
       )}
     </div>

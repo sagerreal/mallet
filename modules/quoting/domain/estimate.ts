@@ -80,6 +80,9 @@ export interface EstimateProps {
   readonly acceptedAt: Date | null;
   readonly declinedAt: Date | null;
   readonly declineReason: string | null;
+  // Unguessable URL-safe token for the public customer quote page (no login required).
+  // Set at draft-time; never changes. Null only for estimates created before the backfill migration.
+  readonly publicToken: string | null;
   readonly lines: readonly EstimateLine[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
