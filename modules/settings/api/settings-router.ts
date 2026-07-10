@@ -10,7 +10,6 @@ import { CreateLaborRateUseCase, UpdateLaborRateUseCase, RemoveLaborRateUseCase 
 import { CreateTermUseCase, UpdateTermUseCase, RemoveTermUseCase } from "../app/terms";
 import { CreateSourceUseCase, RemoveSourceUseCase } from "../app/sources";
 import {
-  settingsSnapshotDTO,
   settingsDTO,
   orgSettingsDTO,
   pricebookItemDTO,
@@ -18,7 +17,6 @@ import {
   jobTermDTO,
   leadSourceDTO,
   bookingCfgDTO,
-  toSnapshotDTO,
   toSettingsDTO,
   toOrgSettingsDTO,
   toPricebookDTO,
