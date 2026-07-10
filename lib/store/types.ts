@@ -188,7 +188,7 @@ export interface Checklist {
 export interface Job {
   id: string;
   leadId: string;
-  svc: string;
+  svc: string | null;
   origin: string;
   title: string;
   addr: string;

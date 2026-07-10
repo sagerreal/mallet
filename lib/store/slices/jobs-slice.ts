@@ -148,7 +148,7 @@ export interface JobsSlice {
   setJobs: (jobs: Job[]) => void;
   addJob: (draft: Omit<Job, "id">) => Job;
   updateJob: (id: string, patch: Partial<Job>) => void;
-  setJobSvc: (id: string, svc: string) => void;
+  setJobSvc: (id: string, svc: string | null) => void;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
@@ -262,7 +262,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         set((s) => ({
           jobs: s.jobs.map((j) =>
             j.id === id
-              ? { ...j, title: dto.title ?? j.title, svc: dto.svc ?? j.svc, notes: dto.notes ?? j.notes }
+              ? { ...j, title: dto.title ?? j.title, svc: dto.svc !== undefined ? dto.svc : j.svc, notes: dto.notes ?? j.notes }
               : j,
           ),
         }));
