@@ -46,6 +46,7 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     acceptedAt: row.acceptedAt,
     declinedAt: row.declinedAt,
     declineReason: row.declineReason,
+    publicToken: row.publicToken,
     lines,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

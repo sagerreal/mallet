@@ -10,3 +10,6 @@ export { SendEstimateUseCase } from "./app/send-estimate";
 export { AcceptEstimateUseCase } from "./app/accept-estimate";
 export { DeclineEstimateUseCase } from "./app/decline-estimate";
 export { ListEstimatesUseCase } from "./app/list-estimates";
+// Public (unauthenticated) quote functions — used by the customer-facing quote page routes.
+export { getPublicQuote, acceptPublicQuote, declinePublicQuote } from "./app/public-quote";
+export type { PublicQuoteView } from "./app/public-quote";

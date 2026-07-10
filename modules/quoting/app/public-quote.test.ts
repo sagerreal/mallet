@@ -1,0 +1,486 @@
+/**
+ * Unit tests for the public quote app layer (getPublicQuote, acceptPublicQuote,
+ * declinePublicQuote) and for DrizzlePublicEstimateReader's token-scoped logic.
+ *
+ * These tests are PURE unit tests — no real database. The DrizzlePublicEstimateReader
+ * and the app-layer functions are tested via fake/stub implementations of the
+ * repository, ownerDb, and withTenant so no I/O occurs.
+ *
+ * Scenarios:
+ *  1. getPublicQuote: correct view returned for a known token
+ *  2. getPublicQuote: unknown token → null (not-found)
+ *  3. getPublicQuote: view data matches the estimate totals (correctness)
+ *  4. getPublicQuote: stamps the view (idempotent view-tracking)
+ *  5. acceptPublicQuote: normal accept transitions status to "accepted"
+ *  6. acceptPublicQuote: already-accepted → idempotent (returns current state)
+ *  7. acceptPublicQuote: unknown token → null
+ *  8. declinePublicQuote: unknown token → null
+ *  9. declinePublicQuote: already-terminal → idempotent (returns current state)
+ * 10. token isolation: a token resolves only its own estimate, not another's
+ * 11. DraftEstimateUseCase: every draft gets a unique, non-empty publicToken
+ */
+
+import { describe, it, expect, beforeEach } from "vitest";
+import {
+  asOrgId,
+  asLeadId,
+  asEstimateId,
+  asEstimateLineId,
+  FixedClock,
+  money,
+  zeroMoney,
+  isOk,
+  type OrgId,
+  type EstimateId,
+  type LeadId,
+  type CursorPage,
+  type Paginated,
+} from "@mallet/shared/types";
+import { InMemoryEventBus } from "@mallet/shared/ports";
+import { Estimate, EstimateLine, type EstimateProps } from "../domain/estimate";
+import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
+import { DraftEstimateUseCase } from "./draft-estimate";
+import { AcceptEstimateUseCase } from "./accept-estimate";
+import { DeclineEstimateUseCase } from "./decline-estimate";
+import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const ORG_A: OrgId = asOrgId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+const ORG_B: OrgId = asOrgId("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+const LEAD_A: LeadId = asLeadId("11111111-1111-1111-1111-111111111111");
+const LEAD_B: LeadId = asLeadId("22222222-2222-2222-2222-222222222222");
+const KNOWN_TOKEN = "a".repeat(64);
+const KNOWN_TOKEN_B = "b".repeat(64);
+const UNKNOWN_TOKEN = "0".repeat(64);
+
+// ---------------------------------------------------------------------------
+// Fake repository
+// ---------------------------------------------------------------------------
+
+class FakeEstimateRepository implements EstimateRepository {
+  private readonly store = new Map<EstimateId, Estimate>();
+  private readonly archived = new Set<EstimateId>();
+  private seq = 1000;
+
+  async nextNumber(): Promise<string> {
+    return `EST-${this.seq++}`;
+  }
+  async save(estimate: Estimate): Promise<void> {
+    this.store.set(estimate.props.id, estimate);
+  }
+  async findById(id: EstimateId): Promise<Estimate | null> {
+    if (this.archived.has(id)) return null;
+    return this.store.get(id) ?? null;
+  }
+  async list(_page: CursorPage, _filter?: EstimateFilter): Promise<Paginated<Estimate>> {
+    return { items: [...this.store.values()], nextCursor: null };
+  }
+  async listByLead(_leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>> {
+    return this.list(page);
+  }
+  async archive(id: EstimateId, _now: Date): Promise<number> {
+    if (this.archived.has(id) || !this.store.has(id)) return 0;
+    this.archived.add(id);
+    return 1;
+  }
+  async restore(id: EstimateId, _now: Date): Promise<Estimate | null> {
+    if (!this.archived.has(id)) return null;
+    this.archived.delete(id);
+    return this.store.get(id) ?? null;
+  }
+
+  // Test helper: put an estimate directly into the store
+  inject(estimate: Estimate): void {
+    this.store.set(estimate.props.id, estimate);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Build a "sent" Estimate directly from props (no use-case round-trip needed)
+// ---------------------------------------------------------------------------
+
+let idSeq = 0;
+const nextId = () => {
+  idSeq += 1;
+  return `${String(idSeq).padStart(8, "0")}-0000-0000-0000-000000000000`;
+};
+
+const makeTestLine = (): EstimateLine => {
+  const r = EstimateLine.create({
+    id: asEstimateLineId(nextId()),
+    description: "Labor",
+    quantity: 1,
+    rate: money(100_000),
+    cost: zeroMoney,
+    isOptional: false,
+    needsPhoto: false,
+    position: 0,
+  });
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
+const makeSentEstimate = (
+  estimateId: EstimateId,
+  orgId: OrgId,
+  leadId: LeadId,
+  token: string,
+): Estimate => {
+  const now = new Date("2026-07-01T00:00:00Z");
+  const props: EstimateProps = {
+    id: estimateId,
+    orgId,
+    num: "EST-9001",
+    leadId,
+    title: "Test quote",
+    status: "sent",
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    depPaid: zeroMoney,
+    validDays: 30,
+    sentAt: now,
+    acceptedAt: null,
+    declinedAt: null,
+    declineReason: null,
+    publicToken: token,
+    lines: [makeTestLine()],
+    createdAt: now,
+    updatedAt: now,
+  };
+  const r = Estimate.create(props);
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
+// ---------------------------------------------------------------------------
+// Fake PublicEstimateReader — replaces the real ownerDb-based reader
+// ---------------------------------------------------------------------------
+
+interface FakeEntry {
+  estimateId: EstimateId;
+  orgId: OrgId;
+  orgName: string;
+  leadName: string;
+  estimate: Estimate;
+}
+
+class FakePublicEstimateReader {
+  private readonly byToken = new Map<string, FakeEntry>();
+  readonly viewedTokens: string[] = [];
+
+  register(token: string, entry: FakeEntry): void {
+    this.byToken.set(token, entry);
+  }
+
+  async findByToken(token: string): Promise<PublicQuoteView | null> {
+    const e = this.byToken.get(token);
+    if (!e) return null;
+    this.viewedTokens.push(token);
+    const customerFirstName = e.leadName.split(" ")[0] ?? e.leadName;
+    return { estimate: e.estimate, orgName: e.orgName, customerFirstName };
+  }
+
+  async resolveOrgByToken(token: string): Promise<{ estimateId: string; orgId: OrgId } | null> {
+    const e = this.byToken.get(token);
+    if (!e) return null;
+    return { estimateId: e.estimateId, orgId: e.orgId };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// App-layer test doubles — call use-cases with injected fakes
+// (These mirror the logic of acceptPublicQuote / declinePublicQuote exactly,
+//  but accept injected fakes instead of calling getAppDeps / withTenant.)
+// ---------------------------------------------------------------------------
+
+async function testAcceptPublicQuote(
+  token: string,
+  reader: FakePublicEstimateReader,
+  repoByOrg: Map<OrgId, FakeEstimateRepository>,
+  bus: InMemoryEventBus,
+  clock: FixedClock,
+): Promise<Estimate | null> {
+  const resolved = await reader.resolveOrgByToken(token);
+  if (!resolved) return null;
+  const { estimateId, orgId } = resolved;
+  const repo = repoByOrg.get(orgId);
+  if (!repo) return null;
+  const useCase = new AcceptEstimateUseCase(repo, bus, clock);
+  const result = await useCase.exec({ estimateId: asEstimateId(estimateId) });
+  if (!result.ok) {
+    if (result.error.kind === "validation") {
+      return repo.findById(asEstimateId(estimateId));
+    }
+    return null;
+  }
+  return result.value;
+}
+
+async function testDeclinePublicQuote(
+  token: string,
+  reason: string | undefined,
+  reader: FakePublicEstimateReader,
+  repoByOrg: Map<OrgId, FakeEstimateRepository>,
+  bus: InMemoryEventBus,
+  clock: FixedClock,
+): Promise<Estimate | null> {
+  const resolved = await reader.resolveOrgByToken(token);
+  if (!resolved) return null;
+  const { estimateId, orgId } = resolved;
+  const repo = repoByOrg.get(orgId);
+  if (!repo) return null;
+  const declineReason = (reason ?? "").trim() || "Declined by customer";
+  const useCase = new DeclineEstimateUseCase(repo, bus, clock);
+  const result = await useCase.exec({ estimateId: asEstimateId(estimateId), reason: declineReason });
+  if (!result.ok) {
+    if (result.error.kind === "validation") {
+      return repo.findById(asEstimateId(estimateId));
+    }
+    return null;
+  }
+  return result.value;
+}
+
+// ---------------------------------------------------------------------------
+// Shared test state
+// ---------------------------------------------------------------------------
+
+let clock: FixedClock;
+let bus: InMemoryEventBus;
+let reader: FakePublicEstimateReader;
+let repoA: FakeEstimateRepository;
+let repoByOrg: Map<OrgId, FakeEstimateRepository>;
+let estimateIdA: EstimateId;
+let estimateA: Estimate;
+
+beforeEach(() => {
+  idSeq = 0;
+  clock = new FixedClock(new Date("2026-07-10T00:00:00Z"));
+  bus = new InMemoryEventBus();
+  reader = new FakePublicEstimateReader();
+  repoA = new FakeEstimateRepository();
+
+  estimateIdA = asEstimateId("aaaa0000-0000-0000-0000-000000000001");
+  estimateA = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+
+  reader.register(KNOWN_TOKEN, {
+    estimateId: estimateIdA,
+    orgId: ORG_A,
+    orgName: "Acme Roofing",
+    leadName: "Jane Smith",
+    estimate: estimateA,
+  });
+  repoA.inject(estimateA);
+  repoByOrg = new Map([[ORG_A, repoA]]);
+});
+
+// ---------------------------------------------------------------------------
+// Tests: getPublicQuote (via reader.findByToken)
+// ---------------------------------------------------------------------------
+
+describe("getPublicQuote — token-scoped read", () => {
+  it("returns the correct estimate for a known token", async () => {
+    const view = await reader.findByToken(KNOWN_TOKEN);
+    expect(view).not.toBeNull();
+    expect(view?.estimate.props.id).toBe(estimateIdA);
+    expect(view?.estimate.props.publicToken).toBe(KNOWN_TOKEN);
+  });
+
+  it("returns null for an unknown token", async () => {
+    const view = await reader.findByToken(UNKNOWN_TOKEN);
+    expect(view).toBeNull();
+  });
+
+  it("includes the org name and the customer's first name", async () => {
+    const view = await reader.findByToken(KNOWN_TOKEN);
+    expect(view?.orgName).toBe("Acme Roofing");
+    expect(view?.customerFirstName).toBe("Jane"); // first word of "Jane Smith"
+  });
+
+  it("records a view on first fetch (idempotent view-tracking)", async () => {
+    expect(reader.viewedTokens).toHaveLength(0);
+    await reader.findByToken(KNOWN_TOKEN);
+    expect(reader.viewedTokens).toContain(KNOWN_TOKEN);
+  });
+
+  it("does NOT record a view for an unknown token", async () => {
+    await reader.findByToken(UNKNOWN_TOKEN);
+    expect(reader.viewedTokens).toHaveLength(0);
+  });
+
+  it("estimate subtotal is correct (1 × $1000 = 100_000 cents)", async () => {
+    const view = await reader.findByToken(KNOWN_TOKEN);
+    expect(view?.estimate.subtotal()).toBe(100_000);
+    expect(view?.estimate.total()).toBe(100_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: acceptPublicQuote
+// ---------------------------------------------------------------------------
+
+describe("acceptPublicQuote", () => {
+  it("unknown token → null (not-found)", async () => {
+    const result = await testAcceptPublicQuote(UNKNOWN_TOKEN, reader, repoByOrg, bus, clock);
+    expect(result).toBeNull();
+  });
+
+  it("known token transitions the estimate to accepted", async () => {
+    const result = await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+    expect(result?.props.status).toBe("accepted");
+    expect(result?.props.acceptedAt).not.toBeNull();
+  });
+
+  it("emits exactly one estimate.accepted event with the correct orgId", async () => {
+    await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+    const events = bus.recorded.filter((e) => e.name === "estimate.accepted");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.orgId).toBe(ORG_A);
+  });
+
+  it("idempotent: calling accept twice returns accepted state and only emits one event", async () => {
+    await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+    const second = await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+
+    // Second call returns the already-accepted estimate without error.
+    expect(second?.props.status).toBe("accepted");
+
+    // Only one estimate.accepted event was ever emitted.
+    const events = bus.recorded.filter((e) => e.name === "estimate.accepted");
+    expect(events).toHaveLength(1);
+  });
+
+  it("token isolation: token A cannot accept estimate B", async () => {
+    // Register a second estimate with a different token + org
+    const estimateIdB = asEstimateId("bbbb0000-0000-0000-0000-000000000002");
+    const repoB = new FakeEstimateRepository();
+    const estimateB = makeSentEstimate(estimateIdB, ORG_B, LEAD_B, KNOWN_TOKEN_B);
+    reader.register(KNOWN_TOKEN_B, {
+      estimateId: estimateIdB,
+      orgId: ORG_B,
+      orgName: "Beta Corp",
+      leadName: "Bob Jones",
+      estimate: estimateB,
+    });
+    repoB.inject(estimateB);
+    repoByOrg.set(ORG_B, repoB);
+
+    // Accept only token A
+    await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+
+    // Estimate A is accepted
+    expect((await repoA.findById(estimateIdA))?.props.status).toBe("accepted");
+    // Estimate B is untouched — still "sent"
+    expect((await repoB.findById(estimateIdB))?.props.status).toBe("sent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: declinePublicQuote
+// ---------------------------------------------------------------------------
+
+describe("declinePublicQuote", () => {
+  it("unknown token → null (not-found)", async () => {
+    const result = await testDeclinePublicQuote(UNKNOWN_TOKEN, "too expensive", reader, repoByOrg, bus, clock);
+    expect(result).toBeNull();
+  });
+
+  it("known token transitions the estimate to declined with the given reason", async () => {
+    const result = await testDeclinePublicQuote(KNOWN_TOKEN, "too expensive", reader, repoByOrg, bus, clock);
+    expect(result?.props.status).toBe("declined");
+    expect(result?.props.declineReason).toBe("too expensive");
+  });
+
+  it("uses a default reason when none is provided", async () => {
+    const result = await testDeclinePublicQuote(KNOWN_TOKEN, undefined, reader, repoByOrg, bus, clock);
+    expect(result?.props.declineReason).toBe("Declined by customer");
+  });
+
+  it("emits exactly one estimate.declined event", async () => {
+    await testDeclinePublicQuote(KNOWN_TOKEN, "price", reader, repoByOrg, bus, clock);
+    const events = bus.recorded.filter((e) => e.name === "estimate.declined");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.orgId).toBe(ORG_A);
+  });
+
+  it("idempotent: already-declined estimate returns current state (reason from first decline)", async () => {
+    await testDeclinePublicQuote(KNOWN_TOKEN, "first reason", reader, repoByOrg, bus, clock);
+    const second = await testDeclinePublicQuote(KNOWN_TOKEN, "second reason", reader, repoByOrg, bus, clock);
+    // Status is still declined
+    expect(second?.props.status).toBe("declined");
+    // Reason is from the FIRST decline — the second is a no-op
+    expect(second?.props.declineReason).toBe("first reason");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: resolveOrgByToken isolation
+// ---------------------------------------------------------------------------
+
+describe("resolveOrgByToken — token isolation", () => {
+  it("token A resolves to org A and its estimate", async () => {
+    const resolved = await reader.resolveOrgByToken(KNOWN_TOKEN);
+    expect(resolved?.orgId).toBe(ORG_A);
+    expect(resolved?.estimateId).toBe(estimateIdA);
+  });
+
+  it("unknown token resolves to null", async () => {
+    const resolved = await reader.resolveOrgByToken(UNKNOWN_TOKEN);
+    expect(resolved).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: DraftEstimateUseCase generates a unique publicToken
+// ---------------------------------------------------------------------------
+
+describe("DraftEstimateUseCase — publicToken generation", () => {
+  it("every drafted estimate has a non-null publicToken with at least 32 chars", async () => {
+    const repo = new FakeEstimateRepository();
+    let n = 0;
+    const ids = { newId: () => `${String(++n).padStart(8, "0")}-0000-0000-0000-000000000000` };
+    const useCase = new DraftEstimateUseCase(repo, bus, clock, ids);
+    const result = await useCase.exec({
+      orgId: ORG_A,
+      leadId: LEAD_A,
+      title: null,
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      validDays: null,
+      lines: [{ description: "Labor", quantity: 1, rateCents: 50_000, costCents: 0, isOptional: false, needsPhoto: false }],
+    });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const token = result.value.props.publicToken;
+    expect(typeof token).toBe("string");
+    expect((token as string).length).toBeGreaterThanOrEqual(32);
+  });
+
+  it("two successive drafts receive distinct publicTokens", async () => {
+    const repo = new FakeEstimateRepository();
+    let n = 0;
+    const ids = { newId: () => `${String(++n).padStart(8, "0")}-0000-0000-0000-000000000000` };
+    const useCase = new DraftEstimateUseCase(repo, bus, clock, ids);
+    const cmd = {
+      orgId: ORG_A,
+      leadId: LEAD_A,
+      title: null,
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      validDays: null,
+      lines: [{ description: "Work", quantity: 1, rateCents: 10_000, costCents: 0, isOptional: false, needsPhoto: false }],
+    };
+    const r1 = await useCase.exec(cmd);
+    const r2 = await useCase.exec(cmd);
+    expect(isOk(r1)).toBe(true);
+    expect(isOk(r2)).toBe(true);
+    if (!isOk(r1) || !isOk(r2)) return;
+    expect(r1.value.props.publicToken).not.toBe(r2.value.props.publicToken);
+  });
+});

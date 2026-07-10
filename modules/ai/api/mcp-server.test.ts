@@ -11,6 +11,10 @@ vi.mock("@mallet/shared/db/tx", () => ({ withTenant: vi.fn() }));
 // so this stays hermetic. The bus is only constructed inside the withTenant callback, which the mock
 // above never invokes, so the stub is never actually used.
 vi.mock("@mallet/shared/outbox", () => ({ OutboxEventBus: class {} }));
+// The quoting barrel now re-exports the public-quote reader, whose module pulls the owner (BYPASSRLS)
+// db client — its init calls loadConfig() (secretful). Stub it so this stays hermetic; withTenant
+// (mocked above) is the only DB seam the tool path actually touches.
+vi.mock("@mallet/shared/db/owner-client", () => ({ ownerDb: {}, closeOwnerDb: async () => {} }));
 
 import { withTenant } from "@mallet/shared/db/tx";
 import { callToolForPrincipal } from "./mcp-server";
