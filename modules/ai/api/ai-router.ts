@@ -11,6 +11,7 @@ import { LlmError, type AgentMessage } from "../domain/llm-client";
 import type { ToolDeps } from "../domain/tool";
 import { describeProposal } from "../domain/proposal-summary";
 import type { JsonValue } from "@mallet/shared/ports";
+import { draftEstimateLines, type EstimateLineDraft } from "../app/draft-estimate";
 
 // Structural validation of an untrusted resume transcript (round-tripped through the client). Mirrors
 // the AgentMessage union so a malformed element becomes a clean BAD_REQUEST, not a 500 deep in the
@@ -123,8 +124,34 @@ const toOutput = (result: AgentResult) => {
   return { status: result.status, text: result.text, pending: [], transcript, usage: result.usage };
 };
 
+// ---- Estimate line draft type (re-exported for tests) -----------------------
+export type { EstimateLineDraft };
+
 export const createAiRouter = () =>
   router({
+    // One-shot LLM call: given a plain-English job description, return itemised estimate lines.
+    // Does NOT require the agent loop — single round-trip, forced tool call.
+    draftEstimate: ownerOrOfficeNoTx
+      .input(z.object({ description: z.string().min(1).max(2000) }))
+      .output(z.object({ lines: z.array(z.object({ description: z.string(), quantity: z.number(), rateCents: z.number().int() })) }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.llmClient) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "AI is not configured" });
+        }
+        try {
+          const lines = await draftEstimateLines(ctx.deps.llmClient, input.description);
+          return { lines };
+        } catch (error) {
+          if (error instanceof LlmError) {
+            throw new TRPCError({
+              code: error.retryable ? "TOO_MANY_REQUESTS" : "BAD_GATEWAY",
+              message: "the AI assistant is temporarily unavailable — please try again",
+            });
+          }
+          throw error;
+        }
+      }),
+
     // Start (or continue) an agent conversation from a user instruction.
     // When `transcript` is supplied it is the client-round-tripped conversation state from a prior
     // turn — validated with the same transcriptSchema that `resume` uses so a malformed payload

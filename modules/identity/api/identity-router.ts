@@ -32,11 +32,11 @@ async function sendInviteEmail(email: string, orgId: string): Promise<InviteEmai
     // it goes through Zod's z.url() check at boot rather than reaching here raw; fall back to a
     // relative path that Supabase will expand using the Site URL configured in the project dashboard.
     const appUrl = loadConfig().PUBLIC_APP_URL ?? "";
-    // After the invited user clicks the link, /auth/callback establishes the session, then
-    // forwards them to set-password so they can choose a password before entering the app.
-    // The `next` param is validated by safeNext inside the callback route (open-redirect guard).
-    const callbackBase = appUrl ? `${appUrl}/auth/callback` : "/auth/callback";
-    const redirectTo = `${callbackBase}?next=/auth/set-password`;
+    // After the invited user clicks the link, /auth/confirm verifies the token_hash and routes
+    // them to /auth/set-password (the type=invite default in confirmDestination).
+    // No ?next param is needed — the type default handles it and avoids any unsafe query on the
+    // Supabase {{ .RedirectTo }} substitution.
+    const redirectTo = appUrl ? `${appUrl}/auth/confirm` : "/auth/confirm";
 
     const { error } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo,

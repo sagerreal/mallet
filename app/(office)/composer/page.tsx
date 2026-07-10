@@ -25,6 +25,7 @@ import { useLeads, useAppStore } from "@/lib/store/app-store";
 import type { Lead, Estimate, EstimateLine } from "@/lib/store/types";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { fmt$ } from "@/lib/format";
+import { api } from "@/lib/trpc/client";
 
 // ---- start-tile icons (soft line icons for the "how do you start" cards) ----
 function TileIcon({ children }: { children: React.ReactNode }) {
@@ -253,37 +254,6 @@ function gbbFor(type: string, baseLines: ComposerLine[]): GBBDraft {
   };
 }
 
-/**
- * Build starter line items from a free-text description (mirrors the
- * prototype's draftLinesFor()). Keyword → template lines, else generic.
- */
-function draftLinesFor(desc: string): ComposerLine[] {
-  const s = (desc || "").toLowerCase();
-  let template: { d: string; q: number; r: number }[] | null = null;
-  if (/water heater|heater/.test(s)) template = TEMPLATES[0]?.lines ?? null;
-  else if (/drain|clog|jet/.test(s)) template = TEMPLATES[1]?.lines ?? null;
-  else if (/toilet/.test(s)) template = TEMPLATES[2]?.lines ?? null;
-
-  let lines: ComposerLine[];
-  if (template) {
-    // Deep-clone so we never share references with the template seed.
-    lines = template.map((l) => ({ d: l.d, q: l.q, r: l.r }));
-  } else {
-    lines = [
-      { d: "Labor — " + desc.slice(0, 48), q: 3, r: 170, c: 0 },
-      { d: "Materials (estimated)", q: 1, r: 350, c: 0 },
-    ];
-  }
-
-  // Contextual touch: two of something → qty 2 on matching lines.
-  if (s.includes("two") || s.includes("2 ")) {
-    lines = lines.map((l) =>
-      (l.d ?? "").toLowerCase().includes("toilet") ? { ...l, q: 2 } : l
-    );
-  }
-
-  return lines;
-}
 
 // ---- Pricebook items (mirrors prototype seed) -------------------------------
 
@@ -756,6 +726,9 @@ function BuilderMode({
   onSaveDraft,
   onSend,
   onPreview,
+  onAiDraft,
+  isDrafting,
+  aiDraftError,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
@@ -763,6 +736,9 @@ function BuilderMode({
   onSaveDraft: () => void;
   onSend: () => void;
   onPreview: () => void;
+  onAiDraft: () => void;
+  isDrafting: boolean;
+  aiDraftError: string | null;
 }) {
   const lead: Lead | null =
     state.leadId != null
@@ -922,16 +898,10 @@ function BuilderMode({
             </div>
             <button
               className="btn sm primary"
-              onClick={() => {
-                if (!state.desc.trim()) return; // no-op on empty description
-                onUpdate({
-                  lines: draftLinesFor(state.desc),
-                  aiOpen: false,
-                  aiDrafted: true,
-                });
-              }}
+              disabled={isDrafting || !state.desc.trim()}
+              onClick={onAiDraft}
             >
-              Draft lines
+              {isDrafting ? "Drafting…" : "Draft lines"}
             </button>{" "}
             <button
               className="btn sm ghost"
@@ -944,6 +914,7 @@ function BuilderMode({
             </button>{" "}
             <button
               className="btn sm ghost"
+              disabled={isDrafting}
               onClick={() => onUpdate({ aiOpen: false })}
             >
               Cancel
@@ -954,7 +925,12 @@ function BuilderMode({
             >
               Drafted from your pricebook &amp; rates — every line editable
             </span>
-            {!isEmpty && (
+            {aiDraftError && (
+              <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 8 }}>
+                {aiDraftError}
+              </div>
+            )}
+            {!aiDraftError && !isEmpty && (
               <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
                 Replaces current lines
               </div>
@@ -1436,8 +1412,44 @@ export default function ComposerPage() {
     return { ...INITIAL_STATE, leadId };
   });
 
+  const [aiDraftError, setAiDraftError] = useState<string | null>(null);
+
+  const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
+    onSuccess: (data) => {
+      const lines: ComposerLine[] = data.lines.map((l) => ({
+        d: l.description,
+        q: l.quantity,
+        // rateCents → dollars (ComposerLine.r is in dollars, e.g. r:170 = $170)
+        r: l.rateCents / 100,
+      }));
+      setCs((prev) => ({
+        ...prev,
+        lines,
+        aiOpen: false,
+        aiDrafted: true,
+      }));
+      setAiDraftError(null);
+    },
+    onError: (err) => {
+      const code = err.data?.code;
+      if (code === "PRECONDITION_FAILED") {
+        setAiDraftError("AI isn't enabled yet — ask your admin to add the API key.");
+      } else if (code === "TOO_MANY_REQUESTS") {
+        setAiDraftError("AI is busy right now — try again in a moment.");
+      } else {
+        setAiDraftError("Couldn't draft with AI — try rephrasing, or add lines manually.");
+      }
+    },
+  });
+
   function update(patch: Partial<ComposerState>) {
     setCs((prev) => ({ ...prev, ...patch }));
+  }
+
+  function triggerAiDraft() {
+    if (!cs.desc.trim()) return;
+    setAiDraftError(null);
+    draftEstimateMutation.mutate({ description: cs.desc });
   }
 
   const selectedLead: Lead | null =
@@ -1553,6 +1565,9 @@ export default function ComposerPage() {
           onSaveDraft={saveDraftComposer}
           onSend={sendComposer}
           onPreview={previewComposer}
+          onAiDraft={triggerAiDraft}
+          isDrafting={draftEstimateMutation.isPending}
+          aiDraftError={aiDraftError}
         />
       )}
     </div>
