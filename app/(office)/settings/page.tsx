@@ -17,8 +17,8 @@
  */
 
 import { useState } from "react";
-import { SAMPLE_BRAND } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { BrandingCard } from "./branding-card";
 import { MODAL } from "@/lib/store/modal-ids";
 import { StagePill } from "@/components/shared/stage-pill";
 import { api } from "@/lib/trpc/client";
@@ -85,23 +85,7 @@ function FoldCard({ title, summary, defaultOpen = false, children }: FoldCardPro
 function SecWorkspace({ role }: { role: string }) {
   return (
     <>
-      <FoldCard title="Branding" summary={SAMPLE_BRAND.name}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="custlogo" style={{ background: SAMPLE_BRAND.color, color: "#fff" }}>
-            {SAMPLE_BRAND.initials}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <b>{SAMPLE_BRAND.name}</b>
-            <div className="muted" style={{ fontSize: 12 }}>
-              {SAMPLE_BRAND.tagline} · {SAMPLE_BRAND.site}
-            </div>
-          </div>
-          {/* deferred: quote preview from settings */}
-          <button className="btn ghost sm" onClick={() => {}}>
-            Preview a quote
-          </button>
-        </div>
-      </FoldCard>
+      <BrandingCard />
 
       <FoldCard title="Guided demos" summary="replay">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
