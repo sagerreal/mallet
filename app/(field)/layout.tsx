@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { guardRole } from "@/lib/auth/guard";
-import { TimesheetsHydrator } from "@/features/timesheets/timesheets-hydrator";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileTabs } from "@/components/shell/mobile-tabs";
 import { Topbar } from "@/components/shell/topbar";
@@ -33,7 +32,6 @@ export default async function FieldLayout({ children }: { children: ReactNode })
       <CallBar />
       <MobileTabs />
       <ModalHost />
-      <TimesheetsHydrator />
     </div>
   );
 }
