@@ -69,10 +69,9 @@ export class UpdatePricebookUseCase {
         : existing.costCents,
       position: cmd.position !== undefined ? cmd.position : existing.position,
     };
-    const count = await this.repo.savePricebook(next);
+    const count = await this.repo.savePricebook(next, this.clock.now());
     if (count === 0) return err(notFound("pricebook item not found"));
     logger.info({ orgId, id: next.id }, "settings.pricebook.updated");
-    void this.clock.now(); // stamp available for future use
     return ok(next);
   }
 }

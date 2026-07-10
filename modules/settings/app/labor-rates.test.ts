@@ -55,4 +55,12 @@ describe("LaborRate use-cases", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("not_found");
   });
+
+  it("update: forwards clock.now() as updatedAt to the repository", async () => {
+    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, position: 0 });
+    const uc = new UpdateLaborRateUseCase(repo, clock);
+    const r = await uc.exec({ id: "l1", label: "Standard Plus" }, ORG);
+    expect(isOk(r)).toBe(true);
+    expect(repo.lastLaborRateUpdatedAt).toEqual(new Date("2026-07-09T12:00:00Z"));
+  });
 });

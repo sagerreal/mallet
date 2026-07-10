@@ -63,6 +63,11 @@ export interface SettingsRepository {
 
   // --- pricebook_items ---------------------------------------------------
 
+  /**
+   * Returns all non-archived pricebook items for the current tenant.
+   * Implicitly scoped to the org — the Drizzle adapter runs under `withTenant`,
+   * so no `orgId` argument is needed or accepted here.
+   */
   listPricebook(): Promise<PricebookItem[]>;
 
   createPricebook(input: {
@@ -75,13 +80,18 @@ export interface SettingsRepository {
   }): Promise<PricebookItem>;
 
   /** Updates a pricebook item. Returns rows affected (0 = not found). */
-  savePricebook(item: PricebookItem): Promise<number>;
+  savePricebook(item: PricebookItem, updatedAt: Date): Promise<number>;
 
   /** Soft-deletes a pricebook item. Returns rows affected (0 = not found). */
   archivePricebook(id: string, now: Date): Promise<number>;
 
   // --- labor_rates -------------------------------------------------------
 
+  /**
+   * Returns all non-archived labor rates for the current tenant.
+   * Implicitly scoped to the org — the Drizzle adapter runs under `withTenant`,
+   * so no `orgId` argument is needed or accepted here.
+   */
   listLaborRates(): Promise<LaborRate[]>;
 
   createLaborRate(input: {
@@ -93,7 +103,7 @@ export interface SettingsRepository {
   }): Promise<LaborRate>;
 
   /** Updates a labor rate. Returns rows affected (0 = not found). */
-  saveLaborRate(rate: LaborRate): Promise<number>;
+  saveLaborRate(rate: LaborRate, updatedAt: Date): Promise<number>;
 
   /**
    * Returns the count of active (non-archived) labor rates.
@@ -106,6 +116,11 @@ export interface SettingsRepository {
 
   // --- job_terms ---------------------------------------------------------
 
+  /**
+   * Returns all non-archived job terms for the current tenant.
+   * Implicitly scoped to the org — the Drizzle adapter runs under `withTenant`,
+   * so no `orgId` argument is needed or accepted here.
+   */
   listTerms(): Promise<JobTerm[]>;
 
   createTerm(input: {
@@ -117,13 +132,18 @@ export interface SettingsRepository {
   }): Promise<JobTerm>;
 
   /** Updates a job term. Returns rows affected (0 = not found). */
-  saveTerm(term: JobTerm): Promise<number>;
+  saveTerm(term: JobTerm, updatedAt: Date): Promise<number>;
 
   /** Soft-deletes a job term. Returns rows affected (0 = not found). */
   archiveTerm(id: string, now: Date): Promise<number>;
 
   // --- lead_sources ------------------------------------------------------
 
+  /**
+   * Returns all non-archived lead sources for the current tenant.
+   * Implicitly scoped to the org — the Drizzle adapter runs under `withTenant`,
+   * so no `orgId` argument is needed or accepted here.
+   */
   listSources(): Promise<LeadSource[]>;
 
   createSource(input: {
@@ -134,7 +154,7 @@ export interface SettingsRepository {
   }): Promise<LeadSource>;
 
   /** Updates a lead source. Returns rows affected (0 = not found). */
-  saveSource(source: LeadSource): Promise<number>;
+  saveSource(source: LeadSource, updatedAt: Date): Promise<number>;
 
   /** Soft-deletes a lead source. Returns rows affected (0 = not found). */
   archiveSource(id: string, now: Date): Promise<number>;

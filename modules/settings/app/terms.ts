@@ -66,10 +66,9 @@ export class UpdateTermUseCase {
       body: cmd.body !== undefined ? cmd.body.trim() : existing.body,
       position: cmd.position !== undefined ? cmd.position : existing.position,
     };
-    const count = await this.repo.saveTerm(next);
+    const count = await this.repo.saveTerm(next, this.clock.now());
     if (count === 0) return err(notFound("term not found"));
     logger.info({ orgId, id: next.id }, "settings.term.updated");
-    void this.clock.now(); // stamp available for future use
     return ok(next);
   }
 }

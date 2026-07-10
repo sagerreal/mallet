@@ -39,6 +39,14 @@ describe("Pricebook use-cases", () => {
     if (!r.ok) expect(r.error.kind).toBe("not_found");
   });
 
+  it("update: forwards clock.now() as updatedAt to the repository", async () => {
+    await repo.createPricebook({ id: "p1", orgId: ORG, label: "Camera", unitPriceCents: 28500, costCents: 0, position: 0 });
+    const uc = new UpdatePricebookUseCase(repo, clock);
+    const r = await uc.exec({ id: "p1", label: "Updated Camera" }, ORG);
+    expect(isOk(r)).toBe(true);
+    expect(repo.lastPricebookUpdatedAt).toEqual(new Date("2026-07-09T12:00:00Z"));
+  });
+
   it("remove: archives an existing row", async () => {
     await repo.createPricebook({ id: "p1", orgId: ORG, label: "Camera", unitPriceCents: 1, costCents: 0, position: 0 });
     const uc = new RemovePricebookUseCase(repo, clock);

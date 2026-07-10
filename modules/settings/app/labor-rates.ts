@@ -66,10 +66,9 @@ export class UpdateLaborRateUseCase {
         : existing.rateCentsPerHour,
       position: cmd.position !== undefined ? cmd.position : existing.position,
     };
-    const count = await this.repo.saveLaborRate(next);
+    const count = await this.repo.saveLaborRate(next, this.clock.now());
     if (count === 0) return err(notFound("labor rate not found"));
     logger.info({ orgId, id: next.id }, "settings.laborRate.updated");
-    void this.clock.now(); // stamp available for future use
     return ok(next);
   }
 }

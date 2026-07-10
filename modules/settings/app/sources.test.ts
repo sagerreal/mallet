@@ -51,4 +51,12 @@ describe("LeadSource use-cases", () => {
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.label).toBe("Google Ads");
   });
+
+  it("update: forwards clock.now() as updatedAt to the repository", async () => {
+    await repo.createSource({ id: "s1", orgId: ORG, label: "Google", position: 0 });
+    const uc = new UpdateSourceUseCase(repo, clock);
+    const r = await uc.exec({ id: "s1", label: "Google Ads" }, ORG);
+    expect(isOk(r)).toBe(true);
+    expect(repo.lastSourceUpdatedAt).toEqual(new Date("2026-07-09T12:00:00Z"));
+  });
 });

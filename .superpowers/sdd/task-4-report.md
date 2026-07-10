@@ -121,3 +121,75 @@ modules/settings/
 2. **`void this.clock.now()` pattern in Update use-cases:** Clock is received by Update use-cases but the current collection row shapes (pricebook/labor-rates/terms/sources) are plain objects without `updatedAt`. The `void` call retains the DI contract and makes adding `updatedAt` stamping trivial at the infra layer.
 
 3. **Case-insensitive duplicate guard on sources is create-only:** `UpdateSourceUseCase` does not guard against renaming to a label that collides with an existing source. Consistent with the brief's intent; a production hardening would add that read-before-write check in the update path.
+
+---
+
+## Review-Finding Fixes (commit after 0349673)
+
+### Finding 1 (IMPORTANT): Dead `void this.clock.now()` — clock forwarded to `save*` port
+
+**Problem:** The four collection Update use-cases called `void this.clock.now()` after `save*`, discarding the timestamp. The child tables all have `updated_at` columns and the domain owns time via the injected `Clock`, but the port signatures did not accept `updatedAt` so the value could never reach the DB.
+
+**Fix:**
+
+- `modules/settings/domain/settings-repository.ts`: Added `updatedAt: Date` parameter to `savePricebook`, `saveLaborRate`, `saveTerm`, and `saveSource` — mirroring the existing `archive*(id, now: Date)` pattern already in the port.
+- `modules/settings/app/pricebook.ts`: `savePricebook(next, this.clock.now())` — removed `void this.clock.now()` dead line.
+- `modules/settings/app/labor-rates.ts`: `saveLaborRate(next, this.clock.now())` — same.
+- `modules/settings/app/terms.ts`: `saveTerm(next, this.clock.now())` — same.
+- `modules/settings/app/sources.ts`: `saveSource(next, this.clock.now())` — same.
+
+**Test evidence (new tests added — one per collection):**
+
+`FakeSettingsRepository` gained four spy fields (`lastPricebookUpdatedAt`, `lastLaborRateUpdatedAt`, `lastTermUpdatedAt`, `lastSourceUpdatedAt`) each set in the corresponding `save*` method. Tests pin the clock to `2026-07-09T12:00:00Z` (via `FixedClock`) and assert the spy equals that date after a successful update.
+
+```
+RED (before): void this.clock.now() — spy field never set; assertion would fail
+GREEN (after): npx vitest run modules/settings
+  Test Files  7 passed (7)
+  Tests  45 passed (45)   ← +4 new updatedAt assertions
+```
+
+### Finding 2 (MINOR): Port `list*` doc comments — tenant-scoping note for Task-5 adapter author
+
+**Fix:** Added a one-line JSDoc on each of `listPricebook`, `listLaborRates`, `listTerms`, and `listSources` in `modules/settings/domain/settings-repository.ts` stating they are implicitly tenant-scoped (Drizzle adapter runs under `withTenant`; no `orgId` arg is needed or accepted).
+
+No behaviour change; no test change needed.
+
+### Finding 3 (MINOR): Fake `save*` check-before-mutate quirk
+
+**Problem:** The original `savePricebook` (and siblings) mapped the array first, then checked `some()` on the already-mapped result — which always returned `true` for any id present after the map, masking a non-existent-item case: if the item was not in the array, the map was a no-op but `some()` still returned `false` correctly. However, a subtler form: if the same id was somehow inserted via `createPricebook` twice the `some()` check was evaluated on the post-mutation state. The intent-correct fix is to check membership **before** mutating.
+
+**Fix:** All four `save*` methods in `FakeSettingsRepository` (in `get-settings.test.ts`) now follow the pattern:
+```ts
+const exists = this.collection.some((x) => x.id === item.id);
+if (!exists) return 0;
+this.collection = this.collection.map(/* replace */);
+return 1;
+```
+
+No net behaviour change for the existing tests (which only exercise the normal path); the fix ensures the fake is an accurate model of the real adapter's `rows affected = 0 when not found` contract.
+
+### tsc + full suite after all fixes
+
+```
+npx tsc --noEmit
+(no output — 0 errors)
+
+npx vitest run
+Test Files  112 passed (112)
+Tests  1074 passed (1074)
+Duration  4.15s
+```
+
+### Files changed
+
+- `modules/settings/domain/settings-repository.ts` — signature + doc comments
+- `modules/settings/app/pricebook.ts` — clock forwarded
+- `modules/settings/app/labor-rates.ts` — clock forwarded
+- `modules/settings/app/terms.ts` — clock forwarded
+- `modules/settings/app/sources.ts` — clock forwarded
+- `modules/settings/app/get-settings.test.ts` — fake spy fields + corrected save logic
+- `modules/settings/app/pricebook.test.ts` — new updatedAt assertion test
+- `modules/settings/app/labor-rates.test.ts` — new updatedAt assertion test
+- `modules/settings/app/terms.test.ts` — new updatedAt assertion test
+- `modules/settings/app/sources.test.ts` — new updatedAt assertion test

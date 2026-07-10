@@ -17,6 +17,13 @@ export class FakeSettingsRepository implements SettingsRepository {
   terms: JobTerm[] = [];
   sources: LeadSource[] = [];
 
+  // Spy fields: capture the last updatedAt passed to each save method so tests can
+  // assert that the use-case forwards clock.now() into the repository.
+  lastPricebookUpdatedAt: Date | null = null;
+  lastLaborRateUpdatedAt: Date | null = null;
+  lastTermUpdatedAt: Date | null = null;
+  lastSourceUpdatedAt: Date | null = null;
+
   async getConfig(orgId: string, defaults: () => BookingCfg): Promise<OrgSettings> {
     if (this.config) return this.config;
     const r = OrgSettings.create({
@@ -50,10 +57,12 @@ export class FakeSettingsRepository implements SettingsRepository {
     return row;
   }
 
-  async savePricebook(item: PricebookItem): Promise<number> {
-    const prev = this.pricebook;
-    this.pricebook = prev.map((p) => (p.id === item.id ? item : p));
-    return this.pricebook.some((p) => p.id === item.id) ? 1 : 0;
+  async savePricebook(item: PricebookItem, updatedAt: Date): Promise<number> {
+    const exists = this.pricebook.some((p) => p.id === item.id);
+    if (!exists) return 0;
+    this.lastPricebookUpdatedAt = updatedAt;
+    this.pricebook = this.pricebook.map((p) => (p.id === item.id ? item : p));
+    return 1;
   }
 
   async archivePricebook(id: string, _now: Date): Promise<number> {
@@ -76,9 +85,12 @@ export class FakeSettingsRepository implements SettingsRepository {
     return row;
   }
 
-  async saveLaborRate(r: LaborRate): Promise<number> {
+  async saveLaborRate(r: LaborRate, updatedAt: Date): Promise<number> {
+    const exists = this.laborRates.some((x) => x.id === r.id);
+    if (!exists) return 0;
+    this.lastLaborRateUpdatedAt = updatedAt;
     this.laborRates = this.laborRates.map((x) => (x.id === r.id ? r : x));
-    return this.laborRates.some((x) => x.id === r.id) ? 1 : 0;
+    return 1;
   }
 
   async countActiveLaborRates(): Promise<number> { return this.laborRates.length; }
@@ -103,9 +115,12 @@ export class FakeSettingsRepository implements SettingsRepository {
     return row;
   }
 
-  async saveTerm(t: JobTerm): Promise<number> {
+  async saveTerm(t: JobTerm, updatedAt: Date): Promise<number> {
+    const exists = this.terms.some((x) => x.id === t.id);
+    if (!exists) return 0;
+    this.lastTermUpdatedAt = updatedAt;
     this.terms = this.terms.map((x) => (x.id === t.id ? t : x));
-    return this.terms.some((x) => x.id === t.id) ? 1 : 0;
+    return 1;
   }
 
   async archiveTerm(id: string, _now: Date): Promise<number> {
@@ -127,9 +142,12 @@ export class FakeSettingsRepository implements SettingsRepository {
     return row;
   }
 
-  async saveSource(s: LeadSource): Promise<number> {
+  async saveSource(s: LeadSource, updatedAt: Date): Promise<number> {
+    const exists = this.sources.some((x) => x.id === s.id);
+    if (!exists) return 0;
+    this.lastSourceUpdatedAt = updatedAt;
     this.sources = this.sources.map((x) => (x.id === s.id ? s : x));
-    return this.sources.some((x) => x.id === s.id) ? 1 : 0;
+    return 1;
   }
 
   async archiveSource(id: string, _now: Date): Promise<number> {

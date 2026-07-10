@@ -44,4 +44,12 @@ describe("JobTerm use-cases", () => {
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.body).toBe("new");
   });
+
+  it("update: forwards clock.now() as updatedAt to the repository", async () => {
+    await repo.createTerm({ id: "t1", orgId: ORG, title: "Warranty", body: "12 months", position: 0 });
+    const uc = new UpdateTermUseCase(repo, clock);
+    const r = await uc.exec({ id: "t1", title: "Extended Warranty" }, ORG);
+    expect(isOk(r)).toBe(true);
+    expect(repo.lastTermUpdatedAt).toEqual(new Date("2026-07-09T12:00:00Z"));
+  });
 });

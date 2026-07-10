@@ -60,10 +60,9 @@ export class UpdateSourceUseCase {
       label: cmd.label !== undefined ? cmd.label.trim() : existing.label,
       position: cmd.position !== undefined ? cmd.position : existing.position,
     };
-    const count = await this.repo.saveSource(next);
+    const count = await this.repo.saveSource(next, this.clock.now());
     if (count === 0) return err(notFound("source not found"));
     logger.info({ orgId, id: next.id }, "settings.source.updated");
-    void this.clock.now(); // stamp available for future use
     return ok(next);
   }
 }
