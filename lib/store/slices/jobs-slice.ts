@@ -71,6 +71,43 @@ function chain(visitId: string, fn: () => Promise<unknown>): void {
 let _nextAuxId = 6000; // addons + other field-created ids (mirrors state.nextId)
 
 // ---------------------------------------------------------------------------
+// Field-filter helpers for updateJob persist
+// ---------------------------------------------------------------------------
+
+// Job fields that have a DB column via v1.jobs.update. Everything else on Job is
+// local-only (visits ride their own mutations; lines/addons/verify/photos are
+// Phase-5; addr/phone have no job column; status/archived derive server-side).
+const JOB_UPDATE_KEYS = new Set<keyof Job>(["title", "svc", "notes"]);
+
+export interface JobUpdatePayload {
+  jobId: string;
+  title?: string | null;
+  svc?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * Build the v1.jobs.update payload from a Job patch, keeping only DB-backed
+ * fields. Returns null when the patch touches only local-only fields (skip the
+ * network call). Mirrors buildLeadUpdatePayload in leads-slice.
+ */
+export function buildJobUpdatePayload(
+  jobId: string,
+  patch: Partial<Job>,
+): JobUpdatePayload | null {
+  const payload: JobUpdatePayload = { jobId };
+  let hasPersisted = false;
+  for (const key of Object.keys(patch) as (keyof Job)[]) {
+    if (!JOB_UPDATE_KEYS.has(key)) continue;
+    hasPersisted = true;
+    if (key === "title") payload.title = patch.title;
+    else if (key === "svc") payload.svc = patch.svc;
+    else if (key === "notes") payload.notes = patch.notes;
+  }
+  return hasPersisted ? payload : null;
+}
+
+// ---------------------------------------------------------------------------
 // Pure local helpers
 // ---------------------------------------------------------------------------
 
@@ -210,11 +247,37 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     return newJob;
   },
 
-  updateJob: (id, patch) =>
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...patch } : j)) })),
+  updateJob: (id, patch) => {
+    const prior = snapshot(get().jobs, id);
+    // 1. Optimistic apply (local-only fields update the store regardless).
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...patch } : j)) }));
+    // 2. Persist only DB-backed fields; skip if the patch is local-only.
+    const mutPayload = buildJobUpdatePayload(id, patch);
+    if (mutPayload === null) return;
+    trpcVanilla.v1.jobs.update
+      .mutate(mutPayload)
+      .then((dto) => {
+        // 3. Reconcile server truth for the persisted scalars, preserving local-only
+        //    fields already on the store record (lines/addons/verify/photos/visits).
+        set((s) => ({
+          jobs: s.jobs.map((j) =>
+            j.id === id
+              ? { ...j, title: dto.title ?? j.title, svc: dto.svc ?? j.svc, notes: dto.notes ?? j.notes }
+              : j,
+          ),
+        }));
+      })
+      .catch((err: unknown) => {
+        // 4. Roll back the whole job to the pre-patch snapshot.
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[jobs-slice] updateJob failed — rolled back", { id, patch, err });
+        }
+      });
+  },
 
-  setJobSvc: (id, svc) =>
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, svc } : j)) })),
+  setJobSvc: (id, svc) => get().updateJob(id, { svc }),
 
   // ---------------------------------------------------------------------------
   // addVisit — optimistic temp id; persist via createVisit; reconcile with

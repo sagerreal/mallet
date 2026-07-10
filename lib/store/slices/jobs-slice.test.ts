@@ -19,7 +19,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
   },
 }));
 
-import { createJobsSlice } from "./jobs-slice";
+import { createJobsSlice, buildJobUpdatePayload } from "./jobs-slice";
 import type { JobsSlice } from "./jobs-slice";
 import type { Job } from "@/lib/store/types";
 
@@ -65,5 +65,55 @@ describe("addJob persist", () => {
     const { get } = makeStore();
     get().addJob({ ...draft, leadId: "" });
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildJobUpdatePayload", () => {
+  it("maps title/svc/notes to the update payload", () => {
+    expect(buildJobUpdatePayload("j1", { title: "New" })).toEqual({ jobId: "j1", title: "New" });
+    expect(buildJobUpdatePayload("j1", { svc: "estimate" })).toEqual({ jobId: "j1", svc: "estimate" });
+    expect(buildJobUpdatePayload("j1", { notes: "x" })).toEqual({ jobId: "j1", notes: "x" });
+  });
+
+  it("returns null for a local-only patch (lines/checklist/addr/phone/status)", () => {
+    expect(buildJobUpdatePayload("j1", { lines: [] })).toBeNull();
+    expect(buildJobUpdatePayload("j1", { checklist: undefined })).toBeNull();
+    expect(buildJobUpdatePayload("j1", { addr: "1 Main" })).toBeNull();
+    expect(buildJobUpdatePayload("j1", { phone: "555" })).toBeNull();
+    expect(buildJobUpdatePayload("j1", { invRequested: true })).toBeNull();
+  });
+});
+
+describe("updateJob persist", () => {
+  beforeEach(() => { mockUpdate.mockReset(); });
+
+  it("persists a title change via v1.jobs.update", () => {
+    mockUpdate.mockResolvedValue({} as never);
+    const { get } = makeStore();
+    const created = get().addJob({ ...draft, leadId: "" }); // local-only add (no create call)
+    get().updateJob(created.id, { title: "Renamed" });
+    expect(get().jobs.find((j) => j.id === created.id)!.title).toBe("Renamed"); // optimistic
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ jobId: created.id, title: "Renamed" }));
+  });
+
+  it("does NOT call update for a local-only patch (lines)", () => {
+    mockUpdate.mockResolvedValue({} as never);
+    const { get } = makeStore();
+    const created = get().addJob({ ...draft, leadId: "" });
+    get().updateJob(created.id, { lines: [{ d: "x", q: 1, r: 100 }] });
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("setJobSvc persist", () => {
+  beforeEach(() => { mockUpdate.mockReset(); });
+
+  it("routes through update with { svc }", () => {
+    mockUpdate.mockResolvedValue({} as never);
+    const { get } = makeStore();
+    const created = get().addJob({ ...draft, leadId: "" });
+    get().setJobSvc(created.id, "estimate");
+    expect(get().jobs.find((j) => j.id === created.id)!.svc).toBe("estimate");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ jobId: created.id, svc: "estimate" }));
   });
 });
