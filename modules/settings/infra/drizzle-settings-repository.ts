@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 import {
   orgSettings,
   pricebookItems,
@@ -221,12 +221,12 @@ export class DrizzleSettingsRepository implements SettingsRepository {
   }
 
   async countActiveLaborRates(): Promise<number> {
-    // Select only the id column to avoid pulling full rows; count in-process (small set).
-    const rows = await this.tx
-      .select({ id: laborRates.id })
+    // DB-side count aggregate: no LIMIT needed, returns single row with count.
+    const [result] = await this.tx
+      .select({ n: count() })
       .from(laborRates)
       .where(and(eq(laborRates.orgId, this.orgId), isNull(laborRates.deletedAt)));
-    return rows.length;
+    return result?.n ?? 0;
   }
 
   async archiveLaborRate(id: string, now: Date): Promise<number> {
