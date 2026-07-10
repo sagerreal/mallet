@@ -8,8 +8,9 @@
  * accepts a URL string here so text + colour ship now.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
+import { FoldCard } from "./fold-card";
 
 const inputStyle = {
   flex: 1, minWidth: 160, border: "1.5px solid var(--line)", borderRadius: 8,
@@ -29,6 +30,26 @@ export function BrandingCard() {
   const [initials, setInitials] = useState(brand.initials);
   const [saved, setSaved] = useState(false);
 
+  // dirty: true once the user has made any edit; prevents BrandHydrator's
+  // async resolution from clobbering an in-progress form.
+  const [dirty, setDirty] = useState(false);
+
+  // Re-sync draft from the store when brand changes (e.g. BrandHydrator resolves
+  // after mount), but only while the user has not started editing.
+  useEffect(() => {
+    if (dirty) return;
+    setName(brand.name);
+    setTagline(brand.tagline);
+    setSite(brand.site);
+    setColor(brand.color);
+    setInitials(brand.initials);
+  }, [brand, dirty]);
+
+  function markDirty() {
+    setDirty(true);
+    setSaved(false);
+  }
+
   function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) return; // brand name maps to NOT NULL orgs.name
@@ -39,73 +60,63 @@ export function BrandingCard() {
       color: color || "",
       initials: (initials.trim() || trimmed.slice(0, 2)).toUpperCase(),
     });
+    setDirty(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
   return (
-    <div className="foldcard open">
-      <div className="fhead">
-        <span className="caret">▸</span>
-        <h3>Branding</h3>
-        <span className="fsum">{name}</span>
+    <FoldCard title="Branding" summary={name} defaultOpen>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div className="custlogo" style={{ background: color, color: "#fff" }}>
+          {(initials || name.slice(0, 2)).toUpperCase()}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <b>{name}</b>
+          <div className="muted" style={{ fontSize: 12 }}>
+            {tagline}{tagline && site ? " · " : ""}{site}
+          </div>
+        </div>
       </div>
-      <div className="fbody">
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <div className="custlogo" style={{ background: color, color: "#fff" }}>
-            {(initials || name.slice(0, 2)).toUpperCase()}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <b>{name}</b>
-            <div className="muted" style={{ fontSize: 12 }}>
-              {tagline}{tagline && site ? " · " : ""}{site}
-            </div>
-          </div>
-        </div>
 
-        <div style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "grid", gap: 10 }}>
+        <div className="field" style={{ margin: 0 }}>
+          <label htmlFor="brandName">Business name</label>
+          <input id="brandName" type="text" value={name}
+            onChange={(e) => { setName(e.target.value); markDirty(); }} style={inputStyle} />
+        </div>
+        <div className="field" style={{ margin: 0 }}>
+          <label htmlFor="brandTagline">Tagline</label>
+          <input id="brandTagline" type="text" value={tagline}
+            onChange={(e) => { setTagline(e.target.value); markDirty(); }}
+            placeholder="Licensed & insured · Your city" style={inputStyle} />
+        </div>
+        <div className="field" style={{ margin: 0 }}>
+          <label htmlFor="brandSite">Website</label>
+          <input id="brandSite" type="text" value={site}
+            onChange={(e) => { setSite(e.target.value); markDirty(); }}
+            placeholder="yourbusiness.com" style={inputStyle} />
+        </div>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <div className="field" style={{ margin: 0 }}>
-            <label htmlFor="brandName">Business name</label>
-            <input id="brandName" type="text" value={name}
-              onChange={(e) => { setName(e.target.value); setSaved(false); }} style={inputStyle} />
+            <label htmlFor="brandColor">Brand colour</label>
+            <input id="brandColor" type="color" value={color || "#6B7280"}
+              onChange={(e) => { setColor(e.target.value); markDirty(); }}
+              style={{ width: 56, height: 34, border: "1.5px solid var(--line)", borderRadius: 8, padding: 2 }} />
           </div>
           <div className="field" style={{ margin: 0 }}>
-            <label htmlFor="brandTagline">Tagline</label>
-            <input id="brandTagline" type="text" value={tagline}
-              onChange={(e) => { setTagline(e.target.value); setSaved(false); }}
-              placeholder="Licensed &amp; insured · Your city" style={inputStyle} />
-          </div>
-          <div className="field" style={{ margin: 0 }}>
-            <label htmlFor="brandSite">Website</label>
-            <input id="brandSite" type="text" value={site}
-              onChange={(e) => { setSite(e.target.value); setSaved(false); }}
-              placeholder="yourbusiness.com" style={inputStyle} />
-          </div>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <div className="field" style={{ margin: 0 }}>
-              <label htmlFor="brandColor">Brand colour</label>
-              <input id="brandColor" type="color" value={color || "#6B7280"}
-                onChange={(e) => { setColor(e.target.value); setSaved(false); }}
-                style={{ width: 56, height: 34, border: "1.5px solid var(--line)", borderRadius: 8, padding: 2 }} />
-            </div>
-            <div className="field" style={{ margin: 0 }}>
-              <label htmlFor="brandInitials">Logo initials</label>
-              <input id="brandInitials" type="text" maxLength={3} value={initials}
-                onChange={(e) => { setInitials(e.target.value); setSaved(false); }}
-                style={{ width: 72, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-            </div>
+            <label htmlFor="brandInitials">Initials</label>
+            <input id="brandInitials" type="text" maxLength={3} value={initials}
+              onChange={(e) => { setInitials(e.target.value); markDirty(); }}
+              style={{ width: 72, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
           </div>
         </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-          <button className="btn primary" onClick={handleSave} disabled={!name.trim()}>Save</button>
-          {saved && <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>Saved ✓</span>}
-        </div>
-        <p className="muted" style={{ fontSize: "11.5px", marginTop: 8 }}>
-          This is what customers see on every quote &amp; invoice. Logo image upload is coming;
-          for now the coloured initials stand in.
-        </p>
       </div>
-    </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+        <button className="btn primary" onClick={handleSave} disabled={!name.trim()}>Save</button>
+        {saved && <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>Saved ✓</span>}
+      </div>
+    </FoldCard>
   );
 }

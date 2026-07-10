@@ -19,6 +19,7 @@
 import { useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
+import { FoldCard } from "./fold-card";
 import { MODAL } from "@/lib/store/modal-ids";
 import { StagePill } from "@/components/shared/stage-pill";
 import { api } from "@/lib/trpc/client";
@@ -53,29 +54,6 @@ function timeLabel(h: number): string {
 function pbMarginPct(p: { unitPrice: number; cost: number }): number {
   if (!p.unitPrice) return 0;
   return Math.round(((p.unitPrice - p.cost) / p.unitPrice) * 100);
-}
-
-// ---- FoldCard component -----------------------------------------------------
-
-interface FoldCardProps {
-  title: string;
-  summary?: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}
-
-function FoldCard({ title, summary, defaultOpen = false, children }: FoldCardProps) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className={`foldcard${open ? " open" : ""}`}>
-      <div className="fhead" onClick={() => setOpen((v) => !v)}>
-        <span className="caret">▸</span>
-        <h3>{title}</h3>
-        {summary && <span className="fsum">{summary}</span>}
-      </div>
-      <div className="fbody">{children}</div>
-    </div>
-  );
 }
 
 // ============================================================================
