@@ -38,6 +38,10 @@ export interface BookingCfg {
 
 // --- Props ---------------------------------------------------------------
 
+// Note: the DB row surrogate `id` is intentionally NOT part of the domain model —
+// the aggregate's identity is `orgId` (one settings row per org). The infra adapter
+// (Task 5) upserts by `orgId` (the `org_settings_org_id_uq` conflict target), never
+// by the surrogate `id`.
 export interface OrgSettingsProps {
   readonly orgId: OrgId;
   readonly trade: string;
