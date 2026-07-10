@@ -65,7 +65,7 @@ export function PriceBuilderModalContent() {
   const laborRatesRaw = useAppStore((s) => s.laborRates);
 
   const pricebook: PricebookItem[] = useMemo(
-    () => pricebookRaw.map((p: PbItem) => ({ d: p.d, r: p.r, c: p.c })),
+    () => pricebookRaw.map((p: PbItem) => ({ d: p.label, r: p.unitPrice, c: p.cost })),
     [pricebookRaw],
   );
   const laborRates: LaborRate[] = useMemo(
