@@ -302,6 +302,13 @@
       "when": 1783620230560,
       "tag": "0042_ordinary_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783702263044,
+      "tag": "0043_strong_ricochet",
+      "breakpoints": true
     }
   ]
 }
