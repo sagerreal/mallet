@@ -33,6 +33,15 @@ export const orgSettings = pgTable(
     //   feeCredited: boolean } — the booking playbook. serviceFee is DOLLARS here (matches the
     //   prototype control), unlike money columns; documented so no one reads it as cents.
     booking: jsonb("booking").notNull(),
+    // ── Brand identity (Phase 3) ─────────────────────────────────────────────
+    // Brand NAME is orgs.name (not duplicated here). These are the rest of the
+    // brand shown on customer quotes/invoices + the pipeline header. All nullable
+    // so the lazily-created default org_settings row is valid without brand values.
+    brandTagline: text("brand_tagline"),
+    brandSite: text("brand_site"),
+    brandColor: text("brand_color"),
+    brandLogoUrl: text("brand_logo_url"),
+    brandInitials: text("brand_initials"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -35,6 +35,11 @@ const baseRow = (): OrgSettingsRow => ({
   areaCities: "Pleasanton",
   areaRadiusMi: 25,
   booking: defaultBooking,
+  brandTagline: null,
+  brandSite: null,
+  brandColor: null,
+  brandLogoUrl: null,
+  brandInitials: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
 });
