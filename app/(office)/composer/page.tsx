@@ -18,7 +18,6 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   calcQuote,
-  SAMPLE_BRAND,
   type SampleEstimateLine,
 } from "@/lib/prototype-sample";
 import { useLeads, useAppStore } from "@/lib/store/app-store";
@@ -1808,7 +1807,3 @@ export default function ComposerPage() {
     </div>
   );
 }
-
-// Keep SAMPLE_BRAND referenced so bundler doesn't tree-shake it (used in
-// composer seed defaults for title/brand watermarks in the preview pane).
-void SAMPLE_BRAND;
