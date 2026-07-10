@@ -190,3 +190,34 @@ describe("updateJob reconcile + rollback", () => {
     expect(get().jobs.find((j) => j.id === created.id)!.title).toBe("Original");
   });
 });
+
+describe("archiveJob / deleteJob persist", () => {
+  beforeEach(() => { mockArchive.mockReset(); });
+
+  it("archiveJob marks archived optimistically and calls v1.jobs.archive", () => {
+    mockArchive.mockResolvedValue({ ok: true });
+    const { get } = makeStore();
+    // Seed a db-origin job directly via setJobs so leadId presence is irrelevant.
+    get().setJobs([{ ...draft, id: "j-arch", origin: "db" }]);
+    get().archiveJob("j-arch");
+    expect(get().jobs.find((j) => j.id === "j-arch")!.archived).toBe(true);
+    expect(mockArchive).toHaveBeenCalledWith({ jobId: "j-arch" });
+  });
+
+  it("deleteJob removes the job optimistically and calls v1.jobs.archive", () => {
+    mockArchive.mockResolvedValue({ ok: true });
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-del", origin: "db" }]);
+    get().deleteJob("j-del");
+    expect(get().jobs.some((j) => j.id === "j-del")).toBe(false);
+    expect(mockArchive).toHaveBeenCalledWith({ jobId: "j-del" });
+  });
+
+  it("archiveJob does NOT call the server for a local-only (leadless manual) job", () => {
+    mockArchive.mockResolvedValue({ ok: true });
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-local", origin: "manual" }]);
+    get().archiveJob("j-local");
+    expect(mockArchive).not.toHaveBeenCalled();
+  });
+});

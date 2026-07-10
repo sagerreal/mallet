@@ -532,14 +532,40 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   },
 
   // ---------------------------------------------------------------------------
-  // Non-persisted actions (unchanged)
+  // Archive / delete (soft-delete only — no hard deletes)
   // ---------------------------------------------------------------------------
 
-  archiveJob: (id) =>
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, archived: true } : j)) })),
+  // Soft-delete server-side; mark archived locally so it drops off the active list.
+  archiveJob: (id) => {
+    const prior = snapshot(get().jobs, id);
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, archived: true } : j)) }));
+    if (prior?.origin !== JOB_ORIGIN.DB) return; // local-only draft — nothing to persist
+    trpcVanilla.v1.jobs.archive
+      .mutate({ jobId: id })
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] archiveJob failed — rolled back", { id, err });
+        }
+      });
+  },
 
-  deleteJob: (id) =>
-    set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) })),
+  // deleteJob repoints to soft-delete (no hard deletes). Removes from the visible
+  // list optimistically; re-inserts on failure.
+  deleteJob: (id) => {
+    const prior = snapshot(get().jobs, id);
+    set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) }));
+    if (prior?.origin !== JOB_ORIGIN.DB) return;
+    trpcVanilla.v1.jobs.archive
+      .mutate({ jobId: id })
+      .catch((err: unknown) => {
+        // Rollback: re-insert the removed job at the front (order is not load-bearing here).
+        if (prior) set((s) => ({ jobs: [prior, ...s.jobs] }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] deleteJob failed — rolled back", { id, err });
+        }
+      });
+  },
 
   addAddon: (jobId, draft) => {
     const d = draft.d.trim();
