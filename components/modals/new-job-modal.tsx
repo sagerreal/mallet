@@ -183,23 +183,28 @@ export function NewJobModalContent() {
     return rows.map((v) => ({ h: clampHours(v.h) }));
   }
 
-  function createEstimate(job: string) {
+  async function createEstimate(job: string) {
     const rows = resolvedVisits();
     const custName = customer.trim();
     const match = matchLead(custName);
 
-    // Resolve the matched lead, or add a new one (Estimate = a scoping visit on a lead).
-    // addLead returns { lead, persisted } — destructure so `lead` is the optimistic Lead.
-    const lead =
-      match ??
-      addLead({
+    // Resolve the matched lead, or create a new one and AWAIT the server id.
+    // addLead returns { lead, persisted }; the evisit must attach to the
+    // reconciled (server-assigned) id, so we await before patching.
+    let lead: Lead;
+    if (match) {
+      lead = match;
+    } else {
+      const { persisted } = addLead({
         name: custName || "New customer",
         phone: phone.trim(),
         source: "Added manually",
         stage: "Contacted",
         job,
         address: addr.trim() || undefined,
-      }).lead;
+      });
+      lead = await persisted;
+    }
 
     // Merge fill-ins onto an existing lead without clobbering (prototype behavior).
     const existing = lead.evisits ?? [];
@@ -253,29 +258,30 @@ export function NewJobModalContent() {
     return created;
   }
 
-  /** Validate + create the job/estimate; returns the created Job (job types) or
-   *  null (estimate types create a lead+evisit; nothing to price). */
-  function commit(): { ok: boolean; job: Job | null } {
+  /** Validate + create the job/estimate. For estimates the create is async
+   *  (awaits the persisted lead before attaching the evisit); returns a promise
+   *  resolving to { ok, job }. */
+  async function commit(): Promise<{ ok: boolean; job: Job | null }> {
     const job = title.trim();
     if (!job) {
       setError("Add what the job is.");
       return { ok: false, job: null };
     }
     if (njType === "estimate") {
-      createEstimate(job);
+      await createEstimate(job);
       return { ok: true, job: null };
     }
     return { ok: true, job: createJob(job) };
   }
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (commit().ok) close();
+    if ((await commit()).ok) close();
   }
 
-  function handleBuildPrice() {
+  async function handleBuildPrice() {
     // Create the job, then hand off to the price builder (prototype saveNewJob(true)).
-    const { ok, job } = commit();
+    const { ok, job } = await commit();
     if (!ok) return;
     close();
     if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
