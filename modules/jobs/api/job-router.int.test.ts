@@ -125,4 +125,59 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(caller.v1.jobs.list({ limit: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  // ── Task 5: create / update / archive ─────────────────────────────────────────
+  // NOTE: These assertions are WRITTEN but NOT RUN — migration 0047 (jobs.svc) must
+  // be applied in the target environment before executing this block.
+
+  it("owner creates a manual job for a lead, edits it, and it lists back", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Manual Job Cust" });
+
+    const created = await caller.v1.jobs.create({
+      leadId: lead.id, title: "Water heater", svc: "service", addr: "1 Main", phone: "555", notes: "gate 4",
+    });
+    expect(created.title).toBe("Water heater");
+    expect(created.svc).toBe("service");
+    expect(created.status).toBe("scheduled");
+
+    const updated = await caller.v1.jobs.update({ jobId: created.id, title: "Water heater swap", svc: "estimate" });
+    expect(updated.title).toBe("Water heater swap");
+    expect(updated.svc).toBe("estimate");
+
+    const listed = await caller.v1.jobs.list({ limit: 500 });
+    expect(listed.items.some((j) => j.id === created.id && j.svc === "estimate")).toBe(true);
+  });
+
+  it("archive soft-deletes a job; it disappears from list", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Archive Job Cust" });
+    const created = await caller.v1.jobs.create({ leadId: lead.id, title: "Temp" });
+    const res = await caller.v1.jobs.archive({ jobId: created.id });
+    expect(res.ok).toBe(true);
+    const listed = await caller.v1.jobs.list({ limit: 500 });
+    expect(listed.items.some((j) => j.id === created.id)).toBe(false);
+  });
+
+  it("update/archive on unknown jobId returns NOT_FOUND", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(caller.v1.jobs.update({ jobId: randomUUID(), title: "x" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(caller.v1.jobs.archive({ jobId: randomUUID() })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("org B cannot update or archive org A's job (NOT_FOUND via RLS)", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await callerA.v1.customers.create({ name: "RLS Job Cust" });
+    const created = await callerA.v1.jobs.create({ leadId: lead.id, title: "Boundary" });
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    await expect(callerB.v1.jobs.update({ jobId: created.id, title: "nope" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(callerB.v1.jobs.archive({ jobId: created.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("a tech is forbidden from job.create/update/archive", async () => {
+    const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    await expect(callerTech.v1.jobs.create({ leadId: randomUUID(), title: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerTech.v1.jobs.update({ jobId: randomUUID(), title: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(callerTech.v1.jobs.archive({ jobId: randomUUID() })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });
