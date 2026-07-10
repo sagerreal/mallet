@@ -18,6 +18,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
 import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS, HYDRATOR_PAGE_LIMIT } from "@/lib/store/hydrator-config";
+import { backendStageToStore } from "@/lib/store/dto-mapper";
 
 type LeadDTO = RouterOutputs["v1"]["customers"]["list"]["items"][number];
 
@@ -31,7 +32,7 @@ function toStoreLead(dto: LeadDTO): Lead {
     name: dto.name,
     phone: dto.phone ?? "",
     source: dto.source ?? "",
-    stage: dto.stage,
+    stage: backendStageToStore(dto.stage),
     age: daysAgo(dto.createdAt),
     job: "",
     last: "",

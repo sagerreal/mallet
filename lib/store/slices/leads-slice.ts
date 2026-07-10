@@ -20,6 +20,7 @@ import type { inferRouterInputs } from "@trpc/server";
 import type { AppRouter } from "@/trpc/root";
 import type { Lead, LeadNote, Task, Visit } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { storeStageToBackend, backendStageToStore } from "@/lib/store/dto-mapper";
 
 type CustomerUpdateInput = inferRouterInputs<AppRouter>["v1"]["customers"]["update"];
 
@@ -81,8 +82,11 @@ export function buildLeadUpdatePayload(
     } else if (key === "source") {
       payload.source = patch.source;
     } else if (key === "stage") {
-      // Store Lead.stage is a plain string; the router validates the enum server-side.
-      payload.stage = patch.stage as CustomerUpdateInput["stage"];
+      // Store Lead.stage is a display string; the router validates the enum
+      // server-side. Map display → enum before sending.
+      if (patch.stage !== undefined) {
+        payload.stage = storeStageToBackend(patch.stage) as CustomerUpdateInput["stage"];
+      }
     } else if (key === "unread") {
       payload.unread = patch.unread;
     } else if (key === "companyId") {
@@ -95,6 +99,17 @@ export function buildLeadUpdatePayload(
   }
 
   return hasPersistedField ? payload : null;
+}
+
+/**
+ * Build the store Lead that replaces the optimistic row once create resolves.
+ * The server assigns the id (dedupe may return an existing row), so we key off
+ * the DTO id and re-pin all local-only fields from the optimistic row.
+ */
+function adoptCreatedLead(optimistic: Lead, dto: Parameters<typeof reconcileLeadFromDTO>[1]): Lead {
+  // reconcileLeadFromDTO preserves local-only fields and maps the stage; the
+  // only extra step is adopting the server id.
+  return { ...reconcileLeadFromDTO(optimistic, dto), id: dto.id };
 }
 
 /**
@@ -125,7 +140,8 @@ function reconcileLeadFromDTO(
     phone: dto.phone ?? "",
     email: dto.email ?? undefined,
     source: dto.source ?? "",
-    stage: dto.stage,
+    // DTO carries the DB enum; the store renders display strings.
+    stage: backendStageToStore(dto.stage),
     value: dto.value.cents / 100,
     unread: dto.unread,
     companyId: dto.companyId ?? undefined,
@@ -152,7 +168,9 @@ export interface LeadsSlice {
   /** Replace the entire tasks array — called by the TasksHydrator. */
   setTasks: (tasks: Task[]) => void;
 
-  addLead: (draft: Omit<Lead, "id" | "age" | "last" | "acts" | "evisits">) => Lead;
+  addLead: (
+    draft: Omit<Lead, "id" | "age" | "last" | "acts" | "evisits">,
+  ) => { lead: Lead; persisted: Promise<Lead> };
   updateLead: (id: string, patch: Partial<Lead>) => void;
   moveLeadStage: (id: string, stage: string) => void;
   addLeadNote: (id: string, note: Omit<LeadNote, "id">) => LeadNote;
@@ -182,16 +200,50 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   setTasks: (tasks) => set({ tasks }),
 
   addLead: (draft) => {
+    const id = crypto.randomUUID();
     const newLead: Lead = {
       ...draft,
-      id: crypto.randomUUID(),
+      id,
       age: 0,
       last: "Just added",
       acts: [],
       evisits: [],
     };
+    // Snapshot BEFORE the optimistic insert so we can roll back on failure.
+    const prior = get().leads.slice();
     set((s) => ({ leads: [newLead, ...s.leads] }));
-    return newLead;
+
+    // Persist. The server assigns the id (create dedupes on phone), so the
+    // reconcile swaps the optimistic id for the server id. Callers holding the
+    // returned lead must read the reconciled id from `persisted`.
+    const persisted: Promise<Lead> = trpcVanilla.v1.customers.create
+      .mutate({
+        name: newLead.name,
+        // create input treats empty phone/email as "not provided" — send only when set.
+        ...(newLead.phone && newLead.phone !== "—" ? { phone: newLead.phone } : {}),
+        ...(newLead.email ? { email: newLead.email } : {}),
+        ...(newLead.source ? { source: newLead.source } : {}),
+        ...(newLead.companyId ? { companyId: newLead.companyId } : {}),
+        ...(newLead.role ? { role: newLead.role } : {}),
+      })
+      .then((dto) => {
+        const reconciled = adoptCreatedLead(newLead, dto);
+        set((s) => ({
+          leads: s.leads.map((l) => (l.id === id ? reconciled : l)),
+        }));
+        return reconciled;
+      })
+      .catch((err: unknown) => {
+        // Rollback: restore the pre-insert snapshot (removes the optimistic row).
+        set({ leads: prior });
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] addLead failed — rolled back", { id, err });
+        }
+        throw err instanceof Error ? err : new Error("addLead failed");
+      });
+
+    return { lead: newLead, persisted };
   },
 
   // ---------------------------------------------------------------------------
@@ -248,12 +300,17 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       });
   },
 
-  moveLeadStage: (id, stage) =>
+  moveLeadStage: (id, stage) => {
+    // Optimistic local touch: stage + the "Moved to" activity line. The stage
+    // itself persists through updateLead (which maps display→enum and reconciles).
     set((s) => ({
       leads: s.leads.map((l) =>
-        l.id === id ? { ...l, stage, last: `Moved to ${stage}` } : l
+        l.id === id ? { ...l, last: `Moved to ${stage}` } : l,
       ),
-    })),
+    }));
+    // updateLead handles the optimistic stage write + persist + reconcile/rollback.
+    get().updateLead(id, { stage });
+  },
 
   addLeadNote: (id, note) => {
     const fullNote: LeadNote = { ...note, id: String(Date.now()) };
@@ -275,20 +332,49 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       ),
     })),
 
-  archiveLead: (id) =>
+  archiveLead: (id) => {
+    const prior = get().leads.slice();
     set((s) => ({
       leads: s.leads.map((l) => (l.id === id ? { ...l, archived: true } : l)),
-    })),
+    }));
+    void trpcVanilla.v1.customers.archive
+      .mutate({ leadId: id })
+      .catch((err: unknown) => {
+        set({ leads: prior });
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] archiveLead failed — rolled back", { id, err });
+        }
+      });
+  },
 
-  restoreLead: (id) =>
+  restoreLead: (id) => {
+    const prior = get().leads.slice();
     set((s) => ({
       leads: s.leads.map((l) => (l.id === id ? { ...l, archived: false } : l)),
-    })),
+    }));
+    trpcVanilla.v1.customers.restore
+      .mutate({ leadId: id })
+      .then((dto) => {
+        // Reconcile the authoritative row (stage mapped enum→display).
+        set((s) => ({
+          leads: s.leads.map((l) => (l.id === id ? reconcileLeadFromDTO(l, dto) : l)),
+        }));
+      })
+      .catch((err: unknown) => {
+        set({ leads: prior });
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] restoreLead failed — rolled back", { id, err });
+        }
+      });
+  },
 
-  deleteLead: (id) =>
-    set((s) => ({
-      leads: s.leads.filter((l) => l.id !== id),
-    })),
+  // Soft-delete only: "delete" archives the lead (no hard delete, no row removal).
+  // Live views already filter on !archived, so the archived row disappears from the UI.
+  deleteLead: (id) => {
+    get().archiveLead(id);
+  },
 
   addEvisit: (leadId, draft) => {
     const visit: Visit = { ...draft, id: crypto.randomUUID() };
