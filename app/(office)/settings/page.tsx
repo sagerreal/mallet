@@ -17,8 +17,9 @@
  */
 
 import { useState } from "react";
-import { SAMPLE_BRAND } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { BrandingCard } from "./branding-card";
+import { FoldCard } from "./fold-card";
 import { MODAL } from "@/lib/store/modal-ids";
 import { StagePill } from "@/components/shared/stage-pill";
 import { api } from "@/lib/trpc/client";
@@ -55,29 +56,6 @@ function pbMarginPct(p: { unitPrice: number; cost: number }): number {
   return Math.round(((p.unitPrice - p.cost) / p.unitPrice) * 100);
 }
 
-// ---- FoldCard component -----------------------------------------------------
-
-interface FoldCardProps {
-  title: string;
-  summary?: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}
-
-function FoldCard({ title, summary, defaultOpen = false, children }: FoldCardProps) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className={`foldcard${open ? " open" : ""}`}>
-      <div className="fhead" onClick={() => setOpen((v) => !v)}>
-        <span className="caret">▸</span>
-        <h3>{title}</h3>
-        {summary && <span className="fsum">{summary}</span>}
-      </div>
-      <div className="fbody">{children}</div>
-    </div>
-  );
-}
-
 // ============================================================================
 // Section: Workspace
 // ============================================================================
@@ -85,23 +63,7 @@ function FoldCard({ title, summary, defaultOpen = false, children }: FoldCardPro
 function SecWorkspace({ role }: { role: string }) {
   return (
     <>
-      <FoldCard title="Branding" summary={SAMPLE_BRAND.name}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="custlogo" style={{ background: SAMPLE_BRAND.color, color: "#fff" }}>
-            {SAMPLE_BRAND.initials}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <b>{SAMPLE_BRAND.name}</b>
-            <div className="muted" style={{ fontSize: 12 }}>
-              {SAMPLE_BRAND.tagline} · {SAMPLE_BRAND.site}
-            </div>
-          </div>
-          {/* deferred: quote preview from settings */}
-          <button className="btn ghost sm" onClick={() => {}}>
-            Preview a quote
-          </button>
-        </div>
-      </FoldCard>
+      <BrandingCard />
 
       <FoldCard title="Guided demos" summary="replay">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

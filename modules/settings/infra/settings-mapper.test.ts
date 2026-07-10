@@ -35,16 +35,25 @@ const baseRow = (): OrgSettingsRow => ({
   areaCities: "Pleasanton",
   areaRadiusMi: 25,
   booking: defaultBooking,
+  brandTagline: null,
+  brandSite: null,
+  brandColor: null,
+  brandLogoUrl: null,
+  brandInitials: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
 });
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
+// Default org name used in mapper unit tests — the real value comes from orgs.name at
+// runtime; the mapper itself is pure and does not fetch it.
+const TEST_ORG_NAME = "Acme Plumbing";
+
 describe("toOrgSettings (settings mapper)", () => {
   it("maps a valid DB row to an OrgSettings aggregate", () => {
     const row = baseRow();
-    const settings = toOrgSettings(row);
+    const settings = toOrgSettings(row, TEST_ORG_NAME);
     const p = settings.props;
 
     expect(p.orgId).toBe(ORG_ID);
@@ -69,14 +78,14 @@ describe("toOrgSettings (settings mapper)", () => {
   it("trims leading/trailing whitespace from trade (OrgSettings.create normalisation)", () => {
     const row = baseRow();
     row.trade = "  hvac  ";
-    const settings = toOrgSettings(row);
+    const settings = toOrgSettings(row, TEST_ORG_NAME);
     expect(settings.props.trade).toBe("hvac");
   });
 
   it("clamps visitScopeMinutes below the 15-minute floor", () => {
     const row = baseRow();
     row.visitScopeMinutes = 5; // below floor
-    const settings = toOrgSettings(row);
+    const settings = toOrgSettings(row, TEST_ORG_NAME);
     // OrgSettings.create clamps to 15 — mapper must surface this, not throw
     expect(settings.props.visitScopeMinutes).toBe(15);
   });
@@ -84,7 +93,22 @@ describe("toOrgSettings (settings mapper)", () => {
   it("throws on a corrupt row (empty trade violates the domain invariant)", () => {
     const row = baseRow();
     row.trade = "";
-    expect(() => toOrgSettings(row)).toThrow(/corrupt org_settings/);
+    expect(() => toOrgSettings(row, TEST_ORG_NAME)).toThrow(/corrupt org_settings/);
+  });
+
+  it("maps brandName from the orgName argument, not the row", () => {
+    const row = baseRow();
+    row.brandTagline = "Licensed & insured";
+    row.brandColor = "#9C5B34";
+    row.brandInitials = "AP";
+    const settings = toOrgSettings(row, "Acme Plumbing");
+    const p = settings.props;
+    expect(p.brandName).toBe("Acme Plumbing");
+    expect(p.brandTagline).toBe("Licensed & insured");
+    expect(p.brandColor).toBe("#9C5B34");
+    expect(p.brandInitials).toBe("AP");
+    expect(p.brandSite).toBeNull();
+    expect(p.brandLogoUrl).toBeNull();
   });
 
   it("passes the booking jsonb blob through unchanged", () => {
@@ -96,7 +120,7 @@ describe("toOrgSettings (settings mapper)", () => {
       feeCredited: false,
     };
     row.booking = customBooking;
-    const settings = toOrgSettings(row);
+    const settings = toOrgSettings(row, TEST_ORG_NAME);
     expect(settings.props.booking).toEqual(customBooking);
   });
 });

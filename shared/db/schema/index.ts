@@ -1,5 +1,6 @@
-// Public surface of the database schema. drizzle.config.ts globs the directory,
-// but app code imports tables from here so the import seam stays stable.
+// Public surface of the database schema. drizzle.config.ts uses this file as the
+// schema entry point, and app code imports tables from here, so the import seam
+// stays stable. New schema files MUST be re-exported here or drizzle-kit will miss them.
 export * from "./orgs";
 export * from "./users";
 export * from "./leads";

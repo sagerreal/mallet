@@ -4,19 +4,20 @@ import { orThrow } from "@/trpc/errors";
 import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository";
 import { GetSettingsUseCase } from "../app/get-settings";
 import { UpdateConfigUseCase } from "../app/update-config";
+import { UpdateBrandUseCase } from "../app/update-brand";
 import { CreatePricebookUseCase, UpdatePricebookUseCase, RemovePricebookUseCase } from "../app/pricebook";
 import { CreateLaborRateUseCase, UpdateLaborRateUseCase, RemoveLaborRateUseCase } from "../app/labor-rates";
 import { CreateTermUseCase, UpdateTermUseCase, RemoveTermUseCase } from "../app/terms";
 import { CreateSourceUseCase, RemoveSourceUseCase } from "../app/sources";
 import {
-  settingsSnapshotDTO,
+  settingsDTO,
   orgSettingsDTO,
   pricebookItemDTO,
   laborRateDTO,
   jobTermDTO,
   leadSourceDTO,
   bookingCfgDTO,
-  toSnapshotDTO,
+  toSettingsDTO,
   toOrgSettingsDTO,
   toPricebookDTO,
   toLaborRateDTO,
@@ -29,6 +30,7 @@ import {
   termCreateInput,
   termUpdateInput,
   sourceCreateInput,
+  updateBrandInput,
 } from "./settings-dto";
 
 // Shared response for remove/archive operations.
@@ -63,12 +65,14 @@ const updateConfigInput = z.object({
 export const createSettingsRouter = () =>
   router({
     // Full snapshot: lazily materialises the org_settings row on first call.
+    // Returns settingsDTO (snapshot + brand) so the client always has brand data available
+    // after the initial load without a separate updateBrand call.
     get: ownerOrOffice
-      .output(settingsSnapshotDTO)
+      .output(settingsDTO)
       .query(async ({ ctx }) => {
         const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
         const result = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
-        return toSnapshotDTO(orThrow(result));
+        return toSettingsDTO(orThrow(result));
       }),
 
     // Patch org config scalars and/or the booking jsonb blob.
@@ -82,6 +86,34 @@ export const createSettingsRouter = () =>
           ctx.principal.orgId,
         );
         return toOrgSettingsDTO(orThrow(result));
+      }),
+
+    // Patch brand identity fields (name → orgs.name, brand_* → org_settings).
+    // Returns the full settingsDTO so the client reconciles brand + config + collections
+    // in one shot — same shape as get() extended with a brand object.
+    // Org is always sourced from ctx.principal.orgId; the client MUST NOT pass orgId.
+    updateBrand: ownerOrOffice
+      .input(updateBrandInput)
+      .output(settingsDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        // repo satisfies both OrgSettingsConfigPort and OrgNameWriter — inject once for both roles.
+        const result = await new UpdateBrandUseCase(repo, repo, ctx.deps.clock).exec(
+          {
+            name: input.name,
+            tagline: input.tagline,
+            site: input.site,
+            color: input.color,
+            logoUrl: input.logoUrl,
+            initials: input.initials,
+          },
+          ctx.principal.orgId,
+        );
+        orThrow(result);
+        // Re-fetch the full snapshot so the response includes all four collections —
+        // avoids partial responses and keeps the client store reconciliation simple.
+        const snapshot = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
+        return toSettingsDTO(orThrow(snapshot));
       }),
 
     // --- Pricebook -------------------------------------------------------

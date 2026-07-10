@@ -1,5 +1,6 @@
 import { and, asc, count, eq, isNull } from "drizzle-orm";
 import {
+  orgs,
   orgSettings,
   pricebookItems,
   laborRates,
@@ -16,6 +17,7 @@ import type {
   JobTerm,
   LeadSource,
 } from "../domain/settings-repository";
+import type { OrgNameWriter } from "../app/update-brand";
 import { toOrgSettings } from "./settings-mapper";
 
 // Per-tenant list cap: these collections are small per-org (pilot scale). A hard cap protects
@@ -31,7 +33,7 @@ const LIST_LIMIT = 500;
  * contract (keeps the port testable with mocks that lack a bound org). This implementation
  * ignores it and uses `this.orgId` so the two are always consistent.
  */
-export class DrizzleSettingsRepository implements SettingsRepository {
+export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWriter {
   constructor(
     private readonly tx: TenantTx,
     private readonly orgId: OrgId,
@@ -48,15 +50,26 @@ export class DrizzleSettingsRepository implements SettingsRepository {
       .values({ orgId: this.orgId, booking: defaults() })
       .onConflictDoNothing({ target: orgSettings.orgId });
 
-    const rows = await this.tx
-      .select()
-      .from(orgSettings)
-      .where(eq(orgSettings.orgId, this.orgId))
-      .limit(1);
+    // Fetch the settings row and the org name in parallel — one extra select, never per-row.
+    // orgs.name is NOT in org_settings; it lives on the orgs table and is passed to the mapper
+    // so brandName reflects the real org display name without duplicating the column.
+    const [rows, orgRows] = await Promise.all([
+      this.tx
+        .select()
+        .from(orgSettings)
+        .where(eq(orgSettings.orgId, this.orgId))
+        .limit(1),
+      this.tx
+        .select({ name: orgs.name })
+        .from(orgs)
+        .where(eq(orgs.id, this.orgId))
+        .limit(1),
+    ]);
 
     const row = rows[0];
     if (!row) throw new Error("org_settings row missing after lazy create — check RLS policy");
-    return toOrgSettings(row);
+    const orgName = orgRows[0]?.name ?? "My Business";
+    return toOrgSettings(row, orgName);
   }
 
   async saveConfig(settings: OrgSettings): Promise<void> {
@@ -82,10 +95,35 @@ export class DrizzleSettingsRepository implements SettingsRepository {
         areaCities: p.areaCities,
         areaRadiusMi: p.areaRadiusMi,
         booking: p.booking,
+        // Brand identity (Phase 3). brandName lives on orgs.name — setName handles that.
+        // This write covers only the org_settings brand columns.
+        brandTagline: p.brandTagline,
+        brandSite: p.brandSite,
+        brandColor: p.brandColor,
+        brandLogoUrl: p.brandLogoUrl,
+        brandInitials: p.brandInitials,
         updatedAt: p.updatedAt,
       })
       // Guard: match by org_id (the unique identity of this row) + RLS double-checks.
       .where(eq(orgSettings.orgId, this.orgId));
+  }
+
+  // ── OrgNameWriter ──────────────────────────────────────────────────────────
+
+  /**
+   * Updates orgs.name for the current org. Brand NAME lives on the orgs table (not
+   * org_settings) so it stays the single authoritative source. Guarded by RLS
+   * (`id = current_org_id()`) — the runtime role can only update its own row.
+   * Called from UpdateBrandUseCase inside the same withTenant tx as saveConfig, so
+   * both writes commit or roll back atomically.
+   *
+   * `now` is accepted for port-signature symmetry; orgs has no updatedAt column.
+   */
+  async setName(orgId: string, name: string, _now: Date): Promise<void> {
+    await this.tx
+      .update(orgs)
+      .set({ name })
+      .where(eq(orgs.id, orgId));
   }
 
   // ── pricebook_items ────────────────────────────────────────────────────────

@@ -203,4 +203,53 @@ suite("settings tRPC router (full stack, live RLS)", () => {
       callerTech.v1.settings.pricebook.create({ label: "Nope", unitPriceCents: 0, costCents: 0 }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  // ── updateBrand ──────────────────────────────────────────────────────────
+  // NOTE: These tests are WRITTEN but UNRUN — migration 0046 (brand_* columns on
+  // org_settings + orgs.name write) is not yet applied in this environment. They
+  // will pass once `npm run db:migrate` has run the pending brand migration in CI.
+
+  describe("v1.settings.updateBrand", () => {
+    it("owner updates brand; get returns it and orgs.name reflects the name", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      const updated = await caller.v1.settings.updateBrand({
+        name: "Rivera Plumbing",
+        tagline: "Licensed & insured",
+        site: "riveraplumbing.com",
+        color: "#9C5B34",
+        initials: "RP",
+      });
+      expect(updated.brand.name).toBe("Rivera Plumbing");
+      expect(updated.brand.color).toBe("#9C5B34");
+
+      const fetched = await caller.v1.settings.get();
+      expect(fetched.brand.name).toBe("Rivera Plumbing");
+      expect(fetched.brand.tagline).toBe("Licensed & insured");
+
+      const me = await caller.v1.identity.me();
+      expect(me.orgName).toBe("Rivera Plumbing");
+    });
+
+    it("rejects a blank brand name with BAD_REQUEST", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      await expect(
+        caller.v1.settings.updateBrand({ name: "   " }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("a tech is forbidden from updateBrand", async () => {
+      const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+      await expect(
+        callerTech.v1.settings.updateBrand({ name: "Nope" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("org B cannot read org A's brand (RLS isolation)", async () => {
+      const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      await callerA.v1.settings.updateBrand({ name: "Org A Plumbing", color: "#123456" });
+      const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+      const bSettings = await callerB.v1.settings.get(); // lazily creates B's own row
+      expect(bSettings.brand.color).not.toBe("#123456");
+    });
+  });
 });

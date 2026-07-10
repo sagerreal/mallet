@@ -42,6 +42,21 @@ export const orgSettingsDTO = z.object({
   booking: bookingCfgDTO,
 });
 
+// --- Brand DTO -------------------------------------------------------------
+
+/**
+ * Brand identity sub-object returned on every settingsDTO response.
+ * name is the org display name (mirrors orgs.name); all other fields are nullable.
+ */
+export const brandDTO = z.object({
+  name: z.string(),
+  tagline: z.string().nullable(),
+  site: z.string().nullable(),
+  color: z.string().nullable(),
+  logoUrl: z.string().nullable(),
+  initials: z.string().nullable(),
+});
+
 // --- Collection item DTOs --------------------------------------------------
 
 export const pricebookItemDTO = z.object({
@@ -70,6 +85,24 @@ export const leadSourceDTO = z.object({
   id: z.string().uuid(),
   label: z.string(),
   position: z.number().int(),
+});
+
+// --- Snapshot (full read) --------------------------------------------------
+
+export const settingsSnapshotDTO = z.object({
+  config: orgSettingsDTO,
+  pricebook: z.array(pricebookItemDTO),
+  laborRates: z.array(laborRateDTO),
+  terms: z.array(jobTermDTO),
+  sources: z.array(leadSourceDTO),
+});
+
+// --- Full settings DTO (snapshot + brand) ----------------------------------
+// Returned by updateBrand (and usable by get) so the client reconciles brand +
+// config + collections in one response, avoiding a follow-up get call.
+
+export const settingsDTO = settingsSnapshotDTO.extend({
+  brand: brandDTO,
 });
 
 // --- Input schemas (named exports, mirroring output DTOs above) ------------
@@ -126,14 +159,17 @@ export const sourceCreateInput = z.object({
   position: z.number().int().optional(),
 });
 
-// --- Snapshot (full read) --------------------------------------------------
-
-export const settingsSnapshotDTO = z.object({
-  config: orgSettingsDTO,
-  pricebook: z.array(pricebookItemDTO),
-  laborRates: z.array(laborRateDTO),
-  terms: z.array(jobTermDTO),
-  sources: z.array(leadSourceDTO),
+// updateBrand input: all fields optional — caller sends only what changed.
+// Boundary validation: name min(1) enforces non-blank even before the domain re-validates.
+// initials hard-capped at 3 chars per UX spec; the domain aggregate intentionally
+// omits this format constraint, delegating it to the boundary (design-principles §validate-at-boundaries).
+export const updateBrandInput = z.object({
+  name: z.string().min(1).max(200).optional(),
+  tagline: z.string().max(500).nullable().optional(),
+  site: z.string().max(2048).nullable().optional(),
+  color: z.string().max(32).nullable().optional(),
+  logoUrl: z.string().max(2048).nullable().optional(),
+  initials: z.string().max(3).nullable().optional(),
 });
 
 // --- Mappers (domain → wire) -----------------------------------------------
@@ -177,3 +213,25 @@ export const toSnapshotDTO = (s: SettingsSnapshot): z.infer<typeof settingsSnaps
   terms: s.terms.map(toJobTermDTO),
   sources: s.sources.map(toLeadSourceDTO),
 });
+
+/**
+ * Maps a SettingsSnapshot (config aggregate + collections) to the full settingsDTO wire shape.
+ * Brand fields are sourced from the OrgSettings aggregate's props; brandName mirrors orgs.name
+ * (the Drizzle repo joins orgs.name into the aggregate at read time).
+ * Authoritative mapper for updateBrand — returns brand + config scalars + all four collections
+ * so the client reconciles everything from a single response.
+ */
+export const toSettingsDTO = (s: SettingsSnapshot): z.infer<typeof settingsDTO> => {
+  const p = s.config.props;
+  return {
+    ...toSnapshotDTO(s),
+    brand: {
+      name: p.brandName,
+      tagline: p.brandTagline,
+      site: p.brandSite,
+      color: p.brandColor,
+      logoUrl: p.brandLogoUrl,
+      initials: p.brandInitials,
+    },
+  };
+};
