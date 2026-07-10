@@ -189,6 +189,7 @@ export function NewJobModalContent() {
     const match = matchLead(custName);
 
     // Resolve the matched lead, or add a new one (Estimate = a scoping visit on a lead).
+    // addLead returns { lead, persisted } — destructure so `lead` is the optimistic Lead.
     const lead =
       match ??
       addLead({
@@ -198,7 +199,7 @@ export function NewJobModalContent() {
         stage: "Contacted",
         job,
         address: addr.trim() || undefined,
-      });
+      }).lead;
 
     // Merge fill-ins onto an existing lead without clobbering (prototype behavior).
     const existing = lead.evisits ?? [];

@@ -22,14 +22,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // The mockMutate stub is captured in module scope so tests can call
 // mockMutate.mock.calls / mockMutate.mockReset() etc.
 const mockMutate = vi.fn();
+const mockCreate = vi.fn();
 
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
     v1: {
       customers: {
-        update: {
-          mutate: (...args: unknown[]) => mockMutate(...args),
-        },
+        update: { mutate: (...args: unknown[]) => mockMutate(...args) },
+        create: { mutate: (...args: unknown[]) => mockCreate(...args) },
       },
       tasks: {
         create: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: false }) },
@@ -501,6 +501,95 @@ describe("updateLead integration (with trpcVanilla mock) — continued", () => {
 // ---------------------------------------------------------------------------
 // updateTask — optimistic update, correct v1.tasks.update args, rollback on error.
 // ---------------------------------------------------------------------------
+
+describe("addLead (with trpcVanilla mock)", () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({
+      id: "srv-lead-999",
+      name: "Ada Lovelace",
+      phone: "+15550001234",
+      email: null,
+      source: "Added manually",
+      stage: "new",
+      value: { cents: 0, currency: "USD" },
+      unread: false,
+      companyId: null,
+      role: null,
+      createdAt: new Date().toISOString(),
+      created: true,
+    });
+  });
+
+  it("prepends optimistically and calls create with name/phone/source", () => {
+    const slice = makeSlice();
+    const { lead } = slice.state.addLead({
+      name: "Ada Lovelace",
+      phone: "+15550001234",
+      source: "Added manually",
+      stage: "New customer",
+      job: "",
+    });
+    // Optimistic insert visible immediately with a client UUID.
+    expect(slice.state.leads).toHaveLength(1);
+    expect(slice.state.leads[0]?.name).toBe("Ada Lovelace");
+    expect(lead.id).toBe(slice.state.leads[0]?.id);
+    // create called with the DB-persisted fields (no stage — server starts at "new").
+    expect(mockCreate).toHaveBeenCalledOnce();
+    const call = mockCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.name).toBe("Ada Lovelace");
+    expect(call.phone).toBe("+15550001234");
+    expect(call.source).toBe("Added manually");
+    expect(call.stage).toBeUndefined();
+  });
+
+  it("adopts the server-assigned id on reconcile (dedupe-safe)", async () => {
+    const slice = makeSlice();
+    const { lead, persisted } = slice.state.addLead({
+      name: "Ada Lovelace",
+      phone: "+15550001234",
+      source: "Added manually",
+      stage: "New customer",
+      job: "",
+    });
+    const optimisticId = lead.id;
+    const reconciled = await persisted;
+    // The optimistic row's id is replaced by the server id.
+    expect(reconciled.id).toBe("srv-lead-999");
+    expect(slice.state.leads.some((l: Lead) => l.id === optimisticId)).toBe(false);
+    expect(slice.state.leads.some((l: Lead) => l.id === "srv-lead-999")).toBe(true);
+    // Local-only fields (acts, evisits) survive the id swap.
+    const row = slice.state.leads.find((l: Lead) => l.id === "srv-lead-999");
+    expect(row?.acts).toEqual([]);
+    expect(row?.evisits).toEqual([]);
+  });
+
+  it("maps the reconciled DB enum stage back to a display string", async () => {
+    mockCreate.mockResolvedValue({
+      id: "srv-lead-1000", name: "Existing Dedup", phone: null, email: null,
+      source: null, stage: "quote_sent", value: { cents: 0, currency: "USD" },
+      unread: false, companyId: null, role: null,
+      createdAt: new Date().toISOString(), created: false,
+    });
+    const slice = makeSlice();
+    const { persisted } = slice.state.addLead({
+      name: "Existing Dedup", phone: "", source: "", stage: "New customer", job: "",
+    });
+    const reconciled = await persisted;
+    expect(reconciled.stage).toBe("Quote Sent");
+  });
+
+  it("rolls back the optimistic lead on create failure", async () => {
+    mockCreate.mockRejectedValue(new Error("network error"));
+    const slice = makeSlice();
+    const { persisted } = slice.state.addLead({
+      name: "Fail", phone: "", source: "", stage: "New customer", job: "",
+    });
+    expect(slice.state.leads).toHaveLength(1);
+    await persisted.catch(() => undefined);
+    expect(slice.state.leads).toHaveLength(0);
+  });
+});
 
 describe("updateTask (with trpcVanilla mock)", () => {
   let updateMutate: ReturnType<typeof vi.fn>;
