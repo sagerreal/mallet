@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { dtoEstimateToStore, dtoInvoiceToStore, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
+import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
 import type { Estimate, Invoice } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -382,5 +382,38 @@ describe("stage mapper (store display ↔ DB enum)", () => {
 
   it("passes through an already-display value in backendStageToStore", () => {
     expect(backendStageToStore("Quote Sent")).toBe("Quote Sent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dtoJobToStoreJob — svc mapping (Task 6)
+// ---------------------------------------------------------------------------
+
+const baseJobDto = {
+  id: "11111111-1111-1111-1111-111111111111",
+  num: "JOB-1",
+  leadId: "33333333-3333-3333-3333-333333333333",
+  sourceEstimateId: null,
+  assigneeUserId: null,
+  title: "Water heater",
+  status: "scheduled" as const,
+  scheduledStart: null, scheduledEnd: null, startedAt: null, completedAt: null,
+  canceledAt: null, cancelReason: null,
+  total: { cents: 0, currency: "USD" as const },
+  notes: "gate 4",
+  svc: "estimate",
+  visits: [],
+  createdAt: "2026-07-10T00:00:00.000Z",
+};
+
+describe("dtoJobToStoreJob svc mapping", () => {
+  it("reads svc from the DTO", () => {
+    const job = dtoJobToStoreJob(baseJobDto as never);
+    expect(job.svc).toBe("estimate");
+  });
+
+  it("falls back to 'service' when svc is null", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, svc: null } as never);
+    expect(job.svc).toBe("service");
   });
 });
