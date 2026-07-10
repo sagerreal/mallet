@@ -20,3 +20,6 @@ coverage/
 
 # agent worktrees / local tooling
 .claude/
+
+# Subagent-driven-development scratch (briefs, reports, diffs, ledger)
+.superpowers/

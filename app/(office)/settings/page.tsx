@@ -50,9 +50,9 @@ function timeLabel(h: number): string {
   return `${dh}${period}`;
 }
 
-function pbMarginPct(p: { r: number; c: number }): number {
-  if (!p.r) return 0;
-  return Math.round(((p.r - p.c) / p.r) * 100);
+function pbMarginPct(p: { unitPrice: number; cost: number }): number {
+  if (!p.unitPrice) return 0;
+  return Math.round(((p.unitPrice - p.cost) / p.unitPrice) * 100);
 }
 
 // ---- FoldCard component -----------------------------------------------------
@@ -591,12 +591,12 @@ function SecSources() {
       <FoldCard title="Source list" summary={`${sources.length} sources`}>
         {sources.length > 0 ? (
           sources.map((s) => {
-            const count = leads.filter((l) => l.source === s).length;
+            const count = leads.filter((l) => l.source === s.label).length;
             return (
-              <div key={s} className="stage-row">
-                <span style={{ fontWeight: 700 }}>{s}</span>
+              <div key={s.id} className="stage-row">
+                <span style={{ fontWeight: 700 }}>{s.label}</span>
                 <span className="trig">{count} lead{count === 1 ? "" : "s"}</span>
-                <button className="btn sm ghost" onClick={() => removeSource(s)}>✕</button>
+                <button className="btn sm ghost" onClick={() => removeSource(s.id)}>✕</button>
               </div>
             );
           })
@@ -826,27 +826,27 @@ function SecPricing() {
 
       <FoldCard title="Pricebook" summary={`${pricebook.length} lines`}>
         <div>
-          {pricebook.map((p, i) => (
-            <div key={i} className="stage-row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <input type="text" defaultValue={p.d}
-                onChange={(e) => updatePricebookItem(i, "d", e.target.value)}
+          {pricebook.map((p) => (
+            <div key={p.id} className="stage-row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <input type="text" defaultValue={p.label}
+                onChange={(e) => updatePricebookItem(p.id, "label", e.target.value)}
                 style={{ flex: 1, minWidth: 150, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
               <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <span className="muted">$</span>
-                <input type="number" defaultValue={p.r}
-                  onChange={(e) => updatePricebookItem(i, "r", e.target.value)}
+                <input type="number" defaultValue={p.unitPrice}
+                  onChange={(e) => updatePricebookItem(p.id, "unitPrice", e.target.value)}
                   style={{ width: 78, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <span className="muted" style={{ fontSize: 11 }}>cost</span>
-                <input type="number" defaultValue={p.c}
-                  onChange={(e) => updatePricebookItem(i, "c", e.target.value)}
+                <input type="number" defaultValue={p.cost}
+                  onChange={(e) => updatePricebookItem(p.id, "cost", e.target.value)}
                   style={{ width: 64, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
               </span>
               <span className="muted" style={{ fontSize: "11.5px", minWidth: 62, textAlign: "right" }}>
-                {p.c ? `${pbMarginPct(p)}% margin` : ""}
+                {p.cost ? `${pbMarginPct(p)}% margin` : ""}
               </span>
-              <button className="btn sm ghost" onClick={() => removePricebookItem(i)}>✕</button>
+              <button className="btn sm ghost" onClick={() => removePricebookItem(p.id)}>✕</button>
             </div>
           ))}
         </div>
@@ -880,11 +880,11 @@ function SecPricing() {
 
       <FoldCard title="Terms library" summary={`${terms.length} terms`}>
         <div>
-          {terms.map((t, i) => (
-            <div key={i} className="stage-row">
+          {terms.map((t) => (
+            <div key={t.id} className="stage-row">
               <span style={{ fontWeight: 700 }}>{t.t}</span>
               <span className="trig" style={{ maxWidth: 280, whiteSpace: "normal" }}>{t.body.slice(0, 60)}…</span>
-              <button className="btn sm ghost" onClick={() => removeTerm(i)}>✕</button>
+              <button className="btn sm ghost" onClick={() => removeTerm(t.id)}>✕</button>
             </div>
           ))}
         </div>
