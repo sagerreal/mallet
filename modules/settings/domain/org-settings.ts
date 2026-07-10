@@ -6,9 +6,6 @@ import { validation, ok, err } from "@mallet/shared/types";
 // Minimum duration for any visit type (minutes).
 const VISIT_FLOOR_MINUTES = 15;
 
-// Brand initials max length (monogram: 1-3 chars).
-const BRAND_INITIALS_MAX_LENGTH = 3;
-
 // Hour range: [0, 24] (0 = midnight, 24 = end-of-day).
 const HOUR_MIN = 0;
 const HOUR_MAX = 24;
@@ -152,18 +149,6 @@ export class OrgSettings {
     if (brandName.length === 0) {
       return err(validation("brand name is required", "brandName"));
     }
-    // Initials are a monogram: enforce max length when present.
-    if (
-      props.brandInitials !== null &&
-      props.brandInitials.length > BRAND_INITIALS_MAX_LENGTH
-    ) {
-      return err(
-        validation(
-          `brand initials must be at most ${BRAND_INITIALS_MAX_LENGTH} characters`,
-          "brandInitials",
-        ),
-      );
-    }
 
     return ok(
       new OrgSettings({
@@ -235,8 +220,7 @@ export class OrgSettings {
   /**
    * Patch the brand-identity subset. undefined = keep current; explicit null
    * clears an optional field. brandName re-runs the NOT-NULL invariant via create.
-   * Returns a new OrgSettings on success, or a ValidationError if the name is blank
-   * or initials exceed the monogram limit.
+   * Returns a new OrgSettings on success, or a ValidationError if the name is blank.
    */
   patchBrand(
     fields: {
