@@ -2,6 +2,15 @@
  * lib/store/slices/jobs-slice.ts
  * Job + visit data and mutations. Immutable updates only.
  *
+ * addJob is OPTIMISTIC + PERSIST + RECONCILE (client-authored id):
+ *   1. Mint a UUID client-side and prepend optimistically.
+ *   2. Fire v1.jobs.create with that same id so the server row id === client id.
+ *   3. On success, reconcile (preserve client id; server side may update
+ *      derived fields); fold in any optimistic visits already added.
+ *   4. On error, remove the optimistic job and dev-log.
+ *   Manual jobs with no leadId (leadId === "") are pure local drafts — the DB
+ *   requires a non-null lead FK, so the network call is skipped for those.
+ *
  * Visit actions (addVisit / placeVisit / updateVisit / removeVisit /
  * setVisitStatus) are OPTIMISTIC + PERSIST + RECONCILE:
  *   1. Apply local change immediately so the UI is instant.
@@ -11,9 +20,9 @@
  *      computed scheduledEnd, derived status).
  *   4. On error, ROLL BACK to the pre-mutation snapshot and log.
  *
- * Only DB-origin jobs (origin === "db") are persisted.  Local prototype
- * jobs created in the UI (origin === "manual") skip the network calls so
- * the demo flow still works without a backend.
+ * Visit actions check job.origin === "db" before firing the network call.
+ * addJob now sets origin to JOB_ORIGIN.DB on reconcile so manual jobs with
+ * a real lead become DB-tracked and their subsequent visits also persist.
  *
  * RESIZE debounce: updateVisit for duration fires on every mousemove.
  * A module-level timer keyed by visitId collapses the stream to ONE
@@ -149,9 +158,52 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
 
   setJobs: (jobs) => set({ jobs }),
 
+  // ---------------------------------------------------------------------------
+  // addJob — client-authored id (so the returned id is valid for an immediate
+  // addVisit) + optimistic insert + persist via v1.jobs.create + reconcile/rollback.
+  // A manual job with no leadId (leadId === "") is a pure local draft — the DB
+  // requires a lead FK, so we skip the network call and keep it store-only.
+  // ---------------------------------------------------------------------------
   addJob: (draft) => {
-    const newJob: Job = { ...draft, id: crypto.randomUUID() };
+    const id = crypto.randomUUID();
+    const newJob: Job = { ...draft, id };
     set((s) => ({ jobs: [newJob, ...s.jobs] }));
+
+    // No lead to attach to → cannot persist (jobs.lead_id is NOT NULL, composite FK).
+    if (!newJob.leadId) return newJob;
+
+    const priorJobs = get().jobs;
+    trpcVanilla.v1.jobs.create
+      .mutate({
+        id,
+        leadId: newJob.leadId,
+        title: newJob.title || undefined,
+        svc: newJob.svc || undefined,
+        addr: newJob.addr || undefined,
+        phone: newJob.phone || undefined,
+        notes: newJob.notes || undefined,
+      })
+      .then((dto) => {
+        // Reconcile: server row id === client id (client-authored), so the board
+        // and any queued addVisit calls remain valid. Fold in any optimistic
+        // visits already added. Mark origin DB so subsequent visit actions persist.
+        set((s) => ({
+          jobs: s.jobs.map((j) =>
+            j.id === id
+              ? { ...dtoJobToStoreJob(dto), id, origin: JOB_ORIGIN.DB, visits: j.visits }
+              : j,
+          ),
+        }));
+      })
+      .catch((err: unknown) => {
+        // Roll back: remove the optimistic job.
+        set(() => ({ jobs: priorJobs.filter((j) => j.id !== id) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[jobs-slice] addJob failed — rolled back", { id, err });
+        }
+      });
+
     return newJob;
   },
 
