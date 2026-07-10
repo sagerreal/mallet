@@ -22,6 +22,13 @@ import {
   toLaborRateDTO,
   toJobTermDTO,
   toLeadSourceDTO,
+  pricebookCreateInput,
+  pricebookUpdateInput,
+  laborRateCreateInput,
+  laborRateUpdateInput,
+  termCreateInput,
+  termUpdateInput,
+  sourceCreateInput,
 } from "./settings-dto";
 
 // Shared response for remove/archive operations.
@@ -81,15 +88,7 @@ export const createSettingsRouter = () =>
 
     pricebook: router({
       create: ownerOrOffice
-        .input(
-          z.object({
-            id: z.string().uuid().optional(),
-            label: z.string().min(1).max(500),
-            unitPriceCents: z.number().int().min(0),
-            costCents: z.number().int().min(0),
-            position: z.number().int().optional(),
-          }),
-        )
+        .input(pricebookCreateInput)
         .output(pricebookItemDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
@@ -101,15 +100,7 @@ export const createSettingsRouter = () =>
         }),
 
       update: ownerOrOffice
-        .input(
-          z.object({
-            id: z.string().uuid(),
-            label: z.string().min(1).max(500).optional(),
-            unitPriceCents: z.number().int().min(0).optional(),
-            costCents: z.number().int().min(0).optional(),
-            position: z.number().int().optional(),
-          }),
-        )
+        .input(pricebookUpdateInput)
         .output(pricebookItemDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
@@ -137,14 +128,7 @@ export const createSettingsRouter = () =>
 
     laborRates: router({
       create: ownerOrOffice
-        .input(
-          z.object({
-            id: z.string().uuid().optional(),
-            label: z.string().min(1).max(200),
-            rateCentsPerHour: z.number().int().min(0),
-            position: z.number().int().optional(),
-          }),
-        )
+        .input(laborRateCreateInput)
         .output(laborRateDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
@@ -156,14 +140,7 @@ export const createSettingsRouter = () =>
         }),
 
       update: ownerOrOffice
-        .input(
-          z.object({
-            id: z.string().uuid(),
-            label: z.string().min(1).max(200).optional(),
-            rateCentsPerHour: z.number().int().min(0).optional(),
-            position: z.number().int().optional(),
-          }),
-        )
+        .input(laborRateUpdateInput)
         .output(laborRateDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
@@ -191,14 +168,7 @@ export const createSettingsRouter = () =>
 
     terms: router({
       create: ownerOrOffice
-        .input(
-          z.object({
-            id: z.string().uuid().optional(),
-            title: z.string().min(1).max(200),
-            body: z.string().min(1).max(10_000),
-            position: z.number().int().optional(),
-          }),
-        )
+        .input(termCreateInput)
         .output(jobTermDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
@@ -210,14 +180,7 @@ export const createSettingsRouter = () =>
         }),
 
       update: ownerOrOffice
-        .input(
-          z.object({
-            id: z.string().uuid(),
-            title: z.string().min(1).max(200).optional(),
-            body: z.string().min(1).max(10_000).optional(),
-            position: z.number().int().optional(),
-          }),
-        )
+        .input(termUpdateInput)
         .output(jobTermDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
@@ -245,13 +208,7 @@ export const createSettingsRouter = () =>
 
     sources: router({
       create: ownerOrOffice
-        .input(
-          z.object({
-            id: z.string().uuid().optional(),
-            label: z.string().min(1).max(200),
-            position: z.number().int().optional(),
-          }),
-        )
+        .input(sourceCreateInput)
         .output(leadSourceDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);

@@ -8,14 +8,14 @@ import type { OrgSettings } from "../domain/org-settings";
 export const bookingServiceDTO = z.object({
   name: z.string(),
   lane: z.enum(["repair", "estimate", "flat"]),
-  price: z.number().optional(),
+  price: z.number().min(0).optional(),
   triggers: z.string(),
 });
 
 export const bookingCfgDTO = z.object({
   services: z.array(bookingServiceDTO),
   notServices: z.string(),
-  serviceFee: z.number(),
+  serviceFee: z.number().min(0), // dollars, not cents
   feeCredited: z.boolean(),
 });
 
@@ -70,6 +70,60 @@ export const leadSourceDTO = z.object({
   id: z.string().uuid(),
   label: z.string(),
   position: z.number().int(),
+});
+
+// --- Input schemas (named exports, mirroring output DTOs above) ------------
+// These are consumed by settings-router.ts so inline anonymous z.object literals
+// don't appear in the procedure chain.
+
+export const pricebookCreateInput = z.object({
+  id: z.string().uuid().optional(),
+  label: z.string().min(1).max(500),
+  unitPriceCents: z.number().int().min(0),
+  costCents: z.number().int().min(0),
+  position: z.number().int().optional(),
+});
+
+export const pricebookUpdateInput = z.object({
+  id: z.string().uuid(),
+  label: z.string().min(1).max(500).optional(),
+  unitPriceCents: z.number().int().min(0).optional(),
+  costCents: z.number().int().min(0).optional(),
+  position: z.number().int().optional(),
+});
+
+export const laborRateCreateInput = z.object({
+  id: z.string().uuid().optional(),
+  label: z.string().min(1).max(200),
+  rateCentsPerHour: z.number().int().min(0),
+  position: z.number().int().optional(),
+});
+
+export const laborRateUpdateInput = z.object({
+  id: z.string().uuid(),
+  label: z.string().min(1).max(200).optional(),
+  rateCentsPerHour: z.number().int().min(0).optional(),
+  position: z.number().int().optional(),
+});
+
+export const termCreateInput = z.object({
+  id: z.string().uuid().optional(),
+  title: z.string().min(1).max(200),
+  body: z.string().min(1).max(10_000),
+  position: z.number().int().optional(),
+});
+
+export const termUpdateInput = z.object({
+  id: z.string().uuid(),
+  title: z.string().min(1).max(200).optional(),
+  body: z.string().min(1).max(10_000).optional(),
+  position: z.number().int().optional(),
+});
+
+export const sourceCreateInput = z.object({
+  id: z.string().uuid().optional(),
+  label: z.string().min(1).max(200),
+  position: z.number().int().optional(),
 });
 
 // --- Snapshot (full read) --------------------------------------------------

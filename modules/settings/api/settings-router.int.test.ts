@@ -71,7 +71,7 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     const snap = await caller.v1.settings.get();
     expect(snap.config.trade).toBe("plumbing");
     expect(snap.config.markupBps).toBe(3500);
-    expect(snap.config.booking.services.length).toBeGreaterThanOrEqual(0);
+    expect(snap.config.booking.services.length).toBeGreaterThan(0);
     expect(snap.pricebook).toEqual([]);
     expect(snap.laborRates).toEqual([]);
     expect(snap.terms).toEqual([]);
