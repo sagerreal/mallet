@@ -170,6 +170,7 @@ export interface LeadsSlice {
   taskDone: (id: string) => void;
   toggleTask: (id: string) => void;
   addTask: (draft: Omit<Task, "id" | "done">) => void;
+  updateTask: (id: string, patch: { t?: string; due?: string | null }) => void;
 }
 
 export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (set, get) => ({
@@ -370,6 +371,51 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         if (process.env.NODE_ENV !== "production") {
           // eslint-disable-next-line no-console
           console.error("[leads-slice] toggleTask failed — rolled back", { id, err });
+        }
+      });
+  },
+
+  // ---------------------------------------------------------------------------
+  // updateTask — optimistic update of text and/or due date; persist via
+  // v1.tasks.update({ taskId, text?, dueDate? }); reconcile returned DTO;
+  // rollback on error. Only sends changed fields; empty string due → null.
+  // ---------------------------------------------------------------------------
+  updateTask: (id, patch) => {
+    const prior = get().tasks.slice();
+    // Optimistic update immediately.
+    set((s) => ({
+      tasks: s.tasks.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              ...(patch.t !== undefined ? { t: patch.t } : {}),
+              ...(patch.due !== undefined ? { due: patch.due } : {}),
+            }
+          : t,
+      ),
+    }));
+    // Build the mutation payload — only send changed fields.
+    const mutInput: { taskId: string; text?: string; dueDate?: string | null } = {
+      taskId: id,
+    };
+    if (patch.t !== undefined) mutInput.text = patch.t;
+    if (patch.due !== undefined) {
+      // Map empty string → null (no due date).
+      mutInput.dueDate = patch.due === "" ? null : patch.due;
+    }
+    trpcVanilla.v1.tasks.update
+      .mutate(mutInput)
+      .then((dto) => {
+        const reconciled = dtoToTask(dto);
+        set((s) => ({
+          tasks: s.tasks.map((t) => (t.id === reconciled.id ? reconciled : t)),
+        }));
+      })
+      .catch((err: unknown) => {
+        set({ tasks: prior });
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] updateTask failed — rolled back", { id, patch, err });
         }
       });
   },

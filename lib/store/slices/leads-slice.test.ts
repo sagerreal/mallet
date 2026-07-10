@@ -34,6 +34,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
       tasks: {
         create: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: false }) },
         setDone: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: true }) },
+        update: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: false }) },
       },
     },
   },
@@ -478,5 +479,134 @@ describe("updateLead integration (with trpcVanilla mock) — continued", () => {
     expect(afterRollback?.name).toBe("A");
     // phone should remain "+9999" — the second edit must NOT be clobbered.
     expect(afterRollback?.phone).toBe("+9999");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateTask — optimistic update, correct v1.tasks.update args, rollback on error.
+// ---------------------------------------------------------------------------
+
+describe("updateTask (with trpcVanilla mock)", () => {
+  let updateMutate: ReturnType<typeof vi.fn>;
+
+  const seedTask = (slice: { state: LeadsSlice; seedLeads: (l: Lead[]) => void }) => {
+    // Directly set tasks on the slice state (mimics setTasks).
+    (slice as unknown as { state: { tasks: unknown[] } }).state.tasks = [];
+    slice.state.setTasks([
+      { id: "task-abc", t: "Call client", due: "2026-07-20", leadId: "lead-111", done: false },
+    ]);
+  };
+
+  beforeEach(async () => {
+    const { trpcVanilla } = await import("@/lib/trpc/vanilla");
+    updateMutate = trpcVanilla.v1.tasks.update.mutate as ReturnType<typeof vi.fn>;
+    updateMutate.mockReset();
+    updateMutate.mockResolvedValue({
+      id: "task-abc",
+      text: "Call client",
+      dueDate: "2026-07-20",
+      leadId: "lead-111",
+      done: false,
+    });
+  });
+
+  it("applies the optimistic update immediately before the mutation resolves", async () => {
+    const slice = makeSlice();
+    seedTask(slice);
+
+    updateMutate.mockResolvedValue({
+      id: "task-abc",
+      text: "Call client UPDATED",
+      dueDate: "2026-07-25",
+      leadId: "lead-111",
+      done: false,
+    });
+
+    slice.state.updateTask("task-abc", { t: "Call client UPDATED", due: "2026-07-25" });
+
+    // Optimistic update visible immediately.
+    const task = slice.state.tasks.find((t) => t.id === "task-abc");
+    expect(task?.t).toBe("Call client UPDATED");
+    expect(task?.due).toBe("2026-07-25");
+  });
+
+  it("calls v1.tasks.update with correct taskId, text, and dueDate", async () => {
+    const slice = makeSlice();
+    seedTask(slice);
+
+    slice.state.updateTask("task-abc", { t: "Renamed task", due: "2026-08-01" });
+
+    expect(updateMutate).toHaveBeenCalledOnce();
+    const call = updateMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.taskId).toBe("task-abc");
+    expect(call.text).toBe("Renamed task");
+    expect(call.dueDate).toBe("2026-08-01");
+  });
+
+  it("maps empty string due to null (clears the due date)", async () => {
+    const slice = makeSlice();
+    seedTask(slice);
+
+    slice.state.updateTask("task-abc", { due: "" });
+
+    expect(updateMutate).toHaveBeenCalledOnce();
+    const call = updateMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.dueDate).toBeNull();
+    // text was not in the patch — must not be sent.
+    expect(call.text).toBeUndefined();
+  });
+
+  it("only sends text when only text changes (does not send dueDate)", async () => {
+    const slice = makeSlice();
+    seedTask(slice);
+
+    slice.state.updateTask("task-abc", { t: "Only text changed" });
+
+    expect(updateMutate).toHaveBeenCalledOnce();
+    const call = updateMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.text).toBe("Only text changed");
+    expect(call.dueDate).toBeUndefined();
+  });
+
+  it("reconciles the returned DTO after successful update", async () => {
+    const slice = makeSlice();
+    seedTask(slice);
+
+    updateMutate.mockResolvedValue({
+      id: "task-abc",
+      text: "Reconciled text",
+      dueDate: "2026-09-01",
+      leadId: "lead-111",
+      done: false,
+    });
+
+    slice.state.updateTask("task-abc", { t: "Reconciled text", due: "2026-09-01" });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const task = slice.state.tasks.find((t) => t.id === "task-abc");
+    expect(task?.t).toBe("Reconciled text");
+    expect(task?.due).toBe("2026-09-01");
+  });
+
+  it("rolls back the task to its prior state on update failure", async () => {
+    const slice = makeSlice();
+    seedTask(slice);
+
+    updateMutate.mockRejectedValue(new Error("network error"));
+
+    slice.state.updateTask("task-abc", { t: "Failed rename", due: "2026-12-31" });
+
+    // Optimistic update visible before rejection.
+    expect(slice.state.tasks.find((t) => t.id === "task-abc")?.t).toBe("Failed rename");
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Rolled back — original values restored.
+    const task = slice.state.tasks.find((t) => t.id === "task-abc");
+    expect(task?.t).toBe("Call client");
+    expect(task?.due).toBe("2026-07-20");
   });
 });
