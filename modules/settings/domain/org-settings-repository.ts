@@ -1,22 +1,15 @@
-import type { OrgSettings } from "./org-settings";
+import type { SettingsRepository } from "./settings-repository";
 
 /**
- * Narrow port for brand-scoped settings access. Used by UpdateBrandUseCase so the
- * app layer stays infra-free. Task 5's Drizzle adapter implements this alongside the
- * broader SettingsRepository.
+ * Narrow port for brand-scoped settings access used by UpdateBrandUseCase.
  *
- * Note on tx-atomicity: both `save` and OrgNameWriter.setName run inside the
- * org-scoped transaction supplied by the router's `withTenant` wrapper. The
- * use-case calls both sequentially; the enclosing tx commits or rolls back them
+ * Defined as a Pick of SettingsRepository so the existing DrizzleSettingsRepository
+ * (Task 5) structurally satisfies it with ZERO new methods — no parallel hierarchy,
+ * no DRY violation. ISP without duplication.
+ *
+ * Note on tx-atomicity: both writes (saveConfig + OrgNameWriter.setName) run inside
+ * the org-scoped Postgres transaction provided by the router's `withTenant` wrapper.
+ * The use-case calls them sequentially; the enclosing tx commits or rolls back both
  * together — no two-phase commit is needed within a single Postgres tx.
  */
-export interface OrgSettingsRepository {
-  /**
-   * Returns the org's settings row, lazily creating it with sane defaults on first access.
-   * Idempotent — safe to call multiple times for the same org.
-   */
-  getOrCreate(orgId: string): Promise<OrgSettings>;
-
-  /** Persists a mutated OrgSettings (brand fields) back to org_settings. Upsert-safe. */
-  save(settings: OrgSettings): Promise<void>;
-}
+export type OrgSettingsConfigPort = Pick<SettingsRepository, "getConfig" | "saveConfig">;

@@ -1,8 +1,8 @@
 import type { Result, AppError, Clock } from "@mallet/shared/types";
 import { ok } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
-import type { OrgSettings } from "../domain/org-settings";
-import type { OrgSettingsRepository } from "../domain/org-settings-repository";
+import { OrgSettings } from "../domain/org-settings";
+import type { OrgSettingsConfigPort } from "../domain/org-settings-repository";
 
 export interface UpdateBrandCommand {
   readonly name?: string;
@@ -25,7 +25,7 @@ export interface OrgNameWriter {
 
 /**
  * Updates an org's brand identity: brand_* fields in org_settings (via
- * OrgSettingsRepository) and the display name in orgs.name (via OrgNameWriter).
+ * OrgSettingsConfigPort) and the display name in orgs.name (via OrgNameWriter).
  *
  * Tx-atomicity: both writes execute inside the router's `withTenant` transaction.
  * The use-case calls them sequentially; the enclosing Postgres tx commits or
@@ -33,13 +33,13 @@ export interface OrgNameWriter {
  */
 export class UpdateBrandUseCase {
   constructor(
-    private readonly settings: OrgSettingsRepository,
+    private readonly settings: OrgSettingsConfigPort,
     private readonly orgNames: OrgNameWriter,
     private readonly clock: Clock,
   ) {}
 
   async exec(cmd: UpdateBrandCommand, orgId: string): Promise<Result<OrgSettings, AppError>> {
-    const current = await this.settings.getOrCreate(orgId);
+    const current = await this.settings.getConfig(orgId, OrgSettings.defaultBooking);
     const now = this.clock.now();
 
     const patched = current.patchBrand(
@@ -55,7 +55,7 @@ export class UpdateBrandUseCase {
     );
     if (!patched.ok) return patched;
 
-    await this.settings.save(patched.value);
+    await this.settings.saveConfig(patched.value);
 
     // Only touch orgs.name when the caller explicitly provided a name.
     // An omitted name leaves orgs.name unchanged; a blank name is rejected

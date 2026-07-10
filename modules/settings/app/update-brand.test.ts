@@ -1,22 +1,26 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { asOrgId, FixedClock, isOk, type OrgId } from "@mallet/shared/types";
-import { OrgSettings } from "../domain/org-settings";
+import { OrgSettings, type BookingCfg } from "../domain/org-settings";
 import { baseSettingsProps } from "../domain/org-settings.fixtures";
-import type { OrgSettingsRepository } from "../domain/org-settings-repository";
+import type { OrgSettingsConfigPort } from "../domain/org-settings-repository";
 import { UpdateBrandUseCase, type OrgNameWriter, type UpdateBrandCommand } from "./update-brand";
 
 const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
 
-class FakeSettingsRepo implements OrgSettingsRepository {
+class FakeSettingsRepo implements OrgSettingsConfigPort {
   saved: OrgSettings | null = null;
   constructor(private readonly current: OrgSettings) {}
-  async getOrCreate(): Promise<OrgSettings> { return this.saved ?? this.current; }
-  async save(s: OrgSettings): Promise<void> { this.saved = s; }
+  async getConfig(_orgId: string, _defaults: () => BookingCfg): Promise<OrgSettings> {
+    return this.saved ?? this.current;
+  }
+  async saveConfig(s: OrgSettings): Promise<void> { this.saved = s; }
 }
 
 class FakeOrgNameWriter implements OrgNameWriter {
-  calls: { orgId: string; name: string }[] = [];
-  async setName(orgId: string, name: string): Promise<void> { this.calls.push({ orgId, name }); }
+  calls: { orgId: string; name: string; now: Date }[] = [];
+  async setName(orgId: string, name: string, now: Date): Promise<void> {
+    this.calls.push({ orgId, name, now });
+  }
 }
 
 describe("UpdateBrandUseCase", () => {
@@ -50,7 +54,7 @@ describe("UpdateBrandUseCase", () => {
       expect(r.value.props.brandColor).toBe("#9C5B34");
     }
     expect(repo.saved).not.toBeNull();
-    expect(names.calls).toEqual([{ orgId: ORG, name: "Rivera Plumbing" }]);
+    expect(names.calls).toEqual([{ orgId: ORG, name: "Rivera Plumbing", now: clock.now() }]);
   });
 
   it("does not write orgs.name when the command omits name", async () => {
