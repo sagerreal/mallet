@@ -183,7 +183,8 @@ export function NewJobModalContent() {
     return rows.map((v) => ({ h: clampHours(v.h) }));
   }
 
-  async function createEstimate(job: string) {
+  /** Returns true on success, false if the server create failed (error already set). */
+  async function createEstimate(job: string): Promise<boolean> {
     const rows = resolvedVisits();
     const custName = customer.trim();
     const match = matchLead(custName);
@@ -203,7 +204,12 @@ export function NewJobModalContent() {
         job,
         address: addr.trim() || undefined,
       });
-      lead = await persisted;
+      try {
+        lead = await persisted;
+      } catch {
+        setError("Couldn't save the customer — check your connection and try again.");
+        return false;
+      }
     }
 
     // Merge fill-ins onto an existing lead without clobbering (prototype behavior).
@@ -229,6 +235,7 @@ export function NewJobModalContent() {
     updateLead(lead.id, patch);
     // CHECKLIST: chosen scope template would attach to lead.scope here — deferred
     // (no checklist template data in the store yet).
+    return true;
   }
 
   function createJob(job: string) {
@@ -268,8 +275,8 @@ export function NewJobModalContent() {
       return { ok: false, job: null };
     }
     if (njType === "estimate") {
-      await createEstimate(job);
-      return { ok: true, job: null };
+      const ok = await createEstimate(job);
+      return { ok, job: null };
     }
     return { ok: true, job: createJob(job) };
   }
