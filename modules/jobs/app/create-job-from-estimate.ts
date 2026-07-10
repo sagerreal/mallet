@@ -43,6 +43,7 @@ export class CreateJobFromEstimateUseCase {
       sourceEstimateId: estimate.id,
       assigneeUserId: null,
       title: estimate.title,
+      svc: null,
       status: "scheduled",
       scheduledStart: null,
       scheduledEnd: null,

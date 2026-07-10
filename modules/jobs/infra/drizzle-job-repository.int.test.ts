@@ -41,6 +41,7 @@ const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
     sourceEstimateId: o.sourceEstimateId ?? null,
     assigneeUserId: o.assigneeUserId ?? null,
     title: "Job",
+    svc: null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,

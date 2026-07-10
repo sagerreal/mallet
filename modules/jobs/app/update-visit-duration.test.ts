@@ -91,6 +91,7 @@ const makeJob = (overrides: Partial<JobProps> = {}): Job => {
     sourceEstimateId: null,
     assigneeUserId: null,
     title: "Roof install",
+    svc: null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,

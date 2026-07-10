@@ -41,6 +41,7 @@ export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): J
     sourceEstimateId: row.sourceEstimateId ? asEstimateId(row.sourceEstimateId) : null,
     assigneeUserId: row.assigneeUserId ? asUserId(row.assigneeUserId) : null,
     title: row.title,
+    svc: row.svc ?? null,
     status: row.status,
     scheduledStart: row.scheduledStart,
     scheduledEnd: row.scheduledEnd,

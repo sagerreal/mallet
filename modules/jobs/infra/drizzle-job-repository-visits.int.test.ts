@@ -37,6 +37,7 @@ const makeJob = (orgId: OrgId, leadId: LeadId, num: string): Job => {
     sourceEstimateId: null,
     assigneeUserId: null,
     title: "Visit test job",
+    svc: null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,

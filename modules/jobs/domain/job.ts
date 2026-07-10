@@ -37,6 +37,8 @@ export const isVisitStatus = (value: string): value is VisitStatus =>
 
 const isTerminal = (status: JobStatus): boolean => status === "complete" || status === "canceled";
 
+const SVC_MAX_LENGTH = 60;
+
 export interface JobVisitProps {
   readonly id: VisitId;
   readonly assigneeUserId: UserId | null;
@@ -90,6 +92,7 @@ export interface JobProps {
   readonly sourceEstimateId: EstimateId | null;
   readonly assigneeUserId: UserId | null;
   readonly title: string | null;
+  readonly svc: string | null; // service type; nullable
   readonly status: JobStatus;
   readonly scheduledStart: Date | null;
   readonly scheduledEnd: Date | null;
@@ -127,7 +130,11 @@ export class Job {
     if (props.status === "canceled" && (props.cancelReason ?? "").trim().length === 0) {
       return err(validation("a canceled job requires a reason", "cancelReason"));
     }
-    return ok(new Job({ ...props, num }));
+    const svc = props.svc === null ? null : props.svc.trim();
+    if (svc !== null && (svc.length === 0 || svc.length > SVC_MAX_LENGTH)) {
+      return err(validation("service type must be 1–60 characters", "svc"));
+    }
+    return ok(new Job({ ...props, num, svc }));
   }
 
   // Replace the visit set — only allowed while the job is not yet terminal.
@@ -188,6 +195,25 @@ export class Job {
       return err(validation("cannot change the assignee of a finished job", "status"));
     }
     return ok(new Job({ ...this.p, assigneeUserId: userId, updatedAt: now }));
+  }
+
+  // Patch DB-backed scalar fields (title/svc/notes) while the job is not terminal.
+  // Undefined = keep current; explicit null clears an optional field. Re-validates
+  // through Job.create (mirrors Company.patch).
+  patchFields(
+    fields: { title?: string | null; svc?: string | null; notes?: string | null },
+    now: Date,
+  ): Result<Job, ValidationError> {
+    if (isTerminal(this.p.status)) {
+      return err(validation("cannot edit a completed or canceled job", "status"));
+    }
+    return Job.create({
+      ...this.p,
+      title: fields.title !== undefined ? fields.title : this.p.title,
+      svc: fields.svc !== undefined ? fields.svc : this.p.svc,
+      notes: fields.notes !== undefined ? fields.notes : this.p.notes,
+      updatedAt: now,
+    });
   }
 
   get props(): JobProps {
