@@ -23,6 +23,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // mockMutate.mock.calls / mockMutate.mockReset() etc.
 const mockMutate = vi.fn();
 const mockCreate = vi.fn();
+const mockArchive = vi.fn();
+const mockRestore = vi.fn();
 
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
@@ -30,6 +32,8 @@ vi.mock("@/lib/trpc/vanilla", () => ({
       customers: {
         update: { mutate: (...args: unknown[]) => mockMutate(...args) },
         create: { mutate: (...args: unknown[]) => mockCreate(...args) },
+        archive: { mutate: (...args: unknown[]) => mockArchive(...args) },
+        restore: { mutate: (...args: unknown[]) => mockRestore(...args) },
       },
       tasks: {
         create: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: false }) },
@@ -588,6 +592,97 @@ describe("addLead (with trpcVanilla mock)", () => {
     expect(slice.state.leads).toHaveLength(1);
     await persisted.catch(() => undefined);
     expect(slice.state.leads).toHaveLength(0);
+  });
+});
+
+describe("lead lifecycle persistence (with trpcVanilla mock)", () => {
+  beforeEach(() => {
+    mockMutate.mockReset();
+    mockArchive.mockReset();
+    mockRestore.mockReset();
+    mockMutate.mockResolvedValue({
+      id: "lead-111", name: "Ada Lovelace", phone: "+15550001234", email: null,
+      source: "referral", stage: "quote_sent", value: { cents: 25000, currency: "USD" },
+      unread: false, companyId: null, role: null, createdAt: new Date().toISOString(),
+    });
+    mockArchive.mockResolvedValue({ ok: true });
+    mockRestore.mockResolvedValue({
+      id: "lead-111", name: "Ada Lovelace", phone: "+15550001234", email: null,
+      source: "referral", stage: "new", value: { cents: 25000, currency: "USD" },
+      unread: false, companyId: null, role: null, createdAt: new Date().toISOString(),
+    });
+  });
+
+  it("moveLeadStage applies optimistically, sends the enum, and sets the 'Moved to' note", () => {
+    const slice = makeSlice();
+    slice.seedLeads([makeLead({ stage: "New customer" })]);
+    slice.state.moveLeadStage("lead-111", "Quote Sent");
+    const row = slice.state.leads.find((l: Lead) => l.id === "lead-111");
+    expect(row?.stage).toBe("Quote Sent");
+    expect(row?.last).toBe("Moved to Quote Sent");
+    expect(mockMutate).toHaveBeenCalledOnce();
+    const call = mockMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.leadId).toBe("lead-111");
+    expect(call.stage).toBe("quote_sent"); // display → enum
+  });
+
+  it("moveLeadStage rolls back the stage on mutation error", async () => {
+    mockMutate.mockRejectedValue(new Error("network error"));
+    const slice = makeSlice();
+    slice.seedLeads([makeLead({ stage: "New customer" })]);
+    slice.state.moveLeadStage("lead-111", "Quote Sent");
+    expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.stage).toBe("Quote Sent");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.stage).toBe("New customer");
+  });
+
+  it("archiveLead sets archived optimistically and calls v1.customers.archive", () => {
+    const slice = makeSlice();
+    slice.seedLeads([makeLead({ archived: false })]);
+    slice.state.archiveLead("lead-111");
+    expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.archived).toBe(true);
+    expect(mockArchive).toHaveBeenCalledOnce();
+    expect((mockArchive.mock.calls[0]?.[0] as Record<string, unknown>).leadId).toBe("lead-111");
+  });
+
+  it("archiveLead rolls back on error", async () => {
+    mockArchive.mockRejectedValue(new Error("network error"));
+    const slice = makeSlice();
+    slice.seedLeads([makeLead({ archived: false })]);
+    slice.state.archiveLead("lead-111");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.archived).toBe(false);
+  });
+
+  it("restoreLead clears archived optimistically and calls v1.customers.restore", () => {
+    const slice = makeSlice();
+    slice.seedLeads([makeLead({ archived: true })]);
+    slice.state.restoreLead("lead-111");
+    expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.archived).toBe(false);
+    expect(mockRestore).toHaveBeenCalledOnce();
+    expect((mockRestore.mock.calls[0]?.[0] as Record<string, unknown>).leadId).toBe("lead-111");
+  });
+
+  it("restoreLead rolls back on error", async () => {
+    mockRestore.mockRejectedValue(new Error("network error"));
+    const slice = makeSlice();
+    slice.seedLeads([makeLead({ archived: true })]);
+    slice.state.restoreLead("lead-111");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.archived).toBe(true);
+  });
+
+  it("deleteLead is a soft-delete: sets archived, keeps the row, calls archive", () => {
+    const slice = makeSlice();
+    slice.seedLeads([makeLead({ archived: false })]);
+    slice.state.deleteLead("lead-111");
+    // Row is NOT removed — archived instead (soft-delete only).
+    expect(slice.state.leads).toHaveLength(1);
+    expect(slice.state.leads.find((l: Lead) => l.id === "lead-111")?.archived).toBe(true);
+    expect(mockArchive).toHaveBeenCalledOnce();
   });
 });
 

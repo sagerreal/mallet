@@ -300,12 +300,17 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       });
   },
 
-  moveLeadStage: (id, stage) =>
+  moveLeadStage: (id, stage) => {
+    // Optimistic local touch: stage + the "Moved to" activity line. The stage
+    // itself persists through updateLead (which maps display→enum and reconciles).
     set((s) => ({
       leads: s.leads.map((l) =>
-        l.id === id ? { ...l, stage, last: `Moved to ${stage}` } : l
+        l.id === id ? { ...l, last: `Moved to ${stage}` } : l,
       ),
-    })),
+    }));
+    // updateLead handles the optimistic stage write + persist + reconcile/rollback.
+    get().updateLead(id, { stage });
+  },
 
   addLeadNote: (id, note) => {
     const fullNote: LeadNote = { ...note, id: String(Date.now()) };
@@ -327,20 +332,49 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       ),
     })),
 
-  archiveLead: (id) =>
+  archiveLead: (id) => {
+    const prior = get().leads.slice();
     set((s) => ({
       leads: s.leads.map((l) => (l.id === id ? { ...l, archived: true } : l)),
-    })),
+    }));
+    void trpcVanilla.v1.customers.archive
+      .mutate({ leadId: id })
+      .catch((err: unknown) => {
+        set({ leads: prior });
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] archiveLead failed — rolled back", { id, err });
+        }
+      });
+  },
 
-  restoreLead: (id) =>
+  restoreLead: (id) => {
+    const prior = get().leads.slice();
     set((s) => ({
       leads: s.leads.map((l) => (l.id === id ? { ...l, archived: false } : l)),
-    })),
+    }));
+    trpcVanilla.v1.customers.restore
+      .mutate({ leadId: id })
+      .then((dto) => {
+        // Reconcile the authoritative row (stage mapped enum→display).
+        set((s) => ({
+          leads: s.leads.map((l) => (l.id === id ? reconcileLeadFromDTO(l, dto) : l)),
+        }));
+      })
+      .catch((err: unknown) => {
+        set({ leads: prior });
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] restoreLead failed — rolled back", { id, err });
+        }
+      });
+  },
 
-  deleteLead: (id) =>
-    set((s) => ({
-      leads: s.leads.filter((l) => l.id !== id),
-    })),
+  // Soft-delete only: "delete" archives the lead (no hard delete, no row removal).
+  // Live views already filter on !archived, so the archived row disappears from the UI.
+  deleteLead: (id) => {
+    get().archiveLead(id);
+  },
 
   addEvisit: (leadId, draft) => {
     const visit: Visit = { ...draft, id: crypto.randomUUID() };
