@@ -1,0 +1,206 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import postgres from "postgres";
+import type { Sql } from "postgres";
+import { randomUUID } from "node:crypto";
+import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
+import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
+import { closeDb } from "@mallet/shared/db/client";
+import type { AuthProvider, Principal, Role } from "@mallet/identity";
+import { appRouter } from "@/trpc/root";
+import type { Context } from "@/trpc/init";
+
+// Capstone: exercise the full settings stack via createCaller — auth gate, RBAC, org-scoped
+// transaction, use-case, Drizzle repo, and live RLS — without spinning up HTTP.
+// Proves an owner can get/update config and manage all four collections; cross-tenant RLS
+// prevents org B from reading or mutating org A's settings; a tech is forbidden entirely.
+const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
+const suite = hasDb ? describe : describe.skip;
+
+const stubAuth: AuthProvider = {
+  authenticate: async () => {
+    throw new Error("authProvider should not be called in createCaller tests");
+  },
+};
+
+const ctxFor = (orgId: string, role: Role): Context => ({
+  principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
+  unmapped: null,
+  tx: null,
+  deps: {
+    authProvider: stubAuth,
+    bus: new InMemoryEventBus(),
+    clock: systemClock,
+    ids: uuidGenerator,
+    paymentLinkGateway: null,
+    llmClient: null,
+    apiKeyAuthenticator: { authenticate: async () => null },
+    tokenVerifier: { verify: async () => null },
+    signupStore: {
+      createOrgForUser: async () => {
+        throw new Error("unused in this test");
+      },
+    },
+  },
+});
+
+suite("settings tRPC router (full stack, live RLS)", () => {
+  let admin: Sql;
+  let orgAId = "";
+  let orgBId = "";
+
+  beforeAll(async () => {
+    admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
+    const [a] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('SettingsApi A ' || gen_random_uuid()) returning id`;
+    const [b] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('SettingsApi B ' || gen_random_uuid()) returning id`;
+    orgAId = a!.id;
+    orgBId = b!.id;
+  });
+
+  afterAll(async () => {
+    if (orgAId) await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
+    await admin.end({ timeout: 5 });
+    await closeDb();
+  });
+
+  // ── get (lazy defaults) ────────────────────────────────────────────────────
+
+  it("get lazily creates a defaults row for a fresh org", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const snap = await caller.v1.settings.get();
+    expect(snap.config.trade).toBe("plumbing");
+    expect(snap.config.markupBps).toBe(3500);
+    expect(snap.config.booking.services.length).toBeGreaterThanOrEqual(0);
+    expect(snap.pricebook).toEqual([]);
+    expect(snap.laborRates).toEqual([]);
+    expect(snap.terms).toEqual([]);
+    expect(snap.sources).toEqual([]);
+  });
+
+  // ── updateConfig ───────────────────────────────────────────────────────────
+
+  it("updateConfig persists scalars and the booking blob", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const cfg = await caller.v1.settings.updateConfig({
+      markupBps: 4200,
+      booking: { services: [], notServices: "septic", serviceFee: 120, feeCredited: false },
+    });
+    expect(cfg.markupBps).toBe(4200);
+    expect(cfg.booking.serviceFee).toBe(120);
+    expect(cfg.booking.feeCredited).toBe(false);
+
+    // Verify the change is durable.
+    const snap = await caller.v1.settings.get();
+    expect(snap.config.markupBps).toBe(4200);
+    expect(snap.config.booking.notServices).toBe("septic");
+  });
+
+  // ── pricebook ──────────────────────────────────────────────────────────────
+
+  it("pricebook create/update/remove round-trips", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const created = await caller.v1.settings.pricebook.create({
+      label: "Sewer camera",
+      unitPriceCents: 28500,
+      costCents: 0,
+    });
+    expect(created.label).toBe("Sewer camera");
+    expect(created.unitPriceCents).toBe(28500);
+    expect(created.costCents).toBe(0);
+
+    const updated = await caller.v1.settings.pricebook.update({
+      id: created.id,
+      unitPriceCents: 30000,
+    });
+    expect(updated.id).toBe(created.id);
+    expect(updated.unitPriceCents).toBe(30000);
+
+    const removed = await caller.v1.settings.pricebook.remove({ id: created.id });
+    expect(removed.ok).toBe(true);
+
+    // Confirm the item is gone from the snapshot.
+    const snap = await caller.v1.settings.get();
+    expect(snap.pricebook.some((p) => p.id === created.id)).toBe(false);
+  });
+
+  // ── labor rates ───────────────────────────────────────────────────────────
+
+  it("labor rate cannot delete the last active rate (CONFLICT)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const only = await caller.v1.settings.laborRates.create({
+      label: "Standard",
+      rateCentsPerHour: 17000,
+    });
+    // Org B has exactly one active rate; removing it must be rejected.
+    await expect(
+      caller.v1.settings.laborRates.remove({ id: only.id }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // ── lead sources ──────────────────────────────────────────────────────────
+
+  it("duplicate source label is rejected with CONFLICT", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await caller.v1.settings.sources.create({ label: "Google" });
+    // Case-insensitive duplicate must also be rejected.
+    await expect(
+      caller.v1.settings.sources.create({ label: "google" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // ── terms ─────────────────────────────────────────────────────────────────
+
+  it("terms create/update/remove round-trips", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const created = await caller.v1.settings.terms.create({
+      title: "Payment policy",
+      body: "Payment is due upon completion of work.",
+    });
+    expect(created.title).toBe("Payment policy");
+
+    const updated = await caller.v1.settings.terms.update({
+      id: created.id,
+      title: "Updated payment policy",
+    });
+    expect(updated.title).toBe("Updated payment policy");
+
+    const removed = await caller.v1.settings.terms.remove({ id: created.id });
+    expect(removed.ok).toBe(true);
+  });
+
+  // ── cross-tenant RLS ──────────────────────────────────────────────────────
+
+  it("org B sees none of org A's collections (RLS)", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await callerA.v1.settings.pricebook.create({
+      label: "A-only item",
+      unitPriceCents: 100,
+      costCents: 0,
+    });
+
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const snapB = await callerB.v1.settings.get();
+    expect(snapB.pricebook.some((p) => p.id === created.id)).toBe(false);
+
+    // Attempting to remove org A's item from org B's context must return NOT_FOUND.
+    await expect(
+      callerB.v1.settings.pricebook.remove({ id: created.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  // ── RBAC ──────────────────────────────────────────────────────────────────
+
+  it("a tech is forbidden from all settings procedures", async () => {
+    const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    await expect(callerTech.v1.settings.get()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      callerTech.v1.settings.updateConfig({ markupBps: 1 }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      callerTech.v1.settings.pricebook.create({ label: "Nope", unitPriceCents: 0, costCents: 0 }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});
