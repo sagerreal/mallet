@@ -15,4 +15,7 @@ export { AssignJobUseCase } from "./app/assign-job";
 export { StartJobUseCase } from "./app/start-job";
 export { CompleteJobUseCase } from "./app/complete-job";
 export { CancelJobUseCase } from "./app/cancel-job";
+export { CreateManualJobUseCase } from "./app/create-manual-job";
+export { UpdateJobUseCase } from "./app/update-job";
+export { ArchiveJobUseCase } from "./app/archive-job";
 export { ListJobsUseCase } from "./app/list-jobs";
