@@ -14,7 +14,8 @@ import type { StateCreator } from "zustand";
 import type { Company, Tech, Brand } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 
-/** Generic brand shown until the org updates their profile. */
+// Placeholder shown ONLY until BrandHydrator seeds the real brand from
+// v1.settings.get + v1.identity.me. Never written back to the DB.
 const DEFAULT_BRAND: Brand = {
   site: "",
   name: "My Business",
@@ -49,6 +50,14 @@ export interface DataSlice {
    * On error, rolls back to the pre-mutation snapshot.
    */
   updateCompany: (id: string, patch: Partial<Company>) => void;
+
+  /** Replace the whole brand — called by BrandHydrator on hydration. */
+  setBrand: (brand: Brand) => void;
+  /**
+   * Optimistically patch the brand, then persist via v1.settings.updateBrand.
+   * Reconciles from the returned settingsDTO.brand; rolls back on error.
+   */
+  updateBrand: (patch: Partial<Brand>) => void;
 }
 
 export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set, get) => ({
@@ -59,6 +68,42 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set,
   setCompanies: (companies) => set({ companies }),
 
   setTechs: (techs) => set({ techs }),
+
+  setBrand: (brand) => set({ brand }),
+
+  updateBrand: (patch) => {
+    const snapshot = get().brand;
+    // Optimistic — the Branding card + customer surfaces reflect it immediately.
+    set((s) => ({ brand: { ...s.brand, ...patch } }));
+
+    void trpcVanilla.v1.settings.updateBrand
+      .mutate({
+        name: patch.name,
+        tagline: patch.tagline ?? null,
+        site: patch.site ?? null,
+        color: patch.color ?? null,
+        logoUrl: patch.logoUrl ?? null,
+        initials: patch.initials ?? null,
+      })
+      .then((dto) => {
+        const b = dto.brand;
+        // Reconcile to the server's canonical brand (name from orgs.name, etc.).
+        set({
+          brand: {
+            name: b.name,
+            tagline: b.tagline ?? "",
+            site: b.site ?? "",
+            color: b.color ?? "",
+            initials: b.initials ?? "",
+            logoUrl: b.logoUrl ?? undefined,
+          },
+        });
+      })
+      .catch(() => {
+        // Rollback to the pre-mutation snapshot.
+        set({ brand: snapshot });
+      });
+  },
 
   addCompany: (name) => {
     const id = crypto.randomUUID();

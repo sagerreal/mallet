@@ -296,6 +296,7 @@ export interface Brand {
   initials: string;
   color: string;
   tagline: string;
+  logoUrl?: string;
 }
 
 // ---- UI state --------------------------------------------------------------
