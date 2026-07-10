@@ -20,6 +20,7 @@ import type { inferRouterInputs } from "@trpc/server";
 import type { AppRouter } from "@/trpc/root";
 import type { Lead, LeadNote, Task, Visit } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { storeStageToBackend, backendStageToStore } from "@/lib/store/dto-mapper";
 
 type CustomerUpdateInput = inferRouterInputs<AppRouter>["v1"]["customers"]["update"];
 
@@ -81,8 +82,11 @@ export function buildLeadUpdatePayload(
     } else if (key === "source") {
       payload.source = patch.source;
     } else if (key === "stage") {
-      // Store Lead.stage is a plain string; the router validates the enum server-side.
-      payload.stage = patch.stage as CustomerUpdateInput["stage"];
+      // Store Lead.stage is a display string; the router validates the enum
+      // server-side. Map display → enum before sending.
+      if (patch.stage !== undefined) {
+        payload.stage = storeStageToBackend(patch.stage) as CustomerUpdateInput["stage"];
+      }
     } else if (key === "unread") {
       payload.unread = patch.unread;
     } else if (key === "companyId") {
@@ -125,7 +129,8 @@ function reconcileLeadFromDTO(
     phone: dto.phone ?? "",
     email: dto.email ?? undefined,
     source: dto.source ?? "",
-    stage: dto.stage,
+    // DTO carries the DB enum; the store renders display strings.
+    stage: backendStageToStore(dto.stage),
     value: dto.value.cents / 100,
     unread: dto.unread,
     companyId: dto.companyId ?? undefined,

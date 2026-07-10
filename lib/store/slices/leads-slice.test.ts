@@ -169,6 +169,22 @@ describe("buildLeadUpdatePayload", () => {
     const payload = buildLeadUpdatePayload("lead-111", { role: "Decision maker" });
     expect(payload?.role).toBe("Decision maker");
   });
+
+  it("maps a display stage to the DB enum in the payload", () => {
+    const payload = buildLeadUpdatePayload("lead-111", { stage: "Quote Sent" });
+    expect(payload).not.toBeNull();
+    expect(payload?.stage).toBe("quote_sent");
+  });
+
+  it("maps 'Lost' (sweep) to the DB enum", () => {
+    const payload = buildLeadUpdatePayload("lead-111", { stage: "Lost" });
+    expect(payload?.stage).toBe("lost");
+  });
+
+  it("passes an already-enum stage through unchanged", () => {
+    const payload = buildLeadUpdatePayload("lead-111", { stage: "won" });
+    expect(payload?.stage).toBe("won");
+  });
 });
 
 // ---------------------------------------------------------------------------
