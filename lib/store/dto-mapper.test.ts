@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { dtoEstimateToStore, dtoInvoiceToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
+import { dtoEstimateToStore, dtoInvoiceToStore, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
 import type { Estimate, Invoice } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -384,5 +384,3 @@ describe("stage mapper (store display ↔ DB enum)", () => {
     expect(backendStageToStore("Quote Sent")).toBe("Quote Sent");
   });
 });
-
-import { storeStageToBackend, backendStageToStore } from "./dto-mapper";
