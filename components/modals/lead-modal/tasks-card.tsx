@@ -141,9 +141,9 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
             fontSize: 12.5,
             padding: "0 6px",
             height: "var(--input-h, 34px)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius, 6px)",
-            background: "var(--surface)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-sm, 9px)",
+            background: "var(--card)",
             color: editing.due ? "var(--ink)" : "var(--ink-3)",
           }}
         />
@@ -262,9 +262,9 @@ export function TasksCard({ lead }: TasksCardProps) {
             fontSize: 12.5,
             padding: "0 6px",
             height: "var(--input-h, 34px)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius, 6px)",
-            background: "var(--surface)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-sm, 9px)",
+            background: "var(--card)",
             color: taskDue ? "var(--ink)" : "var(--ink-3)",
           }}
         />
