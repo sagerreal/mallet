@@ -298,3 +298,53 @@ export function dtoToTimeEntry(dto: TimeEntryDTO): TimeEntry {
     approvedAt: dto.approvedAt ? Date.parse(dto.approvedAt) : undefined,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Lead stage mapping (store display string ↔ DB enum)
+// ---------------------------------------------------------------------------
+//
+// The store keeps stages as display strings ("New customer", "Quote Sent") —
+// the vocabulary STAGE_PILL_CLS / pipeline-lanes / STAGE_ORDER render. The DB
+// enum (modules/customers/domain/lead.ts LEAD_STAGES) is
+// "new" | "contacted" | "quote_sent" | "won" | "lost". v1.customers.update only
+// accepts the enum, so every persisted stage MUST pass through here.
+
+export type BackendStage = "new" | "contacted" | "quote_sent" | "won" | "lost";
+
+/** Display stage → DB enum. Unknown/unrecognised falls back to "new". */
+export const STAGE_DISPLAY_TO_BACKEND: Record<string, BackendStage> = {
+  "New customer": "new",
+  Contacted: "contacted",
+  "Quote Sent": "quote_sent",
+  Won: "won",
+  Lost: "lost",
+};
+
+/** DB enum → display stage. Used on hydrate + reconcile. */
+const STAGE_BACKEND_TO_DISPLAY: Record<BackendStage, string> = {
+  new: "New customer",
+  contacted: "Contacted",
+  quote_sent: "Quote Sent",
+  won: "Won",
+  lost: "Lost",
+};
+
+const BACKEND_STAGES = new Set<string>(["new", "contacted", "quote_sent", "won", "lost"]);
+
+/**
+ * Map a store stage (display OR already-enum) to the DB enum. Idempotent for
+ * values that are already enum values; falls back to "new" for anything unknown.
+ */
+export function storeStageToBackend(stage: string): BackendStage {
+  if (BACKEND_STAGES.has(stage)) return stage as BackendStage;
+  return STAGE_DISPLAY_TO_BACKEND[stage] ?? "new";
+}
+
+/**
+ * Map a DB enum stage back to the store display string. Passes through a value
+ * that is already a display string; returns the input unchanged if unrecognised.
+ */
+export function backendStageToStore(stage: string): string {
+  if (BACKEND_STAGES.has(stage)) return STAGE_BACKEND_TO_DISPLAY[stage as BackendStage];
+  return stage;
+}

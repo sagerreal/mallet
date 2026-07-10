@@ -343,3 +343,46 @@ describe("dtoInvoiceToStore", () => {
     expect(result.jobId).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Stage mapper (store display ↔ DB enum)
+// ---------------------------------------------------------------------------
+
+describe("stage mapper (store display ↔ DB enum)", () => {
+  it("maps every display stage to its DB enum value", () => {
+    expect(storeStageToBackend("New customer")).toBe("new");
+    expect(storeStageToBackend("Contacted")).toBe("contacted");
+    expect(storeStageToBackend("Quote Sent")).toBe("quote_sent");
+    expect(storeStageToBackend("Won")).toBe("won");
+    expect(storeStageToBackend("Lost")).toBe("lost");
+  });
+
+  it("passes through a value that is already a DB enum (idempotent)", () => {
+    expect(storeStageToBackend("quote_sent")).toBe("quote_sent");
+    expect(storeStageToBackend("new")).toBe("new");
+  });
+
+  it("falls back to 'new' for an unknown stage string", () => {
+    expect(storeStageToBackend("Totally unknown")).toBe("new");
+  });
+
+  it("maps every DB enum value back to its display stage", () => {
+    expect(backendStageToStore("new")).toBe("New customer");
+    expect(backendStageToStore("contacted")).toBe("Contacted");
+    expect(backendStageToStore("quote_sent")).toBe("Quote Sent");
+    expect(backendStageToStore("won")).toBe("Won");
+    expect(backendStageToStore("lost")).toBe("Lost");
+  });
+
+  it("round-trips display → backend → display for all five stages", () => {
+    for (const s of ["New customer", "Contacted", "Quote Sent", "Won", "Lost"]) {
+      expect(backendStageToStore(storeStageToBackend(s))).toBe(s);
+    }
+  });
+
+  it("passes through an already-display value in backendStageToStore", () => {
+    expect(backendStageToStore("Quote Sent")).toBe("Quote Sent");
+  });
+});
+
+import { storeStageToBackend, backendStageToStore } from "./dto-mapper";
