@@ -8,7 +8,7 @@ config({ path: ".env.local" });
 // Drizzle migrations-as-code. Schema lives per-module under shared/db/schema.
 // DATABASE_URL points at the Supabase Postgres (Project Settings → Database → Connection string).
 export default defineConfig({
-  schema: "./shared/db/schema/*",
+  schema: "./shared/db/schema/index.ts",
   out: "./shared/db/migrations",
   dialect: "postgresql",
   dbCredentials: {
