@@ -56,7 +56,9 @@ export class CreateManualJobUseCase {
 
     await this.repo.insertManual(job.value);
     await this.bus.emit({
-      name: "job.scheduled",
+      // A manually-created job is UNSCHEDULED — emit a distinct event so a future
+      // job.scheduled handler (which would assume a scheduledStart) never misfires.
+      name: "job.created_manual",
       orgId: cmd.orgId,
       payload: { jobId: job.value.props.id, leadId: cmd.leadId, num },
       occurredAt: now,
