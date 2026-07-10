@@ -2,11 +2,6 @@ import { asOrgId } from "@mallet/shared/types";
 import { orgSettings } from "@mallet/shared/db/schema";
 import { OrgSettings, type BookingCfg } from "../domain/org-settings";
 
-// Placeholder org name used when the real orgs.name join is not yet available.
-// Task 5 will replace this default with a real join — keep the constant named so
-// the intent is clear and grep-able.
-const ORG_NAME_PLACEHOLDER = "(org)";
-
 // The persistence row shape, inferred from the schema.
 export type OrgSettingsRow = typeof orgSettings.$inferSelect;
 
@@ -15,11 +10,12 @@ export type OrgSettingsRow = typeof orgSettings.$inferSelect;
  * The booking column is jsonb — trusted (written only by this app) but corrupt data
  * throws rather than silently coercing, matching the companies pattern.
  *
- * @param orgName - The org's display name from orgs.name (NOT in org_settings).
- *   Task 5 will join orgs + org_settings and pass the real value. A non-blank
- *   default is accepted here so callers that don't yet supply it remain valid.
+ * @param row     - The org_settings DB row.
+ * @param orgName - The org's display name from orgs.name (NOT stored in org_settings).
+ *                  The repository joins orgs before calling this function so the real
+ *                  name is always supplied; the brand aggregate never carries a placeholder.
  */
-export const toOrgSettings = (row: OrgSettingsRow, orgName = ORG_NAME_PLACEHOLDER): OrgSettings => {
+export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings => {
   const result = OrgSettings.create({
     orgId: asOrgId(row.orgId),
     trade: row.trade,
