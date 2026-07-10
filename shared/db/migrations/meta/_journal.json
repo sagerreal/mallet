@@ -309,6 +309,20 @@
       "when": 1783702263044,
       "tag": "0043_strong_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1783710694445,
+      "tag": "0044_lethal_aaron_stack",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1783710704531,
+      "tag": "0045_settings_rls",
+      "breakpoints": true
     }
   ]
 }
