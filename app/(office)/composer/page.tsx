@@ -14,7 +14,7 @@
  *   - descMic() / 🎤     — no speech API in the app yet
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   calcQuote,
@@ -720,6 +720,79 @@ function GBBReviewMode({
   );
 }
 
+// ---- Delivery contact field -------------------------------------------------
+// Editable phone/email for the chosen send channel. A customer can be added by
+// name alone (quick-add), so the contact the quote sends to may be missing — this
+// lets you fill it in right here and persists it to the customer (v1.customers.update).
+
+function DeliveryContactField({
+  lead,
+  channel,
+}: {
+  lead: Lead;
+  channel: "text" | "email";
+}) {
+  const updateLead = useAppStore((s) => s.updateLead);
+
+  // Current value on file — treat the "—" phone placeholder as empty.
+  const current =
+    channel === "text"
+      ? lead.phone && lead.phone !== "—"
+        ? lead.phone
+        : ""
+      : (lead.email ?? "");
+
+  const [val, setVal] = useState(current);
+  // Re-sync when the customer or channel changes (switch customer / toggle channel).
+  useEffect(() => {
+    setVal(current);
+  }, [lead.id, channel, current]);
+
+  function commit() {
+    const trimmed = val.trim();
+    if (trimmed === current) return; // no change
+    updateLead(lead.id, channel === "text" ? { phone: trimmed } : { email: trimmed });
+  }
+
+  const label = channel === "text" ? "Mobile number" : "Email address";
+  const placeholder = channel === "text" ? "(925) 555-0123" : "name@email.com";
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <label
+        style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 3 }}
+      >
+        {label}
+      </label>
+      <input
+        type={channel === "text" ? "tel" : "email"}
+        value={val}
+        placeholder={placeholder}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
+        }}
+        style={{
+          width: "100%",
+          maxWidth: 280,
+          border: "1.5px solid var(--line)",
+          borderRadius: "var(--radius-sm, 9px)",
+          padding: "8px 11px",
+          fontFamily: "inherit",
+          fontSize: 13.5,
+          background: "var(--card)",
+          color: "var(--ink)",
+        }}
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
 // ---- Builder mode (standard single-quote) -----------------------------------
 
 function BuilderMode({
@@ -1272,9 +1345,7 @@ function BuilderMode({
 
           {state.sendChannel === "text" ? (
             <>
-              <b style={{ fontSize: 13 }}>
-                Sends by text to {lead.phone ?? "their phone"}
-              </b>
+              <b style={{ fontSize: 13 }}>Send by text</b>
               <p
                 className="muted"
                 style={{ fontSize: 12, margin: "3px 0 0" }}
@@ -1282,15 +1353,15 @@ function BuilderMode({
                 They tap the link, see it, approve it — no inbox to dig
                 through, nothing blocks the send.
               </p>
+              {/* Editable — the number the quote texts to (persists to the customer). */}
+              <DeliveryContactField lead={lead} channel="text" />
               {/* Gating note: SMS delivery requires a provisioned Twilio number (A2P).
                   The call is wired; if Twilio isn't configured the server returns
                   PRECONDITION_FAILED and the composer shows the error. */}
             </>
           ) : (
             <>
-              <b style={{ fontSize: 13 }}>
-                Sends by email to {lead.email ?? "their email"}
-              </b>
+              <b style={{ fontSize: 13 }}>Send by email</b>
               <p
                 className="muted"
                 style={{ fontSize: 12, margin: "3px 0 0" }}
@@ -1298,6 +1369,8 @@ function BuilderMode({
                 They click the link in the email, see the quote, and approve
                 right there.
               </p>
+              {/* Editable — the address the quote emails to (persists to the customer). */}
+              <DeliveryContactField lead={lead} channel="email" />
               {/* Gating note: email delivery requires RESEND_API_KEY + EMAIL_FROM.
                   Gating is enforced server-side; the call is wired. */}
             </>
@@ -1455,7 +1528,6 @@ export default function ComposerPage() {
   const addEstimate = useAppStore((s) => s.addEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const addLeadNote = useAppStore((s) => s.addLeadNote);
-  const addLead = useAppStore((s) => s.addLead);
 
   // Seed leadId from ?lead= once (read-only initializer so state edits persist).
   const [cs, setCs] = useState<ComposerState>(() => {
@@ -1466,7 +1538,12 @@ export default function ComposerPage() {
 
   const [aiDraftError, setAiDraftError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [custError, setCustError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+
+  // Invalidates the cached customer list so the leads hydrator picks up a
+  // freshly-created customer (with its server-assigned id) into the store.
+  const utils = api.useUtils();
 
   // ---- tRPC mutations for the real send flow --------------------------------
 
@@ -1476,6 +1553,8 @@ export default function ComposerPage() {
   const quoteSendMutation = api.v1.quoting.send.useMutation();
   // Step 3a: send SMS via Twilio (gated on A2P provisioning).
   const messagingSendMutation = api.v1.messaging.send.useMutation();
+  // Inline "+ Add new customer" — persists a real DB lead so quotes can reference it.
+  const createCustomerMutation = api.v1.customers.create.useMutation();
 
   const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
     onSuccess: (data) => {
@@ -1539,7 +1618,9 @@ export default function ComposerPage() {
       pricing: { ...cs.pricing },
       validDays: cs.validDays,
     });
-    router.push("/quotes");
+    // Quotes live in the Pipeline rail (the /quotes route just redirects here);
+    // the new draft lands in the "in the shop" lane.
+    router.push("/pipeline");
   }
 
   async function sendComposer() {
@@ -1650,17 +1731,25 @@ export default function ComposerPage() {
     // deferred: customer preview page
   }
 
-  function composerNewCust() {
+  async function composerNewCust() {
     const name = cs.custQuery.trim();
     if (!name) return;
-    const lead = addLead({
-      name,
-      phone: "—",
-      source: "Added manually",
-      stage: "New customer",
-      job: "",
-    });
-    update({ leadId: lead.id, custQuery: "" });
+    setCustError(null);
+    try {
+      // Persist a real DB lead (server assigns the id). Without this the quote's
+      // leadId would point at a row that doesn't exist and the draft/send would
+      // be rejected server-side and silently rolled back.
+      const data = await createCustomerMutation.mutateAsync({
+        name,
+        source: "Added manually",
+      });
+      // Refetch the customer list so the leads hydrator writes the new lead into
+      // the store; then select it by its server id.
+      await utils.v1.customers.list.invalidate();
+      update({ leadId: data.id, custQuery: "" });
+    } catch {
+      setCustError("Couldn't add the customer — check your connection and try again.");
+    }
   }
 
   function editTier(k: "good" | "better" | "best") {
@@ -1683,6 +1772,11 @@ export default function ComposerPage() {
         leads={leads}
         onNewCust={composerNewCust}
       />
+      {custError && (
+        <p style={{ color: "var(--red, #b42318)", fontSize: 13, margin: "-8px 0 12px" }}>
+          {custError}
+        </p>
+      )}
 
       {cs.mode === "gbb-prompt" && (
         <GBBPromptMode state={cs} onUpdate={update} selectedLead={selectedLead} />
