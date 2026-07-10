@@ -32,7 +32,11 @@ export class FakeSettingsRepository implements SettingsRepository {
       techSeesPrice: true, techTexts: true, frontDesk: true, scopeOn: false,
       hoursWdOpen: 8, hoursWdClose: 17, hoursSatOpen: 0, hoursSatClose: 0,
       hoursSunOpen: 0, hoursSunClose: 0, areaCities: "", areaRadiusMi: 25,
-      booking: defaults(), createdAt: new Date("2026-07-01T00:00:00Z"),
+      booking: defaults(),
+      brandName: "Test Business",
+      brandTagline: null, brandSite: null, brandColor: null,
+      brandLogoUrl: null, brandInitials: null,
+      createdAt: new Date("2026-07-01T00:00:00Z"),
       updatedAt: new Date("2026-07-01T00:00:00Z"),
     });
     if (!isOk(r)) throw new Error("seed config invalid");

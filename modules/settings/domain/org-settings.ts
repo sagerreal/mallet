@@ -6,6 +6,9 @@ import { validation, ok, err } from "@mallet/shared/types";
 // Minimum duration for any visit type (minutes).
 const VISIT_FLOOR_MINUTES = 15;
 
+// Brand initials max length (monogram: 1-3 chars).
+const BRAND_INITIALS_MAX_LENGTH = 3;
+
 // Hour range: [0, 24] (0 = midnight, 24 = end-of-day).
 const HOUR_MIN = 0;
 const HOUR_MAX = 24;
@@ -74,6 +77,19 @@ export interface OrgSettingsProps {
   /** Service area radius in miles (non-negative). */
   readonly areaRadiusMi: number;
   readonly booking: BookingCfg;
+  // --- Brand identity (all optional/nullable; brandName mirrors orgs.name) ---
+  /** Business display name — mirrors orgs.name; NOT NULL. */
+  readonly brandName: string;
+  /** Short tagline or slogan. Nullable. */
+  readonly brandTagline: string | null;
+  /** Business website URL or domain. Nullable. */
+  readonly brandSite: string | null;
+  /** Brand accent color (hex string e.g. "#9C5B34"). Nullable. */
+  readonly brandColor: string | null;
+  /** URL to the logo asset. Nullable. */
+  readonly brandLogoUrl: string | null;
+  /** 1-3 character monogram initials. Nullable. */
+  readonly brandInitials: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -131,11 +147,29 @@ export class OrgSettings {
     if (props.areaRadiusMi < 0) {
       return err(validation("area radius must be non-negative", "areaRadiusMi"));
     }
+    // Brand name mirrors orgs.name (NOT NULL) — must not be blank.
+    const brandName = props.brandName.trim();
+    if (brandName.length === 0) {
+      return err(validation("brand name is required", "brandName"));
+    }
+    // Initials are a monogram: enforce max length when present.
+    if (
+      props.brandInitials !== null &&
+      props.brandInitials.length > BRAND_INITIALS_MAX_LENGTH
+    ) {
+      return err(
+        validation(
+          `brand initials must be at most ${BRAND_INITIALS_MAX_LENGTH} characters`,
+          "brandInitials",
+        ),
+      );
+    }
 
     return ok(
       new OrgSettings({
         ...props,
         trade,
+        brandName,
         visitScopeMinutes: clampMinutes(props.visitScopeMinutes),
         visitRepairMinutes: clampMinutes(props.visitRepairMinutes),
         visitInstallMinutes: clampMinutes(props.visitInstallMinutes),
@@ -194,6 +228,35 @@ export class OrgSettings {
       areaRadiusMi:
         fields.areaRadiusMi !== undefined ? fields.areaRadiusMi : this.p.areaRadiusMi,
       booking: fields.booking !== undefined ? fields.booking : this.p.booking,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Patch the brand-identity subset. undefined = keep current; explicit null
+   * clears an optional field. brandName re-runs the NOT-NULL invariant via create.
+   * Returns a new OrgSettings on success, or a ValidationError if the name is blank
+   * or initials exceed the monogram limit.
+   */
+  patchBrand(
+    fields: {
+      name?: string;
+      tagline?: string | null;
+      site?: string | null;
+      color?: string | null;
+      logoUrl?: string | null;
+      initials?: string | null;
+    },
+    now: Date,
+  ): Result<OrgSettings, ValidationError> {
+    return OrgSettings.create({
+      ...this.p,
+      brandName: fields.name !== undefined ? fields.name : this.p.brandName,
+      brandTagline: fields.tagline !== undefined ? fields.tagline : this.p.brandTagline,
+      brandSite: fields.site !== undefined ? fields.site : this.p.brandSite,
+      brandColor: fields.color !== undefined ? fields.color : this.p.brandColor,
+      brandLogoUrl: fields.logoUrl !== undefined ? fields.logoUrl : this.p.brandLogoUrl,
+      brandInitials: fields.initials !== undefined ? fields.initials : this.p.brandInitials,
       updatedAt: now,
     });
   }
