@@ -24,7 +24,6 @@ describe("readiness", () => {
 
   it("uses 'unknown error' when the probe rejects with a non-Error value", async () => {
     const report = await readiness(async () => {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw "plain string rejection";
     });
     expect(report.status).toBe("error");
