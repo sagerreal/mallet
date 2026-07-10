@@ -553,8 +553,16 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   setToggle: (key, value) => {
     const snapshot = { toggles: get().toggles };
     set((s) => ({ toggles: { ...s.toggles, [key]: value } }));
+    // Explicit mapping: each toggle key → updateConfig field name (type-checked at compile time).
+    const toggleToField: Record<keyof SettingsToggles, string> = {
+      techSeesPrice: "techSeesPrice",
+      techTexts: "techTexts",
+      frontDesk: "frontDesk",
+      scopeOn: "scopeOn",
+    };
+    const col = toggleToField[key];
     void trpcVanilla.v1.settings.updateConfig
-      .mutate({ [key]: value })
+      .mutate({ [col]: value })
       .catch(() => set(snapshot));
   },
 });

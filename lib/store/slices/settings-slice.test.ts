@@ -345,12 +345,20 @@ describe("settings-slice persistence", () => {
     expect(mockUpdateConfig).toHaveBeenCalledWith({ trade: "hvac" });
   });
 
-  it("setToggle persists via updateConfig", async () => {
+  it("setToggle persists via updateConfig with explicit field mapping", async () => {
     const store = makeStore();
     store.get().setToggle("frontDesk", false);
     expect(store.get().toggles.frontDesk).toBe(false);
     await Promise.resolve();
     expect(mockUpdateConfig).toHaveBeenCalledWith({ frontDesk: false });
+  });
+
+  it("setToggle maps techSeesPrice toggle to correct updateConfig field", async () => {
+    const store = makeStore();
+    store.get().setToggle("techSeesPrice", false);
+    expect(store.get().toggles.techSeesPrice).toBe(false);
+    await Promise.resolve();
+    expect(mockUpdateConfig).toHaveBeenCalledWith({ techSeesPrice: false });
   });
 
   it("setVisitDur converts minutes to hours and persists via updateConfig", async () => {
