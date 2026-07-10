@@ -172,6 +172,9 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     // No lead to attach to → cannot persist (jobs.lead_id is NOT NULL, composite FK).
     if (!newJob.leadId) return newJob;
 
+    // Snapshot AFTER the optimistic prepend (includes newJob). Rollback filters
+    // newJob out by id rather than restoring wholesale, so a concurrent write to
+    // `jobs` between the prepend and a failure is preserved, not clobbered.
     const priorJobs = get().jobs;
     trpcVanilla.v1.jobs.create
       .mutate({
