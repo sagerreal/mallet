@@ -7,11 +7,16 @@
  * Deferred (need surfaces not built yet): "Preview as customer" (the customer
  * GBB page) and the signed-agreement / change-request banners (extended sample
  * states). The modal renders faithfully for the data the store carries today.
+ *
+ * Send flow: draft quotes expand an inline send panel (channel toggle →
+ * editable destination → confirm). Mirrors the composer's send semantics:
+ * the status flip always persists; delivery failure surfaces inline without
+ * rolling back the sent state.
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
@@ -20,6 +25,7 @@ import type { Estimate } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { isExpired } from "@/lib/estimates";
 import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
+import { api } from "@/lib/trpc/client";
 
 
 const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
@@ -28,6 +34,8 @@ const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
   declined: { cls: "bad", label: "Declined" },
   draft: { cls: "ink", label: "Draft" },
 };
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Sent-quote follow-up trail (prototype fuRows). */
 function FollowUpTrail({ e }: { e: Estimate }) {
@@ -75,8 +83,20 @@ export function EstimateModalContent() {
   const updateEstimate = useAppStore((s) => s.updateEstimate);
   const deleteEstimate = useAppStore((s) => s.deleteEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
+  const updateLead = useAppStore((s) => s.updateLead);
 
   const [deleteArmed, setDeleteArmed] = useState(false);
+
+  // --- Send panel state -------------------------------------------------------
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendChannel, setSendChannel] = useState<"text" | "email">("text");
+  const [dest, setDest] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [destError, setDestError] = useState<string | null>(null);
+
+  const messagingSend = api.v1.messaging.send.useMutation();
+  const notificationsSend = api.v1.notifications.send.useMutation();
 
   const estId = activeModal?.params?.estId as string | undefined;
   const e = estimates.find((x) => x.id === estId);
@@ -86,15 +106,138 @@ export function EstimateModalContent() {
   const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
   const stamp = STATUS_STAMP[e.status] ?? { cls: "ink", label: e.status };
 
-  function sendDraft() {
-    updateEstimate(e!.id, { status: "sent", age: 0 });
+  // Derive default channel: text if lead has a phone, else email.
+  const defaultChannel: "text" | "email" =
+    lead?.phone && lead.phone !== "—" ? "text" : "email";
+
+  // Sync dest when the panel opens or channel changes.
+  useEffect(() => {
+    if (!sendOpen) return;
+    const val =
+      sendChannel === "text"
+        ? lead?.phone && lead.phone !== "—"
+          ? lead.phone
+          : ""
+        : (lead?.email ?? "");
+    setDest(val);
+    setDestError(null);
+    setSendError(null);
+  // lead?.id is the stable dep: re-run when panel opens/channel changes/customer changes.
+  // lead.phone / lead.email are intentionally excluded to avoid spurious resets on every render.
+  }, [sendOpen, sendChannel, lead?.id]);
+
+  function openSendPanel() {
+    setSendChannel(defaultChannel);
+    setSendOpen(true);
+    setDeleteArmed(false);
+    setSendError(null);
+    setDestError(null);
+  }
+
+  function closeSendPanel() {
+    setSendOpen(false);
+    setSendError(null);
+    setDestError(null);
+  }
+
+  function commitDest() {
+    const trimmed = dest.trim();
+    if (!lead) return;
+    // Persist the edited contact field so the fix carries forward.
+    const current =
+      sendChannel === "text"
+        ? lead.phone && lead.phone !== "—"
+          ? lead.phone
+          : ""
+        : (lead.email ?? "");
+    if (trimmed !== current) {
+      updateLead(lead.id, sendChannel === "text" ? { phone: trimmed } : { email: trimmed });
+    }
+  }
+
+  function validateDest(): boolean {
+    const trimmed = dest.trim();
+    if (!trimmed) {
+      setDestError(sendChannel === "text" ? "Enter a mobile number." : "Enter an email address.");
+      return false;
+    }
+    if (sendChannel === "email" && !EMAIL_RE.test(trimmed)) {
+      setDestError("Enter a valid email address.");
+      return false;
+    }
+    setDestError(null);
+    return true;
+  }
+
+  async function confirmSend() {
+    if (!validateDest()) return;
+    commitDest();
+
+    setSendError(null);
+    setIsSending(true);
+
+    // e is guaranteed non-null: confirmSend is only reachable when sendOpen &&
+    // e.status === "draft", both of which require e to exist (see render guard).
+    const est = e!;
+
+    // Step 1: flip status + persist (fire-and-forget via the slice; it reconciles the DTO).
+    // This is unconditional — the quote IS sent even if delivery fails below.
+    updateEstimate(est.id, { status: "sent", age: 0 });
+
+    // Step 2: advance lead stage.
     if (lead) {
       const order: readonly string[] = STAGE_ORDER;
       if (order.indexOf(lead.stage) < order.indexOf("Quote Sent")) {
         moveLeadStage(lead.id, "Quote Sent");
       }
     }
-    close();
+
+    // Step 3: build the share link.
+    if (!est.publicToken) {
+      // Should not happen for DB-persisted estimates, but guard gracefully.
+      setSendError("This quote predates share links — resend from the composer.");
+      setIsSending(false);
+      close();
+      return;
+    }
+
+    const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+    const quoteLink = `${appOrigin}/q/${est.publicToken}`;
+    const firstName = (lead?.name ?? "").split(" ")[0] ?? lead?.name ?? "";
+    const body =
+      `${firstName}, your quote ${est.num} is ready — view and approve here: ${quoteLink}`;
+
+    try {
+      if (sendChannel === "text") {
+        await messagingSend.mutateAsync({ leadId: est.leadId, body });
+      } else {
+        await notificationsSend.mutateAsync({
+          channel: "email",
+          to: dest.trim(),
+          kind: "estimate_sent",
+          body,
+          relatedType: "estimate",
+          relatedId: est.id,
+          idempotencyKey: `estimate-sent-${est.id}`,
+        });
+      }
+      // Delivery succeeded — close.
+      close();
+    } catch (err: unknown) {
+      // Delivery failed. The status flip already persisted — surface inline.
+      // Do NOT roll back the sent status (mirror composer semantics).
+      const code = (err as { data?: { code?: string } }).data?.code;
+      if (code === "PRECONDITION_FAILED") {
+        setSendError(
+          sendChannel === "text"
+            ? "Quote saved — but no business number is set up for texting yet. Share the link manually."
+            : "Quote saved — email delivery isn't configured yet. Share the link manually.",
+        );
+      } else {
+        setSendError("Quote saved — couldn't deliver. Check your connection.");
+      }
+      setIsSending(false);
+    }
   }
 
   function confirmDelete() {
@@ -184,14 +327,121 @@ export function EstimateModalContent() {
       {e.status === "sent" && <FollowUpTrail e={e} />}
 
       {(e.status === "draft" || e.status === "sent") && (
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
-          <button className="btn ghost" onClick={() => openModal(MODAL.CUST_QUOTE, { estId: e.id })}>
-            Preview as customer
-          </button>
-          {e.status === "draft" && (
-            <button className="btn primary" onClick={sendDraft}>
-              Send quote
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <button className="btn ghost" onClick={() => openModal(MODAL.CUST_QUOTE, { estId: e.id })}>
+              Preview as customer
             </button>
+            {e.status === "draft" && !sendOpen && (
+              <button className="btn primary" onClick={openSendPanel}>
+                Send quote
+              </button>
+            )}
+          </div>
+
+          {/* Inline send panel — expands in-flow below the action row */}
+          {e.status === "draft" && sendOpen && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "14px 16px",
+                border: "1.5px solid var(--line)",
+                borderRadius: "var(--radius-sm, 9px)",
+                background: "var(--card)",
+              }}
+            >
+              {/* Channel toggle */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                {(["text", "email"] as const).map((ch) => (
+                  <button
+                    key={ch}
+                    className={`btn sm ${sendChannel === ch ? "primary" : "ghost"}`}
+                    onClick={() => setSendChannel(ch)}
+                    disabled={isSending}
+                  >
+                    {ch === "text" ? "Text" : "Email"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Destination input */}
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: "var(--ink-2)",
+                    marginBottom: 3,
+                  }}
+                >
+                  {sendChannel === "text" ? "Mobile number" : "Email address"}
+                </label>
+                <input
+                  type={sendChannel === "text" ? "tel" : "email"}
+                  value={dest}
+                  placeholder={sendChannel === "text" ? "(925) 555-0123" : "name@email.com"}
+                  onChange={(ev) => {
+                    setDest(ev.target.value);
+                    if (destError) setDestError(null);
+                  }}
+                  onBlur={commitDest}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter") {
+                      ev.preventDefault();
+                      commitDest();
+                    }
+                  }}
+                  disabled={isSending}
+                  aria-label={sendChannel === "text" ? "Mobile number" : "Email address"}
+                  style={{
+                    width: "100%",
+                    maxWidth: 280,
+                    border: `1.5px solid ${destError ? "var(--red)" : "var(--line)"}`,
+                    borderRadius: "var(--radius-sm, 9px)",
+                    padding: "8px 11px",
+                    fontFamily: "inherit",
+                    fontSize: 13.5,
+                    background: "var(--card)",
+                    color: "var(--ink)",
+                  }}
+                />
+                {destError && (
+                  <div style={{ marginTop: 4, fontSize: 12, color: "var(--red)" }}>
+                    {destError}
+                  </div>
+                )}
+              </div>
+
+              {/* Inline delivery error */}
+              {sendError && (
+                <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--red)" }}>
+                  {sendError}
+                </div>
+              )}
+
+              {/* Panel actions */}
+              <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+                <button
+                  className="btn sm ghost"
+                  onClick={closeSendPanel}
+                  disabled={isSending}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn sm primary"
+                  onClick={confirmSend}
+                  disabled={isSending}
+                >
+                  {isSending
+                    ? "Sending…"
+                    : sendChannel === "text"
+                    ? "Send by text"
+                    : "Send by email"}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

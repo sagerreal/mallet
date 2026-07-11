@@ -243,6 +243,16 @@ describe("dtoEstimateToStore", () => {
     const result = dtoEstimateToStore(makeEstimateDTO({ validDays: null }), makePriorEst());
     expect(result.validDays).toBeUndefined();
   });
+
+  it("maps publicToken string to store", () => {
+    const result = dtoEstimateToStore(makeEstimateDTO({ publicToken: "tok_abc123" }), makePriorEst());
+    expect(result.publicToken).toBe("tok_abc123");
+  });
+
+  it("maps null publicToken → undefined (absent from store)", () => {
+    const result = dtoEstimateToStore(makeEstimateDTO({ publicToken: null }), makePriorEst());
+    expect(result.publicToken).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
