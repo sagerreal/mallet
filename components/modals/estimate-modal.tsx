@@ -209,7 +209,9 @@ export function EstimateModalContent() {
 
     try {
       if (sendChannel === "text") {
-        await messagingSend.mutateAsync({ leadId: est.leadId, body });
+        // Pass the panel's destination explicitly — the server validates it and uses it
+        // directly, so the send never races the (fire-and-forget) lead phone update.
+        await messagingSend.mutateAsync({ leadId: est.leadId, body, to: dest.trim() });
       } else {
         await notificationsSend.mutateAsync({
           channel: "email",
@@ -232,6 +234,12 @@ export function EstimateModalContent() {
           sendChannel === "text"
             ? "Quote saved — but no business number is set up for texting yet. Share the link manually."
             : "Quote saved — email delivery isn't configured yet. Share the link manually.",
+        );
+      } else if (code === "BAD_REQUEST") {
+        setSendError(
+          sendChannel === "text"
+            ? "Quote saved — that phone number doesn't look right. Fix it and resend."
+            : "Quote saved — that email doesn't look right. Fix it and resend.",
         );
       } else {
         setSendError("Quote saved — couldn't deliver. Check your connection.");

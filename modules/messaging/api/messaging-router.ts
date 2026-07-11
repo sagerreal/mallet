@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { loadConfig } from "@mallet/shared/config";
 import { orgs, leads } from "@mallet/shared/db/schema";
-import { asLeadId } from "@mallet/shared/types";
+import { asLeadId, Phone } from "@mallet/shared/types";
 import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
 import { SendMessageUseCase } from "../app/send-message";
 import { ListThreadUseCase } from "../app/list-thread";
@@ -36,6 +36,10 @@ const toConversationDTO = (row: ConversationRow): ConversationDTO => ({
 const sendInput = z.object({
   leadId: z.string().uuid(),
   body: z.string().min(1).max(1600),
+  // Optional office-chosen destination override (e.g. the estimate-modal send panel's
+  // editable number). Validated server-side via Phone.parse; falls back to the lead's
+  // on-file phone when absent.
+  to: z.string().min(7).max(25).optional(),
 });
 
 const listByLeadInput = z.object({
@@ -72,13 +76,23 @@ export const createMessagingRouter = () =>
           });
         }
 
-        // Resolve the lead's phone — required to send.
-        const leadRows = await tx
-          .select({ phoneE164: leads.phoneE164 })
-          .from(leads)
-          .where(eq(leads.id, input.leadId))
-          .limit(1);
-        const leadPhone = leadRows[0]?.phoneE164 ?? null;
+        // Destination: an explicit office-chosen override wins (validated here — untrusted
+        // input goes through Phone.parse); otherwise fall back to the lead's on-file phone.
+        let leadPhone: string | null = null;
+        if (input.to) {
+          const parsed = Phone.parse(input.to);
+          if (!parsed.ok) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "invalid phone number" });
+          }
+          leadPhone = parsed.value;
+        } else {
+          const leadRows = await tx
+            .select({ phoneE164: leads.phoneE164 })
+            .from(leads)
+            .where(eq(leads.id, input.leadId))
+            .limit(1);
+          leadPhone = leadRows[0]?.phoneE164 ?? null;
+        }
 
         if (!leadPhone) {
           throw new TRPCError({
