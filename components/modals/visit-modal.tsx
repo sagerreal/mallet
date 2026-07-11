@@ -49,6 +49,7 @@ export function VisitModalContent() {
   const [purpose, setPurpose] = useState<Purpose>(initialPurpose);
   const [jobDesc, setJobDesc] = useState(lead?.job ?? "");
   const [addr, setAddr] = useState(lead?.address ?? "");
+  const [error, setError] = useState<string | null>(null);
 
   if (!lead) return null;
 
@@ -73,13 +74,15 @@ export function VisitModalContent() {
   /** Create the job (unscheduled) + an unplaced visit — same as the New-customer
    *  "Create job" path; the crew & time get set on the Schedule board.
    *
-   *  The visit-modal always has a real lead FK (lead.id), so addJob will persist.
-   *  We do NOT await persisted here because the visit-modal's lead already exists
-   *  in the DB, so addJob will fire create immediately; the visit is queued
-   *  optimistically (addVisit guards on origin === "db" for the network call, but
-   *  the optimistic row is added either way). This keeps the modal instant. */
-  function createJobForLead(): Job {
-    const { job } = addJob({
+   *  addJob returns { job, persisted } — we MUST await `persisted` before calling
+   *  addVisit so the job has origin === "db" and addVisit fires v1.visits.createVisit.
+   *  Without the await the visit is added while the job is still "manual" and is
+   *  silently dropped by addVisit's origin guard on the next page refresh.
+   *
+   *  Returns the optimistic Job on success, or null on failure (error already set).
+   */
+  async function createJobForLead(): Promise<Job | null> {
+    const { job, persisted } = addJob({
       leadId: lead!.id,
       svc: "service",
       origin: "manual",
@@ -95,20 +98,31 @@ export function VisitModalContent() {
       acts: [],
       visits: [],
     });
+
+    // Await the job reconcile (origin flips to "db") before adding the visit so that
+    // addVisit sees origin === "db" and fires v1.visits.createVisit.
+    try {
+      await persisted;
+    } catch {
+      setError("Couldn't save the job — check your connection and try again.");
+      return null;
+    }
+
     addVisit(job.id); // unplaced — dragged onto the Schedule later
     return job;
   }
 
   /** "✦ Build the price →" (Job only) — create the job, then hand off to the same
    *  price builder the crew uses (mirrors New-customer handleBuildPrice). */
-  function buildPrice() {
+  async function buildPrice() {
     syncLead();
-    const job = createJobForLead();
+    const job = await createJobForLead();
+    if (!job) return; // error already set; modal stays open
     close();
     openModal(MODAL.PRICE_BUILDER, { jobId: job.id, returnTo: MODAL.JOB });
   }
 
-  function submit() {
+  async function submit() {
     syncLead();
     if (purpose === "look") {
       // Estimate visit — an unscheduled estimate visit on the lead (scope, then quote).
@@ -123,7 +137,8 @@ export function VisitModalContent() {
       openModal(MODAL.LEAD, { leadId: lead!.id });
       return;
     }
-    const job = createJobForLead();
+    const job = await createJobForLead();
+    if (!job) return; // error already set; modal stays open
     close();
     openModal(MODAL.JOB, { jobId: job.id });
   }
@@ -202,6 +217,10 @@ export function VisitModalContent() {
           onChange={(e) => setAddr(e.target.value)}
         />
       </div>
+
+      {error && (
+        <p style={{ color: "var(--red)", fontSize: 13, margin: "12px 0 0" }}>{error}</p>
+      )}
 
       {/* Footer */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
