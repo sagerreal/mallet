@@ -55,18 +55,18 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
     await closeDb();
   });
 
-  it("sends an invoice reminder to the customer via the stub sender and lists it", async () => {
+  it("refuses an interactive invoice reminder when the channel is unconfigured (stub sender)", async () => {
+    // Interactive sends must surface delivery truth: with no real sender configured the
+    // logging stub would silently "succeed" — the router now maps that to
+    // PRECONDITION_FAILED so the office user is never shown a false success. The whole
+    // tx rolls back, so no notification row is recorded and a retry stays idempotent.
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
-    const sent = await caller.v1.notifications.sendInvoiceReminder({
-      invoiceId: agedInvoiceId,
-      channel: "sms",
-    });
-    expect(sent.status).toBe("sent");
-    expect(sent.channel).toBe("sms");
-    expect(sent.body).toContain("INV-AGED");
+    await expect(
+      caller.v1.notifications.sendInvoiceReminder({ invoiceId: agedInvoiceId, channel: "sms" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
     const listed = await caller.v1.notifications.list({ limit: 50 });
-    expect(listed.items.some((n) => n.id === sent.id)).toBe(true);
+    expect(listed.items.some((n) => n.relatedId === agedInvoiceId && n.reminderStage === null)).toBe(false);
   });
 
   it("surfaces the aged invoice as a due reminder and advances the stage once (deduped)", async () => {

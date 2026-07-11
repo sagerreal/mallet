@@ -18,6 +18,7 @@ import {
 } from "@mallet/notifications";
 import { DrizzleNotificationRepository } from "../../../notifications/infra/drizzle-notification-repository";
 import { DrizzleReminderTargetReader } from "../../../notifications/infra/drizzle-reminder-target-reader";
+import { STUB_EXTERNAL_ID } from "../../../notifications/infra/logging-notification-sender";
 import { ManualPaymentGateway } from "../../../invoicing/infra/manual-payment-gateway";
 import { CreateVisitUseCase } from "../../../jobs/app/create-visit";
 import type { AgentTool, ToolOutcome } from "../../domain/tool";
@@ -169,6 +170,14 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
     const result = await uc.exec({ orgId: ctx.orgId, invoiceId: parsed.data.invoiceId, channel: parsed.data.channel });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     const p = result.value.props;
+    // Delivery truth (mirrors the notification router's interactive guard): a stubbed
+    // no-op or provider rejection must not read back to the agent as a sent reminder.
+    if (p.externalId === STUB_EXTERNAL_ID) {
+      return { ok: false, error: `${p.channel} delivery is not configured — contact your administrator` };
+    }
+    if (p.status === "failed") {
+      return { ok: false, error: `the ${p.channel} provider rejected the send` };
+    }
     return { ok: true, summary: `Sent invoice reminder via ${p.channel} (notification id: ${p.id}, status: ${p.status}).` };
   },
 };

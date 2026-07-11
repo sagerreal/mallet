@@ -42,6 +42,11 @@ export interface EstimatesSlice {
   /** Replace the entire estimates array — called by the server hydrator. */
   setEstimates: (estimates: Estimate[]) => void;
   addEstimate: (draft: Omit<Estimate, "id" | "num">) => Estimate;
+  /** Insert (or replace by id) an estimate the SERVER already persisted, mapped from its
+   *  DTO — no network call. Used by the composer's send flow, which drafts+sends via tRPC
+   *  itself; going through addEstimate there would fire a second quoting.draft and orphan
+   *  a duplicate draft in the shop rail. */
+  adoptEstimate: (dto: Parameters<typeof dtoEstimateToStore>[0], fu: Estimate["fu"]) => void;
   updateEstimate: (id: string, patch: Partial<Estimate>) => void;
   /** Decline an estimate. Separate from updateEstimate because the backend
    *  requires an explicit reason string. */
@@ -80,6 +85,15 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice, [], [], Estimate
   estimates: [],
 
   setEstimates: (estimates) => set({ estimates }),
+
+  adoptEstimate: (dto, fu) => {
+    const mapped = dtoEstimateToStore(dto, fu);
+    set((s) => ({
+      estimates: s.estimates.some((e) => e.id === mapped.id)
+        ? reconcileEst(s.estimates, mapped)
+        : [...s.estimates, mapped],
+    }));
+  },
 
   // ---------------------------------------------------------------------------
   // addEstimate — optimistic + persist via v1.quoting.draft + reconcile/rollback.

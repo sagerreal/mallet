@@ -13,7 +13,7 @@ import {
 import { FollowUpPolicy } from "../domain/follow-up-policy";
 import { DrizzleNotificationRepository } from "../infra/drizzle-notification-repository";
 import { DrizzleReminderTargetReader } from "../infra/drizzle-reminder-target-reader";
-import { LoggingNotificationSender } from "../infra/logging-notification-sender";
+import { LoggingNotificationSender, STUB_EXTERNAL_ID } from "../infra/logging-notification-sender";
 import { SendNotificationUseCase } from "../app/send-notification";
 import { SendInvoiceNotificationUseCase } from "../app/send-invoice-notification";
 import { AdvanceReminderUseCase } from "../app/advance-reminder";
@@ -70,6 +70,28 @@ const toSummaryDTO = (n: Notification) => {
 const repoFor = (ctx: { tx: import("@mallet/shared/db/tx").TenantTx; principal: { orgId: import("@mallet/shared/types").OrgId } }) =>
   new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId);
 
+// Interactive sends must surface delivery truth. The use-case records provider failures
+// gracefully (status='failed', returned as ok) so the background reminder path never
+// hard-fails — but a human clicking Send needs the real outcome: an unconfigured channel
+// (logging-stub sentinel) or a provider rejection must throw, so the UI's inline error
+// handling fires instead of showing false success.
+const assertDelivered = (n: Notification, channel: string): Notification => {
+  const p = n.props;
+  if (p.externalId === STUB_EXTERNAL_ID) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${channel} delivery is not configured`,
+    });
+  }
+  if (p.status === "failed") {
+    throw new TRPCError({
+      code: "BAD_GATEWAY",
+      message: `the ${channel} provider rejected the send`,
+    });
+  }
+  return n;
+};
+
 export const createNotificationRouter = () =>
   router({
     send: ownerOrOffice
@@ -102,18 +124,21 @@ export const createNotificationRouter = () =>
           ctx.deps.ids,
         );
         return toNotificationDTO(
-          orThrow(
-            await useCase.exec({
-              orgId: ctx.principal.orgId,
-              channel: input.channel,
-              to,
-              kind: input.kind,
-              body: input.body,
-              relatedType: input.relatedType ?? null,
-              relatedId: input.relatedId ?? null,
-              reminderStage: null,
-              idempotencyKey: input.idempotencyKey,
-            }),
+          assertDelivered(
+            orThrow(
+              await useCase.exec({
+                orgId: ctx.principal.orgId,
+                channel: input.channel,
+                to,
+                kind: input.kind,
+                body: input.body,
+                relatedType: input.relatedType ?? null,
+                relatedId: input.relatedId ?? null,
+                reminderStage: null,
+                idempotencyKey: input.idempotencyKey,
+              }),
+            ),
+            input.channel,
           ),
         );
       }),
@@ -135,8 +160,11 @@ export const createNotificationRouter = () =>
           ctx.deps.ids,
         );
         return toNotificationDTO(
-          orThrow(
-            await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: input.invoiceId, channel: input.channel }),
+          assertDelivered(
+            orThrow(
+              await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: input.invoiceId, channel: input.channel }),
+            ),
+            input.channel,
           ),
         );
       }),

@@ -64,9 +64,16 @@ const orgTx = t.middleware(({ ctx, next }) => {
   const orgId = ctx.principal.orgId;
   // Bind the event bus to THIS tx so a use-case's emits land in the outbox atomically with its
   // state change (durable, and rolled back together on failure) — replacing the in-memory bus.
-  return withTenant(orgId, (tx) =>
-    next({ ctx: { tx, deps: { ...ctx.deps, bus: new OutboxEventBus(tx, orgId) } } }),
-  );
+  //
+  // ROLLBACK ON ERROR: tRPC's next() does NOT reject when the resolver throws — it resolves
+  // with { ok: false, error }. Left unchecked, withTenant would COMMIT any writes (and outbox
+  // events) made before the throw. Re-throw the resolver's error inside the tx callback so the
+  // transaction genuinely rolls back; tRPC maps the re-thrown error identically for the client.
+  return withTenant(orgId, async (tx) => {
+    const result = await next({ ctx: { tx, deps: { ...ctx.deps, bus: new OutboxEventBus(tx, orgId) } } });
+    if (!result.ok) throw result.error;
+    return result;
+  });
 });
 
 // Owner/office staff, inside their org transaction. The standard procedure for back-office data.
