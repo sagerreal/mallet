@@ -13,6 +13,9 @@ import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
 import { CancelJobUseCase } from "../app/cancel-job";
 import { ListJobsUseCase } from "../app/list-jobs";
+import { CreateManualJobUseCase } from "../app/create-manual-job";
+import { UpdateJobUseCase } from "../app/update-job";
+import { ArchiveJobUseCase } from "../app/archive-job";
 import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO } from "./job-dto";
 
 const paginatedSummaryDTO = z.object({
@@ -52,6 +55,25 @@ const listByLeadInput = z.object({
   cursor: z.string().nullish(),
 });
 
+// Named input schemas for the manual-job mutation surface (exported so the store can
+// reuse them for client-side validation without duplicating the bounds).
+export const createJobInput = z.object({
+  id: z.string().uuid().optional(),
+  leadId: z.string().uuid(),
+  title: z.string().max(200).optional(),
+  svc: z.string().min(1).max(60).optional(),
+  addr: z.string().max(1000).optional(),
+  phone: z.string().max(50).optional(),
+  notes: z.string().max(10_000).optional(),
+});
+export const updateJobInput = z.object({
+  jobId: z.string().uuid(),
+  title: z.string().max(200).nullable().optional(),
+  svc: z.string().min(1).max(60).nullable().optional(),
+  notes: z.string().max(10_000).nullable().optional(),
+});
+export const archiveJobInput = z.object({ jobId: z.string().uuid() });
+
 // Layer 5: thin transport. Build org-scoped use-cases from the request's tx + ports, delegate,
 // map the result. No business logic here.
 export const createJobRouter = () =>
@@ -89,6 +111,30 @@ export const createJobRouter = () =>
         return toJobDTO(
           orThrow(
             await useCase.exec({ orgId: ctx.principal.orgId, estimateId: asEstimateId(input.estimateId) }),
+          ),
+        );
+      }),
+
+    // Create a manual (unscheduled) job for a lead. addr/phone accepted for modal parity
+    // but are not job columns — the use-case intentionally drops them.
+    create: ownerOrOffice
+      .input(createJobInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new CreateManualJobUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+        return toJobDTO(
+          orThrow(
+            await useCase.exec({
+              id: input.id,
+              orgId: ctx.principal.orgId,
+              leadId: asLeadId(input.leadId),
+              title: input.title ?? null,
+              svc: input.svc ?? null,
+              addr: input.addr ?? null,
+              phone: input.phone ?? null,
+              notes: input.notes ?? null,
+            }),
           ),
         );
       }),
@@ -190,5 +236,35 @@ export const createJobRouter = () =>
         return toJobDTO(
           orThrow(await useCase.exec({ jobId: asJobId(input.jobId), reason: input.reason })),
         );
+      }),
+
+    // Patch title/svc/notes on a non-terminal job. undefined fields are kept as-is;
+    // explicit null clears an optional field. org isolation enforced by RLS via ctx.tx.
+    update: ownerOrOffice
+      .input(updateJobInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new UpdateJobUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        return toJobDTO(
+          orThrow(
+            await useCase.exec({
+              jobId: asJobId(input.jobId),
+              title: input.title,
+              svc: input.svc,
+              notes: input.notes,
+            }),
+          ),
+        );
+      }),
+
+    // Soft-delete a job. Returns NOT_FOUND when the job is unknown or already archived.
+    archive: ownerOrOffice
+      .input(archiveJobInput)
+      .output(z.object({ ok: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ArchiveJobUseCase(repo, ctx.deps.clock);
+        return orThrow(await useCase.exec({ jobId: asJobId(input.jobId) }));
       }),
   });

@@ -152,9 +152,10 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
   return {
     id: dto.id,
     leadId: dto.leadId,
-    svc: "service",
+    svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
+    // addr/phone are not DB columns on jobs — hydrated from the lead on the modal side.
     addr: "",
     phone: "",
     status,

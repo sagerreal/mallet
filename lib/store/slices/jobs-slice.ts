@@ -2,6 +2,15 @@
  * lib/store/slices/jobs-slice.ts
  * Job + visit data and mutations. Immutable updates only.
  *
+ * addJob is OPTIMISTIC + PERSIST + RECONCILE (client-authored id):
+ *   1. Mint a UUID client-side and prepend optimistically.
+ *   2. Fire v1.jobs.create with that same id so the server row id === client id.
+ *   3. On success, reconcile (preserve client id; server side may update
+ *      derived fields); fold in any optimistic visits already added.
+ *   4. On error, remove the optimistic job and dev-log.
+ *   Manual jobs with no leadId (leadId === "") are pure local drafts — the DB
+ *   requires a non-null lead FK, so the network call is skipped for those.
+ *
  * Visit actions (addVisit / placeVisit / updateVisit / removeVisit /
  * setVisitStatus) are OPTIMISTIC + PERSIST + RECONCILE:
  *   1. Apply local change immediately so the UI is instant.
@@ -11,9 +20,9 @@
  *      computed scheduledEnd, derived status).
  *   4. On error, ROLL BACK to the pre-mutation snapshot and log.
  *
- * Only DB-origin jobs (origin === "db") are persisted.  Local prototype
- * jobs created in the UI (origin === "manual") skip the network calls so
- * the demo flow still works without a backend.
+ * Visit actions check job.origin === "db" before firing the network call.
+ * addJob now sets origin to JOB_ORIGIN.DB on reconcile so manual jobs with
+ * a real lead become DB-tracked and their subsequent visits also persist.
  *
  * RESIZE debounce: updateVisit for duration fires on every mousemove.
  * A module-level timer keyed by visitId collapses the stream to ONE
@@ -62,6 +71,43 @@ function chain(visitId: string, fn: () => Promise<unknown>): void {
 let _nextAuxId = 6000; // addons + other field-created ids (mirrors state.nextId)
 
 // ---------------------------------------------------------------------------
+// Field-filter helpers for updateJob persist
+// ---------------------------------------------------------------------------
+
+// Job fields that have a DB column via v1.jobs.update. Everything else on Job is
+// local-only (visits ride their own mutations; lines/addons/verify/photos are
+// Phase-5; addr/phone have no job column; status/archived derive server-side).
+const JOB_UPDATE_KEYS = new Set<keyof Job>(["title", "svc", "notes"]);
+
+export interface JobUpdatePayload {
+  jobId: string;
+  title?: string | null;
+  svc?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * Build the v1.jobs.update payload from a Job patch, keeping only DB-backed
+ * fields. Returns null when the patch touches only local-only fields (skip the
+ * network call). Mirrors buildLeadUpdatePayload in leads-slice.
+ */
+export function buildJobUpdatePayload(
+  jobId: string,
+  patch: Partial<Job>,
+): JobUpdatePayload | null {
+  const payload: JobUpdatePayload = { jobId };
+  let hasPersisted = false;
+  for (const key of Object.keys(patch) as (keyof Job)[]) {
+    if (!JOB_UPDATE_KEYS.has(key)) continue;
+    hasPersisted = true;
+    if (key === "title") payload.title = patch.title;
+    else if (key === "svc") payload.svc = patch.svc;
+    else if (key === "notes") payload.notes = patch.notes;
+  }
+  return hasPersisted ? payload : null;
+}
+
+// ---------------------------------------------------------------------------
 // Pure local helpers
 // ---------------------------------------------------------------------------
 
@@ -100,9 +146,19 @@ function withVerify(job: Job, itemId: number, ans: VerifyAns): Job {
 export interface JobsSlice {
   jobs: Job[];
   setJobs: (jobs: Job[]) => void;
-  addJob: (draft: Omit<Job, "id">) => Job;
+  /**
+   * Optimistically inserts the job and fires v1.jobs.create.
+   * Returns { job } synchronously (the optimistic record with the client-authored id)
+   * and { persisted } — a promise that resolves to the reconciled Job after the
+   * server responds (origin flips to "db").  Mirrors addLead's { lead, persisted }.
+   *
+   * Callers that need to run a subsequent operation that requires the job to be
+   * DB-origin (e.g. addVisit, which only persists when origin === "db") MUST
+   * await `persisted` first.
+   */
+  addJob: (draft: Omit<Job, "id">) => { job: Job; persisted: Promise<Job> };
   updateJob: (id: string, patch: Partial<Job>) => void;
-  setJobSvc: (id: string, svc: string) => void;
+  setJobSvc: (id: string, svc: string | null) => void;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
@@ -149,17 +205,101 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
 
   setJobs: (jobs) => set({ jobs }),
 
+  // ---------------------------------------------------------------------------
+  // addJob — client-authored id (so the returned id is valid for an immediate
+  // addVisit) + optimistic insert + persist via v1.jobs.create + reconcile/rollback.
+  // A manual job with no leadId (leadId === "") is a pure local draft — the DB
+  // requires a lead FK, so we skip the network call and keep it store-only.
+  //
+  // Returns { job } synchronously (the optimistic record) and { persisted } — a
+  // promise that resolves to the reconciled Job (origin "db") after the server
+  // responds, or rejects on failure.  Callers that call addVisit right after
+  // MUST await persisted first so addVisit sees origin === "db" and persists.
+  // ---------------------------------------------------------------------------
   addJob: (draft) => {
-    const newJob: Job = { ...draft, id: crypto.randomUUID() };
+    const id = crypto.randomUUID();
+    const newJob: Job = { ...draft, id };
     set((s) => ({ jobs: [newJob, ...s.jobs] }));
-    return newJob;
+
+    // No lead to attach to → cannot persist (jobs.lead_id is NOT NULL, composite FK).
+    // Return a persisted promise that resolves immediately to the local-only job.
+    if (!newJob.leadId) {
+      return { job: newJob, persisted: Promise.resolve(newJob) };
+    }
+
+    // Snapshot AFTER the optimistic prepend (includes newJob). Rollback filters
+    // newJob out by id rather than restoring wholesale, so a concurrent write to
+    // `jobs` between the prepend and a failure is preserved, not clobbered.
+    const priorJobs = get().jobs;
+    const persisted: Promise<Job> = trpcVanilla.v1.jobs.create
+      .mutate({
+        id,
+        leadId: newJob.leadId,
+        title: newJob.title || undefined,
+        svc: newJob.svc || undefined,
+        addr: newJob.addr || undefined,
+        phone: newJob.phone || undefined,
+        notes: newJob.notes || undefined,
+      })
+      .then((dto) => {
+        // Reconcile: server row id === client id (client-authored), so the board
+        // and any queued addVisit calls remain valid. Fold in any optimistic
+        // visits already added. Mark origin DB so subsequent visit actions persist.
+        const reconciled: Job = {
+          ...dtoJobToStoreJob(dto),
+          id,
+          origin: JOB_ORIGIN.DB,
+          visits: get().jobs.find((j) => j.id === id)?.visits ?? newJob.visits,
+        };
+        set((s) => ({
+          jobs: s.jobs.map((j) => (j.id === id ? reconciled : j)),
+        }));
+        return reconciled;
+      })
+      .catch((err: unknown) => {
+        // Roll back: remove the optimistic job.
+        set(() => ({ jobs: priorJobs.filter((j) => j.id !== id) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[jobs-slice] addJob failed — rolled back", { id, err });
+        }
+        throw err instanceof Error ? err : new Error("addJob failed");
+      });
+
+    return { job: newJob, persisted };
   },
 
-  updateJob: (id, patch) =>
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...patch } : j)) })),
+  updateJob: (id, patch) => {
+    const prior = snapshot(get().jobs, id);
+    // 1. Optimistic apply (local-only fields update the store regardless).
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...patch } : j)) }));
+    // 2. Persist only DB-backed fields; skip if the patch is local-only.
+    const mutPayload = buildJobUpdatePayload(id, patch);
+    if (mutPayload === null) return;
+    trpcVanilla.v1.jobs.update
+      .mutate(mutPayload)
+      .then((dto) => {
+        // 3. Reconcile server truth for the persisted scalars, preserving local-only
+        //    fields already on the store record (lines/addons/verify/photos/visits).
+        set((s) => ({
+          jobs: s.jobs.map((j) =>
+            j.id === id
+              ? { ...j, title: dto.title ?? j.title, svc: dto.svc !== undefined ? dto.svc : j.svc, notes: dto.notes ?? j.notes }
+              : j,
+          ),
+        }));
+      })
+      .catch((err: unknown) => {
+        // 4. Roll back the whole job to the pre-patch snapshot.
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[jobs-slice] updateJob failed — rolled back", { id, patch, err });
+        }
+      });
+  },
 
-  setJobSvc: (id, svc) =>
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, svc } : j)) })),
+  setJobSvc: (id, svc) => get().updateJob(id, { svc }),
 
   // ---------------------------------------------------------------------------
   // addVisit — optimistic temp id; persist via createVisit; reconcile with
@@ -414,14 +554,40 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   },
 
   // ---------------------------------------------------------------------------
-  // Non-persisted actions (unchanged)
+  // Archive / delete (soft-delete only — no hard deletes)
   // ---------------------------------------------------------------------------
 
-  archiveJob: (id) =>
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, archived: true } : j)) })),
+  // Soft-delete server-side; mark archived locally so it drops off the active list.
+  archiveJob: (id) => {
+    const prior = snapshot(get().jobs, id);
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, archived: true } : j)) }));
+    if (prior?.origin !== JOB_ORIGIN.DB) return; // local-only draft — nothing to persist
+    trpcVanilla.v1.jobs.archive
+      .mutate({ jobId: id })
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] archiveJob failed — rolled back", { id, err });
+        }
+      });
+  },
 
-  deleteJob: (id) =>
-    set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) })),
+  // deleteJob repoints to soft-delete (no hard deletes). Removes from the visible
+  // list optimistically; re-inserts on failure.
+  deleteJob: (id) => {
+    const prior = snapshot(get().jobs, id);
+    set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) }));
+    if (prior?.origin !== JOB_ORIGIN.DB) return;
+    trpcVanilla.v1.jobs.archive
+      .mutate({ jobId: id })
+      .catch((err: unknown) => {
+        // Rollback: re-insert the removed job at the front (order is not load-bearing here).
+        if (prior) set((s) => ({ jobs: [prior, ...s.jobs] }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] deleteJob failed — rolled back", { id, err });
+        }
+      });
+  },
 
   addAddon: (jobId, draft) => {
     const d = draft.d.trim();

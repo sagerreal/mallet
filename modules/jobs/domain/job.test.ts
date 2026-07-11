@@ -18,6 +18,7 @@ const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   sourceEstimateId: null,
   assigneeUserId: null,
   title: "Deck rebuild",
+  svc: null,
   status: "scheduled",
   scheduledStart: null,
   scheduledEnd: null,
@@ -119,5 +120,56 @@ describe("Job state machine", () => {
     const canceled = make().cancel("x", now);
     if (!isOk(canceled)) throw new Error("cancel failed");
     expect(canceled.value.assignTo(user, now).ok).toBe(false);
+  });
+});
+
+describe("Job.patchFields", () => {
+  const baseNow = new Date("2026-07-10T12:00:00Z");
+  const makeJob = () => {
+    const r = Job.create({
+      id: asJobId("11111111-1111-1111-1111-111111111111"),
+      orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+      num: "JOB-1000",
+      leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
+      sourceEstimateId: null,
+      assigneeUserId: null,
+      title: "Original",
+      svc: "service",
+      status: "scheduled",
+      scheduledStart: null,
+      scheduledEnd: null,
+      startedAt: null,
+      completedAt: null,
+      canceledAt: null,
+      cancelReason: null,
+      total: zeroMoney,
+      notes: null,
+      visits: [],
+      createdAt: baseNow,
+      updatedAt: baseNow,
+    });
+    if (!isOk(r)) throw new Error("setup failed");
+    return r.value;
+  };
+
+  it("patches title/svc/notes and bumps updatedAt", () => {
+    const later = new Date("2026-07-10T13:00:00Z");
+    const r = makeJob().patchFields({ title: "New", svc: "estimate", notes: "gate code 4" }, later);
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.title).toBe("New");
+      expect(r.value.props.svc).toBe("estimate");
+      expect(r.value.props.notes).toBe("gate code 4");
+      expect(r.value.props.updatedAt).toBe(later);
+    }
+  });
+
+  it("undefined field keeps the current value; explicit null clears it", () => {
+    const r = makeJob().patchFields({ title: null }, baseNow);
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.title).toBeNull();
+      expect(r.value.props.svc).toBe("service"); // untouched
+    }
   });
 });

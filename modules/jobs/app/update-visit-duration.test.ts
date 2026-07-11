@@ -37,6 +37,12 @@ class FakeJobRepository implements JobRepository {
     this.store.set(job.props.id, job);
     return true;
   }
+  async insertManual(job: Job): Promise<void> {
+    this.store.set(job.props.id, job);
+  }
+  async archive(id: JobId, _now: Date): Promise<number> {
+    return this.store.delete(id) ? 1 : 0;
+  }
   async findById(id: JobId): Promise<Job | null> {
     return this.store.get(id) ?? null;
   }
@@ -91,6 +97,7 @@ const makeJob = (overrides: Partial<JobProps> = {}): Job => {
     sourceEstimateId: null,
     assigneeUserId: null,
     title: "Roof install",
+    svc: null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,

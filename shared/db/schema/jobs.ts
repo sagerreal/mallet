@@ -42,6 +42,9 @@ export const jobs = pgTable(
     cancelReason: text("cancel_reason"),
     totalCents: integer("total_cents").notNull().default(0),
     notes: text("notes"),
+    // Service type ("service" | "estimate" | free-text trade label). Mirrors the store
+    // Job.svc field; nullable because estimate-sourced jobs may not set one at creation.
+    svc: text("svc"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -81,6 +84,10 @@ export const jobs = pgTable(
     check(
       "jobs_window_check",
       sql`${t.scheduledEnd} is null or ${t.scheduledStart} is null or ${t.scheduledEnd} >= ${t.scheduledStart}`,
+    ),
+    check(
+      "jobs_svc_len_check",
+      sql`${t.svc} is null or (char_length(btrim(${t.svc})) between 1 and 60)`,
     ),
   ],
 );

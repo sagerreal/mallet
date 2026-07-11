@@ -330,6 +330,13 @@
       "when": 1783718055146,
       "tag": "0046_redundant_night_nurse",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1783723875945,
+      "tag": "0047_jobs_svc",
+      "breakpoints": true
     }
   ]
 }

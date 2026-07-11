@@ -53,6 +53,7 @@ const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
   sourceEstimateId: null,
   assigneeUserId: null,
   title: "Fence install",
+  svc: null,
   status: "scheduled",
   scheduledStart: null,
   scheduledEnd: null,
@@ -92,6 +93,12 @@ class FakeJobRepository implements JobRepository {
   async insertForEstimate(job: Job): Promise<boolean> {
     this.store.set(job.props.id, job);
     return true;
+  }
+  async insertManual(job: Job): Promise<void> {
+    this.store.set(job.props.id, job);
+  }
+  async archive(id: JobId, _now: Date): Promise<number> {
+    return this.store.delete(id) ? 1 : 0;
   }
   async findById(id: JobId): Promise<Job | null> {
     return this.store.get(id) ?? null;

@@ -42,6 +42,7 @@ export class ScheduleJobUseCase {
       sourceEstimateId: null,
       assigneeUserId: cmd.assigneeUserId,
       title: cmd.title,
+      svc: null,
       status: "scheduled",
       scheduledStart: cmd.scheduledStart,
       scheduledEnd: cmd.scheduledEnd,

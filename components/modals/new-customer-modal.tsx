@@ -209,6 +209,11 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             return;
           }
           utils.v1.customers.list.invalidate();
+          // addJob now returns { job, persisted }; destructure to get the optimistic job.
+          // The lead (data.id) is already persisted by the createMutation, so addJob
+          // will fire v1.jobs.create immediately. We do not need to await persisted
+          // here because the modal's primary purpose is customer creation; visits are
+          // not created here (only the price-builder is opened if job was chosen).
           const job: Job | null = visitPurpose === "job"
             ? addJob({
                 leadId: data.id,
@@ -225,7 +230,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 notes: notes.trim(),
                 acts: [],
                 visits: [],
-              })
+              }).job
             : null;
           reset();
           close();

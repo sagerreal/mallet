@@ -79,3 +79,111 @@ describe("NewJobModalContent — createEstimate", () => {
     expect(updateLead).not.toHaveBeenCalled();
   });
 });
+
+describe("NewJobModalContent — createJob (Job type)", () => {
+  beforeEach(() => {
+    addLead.mockReset();
+    updateLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
+    closeMock = vi.fn();
+  });
+
+  it("creates a lead first for a new customer, then addJob receives the server-assigned leadId", async () => {
+    // Lead persist returns a different (server) id from the optimistic one.
+    const persistedLead = { id: "srv-lead-10", name: "Maria Garcia", evisits: [], phone: "5551234567" };
+    addLead.mockReturnValue({
+      lead: { id: "opt-lead-10", name: "Maria Garcia", evisits: [] },
+      persisted: Promise.resolve(persistedLead),
+    });
+    // addJob returns { job, persisted } shape; persisted resolves to the reconciled job.
+    const optimisticJob = { id: "job-opt-10", origin: "manual", visits: [] };
+    const reconciledJob = { id: "job-opt-10", origin: "db", visits: [] };
+    addJob.mockReturnValue({
+      job: optimisticJob,
+      persisted: Promise.resolve(reconciledJob),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "fix boiler" },
+    });
+    // Default type is "Job" (service), so no type switch needed.
+    fireEvent.change(screen.getByPlaceholderText("search or add"), {
+      target: { value: "Maria Garcia" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    // addLead must be called to create the new customer.
+    expect(addLead).toHaveBeenCalledOnce();
+
+    // Wait for the full async createJob to complete.
+    await waitFor(() => {
+      expect(addJob).toHaveBeenCalledOnce();
+    });
+    // addJob must receive the server-assigned lead id, not the optimistic one.
+    expect(addJob).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: "srv-lead-10" }),
+    );
+  });
+
+  it("calls addVisit AFTER job persisted resolves (visits persist when origin is db)", async () => {
+    // existing customer — no addLead call needed.
+    const persistedLead = { id: "existing-lead-20", name: "Bob Smith", evisits: [] };
+    addLead.mockReturnValue({
+      lead: persistedLead,
+      persisted: Promise.resolve(persistedLead),
+    });
+
+    let resolveJobPersisted!: (j: unknown) => void;
+    const jobPersistedPromise = new Promise((res) => { resolveJobPersisted = res; });
+    const optimisticJob = { id: "job-opt-20", origin: "manual", visits: [] };
+    addJob.mockReturnValue({ job: optimisticJob, persisted: jobPersistedPromise });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "install faucet" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+
+    // addVisit must NOT have been called yet — still waiting on jobPersisted.
+    expect(addVisit).not.toHaveBeenCalled();
+
+    // Resolve the job persisted promise to simulate the server reconcile.
+    resolveJobPersisted({ id: "job-opt-20", origin: "db", visits: [] });
+
+    // Now addVisit should be called.
+    await waitFor(() => {
+      expect(addVisit).toHaveBeenCalledWith("job-opt-20", expect.any(Number));
+    });
+  });
+
+  it("surfaces an error and keeps the modal open when addJob persisted rejects", async () => {
+    addLead.mockReturnValue({
+      lead: { id: "lead-fail-30", name: "Fail User", evisits: [] },
+      persisted: Promise.resolve({ id: "lead-fail-30", name: "Fail User", evisits: [] }),
+    });
+    const optimisticJob = { id: "job-fail-30", origin: "manual", visits: [] };
+    addJob.mockReturnValue({
+      job: optimisticJob,
+      persisted: Promise.reject(new Error("db error")),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "repair sink" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/couldn't save the job/i)).toBeTruthy();
+    });
+
+    // Modal must NOT close on failure.
+    expect(closeMock).not.toHaveBeenCalled();
+    // Visits must NOT be created when the job failed to persist.
+    expect(addVisit).not.toHaveBeenCalled();
+  });
+});

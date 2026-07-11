@@ -31,6 +31,11 @@ interface JobOverrides {
   num?: string;
 }
 
+interface ManualJobOverrides {
+  num: string;
+  svc?: string | null;
+}
+
 const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
   const now = new Date("2026-06-01T00:00:00Z");
   const r = Job.create({
@@ -41,6 +46,36 @@ const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
     sourceEstimateId: o.sourceEstimateId ?? null,
     assigneeUserId: o.assigneeUserId ?? null,
     title: "Job",
+    svc: null,
+    status: "scheduled",
+    scheduledStart: null,
+    scheduledEnd: null,
+    startedAt: null,
+    completedAt: null,
+    canceledAt: null,
+    cancelReason: null,
+    total: zeroMoney,
+    notes: null,
+    visits: [],
+    createdAt: now,
+    updatedAt: now,
+  });
+  if (!isOk(r)) throw new Error(r.error.message);
+  return r.value;
+};
+
+// Builds a manually-created job (no source estimate) with a random id for insertManual tests.
+const makeManualJob = (orgId: OrgId, leadId: LeadId, o: ManualJobOverrides): Job => {
+  const now = new Date("2026-06-01T00:00:00Z");
+  const r = Job.create({
+    id: asJobId(randomUUID()),
+    orgId,
+    num: o.num,
+    leadId,
+    sourceEstimateId: null,
+    assigneeUserId: null,
+    title: "Manual Job",
+    svc: o.svc ?? null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,
@@ -187,5 +222,33 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
       rejected = true;
     }
     expect(rejected).toBe(true);
+  });
+
+  it("persists svc on insertManual and reads it back", async () => {
+    const orgA = asOrgId(orgAId);
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const num = await repo.nextNumber();
+      const job = makeManualJob(orgA, asLeadId(leadAId), { num, svc: "estimate" });
+      await repo.insertManual(job);
+      const back = await repo.findById(job.props.id);
+      return { svc: back?.props.svc ?? null };
+    });
+    expect(result.svc).toBe("estimate");
+  });
+
+  it("archive soft-deletes the job so findById returns null", async () => {
+    const orgA = asOrgId(orgAId);
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const num = await repo.nextNumber();
+      const job = makeManualJob(orgA, asLeadId(leadAId), { num, svc: "service" });
+      await repo.insertManual(job);
+      const count = await repo.archive(job.props.id, new Date());
+      const found = await repo.findById(job.props.id);
+      return { count, found };
+    });
+    expect(result.count).toBe(1);
+    expect(result.found).toBeNull();
   });
 });
