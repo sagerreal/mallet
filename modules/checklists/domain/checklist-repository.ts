@@ -1,15 +1,15 @@
-import type { ChecklistId, ChecklistItemId, CursorPage, Paginated } from "@mallet/shared/types";
-import type { Checklist } from "./checklist";
+import type { ChecklistId, ChecklistItemId, OrgId, CursorPage, Paginated } from "@mallet/shared/types";
+import type { Checklist, ChecklistStage, ChecklistItemType } from "./checklist";
 
 // The org is NEVER a parameter — it is implicit in the org-scoped transaction the repository
 // is constructed with, so a caller physically cannot address another tenant's checklists.
 export interface ChecklistRepository {
   create(input: {
-    id: string;
-    orgId: string;
+    id: ChecklistId;
+    orgId: OrgId;
     name: string;
     trade: string;
-    stage: string;
+    stage: ChecklistStage;
     match: readonly string[];
   }): Promise<Checklist>;
 
@@ -22,10 +22,11 @@ export interface ChecklistRepository {
 
   // Append one ordered item to a template; returns the reloaded aggregate.
   addItem(input: {
-    id: string;
+    id: ChecklistItemId;
     templateId: ChecklistId;
     text: string;
-    type: string;
+    type: ChecklistItemType;
+    required: boolean;
     position: number;
   }): Promise<Checklist>;
 

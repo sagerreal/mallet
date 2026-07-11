@@ -39,10 +39,6 @@ export class ChecklistItem {
     return ok(new ChecklistItem({ ...props, text }));
   }
 
-  withRequired(required: boolean): ChecklistItem {
-    return new ChecklistItem({ ...this.p, required });
-  }
-
   get props(): ChecklistItemProps {
     return this.p;
   }
