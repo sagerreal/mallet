@@ -55,10 +55,11 @@ class FakeLeadRepository implements LeadRepository {
       source: input.source,
       stage: "new",
       value: zeroMoney,
-      unread: true,
+      unread: false,
       wonAt: null,
       companyId: input.companyId,
       role: input.role,
+      notes: input.notes,
       createdAt: now,
       updatedAt: now,
     });
@@ -133,7 +134,7 @@ describe("EnsureCustomerUseCase", () => {
   });
 
   it("rejects an empty name", async () => {
-    const r = await useCase.exec({ name: "   ", phone: null, email: null, source: null, companyId: null, role: null });
+    const r = await useCase.exec({ name: "   ", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
     expect(r.ok).toBe(false);
   });
 
@@ -147,6 +148,7 @@ describe("EnsureCustomerUseCase", () => {
       source: "web",
       companyId: null,
       role: null,
+      notes: null,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -167,6 +169,7 @@ describe("EnsureCustomerUseCase", () => {
       source: "web",
       companyId: null,
       role: null,
+      notes: null,
     });
     const second = await useCase.exec({
       name: "Karen (again)",
@@ -175,6 +178,7 @@ describe("EnsureCustomerUseCase", () => {
       source: "phone",
       companyId: null,
       role: null,
+      notes: null,
     });
     expect(first.ok && second.ok).toBe(true);
     if (first.ok && second.ok) {
@@ -189,13 +193,60 @@ describe("EnsureCustomerUseCase", () => {
   });
 
   it("dedupes by phone but not by name alone: same name different phone = two records", async () => {
-    const r1 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null });
-    const r2 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null });
+    const r1 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+    const r2 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
     expect(r1.ok && r2.ok).toBe(true);
     if (r1.ok && r2.ok) {
       // No phone → no dedup key → two distinct records, both created:true
       expect(r1.value.created).toBe(true);
       expect(r2.value.created).toBe(true);
+    }
+  });
+});
+
+describe("EnsureCustomerUseCase — bug-fix regressions", () => {
+  let clock: FixedClock;
+  let repo: FakeLeadRepository;
+  let bus: InMemoryEventBus;
+  let useCase: EnsureCustomerUseCase;
+
+  beforeEach(() => {
+    clock = new FixedClock(new Date("2026-06-01T00:00:00Z"));
+    repo = new FakeLeadRepository(ORG, clock);
+    bus = new InMemoryEventBus();
+    useCase = new EnsureCustomerUseCase(repo, bus, clock);
+  });
+
+  it("new lead is created with unread=false (bug fix: no spurious new-text badge)", async () => {
+    const r = await useCase.exec({ name: "Sam Parker", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.created).toBe(true);
+      expect(r.value.lead.props.unread).toBe(false);
+    }
+  });
+
+  it("notes are persisted on create (bug fix: notes column now exists)", async () => {
+    const r = await useCase.exec({
+      name: "Nora Chen",
+      phone: null,
+      email: null,
+      source: null,
+      companyId: null,
+      role: null,
+      notes: "gate code 9988",
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.lead.props.notes).toBe("gate code 9988");
+    }
+  });
+
+  it("null notes on create yields null in the domain", async () => {
+    const r = await useCase.exec({ name: "Lee Fox", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.lead.props.notes).toBeNull();
     }
   });
 });
@@ -208,7 +259,7 @@ describe("ListLeadsUseCase", () => {
     const ensure = new EnsureCustomerUseCase(repo, bus, clock);
 
     for (const name of ["A", "B", "C"]) {
-      await ensure.exec({ name, phone: null, email: null, source: null, companyId: null, role: null });
+      await ensure.exec({ name, phone: null, email: null, source: null, companyId: null, role: null, notes: null });
       clock.advance(60_000);
     }
 

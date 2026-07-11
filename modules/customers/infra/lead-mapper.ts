@@ -25,6 +25,7 @@ export const toDomain = (row: LeadRow): Lead => {
     wonAt: row.wonAt,
     companyId: row.companyId ? asCompanyId(row.companyId) : null,
     role: row.role,
+    notes: row.notes ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
