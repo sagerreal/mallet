@@ -1,9 +1,10 @@
 # Mallet — project brief for Claude sessions
 
-Mallet is a production field-service SaaS for 1–3 person trade shops (beachhead ICP: plumbing
-service). Core loop: lead → quote → dispatch → invoice, strictly ONE-OFF jobs (no recurring
-jobs/memberships/routes — deliberate). Prod: https://mallet-app-snowy.vercel.app (auto-deploys
-on push to `main`). Owner: Owen (GTM engineer; solo reviewer — open PRs, he merges).
+Mallet is a production field-service SaaS for small trade shops (1–50 people; go-to-market
+beachhead: 1–3 tech plumbing service shops). Core loop: lead → quote → dispatch → invoice,
+strictly ONE-OFF jobs (no recurring jobs/memberships/routes — deliberate). Prod:
+https://mallet-app-snowy.vercel.app (auto-deploys on push to `main`). Owner: Owen (GTM
+engineer; solo reviewer — open PRs, he merges).
 
 ## Stack
 
@@ -97,3 +98,7 @@ Another session may be active on this repo. To avoid stepping on each other: wor
 worktree** on your own branch (`git worktree add ../mallet-app-<topic> -b <branch>`), commit
 linearly, open a PR — never work directly on `main` or someone else's branch. Check open PRs
 (`gh pr list`) before starting overlapping work.
+
+Worktrees do NOT carry git-ignored files: copy `.env.local` into the worktree
+(`cp mallet-app/.env.local ../mallet-app-<topic>/`) or integration tests / db commands /
+provider API checks won't run there.
