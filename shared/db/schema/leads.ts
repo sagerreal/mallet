@@ -34,6 +34,9 @@ export const leads = pgTable(
     // Free-form notes captured at lead creation or edited on the lead modal.
     // Nullable: most leads are created without notes.
     notes: text("notes"),
+    // Service address captured at lead creation or updated from the lead modal.
+    // Nullable: most leads are created without an address.
+    address: text("address"),
     wonAt: timestamp("won_at", { withTimezone: true }),
     // B2B link: the company this contact works for (nullable — individual contacts have no company).
     companyId: uuid("company_id"),

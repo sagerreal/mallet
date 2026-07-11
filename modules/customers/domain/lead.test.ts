@@ -16,6 +16,7 @@ const baseProps = (overrides: Partial<LeadProps> = {}): LeadProps => ({
   companyId: null,
   role: null,
   notes: null,
+  address: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,
@@ -221,6 +222,27 @@ describe("Lead.patch", () => {
       expect(result.value.props.notes).toBe("gate code 1234");
     }
   });
+
+  it("patches address to a new value", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: null })));
+    const patchNow = new Date("2026-07-11T00:00:00Z");
+    const patched = unwrap(lead.patch({ address: "123 Main St, Oakland CA 94601" }, patchNow));
+    expect(patched.props.address).toBe("123 Main St, Oakland CA 94601");
+  });
+
+  it("trims address to null when empty string", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: "123 Main St" })));
+    const patchNow = new Date("2026-07-11T00:00:00Z");
+    const patched = unwrap(lead.patch({ address: "   " }, patchNow));
+    expect(patched.props.address).toBeNull();
+  });
+
+  it("leaves address unchanged when not provided to patch", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: "456 Oak Ave" })));
+    const patchNow = new Date("2026-07-11T00:00:00Z");
+    const patched = unwrap(lead.patch({ name: "New Name" }, patchNow));
+    expect(patched.props.address).toBe("456 Oak Ave");
+  });
 });
 
 // Bug-fix regression tests
@@ -240,5 +262,15 @@ describe("Lead.create — defaults", () => {
   it("notes round-trips through Lead.create", () => {
     const lead = unwrap(Lead.create(baseProps({ notes: "gate code 1234" })));
     expect(lead.props.notes).toBe("gate code 1234");
+  });
+
+  it("address defaults to null on a new lead", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: null })));
+    expect(lead.props.address).toBeNull();
+  });
+
+  it("address round-trips through Lead.create", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: "789 Oak St" })));
+    expect(lead.props.address).toBe("789 Oak St");
   });
 });

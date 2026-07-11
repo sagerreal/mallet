@@ -11,7 +11,7 @@
  *
  * updateLead follows the same pattern for persistable scalar fields (name, phone,
  * email, source, stage, unread, companyId, role, value→valueCents).
- * Local-only fields (age, job, last, book, address, estId, acts, evisits) are
+ * Local-only fields (age, job, last, book, estId, acts, evisits) are
  * updated in the store only — they have no column in the DB contract.
  */
 
@@ -40,7 +40,7 @@ function dtoToTask(dto: { id: string; text: string; dueDate: string | null; lead
 
 // Fields in Lead that are ONLY local — they have no column in the DB contract
 // and must never be sent to v1.customers.update.
-const LOCAL_ONLY_KEYS = new Set<keyof Lead>(["age", "job", "last", "book", "address", "estId", "acts", "evisits"]);
+const LOCAL_ONLY_KEYS = new Set<keyof Lead>(["age", "job", "last", "book", "estId", "acts", "evisits"]);
 
 /** The shape expected by trpcVanilla.v1.customers.update.mutate */
 export type LeadUpdatePayload = CustomerUpdateInput;
@@ -48,7 +48,7 @@ export type LeadUpdatePayload = CustomerUpdateInput;
 /**
  * Builds the tRPC mutation payload from a Lead patch, including only the
  * fields that are persisted in the DB.  Returns null when the patch contains
- * ONLY local-only fields (e.g. { last }, { address }, { book }) — callers
+ * ONLY local-only fields (e.g. { last }, { book }) — callers
  * should skip the network call in that case.
  */
 export function buildLeadUpdatePayload(
@@ -93,6 +93,10 @@ export function buildLeadUpdatePayload(
       payload.companyId = patch.companyId ?? null;
     } else if (key === "role") {
       payload.role = patch.role;
+    } else if (key === "address") {
+      // Map empty string → null (no address on file).
+      const raw = patch.address;
+      payload.address = raw === "" ? null : (raw ?? null);
     }
     // Remaining fields (notes, card, custom, lossReason, archived, trash) are either
     // handled by dedicated mutations or are not yet wired to the DB — skip them.
@@ -114,7 +118,7 @@ function adoptCreatedLead(optimistic: Lead, dto: Parameters<typeof reconcileLead
 
 /**
  * Merges a leadDTO response back onto the current store lead, preserving all
- * local-only fields (acts, evisits, age, job, last, book, address, estId).
+ * local-only fields (acts, evisits, age, job, last, book, estId).
  * The DTO shape mirrors RouterOutputs["v1"]["customers"]["list"]["items"][number].
  */
 function reconcileLeadFromDTO(
@@ -131,6 +135,7 @@ function reconcileLeadFromDTO(
     companyId: string | null;
     role: string | null;
     notes?: string | null;
+    address?: string | null;
   },
 ): Lead {
   return {
@@ -149,13 +154,14 @@ function reconcileLeadFromDTO(
     role: dto.role ?? undefined,
     // notes is persisted; adopt from DTO when present, otherwise keep current.
     notes: dto.notes !== undefined ? (dto.notes ?? undefined) : current.notes,
-    // Explicitly re-pin ALL eight local-only fields so the contract is
+    // address is persisted; adopt from DTO when present, otherwise keep current.
+    address: dto.address !== undefined ? (dto.address ?? undefined) : current.address,
+    // Explicitly re-pin ALL seven local-only fields so the contract is
     // drift-safe regardless of what the spread above brings in from current.
     age: current.age,
     job: current.job,
     last: current.last,
     book: current.book,
-    address: current.address,
     estId: current.estId,
     acts: current.acts,
     evisits: current.evisits,
@@ -229,6 +235,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         ...(newLead.companyId ? { companyId: newLead.companyId } : {}),
         ...(newLead.role ? { role: newLead.role } : {}),
         ...(newLead.notes ? { notes: newLead.notes } : {}),
+        ...(newLead.address ? { address: newLead.address } : {}),
       })
       .then((dto) => {
         const reconciled = adoptCreatedLead(newLead, dto);
@@ -255,7 +262,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   //
   // Persistable fields (name, phone, email, source, stage, unread, companyId,
   // role, value) are written to the DB via v1.customers.update.  Local-only
-  // fields (age, job, last, book, address, estId, acts, evisits) are updated
+  // fields (age, job, last, book, estId, acts, evisits) are updated
   // in the store only — they have no column in the DB contract.
   // If the patch contains ONLY local-only fields the network call is skipped.
   // ---------------------------------------------------------------------------

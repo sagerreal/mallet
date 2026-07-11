@@ -26,6 +26,7 @@ const leadDTO = z.object({
   companyId: z.string().uuid().nullable(),
   role: z.string().nullable(),
   notes: z.string().nullable(),
+  address: z.string().nullable(),
   createdAt: z.string(),
 });
 
@@ -41,6 +42,7 @@ const createInput = z.object({
   companyId: z.string().uuid().nullable().optional(),
   role: z.string().max(255).nullable().optional(),
   notes: z.string().max(2000).optional(),
+  address: z.string().max(500).optional(),
 });
 
 const listInput = z.object({
@@ -70,6 +72,7 @@ const toLeadDTO = (lead: Lead) => {
     companyId: p.companyId,
     role: p.role,
     notes: p.notes,
+    address: p.address,
     createdAt: p.createdAt.toISOString(),
   };
 };
@@ -85,6 +88,7 @@ const updateInput = z.object({
   unread: z.boolean().optional(),
   companyId: z.string().uuid().nullable().optional(),
   role: z.string().max(255).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
 });
 
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
@@ -110,7 +114,8 @@ export const createLeadRouter = () =>
           input.source !== undefined ||
           input.valueCents !== undefined ||
           input.companyId !== undefined ||
-          input.role !== undefined
+          input.role !== undefined ||
+          input.address !== undefined
         ) {
           let phone: Phone | null | undefined = undefined;
           if (input.phone !== undefined) {
@@ -135,6 +140,7 @@ export const createLeadRouter = () =>
                   : null
                 : undefined,
               role: input.role,
+              address: input.address,
             },
             now,
           );
@@ -204,6 +210,7 @@ export const createLeadRouter = () =>
           companyId: input.companyId ? asCompanyId(input.companyId) : null,
           role: input.role ?? null,
           notes: input.notes?.trim() || null,
+          address: input.address?.trim() || null,
         });
         const { lead, created } = orThrow(result);
         logger.info(

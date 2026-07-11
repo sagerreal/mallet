@@ -45,6 +45,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         // inbound SMS (Lead.markUnread), never on create.
         unread: false,
         notes: input.notes,
+        address: input.address,
       })
       .onConflictDoNothing({
         target: [leads.orgId, leads.phoneE164],
@@ -124,6 +125,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         companyId: p.companyId,
         role: p.role,
         notes: p.notes,
+        address: p.address,
         updatedAt: p.updatedAt,
       })
       // Guard: org-scoped + non-deleted (defense in depth, mirrors company + task repos).

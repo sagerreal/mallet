@@ -33,6 +33,8 @@ export interface LeadProps {
   readonly role: string | null;
   // Free-form notes (gate code, call preferences, etc.). Null when not provided.
   readonly notes: string | null;
+  // Service address for field work (e.g. "123 Main St, Oakland CA 94601"). Null when not captured.
+  readonly address: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -89,6 +91,7 @@ export class Lead {
       companyId?: CompanyId | null;
       role?: string | null;
       notes?: string | null;
+      address?: string | null;
     },
     now: Date,
   ): Result<Lead, ValidationError> {
@@ -97,6 +100,11 @@ export class Lead {
       fields.notes !== undefined
         ? (fields.notes?.trim() || null)
         : this.p.notes;
+    // Trim address to null when empty string.
+    const address =
+      fields.address !== undefined
+        ? (fields.address?.trim() || null)
+        : this.p.address;
     return Lead.create({
       ...this.p,
       name: fields.name !== undefined ? fields.name : this.p.name,
@@ -107,6 +115,7 @@ export class Lead {
       companyId: fields.companyId !== undefined ? fields.companyId : this.p.companyId,
       role: fields.role !== undefined ? fields.role : this.p.role,
       notes,
+      address,
       updatedAt: now,
     });
   }
