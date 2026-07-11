@@ -6,7 +6,7 @@ export const checklistItemDTO = z.object({
   text: z.string(),
   type: z.enum(["check", "photo"]),
   required: z.boolean(),
-  position: z.number().int(),
+  position: z.number().int().min(0),
 });
 
 export const checklistDTO = z.object({

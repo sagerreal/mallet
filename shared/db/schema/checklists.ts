@@ -26,7 +26,7 @@ export const checklistTemplates = pgTable(
     name: text("name").notNull(),
     trade: text("trade").notNull().default("Custom"),
     stage: text("stage").notNull().default("job"),
-    // Fuzzy job-type match keywords (["water heater", "tankless"]); jsonb array of text.
+    // Fuzzy job-type match keywords (["water heater", "tankless"]); native Postgres text[] array.
     match: text("match").array().notNull().default(sql`ARRAY[]::text[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
