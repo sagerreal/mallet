@@ -9,6 +9,7 @@ import {
 } from "@mallet/shared/types";
 import { Invoice, type InvoiceProps, type InvoiceStatus } from "./invoice";
 import { Payment } from "./payment";
+import { InvoiceLine } from "./invoice-line";
 
 const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
   id: asInvoiceId("11111111-1111-1111-1111-111111111111"),
@@ -210,5 +211,82 @@ describe("Invoice.editMetadata", () => {
     const res = build("draft").editMetadata({ depositPaid: money(200_000) }, now);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.field).toBe("depositPaid");
+  });
+});
+
+describe("Invoice.editLines", () => {
+  const line = (rateCents: number, qty: number, pos: number): InvoiceLine => {
+    const r = InvoiceLine.create({
+      id: `00000000-0000-0000-0000-${String(pos + 1).padStart(12, "0")}`,
+      sourceJobLineId: null,
+      description: "Work",
+      quantity: qty,
+      rate: money(rateCents),
+      cost: money(0),
+      position: pos,
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    return r.value;
+  };
+  const build = (status: InvoiceStatus) => {
+    const r = Invoice.create({
+      id: asInvoiceId("11111111-1111-1111-1111-111111111111"),
+      orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+      num: "INV-901",
+      sourceJobId: null,
+      leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
+      title: "T",
+      status,
+      total: money(100_000),
+      depositPaid: money(0),
+      amountPaid: money(0),
+      payments: [],
+      lines: [],
+      termsDays: 7,
+      sentAt: status === "draft" ? null : new Date("2026-07-01T00:00:00Z"),
+      dueAt: null,
+      createdAt: new Date("2026-07-01T00:00:00Z"),
+      updatedAt: new Date("2026-07-01T00:00:00Z"),
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    return r.value;
+  };
+  const now = new Date("2026-07-10T12:00:00Z");
+
+  it("replaces lines and recomputes the total on a draft", () => {
+    const res = build("draft").editLines([line(20_000, 2, 0), line(5_000, 1, 1)], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.lines).toHaveLength(2);
+      expect(res.value.props.total).toBe(45_000); // 2*20000 + 1*5000
+      expect(res.value.props.updatedAt.toISOString()).toBe(now.toISOString());
+    }
+  });
+
+  it("recomputes the total when editing a SENT invoice", () => {
+    const res = build("sent").editLines([line(30_000, 1, 0)], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.total).toBe(30_000);
+  });
+
+  it("allows clearing to zero lines (total = 0)", () => {
+    const res = build("draft").editLines([], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.lines).toHaveLength(0);
+      expect(res.value.props.total).toBe(0);
+    }
+  });
+
+  it("rejects editing lines on a PAID invoice", () => {
+    const res = build("paid").editLines([line(1_000, 1, 0)], now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("status");
+  });
+
+  it("rejects editing lines on a VOID invoice", () => {
+    const res = build("void").editLines([line(1_000, 1, 0)], now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("status");
   });
 });

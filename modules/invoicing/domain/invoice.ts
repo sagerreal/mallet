@@ -7,7 +7,7 @@ import type {
   Result,
   ValidationError,
 } from "@mallet/shared/types";
-import { money, addMoney, validation, ok, err } from "@mallet/shared/types";
+import { money, addMoney, zeroMoney, validation, ok, err } from "@mallet/shared/types";
 import type { Payment } from "./payment";
 import type { InvoiceLine } from "./invoice-line";
 
@@ -149,6 +149,17 @@ export class Invoice {
       depositPaid: patch.depositPaid ?? this.p.depositPaid,
       updatedAt: now,
     });
+  }
+
+  // Replace display lines AND recompute the total from their amounts. For open invoices
+  // (draft | sent | partial). This DIFFERS from withLines, which keeps the snapshot total
+  // and is draft-only — that path stays for the create/draft flow.
+  editLines(lines: readonly InvoiceLine[], now: Date): Result<Invoice, ValidationError> {
+    if (this.p.status === "paid" || this.p.status === "void") {
+      return err(validation("a paid or void invoice cannot be edited", "status"));
+    }
+    const total = lines.reduce((sum, l) => addMoney(sum, l.amount()), zeroMoney);
+    return Invoice.create({ ...this.p, lines, total, updatedAt: now });
   }
 
   get props(): InvoiceProps {
