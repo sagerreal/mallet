@@ -61,6 +61,7 @@ const SEED_CHECKLISTS: Checklist[] = [
 
 export interface ChecklistsSlice {
   checklists: Checklist[];
+  setChecklists: (checklists: Checklist[]) => void;
   addChecklist: (name: string, stage: Checklist["stage"]) => Checklist;
   deleteChecklist: (id: string) => void;
   addChecklistItem: (checklistId: string, text: string, type?: ChecklistItem["type"]) => void;
@@ -70,6 +71,8 @@ export interface ChecklistsSlice {
 
 export const createChecklistsSlice: StateCreator<ChecklistsSlice, [], [], ChecklistsSlice> = (set) => ({
   checklists: SEED_CHECKLISTS,
+
+  setChecklists: (checklists) => set({ checklists }),
 
   addChecklist: (name, stage) => {
     const chk: Checklist = {
