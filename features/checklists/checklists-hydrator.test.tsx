@@ -18,8 +18,11 @@ describe("toStoreChecklist", () => {
     expect(store.id).toBe("11111111-1111-1111-1111-111111111111");
     expect(store.stage).toBe("job");
     expect(store.items.map((i) => i.id)).toEqual(["aaaa", "bbbb"]);
-    const [first] = store.items;
+    const [first, second] = store.items;
     expect(first?.type).toBe("photo");
     expect(first?.required).toBe(true);
+    // position is the ordering guarantee — assert it survives the transform.
+    expect(first?.position).toBe(0);
+    expect(second?.position).toBe(1);
   });
 });
