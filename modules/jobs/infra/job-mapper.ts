@@ -5,6 +5,11 @@ import { Job, JobVisit, isJobStatus, isVisitStatus } from "../domain/job";
 export type JobRow = typeof jobs.$inferSelect;
 export type JobVisitRow = typeof jobVisits.$inferSelect;
 
+// Postgres `time` columns come back as "HH:MM:SS", but the app's canonical visit-time
+// format is "HH:MM" (what the domain writes, what hourToHHMM produces, what the store/UI use).
+// Present HH:MM at the read boundary so a written "09:00" round-trips as "09:00", not "09:00:00".
+const toHHMM = (t: string | null): string | null => (t ? t.slice(0, 5) : null);
+
 const toVisit = (row: JobVisitRow): JobVisit => {
   if (!isVisitStatus(row.status)) {
     throw new Error(`corrupt job_visit ${row.id}: unknown status "${row.status}"`);
@@ -13,8 +18,8 @@ const toVisit = (row: JobVisitRow): JobVisit => {
     id: asVisitId(row.id),
     assigneeUserId: row.assigneeUserId ? asUserId(row.assigneeUserId) : null,
     scheduledDate: row.scheduledDate ?? null,
-    scheduledStart: row.scheduledStart ?? null,
-    scheduledEnd: row.scheduledEnd ?? null,
+    scheduledStart: toHHMM(row.scheduledStart ?? null),
+    scheduledEnd: toHHMM(row.scheduledEnd ?? null),
     status: row.status,
     startedAt: row.startedAt ?? null,
     completedAt: row.completedAt ?? null,
