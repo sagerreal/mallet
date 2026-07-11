@@ -289,4 +289,32 @@ describe("Invoice.editLines", () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.field).toBe("status");
   });
+
+  it("rejects when the new total falls below an already-collected deposit", () => {
+    // A sent invoice with a $500 deposit collected against a $1000 total.
+    const r = Invoice.create({
+      id: asInvoiceId("11111111-1111-1111-1111-111111111111"),
+      orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+      num: "INV-902",
+      sourceJobId: null,
+      leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
+      title: "T",
+      status: "sent",
+      total: money(100_000),
+      depositPaid: money(50_000),
+      amountPaid: money(0),
+      payments: [],
+      lines: [],
+      termsDays: 7,
+      sentAt: new Date("2026-07-01T00:00:00Z"),
+      dueAt: null,
+      createdAt: new Date("2026-07-01T00:00:00Z"),
+      updatedAt: new Date("2026-07-01T00:00:00Z"),
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    // Shrinking the total to 20_000 < the 50_000 deposit must fail the invariant.
+    const res = r.value.editLines([line(20_000, 1, 0)], now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("depositPaid");
+  });
 });
