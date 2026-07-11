@@ -1,5 +1,6 @@
 import type { Result, ExternalServiceError } from "@mallet/shared/types";
 import { ok, err, externalService } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 import type {
   PhotoStorageGateway,
   CreateUploadUrlCmd,
@@ -46,13 +47,22 @@ export class SupabasePhotoStorageGateway implements PhotoStorageGateway {
         this.getClient().storage.from(JOB_PHOTOS_BUCKET).createSignedUploadUrl(storagePath),
       );
       if (error || !data) {
-        return err(externalService("supabase-storage", error?.message ?? "no signed url returned", true));
+        // Log the raw provider detail server-side; return a generic message. This AppError becomes
+        // the client-facing tRPC error, and storage internals (bucket names, config) must not leak.
+        logger.error(
+          { err: error?.message ?? "no signed url returned", orgId: cmd.orgId, jobId: cmd.jobId },
+          "supabase-storage.createSignedUploadUrl failed",
+        );
+        return err(externalService("supabase-storage", "the storage service is temporarily unavailable", true));
       }
       const signed: SignedUpload = { signedUrl: data.signedUrl, token: data.token, storagePath };
       return ok(signed);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "unknown storage error";
-      return err(externalService("supabase-storage", message, true));
+      logger.error(
+        { err: e instanceof Error ? e.message : String(e), orgId: cmd.orgId, jobId: cmd.jobId },
+        "supabase-storage.createSignedUploadUrl threw",
+      );
+      return err(externalService("supabase-storage", "the storage service is temporarily unavailable", true));
     }
   }
 
