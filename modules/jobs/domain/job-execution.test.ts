@@ -97,10 +97,22 @@ describe("JobAddon", () => {
 });
 
 describe("JobVerifyAnswer", () => {
+  it("rejects an empty itemId", () => {
+    const r = JobVerifyAnswer.create({
+      jobId: JOB,
+      itemId: " ",
+      state: "pass",
+      via: null,
+      reason: null,
+    });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.field).toBe("itemId");
+  });
+
   it("requires a reason when state is override", () => {
     const r = JobVerifyAnswer.create({
       jobId: JOB,
-      itemId: 7,
+      itemId: "7",
       state: "override",
       via: null,
       reason: "  ",
@@ -112,7 +124,7 @@ describe("JobVerifyAnswer", () => {
   it("accepts a pass answer with a via and no reason", () => {
     const r = JobVerifyAnswer.create({
       jobId: JOB,
-      itemId: 7,
+      itemId: "7",
       state: "pass",
       via: "photo",
       reason: null,

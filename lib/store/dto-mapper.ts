@@ -162,7 +162,7 @@ export interface ExecutionDTO {
     position: number;
   }[];
   verifyAnswers?: {
-    itemId: number;
+    itemId: string;
     state: "pass" | "override";
     via: string | null;
     reason: string | null;
@@ -200,7 +200,7 @@ export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | 
 
   const photos: string[] = (dto.photos ?? []).map((p) => p.storagePath);
 
-  const verifyAns: Record<number, { st: "pass" | "override"; via?: string; reason?: string }> = {};
+  const verifyAns: Record<string, { st: "pass" | "override"; via?: string; reason?: string }> = {};
   for (const v of dto.verifyAnswers ?? []) {
     verifyAns[v.itemId] = {
       st: v.state,

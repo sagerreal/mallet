@@ -158,7 +158,7 @@ export class JobAddon {
 /** Props of a before-you-leave checklist answer. */
 export interface JobVerifyAnswerProps {
   readonly jobId: JobId;
-  readonly itemId: number;
+  readonly itemId: string;
   readonly state: VerifyState;
   /** How the pass was evidenced (e.g. "photo", "manual"). Null when not recorded. */
   readonly via: string | null;
@@ -177,7 +177,7 @@ export class JobVerifyAnswer {
 
   static create(input: {
     jobId: JobId;
-    itemId: number;
+    itemId: string;
     state: string;
     via: string | null;
     reason: string | null;
@@ -185,8 +185,8 @@ export class JobVerifyAnswer {
     if (!isVerifyState(input.state)) {
       return err(validation(`unknown verify state: ${input.state}`, "state"));
     }
-    if (!Number.isInteger(input.itemId)) {
-      return err(validation("itemId must be an integer", "itemId"));
+    if (input.itemId.trim().length === 0) {
+      return err(validation("itemId is required", "itemId"));
     }
     const reason = input.reason?.trim() ?? null;
     // An override answer is meaningless without a reason (mirrors the UX: "why is this N/A?").

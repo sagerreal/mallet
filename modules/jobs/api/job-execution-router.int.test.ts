@@ -95,19 +95,19 @@ suite("v1.jobs execution data (full stack, live RLS)", () => {
 
   it("sets a verify answer, overrides it, then clears it", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, ownerA, "owner"));
-    const passed = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: 5, state: "pass", via: "manual" });
-    expect(passed.verifyAnswers.find((v) => v.itemId === 5)?.state).toBe("pass");
-    const overridden = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: 5, state: "override", reason: "N/A on this unit" });
-    expect(overridden.verifyAnswers.find((v) => v.itemId === 5)?.state).toBe("override");
+    const passed = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "5", state: "pass", via: "manual" });
+    expect(passed.verifyAnswers.find((v) => v.itemId === "5")?.state).toBe("pass");
+    const overridden = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "5", state: "override", reason: "N/A on this unit" });
+    expect(overridden.verifyAnswers.find((v) => v.itemId === "5")?.state).toBe("override");
     expect(overridden.verifyAnswers).toHaveLength(1); // upsert, not a second row
-    const cleared = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: 5, state: "clear" });
-    expect(cleared.verifyAnswers.some((v) => v.itemId === 5)).toBe(false);
+    const cleared = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "5", state: "clear" });
+    expect(cleared.verifyAnswers.some((v) => v.itemId === "5")).toBe(false);
   });
 
   it("override without a reason is BAD_REQUEST", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, ownerA, "owner"));
     await expect(
-      caller.v1.jobs.setVerifyAnswer({ jobId, itemId: 9, state: "override" }),
+      caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "9", state: "override" }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 

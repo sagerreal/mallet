@@ -692,7 +692,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
     trpcVanilla.v1.jobs.setVerifyAnswer
-      .mutate({ jobId, itemId: Number(itemId), state: "pass", via: "manual" })
+      .mutate({ jobId, itemId, state: "pass", via: "manual" })
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
@@ -712,7 +712,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
     trpcVanilla.v1.jobs.setVerifyAnswer
-      .mutate({ jobId, itemId: Number(itemId), state: "override", reason })
+      .mutate({ jobId, itemId, state: "override", reason })
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
@@ -735,7 +735,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
     trpcVanilla.v1.jobs.setVerifyAnswer
-      .mutate({ jobId, itemId: Number(itemId), state: "clear" })
+      .mutate({ jobId, itemId, state: "clear" })
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));

@@ -48,7 +48,7 @@ export interface JobRepository {
   setAddonStatus(jobId: JobId, addonId: string, status: AddonStatus, now: Date): Promise<number>;
   setAddonInvoiceSkip(jobId: JobId, addonId: string, invoiceSkip: boolean, now: Date): Promise<number>;
   upsertVerifyAnswer(answer: JobVerifyAnswer, now: Date): Promise<void>;
-  removeVerifyAnswer(jobId: JobId, itemId: number): Promise<number>;
+  removeVerifyAnswer(jobId: JobId, itemId: string): Promise<number>;
   addPhoto(photo: JobPhoto, now: Date): Promise<void>;
   removePhoto(jobId: JobId, photoId: string, now: Date): Promise<number>;
 }
