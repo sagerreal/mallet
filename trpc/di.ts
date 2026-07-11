@@ -15,6 +15,9 @@ import { logger } from "@mallet/shared/observability";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
+import { SupabasePhotoStorageGateway } from "@mallet/jobs";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender, NotificationChannel } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
 
@@ -65,6 +68,13 @@ export const getAppDeps = (): AppDeps => {
   // The agent's model client self-disables unless the Anthropic key is set.
   const llmClient: LlmClient | null = config.ANTHROPIC_API_KEY ? new AnthropicLlmClient(config.ANTHROPIC_API_KEY) : null;
 
+  // Photo storage self-disables unless the service-role Supabase env is present (getSupabaseAdmin
+  // throws otherwise). Bind lazily — the client is built on first upload, not at boot.
+  let photoStorageGateway: PhotoStorageGateway | null = null;
+  if (config.SUPABASE_SERVICE_ROLE_KEY && config.NEXT_PUBLIC_SUPABASE_URL) {
+    photoStorageGateway = new SupabasePhotoStorageGateway(() => getSupabaseAdmin() as never);
+  }
+
   cached = {
     authProvider: createAuthProvider({
       supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
@@ -78,6 +88,7 @@ export const getAppDeps = (): AppDeps => {
     clock: systemClock,
     ids: uuidGenerator,
     paymentLinkGateway,
+    photoStorageGateway,
     notificationSender,
     llmClient,
   };

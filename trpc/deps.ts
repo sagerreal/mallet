@@ -1,5 +1,6 @@
 import type { AuthProvider, ApiKeyVerifier, TokenVerifier, SignupStore } from "@mallet/identity";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
+import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
@@ -16,6 +17,9 @@ export interface AppDeps {
   readonly ids: IdGenerator;
   // Card payments (Stripe). null when Stripe is unconfigured — card create self-disables.
   readonly paymentLinkGateway: PaymentLinkGateway | null;
+  // Direct-to-storage upload URLs for job photos (Supabase Storage). null when the service-role
+  // env is unavailable — photo upload self-disables (photoUploadUrl returns PRECONDITION_FAILED).
+  readonly photoStorageGateway: PhotoStorageGateway | null;
   // Comms egress (email → Resend, sms → Twilio, per-channel fallback → logging stub). Optional:
   // when omitted (e.g. in tests) callers fall back to the logging stub, so unconfigured comms
   // degrade to a logged no-op rather than an error.

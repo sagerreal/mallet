@@ -17,7 +17,7 @@
  */
 
 import type { RouterOutputs } from "@/lib/trpc/client";
-import type { Estimate, Invoice, Job, TimeEntry, Visit } from "./types";
+import type { Addon, Estimate, Invoice, Job, JobLine, TimeEntry, Visit } from "./types";
 import { JOB_ORIGIN } from "./hydrator-config";
 
 export type JobDTO = RouterOutputs["v1"]["visits"]["createVisit"];
@@ -133,6 +133,85 @@ export function toStoreVisit(v: VisitDTO): Visit {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Execution data mapper (DRY: single conversion site used by both
+// dtoJobToStoreJob and jobs-hydrator.tsx toStoreJob).
+// ---------------------------------------------------------------------------
+
+/**
+ * Execution DTO shape — the four arrays shared by jobDTO and jobSummaryDTO.
+ * All fields are optional so callers that don't have them yet (e.g. legacy
+ * test fixtures cast with `as never`) still work without runtime errors.
+ */
+export interface ExecutionDTO {
+  lines?: {
+    description: string;
+    quantity: number;
+    rate: { cents: number };
+    cost: { cents: number };
+  }[];
+  addons?: {
+    id: string;
+    description: string;
+    quantity: number;
+    rate: { cents: number };
+    cost: { cents: number };
+    isOptional: boolean;
+    invoiceSkip: boolean;
+    status: "proposed" | "approved" | "declined";
+    position: number;
+  }[];
+  verifyAnswers?: {
+    itemId: number;
+    state: "pass" | "override";
+    via: string | null;
+    reason: string | null;
+  }[];
+  photos?: { storagePath: string }[];
+}
+
+/**
+ * Map execution arrays from a DTO into the store Job shape.
+ * Single conversion site for lines/addons/photos/verify — both
+ * dtoJobToStoreJob and the jobs-hydrator toStoreJob call this.
+ *
+ * Money: DTO carries integer cents; store uses dollars (cents / 100).
+ * Addon.id is derived from the array index (stable numeric id for the
+ * prototype UI); dbId carries the DB uuid for persistence.
+ */
+export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | "photos" | "verify"> {
+  const lines: JobLine[] = (dto.lines ?? []).map((l) => ({
+    d: l.description,
+    q: l.quantity,
+    r: l.rate.cents / 100,
+    ...(l.cost.cents > 0 ? { c: l.cost.cents / 100 } : {}),
+  }));
+
+  const addons: Addon[] = (dto.addons ?? []).map((a, i) => ({
+    id: i,
+    dbId: a.id,
+    d: a.description,
+    q: a.quantity,
+    r: a.rate.cents / 100,
+    ...(a.cost.cents > 0 ? { c: a.cost.cents / 100 } : {}),
+    status: a.status,
+    ...(a.invoiceSkip ? { invSkip: true } : {}),
+  }));
+
+  const photos: string[] = (dto.photos ?? []).map((p) => p.storagePath);
+
+  const verifyAns: Record<number, { st: "pass" | "override"; via?: string; reason?: string }> = {};
+  for (const v of dto.verifyAnswers ?? []) {
+    verifyAns[v.itemId] = {
+      st: v.state,
+      ...(v.via ? { via: v.via } : {}),
+      ...(v.reason ? { reason: v.reason } : {}),
+    };
+  }
+
+  return { lines, addons, photos, verify: { ans: verifyAns } };
+}
+
 /**
  * Map a full jobDTO (returned by all v1.visits mutations) to a store Job.
  * Cancelled visits are filtered out — they are never shown on the board.
@@ -160,12 +239,10 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     phone: "",
     status,
     archived: false,
-    lines: [],
-    addons: [],
-    photos: [],
     notes: dto.notes ?? "",
     acts: [],
     visits,
+    ...mapExecution(dto),
   };
 }
 

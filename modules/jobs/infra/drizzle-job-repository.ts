@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNull, notInArray, sql, type SQL } from "drizzle-orm";
-import { jobs, jobVisits } from "@mallet/shared/db/schema";
+import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import {
   buildPage,
@@ -14,7 +14,9 @@ import {
 } from "@mallet/shared/types";
 import type { Job } from "../domain/job";
 import type { JobRepository, JobFilter } from "../domain/job-repository";
+import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
+import { lineToDomain, addonToDomain, verifyToDomain, photoToDomain, type JobLineRow, type JobAddonRow, type JobVerifyAnswerRow, type JobPhotoRow } from "./job-execution-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
 // RLS appends org_id = current_org_id() to every statement — this class never filters by org
@@ -189,6 +191,208 @@ export class DrizzleJobRepository implements JobRepository {
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>> {
     return this.loadPage([isNull(jobs.deletedAt), eq(jobs.leadId, leadId)], page);
+  }
+
+  // ── job execution data (Phase 5) ─────────────────────────────────────────
+
+  async listExecution(jobId: JobId): Promise<{
+    lines: JobLine[];
+    addons: JobAddon[];
+    verifyAnswers: JobVerifyAnswer[];
+    photos: JobPhoto[];
+  }> {
+    const [lineRows, addonRows, answerRows, photoRows] = await Promise.all([
+      this.tx
+        .select()
+        .from(jobLines)
+        .where(and(eq(jobLines.jobId, jobId), isNull(jobLines.deletedAt)))
+        .orderBy(jobLines.position, jobLines.createdAt),
+      this.tx
+        .select()
+        .from(jobAddons)
+        .where(and(eq(jobAddons.jobId, jobId), isNull(jobAddons.deletedAt)))
+        .orderBy(jobAddons.position, jobAddons.createdAt),
+      this.tx
+        .select()
+        .from(jobVerifyAnswers)
+        .where(eq(jobVerifyAnswers.jobId, jobId)),
+      this.tx
+        .select()
+        .from(jobPhotos)
+        .where(and(eq(jobPhotos.jobId, jobId), isNull(jobPhotos.deletedAt)))
+        .orderBy(jobPhotos.position, jobPhotos.createdAt),
+    ]);
+    return {
+      lines: (lineRows as JobLineRow[]).map(lineToDomain),
+      addons: (addonRows as JobAddonRow[]).map(addonToDomain),
+      verifyAnswers: (answerRows as JobVerifyAnswerRow[]).map(verifyToDomain),
+      photos: (photoRows as JobPhotoRow[]).map(photoToDomain),
+    };
+  }
+
+  async addLine(line: JobLine, now: Date): Promise<void> {
+    const p = line.props;
+    await this.tx.insert(jobLines).values({
+      id: p.id,
+      orgId: this.orgId,
+      jobId: p.jobId,
+      description: p.description,
+      quantity: p.quantity,
+      rateCents: p.rate,
+      costCents: p.cost,
+      position: p.position,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  async updateLine(line: JobLine, now: Date): Promise<number> {
+    const p = line.props;
+    const rows = await this.tx
+      .update(jobLines)
+      .set({
+        description: p.description,
+        quantity: p.quantity,
+        rateCents: p.rate,
+        costCents: p.cost,
+        position: p.position,
+        updatedAt: now,
+      })
+      .where(and(eq(jobLines.id, p.id), eq(jobLines.orgId, this.orgId), isNull(jobLines.deletedAt)))
+      .returning({ id: jobLines.id });
+    return rows.length;
+  }
+
+  async removeLine(jobId: JobId, lineId: string, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(jobLines)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(jobLines.id, lineId),
+          eq(jobLines.jobId, jobId),
+          eq(jobLines.orgId, this.orgId),
+          isNull(jobLines.deletedAt),
+        ),
+      )
+      .returning({ id: jobLines.id });
+    return rows.length;
+  }
+
+  async addAddon(addon: JobAddon, now: Date): Promise<void> {
+    const p = addon.props;
+    await this.tx.insert(jobAddons).values({
+      id: p.id,
+      orgId: this.orgId,
+      jobId: p.jobId,
+      description: p.description,
+      quantity: p.quantity,
+      rateCents: p.rate,
+      costCents: p.cost,
+      isOptional: p.isOptional,
+      invoiceSkip: p.invoiceSkip,
+      status: p.status,
+      position: p.position,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  async setAddonStatus(jobId: JobId, addonId: string, status: AddonStatus, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(jobAddons)
+      .set({ status, updatedAt: now })
+      .where(
+        and(
+          eq(jobAddons.id, addonId),
+          eq(jobAddons.jobId, jobId),
+          eq(jobAddons.orgId, this.orgId),
+          isNull(jobAddons.deletedAt),
+        ),
+      )
+      .returning({ id: jobAddons.id });
+    return rows.length;
+  }
+
+  async setAddonInvoiceSkip(jobId: JobId, addonId: string, invoiceSkip: boolean, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(jobAddons)
+      .set({ invoiceSkip, updatedAt: now })
+      .where(
+        and(
+          eq(jobAddons.id, addonId),
+          eq(jobAddons.jobId, jobId),
+          eq(jobAddons.orgId, this.orgId),
+          isNull(jobAddons.deletedAt),
+        ),
+      )
+      .returning({ id: jobAddons.id });
+    return rows.length;
+  }
+
+  async upsertVerifyAnswer(answer: JobVerifyAnswer, now: Date): Promise<void> {
+    const p = answer.props;
+    await this.tx
+      .insert(jobVerifyAnswers)
+      .values({
+        orgId: this.orgId,
+        jobId: p.jobId,
+        itemId: p.itemId,
+        state: p.state,
+        via: p.via,
+        reason: p.reason,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [jobVerifyAnswers.orgId, jobVerifyAnswers.jobId, jobVerifyAnswers.itemId],
+        set: { state: p.state, via: p.via, reason: p.reason, updatedAt: now },
+      });
+  }
+
+  async removeVerifyAnswer(jobId: JobId, itemId: number): Promise<number> {
+    const rows = await this.tx
+      .delete(jobVerifyAnswers)
+      .where(
+        and(
+          eq(jobVerifyAnswers.jobId, jobId),
+          eq(jobVerifyAnswers.itemId, itemId),
+          eq(jobVerifyAnswers.orgId, this.orgId),
+        ),
+      )
+      .returning({ id: jobVerifyAnswers.id });
+    return rows.length;
+  }
+
+  async addPhoto(photo: JobPhoto, now: Date): Promise<void> {
+    const p = photo.props;
+    await this.tx.insert(jobPhotos).values({
+      id: p.id,
+      orgId: this.orgId,
+      jobId: p.jobId,
+      storagePath: p.storagePath,
+      caption: p.caption,
+      verifyPass: p.verifyPass,
+      position: p.position,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  async removePhoto(jobId: JobId, photoId: string, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(jobPhotos)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(jobPhotos.id, photoId),
+          eq(jobPhotos.jobId, jobId),
+          eq(jobPhotos.orgId, this.orgId),
+          isNull(jobPhotos.deletedAt),
+        ),
+      )
+      .returning({ id: jobPhotos.id });
+    return rows.length;
   }
 
   private async loadPage(baseConds: SQL[], page: CursorPage): Promise<Paginated<Job>> {

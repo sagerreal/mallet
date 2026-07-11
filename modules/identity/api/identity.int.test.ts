@@ -23,7 +23,7 @@ const stubDeps = {
   bus: new InMemoryEventBus(),
   clock: systemClock,
   ids: uuidGenerator,
-  paymentLinkGateway: null,
+  paymentLinkGateway: null, photoStorageGateway: null,
   llmClient: null,
 } as unknown as Context["deps"];
 

@@ -39,7 +39,7 @@ export const createFieldRouter = () =>
         const bv = b.props.scheduledStart ? b.props.scheduledStart.getTime() : Infinity;
         return av - bv;
       };
-      return { items: [...[...inProgress.items].sort(byStart), ...[...scheduled.items].sort(byStart)].map(toJobSummaryDTO) };
+      return { items: [...[...inProgress.items].sort(byStart), ...[...scheduled.items].sort(byStart)].map((j) => toJobSummaryDTO(j)) };
     }),
 
     start: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
