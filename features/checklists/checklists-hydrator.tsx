@@ -11,30 +11,14 @@
  * overwrite mid-flight. Matches CompaniesHydrator / LeadsHydrator.
  */
 
-import { api, type RouterOutputs } from "@/lib/trpc/client";
+import { api } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
-import type { Checklist } from "@/lib/store/types";
 import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS, HYDRATOR_PAGE_LIMIT } from "@/lib/store/hydrator-config";
+import { checklistDtoToStore } from "@/lib/store/checklists-mapper";
 
-type ChecklistDTO = RouterOutputs["v1"]["checklists"]["list"]["items"][number];
-
-export function toStoreChecklist(dto: ChecklistDTO): Checklist {
-  return {
-    id: dto.id,
-    name: dto.name,
-    trade: dto.trade,
-    stage: dto.stage,
-    match: [...dto.match],
-    items: dto.items.map((it) => ({
-      id: it.id,
-      text: it.text,
-      type: it.type,
-      required: it.required,
-      position: it.position,
-    })),
-  };
-}
+// Re-export under the original name so existing test imports keep resolving.
+export { checklistDtoToStore as toStoreChecklist } from "@/lib/store/checklists-mapper";
 
 export function ChecklistsHydrator() {
   const setChecklists = useAppStore((s) => s.setChecklists);
@@ -47,7 +31,7 @@ export function ChecklistsHydrator() {
     data,
     isError,
     error,
-    transform: toStoreChecklist,
+    transform: checklistDtoToStore,
     setSlice: setChecklists,
     label: "checklists",
   });

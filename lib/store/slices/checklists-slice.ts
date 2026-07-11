@@ -9,47 +9,22 @@
 import type { StateCreator } from "zustand";
 import type { Checklist, ChecklistItem } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { checklistDtoToStore } from "@/lib/store/checklists-mapper";
 
 // DTO shape returned by v1.checklists.* mutations — mirrors ChecklistDTO from the router.
-interface ChecklistItemDTO {
-  id: string;
-  text: string;
-  type: "check" | "photo";
-  required: boolean;
-  position: number;
-}
-
 interface ChecklistDTO {
   id: string;
   name: string;
   trade: string;
   stage: "job" | "scope";
   match: string[];
-  items: ChecklistItemDTO[];
+  items: { id: string; text: string; type: "check" | "photo"; required: boolean; position: number }[];
   createdAt: string;
-}
-
-/** Convert a server DTO into the store's Checklist shape. Single conversion site (DRY). */
-function dtoToStore(dto: ChecklistDTO): Checklist {
-  return {
-    id: dto.id,
-    name: dto.name,
-    trade: dto.trade,
-    stage: dto.stage,
-    match: [...dto.match],
-    items: dto.items.map((it) => ({
-      id: it.id,
-      text: it.text,
-      type: it.type,
-      required: it.required,
-      position: it.position,
-    })),
-  };
 }
 
 /** Replace a checklist by id in a list; returns a new array (immutable). */
 function reconcileChecklist(list: Checklist[], dto: ChecklistDTO): Checklist[] {
-  const updated = dtoToStore(dto);
+  const updated = checklistDtoToStore(dto);
   return list.map((c) => (c.id === dto.id ? updated : c));
 }
 
@@ -120,6 +95,7 @@ export const createChecklistsSlice: StateCreator<
     const snapshot = get().checklists;
     set((s) => ({ checklists: s.checklists.filter((c) => c.id !== id) }));
 
+    // no reconcile: remove returns nothing; the optimistic removal already reflects success.
     void trpcVanilla.v1.checklists.remove
       .mutate({ checklistId: id })
       .catch((err: unknown) => {
@@ -135,7 +111,7 @@ export const createChecklistsSlice: StateCreator<
     const snapshot = get().checklists;
     const target = snapshot.find((c) => c.id === checklistId);
     const position = target ? target.items.length : 0;
-    // Optimistic item — server will assign its own id; reconciled after resolve.
+    // Optimistic item — reconcile from the server DTO (the whole items array is replaced; the server may reassign the item id).
     const optimisticId = crypto.randomUUID();
     const optimistic: ChecklistItem = {
       id: optimisticId,
