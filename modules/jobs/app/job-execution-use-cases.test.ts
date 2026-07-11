@@ -180,9 +180,20 @@ describe("job execution use-cases", () => {
 
   it("AddJobPhoto records the metadata row", async () => {
     const uc = new AddJobPhotoUseCase(repo as unknown as JobRepository, clock, ids());
-    const r = await uc.exec({ jobId: JOB, storagePath: "org/job/p.jpg", caption: null, verifyPass: true }, ORG);
+    const r = await uc.exec({ jobId: JOB, storagePath: `${ORG}/${JOB}/p.jpg`, caption: null, verifyPass: true }, ORG);
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.execution.photos).toHaveLength(1);
+  });
+
+  it("AddJobPhoto rejects a storagePath outside the job's own org/job folder", async () => {
+    const uc = new AddJobPhotoUseCase(repo as unknown as JobRepository, clock, ids());
+    // A forged path pointing at another org's folder must be rejected before any write.
+    const r = await uc.exec(
+      { jobId: JOB, storagePath: `99999999-9999-9999-9999-999999999999/${JOB}/p.jpg`, caption: null, verifyPass: true },
+      ORG,
+    );
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
   });
 
   it("RemoveJobPhoto on a missing photo returns not_found", async () => {

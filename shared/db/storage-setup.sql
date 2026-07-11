@@ -12,6 +12,11 @@
 -- app_metadata org_id claim the app sets at signup. The service-role client (getSupabaseAdmin) bypasses
 -- these policies and is what mints signed upload URLs server-side.
 
+-- storage.objects/buckets are owned by supabase_storage_admin; CREATE POLICY needs the owner
+-- role. In the Supabase SQL editor the session runs as `postgres`, which is a MEMBER of
+-- supabase_storage_admin, so switch to it for this script, then reset at the end.
+set role supabase_storage_admin;
+
 insert into storage.buckets (id, name, public)
 values ('job-photos', 'job-photos', false)
 on conflict (id) do nothing;
@@ -49,3 +54,5 @@ create policy job_photos_insert on storage.objects
     bucket_id = 'job-photos'
     and (storage.foldername(name))[1] = storage.job_photo_org()::text
   );
+
+reset role;
