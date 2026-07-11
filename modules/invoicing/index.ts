@@ -20,5 +20,7 @@ export { SendInvoiceUseCase } from "./app/send-invoice";
 export { RecordPaymentUseCase } from "./app/record-payment";
 export { VoidInvoiceUseCase } from "./app/void-invoice";
 export { ListInvoicesUseCase } from "./app/list-invoices";
+export { UpdateInvoiceMetadataUseCase } from "./app/update-invoice-metadata";
+export { PatchInvoiceLinesUseCase } from "./app/patch-invoice-lines";
 // Relay handler (invoice.paid) — internal, idempotent; exercises the outbox relay under RLS.
 export { InvoicePaidAuditHandler } from "./app/invoice-paid-audit-handler";
