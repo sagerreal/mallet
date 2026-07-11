@@ -74,7 +74,13 @@ suite("visits tRPC router (full stack, live RLS)", () => {
   });
 
   afterAll(async () => {
-    if (orgAId) await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
+    if (orgAId) {
+      // Delete jobs first (cascades to job_visits) so no visit still references a user via
+      // job_visits_assignee_fk when the org cascade deletes the users. Otherwise the diamond
+      // cascade (org→users vs org→jobs→job_visits→users) hits a NO ACTION FK violation.
+      await admin`delete from jobs where org_id in (${orgAId}, ${orgBId})`;
+      await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
+    }
     await admin.end({ timeout: 5 });
     await closeDb();
   });
