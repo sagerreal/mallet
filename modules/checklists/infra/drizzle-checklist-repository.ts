@@ -52,7 +52,13 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
     const rows = await this.tx
       .select()
       .from(checklistTemplates)
-      .where(and(eq(checklistTemplates.id, id), isNull(checklistTemplates.deletedAt)))
+      .where(
+        and(
+          eq(checklistTemplates.id, id),
+          eq(checklistTemplates.orgId, this.orgId),
+          isNull(checklistTemplates.deletedAt),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     if (!row) return null;
@@ -114,7 +120,13 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
     await this.tx
       .update(checklistItems)
       .set({ deletedAt: now, updatedAt: now })
-      .where(and(eq(checklistItems.templateId, id), isNull(checklistItems.deletedAt)));
+      .where(
+        and(
+          eq(checklistItems.templateId, id),
+          eq(checklistItems.orgId, this.orgId),
+          isNull(checklistItems.deletedAt),
+        ),
+      );
     return rows.length;
   }
 
@@ -148,6 +160,7 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
         and(
           eq(checklistItems.id, itemId),
           eq(checklistItems.templateId, templateId),
+          eq(checklistItems.orgId, this.orgId),
           isNull(checklistItems.deletedAt),
         ),
       );
@@ -167,6 +180,7 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
         and(
           eq(checklistItems.id, itemId),
           eq(checklistItems.templateId, templateId),
+          eq(checklistItems.orgId, this.orgId),
           isNull(checklistItems.deletedAt),
         ),
       );
@@ -179,6 +193,12 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
     return this.tx
       .select()
       .from(checklistItems)
-      .where(and(inArray(checklistItems.templateId, [...templateIds]), isNull(checklistItems.deletedAt)));
+      .where(
+        and(
+          inArray(checklistItems.templateId, [...templateIds]),
+          eq(checklistItems.orgId, this.orgId),
+          isNull(checklistItems.deletedAt),
+        ),
+      );
   }
 }
