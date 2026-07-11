@@ -102,3 +102,9 @@ linearly, open a PR — never work directly on `main` or someone else's branch. 
 Worktrees do NOT carry git-ignored files: copy `.env.local` into the worktree
 (`cp mallet-app/.env.local ../mallet-app-<topic>/`) or integration tests / db commands /
 provider API checks won't run there.
+
+**Migrations are single-writer.** Parallel sessions running `npm run db:generate` mint the
+same migration number and collide in the journal — and the live DB is shared, so applies must
+be serialized. Before generating a migration, check `gh pr list` for any open PR that touches
+`shared/db/migrations/`; if one exists, coordinate with Owen before adding another. Schema
+work belongs to one active branch at a time.
