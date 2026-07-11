@@ -17,6 +17,17 @@ import { CreateManualJobUseCase } from "../app/create-manual-job";
 import { UpdateJobUseCase } from "../app/update-job";
 import { ArchiveJobUseCase } from "../app/archive-job";
 import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO } from "./job-dto";
+import {
+  AddJobLineUseCase,
+  UpdateJobLineUseCase,
+  RemoveJobLineUseCase,
+  AddJobAddonUseCase,
+  SetAddonStatusUseCase,
+  SetAddonInvoiceSkipUseCase,
+  SetVerifyAnswerUseCase,
+  AddJobPhotoUseCase,
+  RemoveJobPhotoUseCase,
+} from "../app/job-execution-use-cases";
 
 const paginatedSummaryDTO = z.object({
   items: z.array(jobSummaryDTO),
@@ -73,6 +84,27 @@ export const updateJobInput = z.object({
   notes: z.string().max(10_000).nullable().optional(),
 });
 export const archiveJobInput = z.object({ jobId: z.string().uuid() });
+
+// ── Execution input schemas ───────────────────────────────────────────────────
+
+const lineFields = {
+  description: z.string().min(1).max(2000),
+  quantity: z.number().min(0),
+  rateCents: z.number().int().min(0),
+  costCents: z.number().int().min(0),
+};
+const addLineInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), ...lineFields, position: z.number().int().min(0).optional() });
+const updateLineInput = z.object({ jobId: z.string().uuid(), lineId: z.string().uuid(), ...lineFields, position: z.number().int().min(0) });
+const removeLineInput = z.object({ jobId: z.string().uuid(), lineId: z.string().uuid() });
+const addAddonInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), description: z.string().min(1).max(2000), quantity: z.number().min(0).default(1), rateCents: z.number().int().min(0), costCents: z.number().int().min(0).default(0), isOptional: z.boolean().optional() });
+const setAddonStatusInput = z.object({ jobId: z.string().uuid(), addonId: z.string().uuid(), status: z.enum(["proposed", "approved", "declined"]) });
+const setAddonInvSkipInput = z.object({ jobId: z.string().uuid(), addonId: z.string().uuid(), invoiceSkip: z.boolean() });
+const setVerifyAnswerInput = z.object({ jobId: z.string().uuid(), itemId: z.number().int(), state: z.enum(["pass", "override", "clear"]), via: z.string().max(50).nullable().optional(), reason: z.string().max(2000).nullable().optional() });
+const photoUploadUrlInput = z.object({ jobId: z.string().uuid(), objectId: z.string().uuid(), ext: z.string().min(1).max(10) });
+const addPhotoInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), storagePath: z.string().min(1).max(1024), caption: z.string().max(2000).nullable().optional(), verifyPass: z.boolean().optional() });
+const removePhotoInput = z.object({ jobId: z.string().uuid(), photoId: z.string().uuid() });
+
+const photoUploadUrlDTO = z.object({ signedUrl: z.string(), token: z.string(), storagePath: z.string() });
 
 // Layer 5: thin transport. Build org-scoped use-cases from the request's tx + ports, delegate,
 // map the result. No business logic here.
@@ -161,7 +193,7 @@ export const createJobRouter = () =>
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
           },
         });
-        return { items: page.items.map(toJobSummaryDTO), nextCursor: page.nextCursor };
+        return { items: page.items.map((j) => toJobSummaryDTO(j)), nextCursor: page.nextCursor };
       }),
 
     listByLead: ownerOrOffice
@@ -173,7 +205,7 @@ export const createJobRouter = () =>
           asLeadId(input.leadId),
           toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         );
-        return { items: page.items.map(toJobSummaryDTO), nextCursor: page.nextCursor };
+        return { items: page.items.map((j) => toJobSummaryDTO(j)), nextCursor: page.nextCursor };
       }),
 
     schedule: ownerOrOffice
@@ -236,6 +268,144 @@ export const createJobRouter = () =>
         return toJobDTO(
           orThrow(await useCase.exec({ jobId: asJobId(input.jobId), reason: input.reason })),
         );
+      }),
+
+    // ── Job execution procedures ──────────────────────────────────────────────
+
+    addLine: ownerOrOffice
+      .input(addLineInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new AddJobLineUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(
+          await useCase.exec(
+            { jobId: asJobId(input.jobId), id: input.id, description: input.description, quantity: input.quantity, rateCents: input.rateCents, costCents: input.costCents, position: input.position },
+            ctx.principal.orgId,
+          ),
+        );
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    updateLine: ownerOrOffice
+      .input(updateLineInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new UpdateJobLineUseCase(repo, ctx.deps.clock);
+        const r = orThrow(
+          await useCase.exec(
+            { jobId: asJobId(input.jobId), lineId: input.lineId, description: input.description, quantity: input.quantity, rateCents: input.rateCents, costCents: input.costCents, position: input.position },
+            ctx.principal.orgId,
+          ),
+        );
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    removeLine: ownerOrOffice
+      .input(removeLineInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new RemoveJobLineUseCase(repo, ctx.deps.clock);
+        const r = orThrow(await useCase.exec({ jobId: asJobId(input.jobId), lineId: input.lineId }, ctx.principal.orgId));
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    addAddon: ownerOrOffice
+      .input(addAddonInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new AddJobAddonUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(
+          await useCase.exec(
+            { jobId: asJobId(input.jobId), id: input.id, description: input.description, quantity: input.quantity, rateCents: input.rateCents, costCents: input.costCents, isOptional: input.isOptional },
+            ctx.principal.orgId,
+          ),
+        );
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    setAddonStatus: ownerOrOffice
+      .input(setAddonStatusInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new SetAddonStatusUseCase(repo, ctx.deps.clock);
+        const r = orThrow(await useCase.exec({ jobId: asJobId(input.jobId), addonId: input.addonId, status: input.status }, ctx.principal.orgId));
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    setAddonInvSkip: ownerOrOffice
+      .input(setAddonInvSkipInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new SetAddonInvoiceSkipUseCase(repo, ctx.deps.clock);
+        const r = orThrow(await useCase.exec({ jobId: asJobId(input.jobId), addonId: input.addonId, invoiceSkip: input.invoiceSkip }, ctx.principal.orgId));
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    setVerifyAnswer: ownerOrOffice
+      .input(setVerifyAnswerInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new SetVerifyAnswerUseCase(repo, ctx.deps.clock);
+        const r = orThrow(
+          await useCase.exec(
+            { jobId: asJobId(input.jobId), itemId: input.itemId, state: input.state, via: input.via ?? null, reason: input.reason ?? null },
+            ctx.principal.orgId,
+          ),
+        );
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    photoUploadUrl: ownerOrOffice
+      .input(photoUploadUrlInput)
+      .output(photoUploadUrlDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "photo storage is not configured" });
+        }
+        // Confirm the job exists in this org before minting an upload URL (fail-closed).
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const job = await repo.findById(asJobId(input.jobId));
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+        const result = await ctx.deps.photoStorageGateway.createUploadUrl({
+          orgId: ctx.principal.orgId,
+          jobId: asJobId(input.jobId),
+          objectId: input.objectId,
+          ext: input.ext,
+        });
+        if (!result.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "could not create upload url" });
+        return result.value;
+      }),
+
+    addPhoto: ownerOrOffice
+      .input(addPhotoInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new AddJobPhotoUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(
+          await useCase.exec(
+            { jobId: asJobId(input.jobId), id: input.id, storagePath: input.storagePath, caption: input.caption ?? null, verifyPass: input.verifyPass ?? false },
+            ctx.principal.orgId,
+          ),
+        );
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    removePhoto: ownerOrOffice
+      .input(removePhotoInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new RemoveJobPhotoUseCase(repo, ctx.deps.clock);
+        const r = orThrow(await useCase.exec({ jobId: asJobId(input.jobId), photoId: input.photoId }, ctx.principal.orgId));
+        return toJobDTO(r.job, r.execution);
       }),
 
     // Patch title/svc/notes on a non-terminal job. undefined fields are kept as-is;
