@@ -28,3 +28,15 @@ export { CreateManualJobUseCase } from "./app/create-manual-job";
 export { UpdateJobUseCase } from "./app/update-job";
 export { ArchiveJobUseCase } from "./app/archive-job";
 export { ListJobsUseCase } from "./app/list-jobs";
+export {
+  AddJobLineUseCase,
+  UpdateJobLineUseCase,
+  RemoveJobLineUseCase,
+  AddJobAddonUseCase,
+  SetAddonStatusUseCase,
+  SetAddonInvoiceSkipUseCase,
+  SetVerifyAnswerUseCase,
+  AddJobPhotoUseCase,
+  RemoveJobPhotoUseCase,
+} from "./app/job-execution-use-cases";
+export type { JobWithExecution } from "./app/job-execution-use-cases";
