@@ -1769,6 +1769,13 @@ export default function ComposerPage() {
             ? "Quote saved — but no business number is set up for texting yet. Share the link manually."
             : "Quote saved — email delivery isn't configured yet. Share the link manually.",
         );
+      } else if (code === "BAD_GATEWAY") {
+        // The provider rejected the send (e.g. Resend refused the from-address/key).
+        setSendError(
+          cs.sendChannel === "text"
+            ? "Quote saved — the texting provider rejected the send. Check the Twilio setup."
+            : "Quote saved — the email provider rejected the send. Check EMAIL_FROM and the Resend key.",
+        );
       } else {
         setSendError("Couldn't send the quote — check your connection and try again.");
       }
