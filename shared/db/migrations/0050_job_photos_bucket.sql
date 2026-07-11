@@ -1,49 +1,7 @@
--- Private Supabase Storage bucket for job photos + tenant-isolation policies. The object key
--- layout is <org_id>/<job_id>/<uuid>.<ext>, so the first path segment IS the org id. Reads/writes
--- are allowed only when that first segment equals the caller's org, derived from the JWT app_metadata
--- org_id claim the app sets at signup. The service-role client (getSupabaseAdmin) bypasses these
--- policies and is what mints signed upload URLs server-side; end-user browser reads go through
--- these policies. Idempotent: safe to re-run.
-
-insert into storage.buckets (id, name, public)
-values ('job-photos', 'job-photos', false)
-on conflict (id) do nothing;
---> statement-breakpoint
-
--- Helper mirrors public.current_org_id() but reads the org from the Storage request's JWT claim
--- (storage runs as the authenticated user, not inside a withTenant tx). Falls back to NULL (deny).
-create or replace function storage.job_photo_org()
-returns uuid
-language sql
-stable
-as $$
-  select nullif(
-    coalesce(
-      current_setting('request.jwt.claims', true)::jsonb -> 'app_metadata' ->> 'org_id',
-      ''
-    ),
-    ''
-  )::uuid
-$$;
---> statement-breakpoint
-
-drop policy if exists job_photos_read ON storage.objects;
---> statement-breakpoint
-create policy job_photos_read on storage.objects
-  for select
-  to authenticated
-  using (
-    bucket_id = 'job-photos'
-    and (storage.foldername(name))[1] = storage.job_photo_org()::text
-  );
---> statement-breakpoint
-
-drop policy if exists job_photos_insert ON storage.objects;
---> statement-breakpoint
-create policy job_photos_insert on storage.objects
-  for insert
-  to authenticated
-  with check (
-    bucket_id = 'job-photos'
-    and (storage.foldername(name))[1] = storage.job_photo_org()::text
-  );
+-- Intentionally a no-op. The job-photos Supabase Storage bucket + tenant-isolation policies were
+-- moved OUT of the drizzle migration chain to `shared/db/storage-setup.sql`, because they touch the
+-- `storage` schema (owned by `supabase_storage_admin`) and require privileges the pooled `postgres`
+-- role used by `db:migrate` lacks — attempting them here aborts the whole pending migration batch.
+-- Run `shared/db/storage-setup.sql` once in the Supabase SQL editor to provision the bucket/policies.
+-- This file stays in the chain (journal idx 50) so migration numbering is unbroken.
+select 1;
