@@ -102,9 +102,22 @@ describe("buildLeadUpdatePayload", () => {
       age: 5,
       job: "HVAC",
       book: true,
-      address: "123 Main St",
     });
     expect(payload).toBeNull();
+  });
+
+  it("(b2) address is now persisted — patch with only address returns a payload", () => {
+    const payload = buildLeadUpdatePayload("lead-111", {
+      address: "123 Main St",
+    });
+    expect(payload).not.toBeNull();
+    expect(payload?.address).toBe("123 Main St");
+  });
+
+  it("(b3) empty string address maps to null", () => {
+    const payload = buildLeadUpdatePayload("lead-111", { address: "" });
+    expect(payload).not.toBeNull();
+    expect(payload?.address).toBeNull();
   });
 
   it("(c) empty string phone maps to null", () => {

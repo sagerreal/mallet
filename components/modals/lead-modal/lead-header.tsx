@@ -7,12 +7,13 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Lead } from "@/lib/store/types";
 import { STAGE_PILL_CLS, leadInitials } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { AddressInput } from "@/components/ui/address-input";
 
 interface LeadHeaderProps {
   lead: Lead;
@@ -33,6 +34,12 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
   }
 
   const [nameVal, setNameVal] = useState(lead.name);
+  const [addrVal, setAddrVal] = useState(lead.address ?? "");
+
+  // Re-sync if the lead prop changes (modal reopening with a different lead).
+  useEffect(() => {
+    setAddrVal(lead.address ?? "");
+  }, [lead.id, lead.address]);
 
   function saveName() {
     const trimmed = nameVal.trim();
@@ -146,13 +153,14 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
           <circle cx="12" cy="10" r="3" />
         </svg>
-        <input
-          type="text"
-          defaultValue={lead.address ?? ""}
+        <AddressInput
+          value={addrVal}
+          onChange={setAddrVal}
+          onSelect={(v) => updateLead(lead.id, { address: v })}
+          onBlur={() => updateLead(lead.id, { address: addrVal })}
           placeholder="Add service address"
-          onBlur={(e) => updateLead(lead.id, { address: e.target.value })}
           aria-label="Service address"
-          style={{
+          inputStyle={{
             flex: 1,
             border: "none",
             background: "transparent",

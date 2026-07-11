@@ -12,6 +12,7 @@ export interface EnsureCustomerInput {
   readonly companyId: CompanyId | null;
   readonly role: string | null;
   readonly notes: string | null;
+  readonly address: string | null;
 }
 
 export interface EnsureCustomerResult {

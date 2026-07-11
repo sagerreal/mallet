@@ -407,11 +407,13 @@ function CustomerSelector({
   onUpdate,
   leads,
   onNewCust,
+  isAddingCust,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
   leads: Lead[];
   onNewCust: () => void;
+  isAddingCust: boolean;
 }) {
   const lead: Lead | null =
     state.leadId != null
@@ -461,6 +463,14 @@ function CustomerSelector({
         onChange={(e) =>
           onUpdate({ custQuery: e.target.value, custMatches: [] })
         }
+        onKeyDown={(e) => {
+          // Route Enter through the guarded handler so rapid keypresses can't
+          // multi-fire the create (same guard as the click path).
+          if (e.key === "Enter" && q) {
+            e.preventDefault();
+            onNewCust();
+          }
+        }}
         style={{
           width: "100%",
           border: "1.5px solid var(--line)",
@@ -491,8 +501,15 @@ function CustomerSelector({
               ) : null}
             </div>
           ))}
-          <div className="cmp-opt cmp-add" onClick={onNewCust}>
-            + Add new customer: &quot;<b>{state.custQuery}</b>&quot;
+          <div
+            className="cmp-opt cmp-add"
+            onClick={isAddingCust ? undefined : onNewCust}
+            style={isAddingCust ? { opacity: 0.5, pointerEvents: "none" } : undefined}
+            aria-disabled={isAddingCust}
+          >
+            {isAddingCust
+              ? <>Adding &quot;<b>{state.custQuery}</b>&quot;…</>
+              : <>+ Add new customer: &quot;<b>{state.custQuery}</b>&quot;</>}
           </div>
         </div>
       )}
@@ -1763,8 +1780,23 @@ export default function ComposerPage() {
   }
 
   async function composerNewCust() {
+    // In-flight guard: if a create is already pending (e.g. the user double-
+    // clicked or hit Enter twice), drop the extra invocation immediately so we
+    // never fire two concurrent creates for the same name.
+    if (createCustomerMutation.isPending) return;
+
     const name = cs.custQuery.trim();
     if (!name) return;
+
+    // Client-side dedupe: if a lead with this name (case-insensitive) already
+    // exists in the store, select it instead of creating a duplicate.
+    const nameLower = name.toLowerCase();
+    const existing = leads.find((l) => (l.name ?? "").trim().toLowerCase() === nameLower);
+    if (existing) {
+      update({ leadId: existing.id, custQuery: "" });
+      return;
+    }
+
     setCustError(null);
     try {
       // Persist a real DB lead (server assigns the id). Without this the quote's
@@ -1802,6 +1834,7 @@ export default function ComposerPage() {
         onUpdate={update}
         leads={leads}
         onNewCust={composerNewCust}
+        isAddingCust={createCustomerMutation.isPending}
       />
       {custError && (
         <p style={{ color: "var(--red, #b42318)", fontSize: 13, margin: "-8px 0 12px" }}>

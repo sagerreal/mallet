@@ -60,6 +60,7 @@ class FakeLeadRepository implements LeadRepository {
       companyId: input.companyId,
       role: input.role,
       notes: input.notes,
+      address: input.address,
       createdAt: now,
       updatedAt: now,
     });
@@ -134,7 +135,7 @@ describe("EnsureCustomerUseCase", () => {
   });
 
   it("rejects an empty name", async () => {
-    const r = await useCase.exec({ name: "   ", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+    const r = await useCase.exec({ name: "   ", phone: null, email: null, source: null, companyId: null, role: null, notes: null, address: null });
     expect(r.ok).toBe(false);
   });
 
@@ -149,6 +150,7 @@ describe("EnsureCustomerUseCase", () => {
       companyId: null,
       role: null,
       notes: null,
+      address: null,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -170,6 +172,7 @@ describe("EnsureCustomerUseCase", () => {
       companyId: null,
       role: null,
       notes: null,
+      address: null,
     });
     const second = await useCase.exec({
       name: "Karen (again)",
@@ -179,6 +182,7 @@ describe("EnsureCustomerUseCase", () => {
       companyId: null,
       role: null,
       notes: null,
+      address: null,
     });
     expect(first.ok && second.ok).toBe(true);
     if (first.ok && second.ok) {
@@ -193,8 +197,8 @@ describe("EnsureCustomerUseCase", () => {
   });
 
   it("dedupes by phone but not by name alone: same name different phone = two records", async () => {
-    const r1 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
-    const r2 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+    const r1 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null, notes: null, address: null });
+    const r2 = await useCase.exec({ name: "Jane Smith", phone: null, email: null, source: null, companyId: null, role: null, notes: null, address: null });
     expect(r1.ok && r2.ok).toBe(true);
     if (r1.ok && r2.ok) {
       // No phone → no dedup key → two distinct records, both created:true
@@ -218,7 +222,7 @@ describe("EnsureCustomerUseCase — bug-fix regressions", () => {
   });
 
   it("new lead is created with unread=false (bug fix: no spurious new-text badge)", async () => {
-    const r = await useCase.exec({ name: "Sam Parker", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+    const r = await useCase.exec({ name: "Sam Parker", phone: null, email: null, source: null, companyId: null, role: null, notes: null, address: null });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.created).toBe(true);
@@ -235,6 +239,7 @@ describe("EnsureCustomerUseCase — bug-fix regressions", () => {
       companyId: null,
       role: null,
       notes: "gate code 9988",
+      address: null,
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -243,10 +248,35 @@ describe("EnsureCustomerUseCase — bug-fix regressions", () => {
   });
 
   it("null notes on create yields null in the domain", async () => {
-    const r = await useCase.exec({ name: "Lee Fox", phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+    const r = await useCase.exec({ name: "Lee Fox", phone: null, email: null, source: null, companyId: null, role: null, notes: null, address: null });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.lead.props.notes).toBeNull();
+    }
+  });
+
+  it("address is persisted on create", async () => {
+    const r = await useCase.exec({
+      name: "Gary Pratt",
+      phone: null,
+      email: null,
+      source: null,
+      companyId: null,
+      role: null,
+      notes: null,
+      address: "789 Pine Rd, Fremont CA 94536",
+    });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.lead.props.address).toBe("789 Pine Rd, Fremont CA 94536");
+    }
+  });
+
+  it("null address on create yields null in the domain", async () => {
+    const r = await useCase.exec({ name: "Faye Dunn", phone: null, email: null, source: null, companyId: null, role: null, notes: null, address: null });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.lead.props.address).toBeNull();
     }
   });
 });
@@ -259,7 +289,7 @@ describe("ListLeadsUseCase", () => {
     const ensure = new EnsureCustomerUseCase(repo, bus, clock);
 
     for (const name of ["A", "B", "C"]) {
-      await ensure.exec({ name, phone: null, email: null, source: null, companyId: null, role: null, notes: null });
+      await ensure.exec({ name, phone: null, email: null, source: null, companyId: null, role: null, notes: null, address: null });
       clock.advance(60_000);
     }
 

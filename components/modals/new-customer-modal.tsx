@@ -15,6 +15,7 @@ import { useCloseModal, useOpenModal, useActiveModal, useAppStore } from "@/lib/
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import type { Job } from "@/lib/store/types";
+import { AddressInput } from "@/components/ui/address-input";
 
 const SOURCES = [
   "Google",
@@ -80,6 +81,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
+  const [address, setAddress] = useState("");
   const [customFields, setCustomFields] = useState<{ label: string; value: string }[]>([]);
   const [cfLabel, setCfLabel] = useState("");
   const [cfValue, setCfValue] = useState("");
@@ -103,6 +105,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setMoreOpen(false);
     setEmail("");
     setNotes("");
+    setAddress("");
     setCustomFields([]);
     setCfLabel("");
     setCfValue("");
@@ -155,6 +158,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       // Prototype default: contacts linked to a company carry role "Contact".
       role: companyId != null ? "Contact" : undefined,
       notes: notes.trim() || undefined,
+      address: address.trim() || undefined,
     };
   }
 
@@ -382,7 +386,19 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           )}
         </div>
 
-        {/* 6. Book a visit reveal */}
+        {/* 6. Service address — top-level because field service lives or dies on it */}
+        <div className="field">
+          <label>Service address</label>
+          <AddressInput
+            value={address}
+            onChange={setAddress}
+            placeholder="123 Main St, Oakland CA 94601"
+            aria-label="Service address"
+            className="w-full"
+          />
+        </div>
+
+        {/* 7. Book a visit reveal */}
         <div className={`reveal${bookOpen ? " open" : ""}`} style={{ marginBottom: 14 }}>
           <div
             className="reveal-head"
@@ -468,7 +484,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           </div>
         </div>
 
-        {/* 7. More details reveal */}
+        {/* 8. More details reveal */}
         <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginBottom: 20 }}>
           <div
             className="reveal-head"
@@ -577,7 +593,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           </div>
         )}
 
-        {/* 8. Footer */}
+        {/* 9. Footer */}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button type="button" className="btn ghost" onClick={handleClose} disabled={createMutation.isPending}>
             Cancel

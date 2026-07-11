@@ -61,6 +61,9 @@ const estimateSummaryDTO = z.object({
   status: statusEnum,
   total: moneyDTO,
   createdAt: z.string(),
+  // Share-link token — carried on summaries so list-hydrated estimates can be
+  // sent by text/email from the estimate modal (the link is /q/<token>).
+  publicToken: z.string().nullable(),
 });
 
 const lineInput = z.object({
@@ -157,6 +160,7 @@ const toSummaryDTO = (estimate: Estimate) => {
     status: p.status,
     total: money(estimate.total()),
     createdAt: p.createdAt.toISOString(),
+    publicToken: p.publicToken ?? null,
   };
 };
 

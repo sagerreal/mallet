@@ -134,6 +134,13 @@ export interface Estimate {
    * (calcQuote over lines is authoritative instead).
    */
   cachedTotal?: number;
+  /**
+   * The unguessable share token for the customer-facing quote page (/q/<token>).
+   * Populated by dtoEstimateToStore when the full estimateDTO is returned by a
+   * mutation (draft/send/accept/decline/restore). Absent for list-hydrated
+   * records (the summary DTO omits it) and locally-created estimates.
+   */
+  publicToken?: string;
   archived?: boolean;
   trash?: boolean;
 }

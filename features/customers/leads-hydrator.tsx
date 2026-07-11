@@ -42,6 +42,7 @@ function toStoreLead(dto: LeadDTO): Lead {
     companyId: dto.companyId ?? undefined,
     role: dto.role ?? undefined,
     notes: dto.notes ?? undefined,
+    address: dto.address ?? undefined,
     acts: [],
     evisits: [],
     archived: false,
