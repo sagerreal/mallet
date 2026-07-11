@@ -9,7 +9,6 @@
  * Prototype reference: elas-crm-prototype.html lines 7031–7139.
  *
  * Deferred (intentional no-ops — see inline comments):
- *   - previewComposer()  — needs the customer-facing quote page
  *   - savePbLine(i)      — needs a store pricebook
  *   - descMic() / 🎤     — no speech API in the app yet
  */
@@ -1552,6 +1551,9 @@ export default function ComposerPage() {
   const quoteSendMutation = api.v1.quoting.send.useMutation();
   // Step 3a: send SMS via Twilio (gated on A2P provisioning).
   const messagingSendMutation = api.v1.messaging.send.useMutation();
+  // Step 3b: send the quote link by email via the notifications sender (Resend,
+  // gated server-side on RESEND_API_KEY + EMAIL_FROM).
+  const notificationsSendMutation = api.v1.notifications.send.useMutation();
   // Inline "+ Add new customer" — persists a real DB lead so quotes can reference it.
   const createCustomerMutation = api.v1.customers.create.useMutation();
 
@@ -1622,6 +1624,29 @@ export default function ComposerPage() {
     router.push("/pipeline");
   }
 
+  // The v1.quoting.draft payload built from the current composer state — shared by the
+  // send flow and the preview flow so they draft an identical estimate.
+  function buildDraftPayload(lead: NonNullable<typeof selectedLead>) {
+    return {
+      leadId: lead.id,
+      title: lead.job || "Quote",
+      discBps: Math.round((cs.pricing.disc ?? 0) * 100),
+      taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
+      depBps: Math.round((cs.pricing.dep ?? 0) * 100),
+      validDays: cs.validDays,
+      lines: cs.lines
+        .filter((l) => (l.d ?? "").trim())
+        .map((l) => ({
+          description: l.d,
+          quantity: l.q ?? 1,
+          rateCents: Math.round((l.r ?? 0) * 100),
+          costCents: Math.round(((l as ComposerLine).c ?? 0) * 100),
+          isOptional: (l as ComposerLine).opt ?? false,
+          needsPhoto: (l as ComposerLine).photo ?? false,
+        })),
+    };
+  }
+
   async function sendComposer() {
     if (!selectedLead) return; // send requires a lead
     if (!hasRealLine()) return;
@@ -1631,24 +1656,7 @@ export default function ComposerPage() {
 
     try {
       // Step 1: persist the estimate draft. The backend generates a publicToken.
-      const drafted = await quoteDraftMutation.mutateAsync({
-        leadId: selectedLead.id,
-        title: selectedLead.job || "Quote",
-        discBps: Math.round((cs.pricing.disc ?? 0) * 100),
-        taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
-        depBps: Math.round((cs.pricing.dep ?? 0) * 100),
-        validDays: cs.validDays,
-        lines: cs.lines
-          .filter((l) => (l.d ?? "").trim())
-          .map((l, i) => ({
-            description: l.d,
-            quantity: l.q ?? 1,
-            rateCents: Math.round((l.r ?? 0) * 100),
-            costCents: Math.round(((l as ComposerLine).c ?? 0) * 100),
-            isOptional: (l as ComposerLine).opt ?? false,
-            needsPhoto: (l as ComposerLine).photo ?? false,
-          })),
-      });
+      const drafted = await quoteDraftMutation.mutateAsync(buildDraftPayload(selectedLead));
 
       // Step 2: mark the estimate as sent (stamps sentAt).
       await quoteSendMutation.mutateAsync({ estimateId: drafted.id });
@@ -1674,10 +1682,21 @@ export default function ComposerPage() {
           body,
         });
       } else {
-        // Email — gated: requires RESEND_API_KEY + EMAIL_FROM. No email tRPC
-        // endpoint exists yet (Phase 2 — notifications module). The draft is
-        // persisted and sent; the email channel is noted but not delivered.
-        // TODO: wire to v1.notifications.send when the email endpoint is added.
+        // Email — deliver the quote link via the notifications sender (Resend). Gated
+        // server-side on RESEND_API_KEY + EMAIL_FROM; a PRECONDITION_FAILED means email
+        // isn't configured (caught below and surfaced inline — the quote is still saved).
+        const body =
+          `${selectedLead.name.split(" ")[0]}, your quote ${drafted.num} is ready — ` +
+          `view and approve here: ${quoteLink}`;
+        await notificationsSendMutation.mutateAsync({
+          channel: "email",
+          to: selectedLead.email ?? "",
+          kind: "estimate_sent",
+          body,
+          relatedType: "estimate",
+          relatedId: drafted.id,
+          idempotencyKey: `estimate-sent-${drafted.id}`,
+        });
       }
 
       // Optimistic store update so the pipeline reflects the new estimate.
@@ -1726,8 +1745,21 @@ export default function ComposerPage() {
     }
   }
 
-  function previewComposer() {
-    // deferred: customer preview page
+  // Preview: persist a draft to mint a public token, then open the customer-facing
+  // quote page (/q/<token>) in a new tab — the exact view the customer will see.
+  async function previewComposer() {
+    if (!selectedLead) return;
+    if (!hasRealLine()) return;
+    setSendError(null);
+    try {
+      const drafted = await quoteDraftMutation.mutateAsync(buildDraftPayload(selectedLead));
+      const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+      if (drafted.publicToken) {
+        window.open(`${appOrigin}/q/${drafted.publicToken}`, "_blank", "noopener");
+      }
+    } catch {
+      setSendError("Couldn't open the preview — check your connection and try again.");
+    }
   }
 
   async function composerNewCust() {
