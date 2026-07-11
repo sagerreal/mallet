@@ -13,7 +13,7 @@
  *   - descMic() / 🎤     — no speech API in the app yet
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   calcQuote,
@@ -1541,6 +1541,7 @@ export default function ComposerPage() {
   const searchParams = useSearchParams();
   const leads = useLeads();
   const addEstimate = useAppStore((s) => s.addEstimate);
+  const adoptEstimate = useAppStore((s) => s.adoptEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const addLeadNote = useAppStore((s) => s.addLeadNote);
 
@@ -1566,6 +1567,10 @@ export default function ComposerPage() {
   const quoteDraftMutation = api.v1.quoting.draft.useMutation();
   // Step 2: mark the estimate as sent (stamps sentAt).
   const quoteSendMutation = api.v1.quoting.send.useMutation();
+  // Preview drafts persisted this composer session: reused per distinct state (no
+  // duplicate drafts on re-click) and archived once the real send supersedes them.
+  const previewDraftsRef = useRef<{ key: string; id: string; token: string | null }[]>([]);
+  const quoteArchiveMutation = api.v1.quoting.archive.useMutation();
   // Step 3a: send SMS via Twilio (gated on A2P provisioning).
   const messagingSendMutation = api.v1.messaging.send.useMutation();
   // Step 3b: send the quote link by email via the notifications sender (Resend,
@@ -1675,8 +1680,8 @@ export default function ComposerPage() {
       // Step 1: persist the estimate draft. The backend generates a publicToken.
       const drafted = await quoteDraftMutation.mutateAsync(buildDraftPayload(selectedLead));
 
-      // Step 2: mark the estimate as sent (stamps sentAt).
-      await quoteSendMutation.mutateAsync({ estimateId: drafted.id });
+      // Step 2: mark the estimate as sent (stamps sentAt). Returns the SENT dto.
+      const sentDto = await quoteSendMutation.mutateAsync({ estimateId: drafted.id });
 
       // Step 3: deliver the quote link via the selected channel.
       // The public link is /q/<token>. Use the current origin so it works in
@@ -1716,18 +1721,18 @@ export default function ComposerPage() {
         });
       }
 
-      // Optimistic store update so the pipeline reflects the new estimate.
-      addEstimate({
-        leadId: selectedLead.id,
-        title: selectedLead.job || "Quote",
-        status: "sent",
-        age: 0,
-        viewed: false,
-        fu: { on: cs.fuOn, stage: 0 },
-        lines: toEstimateLines(cs.lines),
-        pricing: { ...cs.pricing },
-        validDays: cs.validDays,
-      });
+      // Store update so the pipeline reflects the new estimate. Adopt the SERVER's
+      // sent record — the draft+send above already persisted it; going through
+      // addEstimate here would fire a second quoting.draft and orphan a duplicate
+      // draft in the shop rail.
+      adoptEstimate(sentDto, { on: cs.fuOn, stage: 0 });
+
+      // Preview drafts from this composer session are superseded by the real send —
+      // archive them so they don't linger in the shop rail (fire-and-forget).
+      for (const p of previewDraftsRef.current) {
+        quoteArchiveMutation.mutate({ estimateId: p.id });
+      }
+      previewDraftsRef.current = [];
 
       addLeadNote(selectedLead.id, {
         type: "text",
@@ -1769,8 +1774,18 @@ export default function ComposerPage() {
     if (!hasRealLine()) return;
     setSendError(null);
     try {
-      const drafted = await quoteDraftMutation.mutateAsync(buildDraftPayload(selectedLead));
+      const payload = buildDraftPayload(selectedLead);
+      // One preview draft per distinct composer state: re-clicking Preview without
+      // changing anything reuses the same draft instead of persisting another one.
+      const key = JSON.stringify(payload);
       const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+      const cached = previewDraftsRef.current.find((p) => p.key === key);
+      if (cached?.token) {
+        window.open(`${appOrigin}/q/${cached.token}`, "_blank", "noopener");
+        return;
+      }
+      const drafted = await quoteDraftMutation.mutateAsync(payload);
+      previewDraftsRef.current.push({ key, id: drafted.id, token: drafted.publicToken ?? null });
       if (drafted.publicToken) {
         window.open(`${appOrigin}/q/${drafted.publicToken}`, "_blank", "noopener");
       }
