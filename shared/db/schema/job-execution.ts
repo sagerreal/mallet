@@ -12,7 +12,8 @@ import {
   check,
   foreignKey,
 } from "drizzle-orm/pg-core";
-import { orgs } from "./orgs";
+// Tenant safety comes from the composite FK to jobs (org_id, job_id) → jobs_org_id_uq,
+// and jobs.org_id already FKs to orgs — so no direct orgs FK is needed here.
 import { jobs } from "./jobs";
 
 // Job execution data — the field-captured tail of a job. Every table carries its own org_id
