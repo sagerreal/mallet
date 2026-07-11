@@ -86,15 +86,15 @@ export const jobAddons = pgTable(
 
 // One before-you-leave checklist answer per (job, checklist item). Upsert-keyed on
 // (org_id, job_id, item_id) so re-answering replaces; unchecking deletes the single row. state:
-// pass (checked, via manual|photo) | override (N/A with reason). item_id is the store's numeric
-// checklist item id (stable per checklist template).
+// pass (checked, via manual|photo) | override (N/A with reason). item_id is the checklist item's
+// string id (stable per checklist template; text to align with Phase-6 string checklist item ids).
 export const jobVerifyAnswers = pgTable(
   "job_verify_answers",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: uuid("org_id").notNull(),
     jobId: uuid("job_id").notNull(),
-    itemId: integer("item_id").notNull(),
+    itemId: text("item_id").notNull(),
     state: text("state").notNull(),
     via: text("via"),
     reason: text("reason"),

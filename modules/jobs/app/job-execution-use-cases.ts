@@ -209,7 +209,7 @@ export class SetAddonInvoiceSkipUseCase {
 // state 'clear' removes the answer (mirrors uncheckVerifyItem); pass|override upsert one.
 export interface SetVerifyAnswerCommand {
   readonly jobId: JobId;
-  readonly itemId: number;
+  readonly itemId: string;
   readonly state: "pass" | "override" | "clear";
   readonly via: string | null;
   readonly reason: string | null;

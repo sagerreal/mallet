@@ -350,7 +350,7 @@ export class DrizzleJobRepository implements JobRepository {
       });
   }
 
-  async removeVerifyAnswer(jobId: JobId, itemId: number): Promise<number> {
+  async removeVerifyAnswer(jobId: JobId, itemId: string): Promise<number> {
     const rows = await this.tx
       .delete(jobVerifyAnswers)
       .where(

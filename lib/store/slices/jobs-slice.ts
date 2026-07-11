@@ -134,7 +134,7 @@ function withVisits(job: Job, visits: Visit[]): Job {
 }
 
 /** Set one verify answer immutably. */
-function withVerify(job: Job, itemId: number, ans: VerifyAns): Job {
+function withVerify(job: Job, itemId: string, ans: VerifyAns): Job {
   const prev = job.verify?.ans ?? {};
   return { ...job, verify: { ans: { ...prev, [itemId]: ans } } };
 }
@@ -171,9 +171,9 @@ export interface JobsSlice {
   setAddonStatus: (jobId: string, addonId: number, status: Addon["status"]) => void;
   setAddonInvSkip: (jobId: string, addonId: number) => void;
   // Before-you-leave checklist capture
-  checkVerifyItem: (jobId: string, itemId: number) => void;
-  overrideVerifyItem: (jobId: string, itemId: number, reason: string) => void;
-  uncheckVerifyItem: (jobId: string, itemId: number) => void;
+  checkVerifyItem: (jobId: string, itemId: string) => void;
+  overrideVerifyItem: (jobId: string, itemId: string, reason: string) => void;
+  uncheckVerifyItem: (jobId: string, itemId: string) => void;
   addJobPhoto: (jobId: string) => void;
 }
 

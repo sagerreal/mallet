@@ -11,6 +11,7 @@ import { createTimesheetRouter } from "@mallet/timesheets";
 import { createCompanyRouter } from "@mallet/companies";
 import { createMessagingRouter } from "@mallet/messaging";
 import { createSettingsRouter } from "@mallet/settings";
+import { createChecklistRouter } from "@mallet/checklists";
 
 // The versioned API tree. Clients call trpc.v1.<module>.*; a future v2 can coexist here while v1
 // stays stable. Module routers are composed in — never defined here.
@@ -30,6 +31,7 @@ export const appRouter = router({
     companies: createCompanyRouter(),
     messaging: createMessagingRouter(),
     settings: createSettingsRouter(),
+    checklists: createChecklistRouter(),
   }),
 });
 

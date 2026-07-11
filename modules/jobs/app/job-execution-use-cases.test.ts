@@ -66,7 +66,7 @@ class FakeRepo implements Partial<JobRepository> {
   async upsertVerifyAnswer(answer: JobVerifyAnswer): Promise<void> {
     this.answers.push(answer);
   }
-  async removeVerifyAnswer(_j: JobId, itemId: number): Promise<number> {
+  async removeVerifyAnswer(_j: JobId, itemId: string): Promise<number> {
     const before = this.answers.length;
     this.answers = this.answers.filter((a) => a.props.itemId !== itemId);
     return before - this.answers.length;
@@ -153,25 +153,25 @@ describe("job execution use-cases", () => {
 
   it("SetVerifyAnswer with state=pass upserts an answer", async () => {
     const uc = new SetVerifyAnswerUseCase(repo as unknown as JobRepository, clock);
-    const r = await uc.exec({ jobId: JOB, itemId: 3, state: "pass", via: "manual", reason: null }, ORG);
+    const r = await uc.exec({ jobId: JOB, itemId: "3", state: "pass", via: "manual", reason: null }, ORG);
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.execution.verifyAnswers).toHaveLength(1);
   });
 
   it("SetVerifyAnswer with state=override and no reason is validation", async () => {
     const uc = new SetVerifyAnswerUseCase(repo as unknown as JobRepository, clock);
-    const r = await uc.exec({ jobId: JOB, itemId: 3, state: "override", via: null, reason: " " }, ORG);
+    const r = await uc.exec({ jobId: JOB, itemId: "3", state: "override", via: null, reason: " " }, ORG);
     expect(isErr(r)).toBe(true);
     if (isErr(r)) expect(r.error.kind).toBe("validation");
   });
 
   it("SetVerifyAnswer with state=clear removes the answer", async () => {
     await new SetVerifyAnswerUseCase(repo as unknown as JobRepository, clock).exec(
-      { jobId: JOB, itemId: 3, state: "pass", via: "manual", reason: null },
+      { jobId: JOB, itemId: "3", state: "pass", via: "manual", reason: null },
       ORG,
     );
     const r = await new SetVerifyAnswerUseCase(repo as unknown as JobRepository, clock).exec(
-      { jobId: JOB, itemId: 3, state: "clear", via: null, reason: null },
+      { jobId: JOB, itemId: "3", state: "clear", via: null, reason: null },
       ORG,
     );
     expect(isOk(r)).toBe(true);

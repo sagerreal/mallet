@@ -1,0 +1,1 @@
+ALTER TABLE "job_verify_answers" ALTER COLUMN "item_id" SET DATA TYPE text USING "item_id"::text;

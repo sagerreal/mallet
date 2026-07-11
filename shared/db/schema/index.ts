@@ -17,6 +17,7 @@ export * from "./invites";
 export * from "./time-entries";
 export * from "./companies";
 export * from "./messages";
+export * from "./checklists";
 export * from "./job-execution";
 export * from "./org-settings";
 export * from "./pricebook-items";

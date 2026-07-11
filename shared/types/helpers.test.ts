@@ -7,6 +7,8 @@ import {
   asVisitId,
   asInvoiceId,
   asPhone,
+  asChecklistId,
+  asChecklistItemId,
 } from "./ids";
 import { money, zeroMoney, addMoney, subMoney, fromDollars, toDollars, formatUsd } from "./money";
 import { systemClock, FixedClock } from "./clock";
@@ -22,6 +24,11 @@ describe("id casters", () => {
     expect(asVisitId("v")).toBe("v");
     expect(asInvoiceId("i")).toBe("i");
     expect(asPhone("+15550000000")).toBe("+15550000000");
+  });
+
+  it("asChecklistId / asChecklistItemId round-trip", () => {
+    expect(asChecklistId("chk")).toBe("chk");
+    expect(asChecklistItemId("itm")).toBe("itm");
   });
 });
 
