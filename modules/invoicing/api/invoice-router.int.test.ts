@@ -120,4 +120,93 @@ suite("invoicing tRPC router (full money loop, live RLS)", () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(caller.v1.invoicing.list({ limit: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  it("updateMetadata persists terms/title/deposit on a draft invoice", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const draft = await caller.v1.invoicing.draft({
+      leadId: leadAId,
+      title: "Editable",
+      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+    });
+
+    const updated = await caller.v1.invoicing.updateMetadata({
+      invoiceId: draft.id,
+      title: "Renamed",
+      termsDays: 30,
+      depositPaidCents: 25_000,
+    });
+    expect(updated.title).toBe("Renamed");
+    expect(updated.termsDays).toBe(30);
+    expect(updated.depositPaid.cents).toBe(25_000);
+    // due = total(100000) - deposit(25000) - paid(0)
+    expect(updated.due.cents).toBe(75_000);
+
+    // Survives a re-fetch.
+    const reloaded = await caller.v1.invoicing.get({ invoiceId: draft.id });
+    expect(reloaded.termsDays).toBe(30);
+    expect(reloaded.depositPaid.cents).toBe(25_000);
+  });
+
+  it("updateMetadata edits a SENT invoice too", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const draft = await caller.v1.invoicing.draft({
+      leadId: leadAId, title: "S", lines: [{ description: "L", quantity: 1, rateCents: 50_000 }],
+    });
+    await caller.v1.invoicing.send({ invoiceId: draft.id });
+    const edited = await caller.v1.invoicing.updateMetadata({ invoiceId: draft.id, termsDays: 14 });
+    expect(edited.status).toBe("sent");
+    expect(edited.termsDays).toBe(14);
+  });
+
+  it("patchLines replaces lines and recomputes the total", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const draft = await caller.v1.invoicing.draft({
+      leadId: leadAId, title: "P", lines: [{ description: "Old", quantity: 1, rateCents: 10_000 }],
+    });
+    const patched = await caller.v1.invoicing.patchLines({
+      invoiceId: draft.id,
+      lines: [
+        { description: "New A", quantity: 2, rateCents: 20_000 },
+        { description: "New B", quantity: 1, rateCents: 5_000 },
+      ],
+    });
+    expect(patched.lines).toHaveLength(2);
+    expect(patched.total.cents).toBe(45_000);
+
+    const reloaded = await caller.v1.invoicing.get({ invoiceId: draft.id });
+    expect(reloaded.lines).toHaveLength(2);
+    expect(reloaded.total.cents).toBe(45_000);
+  });
+
+  it("rejects updateMetadata on a paid invoice (BAD_REQUEST)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const draft = await caller.v1.invoicing.draft({
+      leadId: leadAId, title: "Paid", lines: [{ description: "L", quantity: 1, rateCents: 40_000 }],
+    });
+    await caller.v1.invoicing.send({ invoiceId: draft.id });
+    await caller.v1.invoicing.recordPayment({
+      invoiceId: draft.id, amountCents: 40_000, method: "cash", idempotencyKey: `edit-${draft.id}`,
+    });
+    await expect(
+      caller.v1.invoicing.updateMetadata({ invoiceId: draft.id, termsDays: 30 }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("a tech is forbidden from updateMetadata", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    await expect(
+      caller.v1.invoicing.updateMetadata({ invoiceId: randomUUID(), termsDays: 30 }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("a different org cannot edit org A's invoice (not_found under RLS)", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const draft = await callerA.v1.invoicing.draft({
+      leadId: leadAId, title: "Iso", lines: [{ description: "L", quantity: 1, rateCents: 1_000 }],
+    });
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    await expect(
+      callerB.v1.invoicing.patchLines({ invoiceId: draft.id, lines: [] }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
 });
