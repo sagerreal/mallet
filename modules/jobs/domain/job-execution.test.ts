@@ -51,7 +51,7 @@ describe("JobLine", () => {
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       expect(r.value.props.description).toBe("Panel swap");
-      expect(r.value.props.rate.cents).toBe(5000);
+      expect(r.value.props.rate).toBe(5000);
       expect(r.value.props.position).toBe(3);
     }
   });

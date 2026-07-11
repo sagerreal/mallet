@@ -19,17 +19,6 @@ export const VERIFY_STATES: readonly VerifyState[] = ["pass", "override"];
 export const isVerifyState = (v: string): v is VerifyState =>
   (VERIFY_STATES as readonly string[]).includes(v);
 
-// ── Money holder used in props ────────────────────────────────────────────────
-
-// Expose money as { cents } in value-object props so consumers (tests, mappers, DTOs)
-// can read the figure without importing the branded-number helpers. The Money brand is
-// used only when constructing the holder, preserving the integer-cents invariant.
-interface MoneyHolder {
-  readonly cents: Money;
-}
-
-const moneyHolder = (cents: number): MoneyHolder => ({ cents: money(cents) });
-
 // ── JobLine ───────────────────────────────────────────────────────────────────
 
 /** Props of a persisted, billable line item on a job. */
@@ -38,8 +27,8 @@ export interface JobLineProps {
   readonly jobId: JobId;
   readonly description: string;
   readonly quantity: number;
-  readonly rate: MoneyHolder;
-  readonly cost: MoneyHolder;
+  readonly rate: Money;
+  readonly cost: Money;
   readonly position: number;
 }
 
@@ -79,8 +68,8 @@ export class JobLine {
         jobId: input.jobId,
         description,
         quantity: input.quantity,
-        rate: moneyHolder(input.rateCents),
-        cost: moneyHolder(input.costCents),
+        rate: money(input.rateCents),
+        cost: money(input.costCents),
         position: input.position,
       }),
     );
@@ -99,8 +88,8 @@ export interface JobAddonProps {
   readonly jobId: JobId;
   readonly description: string;
   readonly quantity: number;
-  readonly rate: MoneyHolder;
-  readonly cost: MoneyHolder;
+  readonly rate: Money;
+  readonly cost: Money;
   readonly isOptional: boolean;
   readonly invoiceSkip: boolean;
   readonly status: AddonStatus;
@@ -149,8 +138,8 @@ export class JobAddon {
         jobId: input.jobId,
         description,
         quantity: input.quantity,
-        rate: moneyHolder(input.rateCents),
-        cost: moneyHolder(input.costCents),
+        rate: money(input.rateCents),
+        cost: money(input.costCents),
         isOptional: input.isOptional,
         invoiceSkip: input.invoiceSkip,
         status: input.status,
