@@ -71,9 +71,15 @@ export function VisitModalContent() {
   }
 
   /** Create the job (unscheduled) + an unplaced visit — same as the New-customer
-   *  "Create job" path; the crew & time get set on the Schedule board. */
+   *  "Create job" path; the crew & time get set on the Schedule board.
+   *
+   *  The visit-modal always has a real lead FK (lead.id), so addJob will persist.
+   *  We do NOT await persisted here because the visit-modal's lead already exists
+   *  in the DB, so addJob will fire create immediately; the visit is queued
+   *  optimistically (addVisit guards on origin === "db" for the network call, but
+   *  the optimistic row is added either way). This keeps the modal instant. */
   function createJobForLead(): Job {
-    const job = addJob({
+    const { job } = addJob({
       leadId: lead!.id,
       svc: "service",
       origin: "manual",

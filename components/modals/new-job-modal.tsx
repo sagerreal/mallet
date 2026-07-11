@@ -238,17 +238,57 @@ export function NewJobModalContent() {
     return true;
   }
 
-  function createJob(job: string) {
+  /** Create a new Job and persist it (along with its visits) to the database.
+   *
+   *  For the "new customer" path (typed name with no matching lead), we first
+   *  create the lead and await the server-assigned id — the job requires a
+   *  non-null lead FK, so we must use the reconciled (server) id, not the
+   *  optimistic one.  This mirrors createEstimate's addLead → await persisted
+   *  pattern from Phase 1.
+   *
+   *  Visit persistence depends on the job having origin === "db" (addVisit guards
+   *  on this before firing v1.visits.createVisit).  addJob now returns
+   *  { job, persisted } — we await persisted (which resolves after v1.jobs.create
+   *  reconciles with origin "db") before calling addVisit so the visits are
+   *  persisted along with the job, not silently dropped.
+   *
+   *  Returns false on failure (error already set via setError).
+   */
+  async function createJob(job: string): Promise<{ ok: boolean; createdJob: Job | null }> {
     const rows = resolvedVisits();
-    const match = matchLead(customer.trim());
-    const created = addJob({
-      leadId: match ? match.id : "",
+    const custName = customer.trim();
+    const match = matchLead(custName);
+
+    // Resolve the lead — either an existing match (already in the DB) or a newly
+    // created one.  For a new lead we MUST await the server-assigned id before
+    // creating the job, because the job's lead_id FK must reference a real row.
+    let lead: Lead;
+    if (match) {
+      lead = match;
+    } else {
+      const { persisted: leadPersisted } = addLead({
+        name: custName || "New customer",
+        phone: phone.trim(),
+        source: "Added manually",
+        stage: "Contacted",
+        job,
+        address: addr.trim() || undefined,
+      });
+      try {
+        lead = await leadPersisted;
+      } catch {
+        setError("Couldn't save the customer — check your connection and try again.");
+        return { ok: false, createdJob: null };
+      }
+    }
+
+    const { job: created, persisted: jobPersisted } = addJob({
+      leadId: lead.id,
       svc: njType, // 'service'
       origin: "manual",
       title: job,
-      addr: addr.trim() || (match?.address ?? ""),
-      phone:
-        phone.trim() || (match && match.phone && match.phone !== "—" ? match.phone : ""),
+      addr: addr.trim() || (lead.address ?? ""),
+      phone: phone.trim() || (lead.phone && lead.phone !== "—" ? lead.phone : ""),
       status: "unscheduled",
       archived: false,
       lines: [],
@@ -258,11 +298,23 @@ export function NewJobModalContent() {
       acts: [],
       visits: [],
     });
+
+    // Await the job reconcile (origin flips to "db") before adding visits so that
+    // addVisit sees origin === "db" and fires v1.visits.createVisit.  Without this
+    // await, visits are added while the job is still "manual" and are silently
+    // skipped by addVisit's origin guard — they would be lost on a page refresh.
+    try {
+      await jobPersisted;
+    } catch {
+      setError("Couldn't save the job — check your connection and try again.");
+      return { ok: false, createdJob: null };
+    }
+
     // Each visit is created UNPLACED (hours only) — dragged onto the Schedule later.
     rows.forEach((v) => addVisit(created.id, v.h));
     // CHECKLIST: chosen before-you-leave template would attach to the job here —
     // deferred (no checklist template data in the store yet).
-    return created;
+    return { ok: true, createdJob: created };
   }
 
   /** Validate + create the job/estimate. For estimates the create is async
@@ -278,7 +330,8 @@ export function NewJobModalContent() {
       const ok = await createEstimate(job);
       return { ok, job: null };
     }
-    return { ok: true, job: createJob(job) };
+    const { ok, createdJob } = await createJob(job);
+    return { ok, job: createdJob };
   }
 
   async function handleSubmit(e: FormEvent) {

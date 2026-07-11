@@ -146,7 +146,17 @@ function withVerify(job: Job, itemId: number, ans: VerifyAns): Job {
 export interface JobsSlice {
   jobs: Job[];
   setJobs: (jobs: Job[]) => void;
-  addJob: (draft: Omit<Job, "id">) => Job;
+  /**
+   * Optimistically inserts the job and fires v1.jobs.create.
+   * Returns { job } synchronously (the optimistic record with the client-authored id)
+   * and { persisted } — a promise that resolves to the reconciled Job after the
+   * server responds (origin flips to "db").  Mirrors addLead's { lead, persisted }.
+   *
+   * Callers that need to run a subsequent operation that requires the job to be
+   * DB-origin (e.g. addVisit, which only persists when origin === "db") MUST
+   * await `persisted` first.
+   */
+  addJob: (draft: Omit<Job, "id">) => { job: Job; persisted: Promise<Job> };
   updateJob: (id: string, patch: Partial<Job>) => void;
   setJobSvc: (id: string, svc: string | null) => void;
   addVisit: (jobId: string, dur?: number) => Visit | null;
@@ -200,6 +210,11 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // addVisit) + optimistic insert + persist via v1.jobs.create + reconcile/rollback.
   // A manual job with no leadId (leadId === "") is a pure local draft — the DB
   // requires a lead FK, so we skip the network call and keep it store-only.
+  //
+  // Returns { job } synchronously (the optimistic record) and { persisted } — a
+  // promise that resolves to the reconciled Job (origin "db") after the server
+  // responds, or rejects on failure.  Callers that call addVisit right after
+  // MUST await persisted first so addVisit sees origin === "db" and persists.
   // ---------------------------------------------------------------------------
   addJob: (draft) => {
     const id = crypto.randomUUID();
@@ -207,13 +222,16 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     set((s) => ({ jobs: [newJob, ...s.jobs] }));
 
     // No lead to attach to → cannot persist (jobs.lead_id is NOT NULL, composite FK).
-    if (!newJob.leadId) return newJob;
+    // Return a persisted promise that resolves immediately to the local-only job.
+    if (!newJob.leadId) {
+      return { job: newJob, persisted: Promise.resolve(newJob) };
+    }
 
     // Snapshot AFTER the optimistic prepend (includes newJob). Rollback filters
     // newJob out by id rather than restoring wholesale, so a concurrent write to
     // `jobs` between the prepend and a failure is preserved, not clobbered.
     const priorJobs = get().jobs;
-    trpcVanilla.v1.jobs.create
+    const persisted: Promise<Job> = trpcVanilla.v1.jobs.create
       .mutate({
         id,
         leadId: newJob.leadId,
@@ -227,13 +245,16 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         // Reconcile: server row id === client id (client-authored), so the board
         // and any queued addVisit calls remain valid. Fold in any optimistic
         // visits already added. Mark origin DB so subsequent visit actions persist.
+        const reconciled: Job = {
+          ...dtoJobToStoreJob(dto),
+          id,
+          origin: JOB_ORIGIN.DB,
+          visits: get().jobs.find((j) => j.id === id)?.visits ?? newJob.visits,
+        };
         set((s) => ({
-          jobs: s.jobs.map((j) =>
-            j.id === id
-              ? { ...dtoJobToStoreJob(dto), id, origin: JOB_ORIGIN.DB, visits: j.visits }
-              : j,
-          ),
+          jobs: s.jobs.map((j) => (j.id === id ? reconciled : j)),
         }));
+        return reconciled;
       })
       .catch((err: unknown) => {
         // Roll back: remove the optimistic job.
@@ -242,9 +263,10 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           // eslint-disable-next-line no-console
           console.error("[jobs-slice] addJob failed — rolled back", { id, err });
         }
+        throw err instanceof Error ? err : new Error("addJob failed");
       });
 
-    return newJob;
+    return { job: newJob, persisted };
   },
 
   updateJob: (id, patch) => {
