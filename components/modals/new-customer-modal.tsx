@@ -1,8 +1,8 @@
 /**
  * components/modals/new-customer-modal.tsx
  * Faithful port of prototype ovQuick / openQuickAdd (lines 1106-1143).
- * Exact field order: Name, Phone (with dup-hint), Customer type (Person/Biz chip toggle),
- * Business name (hidden when Person), Lead source (chip dropdown),
+ * Exact field order: Name, Phone (with dup-hint), Service address (autocomplete),
+ * Customer type (Person/Biz chip toggle), Business name (hidden when Person), Lead source (chip dropdown),
  * Book a visit reveal, More details reveal, footer.
  * NO subtitle. Button label: "Add customer" → "Create job" / "Create estimate visit".
  */
@@ -297,7 +297,19 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           <div className="muted" id="qaDupHint" style={{ fontSize: 12, marginTop: 4 }} />
         </div>
 
-        {/* 3. Customer type chip toggle */}
+        {/* 3. Service address — right under Phone; field service lives or dies on it */}
+        <div className="field">
+          <label>Service address</label>
+          <AddressInput
+            value={address}
+            onChange={setAddress}
+            placeholder="123 Main St, Oakland CA 94601"
+            aria-label="Service address"
+            className="w-full"
+          />
+        </div>
+
+        {/* 4. Customer type chip toggle */}
         <div className="field">
           <label>Customer type</label>
           <div className="chips">
@@ -318,7 +330,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           </div>
         </div>
 
-        {/* 4. Business name — hidden when Person */}
+        {/* 5. Business name — hidden when Person */}
         {isBiz && (
           <div className="field">
             <label>Business name</label>
@@ -331,7 +343,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           </div>
         )}
 
-        {/* 5. Lead source — full-width field-style dropdown (prototype qa-srcbtn) */}
+        {/* 6. Lead source — full-width field-style dropdown (prototype qa-srcbtn) */}
         <div className="field">
           <label>Lead source</label>
           <button
@@ -386,17 +398,6 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           )}
         </div>
 
-        {/* 6. Service address — top-level because field service lives or dies on it */}
-        <div className="field">
-          <label>Service address</label>
-          <AddressInput
-            value={address}
-            onChange={setAddress}
-            placeholder="123 Main St, Oakland CA 94601"
-            aria-label="Service address"
-            className="w-full"
-          />
-        </div>
 
         {/* 7. Book a visit reveal */}
         <div className={`reveal${bookOpen ? " open" : ""}`} style={{ marginBottom: 14 }}>
