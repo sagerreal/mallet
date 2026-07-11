@@ -21,6 +21,18 @@ class FakeRepo implements JobRepository {
   async findBySourceEstimate() { return null; }
   async list() { return { items: [], nextCursor: null }; }
   async listByLead() { return { items: [], nextCursor: null }; }
+  // execution stubs — implemented in Task 5
+  async listExecution() { return { lines: [], addons: [], verifyAnswers: [], photos: [] }; }
+  async addLine() {}
+  async updateLine() { return 0; }
+  async removeLine() { return 0; }
+  async addAddon() {}
+  async setAddonStatus() { return 0; }
+  async setAddonInvoiceSkip() { return 0; }
+  async upsertVerifyAnswer() {}
+  async removeVerifyAnswer() { return 0; }
+  async addPhoto() {}
+  async removePhoto() { return 0; }
 }
 
 const ids = (id = MINTED) => ({ newId: () => id });

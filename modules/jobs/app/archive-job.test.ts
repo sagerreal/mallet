@@ -16,6 +16,18 @@ function repoWith(archiveResult: number): JobRepository {
     findBySourceEstimate: async () => null,
     list: async () => ({ items: [], nextCursor: null }),
     listByLead: async () => ({ items: [], nextCursor: null }),
+    // execution stubs — implemented in Task 5
+    listExecution: async () => ({ lines: [], addons: [], verifyAnswers: [], photos: [] }),
+    addLine: async () => {},
+    updateLine: async () => 0,
+    removeLine: async () => 0,
+    addAddon: async () => {},
+    setAddonStatus: async () => 0,
+    setAddonInvoiceSkip: async () => 0,
+    upsertVerifyAnswer: async () => {},
+    removeVerifyAnswer: async () => 0,
+    addPhoto: async () => {},
+    removePhoto: async () => 0,
   };
 }
 

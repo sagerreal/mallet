@@ -4,6 +4,15 @@ export { createFieldRouter } from "./api/field-router";
 export { createVisitRouter } from "./api/visit-router";
 export type { Job, JobStatus, JobProps } from "./domain/job";
 export type { JobRepository, JobFilter } from "./domain/job-repository";
+export type {
+  JobLine,
+  JobAddon,
+  JobVerifyAnswer,
+  JobPhoto,
+  AddonStatus,
+  VerifyState,
+} from "./domain/job-execution";
+export { JOB_ADDON_STATUSES, VERIFY_STATES, isAddonStatus, isVerifyState } from "./domain/job-execution";
 export type { EstimateReader, EstimateSummary } from "./domain/estimate-reader";
 // Exposed so other modules (e.g. invoicing) can read jobs through this seam without touching
 // jobs internals.

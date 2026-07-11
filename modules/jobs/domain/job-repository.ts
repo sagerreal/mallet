@@ -7,6 +7,7 @@ import type {
   Paginated,
 } from "@mallet/shared/types";
 import type { Job, JobStatus } from "./job";
+import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "./job-execution";
 
 export interface JobFilter {
   readonly status?: JobStatus;
@@ -30,4 +31,24 @@ export interface JobRepository {
   findBySourceEstimate(estimateId: EstimateId): Promise<Job | null>;
   list(page: CursorPage, filter?: JobFilter): Promise<Paginated<Job>>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>>;
+
+  // ── job execution data (Phase 5) ─────────────────────────────────────────
+  // Each returns the loaded child collections for a job so a use-case can hand the router the
+  // refreshed full-job DTO. All are org-implicit (the tx is tenant-scoped) and non-deleted only.
+  listExecution(jobId: JobId): Promise<{
+    lines: JobLine[];
+    addons: JobAddon[];
+    verifyAnswers: JobVerifyAnswer[];
+    photos: JobPhoto[];
+  }>;
+  addLine(line: JobLine, now: Date): Promise<void>;
+  updateLine(line: JobLine, now: Date): Promise<number>; // rows affected; 0 = not found
+  removeLine(jobId: JobId, lineId: string, now: Date): Promise<number>;
+  addAddon(addon: JobAddon, now: Date): Promise<void>;
+  setAddonStatus(jobId: JobId, addonId: string, status: AddonStatus, now: Date): Promise<number>;
+  setAddonInvoiceSkip(jobId: JobId, addonId: string, invoiceSkip: boolean, now: Date): Promise<number>;
+  upsertVerifyAnswer(answer: JobVerifyAnswer, now: Date): Promise<void>;
+  removeVerifyAnswer(jobId: JobId, itemId: number): Promise<number>;
+  addPhoto(photo: JobPhoto, now: Date): Promise<void>;
+  removePhoto(jobId: JobId, photoId: string, now: Date): Promise<number>;
 }

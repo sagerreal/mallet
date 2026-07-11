@@ -14,6 +14,7 @@ import {
 } from "@mallet/shared/types";
 import type { Job } from "../domain/job";
 import type { JobRepository, JobFilter } from "../domain/job-repository";
+import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
@@ -190,6 +191,27 @@ export class DrizzleJobRepository implements JobRepository {
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>> {
     return this.loadPage([isNull(jobs.deletedAt), eq(jobs.leadId, leadId)], page);
   }
+
+  // ── job execution data stubs — implemented in Task 5 ─────────────────────
+  // These satisfy the JobRepository interface until the Drizzle adapters are wired.
+  async listExecution(_jobId: JobId): Promise<{
+    lines: JobLine[];
+    addons: JobAddon[];
+    verifyAnswers: JobVerifyAnswer[];
+    photos: JobPhoto[];
+  }> {
+    return { lines: [], addons: [], verifyAnswers: [], photos: [] };
+  }
+  async addLine(_line: JobLine, _now: Date): Promise<void> { /* TODO Task 5 */ }
+  async updateLine(_line: JobLine, _now: Date): Promise<number> { return 0; }
+  async removeLine(_jobId: JobId, _lineId: string, _now: Date): Promise<number> { return 0; }
+  async addAddon(_addon: JobAddon, _now: Date): Promise<void> { /* TODO Task 5 */ }
+  async setAddonStatus(_jobId: JobId, _addonId: string, _status: AddonStatus, _now: Date): Promise<number> { return 0; }
+  async setAddonInvoiceSkip(_jobId: JobId, _addonId: string, _invoiceSkip: boolean, _now: Date): Promise<number> { return 0; }
+  async upsertVerifyAnswer(_answer: JobVerifyAnswer, _now: Date): Promise<void> { /* TODO Task 5 */ }
+  async removeVerifyAnswer(_jobId: JobId, _itemId: number): Promise<number> { return 0; }
+  async addPhoto(_photo: JobPhoto, _now: Date): Promise<void> { /* TODO Task 5 */ }
+  async removePhoto(_jobId: JobId, _photoId: string, _now: Date): Promise<number> { return 0; }
 
   private async loadPage(baseConds: SQL[], page: CursorPage): Promise<Paginated<Job>> {
     const conds = [...baseConds];
