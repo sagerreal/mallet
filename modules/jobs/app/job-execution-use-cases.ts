@@ -1,5 +1,5 @@
 import type { JobId, Result, AppError, Clock } from "@mallet/shared/types";
-import { notFound, ok, err } from "@mallet/shared/types";
+import { notFound, ok, err, validation } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import type { Job } from "../domain/job";
@@ -262,6 +262,13 @@ export class AddJobPhotoUseCase {
   async exec(cmd: AddJobPhotoCommand, orgId: string): Promise<Result<JobWithExecution, AppError>> {
     const job = await this.repo.findById(cmd.jobId);
     if (!job) return err(notFound("job not found"));
+    // The storage key layout is <org_id>/<job_id>/<uuid>.<ext>. photoUploadUrl mints this
+    // server-side, but addPhoto accepts the path from the client — so reject any path that
+    // isn't within this job's own org/job folder (defense-in-depth against a forged prefix).
+    const prefix = `${orgId}/${cmd.jobId}/`;
+    if (!cmd.storagePath.startsWith(prefix)) {
+      return err(validation("storage path must be within the job's folder", "storagePath"));
+    }
     const photo = JobPhoto.create({
       id: cmd.id ?? this.ids.newId(),
       jobId: cmd.jobId,
