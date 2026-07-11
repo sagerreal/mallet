@@ -1728,9 +1728,19 @@ export default function ComposerPage() {
       adoptEstimate(sentDto, { on: cs.fuOn, stage: 0 });
 
       // Preview drafts from this composer session are superseded by the real send —
-      // archive them so they don't linger in the shop rail (fire-and-forget).
+      // archive them so they don't linger in the shop rail (best-effort; a failed
+      // archive just leaves a draft the user can trash from the estimate modal).
       for (const p of previewDraftsRef.current) {
-        quoteArchiveMutation.mutate({ estimateId: p.id });
+        quoteArchiveMutation.mutate(
+          { estimateId: p.id },
+          {
+            onError: (err) => {
+              if (process.env.NODE_ENV !== "production") {
+                console.error("[composer] preview-draft archive failed", { estimateId: p.id, err });
+              }
+            },
+          },
+        );
       }
       previewDraftsRef.current = [];
 
