@@ -66,6 +66,9 @@ function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
     // cachedTotal: list-DTO total converted to dollars; estTotal() falls back to
     // calcQuote(lines) once the modal loads the full record.
     cachedTotal: dto.total.cents / 100,
+    // publicToken: the /q/<token> share link — carried on summaries so the
+    // estimate modal can send the quote by text/email after a refresh.
+    publicToken: dto.publicToken ?? undefined,
     archived: false,
     trash: false,
   };
