@@ -241,6 +241,13 @@ export function EstimateModalContent() {
             ? "Quote saved — that phone number doesn't look right. Fix it and resend."
             : "Quote saved — that email doesn't look right. Fix it and resend.",
         );
+      } else if (code === "BAD_GATEWAY") {
+        // The provider rejected the send (e.g. Resend refused the from-address/key).
+        setSendError(
+          sendChannel === "text"
+            ? "Quote saved — the texting provider rejected the send. Check the Twilio setup."
+            : "Quote saved — the email provider rejected the send. Check EMAIL_FROM and the Resend key.",
+        );
       } else {
         setSendError("Quote saved — couldn't deliver. Check your connection.");
       }
