@@ -49,7 +49,7 @@ export const jobAddonDTO = z.object({
 });
 
 export const jobVerifyAnswerDTO = z.object({
-  itemId: z.string(),
+  itemId: z.string().min(1),
   state: z.enum(["pass", "override"]),
   via: z.string().nullable(),
   reason: z.string().nullable(),
