@@ -15,6 +15,8 @@ import { SendInvoiceUseCase } from "../app/send-invoice";
 import { RecordPaymentUseCase } from "../app/record-payment";
 import { VoidInvoiceUseCase } from "../app/void-invoice";
 import { ListInvoicesUseCase } from "../app/list-invoices";
+import { UpdateInvoiceMetadataUseCase } from "../app/update-invoice-metadata";
+import { PatchInvoiceLinesUseCase } from "../app/patch-invoice-lines";
 
 const statusEnum = z.enum(INVOICE_STATUSES as unknown as [InvoiceStatus, ...InvoiceStatus[]]);
 const methodEnum = z.enum(PAYMENT_METHODS as unknown as [PaymentMethod, ...PaymentMethod[]]);
@@ -81,6 +83,18 @@ const draftInput = z.object({
   lines: z.array(lineInput).min(1),
 });
 const idInput = z.object({ invoiceId: z.string().uuid() });
+const updateMetadataInput = z.object({
+  invoiceId: z.string().uuid(),
+  leadId: z.string().uuid().optional(),
+  title: z.string().max(500).nullable().optional(),
+  termsDays: z.number().int().min(0).optional(),
+  depositPaidCents: z.number().int().nonnegative().optional(),
+});
+const patchLinesInput = z.object({
+  invoiceId: z.string().uuid(),
+  // empty array clears all lines — deliberately NOT .min(1) like draftInput.
+  lines: z.array(lineInput),
+});
 const recordPaymentInput = z.object({
   invoiceId: z.string().uuid(),
   amountCents: z.number().int().positive(),
@@ -233,6 +247,46 @@ export const createInvoiceRouter = () =>
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new VoidInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock);
         return toInvoiceDTO(orThrow(await useCase.exec({ invoiceId: asInvoiceId(input.invoiceId) })));
+      }),
+
+    updateMetadata: ownerOrOffice
+      .input(updateMetadataInput)
+      .output(invoiceDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new UpdateInvoiceMetadataUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        return toInvoiceDTO(
+          orThrow(
+            await useCase.exec({
+              invoiceId: asInvoiceId(input.invoiceId),
+              leadId: input.leadId ? asLeadId(input.leadId) : undefined,
+              title: input.title,
+              termsDays: input.termsDays,
+              depositPaidCents: input.depositPaidCents,
+            }),
+          ),
+        );
+      }),
+
+    patchLines: ownerOrOffice
+      .input(patchLinesInput)
+      .output(invoiceDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new PatchInvoiceLinesUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+        return toInvoiceDTO(
+          orThrow(
+            await useCase.exec({
+              invoiceId: asInvoiceId(input.invoiceId),
+              lines: input.lines.map((l) => ({
+                description: l.description,
+                quantity: l.quantity,
+                rateCents: l.rateCents,
+                costCents: l.costCents ?? 0,
+              })),
+            }),
+          ),
+        );
       }),
 
     // Create a Stripe-hosted payment link for the invoice balance (returns the URL to send the
