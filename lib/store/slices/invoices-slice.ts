@@ -20,11 +20,11 @@
  *   sendInvoice                → v1.invoicing.draft + v1.invoicing.send sequence
  *   recordPayment              → v1.invoicing.recordPayment
  *   archiveInvoice             → v1.invoicing.void  (only for non-draft invoices)
+ *   updateInvoice   → v1.invoicing.updateMetadata (db invoices; DB-backed fields only)
+ *   setInvoiceLines → v1.invoicing.patchLines     (db invoices; recomputes total)
  *
  * DEFERRED (no backend endpoint yet — store-local only):
  *   addInvoice (blank path)    — skips network; DB row created at sendInvoice time
- *   updateInvoice              — TODO(persist): no generic update-metadata endpoint
- *   setInvoiceLines            — TODO(persist): no patch-lines endpoint; snapshot at send
  *   archiveInvoice on draft    — guarded: only void non-draft invoices
  */
 
@@ -39,6 +39,46 @@ let _nextInvNum = 810;
 
 function linesTotal(lines: InvoiceLine[]): number {
   return lines.reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Metadata payload helper
+// ---------------------------------------------------------------------------
+
+// Only these Invoice fields have DB columns on the invoices header. Everything else
+// (cust/phone/email/fu/archived/pricing/age/payments/status) is client-local — a patch
+// touching only those must NOT hit the network (mirrors buildLeadUpdatePayload).
+export interface InvoiceMetadataPayload {
+  invoiceId: string;
+  leadId?: string;
+  title?: string | null;
+  termsDays?: number;
+  depositPaidCents?: number;
+}
+
+export function buildInvoiceMetadataPayload(
+  id: string,
+  patch: Partial<Invoice>,
+): InvoiceMetadataPayload | null {
+  const payload: InvoiceMetadataPayload = { invoiceId: id };
+  let persistable = false;
+  if ("leadId" in patch && patch.leadId != null && patch.leadId !== "") {
+    payload.leadId = patch.leadId;
+    persistable = true;
+  }
+  if ("title" in patch) {
+    payload.title = patch.title ?? null;
+    persistable = true;
+  }
+  if ("termsDays" in patch && patch.termsDays != null) {
+    payload.termsDays = patch.termsDays;
+    persistable = true;
+  }
+  if ("depPaid" in patch && patch.depPaid != null) {
+    payload.depositPaidCents = Math.round(patch.depPaid * 100); // dollars → cents
+    persistable = true;
+  }
+  return persistable ? payload : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,29 +164,83 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   },
 
   // ---------------------------------------------------------------------------
-  // updateInvoice — store-local for pilot.
-  // The backend has no generic update-metadata endpoint.
-  // Fields like cust, phone, email, termsDays, pricing, depPaid, fu are
-  // captured at the store level and sent as part of the draft/send payload
-  // when sendInvoice fires.
-  // TODO(persist): no backend update-metadata endpoint — all patches are store-local
+  // updateInvoice — optimistic + persist via v1.invoicing.updateMetadata + reconcile.
+  //
+  // All fields (including client-local ones like cust/phone/email) are applied
+  // optimistically. Only DB-backed fields (title, termsDays, depPaid, leadId)
+  // trigger a network call — client-local-only patches skip the network entirely.
+  // Only "db"-origin invoices persist; "manual" invoices stay store-local.
   // ---------------------------------------------------------------------------
-  updateInvoice: (id, patch) =>
-    // TODO(persist): no backend update-metadata endpoint — store-local only
-    set((s) => ({ invoices: s.invoices.map((i) => (i.id === id ? { ...i, ...patch } : i)) })),
+  updateInvoice: (id, patch) => {
+    const prior = snapshotInv(get().invoices, id);
+
+    // 1. Optimistic local update (all fields — client-local included).
+    set((s) => ({ invoices: s.invoices.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
+
+    const inv = get().invoices.find((i) => i.id === id);
+    // 2. Persist only DB-origin invoices with a DB-backed field in the patch.
+    if (!inv || inv.origin !== "db") return;
+    const payload = buildInvoiceMetadataPayload(id, patch);
+    if (!payload) return; // client-local-only patch — no network call
+
+    trpcVanilla.v1.invoicing.updateMetadata
+      .mutate(payload)
+      .then((dto) => {
+        const reconciled = dtoInvoiceToStore(dto, inv);
+        set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
+      })
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[invoices-slice] updateInvoice failed — rolled back", { id, err });
+        }
+      });
+  },
 
   // ---------------------------------------------------------------------------
-  // setInvoiceLines — store-local until sendInvoice fires.
-  // Editing lines re-derives the invoice total (prototype invSetLine behaviour).
-  // TODO(persist): no patch-lines endpoint; snapshot at sendInvoice time
+  // setInvoiceLines — optimistic + persist via v1.invoicing.patchLines + reconcile.
+  //
+  // Lines are applied optimistically and the total is recomputed immediately
+  // (prototype invSetLine behaviour). Only "db"-origin invoices fire the
+  // network call; "manual" invoices stay store-local until sendInvoice.
   // ---------------------------------------------------------------------------
-  setInvoiceLines: (id, lines) =>
-    // TODO(persist): no patch-lines endpoint — store-local; lines snapshotted at send
+  setInvoiceLines: (id, lines) => {
+    const prior = snapshotInv(get().invoices, id);
+
+    // 1. Optimistic update — recompute the total from lines.
     set((s) => ({
       invoices: s.invoices.map((i) =>
-        i.id === id ? { ...i, lines, total: linesTotal(lines) } : i
+        i.id === id ? { ...i, lines, total: linesTotal(lines) } : i,
       ),
-    })),
+    }));
+
+    const inv = get().invoices.find((i) => i.id === id);
+    // 2. Persist only DB-origin invoices; manual drafts snapshot at sendInvoice.
+    if (!inv || inv.origin !== "db") return;
+
+    trpcVanilla.v1.invoicing.patchLines
+      .mutate({
+        invoiceId: id,
+        lines: lines.map((l) => ({
+          description: l.d,
+          quantity: l.q ?? 1,
+          rateCents: Math.round((l.r ?? 0) * 100), // dollars → cents
+          costCents: Math.round((l.c ?? 0) * 100), // dollars → cents; 0 when absent
+        })),
+      })
+      .then((dto) => {
+        const reconciled = dtoInvoiceToStore(dto, inv);
+        set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
+      })
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[invoices-slice] setInvoiceLines failed — rolled back", { id, err });
+        }
+      });
+  },
 
   // ---------------------------------------------------------------------------
   // recordPayment — optimistic + persist via v1.invoicing.recordPayment + reconcile.
