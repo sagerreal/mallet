@@ -601,47 +601,153 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       status: "proposed",
       when: "Just now",
     };
+    const prior = snapshot(get().jobs, jobId);
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => ({ ...j, addons: [...j.addons, addon] })),
     }));
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return addon;
+
+    trpcVanilla.v1.jobs.addAddon
+      .mutate({
+        jobId,
+        description: d,
+        quantity: 1,
+        rateCents: Math.round((draft.r || 0) * 100),
+        costCents: draft.c != null ? Math.round(draft.c * 100) : 0,
+      })
+      .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] addAddon failed — rolled back", { jobId, err });
+        }
+      });
+
     return addon;
   },
 
-  setAddonStatus: (jobId, addonId, status) =>
+  setAddonStatus: (jobId, addonId, status) => {
+    const prior = snapshot(get().jobs, jobId);
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => ({
         ...j,
         addons: j.addons.map((a) => (a.id === addonId ? { ...a, status } : a)),
       })),
-    })),
+    }));
 
-  setAddonInvSkip: (jobId, addonId) =>
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return;
+
+    const target = job.addons.find((a) => a.id === addonId);
+    // Locally-added addon not yet reconciled (no dbId) → skip network, optimistic-only.
+    if (!target?.dbId) return;
+
+    trpcVanilla.v1.jobs.setAddonStatus
+      .mutate({ jobId, addonId: target.dbId, status })
+      .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] setAddonStatus failed — rolled back", { jobId, addonId, err });
+        }
+      });
+  },
+
+  setAddonInvSkip: (jobId, addonId) => {
+    const prior = snapshot(get().jobs, jobId);
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => ({
         ...j,
         addons: j.addons.map((a) => (a.id === addonId ? { ...a, invSkip: true } : a)),
       })),
-    })),
+    }));
 
-  checkVerifyItem: (jobId, itemId) =>
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return;
+
+    const target = job.addons.find((a) => a.id === addonId);
+    // Locally-added addon not yet reconciled (no dbId) → skip network, optimistic-only.
+    if (!target?.dbId) return;
+
+    trpcVanilla.v1.jobs.setAddonInvSkip
+      .mutate({ jobId, addonId: target.dbId, invoiceSkip: true })
+      .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] setAddonInvSkip failed — rolled back", { jobId, addonId, err });
+        }
+      });
+  },
+
+  checkVerifyItem: (jobId, itemId) => {
+    const prior = snapshot(get().jobs, jobId);
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => withVerify(j, itemId, { st: "pass", via: "manual" })),
-    })),
+    }));
 
-  overrideVerifyItem: (jobId, itemId, reason) =>
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return;
+
+    trpcVanilla.v1.jobs.setVerifyAnswer
+      .mutate({ jobId, itemId, state: "pass", via: "manual" })
+      .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] checkVerifyItem failed — rolled back", { jobId, itemId, err });
+        }
+      });
+  },
+
+  overrideVerifyItem: (jobId, itemId, reason) => {
+    const prior = snapshot(get().jobs, jobId);
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => withVerify(j, itemId, { st: "override", reason })),
-    })),
+    }));
 
-  uncheckVerifyItem: (jobId, itemId) =>
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return;
+
+    trpcVanilla.v1.jobs.setVerifyAnswer
+      .mutate({ jobId, itemId, state: "override", reason })
+      .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] overrideVerifyItem failed — rolled back", { jobId, itemId, err });
+        }
+      });
+  },
+
+  uncheckVerifyItem: (jobId, itemId) => {
+    const prior = snapshot(get().jobs, jobId);
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => {
         const { [itemId]: _removed, ...rest } = j.verify?.ans ?? {};
         return { ...j, verify: { ans: rest } };
       }),
-    })),
+    }));
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return;
+
+    trpcVanilla.v1.jobs.setVerifyAnswer
+      .mutate({ jobId, itemId, state: "clear" })
+      .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[jobs-slice] uncheckVerifyItem failed — rolled back", { jobId, itemId, err });
+        }
+      });
+  },
 
   // Push a field photo and auto-pass the next unanswered photo checklist item.
+  // This is the prototype demo path — no file param, remains optimistic-only.
+  // For real photo uploads, use uploadJobPhoto from lib/store/upload-job-photo.ts.
   addJobPhoto: (jobId) =>
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => {

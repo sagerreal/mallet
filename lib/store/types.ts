@@ -152,6 +152,8 @@ export interface JobLine {
 // current bill but kept on the job.
 export interface Addon {
   id: number;
+  /** DB uuid for persistence; id stays numeric for the prototype UI. */
+  dbId?: string;
   d: string;
   q: number;
   r: number;

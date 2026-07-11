@@ -25,6 +25,7 @@ import {
   hhmmToHour,
   hoursBetween,
   toStoreVisit,
+  mapExecution,
 } from "@/lib/store/dto-mapper";
 
 // Re-export the pure time helpers so existing unit tests importing from here
@@ -88,12 +89,10 @@ function toStoreJob(dto: JobSummaryDTO): Job {
     phone: "",
     status,
     archived: false,
-    lines: [],
-    addons: [],
-    photos: [],
     notes: dto.notes ?? "",
     acts: [],
     visits,
+    ...mapExecution(dto),
   };
 }
 
