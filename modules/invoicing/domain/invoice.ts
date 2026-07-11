@@ -46,6 +46,13 @@ export interface InvoiceProps {
   readonly updatedAt: Date;
 }
 
+export interface InvoiceMetadataPatch {
+  readonly leadId?: LeadId;
+  readonly title?: string | null;
+  readonly termsDays?: number;
+  readonly depositPaid?: Money;
+}
+
 // A bill for completed work. Aggregate root over its payment ledger + display lines. Money is
 // integer cents; the balance due is always derived (total − deposit − amountPaid, clamped ≥ 0).
 // The total is a snapshot taken at creation, NOT recomputed from lines.
@@ -125,6 +132,23 @@ export class Invoice {
       return err(validation("lines can only be edited on a draft", "status"));
     }
     return ok(new Invoice({ ...this.p, lines, updatedAt: now }));
+  }
+
+  // Edit header metadata on an open invoice (draft | sent | partial). Frozen once paid/void.
+  // Undefined fields keep their current value; re-runs create() so every invariant
+  // (deposit ≤ total, termsDays ≥ 0) is re-checked.
+  editMetadata(patch: InvoiceMetadataPatch, now: Date): Result<Invoice, ValidationError> {
+    if (this.p.status === "paid" || this.p.status === "void") {
+      return err(validation("a paid or void invoice cannot be edited", "status"));
+    }
+    return Invoice.create({
+      ...this.p,
+      leadId: patch.leadId ?? this.p.leadId,
+      title: patch.title === undefined ? this.p.title : patch.title,
+      termsDays: patch.termsDays ?? this.p.termsDays,
+      depositPaid: patch.depositPaid ?? this.p.depositPaid,
+      updatedAt: now,
+    });
   }
 
   get props(): InvoiceProps {

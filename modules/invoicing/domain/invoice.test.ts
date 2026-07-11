@@ -7,7 +7,7 @@ import {
   zeroMoney,
   isOk,
 } from "@mallet/shared/types";
-import { Invoice, type InvoiceProps } from "./invoice";
+import { Invoice, type InvoiceProps, type InvoiceStatus } from "./invoice";
 import { Payment } from "./payment";
 
 const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
@@ -117,5 +117,98 @@ describe("Invoice.isOverdue", () => {
     expect(draft.isOverdue(now)).toBe(false);
     const notYetDue = make({ status: "sent", dueAt: new Date("2026-06-20T00:00:00Z") });
     expect(notYetDue.isOverdue(now)).toBe(false);
+  });
+});
+
+describe("Invoice.editMetadata", () => {
+  const build = (status: InvoiceStatus, overrides: Partial<InvoiceProps> = {}) => {
+    const r = Invoice.create({
+      id: asInvoiceId("11111111-1111-1111-1111-111111111111"),
+      orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+      num: "INV-900",
+      sourceJobId: null,
+      leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
+      title: "Old title",
+      status,
+      total: money(100_000),
+      depositPaid: money(0),
+      amountPaid: money(0),
+      payments: [],
+      lines: [],
+      termsDays: 7,
+      sentAt: status === "draft" ? null : new Date("2026-07-01T00:00:00Z"),
+      dueAt: null,
+      createdAt: new Date("2026-07-01T00:00:00Z"),
+      updatedAt: new Date("2026-07-01T00:00:00Z"),
+      ...overrides,
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    return r.value;
+  };
+  const now = new Date("2026-07-10T12:00:00Z");
+
+  it("patches leadId/title/termsDays/depositPaid on a draft", () => {
+    const res = build("draft").editMetadata(
+      {
+        leadId: asLeadId("44444444-4444-4444-4444-444444444444"),
+        title: "New title",
+        termsDays: 30,
+        depositPaid: money(25_000),
+      },
+      now,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.leadId).toBe("44444444-4444-4444-4444-444444444444");
+      expect(res.value.props.title).toBe("New title");
+      expect(res.value.props.termsDays).toBe(30);
+      expect(res.value.props.depositPaid).toBe(25_000);
+      expect(res.value.props.updatedAt.toISOString()).toBe(now.toISOString());
+    }
+  });
+
+  it("allows editing a SENT invoice's metadata", () => {
+    const res = build("sent").editMetadata({ termsDays: 14 }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.termsDays).toBe(14);
+  });
+
+  it("keeps fields that are undefined in the patch", () => {
+    const res = build("draft", { title: "Keep me" }).editMetadata({ termsDays: 21 }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.title).toBe("Keep me");
+      expect(res.value.props.leadId).toBe("33333333-3333-3333-3333-333333333333");
+    }
+  });
+
+  it("clears title to null", () => {
+    const res = build("draft").editMetadata({ title: null }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.title).toBeNull();
+  });
+
+  it("rejects editing a PAID invoice", () => {
+    const res = build("paid").editMetadata({ termsDays: 30 }, now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("status");
+  });
+
+  it("rejects editing a VOID invoice", () => {
+    const res = build("void").editMetadata({ termsDays: 30 }, now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("status");
+  });
+
+  it("rejects a negative termsDays", () => {
+    const res = build("draft").editMetadata({ termsDays: -1 }, now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("termsDays");
+  });
+
+  it("rejects a depositPaid greater than total (create invariant)", () => {
+    const res = build("draft").editMetadata({ depositPaid: money(200_000) }, now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("depositPaid");
   });
 });
