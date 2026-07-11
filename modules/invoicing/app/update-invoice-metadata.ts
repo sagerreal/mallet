@@ -1,6 +1,7 @@
 import type { InvoiceId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
 import { money, notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus } from "@mallet/shared/ports";
+import { logger } from "@mallet/shared/observability";
 import type { Invoice } from "../domain/invoice";
 import type { InvoiceRepository } from "../domain/invoice-repository";
 
@@ -38,6 +39,10 @@ export class UpdateInvoiceMetadataUseCase {
     if (!isOk(patched)) return patched;
 
     await this.repo.save(patched.value);
+    logger.info(
+      { invoiceId: patched.value.props.id, orgId: patched.value.props.orgId },
+      "invoice.metadata.updated",
+    );
     await this.bus.emit({
       name: "invoice.updated",
       orgId: patched.value.props.orgId,

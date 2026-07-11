@@ -95,6 +95,14 @@ describe("UpdateInvoiceMetadataUseCase", () => {
     expect(repo.saveCallCount).toBe(0);
   });
 
+  it("returns a validation error and does not save when editing a void invoice", async () => {
+    seed(repo, "void");
+    const res = await useCase.exec({ invoiceId: INV, termsDays: 30 });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.kind).toBe("validation");
+    expect(repo.saveCallCount).toBe(0);
+  });
+
   it("rejects a negative termsDays", async () => {
     seed(repo);
     const res = await useCase.exec({ invoiceId: INV, termsDays: -5 });
