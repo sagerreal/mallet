@@ -855,14 +855,14 @@ function ChecklistItemRow({
 
 interface ChecklistSecProps {
   job: Job;
-  checkItem: (jobId: string, itemId: number) => void;
-  overrideItem: (jobId: string, itemId: number, reason: string) => void;
-  uncheckItem: (jobId: string, itemId: number) => void;
+  checkItem: (jobId: string, itemId: string) => void;
+  overrideItem: (jobId: string, itemId: string, reason: string) => void;
+  uncheckItem: (jobId: string, itemId: string) => void;
   addPhoto: (jobId: string) => void;
 }
 
 function ChecklistSec({ job, checkItem, overrideItem, uncheckItem, addPhoto }: ChecklistSecProps) {
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const vs = jobVerifyState(job);
   if (!vs) return null;
 

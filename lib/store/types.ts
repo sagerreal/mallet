@@ -172,14 +172,15 @@ export interface VerifyAns {
 }
 
 export interface ChecklistItem {
-  id: number;
+  id: string;
   text: string;
   type: "check" | "photo";
   required: boolean;
+  position: number;
 }
 
 export interface Checklist {
-  id: number;
+  id: string;
   name: string;
   trade: string;
   stage: "job" | "scope";
@@ -203,8 +204,8 @@ export interface Job {
   notes: string;
   special?: string;
   prep?: string;
-  // Before-you-leave checklist answers, keyed by checklist item id.
-  verify?: { ans: Record<number, VerifyAns> };
+  // Before-you-leave checklist answers, keyed by checklist item id (string).
+  verify?: { ans: Record<string, VerifyAns> };
   acts: unknown[];
   visits: Visit[];
   checklist?: { name: string; items: ChecklistItem[] };

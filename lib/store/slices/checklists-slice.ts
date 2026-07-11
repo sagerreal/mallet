@@ -3,6 +3,9 @@
  * Checklist templates (job "before you leave" + scope "visit checklist").
  * Seeded with a couple of defaults; the office manages them via openStandards
  * and attaches one per job/estimate. Immutable updates only.
+ *
+ * Ids are deterministic strings (chk-N / itm-N) for the store-only seed.
+ * Persistence is Task 9; no network calls here.
  */
 
 import type { StateCreator } from "zustand";
@@ -11,34 +14,47 @@ import type { Checklist, ChecklistItem } from "../types";
 let _nextChkId = 5000;
 let _nextItemId = 5500;
 
-function item(text: string, type: ChecklistItem["type"] = "check", required = false): ChecklistItem {
-  return { id: ++_nextItemId, text, type, required };
+function mintChkId(): string {
+  return `chk-${++_nextChkId}`;
+}
+
+function mintItemId(): string {
+  return `itm-${++_nextItemId}`;
+}
+
+function item(
+  text: string,
+  type: ChecklistItem["type"] = "check",
+  required = false,
+  position = 0,
+): ChecklistItem {
+  return { id: mintItemId(), text, type, required, position };
 }
 
 const SEED_CHECKLISTS: Checklist[] = [
   {
-    id: ++_nextChkId,
+    id: mintChkId(),
     name: "Water heater — before you leave",
     trade: "Plumbing",
     stage: "job",
     match: ["water heater", "tankless"],
     items: [
-      item("Photo of the finished install", "photo", true),
-      item("Test T&P relief valve", "check", true),
-      item("Check all connections for leaks", "check", true),
-      item("Haul away the old unit", "check", false),
+      item("Photo of the finished install", "photo", true, 0),
+      item("Test T&P relief valve", "check", true, 1),
+      item("Check all connections for leaks", "check", true, 2),
+      item("Haul away the old unit", "check", false, 3),
     ],
   },
   {
-    id: ++_nextChkId,
+    id: mintChkId(),
     name: "Estimate visit — what to capture",
     trade: "General",
     stage: "scope",
     match: [],
     items: [
-      item("Photo of the problem area", "photo", true),
-      item("Model / serial number", "check", false),
-      item("Access & parking notes", "check", false),
+      item("Photo of the problem area", "photo", true, 0),
+      item("Model / serial number", "check", false, 1),
+      item("Access & parking notes", "check", false, 2),
     ],
   },
 ];
@@ -46,10 +62,10 @@ const SEED_CHECKLISTS: Checklist[] = [
 export interface ChecklistsSlice {
   checklists: Checklist[];
   addChecklist: (name: string, stage: Checklist["stage"]) => Checklist;
-  deleteChecklist: (id: number) => void;
-  addChecklistItem: (checklistId: number, text: string, type?: ChecklistItem["type"]) => void;
-  deleteChecklistItem: (checklistId: number, itemId: number) => void;
-  toggleItemRequired: (checklistId: number, itemId: number) => void;
+  deleteChecklist: (id: string) => void;
+  addChecklistItem: (checklistId: string, text: string, type?: ChecklistItem["type"]) => void;
+  deleteChecklistItem: (checklistId: string, itemId: string) => void;
+  toggleItemRequired: (checklistId: string, itemId: string) => void;
 }
 
 export const createChecklistsSlice: StateCreator<ChecklistsSlice, [], [], ChecklistsSlice> = (set) => ({
@@ -57,7 +73,7 @@ export const createChecklistsSlice: StateCreator<ChecklistsSlice, [], [], Checkl
 
   addChecklist: (name, stage) => {
     const chk: Checklist = {
-      id: ++_nextChkId,
+      id: mintChkId(),
       name: name.trim() || "New checklist",
       trade: "Custom",
       stage,
@@ -74,7 +90,9 @@ export const createChecklistsSlice: StateCreator<ChecklistsSlice, [], [], Checkl
   addChecklistItem: (checklistId, text, type = "check") =>
     set((s) => ({
       checklists: s.checklists.map((c) =>
-        c.id === checklistId ? { ...c, items: [...c.items, item(text, type)] } : c
+        c.id === checklistId
+          ? { ...c, items: [...c.items, item(text, type, false, c.items.length)] }
+          : c
       ),
     })),
 

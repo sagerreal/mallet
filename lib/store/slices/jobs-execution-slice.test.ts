@@ -81,23 +81,23 @@ describe("jobs-slice execution actions persist", () => {
 
   it("checkVerifyItem fires setVerifyAnswer(state=pass)", async () => {
     mutate.setVerifyAnswer.mockResolvedValue({ id: "job-1", leadId: "lead-1", title: "T", status: "scheduled", notes: "", visits: [], lines: [], addons: [], verifyAnswers: [{ itemId: 3, state: "pass", via: "manual", reason: null }], photos: [] });
-    store.getState().checkVerifyItem("job-1", 3);
-    expect(store.getState().jobs[0]!.verify?.ans[3]?.st).toBe("pass"); // optimistic
+    store.getState().checkVerifyItem("job-1", "3");
+    expect(store.getState().jobs[0]!.verify?.ans["3"]?.st).toBe("pass"); // optimistic
     await flush();
     expect(mutate.setVerifyAnswer.mock.calls[0]![0]).toMatchObject({ jobId: "job-1", itemId: 3, state: "pass" });
   });
 
   it("overrideVerifyItem fires setVerifyAnswer(state=override, reason)", async () => {
     mutate.setVerifyAnswer.mockResolvedValue({ id: "job-1", leadId: "lead-1", title: "T", status: "scheduled", notes: "", visits: [], lines: [], addons: [], verifyAnswers: [{ itemId: 3, state: "override", via: null, reason: "N/A" }], photos: [] });
-    store.getState().overrideVerifyItem("job-1", 3, "N/A");
+    store.getState().overrideVerifyItem("job-1", "3", "N/A");
     await flush();
     expect(mutate.setVerifyAnswer.mock.calls[0]![0]).toMatchObject({ jobId: "job-1", itemId: 3, state: "override", reason: "N/A" });
   });
 
   it("uncheckVerifyItem fires setVerifyAnswer(state=clear)", async () => {
     mutate.setVerifyAnswer.mockResolvedValue({ id: "job-1", leadId: "lead-1", title: "T", status: "scheduled", notes: "", visits: [], lines: [], addons: [], verifyAnswers: [], photos: [] });
-    store.setState({ jobs: [{ ...store.getState().jobs[0]!, verify: { ans: { 3: { st: "pass", via: "manual" } } } }] });
-    store.getState().uncheckVerifyItem("job-1", 3);
+    store.setState({ jobs: [{ ...store.getState().jobs[0]!, verify: { ans: { "3": { st: "pass", via: "manual" } } } }] });
+    store.getState().uncheckVerifyItem("job-1", "3");
     await flush();
     expect(mutate.setVerifyAnswer.mock.calls[0]![0]).toMatchObject({ jobId: "job-1", itemId: 3, state: "clear" });
   });
