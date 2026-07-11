@@ -31,6 +31,8 @@ export interface LeadProps {
   readonly companyId: CompanyId | null;
   // The contact's role at the company (e.g. "Property manager"). Null when no company or unknown.
   readonly role: string | null;
+  // Free-form notes (gate code, call preferences, etc.). Null when not provided.
+  readonly notes: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -86,9 +88,15 @@ export class Lead {
       value?: Money;
       companyId?: CompanyId | null;
       role?: string | null;
+      notes?: string | null;
     },
     now: Date,
   ): Result<Lead, ValidationError> {
+    // Trim notes to null when empty string — preserve null for "not set".
+    const notes =
+      fields.notes !== undefined
+        ? (fields.notes?.trim() || null)
+        : this.p.notes;
     return Lead.create({
       ...this.p,
       name: fields.name !== undefined ? fields.name : this.p.name,
@@ -98,6 +106,7 @@ export class Lead {
       value: fields.value !== undefined ? fields.value : this.p.value,
       companyId: fields.companyId !== undefined ? fields.companyId : this.p.companyId,
       role: fields.role !== undefined ? fields.role : this.p.role,
+      notes,
       updatedAt: now,
     });
   }

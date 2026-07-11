@@ -130,6 +130,7 @@ function reconcileLeadFromDTO(
     unread: boolean;
     companyId: string | null;
     role: string | null;
+    notes?: string | null;
   },
 ): Lead {
   return {
@@ -146,6 +147,8 @@ function reconcileLeadFromDTO(
     unread: dto.unread,
     companyId: dto.companyId ?? undefined,
     role: dto.role ?? undefined,
+    // notes is persisted; adopt from DTO when present, otherwise keep current.
+    notes: dto.notes !== undefined ? (dto.notes ?? undefined) : current.notes,
     // Explicitly re-pin ALL eight local-only fields so the contract is
     // drift-safe regardless of what the spread above brings in from current.
     age: current.age,
@@ -225,6 +228,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         ...(newLead.source ? { source: newLead.source } : {}),
         ...(newLead.companyId ? { companyId: newLead.companyId } : {}),
         ...(newLead.role ? { role: newLead.role } : {}),
+        ...(newLead.notes ? { notes: newLead.notes } : {}),
       })
       .then((dto) => {
         const reconciled = adoptCreatedLead(newLead, dto);

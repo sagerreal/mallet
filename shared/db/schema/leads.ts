@@ -30,7 +30,10 @@ export const leads = pgTable(
     source: text("source"),
     stage: text("stage").notNull().default("new"),
     valueCents: integer("value_cents").notNull().default(0),
-    unread: boolean("unread").notNull().default(true),
+    unread: boolean("unread").notNull().default(false),
+    // Free-form notes captured at lead creation or edited on the lead modal.
+    // Nullable: most leads are created without notes.
+    notes: text("notes"),
     wonAt: timestamp("won_at", { withTimezone: true }),
     // B2B link: the company this contact works for (nullable — individual contacts have no company).
     companyId: uuid("company_id"),

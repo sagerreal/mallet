@@ -301,6 +301,7 @@ export const customerCreateTool: AgentTool = {
       source: parsed.data.source ?? null,
       companyId: parsed.data.companyId ? asCompanyId(parsed.data.companyId) : null,
       role: parsed.data.role ?? null,
+      notes: null,
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     const p = result.value.lead.props;

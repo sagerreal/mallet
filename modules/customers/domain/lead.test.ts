@@ -11,10 +11,11 @@ const baseProps = (overrides: Partial<LeadProps> = {}): LeadProps => ({
   source: "web",
   stage: "new",
   value: zeroMoney,
-  unread: true,
+  unread: false,
   wonAt: null,
   companyId: null,
   role: null,
+  notes: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,
@@ -196,5 +197,48 @@ describe("Lead.patch", () => {
     if (isOk(result)) {
       expect(result.value.props.phone).toBeNull();
     }
+  });
+
+  it("patches notes and trims empty string to null", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: null })));
+    const withNote = lead.patch({ notes: "gate code 1234" }, now);
+    expect(isOk(withNote)).toBe(true);
+    if (isOk(withNote)) {
+      expect(withNote.value.props.notes).toBe("gate code 1234");
+    }
+    const cleared = lead.patch({ notes: "   " }, now);
+    expect(isOk(cleared)).toBe(true);
+    if (isOk(cleared)) {
+      expect(cleared.value.props.notes).toBeNull();
+    }
+  });
+
+  it("preserves existing notes when notes not in patch", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: "gate code 1234" })));
+    const result = lead.patch({ name: "Karen D." }, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.notes).toBe("gate code 1234");
+    }
+  });
+});
+
+// Bug-fix regression tests
+describe("Lead.create — defaults", () => {
+  it("unread defaults to false on a new lead (bug fix: new leads must start read)", () => {
+    // The schema default changed from true → false. The domain validates the caller-supplied value;
+    // the belt-and-suspenders false in the repo insert ensures DB rows never start unread.
+    const lead = unwrap(Lead.create(baseProps({ unread: false })));
+    expect(lead.props.unread).toBe(false);
+  });
+
+  it("notes defaults to null on a new lead", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: null })));
+    expect(lead.props.notes).toBeNull();
+  });
+
+  it("notes round-trips through Lead.create", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: "gate code 1234" })));
+    expect(lead.props.notes).toBe("gate code 1234");
   });
 });

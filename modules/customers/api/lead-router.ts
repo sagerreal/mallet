@@ -25,6 +25,7 @@ const leadDTO = z.object({
   unread: z.boolean(),
   companyId: z.string().uuid().nullable(),
   role: z.string().nullable(),
+  notes: z.string().nullable(),
   createdAt: z.string(),
 });
 
@@ -39,6 +40,7 @@ const createInput = z.object({
   source: z.string().max(255).optional(),
   companyId: z.string().uuid().nullable().optional(),
   role: z.string().max(255).nullable().optional(),
+  notes: z.string().max(2000).optional(),
 });
 
 const listInput = z.object({
@@ -67,6 +69,7 @@ const toLeadDTO = (lead: Lead) => {
     unread: p.unread,
     companyId: p.companyId,
     role: p.role,
+    notes: p.notes,
     createdAt: p.createdAt.toISOString(),
   };
 };
@@ -200,6 +203,7 @@ export const createLeadRouter = () =>
           source: input.source ?? null,
           companyId: input.companyId ? asCompanyId(input.companyId) : null,
           role: input.role ?? null,
+          notes: input.notes?.trim() || null,
         });
         const { lead, created } = orThrow(result);
         logger.info(

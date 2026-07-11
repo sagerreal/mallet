@@ -11,6 +11,7 @@ export interface EnsureCustomerCommand {
   readonly source: string | null;
   readonly companyId: CompanyId | null;
   readonly role: string | null;
+  readonly notes: string | null;
 }
 
 // Get-or-create a customer. Validation lives here and in the domain factory; the repository
@@ -34,6 +35,7 @@ export class EnsureCustomerUseCase {
       source: cmd.source,
       companyId: cmd.companyId,
       role: cmd.role,
+      notes: cmd.notes,
     });
 
     if (created) {

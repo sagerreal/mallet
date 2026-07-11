@@ -154,6 +154,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       companyId: companyId ?? undefined,
       // Prototype default: contacts linked to a company carry role "Contact".
       role: companyId != null ? "Contact" : undefined,
+      notes: notes.trim() || undefined,
     };
   }
 

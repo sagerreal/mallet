@@ -41,6 +41,7 @@ function toStoreLead(dto: LeadDTO): Lead {
     value: dto.value.cents / 100, // DTO is cents; store Lead.value is dollars.
     companyId: dto.companyId ?? undefined,
     role: dto.role ?? undefined,
+    notes: dto.notes ?? undefined,
     acts: [],
     evisits: [],
     archived: false,

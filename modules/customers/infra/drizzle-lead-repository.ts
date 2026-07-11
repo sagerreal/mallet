@@ -41,6 +41,10 @@ export class DrizzleLeadRepository implements LeadRepository {
         source: input.source,
         companyId: input.companyId,
         role: input.role,
+        // Belt-and-suspenders: new leads are born read. unread is only raised by
+        // inbound SMS (Lead.markUnread), never on create.
+        unread: false,
+        notes: input.notes,
       })
       .onConflictDoNothing({
         target: [leads.orgId, leads.phoneE164],
@@ -119,6 +123,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         wonAt: p.wonAt,
         companyId: p.companyId,
         role: p.role,
+        notes: p.notes,
         updatedAt: p.updatedAt,
       })
       // Guard: org-scoped + non-deleted (defense in depth, mirrors company + task repos).
