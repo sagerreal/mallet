@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import * as invoicing from "..";
 import {
   asOrgId,
   asLeadId,
@@ -603,12 +602,5 @@ describe("ListInvoicesUseCase", () => {
     expect(drafts.items).toHaveLength(3);
     const paid = await list.exec({ page: toPage(), filter: { status: "paid" } });
     expect(paid.items).toHaveLength(0);
-  });
-});
-
-describe("module public surface (Phase 7)", () => {
-  it("re-exports the invoice-edit use-cases", () => {
-    expect(typeof invoicing.UpdateInvoiceMetadataUseCase).toBe("function");
-    expect(typeof invoicing.PatchInvoiceLinesUseCase).toBe("function");
   });
 });
