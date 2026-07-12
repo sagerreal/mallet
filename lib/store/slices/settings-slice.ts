@@ -46,6 +46,11 @@ export interface SourceItem {
   label: string;
 }
 
+// Outcome of addSource so the UI can give feedback instead of silently swallowing a failure:
+// "empty" (blank input), "duplicate" (matches a built-in or an existing custom source), or
+// "failed" (the persist call errored — e.g. a transient connection blip).
+export type AddSourceResult = { ok: true } | { ok: false; reason: "empty" | "duplicate" | "failed" };
+
 export interface BookingService {
   name: string;
   lane: "repair" | "flat" | "estimate";
@@ -230,7 +235,7 @@ export interface SettingsSlice {
   removeTerm: (id: string) => void;
 
   // sources
-  addSource: (name: string) => void;
+  addSource: (name: string) => Promise<AddSourceResult>;
   removeSource: (id: string) => void;
 
   // booking
@@ -407,28 +412,29 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
 
   // ---- sources --------------------------------------------------------------
 
-  addSource: (name) => {
+  addSource: async (name) => {
     const nm = name.trim();
-    if (!nm) return;
-    // Dedupe case-insensitively before persisting — against BOTH the store's
-    // custom sources and the hardcoded defaults; a persisted default duplicate
-    // would be an invisible row (the merged picker already shows the default).
-    if (isDefaultSourceLabel(nm)) return;
-    if (get().sources.some((x) => x.label.toLowerCase() === nm.toLowerCase())) return;
+    if (!nm) return { ok: false, reason: "empty" };
+    // Dedupe case-insensitively — against BOTH the store's custom sources and the hardcoded
+    // defaults; a persisted default duplicate would be an invisible row (the merged picker
+    // already shows the default). Report it so the UI can say so instead of doing nothing.
+    if (isDefaultSourceLabel(nm) || get().sources.some((x) => x.label.toLowerCase() === nm.toLowerCase())) {
+      return { ok: false, reason: "duplicate" };
+    }
     const id = crypto.randomUUID();
     set((s) => ({ sources: [...s.sources, { id, label: nm }] }));
-    void trpcVanilla.v1.settings.sources.create
-      .mutate({ id, label: nm })
-      .then((dto) => {
-        set((s) => ({
-          sources: s.sources.map((x) =>
-            x.id === id ? { id: dto.id, label: dto.label } : x,
-          ),
-        }));
-      })
-      .catch(() => {
-        set((s) => ({ sources: s.sources.filter((x) => x.id !== id) }));
-      });
+    try {
+      const dto = await trpcVanilla.v1.settings.sources.create.mutate({ id, label: nm });
+      set((s) => ({
+        sources: s.sources.map((x) => (x.id === id ? { id: dto.id, label: dto.label } : x)),
+      }));
+      return { ok: true };
+    } catch (e) {
+      // Roll back the optimistic row and surface the failure — never silently swallow it.
+      set((s) => ({ sources: s.sources.filter((x) => x.id !== id) }));
+      if (process.env.NODE_ENV !== "production") console.warn("[addSource] create failed", e);
+      return { ok: false, reason: "failed" };
+    }
   },
 
   removeSource: (id) => {
