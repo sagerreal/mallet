@@ -289,6 +289,18 @@ export class Job {
     );
   }
 
+  // Field-surface authorization predicate: is this user ON the job — the job-level
+  // assignee, or the assignee of any active (non-canceled) visit? Visit-level
+  // assignment counts because the schedule board dispatches crew per visit; a
+  // canceled visit is no longer a claim to the job. Used by the tech-facing
+  // field-router to scope writes (e.g. checklist verify answers) to a tech's own jobs.
+  isAssignedTo(userId: UserId): boolean {
+    if (this.p.assigneeUserId === userId) return true;
+    return this.p.visits.some(
+      (v) => v.props.status !== "canceled" && v.props.assigneeUserId === userId,
+    );
+  }
+
   // Set (or clear, with null) the single assignee. Not allowed once terminal.
   assignTo(userId: UserId | null, now: Date): Result<Job, ValidationError> {
     if (isTerminal(this.p.status)) {

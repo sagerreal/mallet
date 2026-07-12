@@ -16,9 +16,13 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         addAddon: { mutate: (...a: unknown[]) => mutate.addAddon(...a) },
         setAddonStatus: { mutate: (...a: unknown[]) => mutate.setAddonStatus(...a) },
         setAddonInvSkip: { mutate: (...a: unknown[]) => mutate.setAddonInvSkip(...a) },
-        setVerifyAnswer: { mutate: (...a: unknown[]) => mutate.setVerifyAnswer(...a) },
         photoUploadUrl: { mutate: (...a: unknown[]) => mutate.photoUploadUrl(...a) },
         addPhoto: { mutate: (...a: unknown[]) => mutate.addPhoto(...a) },
+      },
+      // Verify answers write through the tech-facing field router (anyRole +
+      // server-side assignment gate) so a tech's check-offs persist too.
+      field: {
+        setVerifyAnswer: { mutate: (...a: unknown[]) => mutate.setVerifyAnswer(...a) },
       },
     },
   },

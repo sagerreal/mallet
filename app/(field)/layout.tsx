@@ -6,6 +6,7 @@ import { Topbar } from "@/components/shell/topbar";
 import { CommandBar } from "@/components/shell/command-bar";
 import { CallBar } from "@/components/shell/call-bar";
 import { ModalHost } from "@/components/modals/modal-host";
+import { FieldJobsHydrator } from "@/features/field/field-jobs-hydrator";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,10 @@ export default async function FieldLayout({ children }: { children: ReactNode })
   await guardRole(["owner", "office", "tech"]);
   return (
     <div className="appshell field-shell">
+      {/* Fills store.jobs from v1.field.myDay — the office JobsHydrator is
+          ownerOrOffice-only, so without this a tech's store (and the
+          tech-job-modal it feeds) would stay empty. */}
+      <FieldJobsHydrator />
       <div className="layout">
         <Sidebar />
         <div className="appmain">

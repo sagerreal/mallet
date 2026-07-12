@@ -9,7 +9,8 @@ import type { Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 
-// Integration tests for the tech-facing field surface: v1.field.myDay / start / complete.
+// Integration tests for the tech-facing field surface: v1.field.myDay / start / complete /
+// setVerifyAnswer.
 // The assignment boundary is the security primitive: a tech may only act on jobs assigned to them.
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
@@ -179,6 +180,90 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     } finally {
       await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id})`;
       await admin`delete from users where id = ${orderTechId}`;
+    }
+  });
+
+  // ── v1.field.setVerifyAnswer — checklist check-offs from the job site ──────
+
+  const CHECKLIST = JSON.stringify({
+    name: "Before you leave",
+    items: [{ id: "i1", text: "Water back on", type: "check", required: true }],
+  });
+
+  const seedChecklistJob = async (num: string, assigneeId: string | null): Promise<string> => {
+    const [row] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, checklist)
+      values (${orgId}, ${leadId}, ${num}, 'in_progress', 0, ${assigneeId}, ${CHECKLIST}::jsonb)
+      returning id
+    `;
+    return row!.id;
+  };
+
+  it("assigned tech saves a verify answer, it survives a myDay re-read, and clear removes it", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-01", techAId);
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+      const dto = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(dto.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
+
+      // Survives a re-read through the tech's own surface — myDay must carry the
+      // checklist AND the saved answers (execution data), not just job headers.
+      const day = await caller.v1.field.myDay();
+      const mine = day.items.find((i) => i.id === jobId);
+      expect(mine?.checklist?.items[0]?.id).toBe("i1");
+      expect(mine?.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
+
+      const cleared = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "clear" });
+      expect(cleared.verifyAnswers).toEqual([]);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  it("tech assigned only via an ACTIVE VISIT can save (job-level assignee is someone else)", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-02", techBId);
+    await admin`
+      insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+      values (${orgId}, ${jobId}, ${techAId}, 'pending', 1)
+    `;
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      const dto = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(dto.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  it("tech NOT on the job gets FORBIDDEN and nothing is written (a canceled visit is no claim)", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-03", techBId);
+    // techA once had a visit here, but it was canceled — that must not grant access.
+    await admin`
+      insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+      values (${orgId}, ${jobId}, ${techAId}, 'canceled', 1)
+    `;
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await expect(
+        caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      const rows = await admin`select id from job_verify_answers where job_id = ${jobId}`;
+      expect(rows).toHaveLength(0);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  it("office/owner saves through the field procedure without an assignment (override with reason)", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-04", techBId);
+    try {
+      const caller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const dto = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "override", reason: "N/A today" });
+      expect(dto.verifyAnswers).toEqual([{ itemId: "i1", state: "override", via: null, reason: "N/A today" }]);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
     }
   });
 });

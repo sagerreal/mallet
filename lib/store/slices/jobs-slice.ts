@@ -1011,7 +1011,10 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
-    trpcVanilla.v1.jobs.setVerifyAnswer
+    // v1.field.setVerifyAnswer is anyRole (owner/office/tech) with a server-side
+    // assignment gate for techs — the office path behaves exactly like the old
+    // v1.jobs.setVerifyAnswer call; the tech path now actually persists.
+    trpcVanilla.v1.field.setVerifyAnswer
       .mutate({ jobId, itemId, state: "pass", via: "manual" })
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
@@ -1031,7 +1034,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
-    trpcVanilla.v1.jobs.setVerifyAnswer
+    trpcVanilla.v1.field.setVerifyAnswer
       .mutate({ jobId, itemId, state: "override", reason })
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
@@ -1054,7 +1057,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
-    trpcVanilla.v1.jobs.setVerifyAnswer
+    trpcVanilla.v1.field.setVerifyAnswer
       .mutate({ jobId, itemId, state: "clear" })
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {

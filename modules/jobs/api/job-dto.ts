@@ -65,6 +65,16 @@ export const jobVerifyAnswerDTO = z.object({
   reason: z.string().nullable(),
 });
 
+// Input for writing one verify answer. Shared by BOTH surfaces — the office
+// job-router and the tech field-router — so the contract can't drift between them.
+export const setVerifyAnswerInput = z.object({
+  jobId: z.string().uuid(),
+  itemId: z.string().min(1),
+  state: z.enum(["pass", "override", "clear"]),
+  via: z.string().max(50).nullable().optional(),
+  reason: z.string().max(2000).nullable().optional(),
+});
+
 // Before-you-leave checklist snapshot on the job (order = array order). Crew
 // ANSWERS ride jobVerifyAnswerDTO — this is only the attached list itself.
 export const jobChecklistDTO = z.object({
