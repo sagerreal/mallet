@@ -118,6 +118,25 @@ export function EstimateModalContent() {
     // read from the store copy at that moment.
   }, [fullQuery.data]);
 
+  const lead = leads.find((l) => l.id === e?.leadId);
+
+  // Sync dest when the panel opens or channel changes. Lives ABOVE the early returns —
+  // every hook must run on every render or React throws when the returns start firing.
+  useEffect(() => {
+    if (!sendOpen) return;
+    const val =
+      sendChannel === "text"
+        ? lead?.phone && lead.phone !== "—"
+          ? lead.phone
+          : ""
+        : (lead?.email ?? "");
+    setDest(val);
+    setDestError(null);
+    setSendError(null);
+  // lead?.id is the stable dep: re-run when panel opens/channel changes/customer changes.
+  // lead.phone / lead.email are intentionally excluded to avoid spurious resets on every render.
+  }, [sendOpen, sendChannel, lead?.id]);
+
   if (!e) return null;
 
   // L2: surface a non-not_found query error inline rather than silently leaving the table empty.
@@ -137,7 +156,6 @@ export function EstimateModalContent() {
     );
   }
 
-  const lead = leads.find((l) => l.id === e.leadId);
   const m = calcQuote(e.lines, e.pricing);
   const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
   const stamp = STATUS_STAMP[e.status] ?? { cls: "ink", label: e.status };
@@ -145,22 +163,6 @@ export function EstimateModalContent() {
   // Derive default channel: text if lead has a phone, else email.
   const defaultChannel: "text" | "email" =
     lead?.phone && lead.phone !== "—" ? "text" : "email";
-
-  // Sync dest when the panel opens or channel changes.
-  useEffect(() => {
-    if (!sendOpen) return;
-    const val =
-      sendChannel === "text"
-        ? lead?.phone && lead.phone !== "—"
-          ? lead.phone
-          : ""
-        : (lead?.email ?? "");
-    setDest(val);
-    setDestError(null);
-    setSendError(null);
-  // lead?.id is the stable dep: re-run when panel opens/channel changes/customer changes.
-  // lead.phone / lead.email are intentionally excluded to avoid spurious resets on every render.
-  }, [sendOpen, sendChannel, lead?.id]);
 
   function openSendPanel() {
     setSendChannel(defaultChannel);
