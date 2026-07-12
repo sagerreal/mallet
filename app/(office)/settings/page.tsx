@@ -20,6 +20,7 @@ import { useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
+import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { FoldCard } from "./fold-card";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
@@ -493,21 +494,7 @@ function SecSources() {
         </div>
       </FoldCard>
 
-      <FoldCard title="Lead marketplaces" summary="Angi · Thumbtack · Google · Yelp">
-        {[
-          { name: "Angi", k: "angi" },
-          { name: "Thumbtack", k: "thumbtack" },
-          { name: "Google LSA", k: "google-lsa" },
-          { name: "Yelp", k: "yelp" },
-        ].map((c) => (
-          <div key={c.k} className="stage-row">
-            <span style={{ fontWeight: 700 }}>{c.name}</span>
-            <span className="trig">Not connected</span>
-            {/* deferred: external integration (marketplace connect) */}
-            <button className="btn sm primary" onClick={() => {}}>Connect</button>
-          </div>
-        ))}
-      </FoldCard>
+      <LeadMarketplacesCard />
 
       <FoldCard title="Import customers" summary="CSV">
         <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
