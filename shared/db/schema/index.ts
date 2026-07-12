@@ -24,3 +24,4 @@ export * from "./pricebook-items";
 export * from "./labor-rates";
 export * from "./job-terms";
 export * from "./lead-sources";
+export * from "./inbound-endpoints";
