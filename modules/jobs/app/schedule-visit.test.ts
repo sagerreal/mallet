@@ -31,6 +31,7 @@ const visitProps = (overrides: Partial<JobVisitProps> = {}): JobVisitProps => ({
   scheduledDate: null,
   scheduledStart: null,
   scheduledEnd: null,
+  durationMinutes: null,
   status: "pending",
   startedAt: null,
   completedAt: null,
@@ -193,6 +194,15 @@ describe("ScheduleVisitUseCase", () => {
     expect(updatedVisit.props.scheduledDate).toBe("2026-07-20");
     expect(updatedVisit.props.scheduledStart).toBe("08:00");
     expect(updatedVisit.props.scheduledEnd).toBe("10:00");
+  });
+
+  it("syncs durationMinutes with the placed window (stale explicit length is replaced)", async () => {
+    const job = makeJob({ visits: [makeVisit({ durationMinutes: 60 })] });
+    repo.seed(job);
+    const result = await useCase.exec(baseCmd()); // durationHours: 2
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.visits[0]?.props.durationMinutes).toBe(120);
   });
 
   it("happy path: persists the updated job to the repository", async () => {

@@ -46,9 +46,13 @@ export class UpdateVisitDurationUseCase {
       return err(validation("start + duration exceeds midnight", "durationHours"));
     }
 
+    // Persist durationMinutes for BOTH placed and unplaced visits. Before the
+    // duration_minutes column existed this use-case silently no-opped for
+    // unplaced visits (no start → no end to recompute), losing the typed hours.
     const updated = JobVisit.create({
       ...visit.props,
       scheduledEnd: newEnd,
+      durationMinutes: Math.round(cmd.durationHours * 60),
     });
     if (!isOk(updated)) return updated;
 

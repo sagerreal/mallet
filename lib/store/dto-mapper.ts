@@ -127,7 +127,12 @@ export function toStoreVisit(v: VisitDTO): Visit {
     techId: v.assigneeUserId ?? null,
     date: v.scheduledDate ?? null,
     start: v.scheduledStart ? hhmmToHour(v.scheduledStart) : null,
-    dur: hoursBetween(v.scheduledStart, v.scheduledEnd),
+    // durationMinutes is the authoritative length (persists for unplaced visits
+    // too); the start→end window is the fallback for legacy rows without it.
+    dur:
+      v.durationMinutes != null
+        ? v.durationMinutes / 60
+        : hoursBetween(v.scheduledStart, v.scheduledEnd),
     status: toStoreVisitStatusInternal(v.status),
     ...(v.notes ? { scopeNotes: v.notes } : {}),
   };

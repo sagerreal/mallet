@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockArchive = vi.fn();
+const mockCreateVisit = vi.fn();
+const mockUpdateVisitDuration = vi.fn();
+const mockSetVisitStatus = vi.fn();
 
 // jobs-slice imports RouterOutputs from @/lib/trpc/client for type purposes only.
 vi.mock("@/lib/trpc/client", () => ({ api: {} }));
@@ -16,7 +19,9 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         archive: { mutate: (...a: unknown[]) => mockArchive(...a) },
       },
       visits: {
-        createVisit: { mutate: vi.fn() },
+        createVisit: { mutate: (...a: unknown[]) => mockCreateVisit(...a) },
+        updateVisitDuration: { mutate: (...a: unknown[]) => mockUpdateVisitDuration(...a) },
+        setVisitStatus: { mutate: (...a: unknown[]) => mockSetVisitStatus(...a) },
       },
     },
   },
@@ -312,6 +317,251 @@ describe("adoptJob", () => {
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockArchive).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Visit hardening (live-testing batch 2): addVisit dedupe, pending-create
+// merge guard, duration-debounce value capture + chaining.
+// ---------------------------------------------------------------------------
+
+/** Deferred promise — lets a test hold a mutation in flight. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Full visitDTO shape (matches the visitDTO zod schema). */
+function makeVisitDTO(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    assigneeUserId: null,
+    scheduledDate: null,
+    scheduledStart: null,
+    scheduledEnd: null,
+    durationMinutes: 120,
+    status: "pending",
+    startedAt: null,
+    completedAt: null,
+    notes: null,
+    position: 1,
+    ...overrides,
+  };
+}
+
+/** Seed one DB-origin job (optionally with store visits) into a fresh store. */
+function seedDbJob(
+  get: ReturnType<typeof makeStore>["get"],
+  id: string,
+  visits: Job["visits"] = [],
+) {
+  get().setJobs([{ ...draft, id, origin: "db", visits }]);
+}
+
+// Chained ops (chain() + .then/.catch/.finally) settle across several
+// microtask turns — flush generously.
+const flush = async () => {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+};
+
+describe("addVisit dedupe guard (pending create)", () => {
+  beforeEach(() => { mockCreateVisit.mockReset(); });
+
+  it("returns the existing unplaced visit while its create is still in flight", async () => {
+    const d = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(d.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-dedupe");
+
+    const first = get().addVisit("j-dedupe");
+    const second = get().addVisit("j-dedupe");
+
+    expect(first).not.toBeNull();
+    expect(second!.id).toBe(first!.id); // no second row minted
+    expect(get().jobs[0]!.visits).toHaveLength(1);
+    await flush(); // chain() defers the mutate by a microtask
+    expect(mockCreateVisit).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a real second visit once the first create settles", async () => {
+    const d = deferred<unknown>();
+    mockCreateVisit.mockReturnValueOnce(d.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-second");
+
+    const first = get().addVisit("j-second")!;
+    d.resolve(makeJobDTO("j-second", { visits: [makeVisitDTO(first.id)] }));
+    await flush();
+
+    mockCreateVisit.mockReturnValueOnce(deferred<unknown>().promise);
+    const second = get().addVisit("j-second")!;
+    expect(second.id).not.toBe(first.id);
+    expect(get().jobs[0]!.visits).toHaveLength(2);
+    await flush();
+    expect(mockCreateVisit).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not dedupe local-only jobs (no create in flight)", () => {
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-local-v", origin: "manual" }]);
+
+    const first = get().addVisit("j-local-v")!;
+    const second = get().addVisit("j-local-v")!;
+    expect(second.id).not.toBe(first.id);
+    expect(get().jobs[0]!.visits).toHaveLength(2);
+    expect(mockCreateVisit).not.toHaveBeenCalled();
+  });
+
+  it("rolls back the optimistic visit when the create fails", async () => {
+    const d = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(d.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-fail");
+
+    get().addVisit("j-fail");
+    expect(get().jobs[0]!.visits).toHaveLength(1);
+    d.reject(new Error("network"));
+    await flush();
+    expect(get().jobs[0]!.visits).toHaveLength(0); // optimistic row removed
+  });
+});
+
+describe("pending-create merge guard", () => {
+  beforeEach(() => {
+    mockCreateVisit.mockReset();
+    mockSetVisitStatus.mockReset();
+  });
+
+  it("setJobs (hydrator snapshot) keeps a visit whose create is still in flight", () => {
+    const d = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(d.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-guard");
+    const visit = get().addVisit("j-guard")!;
+
+    // A list snapshot read BEFORE the create committed: no visits.
+    get().setJobs([{ ...draft, id: "j-guard", origin: "db", visits: [] }]);
+
+    const ids = get().jobs[0]!.visits.map((v) => v.id);
+    expect(ids).toContain(visit.id); // optimistic visit survived the merge
+  });
+
+  it("mutation reconcile keeps the pending visit absent from the returned DTO", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    const serverVisit = { id: "aaaaaaaa-0000-0000-0000-000000000001", date: null, techId: null, start: null, dur: 2, status: "scheduled" };
+    const { get } = makeStore();
+    seedDbJob(get, "j-recon", [serverVisit]);
+
+    const optimistic = get().addVisit("j-recon")!; // create stays in flight
+
+    // A concurrent setVisitStatus on the server-known visit resolves with a
+    // DTO snapshot that does not include the still-uncommitted visit.
+    mockSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-recon", { visits: [makeVisitDTO(serverVisit.id)] }),
+    );
+    get().setVisitStatus("j-recon", serverVisit.id, "onsite");
+    await flush();
+
+    const ids = get().jobs[0]!.visits.map((v) => v.id);
+    expect(ids).toContain(serverVisit.id);
+    expect(ids).toContain(optimistic.id); // NOT stomped by the reconcile
+  });
+
+  it("after the create settles, snapshots are authoritative again", async () => {
+    const d = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(d.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-settled");
+    const visit = get().addVisit("j-settled")!;
+
+    d.resolve(makeJobDTO("j-settled", { visits: [makeVisitDTO(visit.id)] }));
+    await flush();
+
+    // Server later says the visit is gone (e.g. removed elsewhere) — no guard.
+    get().setJobs([{ ...draft, id: "j-settled", origin: "db", visits: [] }]);
+    expect(get().jobs[0]!.visits).toHaveLength(0);
+  });
+});
+
+describe("updateVisit duration debounce", () => {
+  beforeEach(() => {
+    mockCreateVisit.mockReset();
+    mockUpdateVisitDuration.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const storeVisit = (id: string) =>
+    ({ id, date: null, techId: null, start: null, dur: 2, status: "scheduled" });
+
+  it("collapses a typing burst to ONE mutation carrying the LAST value", async () => {
+    mockUpdateVisitDuration.mockResolvedValue(
+      makeJobDTO("j-burst", { visits: [makeVisitDTO("bbbbbbbb-0000-0000-0000-000000000001", { durationMinutes: 300 })] }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-burst", [storeVisit("bbbbbbbb-0000-0000-0000-000000000001")]);
+
+    get().updateVisit("j-burst", "bbbbbbbb-0000-0000-0000-000000000001", { dur: 3 });
+    get().updateVisit("j-burst", "bbbbbbbb-0000-0000-0000-000000000001", { dur: 5 });
+    await vi.advanceTimersByTimeAsync(400);
+    await flush();
+
+    expect(mockUpdateVisitDuration).toHaveBeenCalledTimes(1);
+    expect(mockUpdateVisitDuration).toHaveBeenCalledWith(
+      expect.objectContaining({ durationHours: 5 }),
+    );
+  });
+
+  it("persists the CAPTURED value even when a reconcile stomps the store dur inside the window", async () => {
+    mockUpdateVisitDuration.mockResolvedValue(
+      makeJobDTO("j-stomp", { visits: [makeVisitDTO("bbbbbbbb-0000-0000-0000-000000000002", { durationMinutes: 300 })] }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-stomp", [storeVisit("bbbbbbbb-0000-0000-0000-000000000002")]);
+
+    get().updateVisit("j-stomp", "bbbbbbbb-0000-0000-0000-000000000002", { dur: 5 });
+    // A stale snapshot lands during the debounce window and resets dur to 2.
+    get().setJobs([{ ...draft, id: "j-stomp", origin: "db", visits: [storeVisit("bbbbbbbb-0000-0000-0000-000000000002")] }]);
+    await vi.advanceTimersByTimeAsync(400);
+    await flush();
+
+    // The old code re-read the store here and would have sent 2.
+    expect(mockUpdateVisitDuration).toHaveBeenCalledWith(
+      expect.objectContaining({ durationHours: 5 }),
+    );
+  });
+
+  it("serializes the duration mutation behind the visit's in-flight createVisit", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    mockUpdateVisitDuration.mockResolvedValue(makeJobDTO("j-chain", { visits: [] }));
+    const { get } = makeStore();
+    seedDbJob(get, "j-chain");
+
+    const visit = get().addVisit("j-chain")!; // create stays pending
+    get().updateVisit("j-chain", visit.id, { dur: 3 });
+    await vi.advanceTimersByTimeAsync(400);
+    await flush();
+
+    // Debounce fired, but the mutation is queued behind the pending create.
+    expect(mockUpdateVisitDuration).not.toHaveBeenCalled();
+
+    create.resolve(makeJobDTO("j-chain", { visits: [makeVisitDTO(visit.id)] }));
+    await flush();
+
+    expect(mockUpdateVisitDuration).toHaveBeenCalledTimes(1);
+    expect(mockUpdateVisitDuration).toHaveBeenCalledWith(
+      expect.objectContaining({ visitId: visit.id, durationHours: 3 }),
+    );
   });
 });
 

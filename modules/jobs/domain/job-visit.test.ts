@@ -20,6 +20,7 @@ const visitProps = (overrides: Partial<JobVisitProps> = {}): JobVisitProps => ({
   scheduledDate: null,
   scheduledStart: null,
   scheduledEnd: null,
+  durationMinutes: null,
   status: "pending",
   startedAt: null,
   completedAt: null,
@@ -104,6 +105,26 @@ describe("JobVisit.create", () => {
 
   it("accepts null start/end (unplaced visit)", () => {
     expect(JobVisit.create(visitProps({ scheduledStart: null, scheduledEnd: null })).ok).toBe(true);
+  });
+
+  it("accepts a valid durationMinutes on an unplaced visit", () => {
+    expect(JobVisit.create(visitProps({ durationMinutes: 90 })).ok).toBe(true);
+  });
+
+  it("accepts null durationMinutes (legacy row)", () => {
+    expect(JobVisit.create(visitProps({ durationMinutes: null })).ok).toBe(true);
+  });
+
+  it("accepts the 1440-minute (24h) ceiling", () => {
+    expect(JobVisit.create(visitProps({ durationMinutes: 1440 })).ok).toBe(true);
+  });
+
+  it("rejects zero / negative / fractional / over-24h durationMinutes", () => {
+    for (const durationMinutes of [0, -15, 90.5, 1441]) {
+      const r = JobVisit.create(visitProps({ durationMinutes }));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.field).toBe("durationMinutes");
+    }
   });
 });
 

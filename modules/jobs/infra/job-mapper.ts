@@ -20,6 +20,7 @@ const toVisit = (row: JobVisitRow): JobVisit => {
     scheduledDate: row.scheduledDate ?? null,
     scheduledStart: toHHMM(row.scheduledStart ?? null),
     scheduledEnd: toHHMM(row.scheduledEnd ?? null),
+    durationMinutes: row.durationMinutes ?? null,
     status: row.status,
     startedAt: row.startedAt ?? null,
     completedAt: row.completedAt ?? null,

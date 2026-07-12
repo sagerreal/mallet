@@ -36,6 +36,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
+import { DurField } from "./dur-field";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -125,49 +126,8 @@ function invDue(i: Invoice): number {
   return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
 }
 
-// ---- minute-precise Length field (prototype visitDurField) -----------------
-
-interface DurFieldProps {
-  dur: number;
-  onChange: (dur: number) => void;
-}
-
-/** Length as h + m (not a coarse 0.5h step) — mirrors visitDurField. */
-function DurField({ dur, onChange }: DurFieldProps) {
-  const h = Math.floor(dur || 0);
-  const m = Math.round(((dur || 0) - h) * 60);
-
-  function commit(nextH: number, nextM: number) {
-    const hh = Math.max(0, nextH);
-    const mm = Math.max(0, Math.min(59, nextM));
-    onChange(Math.max(0.25, hh + mm / 60));
-  }
-
-  return (
-    <div className="field" style={{ margin: 0 }}>
-      <label>Length</label>
-      <div className="sched-dur" style={{ flexWrap: "nowrap" }}>
-        <input
-          type="number"
-          min={0}
-          max={24}
-          value={h}
-          onChange={(e) => commit(Number(e.target.value) || 0, m)}
-        />
-        <span className="unit">h</span>
-        <input
-          type="number"
-          min={0}
-          max={59}
-          step={5}
-          value={m}
-          onChange={(e) => commit(h, Number(e.target.value) || 0)}
-        />
-        <span className="unit">m</span>
-      </div>
-    </div>
-  );
-}
+// ---- minute-precise Length field: extracted to ./dur-field (draft-input
+// rewrite — commit on blur/Enter instead of per-keystroke clamping) ----------
 
 // ---- visit row (prototype visitRow, lines 4677-4698) -----------------------
 

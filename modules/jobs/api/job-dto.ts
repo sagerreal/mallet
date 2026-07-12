@@ -20,6 +20,9 @@ export const visitDTO = z.object({
   scheduledDate: z.string().nullable(),
   scheduledStart: z.string().nullable(),
   scheduledEnd: z.string().nullable(),
+  // Authoritative length in minutes; null only for legacy rows (client falls back
+  // to the start→end window).
+  durationMinutes: z.number().int().nullable(),
   status: visitStatusEnum,
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
@@ -164,6 +167,7 @@ export const toVisitDTO = (visit: import("../domain/job").JobVisit) => {
     scheduledDate: v.scheduledDate,
     scheduledStart: v.scheduledStart,
     scheduledEnd: v.scheduledEnd,
+    durationMinutes: v.durationMinutes,
     status: v.status,
     startedAt: iso(v.startedAt),
     completedAt: iso(v.completedAt),

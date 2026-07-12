@@ -27,7 +27,22 @@
  * RESIZE debounce: updateVisit for duration fires on every mousemove.
  * A module-level timer keyed by visitId collapses the stream to ONE
  * updateVisitDuration mutation per drag (~400 ms trailing).  The local
- * optimistic update still runs every move for smoothness.
+ * optimistic update still runs every move for smoothness.  The debounced
+ * mutation captures the LAST duration value in its closure (never re-reads
+ * the store at fire time — a reconcile landing inside the window would make
+ * it persist a stale value) and is serialized through the per-visit op chain
+ * so it can never race the visit's own createVisit.
+ *
+ * PENDING-CREATE MERGE GUARD: reconciles and the hydrator's setJobs replace
+ * job.visits wholesale from server snapshots. A snapshot read before an
+ * in-flight createVisit commits doesn't know the optimistic visit — dropping
+ * it made the user (or the schedule board's auto-add) add it again → two
+ * rows. Every snapshot merge therefore re-attaches store visits whose create
+ * op is still pending and which are absent from the snapshot. Once the op
+ * settles the visit arrives from the server (or is rolled back) and the
+ * guard no longer applies. addVisit also dedupes: while a job has an
+ * unplaced visit with a pending create, it returns THAT visit instead of
+ * minting a second one.
  *
  * EVISIT actions in leads-slice are intentionally NOT persisted (they
  * are lead-owned and deferred to a future phase).
@@ -62,6 +77,10 @@ const _durRollback = new Map<string, Job>();
 // strictly in order while different visits stay concurrent.
 // ---------------------------------------------------------------------------
 const _visitOpChain = new Map<string, Promise<unknown>>();
+
+// The create-op leg of _visitOpChain: visit ids whose createVisit mutation has
+// not settled yet. Powers the pending-create merge guard + addVisit dedupe.
+const _pendingVisitCreates = new Set<string>();
 
 function chain(visitId: string, fn: () => Promise<unknown>): void {
   const prev = _visitOpChain.get(visitId) ?? Promise.resolve();
@@ -196,9 +215,25 @@ function snapshot(jobs: Job[], jobId: string): Job | undefined {
   return jobs.find((j) => j.id === jobId);
 }
 
-/** Replace one job with the server-reconciled version. */
+/**
+ * Merge guard: re-attach the prior store job's visits whose createVisit is
+ * still in flight and which the incoming server snapshot doesn't know yet
+ * (it was read before that create committed). Without this, snapshot merges
+ * made the optimistic visit vanish → the user / the board's auto-add added
+ * it again → duplicate visits. Only pending-create survivors are kept; once
+ * the op settles they come from the server or are rolled back.
+ */
+function withPendingCreateVisits(prior: Job, incoming: Job): Job {
+  const survivors = prior.visits.filter(
+    (v) => _pendingVisitCreates.has(v.id) && !incoming.visits.some((iv) => iv.id === v.id),
+  );
+  if (survivors.length === 0) return incoming;
+  return { ...incoming, visits: [...incoming.visits, ...survivors] };
+}
+
+/** Replace one job with the server-reconciled version (pending-create guarded). */
 function reconcileJob(jobs: Job[], reconciled: Job): Job[] {
-  return jobs.map((j) => (j.id === reconciled.id ? reconciled : j));
+  return jobs.map((j) => (j.id === reconciled.id ? withPendingCreateVisits(j, reconciled) : j));
 }
 
 /** Restore the snapshot (rollback). */
@@ -213,7 +248,16 @@ function restoreJob(jobs: Job[], prior: Job): Job[] {
 export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set, get) => ({
   jobs: [],
 
-  setJobs: (jobs) => set({ jobs }),
+  // Hydrator path: wholesale list replace, but a list snapshot read before an
+  // in-flight createVisit commits must not drop the optimistic visit (same
+  // pending-create guard as the mutation reconciles).
+  setJobs: (jobs) =>
+    set((s) => ({
+      jobs: jobs.map((incoming) => {
+        const prior = s.jobs.find((j) => j.id === incoming.id);
+        return prior ? withPendingCreateVisits(prior, incoming) : incoming;
+      }),
+    })),
 
   // ---------------------------------------------------------------------------
   // adoptJob — merge a job DTO received from a server mutation into the store
@@ -342,6 +386,16 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job) return null;
 
+    // Duplicate guard: while this job already has an UNPLACED visit whose
+    // createVisit is still in flight, return that visit instead of minting a
+    // second — protects the schedule board's auto-add (and a double-click)
+    // when a snapshot merge briefly raced the create. Settled creates are no
+    // longer in the set, so adding a real second visit later is not blocked.
+    const pendingUnplaced = job.visits.find(
+      (v) => !isPlaced(v) && _pendingVisitCreates.has(v.id),
+    );
+    if (pendingUnplaced) return pendingUnplaced;
+
     // Fix 2a: client-authored id so optimistic id === server row id; no id swap on reconcile.
     const id = crypto.randomUUID();
     const visit: Visit = {
@@ -353,6 +407,10 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       status: "scheduled",
     };
 
+    // Rollback snapshot BEFORE the optimistic insert, so a failed create
+    // removes the optimistic visit instead of restoring a state that has it.
+    const prior = snapshot(get().jobs, jobId);
+
     // 1. Optimistic update (synchronous — schedule-panel reads .id immediately).
     set((s) => ({
       jobs: s.jobs.map((j) => (j.id === jobId ? withVisits(j, [...j.visits, visit]) : j)),
@@ -361,7 +419,8 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     // 2. Only persist DB-origin jobs.
     if (job.origin !== JOB_ORIGIN.DB) return visit;
 
-    const prior = snapshot(get().jobs, jobId);
+    // Track the in-flight create for the merge guard + addVisit dedupe.
+    _pendingVisitCreates.add(id);
 
     // Fix 2b: route network op through per-visit chain so scheduleVisit always
     // awaits the createVisit that must precede it.
@@ -378,6 +437,9 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           if (process.env.NODE_ENV !== "production") {
             console.error("[jobs-slice] addVisit failed — rolled back", { jobId, err });
           }
+        })
+        .finally(() => {
+          _pendingVisitCreates.delete(id);
         }),
     );
 
@@ -452,6 +514,11 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const isDurOnly = "dur" in patch && !("date" in patch) && !("techId" in patch) && !("start" in patch);
 
     if (isDurOnly && patch.dur != null) {
+      // Capture the typed/dragged value NOW. The timer must NOT re-read the
+      // store at fire time — a reconcile landing inside the debounce window
+      // would make it persist a stale value instead of what the user set.
+      const durationHours = patch.dur;
+
       // Fix 3: capture the pre-drag rollback snapshot only on the FIRST call of a
       // new drag (no pending debounce timer yet), so rollback always returns to
       // the state before the drag started, not to the last-move state.
@@ -475,24 +542,26 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           return;
         }
 
-        const currentVisit = guardJob.visits.find((v) => v.id === visitId);
-        const durationHours = currentVisit?.dur ?? patch.dur!;
-
         const preDragSnapshot = _durRollback.get(visitId);
 
-        trpcVanilla.v1.visits.updateVisitDuration
-          .mutate({ jobId, visitId, durationHours })
-          .then((dto) => {
-            _durRollback.delete(visitId);
-            set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
-          })
-          .catch((err: unknown) => {
-            _durRollback.delete(visitId);
-            if (preDragSnapshot) set((s) => ({ jobs: restoreJob(s.jobs, preDragSnapshot) }));
-            if (process.env.NODE_ENV !== "production") {
-              console.error("[jobs-slice] updateVisit(dur) failed — rolled back", { jobId, visitId, err });
-            }
-          });
+        // Serialize behind any in-flight createVisit (and other ops) on this
+        // visit so the duration write can never race — or beat — the row's
+        // own creation.
+        chain(visitId, () =>
+          trpcVanilla.v1.visits.updateVisitDuration
+            .mutate({ jobId, visitId, durationHours })
+            .then((dto) => {
+              _durRollback.delete(visitId);
+              set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+            })
+            .catch((err: unknown) => {
+              _durRollback.delete(visitId);
+              if (preDragSnapshot) set((s) => ({ jobs: restoreJob(s.jobs, preDragSnapshot) }));
+              if (process.env.NODE_ENV !== "production") {
+                console.error("[jobs-slice] updateVisit(dur) failed — rolled back", { jobId, visitId, err });
+              }
+            }),
+        );
       }, DUR_DEBOUNCE_MS);
 
       _durDebounceTimers.set(visitId, timer);

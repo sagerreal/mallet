@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
+import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, toStoreVisit, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
 import type { Estimate, Invoice } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -441,6 +441,7 @@ const visitDTO = {
   scheduledDate: "2026-07-15",
   scheduledStart: "09:00",
   scheduledEnd: "11:00",
+  durationMinutes: null,
   status: "pending" as const,
   startedAt: null,
   completedAt: null,
@@ -474,5 +475,44 @@ describe("dtoJobToStoreJob status remap (zero-visit fix)", () => {
     const canceledVisit = { ...visitDTO, status: "canceled" as const };
     const job = dtoJobToStoreJob({ ...baseJobDto, status: "scheduled", visits: [canceledVisit] } as never);
     expect(job.status).toBe("unscheduled");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toStoreVisit — dur precedence (duration_minutes fix)
+// durationMinutes is authoritative; the start→end window is the legacy fallback.
+// ---------------------------------------------------------------------------
+
+describe("toStoreVisit dur precedence", () => {
+  it("prefers durationMinutes over the start→end window", () => {
+    const v = toStoreVisit({ ...visitDTO, durationMinutes: 90 } as never);
+    expect(v.dur).toBe(1.5); // NOT the 2h window 09:00→11:00
+  });
+
+  it("uses durationMinutes for an unplaced visit (no window at all)", () => {
+    const v = toStoreVisit({
+      ...visitDTO,
+      assigneeUserId: null,
+      scheduledDate: null,
+      scheduledStart: null,
+      scheduledEnd: null,
+      durationMinutes: 30,
+    } as never);
+    expect(v.dur).toBe(0.5);
+  });
+
+  it("falls back to hoursBetween(start, end) when durationMinutes is null (legacy row)", () => {
+    const v = toStoreVisit({ ...visitDTO, durationMinutes: null } as never);
+    expect(v.dur).toBe(2); // 09:00 → 11:00
+  });
+
+  it("falls back to the 2h default when durationMinutes is null and there is no window", () => {
+    const v = toStoreVisit({
+      ...visitDTO,
+      scheduledStart: null,
+      scheduledEnd: null,
+      durationMinutes: null,
+    } as never);
+    expect(v.dur).toBe(2);
   });
 });

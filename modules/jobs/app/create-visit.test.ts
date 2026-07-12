@@ -41,6 +41,7 @@ const visitProps = (overrides: Partial<JobVisitProps> = {}): JobVisitProps => ({
   scheduledDate: null,
   scheduledStart: null,
   scheduledEnd: null,
+  durationMinutes: null,
   status: "pending",
   startedAt: null,
   completedAt: null,
@@ -299,6 +300,22 @@ describe("CreateVisitUseCase", () => {
     expect(isOk(r)).toBe(true);
     if (!isOk(r)) return;
     expect(r.value.props.visits[0]?.props.notes).toBe("bring ladder");
+  });
+
+  it("persists durationMinutes from durationHours (2h → 120) even when unplaced", async () => {
+    repo.seed(makeJob());
+    const r = await uc.exec({ ...baseCmd(), scheduledStart: null, durationHours: 2 });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.visits[0]?.props.durationMinutes).toBe(120);
+  });
+
+  it("rounds fractional durations to whole minutes (1.5h → 90)", async () => {
+    repo.seed(makeJob());
+    const r = await uc.exec({ ...baseCmd(), scheduledStart: "08:30", durationHours: 1.5 });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.visits[0]?.props.durationMinutes).toBe(90);
   });
 
   it("bumps updatedAt to the clock's current time", async () => {
