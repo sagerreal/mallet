@@ -50,33 +50,40 @@ export async function POST(req: Request, { params }: Params): Promise<Response> 
 
   const deps = getAppDeps();
   return runWithContext({ requestId: deps.ids.newId() }, async () => {
-    // Privileged, pre-tenant token→org resolution (returns only { orgId, channel }).
-    const resolved = await new DrizzleInboundEndpointResolver().resolve(token);
-    if (!resolved || resolved.channel !== channel) {
-      logger.warn({ channel }, "inbound.rejected_unknown_token");
-      return new NextResponse("not found", { status: 404 });
-    }
-    enrichRequestContext({ orgId: resolved.orgId });
+    try {
+      // Privileged, pre-tenant token→org resolution (returns only { orgId, channel }).
+      const resolved = await new DrizzleInboundEndpointResolver().resolve(token);
+      if (!resolved || resolved.channel !== channel) {
+        logger.warn({ channel, orgId: resolved?.orgId }, "inbound.rejected_unknown_token");
+        return new NextResponse("not found", { status: 404 });
+      }
+      enrichRequestContext({ orgId: resolved.orgId });
 
-    const result = await withTenant(resolved.orgId, async (tx) => {
-      // Tx-bound outbox bus so EnsureCustomer's customer.created event lands durably (matches the
-      // public-quote accept path). The InMemoryEventBus from getAppDeps is NOT used here.
-      const bus = new OutboxEventBus(tx, resolved.orgId);
-      const ensure = new EnsureCustomerUseCase(new DrizzleLeadRepository(tx, resolved.orgId), bus, deps.clock);
-      const uc = new IngestExternalLeadUseCase(
-        ensure,
-        new DrizzleLeadReceiptRepository(tx, resolved.orgId),
-        new DrizzleInboundEndpointRepository(tx, resolved.orgId),
-        deps.clock,
-      );
-      return uc.exec({ channel, source: SOURCE[channel]!, lead: parsed.value });
-    });
+      const result = await withTenant(resolved.orgId, async (tx) => {
+        // Tx-bound outbox bus so EnsureCustomer's customer.created event lands durably (matches the
+        // public-quote accept path). The InMemoryEventBus from getAppDeps is NOT used here.
+        const bus = new OutboxEventBus(tx, resolved.orgId);
+        const ensure = new EnsureCustomerUseCase(new DrizzleLeadRepository(tx, resolved.orgId), bus, deps.clock);
+        const uc = new IngestExternalLeadUseCase(
+          ensure,
+          new DrizzleLeadReceiptRepository(tx, resolved.orgId),
+          new DrizzleInboundEndpointRepository(tx, resolved.orgId),
+          deps.clock,
+        );
+        return uc.exec({ channel, source: SOURCE[channel]!, lead: parsed.value });
+      });
 
-    if (!result.ok) {
-      logger.error({ channel }, "inbound.ingest_failed");
-      return new NextResponse("could not accept lead", { status: 422 });
+      if (!result.ok) {
+        logger.error({ channel, kind: result.error.kind }, "inbound.ingest_failed");
+        return new NextResponse("could not accept lead", { status: 422 });
+      }
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      // Unexpected failure (e.g. a non-transient DB error). Log a channel-scoped line — never PII —
+      // and return a controlled 500 rather than leaking an unhandled rejection past the logger.
+      logger.error({ channel, err: err instanceof Error ? err.message : String(err) }, "inbound.unexpected_error");
+      return new NextResponse("could not accept lead", { status: 500 });
     }
-    return NextResponse.json({ ok: true });
   });
 }
 
