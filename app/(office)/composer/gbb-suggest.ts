@@ -1,18 +1,22 @@
 /**
  * "Suggest Better & Best from Good" — pure heuristics, NOT AI.
  *
- * Trade seed templates (keyed off the job text) fill the Better and Best
+ * Trade seed templates (keyed off the job text) REPLACE the Better and Best
  * tiers; a generic fallback derives them from the Good tier's lines. The
  * user's Good tier is always preserved verbatim — the suggestion only writes
- * Better and Best (and stars Better, the seeds' default recommendation).
- * Everything here is pure data / pure functions — no React.
+ * Better and Best (the quote card confirms first when those tiers hold real
+ * lines). The star stays where the user put it unless it sat on an EMPTY
+ * tier being replaced — see recAfterSuggest. Everything here is pure data /
+ * pure functions — no React.
  */
 
 import {
   cloneLines,
+  hasRealLine,
+  realLines,
   type ComposerLine,
   type GBBDraft,
-  type GBBTier,
+  type TierKey,
 } from "./composer-state";
 
 // ---- job-type classifier (mirrors the prototype) -----------------------------
@@ -109,9 +113,13 @@ const SEED_BETTER_BEST: Record<string, { better: SeedTier; best: SeedTier }> = {
 // ---- generic fallback: derive Better/Best from the Good tier's lines ---------
 
 function genericBetterBest(goodLines: ComposerLine[]): { better: SeedTier; best: SeedTier } {
-  const filtered = goodLines
-    .filter((l) => (l.d ?? "").trim())
-    .map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0 }));
+  // Spread each carried line — optional/photo/cost flags survive verbatim
+  // into the Better copy (an Optional line must not send as mandatory).
+  const filtered = realLines(goodLines).map((l) => ({
+    ...l,
+    q: l.q ?? 1,
+    r: l.r ?? 0,
+  }));
   const base: ComposerLine[] =
     filtered.length > 0
       ? filtered
@@ -150,15 +158,30 @@ function genericBetterBest(goodLines: ComposerLine[]): { better: SeedTier; best:
 // ---- the suggestion ----------------------------------------------------------
 
 /**
- * Build a full GBB draft from the user's Good tier: Good is kept verbatim;
- * Better & Best come from the trade seed matching `jobText` (else the generic
- * fallback derived from Good's lines). Recommends Better — the seeds' default;
- * the star is a visible radio the user can move.
+ * Where the star lands after a suggestion: unchanged, unless the starred tier
+ * is one being replaced (Better/Best) AND held no real lines — an empty
+ * starred tier carries no user intent, so Better (the seeds' default
+ * recommendation) takes it. A star on Good never moves: Good isn't replaced.
  */
-export function suggestFromGood(good: GBBTier, jobText: string): GBBDraft {
+export function recAfterSuggest(current: GBBDraft): TierKey {
+  if (current.rec === "good") return "good";
+  const starred = current.opts.find((o) => o.k === current.rec);
+  const starredWasEmpty = !starred || !hasRealLine(starred.lines);
+  return starredWasEmpty ? "better" : current.rec;
+}
+
+/**
+ * Rebuild the GBB draft from its Good tier: Good is kept verbatim; Better &
+ * Best are REPLACED from the trade seed matching `jobText` (else the generic
+ * fallback derived from Good's lines). The star follows recAfterSuggest —
+ * the user's choice is preserved wherever it points at real content.
+ */
+export function suggestFromGood(current: GBBDraft, jobText: string): GBBDraft {
+  const good = current.opts.find((o) => o.k === "good") ?? current.opts[0];
+  if (!good) return current;
   const seed = SEED_BETTER_BEST[jobTypeOf(jobText)] ?? genericBetterBest(good.lines);
   return {
-    rec: "better",
+    rec: recAfterSuggest(current),
     opts: [
       { ...good, lines: cloneLines(good.lines) },
       { k: "better", ...seed.better, lines: cloneLines(seed.better.lines) },

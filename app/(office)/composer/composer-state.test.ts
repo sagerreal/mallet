@@ -9,15 +9,19 @@ import { describe, it, expect } from "vitest";
 import {
   INITIAL_STATE,
   applyAiDraftLines,
+  applyComposerPatch,
   buildQuoteMessageBody,
+  deliveryGateReason,
   gbbTierTotal,
   hasRealLine,
   linesForSend,
   pricingSummary,
+  realLines,
   recommendedTier,
   sendGateReason,
   switchToGbb,
   switchToSingle,
+  tierDisplayName,
   toEstimateLines,
   updateTier,
   type ComposerLine,
@@ -256,6 +260,34 @@ describe("hasRealLine", () => {
   });
 });
 
+describe("realLines — the save-draft / send payload filter", () => {
+  it("drops blank and whitespace-only rows, keeping the real ones", () => {
+    const real = line("Camera inspection", 1, 285);
+    expect(realLines([real, line(""), line("   ")])).toEqual([real]);
+  });
+
+  it("saved payload from a state with one real + one blank line contains only the real line", () => {
+    // The composer manufactures blank rows ("+ Add line", GBB seeding) — the
+    // server rejects description:"" and would roll the whole draft back.
+    const state = makeState({ lines: [line("Camera inspection", 1, 285), line("")] });
+    const payloadLines = toEstimateLines(realLines(linesForSend(state)));
+    expect(payloadLines).toEqual([{ d: "Camera inspection", q: 1, r: 285 }]);
+  });
+
+  it("filters the RECOMMENDED tier's blanks in GBB format too", () => {
+    const gbb = updateTier(makeGbb({ rec: "better" }), "better", {
+      lines: [line("Hydro-jet the line", 1, 450), line("")],
+    });
+    const state = makeState({ format: "gbb", gbb });
+    expect(realLines(linesForSend(state))).toEqual([line("Hydro-jet the line", 1, 450)]);
+  });
+
+  it("keeps optional / photo / cost flags on the surviving lines", () => {
+    const flagged: ComposerLine = { d: "Valve", q: 1, r: 300, c: 120, opt: true, photo: true };
+    expect(realLines([flagged, line("")])).toEqual([flagged]);
+  });
+});
+
 describe("sendGateReason", () => {
   const realLines = [line("Camera inspection", 1, 285)];
 
@@ -279,6 +311,35 @@ describe("sendGateReason", () => {
   });
 });
 
+describe("deliveryGateReason — the send-only destination gate", () => {
+  it("text channel needs a mobile number — empty, whitespace, or the — placeholder", () => {
+    expect(deliveryGateReason("text", { phone: "", email: "dana@email.com" })).toBe(
+      "Add a mobile number."
+    );
+    expect(deliveryGateReason("text", { phone: "   " })).toBe("Add a mobile number.");
+    expect(deliveryGateReason("text", { phone: "—" })).toBe("Add a mobile number.");
+    expect(deliveryGateReason("text", {})).toBe("Add a mobile number.");
+  });
+
+  it("email channel needs an address", () => {
+    expect(deliveryGateReason("email", { phone: "(925) 555-0123" })).toBe(
+      "Add an email address."
+    );
+    expect(deliveryGateReason("email", { email: "" })).toBe("Add an email address.");
+    expect(deliveryGateReason("email", { email: "   " })).toBe("Add an email address.");
+  });
+
+  it("is null when the chosen channel has a destination on file", () => {
+    expect(deliveryGateReason("text", { phone: "(925) 555-0123" })).toBeNull();
+    expect(deliveryGateReason("email", { email: "dana@email.com" })).toBeNull();
+  });
+
+  it("only gates the CHOSEN channel — the other contact may be missing", () => {
+    expect(deliveryGateReason("text", { phone: "(925) 555-0123", email: "" })).toBeNull();
+    expect(deliveryGateReason("email", { phone: "—", email: "dana@email.com" })).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // AI-draft routing
 // ---------------------------------------------------------------------------
@@ -295,7 +356,7 @@ describe("applyAiDraftLines", () => {
     expect(next.aiDrafted).toBe(true);
   });
 
-  it("drafts into the GOOD tier in GBB format, leaving the other tiers alone", () => {
+  it("drafts into the GOOD tier in GBB format, leaving the other tiers' lines alone", () => {
     const state = makeState({ format: "gbb", gbb: makeGbb({ rec: "better" }), aiOpen: true });
     const next = applyAiDraftLines(state, drafted);
 
@@ -304,6 +365,21 @@ describe("applyAiDraftLines", () => {
     expect(good.lines).toEqual(drafted);
     expect(better.lines).toEqual([line("Hydro-jet the line", 1, 450)]);
     expect(next.aiDrafted).toBe(true);
+  });
+
+  it("moves the star to Good in GBB — the fresh AI draft is what sends", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb({ rec: "better" }) });
+    const next = applyAiDraftLines(state, drafted);
+
+    expect(next.gbb!.rec).toBe("good");
+    expect(linesForSend(next)).toEqual(drafted);
+  });
+
+  it("clears a stale format-switch note — the draft rewrote the lines", () => {
+    const state = makeState({
+      switchNote: "Your lines moved into Good — Better & Best start empty.",
+    });
+    expect(applyAiDraftLines(state, drafted).switchNote).toBeNull();
   });
 
   it("clones the drafted lines and never mutates the input state", () => {
@@ -321,6 +397,68 @@ describe("applyAiDraftLines", () => {
 // ---------------------------------------------------------------------------
 // Tier patching + totals
 // ---------------------------------------------------------------------------
+
+describe("tierDisplayName", () => {
+  it("uses the custom name when present", () => {
+    expect(tierDisplayName(makeTier("better", { name: "Most popular" }))).toBe(
+      "Most popular"
+    );
+  });
+
+  it("falls back to the tier key's display name when the custom name trims empty", () => {
+    expect(tierDisplayName(makeTier("good", { name: "" }))).toBe("Good");
+    expect(tierDisplayName(makeTier("better", { name: "   " }))).toBe("Better");
+    expect(tierDisplayName(makeTier("best", { name: "" }))).toBe("Best");
+  });
+
+  it("keeps labels honest through switchToSingle when the name was cleared", () => {
+    const gbb = updateTier(makeGbb({ rec: "better" }), "better", { name: "  " });
+    const patch = switchToSingle(makeState({ format: "gbb", gbb }));
+    expect(patch.switchNote).toBe("Kept the Better option's lines.");
+  });
+});
+
+describe("applyComposerPatch — stale switch-note clearing", () => {
+  const noted = () =>
+    makeState({
+      switchNote: "Your lines moved into Good — Better & Best start empty.",
+    });
+
+  it("clears the note when the lines change", () => {
+    const next = applyComposerPatch(noted(), { lines: [line("Job", 1, 100)] });
+    expect(next.switchNote).toBeNull();
+    expect(next.lines).toEqual([line("Job", 1, 100)]);
+  });
+
+  it("clears the note when a tier changes", () => {
+    const prev = { ...noted(), format: "gbb" as const, gbb: makeGbb() };
+    const next = applyComposerPatch(prev, { gbb: makeGbb({ rec: "best" }) });
+    expect(next.switchNote).toBeNull();
+  });
+
+  it("keeps a note the patch itself sets — format switches stay announced", () => {
+    const next = applyComposerPatch(noted(), {
+      lines: [line("Job", 1, 100)],
+      switchNote: "Kept the Good option's lines.",
+    });
+    expect(next.switchNote).toBe("Kept the Good option's lines.");
+  });
+
+  it("leaves the note alone on unrelated edits (intro, pricing, channel)", () => {
+    const prev = noted();
+    expect(applyComposerPatch(prev, { intro: "hey" }).switchNote).toBe(prev.switchNote);
+    expect(applyComposerPatch(prev, { sendChannel: "email" }).switchNote).toBe(
+      prev.switchNote
+    );
+  });
+
+  it("does not mutate the previous state", () => {
+    const prev = noted();
+    applyComposerPatch(prev, { lines: [line("Job", 1, 100)] });
+    expect(prev.switchNote).toBe("Your lines moved into Good — Better & Best start empty.");
+    expect(prev.lines).toEqual([{ d: "", q: 1, r: 0 }]);
+  });
+});
 
 describe("updateTier", () => {
   it("patches only the target tier and returns a new draft", () => {

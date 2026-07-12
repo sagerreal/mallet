@@ -11,7 +11,7 @@
  *   - Dictate 🎤 — no speech API in the app yet
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { calcQuote } from "@/lib/prototype-sample";
 import { fmt$ } from "@/lib/format";
 import {
@@ -21,6 +21,7 @@ import {
   recommendedTier,
   switchToGbb,
   switchToSingle,
+  tierDisplayName,
   type ComposerLine,
   type ComposerState,
 } from "./composer-state";
@@ -49,6 +50,16 @@ export function QuoteCard({
 
   const isGbb = state.format === "gbb";
   const rec = recommendedTier(state);
+
+  // "Suggest Better & Best" replaces those tiers — when either holds real
+  // lines, the button swaps to an in-flow confirm state before running.
+  const suggestReplacesTypedTiers =
+    state.gbb?.opts.some((o) => o.k !== "good" && hasRealLine(o.lines)) ?? false;
+  const [confirmSuggest, setConfirmSuggest] = useState(false);
+  useEffect(() => {
+    // The confirm state is only meaningful while there is something to lose.
+    if (!isGbb || !suggestReplacesTypedTiers) setConfirmSuggest(false);
+  }, [isGbb, suggestReplacesTypedTiers]);
   // What would send right now — recommended tier in GBB, the table in single.
   const sendLines = linesForSend(state);
   const m = calcQuote(
@@ -103,7 +114,11 @@ export function QuoteCard({
               className="pill"
               style={{ background: "var(--purple-bg)", color: "var(--purple)", marginLeft: 8 }}
             >
-              {isGbb ? "AI drafted Good — edit freely" : "AI draft — edit freely"}
+              {isGbb
+                ? rec?.k === "good"
+                  ? "AI drafted Good — now the recommended option"
+                  : "AI drafted Good — edit freely"
+                : "AI draft — edit freely"}
             </span>
           )}
         </h3>
@@ -163,14 +178,41 @@ export function QuoteCard({
             </button>
           </>
         )}
-        {isGbb && (
+        {isGbb && !confirmSuggest && (
           <>
-            <button className="btn sm ghost" onClick={onSuggestBetterBest}>
+            <button
+              className="btn sm ghost"
+              onClick={() => {
+                // Typed Better/Best lines would be overwritten — confirm
+                // in place first. Empty tiers have nothing to lose: run.
+                if (suggestReplacesTypedTiers) setConfirmSuggest(true);
+                else onSuggestBetterBest();
+              }}
+            >
               Suggest Better &amp; Best from Good
             </button>
             <span className="muted" style={{ fontSize: 11 }}>
-              Starts Better &amp; Best from Good — edit freely
+              Builds Better &amp; Best from Good — replaces what&apos;s there.
             </span>
+          </>
+        )}
+        {isGbb && confirmSuggest && (
+          <>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>
+              Replaces Better &amp; Best — sure?
+            </span>
+            <button
+              className="btn sm primary"
+              onClick={() => {
+                setConfirmSuggest(false);
+                onSuggestBetterBest();
+              }}
+            >
+              Replace
+            </button>
+            <button className="btn sm ghost" onClick={() => setConfirmSuggest(false)}>
+              Cancel
+            </button>
           </>
         )}
         <button className="btn sm ghost" onClick={() => setShowCost((v) => !v)}>
@@ -266,7 +308,7 @@ export function QuoteCard({
         >
           {isGbb && rec && (
             <div className="muted" style={{ fontSize: 12 }}>
-              {rec.name} option — what the customer receives
+              {tierDisplayName(rec)} option — what the customer receives
             </div>
           )}
           {(state.pricing.disc || state.pricing.tax) ? (

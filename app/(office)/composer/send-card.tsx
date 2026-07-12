@@ -7,13 +7,15 @@
  * (Preview · Save draft · Send quote).
  *
  * Actions gate with an inline reason (no silent no-ops): the buttons disable
- * and the reason renders next to them until the quote is sendable.
+ * and the reason renders next to them until the quote is sendable. Send takes
+ * one extra gate the others don't — a destination for the chosen channel
+ * (Preview and Save draft don't deliver, so they stay enabled without one).
  */
 
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
-import { recommendedTier, type ComposerState } from "./composer-state";
+import { recommendedTier, tierDisplayName, type ComposerState } from "./composer-state";
 
 // ---- Delivery contact field -------------------------------------------------
 // Editable phone/email for the chosen send channel. A customer can be added by
@@ -95,6 +97,7 @@ export function SendCard({
   state,
   onUpdate,
   gateReason,
+  deliveryGateReason,
   isSending,
   sendError,
   onPreview,
@@ -104,7 +107,10 @@ export function SendCard({
   lead: Lead | null;
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
+  /** Blocks ALL actions (customer / lines missing) — null when clear. */
   gateReason: string | null;
+  /** Blocks SEND only (no destination for the chosen channel) — null when clear. */
+  deliveryGateReason: string | null;
   isSending: boolean;
   sendError: string | null;
   onPreview: () => void;
@@ -112,8 +118,13 @@ export function SendCard({
   onSend: () => void;
 }) {
   const gated = gateReason != null;
+  const sendGated = gated || deliveryGateReason != null;
+  // The reason shown next to the action row — the all-actions gate first,
+  // else the send-only destination gate.
+  const shownReason = gateReason ?? deliveryGateReason;
   // GBB format sends the recommended tier's lines — the labels say which.
   const rec = recommendedTier(state);
+  const recName = rec ? tierDisplayName(rec) : null;
 
   return (
     <div className="card" style={{ borderColor: "#E6DCC4" }}>
@@ -218,13 +229,13 @@ export function SendCard({
           marginTop: 12,
         }}
       >
-        {gateReason && (
+        {shownReason && (
           <span className="muted" style={{ fontSize: 12.5 }}>
-            {gateReason}
+            {shownReason}
           </span>
         )}
         <button className="btn ghost" onClick={onPreview} disabled={gated}>
-          {rec ? `Preview — ${rec.name}` : "Preview"}
+          {recName ? `Preview — ${recName}` : "Preview"}
         </button>
         <button
           className="btn ghost"
@@ -236,17 +247,17 @@ export function SendCard({
         <button
           className="btn primary"
           onClick={onSend}
-          disabled={gated || isSending}
+          disabled={sendGated || isSending}
           aria-busy={isSending}
           style={{
-            opacity: gated || isSending ? 0.6 : 1,
-            cursor: gated || isSending ? "not-allowed" : "pointer",
+            opacity: sendGated || isSending ? 0.6 : 1,
+            cursor: sendGated || isSending ? "not-allowed" : "pointer",
           }}
         >
           {isSending
             ? "Sending…"
-            : rec
-              ? `Send quote — ${rec.name} option`
+            : recName
+              ? `Send quote — ${recName} option`
               : "Send quote"}
         </button>
       </div>

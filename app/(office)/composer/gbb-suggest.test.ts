@@ -4,12 +4,21 @@
  * job-type classifier, the trade seeds (water heater / drain / toilet), and
  * the generic fallback derived from the Good tier's lines. Pure functions,
  * NOT AI — the tests pin that contract: Good is preserved verbatim, only
- * Better & Best are written, and Better gets the star.
+ * Better & Best are replaced, carried lines keep their flags, and the star
+ * stays with the user's choice unless it sat on an empty replaced tier.
  */
 
 import { describe, it, expect } from "vitest";
-import { jobTypeOf, suggestFromGood } from "./gbb-suggest";
-import type { ComposerLine, GBBTier } from "./composer-state";
+import { jobTypeOf, recAfterSuggest, suggestFromGood } from "./gbb-suggest";
+import {
+  INITIAL_STATE,
+  applyAiDraftLines,
+  updateTier,
+  type ComposerLine,
+  type ComposerState,
+  type GBBDraft,
+  type GBBTier,
+} from "./composer-state";
 
 // ---------------------------------------------------------------------------
 // Fixture builders
@@ -21,6 +30,19 @@ function line(d: string, q = 1, r = 0): ComposerLine {
 
 function makeGood(lines: ComposerLine[], overrides: Partial<GBBTier> = {}): GBBTier {
   return { k: "good", name: "Good", title: "", note: "", lines, ...overrides };
+}
+
+/** A full draft around the Good tier — Better & Best start empty, star on Good. */
+function makeDraft(good: GBBTier, overrides: Partial<GBBDraft> = {}): GBBDraft {
+  return {
+    rec: "good",
+    opts: [
+      good,
+      { k: "better", name: "Better", title: "", note: "", lines: [] },
+      { k: "best", name: "Best", title: "", note: "", lines: [] },
+    ],
+    ...overrides,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -63,14 +85,9 @@ describe("jobTypeOf", () => {
 describe("suggestFromGood (trade seeds)", () => {
   const goodLines = [line("Relight & service existing heater", 1, 220)];
 
-  it("recommends Better — the seeds' default star", () => {
-    const draft = suggestFromGood(makeGood(goodLines), "water heater replacement");
-    expect(draft.rec).toBe("better");
-  });
-
   it("keeps the user's Good tier verbatim as the first option", () => {
     const good = makeGood(goodLines, { name: "Basic", title: "Just the fix" });
-    const draft = suggestFromGood(good, "water heater replacement");
+    const draft = suggestFromGood(makeDraft(good), "water heater replacement");
 
     expect(draft.opts[0]!.k).toBe("good");
     expect(draft.opts[0]!.name).toBe("Basic");
@@ -80,14 +97,14 @@ describe("suggestFromGood (trade seeds)", () => {
 
   it("clones Good's lines — editing the draft never mutates the input tier", () => {
     const good = makeGood([line("Relight & service", 1, 220)]);
-    const draft = suggestFromGood(good, "water heater replacement");
+    const draft = suggestFromGood(makeDraft(good), "water heater replacement");
 
     draft.opts[0]!.lines[0]!.d = "MUTATED";
     expect(good.lines[0]!.d).toBe("Relight & service");
   });
 
   it("fills Better & Best from the water-heater seed", () => {
-    const draft = suggestFromGood(makeGood(goodLines), "no hot water");
+    const draft = suggestFromGood(makeDraft(makeGood(goodLines)), "no hot water");
     const better = draft.opts[1]!;
     const best = draft.opts[2]!;
 
@@ -103,7 +120,10 @@ describe("suggestFromGood (trade seeds)", () => {
   });
 
   it("fills Better & Best from the drain seed", () => {
-    const draft = suggestFromGood(makeGood([line("Snake the line", 1, 250)]), "kitchen drain clog");
+    const draft = suggestFromGood(
+      makeDraft(makeGood([line("Snake the line", 1, 250)])),
+      "kitchen drain clog"
+    );
     const better = draft.opts[1]!;
     const best = draft.opts[2]!;
 
@@ -115,7 +135,10 @@ describe("suggestFromGood (trade seeds)", () => {
   });
 
   it("fills Better & Best from the toilet seed", () => {
-    const draft = suggestFromGood(makeGood([line("Reset & reseal toilet", 1, 180)]), "toilet leaking");
+    const draft = suggestFromGood(
+      makeDraft(makeGood([line("Reset & reseal toilet", 1, 180)])),
+      "toilet leaking"
+    );
     const better = draft.opts[1]!;
     const best = draft.opts[2]!;
 
@@ -128,14 +151,68 @@ describe("suggestFromGood (trade seeds)", () => {
   });
 
   it("clones the seed lines — editing one draft never bleeds into the next", () => {
-    const first = suggestFromGood(makeGood(goodLines), "water heater");
+    const first = suggestFromGood(makeDraft(makeGood(goodLines)), "water heater");
     first.opts[1]!.lines[0]!.d = "MUTATED";
     first.opts[1]!.lines[0]!.r = 1;
 
-    const second = suggestFromGood(makeGood(goodLines), "water heater");
+    const second = suggestFromGood(makeDraft(makeGood(goodLines)), "water heater");
     expect(second.opts[1]!.lines[0]).toEqual(
       line("40-gal gas water heater (Rheem Performance)", 1, 1650)
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// suggestFromGood / recAfterSuggest — star preservation
+// ---------------------------------------------------------------------------
+
+describe("recAfterSuggest / suggestFromGood (star preservation)", () => {
+  const good = makeGood([line("Relight & service", 1, 220)]);
+
+  it("keeps the star on Good — the tier the suggestion never touches", () => {
+    const draft = suggestFromGood(makeDraft(good), "water heater");
+    expect(draft.rec).toBe("good");
+  });
+
+  it("keeps the star on a TYPED Better/Best being replaced — the user chose it", () => {
+    const withTypedBest = updateTier(makeDraft(good, { rec: "best" }), "best", {
+      lines: [line("Typed best line", 1, 900)],
+    });
+    expect(recAfterSuggest(withTypedBest)).toBe("best");
+    expect(suggestFromGood(withTypedBest, "water heater").rec).toBe("best");
+
+    const withTypedBetter = updateTier(makeDraft(good, { rec: "better" }), "better", {
+      lines: [line("Typed better line", 1, 500)],
+    });
+    expect(suggestFromGood(withTypedBetter, "water heater").rec).toBe("better");
+  });
+
+  it("re-stars Better when the starred tier was EMPTY — no user intent to keep", () => {
+    expect(suggestFromGood(makeDraft(good, { rec: "best" }), "water heater").rec).toBe(
+      "better"
+    );
+    expect(suggestFromGood(makeDraft(good, { rec: "better" }), "water heater").rec).toBe(
+      "better"
+    );
+  });
+
+  it("treats whitespace-only lines in the starred tier as empty", () => {
+    const blankBest = updateTier(makeDraft(good, { rec: "best" }), "best", {
+      lines: [line("   ")],
+    });
+    expect(recAfterSuggest(blankBest)).toBe("better");
+  });
+
+  it("suggest then AI draft: the star follows the fresh AI draft into Good", () => {
+    const suggested = suggestFromGood(
+      makeDraft(makeGood([line("Snake the line", 1, 250)]), { rec: "better" }),
+      "kitchen drain clog"
+    );
+    expect(suggested.rec).toBe("better"); // empty starred Better → seed default
+
+    const state: ComposerState = { ...INITIAL_STATE, format: "gbb", gbb: suggested };
+    const next = applyAiDraftLines(state, [line("AI-drafted repipe", 1, 1200)]);
+    expect(next.gbb!.rec).toBe("good");
   });
 });
 
@@ -146,7 +223,7 @@ describe("suggestFromGood (trade seeds)", () => {
 describe("suggestFromGood (generic fallback)", () => {
   it("builds Better as Good's lines plus a maintenance line at ~12% (rounded to $10)", () => {
     const good = makeGood([line("Repipe laundry room", 1, 1000)]);
-    const draft = suggestFromGood(good, "regrout shower pan");
+    const draft = suggestFromGood(makeDraft(good), "regrout shower pan");
     const better = draft.opts[1]!;
 
     expect(better.title).toBe("Job + protection");
@@ -156,16 +233,30 @@ describe("suggestFromGood (generic fallback)", () => {
     ]);
   });
 
+  it("preserves optional / photo / cost flags on the lines carried into Better", () => {
+    const flagged: ComposerLine = {
+      d: "Rebuild pressure valve",
+      q: 1,
+      r: 300,
+      c: 120,
+      opt: true,
+      photo: true,
+    };
+    const draft = suggestFromGood(makeDraft(makeGood([flagged])), "something unclassified");
+    const carried = draft.opts[1]!.lines[0]!;
+    expect(carried).toEqual(flagged);
+  });
+
   it("floors the maintenance line at $89 for small jobs", () => {
     const good = makeGood([line("Tighten fittings", 2, 100)]); // sum 200 → 12% = 24 → rounds to 20 → floor 89
-    const draft = suggestFromGood(good, "misc repair");
+    const draft = suggestFromGood(makeDraft(good), "misc repair");
     const maintenance = draft.opts[1]!.lines.at(-1)!;
     expect(maintenance.r).toBe(89);
   });
 
   it("builds Best as one full-upgrade line at ~1.8× (rounded to $10)", () => {
     const good = makeGood([line("Repipe laundry room", 1, 1000)]);
-    const draft = suggestFromGood(good, "regrout shower pan");
+    const draft = suggestFromGood(makeDraft(good), "regrout shower pan");
     const best = draft.opts[2]!;
 
     expect(best.title).toBe("Full upgrade");
@@ -176,7 +267,7 @@ describe("suggestFromGood (generic fallback)", () => {
 
   it("ignores blank Good lines when deriving the tiers", () => {
     const good = makeGood([line(""), line("Repipe laundry room", 1, 1000), line("   ")]);
-    const draft = suggestFromGood(good, "something unclassified");
+    const draft = suggestFromGood(makeDraft(good), "something unclassified");
     const better = draft.opts[1]!;
 
     expect(better.lines.map((l) => l.d)).toEqual([
@@ -187,7 +278,7 @@ describe("suggestFromGood (generic fallback)", () => {
 
   it("uses the placeholder base when Good has no real lines", () => {
     const good = makeGood([line("")]);
-    const draft = suggestFromGood(good, "something unclassified");
+    const draft = suggestFromGood(makeDraft(good), "something unclassified");
     const better = draft.opts[1]!;
     const best = draft.opts[2]!;
 
@@ -202,10 +293,10 @@ describe("suggestFromGood (generic fallback)", () => {
     ]);
   });
 
-  it("still recommends Better and keeps Good verbatim in fallback mode", () => {
+  it("keeps Good verbatim and the star on Good in fallback mode", () => {
     const goodLines = [line("Custom work", 1, 400)];
-    const draft = suggestFromGood(makeGood(goodLines), "unclassifiable job");
-    expect(draft.rec).toBe("better");
+    const draft = suggestFromGood(makeDraft(makeGood(goodLines)), "unclassifiable job");
+    expect(draft.rec).toBe("good");
     expect(draft.opts[0]!.lines).toEqual(goodLines);
   });
 });

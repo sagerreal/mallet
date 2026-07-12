@@ -33,11 +33,15 @@ import { api } from "@/lib/trpc/client";
 import {
   INITIAL_STATE,
   applyAiDraftLines,
+  applyComposerPatch,
   buildQuoteMessageBody,
+  deliveryGateReason,
   hasRealLine,
   linesForSend,
+  realLines,
   recommendedTier,
   sendGateReason,
+  tierDisplayName,
   toEstimateLines,
   type ComposerLine,
   type ComposerState,
@@ -117,7 +121,8 @@ export default function ComposerPage() {
   });
 
   function update(patch: Partial<ComposerState>) {
-    setCs((prev) => ({ ...prev, ...patch }));
+    // applyComposerPatch clears a stale format-switch note on line/tier edits.
+    setCs((prev) => applyComposerPatch(prev, patch));
   }
 
   function triggerAiDraft() {
@@ -143,7 +148,10 @@ export default function ComposerPage() {
         prev.desc,
         selectedLead?.job ?? "",
       ].join(" ");
-      return { ...prev, gbb: suggestFromGood(good, jobText) };
+      // Replaces Better & Best (the quote card confirms first when they hold
+      // real lines); the star preservation rule lives in suggestFromGood.
+      // Any format-switch note is stale after the rewrite.
+      return { ...prev, gbb: suggestFromGood(prev.gbb, jobText), switchNote: null };
     });
   }
 
@@ -169,8 +177,11 @@ export default function ComposerPage() {
   // ALL of them derive the lines at call time (recommended tier in GBB).
 
   function saveDraftComposer() {
-    const sendLines = linesForSend(cs);
-    if (!hasRealLine(sendLines)) return;
+    // Filter blank rows exactly like buildDraftPayload does — the server's
+    // draft schema rejects `description: ""` and the optimistic estimate
+    // would roll back silently AFTER the redirect (draft vanishes).
+    const sendLines = realLines(linesForSend(cs));
+    if (sendLines.length === 0) return;
     // Draft requires a lead because addEstimate needs a real leadId.
     if (!selectedLead) return;
     addEstimate({
@@ -200,8 +211,7 @@ export default function ComposerPage() {
       taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
       depBps: Math.round((cs.pricing.dep ?? 0) * 100),
       validDays: cs.validDays,
-      lines: linesForSend(cs)
-        .filter((l) => (l.d ?? "").trim())
+      lines: realLines(linesForSend(cs))
         .map((l) => ({
           description: l.d,
           quantity: l.q ?? 1,
@@ -216,6 +226,12 @@ export default function ComposerPage() {
   async function sendComposer() {
     if (!selectedLead) return; // send requires a lead
     if (!hasRealLine(linesForSend(cs))) return;
+    // Send-only gate: no destination on file for the chosen channel. The Send
+    // button disables with the reason; this early return is defense-in-depth —
+    // a destination-less send would persist + mark the estimate sent, then
+    // fail delivery with a misleading error, and a retry would mint a
+    // duplicate estimate.
+    if (deliveryGateReason(cs.sendChannel, selectedLead) != null) return;
 
     setSendError(null);
     setIsSending(true);
@@ -395,6 +411,11 @@ export default function ComposerPage() {
     }
   }
 
+  // Gate inputs for the send card: tier label (falls back when a custom name
+  // trims empty) + the chosen channel's destination check (gates Send only).
+  const recTier = recommendedTier(cs);
+  const recTierName = recTier ? tierDisplayName(recTier) : null;
+
   return (
     <div>
       <h1>New quote</h1>
@@ -433,11 +454,12 @@ export default function ComposerPage() {
         lead={selectedLead}
         state={cs}
         onUpdate={update}
-        gateReason={sendGateReason(
-          selectedLead != null,
-          linesForSend(cs),
-          recommendedTier(cs)?.name ?? null,
-        )}
+        gateReason={sendGateReason(selectedLead != null, linesForSend(cs), recTierName)}
+        deliveryGateReason={
+          selectedLead != null
+            ? deliveryGateReason(cs.sendChannel, selectedLead)
+            : null
+        }
         isSending={isSending}
         sendError={sendError}
         onPreview={previewComposer}

@@ -113,6 +113,22 @@ export function updateTier(
   };
 }
 
+const TIER_DEFAULT_NAMES: Record<TierKey, string> = {
+  good: "Good",
+  better: "Better",
+  best: "Best",
+};
+
+/**
+ * The tier's name for labels, notes and gate reasons — falls back to the tier
+ * key's display name (Good/Better/Best) when the custom name trims empty, so
+ * a cleared name input never yields "Send quote —  option".
+ */
+export function tierDisplayName(tier: Pick<GBBTier, "k" | "name">): string {
+  const trimmed = tier.name.trim();
+  return trimmed !== "" ? trimmed : TIER_DEFAULT_NAMES[tier.k];
+}
+
 /** The recommended tier when the composer is in GBB format, else null. */
 export function recommendedTier(
   state: Pick<ComposerState, "format" | "gbb">
@@ -153,8 +169,8 @@ export function switchToGbb(state: ComposerState): Partial<ComposerState> {
   const lines = state.lines.length > 0 ? cloneLines(state.lines) : [emptyLine()];
   if (state.gbb) {
     const gbb = updateTier(state.gbb, state.gbb.rec, { lines });
-    const recName =
-      gbb.opts.find((o) => o.k === gbb.rec)?.name ?? "the recommended";
+    const recTier = gbb.opts.find((o) => o.k === gbb.rec);
+    const recName = recTier ? tierDisplayName(recTier) : "the recommended";
     return {
       format: "gbb",
       gbb,
@@ -184,26 +200,51 @@ export function switchToSingle(state: ComposerState): Partial<ComposerState> {
   return {
     format: "single",
     lines,
-    switchNote: rec ? `Kept the ${rec.name} option's lines.` : null,
+    switchNote: rec ? `Kept the ${tierDisplayName(rec)} option's lines.` : null,
   };
+}
+
+// ---- state patching ------------------------------------------------------------
+
+/**
+ * Apply a section patch to the composer state. The format-switch note
+ * describes what the LAST switch did — any patch that changes the lines or
+ * tiers without setting its own note makes it stale, so it clears here rather
+ * than pinning a claim that is no longer true.
+ */
+export function applyComposerPatch(
+  prev: ComposerState,
+  patch: Partial<ComposerState>
+): ComposerState {
+  const editsLines = "lines" in patch || "gbb" in patch;
+  const noteWentStale =
+    prev.switchNote != null && editsLines && !("switchNote" in patch);
+  return noteWentStale
+    ? { ...prev, ...patch, switchNote: null }
+    : { ...prev, ...patch };
 }
 
 // ---- AI draft routing --------------------------------------------------------
 
 /**
  * Apply AI-drafted lines to the right target: the Good tier in GBB format
- * (the panel copy says so), else the single-format line table.
+ * (the panel copy says so), else the single-format line table. In GBB the
+ * star moves to Good — the user just drafted it, so it's what they expect to
+ * send. Any format-switch note is stale after the rewrite and clears.
  */
 export function applyAiDraftLines(
   state: ComposerState,
   lines: ComposerLine[]
 ): ComposerState {
-  const drafted = { aiOpen: false, aiDrafted: true };
+  const drafted = { aiOpen: false, aiDrafted: true, switchNote: null };
   if (state.format === "gbb" && state.gbb) {
     return {
       ...state,
       ...drafted,
-      gbb: updateTier(state.gbb, "good", { lines: cloneLines(lines) }),
+      gbb: {
+        ...updateTier(state.gbb, "good", { lines: cloneLines(lines) }),
+        rec: "good",
+      },
     };
   }
   return { ...state, ...drafted, lines: cloneLines(lines) };
@@ -245,9 +286,19 @@ export function toEstimateLines(lines: ComposerLine[]): EstimateLine[] {
 
 // ---- send gating ------------------------------------------------------------
 
+/**
+ * Only the lines with a non-blank description — the composer manufactures
+ * blank rows (initial state, "+ Add line", GBB seeding), and the server's
+ * draft schema rejects them (`description: min(1)`), so every persisted
+ * payload (save draft AND send) filters through here.
+ */
+export function realLines(lines: ComposerLine[]): ComposerLine[] {
+  return lines.filter((l) => (l.d ?? "").trim() !== "");
+}
+
 /** True when at least one line has a non-blank description. */
 export function hasRealLine(lines: ComposerLine[]): boolean {
-  return lines.some((l) => (l.d ?? "").trim() !== "");
+  return realLines(lines).length > 0;
 }
 
 /**
@@ -268,6 +319,24 @@ export function sendGateReason(
       : "Add at least one line.";
   }
   return null;
+}
+
+/**
+ * Why Send is blocked for the chosen channel — or null when a destination is
+ * on file. Same rules the send card's destination field uses: trimmed, and
+ * the "—" phone placeholder counts as empty. This gates SEND ONLY: Preview
+ * and Save draft don't deliver, so they don't take this gate.
+ */
+export function deliveryGateReason(
+  channel: "text" | "email",
+  contact: { phone?: string | null; email?: string | null }
+): string | null {
+  if (channel === "text") {
+    const phone = (contact.phone ?? "").trim();
+    return phone === "" || phone === "—" ? "Add a mobile number." : null;
+  }
+  const email = (contact.email ?? "").trim();
+  return email === "" ? "Add an email address." : null;
 }
 
 // ---- quote message body -------------------------------------------------------
