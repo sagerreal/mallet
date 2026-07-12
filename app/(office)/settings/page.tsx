@@ -410,7 +410,6 @@ function TeamRolesBlock() {
   const { data, isLoading, isError } = api.v1.identity.members.useQuery();
   const setToggle = useAppStore((s) => s.setToggle);
   const techSeesPrice = useAppStore((s) => s.toggles.techSeesPrice);
-  const techTexts = useAppStore((s) => s.toggles.techTexts);
 
   const memberCount = data?.items.length ?? 0;
   const fieldCrewCount = data?.items.filter((m) => m.isFieldCrew).length ?? 0;
@@ -445,16 +444,6 @@ function TeamRolesBlock() {
           </div>
           <label className="switch">
             <input type="checkbox" checked={techSeesPrice} onChange={(e) => setToggle("techSeesPrice", e.target.checked)} />
-            <i />
-          </label>
-        </div>
-        <div className="stage-row">
-          <div style={{ flex: 1 }}>
-            <b>Techs can text customers</b>
-            <div className="muted" style={{ fontSize: 12 }}>From your business number; threads stay visible to the office.</div>
-          </div>
-          <label className="switch">
-            <input type="checkbox" checked={techTexts} onChange={(e) => setToggle("techTexts", e.target.checked)} />
             <i />
           </label>
         </div>

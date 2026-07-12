@@ -86,7 +86,6 @@ export function SettingsHydrator() {
       trade: dto.config.trade,
       toggles: {
         techSeesPrice: dto.config.techSeesPrice,
-        techTexts: dto.config.techTexts,
         frontDesk: dto.config.frontDesk,
         scopeOn: dto.config.scopeOn,
       },
