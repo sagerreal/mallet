@@ -21,8 +21,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicQuote } from "@/modules/quoting/app/public-quote";
-import { fmt$ } from "@/lib/format";
+import { LineRow } from "./LineRow";
 import { QuoteLines } from "./QuoteLines";
+import { tierViewsFor } from "./tier-view";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
@@ -47,31 +48,25 @@ export async function generateMetadata({
   };
 }
 
-// ---- helpers ---------------------------------------------------------------
+// ---- terms -----------------------------------------------------------------
 
-function centsToDisplay(cents: number): string {
-  return fmt$(cents / 100);
-}
-
-// ---- static line rows (non-optional) ---------------------------------------
-
-function LineRow({
-  description,
-  quantity,
-  rateCents,
-}: {
-  description: string;
-  quantity: number;
-  rateCents: number;
-}) {
-  const amount = Math.round(quantity * rateCents);
+function TermsBlock({ text }: { text: string }) {
   return (
-    <div className="custline">
-      <span>
-        {description}
-        {quantity !== 1 ? ` × ${quantity}` : ""}
-      </span>
-      <b>{centsToDisplay(amount)}</b>
+    <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--line-2)" }}>
+      <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
+        Terms
+      </div>
+      <p
+        style={{
+          fontSize: 12,
+          lineHeight: 1.55,
+          margin: 0,
+          whiteSpace: "pre-wrap",
+          color: "var(--ink-2)",
+        }}
+      >
+        {text}
+      </p>
     </div>
   );
 }
@@ -164,10 +159,15 @@ export default async function PublicQuotePage({
   const isDeclined = p.status === "declined";
   const isDone = isAccepted || isDeclined;
 
-  // Fixed (non-optional) lines stay server-rendered. Optional add-ons are interactive:
-  // the QuoteLines client island renders them as toggles and recomputes the totals +
-  // approve amount on every change. estimate.subtotal() counts only non-optional lines,
-  // so it is the island's fixed base.
+  // Good/Better/Best: non-null while the quote is tiered AND unresolved — the
+  // QuoteLines island then renders the three-option picker + the selected tier's
+  // lines instead of the server-rendered fixed rows below.
+  const tierViews = tierViewsFor(estimate);
+
+  // Single format: fixed (non-optional) lines stay server-rendered. Optional
+  // add-ons are interactive: the QuoteLines client island renders them as toggles
+  // and recomputes the totals + approve amount on every change. estimate.subtotal()
+  // counts only non-optional lines, so it is the island's fixed base.
   const fixedLines = p.lines.filter((l) => !l.props.isOptional);
   const optLines = p.lines.filter((l) => l.props.isOptional);
   const fixedSubtotalCents = estimate.subtotal();
@@ -233,37 +233,55 @@ export default async function PublicQuotePage({
                 {customerFirstName ? `, ${customerFirstName}` : ""} — take a look.
               </p>
 
-              {/* Fixed lines */}
-              {fixedLines.map((line) => {
-                const lp = line.props;
-                return (
-                  <LineRow
-                    key={lp.id}
-                    description={lp.description}
-                    quantity={lp.quantity}
-                    rateCents={lp.rate}
-                  />
-                );
-              })}
+              {tierViews ? (
+                /* Good/Better/Best: picker + selected tier's lines + totals + actions */
+                <QuoteLines
+                  tiers={tierViews.tiers}
+                  recommendedTier={tierViews.recommendedTier}
+                  discBps={p.discBps}
+                  taxBps={p.taxBps}
+                  depBps={p.depBps}
+                  token={token}
+                  changeAlreadyRequested={Boolean(p.changeRequestedAt)}
+                />
+              ) : (
+                <>
+                  {/* Fixed lines */}
+                  {fixedLines.map((line) => {
+                    const lp = line.props;
+                    return (
+                      <LineRow
+                        key={lp.id}
+                        description={lp.description}
+                        quantity={lp.quantity}
+                        rateCents={lp.rate}
+                      />
+                    );
+                  })}
 
-              {/* Optional add-on toggles + live totals + actions — client island */}
-              <QuoteLines
-                fixedSubtotalCents={fixedSubtotalCents}
-                optionalLines={optLines.map((line) => {
-                  const lp = line.props;
-                  return {
-                    id: lp.id,
-                    description: lp.description,
-                    quantity: lp.quantity,
-                    rateCents: lp.rate,
-                  };
-                })}
-                discBps={p.discBps}
-                taxBps={p.taxBps}
-                depBps={p.depBps}
-                token={token}
-                changeAlreadyRequested={Boolean(p.changeRequestedAt)}
-              />
+                  {/* Optional add-on toggles + live totals + actions — client island */}
+                  <QuoteLines
+                    fixedSubtotalCents={fixedSubtotalCents}
+                    optionalLines={optLines.map((line) => {
+                      const lp = line.props;
+                      return {
+                        id: lp.id,
+                        description: lp.description,
+                        quantity: lp.quantity,
+                        rateCents: lp.rate,
+                      };
+                    })}
+                    discBps={p.discBps}
+                    taxBps={p.taxBps}
+                    depBps={p.depBps}
+                    token={token}
+                    changeAlreadyRequested={Boolean(p.changeRequestedAt)}
+                  />
+                </>
+              )}
+
+              {/* Terms snapshot — both formats, plain functional block */}
+              {p.termsSnapshot && <TermsBlock text={p.termsSnapshot} />}
             </>
           )}
 

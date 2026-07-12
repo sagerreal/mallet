@@ -21,8 +21,9 @@ import {
   Estimate,
   EstimateLine,
   type EstimateProps,
+  type QuoteTier,
 } from "@/modules/quoting/domain/estimate";
-import { computeQuoteTotals, lineAmountCents } from "./quote-totals";
+import { computeQuoteTotals, lineAmountCents, sumLineAmountsCents } from "./quote-totals";
 
 // ---------------------------------------------------------------------------
 // Domain builders
@@ -34,6 +35,7 @@ interface LineSpec {
   readonly quantity: number;
   readonly rateCents: number;
   readonly isOptional: boolean;
+  readonly tier?: QuoteTier;
 }
 
 const makeLine = (spec: LineSpec, position: number): EstimateLine => {
@@ -46,7 +48,7 @@ const makeLine = (spec: LineSpec, position: number): EstimateLine => {
     isOptional: spec.isOptional,
     needsPhoto: false,
     position,
-    tier: null,
+    tier: spec.tier ?? null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -55,6 +57,7 @@ const makeLine = (spec: LineSpec, position: number): EstimateLine => {
 const makeEstimate = (
   lines: readonly LineSpec[],
   pricing: { discBps: number; taxBps: number; depBps: number },
+  recommendedTier: QuoteTier | null = null,
 ): Estimate => {
   const now = new Date("2026-07-01T00:00:00Z");
   const props: EstimateProps = {
@@ -76,7 +79,7 @@ const makeEstimate = (
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: "c".repeat(64),
-    recommendedTier: null,
+    recommendedTier,
     acceptedTier: null,
     tierNames: null,
     termsSnapshot: null,
@@ -207,5 +210,78 @@ describe("computeQuoteTotals — parity with the domain (odd cents)", () => {
     expect(totals.discountCents).toBe(0);
     expect(totals.taxCents).toBe(0);
     expect(totals.depositCents).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Good/Better/Best: per-tier derivation client-side
+// ---------------------------------------------------------------------------
+
+describe("sumLineAmountsCents", () => {
+  it("rounds each line amount BEFORE summing, like Estimate.subtotalOf", () => {
+    // Two ×.5 fractions make the rounding order visible: per-line rounding gives
+    // 1499 + 833 = 2332, while rounding the raw sum (1498.5 + 832.5 = 2331) once
+    // would give 2331.
+    expect(
+      sumLineAmountsCents([
+        { quantity: 1.5, rateCents: 999 }, // 1498.5 → 1499
+        { quantity: 2.5, rateCents: 333 }, // 832.5 → 833
+      ]),
+    ).toBe(2_332);
+    expect(sumLineAmountsCents([])).toBe(0);
+  });
+});
+
+describe("per-tier totals — parity with the domain's totalsForTier (odd cents)", () => {
+  // A tiered estimate: each tier has odd-cent fixed lines; better carries an optional.
+  const TIERED_LINES: readonly LineSpec[] = [
+    { id: "00000000-0000-0000-0000-00000000000a", description: "Patch", quantity: 1.5, rateCents: 9_999, isOptional: false, tier: "good" },
+    { id: "00000000-0000-0000-0000-00000000000b", description: "Repair labor", quantity: 3, rateCents: 3_333, isOptional: false, tier: "better" },
+    { id: "00000000-0000-0000-0000-00000000000c", description: "Repair parts", quantity: 1.5, rateCents: 999, isOptional: false, tier: "better" },
+    { id: "00000000-0000-0000-0000-00000000000d", description: "Camera inspection", quantity: 1, rateCents: 24_995, isOptional: true, tier: "better" },
+    { id: "00000000-0000-0000-0000-00000000000e", description: "Replace run", quantity: 0.33, rateCents: 299_999, isOptional: false, tier: "best" },
+  ];
+
+  const tierFixedLines = (tier: QuoteTier) =>
+    TIERED_LINES.filter((l) => l.tier === tier && !l.isOptional).map((l) => ({
+      quantity: l.quantity,
+      rateCents: l.rateCents,
+    }));
+
+  it.each(["good", "better", "best"] as const)(
+    "tier %s with no optionals matches the domain's totalsForTier exactly",
+    (tier) => {
+      const domain = makeEstimate(TIERED_LINES, PRICING, "better");
+      const expected = domain.totalsForTier(tier);
+      const totals = computeQuoteTotals({
+        fixedSubtotalCents: sumLineAmountsCents(tierFixedLines(tier)),
+        selectedOptionalLines: [],
+        ...PRICING,
+      });
+      expect(totals.subtotalCents).toBe(expected.subtotal);
+      expect(totals.discountCents).toBe(expected.discount);
+      expect(totals.taxCents).toBe(expected.tax);
+      expect(totals.totalCents).toBe(expected.total);
+      expect(totals.depositCents).toBe(expected.depositDue);
+    },
+  );
+
+  it("selected tier + toggled optional matches a domain twin with that line committed", () => {
+    // Twin: better's lines only, optional flipped non-optional (what accept commits).
+    const twin = makeEstimate(
+      TIERED_LINES.filter((l) => l.tier === "better").map((l) => ({
+        ...l,
+        isOptional: false,
+        tier: undefined,
+      })),
+      PRICING,
+    );
+    const opt = TIERED_LINES.find((l) => l.tier === "better" && l.isOptional)!;
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: sumLineAmountsCents(tierFixedLines("better")),
+      selectedOptionalLines: [{ quantity: opt.quantity, rateCents: opt.rateCents }],
+      ...PRICING,
+    });
+    expectParity(totals, twin);
   });
 });
