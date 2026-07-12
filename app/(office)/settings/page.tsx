@@ -21,22 +21,11 @@ import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
 import { FoldCard } from "./fold-card";
 import { MODAL } from "@/lib/store/modal-ids";
-import { StagePill } from "@/components/shared/stage-pill";
 import { api } from "@/lib/trpc/client";
 
 // ---- sample state values mirrored from prototype's state -------------------
 
 const MALLET_NUMBER = "(925) 555-0100";
-
-// Pipeline stages (prototype's pipelineStages() with no custom stages)
-const PIPELINE_STAGES = ["New customer", "Contacted", "Quote Sent", "Won"];
-const BUILTIN_STAGE_TRIGGERS: Record<string, string> = {
-  "New customer": "a lead is created",
-  Contacted: "the first call or text goes out",
-  "Quote Sent": "a quote goes out",
-  Won: "a quote is accepted",
-  Lost: "marked lost — always with a reason",
-};
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -577,36 +566,8 @@ function SecPipeline() {
     setChkNew("");
   }
 
-  const allStages = [...PIPELINE_STAGES, "Lost"];
-
-  function StageRow({ s }: { s: string }) {
-    const trigger = BUILTIN_STAGE_TRIGGERS[s] ?? "";
-
-    return (
-      <div className="stage-row">
-        <span style={{ fontWeight: 700 }}>{s}</span>
-        <StagePill stage={s} />
-        <span className="trig">{trigger}</span>
-        {/* deferred: custom stage rename (needs a stage model not in scope) */}
-        <button className="btn sm ghost" onClick={() => {}}>Rename</button>
-      </div>
-    );
-  }
-
   return (
     <>
-      <FoldCard title="Pipeline stages" defaultOpen summary={`${PIPELINE_STAGES.length} stages`}>
-        <div>
-          {allStages.map((s) => (
-            <StageRow key={s} s={s} />
-          ))}
-        </div>
-        <div style={{ padding: "14px 6px 4px" }}>
-          {/* deferred: custom stages */}
-          <button className="btn" onClick={() => {}}>+ Add a stage</button>
-        </div>
-      </FoldCard>
-
       <FoldCard title="Visit checklists" summary={`${scopeChecklists.length} lists`}>
         <div className="stage-row" style={{ borderTop: "none", marginTop: 0 }}>
           <div style={{ flex: 1 }}>
