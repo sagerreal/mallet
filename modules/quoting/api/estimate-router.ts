@@ -11,7 +11,7 @@ import { AcceptEstimateUseCase } from "../app/accept-estimate";
 import { DeclineEstimateUseCase } from "../app/decline-estimate";
 import { ListEstimatesUseCase } from "../app/list-estimates";
 import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
-import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
+import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase, jobSummaryDTO, toJobSummaryDTO } from "@mallet/jobs";
 import { logger } from "@mallet/shared/observability";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
@@ -249,7 +249,7 @@ export const createEstimateRouter = () =>
 
     accept: ownerOrOffice
       .input(acceptInput)
-      .output(estimateDTO)
+      .output(estimateDTO.extend({ job: jobSummaryDTO.nullable() }))
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new AcceptEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
@@ -272,6 +272,9 @@ export const createEstimateRouter = () =>
         // CreateJobFromEstimateUseCase is idempotent (partial unique index on source_estimate_id +
         // ON CONFLICT DO NOTHING), so a re-accept is safe. If job creation fails, do NOT fail the
         // accept — log and continue. The manual v1.jobs.createFromEstimate endpoint is the fallback.
+        // The created (or existing) job is returned so the client can adopt it into the jobs store
+        // immediately without a network round-trip.
+        let jobSummary: ReturnType<typeof toJobSummaryDTO> | null = null;
         try {
           await ctx.tx.transaction(async (sp) => {
             const jobRepo = new DrizzleJobRepository(sp, ctx.principal.orgId);
@@ -284,7 +287,9 @@ export const createEstimateRouter = () =>
               ctx.deps.ids,
             );
             const result = await createJob.exec({ orgId: ctx.principal.orgId, estimateId: asEstimateId(input.estimateId) });
-            if (!result.ok) {
+            if (result.ok) {
+              jobSummary = toJobSummaryDTO(result.value);
+            } else {
               logger.error(
                 { err: result.error, estimateId: input.estimateId, orgId: ctx.principal.orgId },
                 "quoting.accept: job creation returned error (non-fatal)",
@@ -298,7 +303,7 @@ export const createEstimateRouter = () =>
           );
         }
 
-        return toEstimateDTO(accepted);
+        return { ...toEstimateDTO(accepted), job: jobSummary };
       }),
 
     archive: ownerOrOffice

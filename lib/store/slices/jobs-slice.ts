@@ -36,8 +36,12 @@
 import type { StateCreator } from "zustand";
 import type { Job, Visit, Addon, VerifyAns } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
-import { dtoJobToStoreJob, hourToHHMM, storeStatusToBackend } from "@/lib/store/dto-mapper";
+import { dtoJobToStoreJob, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
 import { JOB_ORIGIN } from "@/lib/store/hydrator-config";
+import type { RouterOutputs } from "@/lib/trpc/client";
+
+/** Narrow type for the job summary embedded in the accept response. */
+type AcceptJobDTO = NonNullable<RouterOutputs["v1"]["quoting"]["accept"]["job"]>;
 
 // ---------------------------------------------------------------------------
 // Module-level debounce timers: keyed by visitId.
@@ -164,6 +168,12 @@ export interface JobsSlice {
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
   setVisitStatus: (jobId: string, visitId: string, status: string) => void;
   removeVisit: (jobId: string, visitId: string) => void;
+  /**
+   * Adopt a job DTO returned by a server mutation (e.g. the job created by quoting.accept).
+   * Maps via dtoJobToStoreJob (so Fix 1 status remap applies) then either replaces the
+   * existing store entry if a matching id exists, or appends a new one. No network call.
+   */
+  adoptJob: (dto: AcceptJobDTO) => void;
   archiveJob: (id: string) => void;
   deleteJob: (id: string) => void;
   // Found-work / add-ons
@@ -204,6 +214,29 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   jobs: [],
 
   setJobs: (jobs) => set({ jobs }),
+
+  // ---------------------------------------------------------------------------
+  // adoptJob — merge a job DTO received from a server mutation into the store
+  // without a network call. Used by the estimates-slice accept path to surface
+  // the job that CreateJobFromEstimateUseCase created during quoting.accept.
+  //
+  // Maps via dtoJobToStoreJob so the Fix 1 status remap (zero active visits +
+  // backend "scheduled" → store "unscheduled") applies automatically.
+  //
+  // Replace by id if the job is already in the store (idempotent re-accept),
+  // else prepend — mirrors the reconcileJob / addJob pattern elsewhere.
+  // ---------------------------------------------------------------------------
+  adoptJob: (dto) => {
+    // Cast: AcceptJobDTO (jobSummaryDTO shape) is structurally compatible with the
+    // fields dtoJobToStoreJob actually reads; the surplus fields on JobDTO are not
+    // accessed by the mapper.
+    const mapped = dtoJobToStoreJob(dto as unknown as JobDTO);
+    set((s) => {
+      const exists = s.jobs.some((j) => j.id === mapped.id);
+      const jobs = exists ? reconcileJob(s.jobs, mapped) : [mapped, ...s.jobs];
+      return { jobs };
+    });
+  },
 
   // ---------------------------------------------------------------------------
   // addJob — client-authored id (so the returned id is valid for an immediate

@@ -4,6 +4,9 @@ const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockArchive = vi.fn();
 
+// jobs-slice imports RouterOutputs from @/lib/trpc/client for type purposes only.
+vi.mock("@/lib/trpc/client", () => ({ api: {} }));
+
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
     v1: {
@@ -237,6 +240,78 @@ describe("updateJob reconcile + rollback", () => {
     await Promise.resolve();
     // After rejection, snapshot restored.
     expect(get().jobs.find((j) => j.id === created.id)!.title).toBe("Original");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// adoptJob — insert or replace by id; applies Fix 1 status remap; no network call
+// ---------------------------------------------------------------------------
+
+/** Minimal jobSummaryDTO-shaped object (as returned by quoting.accept "job" field). */
+function makeAcceptJobDTO(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    num: "JOB-2",
+    leadId: "lead-1",
+    title: "Auto-job",
+    svc: null,
+    status: "scheduled",
+    assigneeUserId: null,
+    scheduledStart: null,
+    total: { cents: 15000, currency: "USD" },
+    notes: null,
+    visits: [],
+    createdAt: "2026-07-11T00:00:00.000Z",
+    lines: [],
+    addons: [],
+    verifyAnswers: [],
+    photos: [],
+    ...overrides,
+  };
+}
+
+describe("adoptJob", () => {
+  it("appends a new job when the id is not already in the store", () => {
+    const { get } = makeStore();
+    const dto = makeAcceptJobDTO("adopt-new");
+    get().adoptJob(dto as never);
+    const found = get().jobs.find((j) => j.id === "adopt-new");
+    expect(found).toBeDefined();
+    expect(found!.origin).toBe("db");
+  });
+
+  it("replaces an existing job by id when already present", () => {
+    const { get } = makeStore();
+    // Seed an existing job with old title.
+    get().setJobs([{ ...draft, id: "adopt-replace", origin: "db", title: "Old title" }]);
+    const dto = makeAcceptJobDTO("adopt-replace", { title: "New title" });
+    get().adoptJob(dto as never);
+    const jobs = get().jobs.filter((j) => j.id === "adopt-replace");
+    expect(jobs).toHaveLength(1); // not duplicated
+    expect(jobs[0]!.title).toBe("New title");
+  });
+
+  it("applies Fix 1 remap: zero visits + scheduled → store status 'unscheduled'", () => {
+    const { get } = makeStore();
+    const dto = makeAcceptJobDTO("adopt-status", { status: "scheduled", visits: [] });
+    get().adoptJob(dto as never);
+    expect(get().jobs.find((j) => j.id === "adopt-status")!.status).toBe("unscheduled");
+  });
+
+  it("does NOT remap: zero visits + in_progress stays 'scheduled'", () => {
+    const { get } = makeStore();
+    const dto = makeAcceptJobDTO("adopt-inprogress", { status: "in_progress", visits: [] });
+    get().adoptJob(dto as never);
+    expect(get().jobs.find((j) => j.id === "adopt-inprogress")!.status).toBe("scheduled");
+  });
+
+  it("makes no network call (mockCreate/Update/Archive untouched)", () => {
+    mockCreate.mockReset(); mockUpdate.mockReset(); mockArchive.mockReset();
+    const { get } = makeStore();
+    get().adoptJob(makeAcceptJobDTO("adopt-nonet") as never);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockArchive).not.toHaveBeenCalled();
   });
 });
 

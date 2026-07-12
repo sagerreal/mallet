@@ -224,9 +224,16 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     (v) => v.status !== BACKEND_VISIT_STATUS.CANCELED,
   );
   const visits = activeVisitDTOs.map(toStoreVisit);
+  // When there are active visits, recalc from their placement state.
+  // When there are no active visits AND the backend status is "scheduled", remap to
+  // "unscheduled" — a zero-visit job has not been slotted yet (this is the common state
+  // immediately after a quote is accepted and CreateJobFromEstimateUseCase runs).
+  // Only "in_progress", "complete", and "canceled" are preserved as-is via the fallback.
   const status = visits.length > 0
     ? recalcJobStatus(visits)
-    : toStoreJobStatusInternal(dto.status);
+    : dto.status === BACKEND_JOB_STATUS.SCHEDULED
+      ? "unscheduled"
+      : toStoreJobStatusInternal(dto.status);
 
   return {
     id: dto.id,

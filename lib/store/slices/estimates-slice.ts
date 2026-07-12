@@ -32,6 +32,7 @@ import type { StateCreator } from "zustand";
 import type { Estimate, EstimateRead } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoEstimateToStore } from "@/lib/store/dto-mapper";
+import type { JobsSlice } from "./jobs-slice";
 
 // Continue the sample's Q-numbers (sample tops out at Q-1044).
 // After reconcile, the server-canonical `num` overwrites this optimistic value.
@@ -81,7 +82,7 @@ function restoreEst(estimates: Estimate[], prior: Estimate): Estimate[] {
 // Slice creator
 // ---------------------------------------------------------------------------
 
-export const createEstimatesSlice: StateCreator<EstimatesSlice, [], [], EstimatesSlice> = (set, get) => ({
+export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], [], EstimatesSlice> = (set, get) => ({
   estimates: [],
 
   setEstimates: (estimates) => set({ estimates }),
@@ -212,6 +213,11 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice, [], [], Estimate
           // Reconcile with the persisted accepted lines (including any customer-selected add-ons).
           const reconciled = dtoEstimateToStore(dto, prior?.fu ?? { on: false, stage: 0 });
           set((s) => ({ estimates: reconcileEst(s.estimates, { ...reconciled, id }) }));
+          // Adopt the newly created job into the jobs slice so it appears immediately
+          // without waiting for the next hydrator refetch.
+          if (dto.job) {
+            get().adoptJob(dto.job);
+          }
         })
         .catch((err: unknown) => {
           if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));

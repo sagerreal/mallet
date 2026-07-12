@@ -1,5 +1,6 @@
 // Public surface for the jobs module — the only sanctioned import seam (architecture rule).
 export { createJobRouter } from "./api/job-router";
+export { jobSummaryDTO, toJobSummaryDTO } from "./api/job-dto";
 export { createFieldRouter } from "./api/field-router";
 export { createVisitRouter } from "./api/visit-router";
 export type { Job, JobStatus, JobProps } from "./domain/job";

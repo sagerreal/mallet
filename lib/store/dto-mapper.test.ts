@@ -429,3 +429,50 @@ describe("dtoJobToStoreJob svc mapping", () => {
     expect(job.svc).toBe("service");
   });
 });
+
+// ---------------------------------------------------------------------------
+// dtoJobToStoreJob — status remap (Fix 1)
+// Zero active visits + backend "scheduled" → store "unscheduled"
+// ---------------------------------------------------------------------------
+
+const visitDTO = {
+  id: "vis-1",
+  assigneeUserId: "tech-1",
+  scheduledDate: "2026-07-15",
+  scheduledStart: "09:00",
+  scheduledEnd: "11:00",
+  status: "pending" as const,
+  startedAt: null,
+  completedAt: null,
+  notes: null,
+  position: 0,
+};
+
+describe("dtoJobToStoreJob status remap (zero-visit fix)", () => {
+  it("zero active visits + backend 'scheduled' → store 'unscheduled'", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "scheduled", visits: [] } as never);
+    expect(job.status).toBe("unscheduled");
+  });
+
+  it("zero active visits + backend 'in_progress' → store 'scheduled' (not remapped)", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "in_progress", visits: [] } as never);
+    expect(job.status).toBe("scheduled");
+  });
+
+  it("zero active visits + backend 'complete' → store 'done'", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "complete", visits: [] } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("with placed visits + backend 'scheduled' → recalcStatus (stays 'scheduled')", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "scheduled", visits: [visitDTO] } as never);
+    // A placed visit (date+tech+start all present) with pending status → recalcStatus → "scheduled"
+    expect(job.status).toBe("scheduled");
+  });
+
+  it("canceled visit is filtered out → treated as zero active visits → 'unscheduled'", () => {
+    const canceledVisit = { ...visitDTO, status: "canceled" as const };
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "scheduled", visits: [canceledVisit] } as never);
+    expect(job.status).toBe("unscheduled");
+  });
+});
