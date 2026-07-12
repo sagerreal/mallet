@@ -89,8 +89,8 @@ function toStoreJob(dto: JobSummaryDTO): Job {
   return {
     id: dto.id,
     leadId: dto.leadId,
-    // jobSummaryDTO does not carry sourceEstimateId (only jobDTO does); default to "service".
-    svc: "service",
+    sourceEstimateId: dto.sourceEstimateId ?? null,
+    svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
     addr: "",

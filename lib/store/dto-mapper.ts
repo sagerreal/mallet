@@ -243,6 +243,7 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
   return {
     id: dto.id,
     leadId: dto.leadId,
+    sourceEstimateId: dto.sourceEstimateId ?? null,
     svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",

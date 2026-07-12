@@ -431,6 +431,23 @@ describe("dtoJobToStoreJob svc mapping", () => {
 });
 
 // ---------------------------------------------------------------------------
+// dtoJobToStoreJob — sourceEstimateId threading
+// ---------------------------------------------------------------------------
+
+describe("dtoJobToStoreJob sourceEstimateId threading", () => {
+  it("threads a non-null sourceEstimateId through to the store job", () => {
+    const estId = "aaaabbbb-cccc-dddd-eeee-ffffffffffff";
+    const job = dtoJobToStoreJob({ ...baseJobDto, sourceEstimateId: estId } as never);
+    expect(job.sourceEstimateId).toBe(estId);
+  });
+
+  it("maps null sourceEstimateId to null on the store job", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, sourceEstimateId: null } as never);
+    expect(job.sourceEstimateId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // dtoJobToStoreJob — status remap (Fix 1)
 // Zero active visits + backend "scheduled" → store "unscheduled"
 // ---------------------------------------------------------------------------

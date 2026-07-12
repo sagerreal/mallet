@@ -33,7 +33,7 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
+import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
@@ -281,11 +281,52 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove, onGoToSched
 interface PriceSummaryProps {
   job: Job;
   onBuildPrice: () => void;
+  onViewQuote: (estId: string) => void;
 }
 
-function PriceSummary({ job, onBuildPrice }: PriceSummaryProps) {
+/**
+ * Derive a display total for the quote pointer row.
+ * Uses cachedTotal when lines are empty (list-hydrated estimate), otherwise sums lines.
+ * Exported for unit testing.
+ */
+export function estDisplayTotal(est: Estimate): number | null {
+  if (est.lines.length > 0) {
+    return est.lines.reduce((sum, l) => sum + (l.q ?? 1) * (l.r ?? 0), 0);
+  }
+  return est.cachedTotal ?? null;
+}
+
+export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryProps) {
+  const estimates = useAppStore((s) => s.estimates);
+
   if (jobMode(job) === "estimate") return null;
   const hasLines = (job.lines ?? []).length > 0;
+
+  // When this job was created from an accepted quote and has no lines of its own,
+  // show a pointer to the source quote instead of the "Build the price" prompt.
+  // LOCKED rule: money lives in Finance, not here — this is a read-only pointer only.
+  if (!hasLines && job.sourceEstimateId) {
+    const est = estimates.find((e) => e.id === job.sourceEstimateId);
+    const total = est ? estDisplayTotal(est) : null;
+    const label =
+      est && total !== null
+        ? `Priced from quote ${est.num} — ${fmt$(total)}`
+        : "Priced from its quote";
+    return (
+      <div style={{ margin: "14px 0 0", display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 13 }}>{label}</span>
+        {est && (
+          <span
+            className="linklike"
+            style={{ fontSize: 12 }}
+            onClick={() => onViewQuote(est.id)}
+          >
+            View the quote →
+          </span>
+        )}
+      </div>
+    );
+  }
 
   if (!hasLines) {
     return (
@@ -860,7 +901,11 @@ export function JobModalContent() {
       </div>
 
       {/* 7. Price summary — PRICE + Total only, never cost/margin/profit */}
-      <PriceSummary job={job} onBuildPrice={() => openModal(MODAL.PRICE_BUILDER, { jobId: job.id })} />
+      <PriceSummary
+        job={job}
+        onBuildPrice={() => openModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
+        onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
+      />
 
       {/* 8. View signed agreement — deferred (signed-doc viewer not built) */}
 
