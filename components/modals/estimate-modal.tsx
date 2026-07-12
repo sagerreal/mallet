@@ -115,7 +115,6 @@ export function EstimateModalContent() {
     if (fullQuery.data) adoptEstimate(fullQuery.data, e?.fu ?? { on: false, stage: 0 });
     // e?.fu intentionally not a dep — adopt fires once per fetched record; fu is
     // read from the store copy at that moment.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fullQuery.data]);
 
   if (!e) return null;

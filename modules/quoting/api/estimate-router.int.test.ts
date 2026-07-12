@@ -8,6 +8,7 @@ import { closeDb } from "@mallet/shared/db/client";
 import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
+import { requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
 
 // Capstone: the whole quoting stack via createCaller — auth, RBAC, org-scoped tx, use-cases,
 // Drizzle repo, live RLS. Owner in org A drafts -> sends -> accepts; org B sees nothing; a tech
@@ -199,36 +200,56 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     const pageB = await callerB.v1.quoting.listByLead({ leadId: leadAId });
     expect(pageB.items).toHaveLength(0);
   });
-});
 
-// ---------------------------------------------------------------------------
-// Integration tests for the public quote request_change action
-// DEFERRED: needs migration 0056 applied to the live DB before running
-// Run with: npm run test:int -- modules/quoting/api/estimate-router.int.test.ts
-// ---------------------------------------------------------------------------
+  it("customer requests a change on a sent quote via the public token", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
 
-describe("public quote POST request_change", () => {
-  // These tests hit the live Supabase DB. They require migration 0056 (two ADD COLUMNs on estimates).
-  // The controller applies migration 0056 before running these tests.
+    // Fresh lead for isolation (the task assertion counts rows on this lead).
+    const lead = await caller.v1.customers.create({ name: "Change Request Customer" });
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Fence repair",
+      lines: [{ description: "Labor", quantity: 4, rateCents: 12_000 }],
+    });
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+    expect(sent.publicToken).toBeTruthy();
 
-  it("request_change on a sent estimate sets change_requested_at and change_request", async () => {
-    // This test should:
-    // 1. Create a draft estimate via v1.quoting.draft (authenticated)
-    // 2. Send it via v1.quoting.send
-    // 3. POST to /api/public/quote/[token] with { action: "request_change", message: "lower price" }
-    //    (using the test's HTTP client / fetch against the live Next.js server, or
-    //     calling requestChangePublicQuote directly if the test harness supports it)
-    // 4. Assert the returned estimate has changeRequestedAt set and changeRequest === "lower price"
-    // 5. Assert a task was created on the lead (query the tasks table)
-    //
-    // NOTE: The existing int test file pattern uses direct tRPC callers, not HTTP fetch.
-    //       Wire this test the same way the other int tests are structured in this file.
-    //       Read the top of this file to understand the test harness before implementing.
-    expect(true).toBe(true); // placeholder — replace with real assertions
+    // The public page path: request a change through the token (no auth).
+    const changed = await requestChangePublicQuote(sent.publicToken!, "  Please lower the price  ");
+    expect(changed).not.toBeNull();
+    expect(changed!.props.status).toBe("sent"); // stays sent — office decides what happens next
+    expect(changed!.props.changeRequest).toBe("Please lower the price"); // trimmed
+    expect(changed!.props.changeRequestedAt).toBeInstanceOf(Date);
+
+    // The office sees it on the DTO.
+    const fetched = await caller.v1.quoting.get({ estimateId: drafted.id });
+    expect(fetched.changeRequest).toBe("Please lower the price");
+    expect(fetched.changeRequestedAt).not.toBeNull();
+
+    // A task was created on the lead so the office is notified.
+    const tasks = await admin<{ text: string }[]>`
+      select text from tasks where org_id = ${orgAId} and lead_id = ${lead.id}`;
+    expect(tasks.some((t) => t.text.includes("change requested"))).toBe(true);
   });
 
-  it("request_change on a draft estimate returns 400", async () => {
-    // Same setup: create a draft but do NOT send it; POST request_change → expect 400
-    expect(true).toBe(true); // placeholder
+  it("request_change on a non-sent quote is refused: state and fields unchanged", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const drafted = await caller.v1.quoting.draft({
+      leadId: leadAId,
+      title: "Too-late change",
+      lines: [{ description: "Work", quantity: 1, rateCents: 9_000 }],
+    });
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+    await caller.v1.quoting.accept({ estimateId: drafted.id });
+
+    // Accepted quote → domain rejects; the idempotent path returns current state untouched.
+    const result = await requestChangePublicQuote(sent.publicToken!, "actually, change it");
+    expect(result).not.toBeNull();
+    expect(result!.props.status).toBe("accepted");
+    expect(result!.props.changeRequest ?? null).toBeNull();
+
+    // A token that matches nothing → null.
+    expect(await requestChangePublicQuote("not-a-real-token", "hello")).toBeNull();
   });
 });
