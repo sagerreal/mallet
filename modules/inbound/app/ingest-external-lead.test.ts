@@ -2,54 +2,54 @@ import { describe, it, expect } from "vitest";
 import { IngestExternalLeadUseCase } from "./ingest-external-lead";
 import { ok, err, isOk, isErr, validation } from "@mallet/shared/types";
 
-function makeDeps(receiptSeen = false) {
-  const calls = { ensure: [] as unknown[], touched: [] as unknown[] };
-  const ensure = { exec: async (cmd: unknown) => { calls.ensure.push(cmd); return ok({ lead: { props: { id: "lead-1" } }, created: true }); } };
-  const receipts = { recordIfNew: async () => !receiptSeen }; // false => already seen
-  const endpoints = { touchLastLead: async (...a: unknown[]) => { calls.touched.push(a); } };
+function makeDeps(opts: { reserved?: boolean; ensureErr?: boolean } = {}) {
+  const calls = { ensure: 0, reserve: 0, release: 0, touched: 0 };
+  const ensure = { exec: async () => { calls.ensure++; return opts.ensureErr ? err(validation("bad", "name")) : ok({ lead: { props: { id: "lead-1" } }, created: true }); } };
+  const receipts = {
+    reserve: async () => { calls.reserve++; return !opts.reserved; }, // reserved=true → already seen → reserve returns false
+    release: async () => { calls.release++; },
+  };
+  const endpoints = { touchLastLead: async () => { calls.touched++; } };
   const clock = { now: () => new Date("2026-07-12T00:00:00Z") };
   return { uc: new IngestExternalLeadUseCase(ensure as never, receipts as never, endpoints as never, clock as never), calls };
 }
 const lead = { name: "Gary", phone: "(925) 555-0100", email: null, address: null, notes: null, externalId: "angi-1" };
 
 describe("IngestExternalLeadUseCase", () => {
-  it("creates a customer and stamps last_lead_at", async () => {
+  it("reserves BEFORE creating; a fresh reservation creates the lead", async () => {
     const { uc, calls } = makeDeps();
     const r = await uc.exec({ channel: "angi", source: "Angi", lead });
-    expect(isOk(r)).toBe(true);
-    if (isOk(r)) expect(r.value.outcome).toBe("created");
-    expect(calls.ensure).toHaveLength(1);
-    expect(calls.touched).toHaveLength(1);
+    expect(isOk(r) && r.value.outcome).toBe("created");
+    expect(calls.reserve).toBe(1);
+    expect(calls.ensure).toBe(1);
+    expect(calls.release).toBe(0);
+    expect(calls.touched).toBe(1);
   });
-  it("reports an already-received external_id as duplicate_ignored without re-touching the endpoint", async () => {
-    const { uc, calls } = makeDeps(true);
+
+  it("ignores a duplicate WITHOUT creating (reserve returns false → ensure never called)", async () => {
+    const { uc, calls } = makeDeps({ reserved: true });
     const r = await uc.exec({ channel: "angi", source: "Angi", lead });
-    expect(isOk(r)).toBe(true);
-    if (isOk(r)) expect(r.value.outcome).toBe("duplicate_ignored");
-    // Ordering (see brief NOTE, kept intentionally): the receipt guard runs AFTER EnsureCustomer
-    // because recordIfNew needs the resulting leadId, so ensureCustomer IS still called on a
-    // retry — its own phone dedupe is the backstop that prevents a second customer record.
-    // What must NOT happen twice is the caller-visible side effect: last_lead_at is only
-    // touched once, on the delivery that actually wins the receipt race.
-    expect(calls.ensure).toHaveLength(1);
-    expect(calls.touched).toHaveLength(0);
+    expect(isOk(r) && r.value.outcome).toBe("duplicate_ignored");
+    expect(calls.reserve).toBe(1);
+    expect(calls.ensure).toBe(0); // the key fix: a retried phoneless lead can't double-create
+    expect(calls.touched).toBe(0); // a duplicate must NOT bump the endpoint's last_lead_at
   });
-  it("skips the receipt guard when externalId is null (form channel)", async () => {
-    const { uc, calls } = makeDeps(true); // even if recordIfNew would say seen, null id skips it
-    const r = await uc.exec({ channel: "form", source: "Website", lead: { ...lead, externalId: null } });
-    if (isOk(r)) expect(r.value.outcome).toBe("created");
-    expect(calls.ensure).toHaveLength(1);
-  });
-  it("passes an EnsureCustomer failure straight through without recording or touching", async () => {
-    const calls = { record: 0, touched: 0 };
-    const ensure = { exec: async () => err(validation("name required", "name")) };
-    const receipts = { recordIfNew: async () => { calls.record++; return true; } };
-    const endpoints = { touchLastLead: async () => { calls.touched++; } };
-    const clock = { now: () => new Date("2026-07-12T00:00:00Z") };
-    const uc = new IngestExternalLeadUseCase(ensure as never, receipts as never, endpoints as never, clock as never);
-    const r = await uc.exec({ channel: "angi", source: "Angi", lead: { name: "Gary", phone: null, email: null, address: null, notes: null, externalId: "angi-9" } });
+
+  it("releases the reservation when the create fails, so a retry can succeed", async () => {
+    const { uc, calls } = makeDeps({ ensureErr: true });
+    const r = await uc.exec({ channel: "angi", source: "Angi", lead });
     expect(isErr(r)).toBe(true);
-    expect(calls.record).toBe(0);
-    expect(calls.touched).toBe(0);
+    expect(calls.reserve).toBe(1);
+    expect(calls.ensure).toBe(1);
+    expect(calls.release).toBe(1); // rolled back → retry re-reserves
+    expect(calls.touched).toBe(0); // a failed create must NOT bump last_lead_at
+  });
+
+  it("form channel (externalId=null) skips the receipt entirely", async () => {
+    const { uc, calls } = makeDeps({ reserved: true });
+    const r = await uc.exec({ channel: "form", source: "Website", lead: { ...lead, externalId: null } });
+    expect(isOk(r) && r.value.outcome).toBe("created");
+    expect(calls.reserve).toBe(0);
+    expect(calls.ensure).toBe(1);
   });
 });

@@ -12,9 +12,12 @@ export interface InboundEndpointRepository {
   touchLastLead(channel: Channel, at: Date): Promise<void>;
 }
 
-// Idempotency ledger (runs under withTenant). Returns false if (channel, externalId) already seen.
+// Idempotency ledger used as a LOCK (record-first): reserve the (channel, externalId) BEFORE the
+// create so a retried/duplicate webhook can't double-create. release() rolls back a reservation
+// when the create fails, so a genuine retry can proceed.
 export interface LeadReceiptRepository {
-  recordIfNew(channel: Channel, externalId: string, leadId: string): Promise<boolean>;
+  reserve(channel: Channel, externalId: string): Promise<boolean>; // true = newly reserved (proceed)
+  release(channel: Channel, externalId: string): Promise<void>;
 }
 
 // Privileged, pre-tenant token→org lookup (BYPASSRLS ownerDb). Returns minimal identity only.
