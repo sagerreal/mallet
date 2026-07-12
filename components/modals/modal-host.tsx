@@ -30,6 +30,7 @@ import { Modal } from "./modal";
 import { VisitModalContent } from "./visit-modal";
 import { CleanUpModalContent } from "./placeholder-modals";
 import { CompanyViewModalContent } from "./company-view-modal";
+import { ImportCustomersModalContent } from "./import-customers-modal";
 
 export function ModalHost() {
   const activeModal = useActiveModal();
@@ -80,6 +81,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.SWEEP} onClose={close}>
         <SweepModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.IMPORT_CUSTOMERS} onClose={close}>
+        <ImportCustomersModalContent />
       </Modal>
 
       <Modal open={id === MODAL.QUOTE_SWEEP} onClose={close}>

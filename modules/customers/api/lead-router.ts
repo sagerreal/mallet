@@ -46,6 +46,23 @@ const createInput = z.object({
   address: z.string().max(500).optional(),
 });
 
+const importRowInput = z.object({
+  name: z.string().min(1).max(255),
+  phone: z.string().max(40).nullable(), // raw string; server parses leniently, never rejects the batch
+  email: z.string().max(320).nullable(), // raw string; server validates leniently, never rejects the batch
+  source: z.string().max(255).nullable(),
+  address: z.string().max(500).nullable(),
+  notes: z.string().max(2000).nullable(),
+});
+const importInput = z.object({ rows: z.array(importRowInput).min(1).max(500) });
+
+const importResultDTO = z.object({
+  created: z.number().int(),
+  deduped: z.number().int(),
+  failed: z.number().int(),
+  errors: z.array(z.object({ index: z.number().int(), message: z.string() })),
+});
+
 const listInput = z.object({
   // 500-row pilot ceiling: a single fetch is correct below this; above it, cursor iteration is needed.
   limit: z.number().int().positive().max(500).optional(),
@@ -233,6 +250,55 @@ export const createLeadRouter = () =>
           created ? "lead.created" : "lead.deduped",
         );
         return { ...toLeadDTO(lead), created };
+      }),
+
+    importCustomers: ownerOrOffice
+      .input(importInput)
+      .output(importResultDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new EnsureCustomerUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        let created = 0;
+        let deduped = 0;
+        let failed = 0;
+        const errors: { index: number; message: string }[] = [];
+
+        for (let i = 0; i < input.rows.length; i++) {
+          const r = input.rows[i]!;
+          // Lenient phone parse: an unreadable phone is dropped, not fatal (name is the only requirement).
+          let phone: Phone | null = null;
+          if (r.phone) {
+            const parsed = Phone.parse(r.phone);
+            if (isOk(parsed)) phone = parsed.value;
+          }
+          // Lenient email validation: a malformed email is dropped, not fatal — same partial-success
+          // contract as phone, so one bad email can't reject the whole batch at the Zod boundary.
+          let email: string | null = null;
+          if (r.email) {
+            const e = r.email.trim();
+            if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) email = e;
+          }
+          // exec returns a Result — NEVER throws for validation, so one bad row can't roll back the tx.
+          const result = await useCase.exec({
+            name: r.name,
+            phone,
+            email,
+            source: r.source,
+            companyId: null,
+            role: null,
+            notes: r.notes?.trim() || null,
+            address: r.address?.trim() || null,
+          });
+          if (isOk(result)) {
+            result.value.created ? (created += 1) : (deduped += 1);
+          } else {
+            failed += 1;
+            errors.push({ index: i, message: result.error.message });
+          }
+        }
+
+        logger.info({ orgId: ctx.principal.orgId, created, deduped, failed }, "customers.imported");
+        return { created, deduped, failed, errors };
       }),
 
     get: ownerOrOffice

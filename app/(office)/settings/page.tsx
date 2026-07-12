@@ -440,6 +440,7 @@ function SecSources() {
   const removeSource = useAppStore((s) => s.removeSource);
   const setToggle = useAppStore((s) => s.setToggle);
   const frontDesk = useAppStore((s) => s.toggles.frontDesk);
+  const openModal = useOpenModal();
 
   const [srcName, setSrcName] = useState("");
 
@@ -507,13 +508,13 @@ function SecSources() {
         ))}
       </FoldCard>
 
-      <FoldCard title="Import customers" summary="QuickBooks · CSV">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {/* deferred: external integration (imports) */}
-          <button className="btn" onClick={() => {}}>Import from QuickBooks</button>
-          <button className="btn" onClick={() => {}}>Google Contacts</button>
-          <button className="btn ghost" onClick={() => {}}>Upload a spreadsheet</button>
-        </div>
+      <FoldCard title="Import customers" summary="CSV">
+        <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+          Coming from QuickBooks, Google Contacts, or another tool? Export a CSV and upload it here.
+        </p>
+        <button className="btn primary" onClick={() => openModal(MODAL.IMPORT_CUSTOMERS)}>
+          Upload a spreadsheet (CSV)
+        </button>
       </FoldCard>
 
       <FoldCard title="Source list" summary={`${sources.length} sources`}>
