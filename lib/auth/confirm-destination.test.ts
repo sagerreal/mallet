@@ -7,8 +7,8 @@ describe("confirmDestination", () => {
     expect(confirmDestination("recovery", undefined)).toBe("/reset-password");
   });
 
-  it('routes invite to /auth/set-password when next is absent', () => {
-    expect(confirmDestination("invite", undefined)).toBe("/auth/set-password");
+  it('routes invite to /set-password when next is absent', () => {
+    expect(confirmDestination("invite", undefined)).toBe("/set-password");
   });
 
   it('routes magiclink to / when next is absent', () => {
@@ -34,7 +34,7 @@ describe("confirmDestination", () => {
 
   // Unsafe next falls back to type default (open-redirect guard via safeNext)
   it('rejects protocol-relative URL for invite, falls back to type default', () => {
-    expect(confirmDestination("invite", "//evil.com")).toBe("/auth/set-password");
+    expect(confirmDestination("invite", "//evil.com")).toBe("/set-password");
   });
 
   it('rejects absolute https URL for recovery, falls back to type default', () => {
@@ -46,11 +46,11 @@ describe("confirmDestination", () => {
   });
 
   it('rejects paths not starting with / for invite', () => {
-    expect(confirmDestination("invite", "evil.com/path")).toBe("/auth/set-password");
+    expect(confirmDestination("invite", "evil.com/path")).toBe("/set-password");
   });
 
   it('returns type default when next is null', () => {
-    expect(confirmDestination("invite", null)).toBe("/auth/set-password");
+    expect(confirmDestination("invite", null)).toBe("/set-password");
     expect(confirmDestination("recovery", null)).toBe("/reset-password");
   });
 });

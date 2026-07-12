@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
-import { updatePassword } from "@/features/auth/hooks";
+import { completeInvite } from "@/features/auth/hooks";
 
 // Landing screen for invited team members after they click their invite link.
 // The Supabase session is already active (established by /auth/callback).
@@ -19,7 +19,8 @@ export default function SetPasswordPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const failure = await updatePassword(String(new FormData(e.currentTarget).get("password")));
+    const form = new FormData(e.currentTarget);
+    const failure = await completeInvite(String(form.get("password")), String(form.get("fullName")));
     if (failure) {
       setError(failure);
       setBusy(false);
@@ -36,6 +37,16 @@ export default function SetPasswordPage() {
       <p className="auth-sub">Choose a password to finish joining your team.</p>
       <Card>
         <form onSubmit={onSubmit} className="space-y-3">
+          <Field label="Your name">
+            <Input
+              name="fullName"
+              type="text"
+              required
+              maxLength={80}
+              autoComplete="name"
+              placeholder="Mike Rivera"
+            />
+          </Field>
           <Field label="Password">
             <Input
               name="password"

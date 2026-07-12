@@ -5,7 +5,7 @@ import { safeNext } from "./safe-next";
 // Anything not explicitly listed (e.g. "email_change") falls back to "/".
 const TYPE_DEFAULTS: Partial<Record<EmailOtpType, string>> = {
   recovery: "/reset-password",
-  invite: "/auth/set-password",
+  invite: "/set-password",
 };
 
 const FALLBACK = "/";
@@ -14,7 +14,7 @@ const FALLBACK = "/";
 // return the destination path the confirm route should redirect to.
 //
 // Rules:
-//   1. Start with the type's default path (recovery→/reset-password, invite→/auth/set-password, else /).
+//   1. Start with the type's default path (recovery→/reset-password, invite→/set-password, else /).
 //   2. If `next` is present, validate it with safeNext against that default.
 //      A safe `next` wins; a missing or unsafe one falls back to the type default.
 //

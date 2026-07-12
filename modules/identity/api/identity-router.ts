@@ -33,7 +33,7 @@ async function sendInviteEmail(email: string, orgId: string): Promise<InviteEmai
     // relative path that Supabase will expand using the Site URL configured in the project dashboard.
     const appUrl = loadConfig().PUBLIC_APP_URL ?? "";
     // After the invited user clicks the link, /auth/confirm verifies the token_hash and routes
-    // them to /auth/set-password (the type=invite default in confirmDestination).
+    // them to /set-password (the type=invite default in confirmDestination).
     // No ?next param is needed — the type default handles it and avoids any unsafe query on the
     // Supabase {{ .RedirectTo }} substitution.
     const redirectTo = appUrl ? `${appUrl}/auth/confirm` : "/auth/confirm";

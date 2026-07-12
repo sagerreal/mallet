@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { safeNext } from "./safe-next";
 
-const DEFAULT = "/auth/set-password";
+const DEFAULT = "/set-password";
 
 describe("safeNext", () => {
   it("returns a safe relative path unchanged", () => {

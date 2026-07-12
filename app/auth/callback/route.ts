@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabase/server";
 import { safeNext } from "@/lib/auth/safe-next";
 
 // Default landing for an invited user who has no password yet.
-const SET_PASSWORD_PATH = "/auth/set-password";
+const SET_PASSWORD_PATH = "/set-password";
 
 // Supabase email-based auth links land here in two formats:
 //
