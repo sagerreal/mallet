@@ -33,4 +33,7 @@ describe("ThumbtackLeadParser", () => {
   it("requires leadID (the idempotency key)", () => {
     expect(isErr(p.parse({ ...sample, leadID: undefined }))).toBe(true);
   });
+  it("rejects a whitespace-only leadID (would normalize to an empty idempotency key)", () => {
+    expect(isErr(p.parse({ ...sample, leadID: "   " }))).toBe(true);
+  });
 });

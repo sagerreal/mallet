@@ -32,6 +32,7 @@ describe("IngestExternalLeadUseCase", () => {
     expect(isOk(r) && r.value.outcome).toBe("duplicate_ignored");
     expect(calls.reserve).toBe(1);
     expect(calls.ensure).toBe(0); // the key fix: a retried phoneless lead can't double-create
+    expect(calls.touched).toBe(0); // a duplicate must NOT bump the endpoint's last_lead_at
   });
 
   it("releases the reservation when the create fails, so a retry can succeed", async () => {
@@ -41,6 +42,7 @@ describe("IngestExternalLeadUseCase", () => {
     expect(calls.reserve).toBe(1);
     expect(calls.ensure).toBe(1);
     expect(calls.release).toBe(1); // rolled back → retry re-reserves
+    expect(calls.touched).toBe(0); // a failed create must NOT bump last_lead_at
   });
 
   it("form channel (externalId=null) skips the receipt entirely", async () => {

@@ -32,4 +32,7 @@ describe("AngiLeadParser", () => {
   it("requires leadOid (the idempotency key)", () => {
     expect(isErr(p.parse({ ...sample, leadOid: undefined }))).toBe(true);
   });
+  it("rejects a whitespace-only leadOid (would normalize to an empty idempotency key)", () => {
+    expect(isErr(p.parse({ ...sample, leadOid: "   " }))).toBe(true);
+  });
 });

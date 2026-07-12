@@ -133,6 +133,7 @@ suite("inbound intake (resolver + ingest, live RLS)", () => {
 
     const rowsAfterRetry = await admin<{ n: number }[]>`select count(*)::int as n from leads where org_id = ${orgAId} and name = 'Priya Nair' and source = 'Angi'`;
     expect(rowsAfterRetry[0]!.n).toBe(1);
+    // (The no-re-touch-of-last_lead_at guarantee is asserted at the unit layer via calls.touched===0.)
   });
 
   it("dedupes a phoneless Angi lead by externalId on retry (phone dedupe alone can't catch this)", async () => {
