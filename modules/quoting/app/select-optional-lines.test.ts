@@ -47,6 +47,7 @@ const makeLine = (
     isOptional,
     needsPhoto,
     position,
+    tier: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -73,6 +74,10 @@ const makeSentEstimate = (lines: readonly EstimateLine[]): Estimate => {
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: "d".repeat(64),
+    recommendedTier: null,
+    acceptedTier: null,
+    tierNames: null,
+    termsSnapshot: null,
     lines,
     createdAt: now,
     updatedAt: now,

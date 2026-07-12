@@ -59,6 +59,7 @@ export class DraftEstimateUseCase {
         isOptional: input.isOptional,
         needsPhoto: input.needsPhoto,
         position: i,
+        tier: null,
       });
       if (!isOk(line)) return line;
       built.push(line.value);
@@ -88,6 +89,10 @@ export class DraftEstimateUseCase {
       changeRequestedAt: null,
       changeRequest: null,
       publicToken: generatePublicToken(),
+      recommendedTier: null,
+      acceptedTier: null,
+      tierNames: null,
+      termsSnapshot: null,
       lines: built,
       createdAt: now,
       updatedAt: now,

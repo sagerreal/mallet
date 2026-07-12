@@ -59,6 +59,8 @@ export class AcceptEstimateUseCase {
           isOptional: input.isOptional,
           needsPhoto: input.needsPhoto,
           position: i,
+          // Committed accept-time lines are always resolved — never tier-tagged.
+          tier: null,
         });
         if (!isOk(line)) return line;
         built.push(line.value);

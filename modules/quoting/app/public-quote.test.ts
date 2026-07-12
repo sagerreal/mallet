@@ -139,6 +139,7 @@ const makeTestLine = (): EstimateLine => {
     isOptional: false,
     needsPhoto: false,
     position: 0,
+    tier: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -160,6 +161,7 @@ const makeLineWith = (
     isOptional,
     needsPhoto: false,
     position,
+    tier: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -193,6 +195,10 @@ const makeSentEstimate = (
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: token,
+    recommendedTier: null,
+    acceptedTier: null,
+    tierNames: null,
+    termsSnapshot: null,
     lines: lines ?? [makeTestLine()],
     createdAt: now,
     updatedAt: now,
@@ -229,6 +235,10 @@ const makeDraftEstimate = (
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: token,
+    recommendedTier: null,
+    acceptedTier: null,
+    tierNames: null,
+    termsSnapshot: null,
     lines: [makeTestLine()],
     createdAt: now,
     updatedAt: now,

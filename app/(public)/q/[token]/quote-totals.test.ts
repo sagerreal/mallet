@@ -46,6 +46,7 @@ const makeLine = (spec: LineSpec, position: number): EstimateLine => {
     isOptional: spec.isOptional,
     needsPhoto: false,
     position,
+    tier: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -75,6 +76,10 @@ const makeEstimate = (
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: "c".repeat(64),
+    recommendedTier: null,
+    acceptedTier: null,
+    tierNames: null,
+    termsSnapshot: null,
     lines: lines.map(makeLine),
     createdAt: now,
     updatedAt: now,
