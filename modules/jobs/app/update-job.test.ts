@@ -13,7 +13,7 @@ function makeJob() {
     id: JID, orgId: ORG, num: "JOB-1", leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
     sourceEstimateId: null, assigneeUserId: null, title: "Old", svc: "service", status: "scheduled",
     scheduledStart: null, scheduledEnd: null, startedAt: null, completedAt: null, canceledAt: null,
-    cancelReason: null, total: zeroMoney, notes: null, visits: [],
+    cancelReason: null, total: zeroMoney, notes: null, checklist: null, visits: [],
     createdAt: new Date("2026-07-10T00:00:00Z"), updatedAt: new Date("2026-07-10T00:00:00Z"),
   });
   if (!isOk(r)) throw new Error("setup"); return r.value;
@@ -60,6 +60,35 @@ describe("UpdateJobUseCase", () => {
       expect(r.value.props.notes).toBe("code 4");
     }
     expect(repo.saved).toBeDefined();
+  });
+
+  it("attaches a checklist, then detaches it with an explicit null", async () => {
+    const repo = new FakeRepo(makeJob());
+    const uc = new UpdateJobUseCase(repo, new InMemoryEventBus(), clock);
+    const attached = await uc.exec({
+      jobId: JID,
+      checklist: {
+        name: "Before you leave",
+        items: [{ id: "i1", text: "Photo of the valve", type: "photo", required: true }],
+      },
+    });
+    expect(isOk(attached)).toBe(true);
+    if (isOk(attached)) {
+      expect(attached.value.props.checklist?.items).toHaveLength(1);
+      expect(attached.value.props.title).toBe("Old"); // untouched
+    }
+
+    const detached = await uc.exec({ jobId: JID, checklist: null });
+    expect(isOk(detached) && detached.value.props.checklist).toBeNull();
+  });
+
+  it("rejects an invalid checklist (blank name) with a validation error", async () => {
+    const repo = new FakeRepo(makeJob());
+    const uc = new UpdateJobUseCase(repo, new InMemoryEventBus(), clock);
+    const r = await uc.exec({ jobId: JID, checklist: { name: " ", items: [] } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined(); // nothing persisted
   });
 
   it("returns NOT_FOUND when the job is missing", async () => {

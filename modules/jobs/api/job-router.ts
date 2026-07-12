@@ -77,11 +77,28 @@ export const createJobInput = z.object({
   phone: z.string().max(50).optional(),
   notes: z.string().max(10_000).optional(),
 });
+// Before-you-leave checklist payload — bounds mirror the domain's validateChecklist
+// (name 1–100, item text 1–200, ≤ 50 items). Exported for store-side reuse.
+export const jobChecklistInput = z.object({
+  name: z.string().min(1).max(100),
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(100),
+        text: z.string().min(1).max(200),
+        type: z.enum(["check", "photo"]),
+        required: z.boolean().default(false),
+      }),
+    )
+    .max(50),
+});
 export const updateJobInput = z.object({
   jobId: z.string().uuid(),
   title: z.string().max(200).nullable().optional(),
   svc: z.string().min(1).max(60).nullable().optional(),
   notes: z.string().max(10_000).nullable().optional(),
+  // undefined = keep; null = detach; object = attach/replace.
+  checklist: jobChecklistInput.nullable().optional(),
 });
 export const archiveJobInput = z.object({ jobId: z.string().uuid() });
 
@@ -408,8 +425,8 @@ export const createJobRouter = () =>
         return toJobDTO(r.job, r.execution);
       }),
 
-    // Patch title/svc/notes on a non-terminal job. undefined fields are kept as-is;
-    // explicit null clears an optional field. org isolation enforced by RLS via ctx.tx.
+    // Patch title/svc/notes/checklist on a non-terminal job. undefined fields are kept
+    // as-is; explicit null clears an optional field. org isolation enforced by RLS via ctx.tx.
     update: ownerOrOffice
       .input(updateJobInput)
       .output(jobDTO)
@@ -423,6 +440,7 @@ export const createJobRouter = () =>
               title: input.title,
               svc: input.svc,
               notes: input.notes,
+              checklist: input.checklist,
             }),
           ),
         );

@@ -59,6 +59,10 @@ export class DrizzleJobRepository implements JobRepository {
       totalCents: p.total,
       notes: p.notes,
       svc: p.svc,
+      // Deep-copy out of the immutable domain props into a plain mutable JSON blob.
+      checklist: p.checklist
+        ? { name: p.checklist.name, items: p.checklist.items.map((it) => ({ ...it })) }
+        : null,
       updatedAt: p.updatedAt,
     };
   }

@@ -28,6 +28,7 @@ const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   cancelReason: null,
   total: zeroMoney,
   notes: null,
+  checklist: null,
   visits: [],
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
@@ -144,6 +145,7 @@ describe("Job.patchFields", () => {
       cancelReason: null,
       total: zeroMoney,
       notes: null,
+      checklist: null,
       visits: [],
       createdAt: baseNow,
       updatedAt: baseNow,
@@ -171,5 +173,88 @@ describe("Job.patchFields", () => {
       expect(r.value.props.title).toBeNull();
       expect(r.value.props.svc).toBe("service"); // untouched
     }
+  });
+
+  it("attaches a checklist, keeps it on unrelated patches, and detaches with null", () => {
+    const checklist = {
+      name: "Before you leave",
+      items: [{ id: "i1", text: "Photo of the valve", type: "photo" as const, required: true }],
+    };
+    const attached = makeJob().patchFields({ checklist }, baseNow);
+    expect(isOk(attached)).toBe(true);
+    if (!isOk(attached)) return;
+    expect(attached.value.props.checklist?.name).toBe("Before you leave");
+    expect(attached.value.props.checklist?.items).toHaveLength(1);
+
+    // undefined keeps the attached checklist.
+    const kept = attached.value.patchFields({ title: "Renamed" }, baseNow);
+    expect(isOk(kept) && kept.value.props.checklist?.name).toBe("Before you leave");
+
+    // explicit null detaches.
+    const detached = attached.value.patchFields({ checklist: null }, baseNow);
+    expect(isOk(detached) && detached.value.props.checklist).toBeNull();
+  });
+});
+
+describe("Job.create — checklist validation", () => {
+  const item = (over: Partial<{ id: string; text: string; type: "check" | "photo"; required: boolean }> = {}) => ({
+    id: "i1",
+    text: "Test water pressure",
+    type: "check" as const,
+    required: false,
+    ...over,
+  });
+
+  it("accepts a valid checklist and trims name + item text", () => {
+    const r = Job.create(
+      props({
+        checklist: {
+          name: "  Repipe close-out  ",
+          items: [item({ text: "  Photo of the manifold  ", type: "photo", required: true })],
+        },
+      }),
+    );
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.checklist?.name).toBe("Repipe close-out");
+      expect(r.value.props.checklist?.items[0]).toEqual({
+        id: "i1",
+        text: "Photo of the manifold",
+        type: "photo",
+        required: true,
+      });
+    }
+  });
+
+  it("accepts an empty items list (name-only checklist)", () => {
+    const r = Job.create(props({ checklist: { name: "Walkthrough", items: [] } }));
+    expect(isOk(r) && r.value.props.checklist?.items).toEqual([]);
+  });
+
+  it("rejects a blank or over-long name", () => {
+    expect(Job.create(props({ checklist: { name: "  ", items: [] } })).ok).toBe(false);
+    expect(Job.create(props({ checklist: { name: "x".repeat(101), items: [] } })).ok).toBe(false);
+  });
+
+  it("rejects more than 50 items", () => {
+    const items = Array.from({ length: 51 }, (_, i) => item({ id: `i${i}` }));
+    expect(Job.create(props({ checklist: { name: "Big", items } })).ok).toBe(false);
+  });
+
+  it("rejects an item with a missing id, blank text, over-long text, or unknown type", () => {
+    expect(Job.create(props({ checklist: { name: "C", items: [item({ id: " " })] } })).ok).toBe(false);
+    expect(Job.create(props({ checklist: { name: "C", items: [item({ text: "  " })] } })).ok).toBe(false);
+    expect(
+      Job.create(props({ checklist: { name: "C", items: [item({ text: "x".repeat(201) })] } })).ok,
+    ).toBe(false);
+    expect(
+      Job.create(props({ checklist: { name: "C", items: [item({ type: "video" as never })] } })).ok,
+    ).toBe(false);
+  });
+
+  it("rejects structurally corrupt jsonb (items not an array) instead of coercing", () => {
+    expect(
+      Job.create(props({ checklist: { name: "C", items: "oops" as never } })).ok,
+    ).toBe(false);
   });
 });

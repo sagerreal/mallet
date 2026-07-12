@@ -48,6 +48,7 @@ export class CreateManualJobUseCase {
       cancelReason: null,
       total: zeroMoney,
       notes: cmd.notes,
+      checklist: null,
       visits: [],
       createdAt: now,
       updatedAt: now,

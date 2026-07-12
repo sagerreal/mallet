@@ -161,12 +161,40 @@ describe("buildJobUpdatePayload", () => {
     expect(buildJobUpdatePayload("j1", { notes: "x" })).toEqual({ jobId: "j1", notes: "x" });
   });
 
-  it("returns null for a local-only patch (lines/checklist/addr/phone/status)", () => {
+  it("returns null for a local-only patch (lines/addr/phone/status)", () => {
     expect(buildJobUpdatePayload("j1", { lines: [] })).toBeNull();
-    expect(buildJobUpdatePayload("j1", { checklist: undefined })).toBeNull();
     expect(buildJobUpdatePayload("j1", { addr: "1 Main" })).toBeNull();
     expect(buildJobUpdatePayload("j1", { phone: "555" })).toBeNull();
     expect(buildJobUpdatePayload("j1", { invRequested: true })).toBeNull();
+  });
+
+  it("maps an attached checklist to the wire shape (drops store-only position)", () => {
+    const payload = buildJobUpdatePayload("j1", {
+      checklist: {
+        name: "Before you leave",
+        items: [
+          { id: "i1", text: "Photo of the valve", type: "photo", required: true, position: 0 },
+          { id: "i2", text: "Test water pressure", type: "check", required: false, position: 1 },
+        ],
+      },
+    });
+    expect(payload).toEqual({
+      jobId: "j1",
+      checklist: {
+        name: "Before you leave",
+        items: [
+          { id: "i1", text: "Photo of the valve", type: "photo", required: true },
+          { id: "i2", text: "Test water pressure", type: "check", required: false },
+        ],
+      },
+    });
+  });
+
+  it("maps a checklist removal (key present, value undefined) to an explicit null", () => {
+    expect(buildJobUpdatePayload("j1", { checklist: undefined })).toEqual({
+      jobId: "j1",
+      checklist: null,
+    });
   });
 });
 

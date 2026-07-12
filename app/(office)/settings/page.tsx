@@ -596,6 +596,8 @@ function SecPipeline() {
           <input type="text" id="chkNew" placeholder="job type — e.g. Sump pump" value={chkNew} onChange={(e) => setChkNew(e.target.value)}
             style={{ flex: 1, minWidth: 140, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
           <button className="btn" onClick={handleAddChecklist}>+ Create blank</button>
+          {/* Always reachable — the per-row Edit above only renders once a list exists. */}
+          <button className="btn" onClick={() => openModal(MODAL.STANDARDS)}>Manage templates</button>
           {/* deferred: SOP paste import */}
           <span className="linklike" style={{ fontSize: 12 }} onClick={() => {}}>paste an SOP</span>
         </div>

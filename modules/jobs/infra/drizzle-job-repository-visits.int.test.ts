@@ -47,6 +47,7 @@ const makeJob = (orgId: OrgId, leadId: LeadId, num: string): Job => {
     cancelReason: null,
     total: zeroMoney,
     notes: null,
+    checklist: null,
     visits: [],
     createdAt: now,
     updatedAt: now,

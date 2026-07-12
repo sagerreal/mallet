@@ -72,7 +72,7 @@
 import type { StateCreator } from "zustand";
 import type { Job, Visit, Addon, VerifyAns } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
-import { dtoJobToStoreJob, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
+import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
 
@@ -135,19 +135,33 @@ let _nextAuxId = 6000; // addons + other field-created ids (mirrors state.nextId
 // Job fields that have a DB column via v1.jobs.update. Everything else on Job is
 // local-only (visits ride their own mutations; lines/addons/verify/photos are
 // Phase-5; addr/phone have no job column; status/archived derive server-side).
-const JOB_UPDATE_KEYS = new Set<keyof Job>(["title", "svc", "notes"]);
+const JOB_UPDATE_KEYS = new Set<keyof Job>(["title", "svc", "notes", "checklist"]);
+
+/** Wire shape of a checklist item for v1.jobs.update (no store-only `position` —
+ *  order on the wire is the array order). */
+interface JobChecklistItemPayload {
+  id: string;
+  text: string;
+  type: "check" | "photo";
+  required: boolean;
+}
 
 export interface JobUpdatePayload {
   jobId: string;
   title?: string | null;
   svc?: string | null;
   notes?: string | null;
+  checklist?: { name: string; items: JobChecklistItemPayload[] } | null;
 }
 
 /**
  * Build the v1.jobs.update payload from a Job patch, keeping only DB-backed
  * fields. Returns null when the patch touches only local-only fields (skip the
  * network call). Mirrors buildLeadUpdatePayload in leads-slice.
+ *
+ * checklist: the key being PRESENT in the patch signals intent — an object
+ * attaches/replaces; undefined (the store's "removed" representation) maps to
+ * an explicit null so the server detaches it.
  */
 export function buildJobUpdatePayload(
   jobId: string,
@@ -161,6 +175,19 @@ export function buildJobUpdatePayload(
     if (key === "title") payload.title = patch.title;
     else if (key === "svc") payload.svc = patch.svc;
     else if (key === "notes") payload.notes = patch.notes;
+    else if (key === "checklist") {
+      payload.checklist = patch.checklist
+        ? {
+            name: patch.checklist.name,
+            items: patch.checklist.items.map(({ id, text, type, required }) => ({
+              id,
+              text,
+              type,
+              required,
+            })),
+          }
+        : null;
+    }
   }
   return hasPersisted ? payload : null;
 }
@@ -429,12 +456,20 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     trpcVanilla.v1.jobs.update
       .mutate(mutPayload)
       .then((dto) => {
-        // 3. Reconcile server truth for the persisted scalars, preserving local-only
+        // 3. Reconcile server truth for the persisted fields, preserving local-only
         //    fields already on the store record (lines/addons/verify/photos/visits).
+        //    checklist adopts the DTO value outright (undefined when detached) —
+        //    it is DB-backed now, so the server answer is authoritative.
         set((s) => ({
           jobs: s.jobs.map((j) =>
             j.id === id
-              ? { ...j, title: dto.title ?? j.title, svc: dto.svc !== undefined ? dto.svc : j.svc, notes: dto.notes ?? j.notes }
+              ? {
+                  ...j,
+                  title: dto.title ?? j.title,
+                  svc: dto.svc !== undefined ? dto.svc : j.svc,
+                  notes: dto.notes ?? j.notes,
+                  checklist: dtoChecklistToStore(dto.checklist),
+                }
               : j,
           ),
         }));

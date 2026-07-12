@@ -16,8 +16,8 @@
  *   - the signed-agreement viewer (openSignedDoc)
  *   - smartPanel's ⏱ estimate line + split suggestion (need estJobHours →
  *     pricebook/DUR_RULES the store doesn't seed); the dispatch suggestion IS built
- *   - the checklist template picker / attached-checklist editor (need
- *     state.verifyOn + state.checklists — only "+ Add a checklist" is built)
+ *   - (checklists: the template picker + in-flow create form now live in
+ *     ./job-checklist-block.tsx; the attach persists via v1.jobs.update)
  *   - the skills-gap per-visit banner (needs suggestTechFor / techHasSkill)
  *   - the invoice modal (opened from the money pointer — Money-area task)
  */
@@ -37,6 +37,7 @@ import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/type
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
+import { JobChecklistBlock } from "./job-checklist-block";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -544,95 +545,8 @@ function jobDayLoad(job: Job, techId: string, iso: string): number {
     .reduce((s, v) => s + v.dur, 0);
 }
 
-// ---- job checklist block (prototype jobChecklistBlock, line 4859) ----------
-// Opt-in, office-attached checklist the crew runs before they leave. The
-// prototype gates the whole block behind state.verifyOn and its template
-// picker reads state.checklists — neither is in the store. So we render the
-// faithful "+ Add a checklist" entry point (exact markup + copy + .linklike);
-// the actual template attach / picker card is deferred (no template data yet).
-
-function JobChecklistBlock({ job }: { job: Job }) {
-  const checklists = useAppStore((s) => s.checklists);
-  const updateJob = useAppStore((s) => s.updateJob);
-  const [picking, setPicking] = useState(false);
-  const templates = checklists.filter((c) => c.stage === "job");
-
-  // Already attached → show it (+ Remove).
-  if (job.checklist) {
-    return (
-      <div className="card" style={{ marginTop: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <h3 style={{ margin: 0, fontSize: 13 }}>Before you leave</h3>
-          <span
-            className="linklike"
-            style={{ fontSize: 12 }}
-            onClick={() => updateJob(job.id, { checklist: undefined })}
-          >
-            Remove
-          </span>
-        </div>
-        <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>{job.checklist.name}</div>
-        {job.checklist.items.map((it) => (
-          <div key={it.id} className="stage-row" style={{ gap: 8, padding: "4px 0" }}>
-            <span style={{ color: it.required ? "var(--amber)" : "var(--ink-3)" }}>
-              {it.type === "photo" ? "📷" : "○"}
-            </span>
-            <span style={{ flex: 1, fontSize: 13 }}>{it.text}</span>
-            {it.required && <span className="muted" style={{ fontSize: 11 }}>required</span>}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  // Picking a template.
-  if (picking) {
-    return (
-      <div className="card" style={{ marginTop: 16 }}>
-        <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>Attach a checklist</h3>
-        {templates.length ? (
-          templates.map((c) => (
-            <div
-              key={c.id}
-              className="stage-row clickable"
-              style={{ cursor: "pointer" }}
-              onClick={() => {
-                updateJob(job.id, { checklist: { name: c.name, items: c.items } });
-                setPicking(false);
-              }}
-            >
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{c.name}</span>
-              <span className="muted" style={{ fontSize: 12 }}>{c.items.length} items</span>
-            </div>
-          ))
-        ) : (
-          <div className="muted" style={{ fontSize: 12 }}>
-            No templates yet — add one in Checklist templates.
-          </div>
-        )}
-        <span className="linklike" style={{ fontSize: 12 }} onClick={() => setPicking(false)}>
-          Cancel
-        </span>
-      </div>
-    );
-  }
-
-  // Entry point.
-  return (
-    <div style={{ marginTop: 16 }}>
-      <span
-        className="linklike"
-        style={{ fontSize: 13, fontWeight: 700 }}
-        onClick={() => setPicking(true)}
-      >
-        + Add a checklist
-      </span>{" "}
-      <span className="muted" style={{ fontSize: 11.5 }}>
-        — the crew runs it before they leave (optional, per job)
-      </span>
-    </div>
-  );
-}
+// ---- job checklist block — extracted to ./job-checklist-block (file-size cap).
+// Template picker + in-flow create form + persisted attach live there now.
 
 // ---- money pointer (prototype moneyPointer, line 6379) ---------------------
 // ONE anchored pointer — never the P&L. Opens the invoice if one exists,

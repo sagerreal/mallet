@@ -2,7 +2,7 @@ import type { JobId, Result, AppError, Clock } from "@mallet/shared/types";
 import { notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import type { Job } from "../domain/job";
+import type { Job, JobChecklistProps } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
 
 export interface UpdateJobCommand {
@@ -10,10 +10,12 @@ export interface UpdateJobCommand {
   readonly title?: string | null;
   readonly svc?: string | null;
   readonly notes?: string | null;
+  /** undefined = keep; null = detach; object = attach/replace the before-you-leave checklist. */
+  readonly checklist?: JobChecklistProps | null;
 }
 
-// Edit a job's DB-backed scalars (title/svc/notes). addr/phone are not job columns and
-// never reach here. Terminal jobs reject via Job.patchFields (mirrors UpdateCompanyUseCase).
+// Edit a job's DB-backed fields (title/svc/notes/checklist). addr/phone are not job columns
+// and never reach here. Terminal jobs reject via Job.patchFields (mirrors UpdateCompanyUseCase).
 export class UpdateJobUseCase {
   constructor(
     private readonly repo: JobRepository,
@@ -27,7 +29,7 @@ export class UpdateJobUseCase {
 
     const now = this.clock.now();
     const patched = job.patchFields(
-      { title: cmd.title, svc: cmd.svc, notes: cmd.notes },
+      { title: cmd.title, svc: cmd.svc, notes: cmd.notes, checklist: cmd.checklist },
       now,
     );
     if (!isOk(patched)) return patched;
