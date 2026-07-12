@@ -4,6 +4,13 @@
  * Settings → Workspace → Branding card. Reads the hydrated store `brand`
  * (BrandHydrator seeds it) and persists edits via updateBrand (optimistic +
  * v1.settings.updateBrand). Replaces the prototype's SAMPLE_BRAND no-op save.
+ *
+ * The preview is a live, WYSIWYG replica of the header a customer sees atop a
+ * quote or invoice (mirrors CustHead in cust-quote-modal): a brand-colour
+ * banner, a light chip with the brand-colour initials, name, and tagline. That
+ * is the whole point of this card — it controls how the shop appears to its
+ * customers on the documents it sends.
+ *
  * Logo image upload is deferred to the Phase-5 storage helper; brand_logo_url
  * accepts a URL string here so text + colour ship now.
  */
@@ -11,6 +18,10 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { FoldCard } from "./fold-card";
+
+// Fallback so the preview banner + chip are never invisible when a fresh org
+// has no brand colour yet. Matches the app's warm-theme accent (near-black).
+const DEFAULT_BRAND_COLOR = "#1A1510";
 
 const inputStyle = {
   flex: 1, minWidth: 160, border: "1.5px solid var(--line)", borderRadius: 8,
@@ -65,16 +76,28 @@ export function BrandingCard() {
     setTimeout(() => setSaved(false), 2000);
   }
 
+  const previewColor = color || DEFAULT_BRAND_COLOR;
+  const previewInitials = (initials || name.slice(0, 2)).toUpperCase();
+  const previewName = name.trim() || "Your business";
+  const previewSub = [tagline.trim(), site.trim()].filter(Boolean).join(" · ");
+
   return (
     <FoldCard title="Branding" summary={name} defaultOpen>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <div className="custlogo" style={{ background: color, color: "#fff" }}>
-          {(initials || name.slice(0, 2)).toUpperCase()}
+      {/* Live WYSIWYG preview — the exact header a customer sees atop a quote or
+          invoice (mirrors CustHead in cust-quote-modal). */}
+      <div style={{ marginBottom: 16 }}>
+        <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 7 }}>
+          How you appear on quotes &amp; invoices
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <b>{name}</b>
-          <div className="muted" style={{ fontSize: 12 }}>
-            {tagline}{tagline && site ? " · " : ""}{site}
+        <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--line)" }}>
+          <div className="custhead" style={{ background: previewColor }}>
+            <div className="custlogo" style={{ color: previewColor }}>{previewInitials}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>{previewName}</div>
+              {previewSub && (
+                <div style={{ fontSize: 11.5, opacity: 0.85, marginTop: 2 }}>{previewSub}</div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -100,7 +123,7 @@ export function BrandingCard() {
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <div className="field" style={{ margin: 0 }}>
             <label htmlFor="brandColor">Brand colour</label>
-            <input id="brandColor" type="color" value={color || "#6B7280"}
+            <input id="brandColor" type="color" value={color || DEFAULT_BRAND_COLOR}
               onChange={(e) => { setColor(e.target.value); markDirty(); }}
               style={{ width: 56, height: 34, border: "1.5px solid var(--line)", borderRadius: 8, padding: 2 }} />
           </div>
