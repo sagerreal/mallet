@@ -127,7 +127,7 @@ export function QuoteCard({
             </button>
             <button
               className={`btn sm ghost${state.aiOpen ? " primary" : ""}`}
-              onClick={() => onUpdate({ aiOpen: !state.aiOpen, tmplOpen: false })}
+              onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
             >
               ✦ Redraft with AI
             </button>
@@ -198,7 +198,7 @@ export function QuoteCard({
             <button
               type="button"
               className="addtile"
-              onClick={() => onUpdate({ aiOpen: !state.aiOpen, tmplOpen: false })}
+              onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
             >
               <div className="addtile-ico">{ICO_AI}</div>
               <div className="addtile-t">Draft with AI</div>

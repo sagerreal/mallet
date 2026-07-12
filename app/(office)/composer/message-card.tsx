@@ -1,12 +1,20 @@
 "use client";
 
 /**
- * Message & terms section — intro message, terms select, price-valid days.
- * Extracted from the composer page; behavior unchanged.
+ * Message section — the intro that leads the quote text/email, plus the
+ * price-valid window. Boxed card shell; collapsible in-flow.
+ *
+ * The intro (or the auto-intro fallback) IS the lead text of the send body —
+ * see buildQuoteMessageBody in composer-state.ts. Terms return in a later PR
+ * with a terms snapshot on the estimate.
  */
 
 import type { Lead } from "@/lib/store/types";
-import { TERMS_LIB, type ComposerState } from "./composer-state";
+import type { ComposerState } from "./composer-state";
+
+// Keeps the composed SMS body comfortably under the 1600-char messaging cap
+// (intro + ~100 chars of fixed copy + the quote link).
+const INTRO_MAX_CHARS = 1200;
 
 export function MessageCard({
   state,
@@ -18,65 +26,35 @@ export function MessageCard({
   lead: Lead | null;
 }) {
   return (
-    <div className={`reveal${state.msgOpen ? " open" : ""}`}>
-      <div
-        className="reveal-head"
-        onClick={() => onUpdate({ msgOpen: !state.msgOpen })}
-      >
-        <span className="caret">▸</span> Message &amp; terms{" "}
-        <span className="muted" style={{ fontWeight: 500 }}>
-          —{" "}
-          {state.intro ? "custom intro" : "auto intro"}
-          {state.terms != null ? " · terms attached" : ""} · valid{" "}
-          {state.validDays}d
-        </span>
-      </div>
-      <div className="reveal-body">
-        <div className="field">
-          <label>
-            Intro message{" "}
-            <span className="muted">
-              (optional — the auto intro covers most sends)
-            </span>
-          </label>
-          <textarea
-            rows={2}
-            placeholder={`auto: Hi ${lead ? lead.name.split(" ")[0] : "there"} — thanks for having us out…`}
-            value={state.intro}
-            onChange={(e) => onUpdate({ intro: e.target.value })}
-          />
+    <div className="card">
+      <div className={`reveal${state.msgOpen ? " open" : ""}`}>
+        <div
+          className="reveal-head"
+          onClick={() => onUpdate({ msgOpen: !state.msgOpen })}
+        >
+          <span className="caret">▸</span> Message{" "}
+          <span className="muted" style={{ fontWeight: 500 }}>
+            — {state.intro ? "custom intro" : "auto intro"} · valid{" "}
+            {state.validDays}d
+          </span>
         </div>
-        <div style={{ display: "flex", gap: 14 }}>
-          <div className="field" style={{ flex: 2, marginBottom: 0 }}>
+        <div className="reveal-body">
+          <div className="field">
             <label>
-              Terms{" "}
-              <span className="muted">(from your library)</span>
+              Intro message{" "}
+              <span className="muted">
+                (leads the text/email — the auto intro covers most sends)
+              </span>
             </label>
-            <select
-              style={{
-                width: "100%",
-                border: "1.5px solid var(--line)",
-                borderRadius: 8,
-                padding: "8px 10px",
-                fontFamily: "inherit",
-                fontSize: 13,
-              }}
-              value={state.terms ?? ""}
-              onChange={(e) =>
-                onUpdate({
-                  terms: e.target.value === "" ? null : +e.target.value,
-                })
-              }
-            >
-              <option value="">None</option>
-              {TERMS_LIB.map((t, i) => (
-                <option key={i} value={i}>
-                  {t.t}
-                </option>
-              ))}
-            </select>
+            <textarea
+              rows={2}
+              maxLength={INTRO_MAX_CHARS}
+              placeholder={`auto: Hi ${lead ? lead.name.split(" ")[0] : "there"} — thanks for having us out.`}
+              value={state.intro}
+              onChange={(e) => onUpdate({ intro: e.target.value })}
+            />
           </div>
-          <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+          <div className="field" style={{ maxWidth: 200, marginBottom: 0 }}>
             <label>Price valid (days)</label>
             <input
               type="number"

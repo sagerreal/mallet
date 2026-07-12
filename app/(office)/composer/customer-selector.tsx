@@ -66,9 +66,7 @@ export function CustomerSelector({
         type="text"
         value={state.custQuery}
         placeholder="Type a name — pick an existing customer or add a new one"
-        onChange={(e) =>
-          onUpdate({ custQuery: e.target.value, custMatches: [] })
-        }
+        onChange={(e) => onUpdate({ custQuery: e.target.value })}
         onKeyDown={(e) => {
           // Route Enter through the guarded handler so rapid keypresses can't
           // multi-fire the create (same guard as the click path).

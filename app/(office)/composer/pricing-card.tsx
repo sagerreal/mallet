@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Pricing section — discount / deposit / tax. Extracted from the composer
- * page; behavior unchanged.
+ * Pricing section — discount / deposit / tax in a boxed card shell.
+ * Collapsible: the header row toggles the fields open in-flow.
  */
 
 import { pricingSummary, type ComposerState } from "./composer-state";
@@ -17,17 +17,18 @@ export function PricingCard({
   const priceSum = pricingSummary(state.pricing);
 
   return (
-    <div className={`reveal${state.priceOpen ? " open" : ""}`}>
-      <div
-        className="reveal-head"
-        onClick={() => onUpdate({ priceOpen: !state.priceOpen })}
-      >
-        <span className="caret">▸</span> Pricing options{" "}
-        <span className="muted" style={{ fontWeight: 500 }}>
-          — {priceSum || "discount, deposit, tax"}
-        </span>
-      </div>
-      <div className="reveal-body">
+    <div className="card">
+      <div className={`reveal${state.priceOpen ? " open" : ""}`}>
+        <div
+          className="reveal-head"
+          onClick={() => onUpdate({ priceOpen: !state.priceOpen })}
+        >
+          <span className="caret">▸</span> Pricing{" "}
+          <span className="muted" style={{ fontWeight: 500 }}>
+            — {priceSum || "discount, deposit, tax"}
+          </span>
+        </div>
+        <div className="reveal-body">
         <div style={{ display: "flex", gap: 14 }}>
           <div className="field" style={{ flex: 1 }}>
             <label>Discount %</label>
@@ -81,6 +82,7 @@ export function PricingCard({
               }
             />
           </div>
+        </div>
         </div>
       </div>
     </div>

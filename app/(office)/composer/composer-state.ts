@@ -7,7 +7,7 @@
  */
 
 import type { SampleEstimateLine } from "@/lib/prototype-sample";
-import type { Lead, EstimateLine } from "@/lib/store/types";
+import type { EstimateLine } from "@/lib/store/types";
 
 // ---- composer line + state types --------------------------------------------
 
@@ -27,20 +27,17 @@ export type ComposerMode = "builder" | "gbb-prompt" | "gbb-review";
 export interface ComposerState {
   leadId: string | null;
   custQuery: string;
-  custMatches: Lead[];
   mode: ComposerMode;
   lines: ComposerLine[];
   desc: string;
   aiOpen: boolean;
   aiDrafted: boolean;
-  tmplOpen: boolean;
   pbOpen: boolean;
   priceOpen: boolean;
   msgOpen: boolean;
   fuOn: boolean;
   pricing: { disc: number; dep: number; tax: number };
   validDays: number;
-  terms: number | null;
   intro: string;
   gbb: GBBDraft | null;
   gbbType?: string;
@@ -52,20 +49,17 @@ export interface ComposerState {
 export const INITIAL_STATE: ComposerState = {
   leadId: null, // overridden from ?lead= in ComposerPage; else the customer picker shows
   custQuery: "",
-  custMatches: [],
   mode: "builder",
   lines: [{ d: "", q: 1, r: 0 }],
   desc: "",
   aiOpen: false,
   aiDrafted: false,
-  tmplOpen: false,
   pbOpen: false,
   priceOpen: false,
   msgOpen: false,
   fuOn: true,
   pricing: { disc: 0, dep: 0, tax: 0 },
   validDays: 14,
-  terms: null,
   intro: "",
   gbb: null,
   gbbType: undefined,
@@ -287,49 +281,6 @@ export const PRICEBOOK = [
   { d: "City permit", r: 110 },
 ];
 
-// ---- Templates (mirrors prototype TEMPLATES seed) ---------------------------
-
-export const TEMPLATES = [
-  {
-    k: "wh",
-    t: "Water heater",
-    sub: "40-gal gas — supply, install, haul",
-    lines: [
-      { d: "40-gal gas water heater (Rheem Performance)", q: 1, r: 1650 },
-      { d: "Remove & haul away existing unit", q: 1, r: 150 },
-      { d: "Expansion tank + seismic straps (code)", q: 1, r: 385 },
-      { d: "City permit", q: 1, r: 110 },
-    ],
-  },
-  {
-    k: "drain",
-    t: "Drain clean",
-    sub: "Cable + camera + cleanout",
-    lines: [
-      { d: "Hydro-jet kitchen drain line", q: 1, r: 450 },
-      { d: "Camera inspection w/ locate", q: 1, r: 285 },
-    ],
-  },
-  {
-    k: "toilet",
-    t: "Toilet install",
-    sub: "Toto Drake supplied & set",
-    lines: [
-      { d: "Toilet — Toto Drake, supplied & installed", q: 2, r: 460 },
-    ],
-  },
-];
-
-// ---- Terms library ----------------------------------------------------------
-
-export const TERMS_LIB = [
-  { t: "Workmanship warranty", body: "All labor guaranteed for 12 months." },
-  {
-    t: "Water heater install terms",
-    body: "Price includes haul-away and code compliance. Permit fees billed at cost.",
-  },
-];
-
 // ---- GBB tier total ---------------------------------------------------------
 
 export function gbbTierTotal(tier: GBBTier): number {
@@ -356,4 +307,41 @@ export function toEstimateLines(lines: ComposerLine[]): EstimateLine[] {
     if (l.photo != null) e.photo = l.photo;
     return e;
   });
+}
+
+// ---- send gating ------------------------------------------------------------
+
+/** True when at least one line has a non-blank description. */
+export function hasRealLine(lines: ComposerLine[]): boolean {
+  return lines.some((l) => (l.d ?? "").trim() !== "");
+}
+
+/**
+ * Why Preview / Save draft / Send are disabled right now — or null when the
+ * quote is sendable. Shown inline next to the action row (no silent no-ops).
+ */
+export function sendGateReason(
+  hasLead: boolean,
+  lines: ComposerLine[]
+): string | null {
+  if (!hasLead) return "Pick a customer first.";
+  if (!hasRealLine(lines)) return "Add at least one line.";
+  return null;
+}
+
+// ---- quote message body -------------------------------------------------------
+
+/**
+ * The SMS / email body for a quote send: the intro the user typed (or the
+ * auto-intro fallback) followed by the quote link line.
+ */
+export function buildQuoteMessageBody(opts: {
+  firstName: string;
+  intro: string;
+  quoteNum: string;
+  quoteLink: string;
+}): string {
+  const intro =
+    opts.intro.trim() || `Hi ${opts.firstName} — thanks for having us out.`;
+  return `${intro} Your quote ${opts.quoteNum} is ready — view and approve here: ${opts.quoteLink}`;
 }

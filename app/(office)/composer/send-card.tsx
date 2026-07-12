@@ -1,9 +1,13 @@
 "use client";
 
 /**
- * Send section — Text/Email channel toggle, per-channel copy, and the
- * editable delivery destination (persists contact edits to the customer).
- * Extracted from the composer page; behavior unchanged.
+ * Send section — the last act of the composer. Text/Email channel toggle,
+ * per-channel copy, the editable delivery destination (persists contact edits
+ * to the customer), the automatic follow-ups toggle, and the action row
+ * (Preview · Save draft · Send quote).
+ *
+ * Actions gate with an inline reason (no silent no-ops): the buttons disable
+ * and the reason renders next to them until the quote is sendable.
  */
 
 import { useState, useEffect } from "react";
@@ -90,13 +94,29 @@ export function SendCard({
   lead,
   state,
   onUpdate,
+  gateReason,
+  isSending,
+  sendError,
+  onPreview,
+  onSaveDraft,
+  onSend,
 }: {
-  lead: Lead;
+  lead: Lead | null;
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
+  gateReason: string | null;
+  isSending: boolean;
+  sendError: string | null;
+  onPreview: () => void;
+  onSaveDraft: () => void;
+  onSend: () => void;
 }) {
+  const gated = gateReason != null;
+
   return (
     <div className="card" style={{ borderColor: "#E6DCC4" }}>
+      <h3 style={{ marginTop: 0 }}>Send</h3>
+
       {/* Text / email channel toggle */}
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
         <button
@@ -128,7 +148,7 @@ export function SendCard({
             through, nothing blocks the send.
           </p>
           {/* Editable — the number the quote texts to (persists to the customer). */}
-          <DeliveryContactField lead={lead} channel="text" />
+          {lead && <DeliveryContactField lead={lead} channel="text" />}
           {/* Gating note: SMS delivery requires a provisioned Twilio number (A2P).
               The call is wired; if Twilio isn't configured the server returns
               PRECONDITION_FAILED and the composer shows the error. */}
@@ -144,11 +164,86 @@ export function SendCard({
             right there.
           </p>
           {/* Editable — the address the quote emails to (persists to the customer). */}
-          <DeliveryContactField lead={lead} channel="email" />
+          {lead && <DeliveryContactField lead={lead} channel="email" />}
           {/* Gating note: email delivery requires RESEND_API_KEY + EMAIL_FROM.
               Gating is enforced server-side; the call is wired. */}
         </>
       )}
+
+      {/* Follow-up toggle */}
+      <div className="fu-toggle">
+        <div
+          className={`switch${state.fuOn ? "" : " off"}`}
+          onClick={() => onUpdate({ fuOn: !state.fuOn })}
+        />
+        <div>
+          <b>
+            Automatic follow-ups: {state.fuOn ? "on" : "off"}
+          </b>{" "}
+          <span className="muted" style={{ fontSize: 12 }}>
+            {state.fuOn
+              ? "— 2 reminders, then it flags you to call"
+              : "— you'll remind them yourself"}
+          </span>
+        </div>
+      </div>
+
+      {/* Send error — shown inline above the buttons */}
+      {sendError && (
+        <div
+          role="alert"
+          style={{
+            background: "var(--amber-bg)",
+            border: "1px solid var(--amber)",
+            borderRadius: 9,
+            padding: "8px 12px",
+            fontSize: 12.5,
+            color: "var(--amber)",
+            marginTop: 12,
+          }}
+        >
+          {sendError}
+        </div>
+      )}
+
+      {/* Action row — disabled with the reason shown, never a silent no-op */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 10,
+          marginTop: 12,
+        }}
+      >
+        {gateReason && (
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            {gateReason}
+          </span>
+        )}
+        <button className="btn ghost" onClick={onPreview} disabled={gated}>
+          Preview
+        </button>
+        <button
+          className="btn ghost"
+          onClick={onSaveDraft}
+          disabled={gated || isSending}
+        >
+          Save draft
+        </button>
+        <button
+          className="btn primary"
+          onClick={onSend}
+          disabled={gated || isSending}
+          aria-busy={isSending}
+          style={{
+            opacity: gated || isSending ? 0.6 : 1,
+            cursor: gated || isSending ? "not-allowed" : "pointer",
+          }}
+        >
+          {isSending ? "Sending…" : "Send quote"}
+        </button>
+      </div>
     </div>
   );
 }

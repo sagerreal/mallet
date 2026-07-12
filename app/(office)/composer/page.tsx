@@ -6,14 +6,15 @@
  * Wired to the Zustand app-store (leads + estimates). The markup mirrors the
  * prototype; only the action handlers are live.
  *
- * The page orchestrates; the sections live in sibling components:
+ * The page reads top-to-bottom: Customer → The quote → Pricing → Message →
+ * Send. The page orchestrates; the sections live in sibling components:
  *   composer-state.ts   — ComposerState + pure helpers (single source of truth)
  *   customer-selector   — pick / quick-add the customer
  *   quote-card          — line items, totals, pricebook, AI panel
  *   line-table          — the shared line-editor grid
  *   pricing-card        — discount / deposit / tax
- *   message-card        — intro, terms, valid days
- *   send-card           — channel toggle + delivery destination
+ *   message-card        — intro (leads the send body) + valid days
+ *   send-card           — channel, destination, follow-ups, action row
  *   gbb-modes           — Good/Better/Best prompt + review
  *
  * Prototype reference: elas-crm-prototype.html lines 7031–7139.
@@ -23,7 +24,7 @@
  *   - descMic() / 🎤     — no speech API in the app yet
  */
 
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLeads, useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
@@ -31,6 +32,9 @@ import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import {
   INITIAL_STATE,
+  buildQuoteMessageBody,
+  hasRealLine,
+  sendGateReason,
   toEstimateLines,
   type ComposerLine,
   type ComposerState,
@@ -125,7 +129,7 @@ function BuilderMode({
         </div>
       )}
 
-      {/* Line items */}
+      {/* The quote — line items, totals, authoring tools */}
       <QuoteCard
         state={state}
         onUpdate={onUpdate}
@@ -134,76 +138,24 @@ function BuilderMode({
         aiDraftError={aiDraftError}
       />
 
-      {/* Pricing options reveal */}
+      {/* Pricing — discount, deposit, tax */}
       <PricingCard state={state} onUpdate={onUpdate} />
 
-      {/* Delivery card (only when a lead is selected) */}
-      {lead && <SendCard lead={lead} state={state} onUpdate={onUpdate} />}
-
-      {/* Follow-up toggle */}
-      <div className="fu-toggle">
-        <div
-          className={`switch${state.fuOn ? "" : " off"}`}
-          onClick={() => onUpdate({ fuOn: !state.fuOn })}
-        />
-        <div>
-          <b>
-            Automatic follow-ups: {state.fuOn ? "on" : "off"}
-          </b>{" "}
-          <span className="muted" style={{ fontSize: 12 }}>
-            {state.fuOn
-              ? "— 2 reminders, then it flags you to call"
-              : "— you'll remind them yourself"}
-          </span>
-        </div>
-      </div>
-
-      {/* Message & terms reveal */}
+      {/* Message — intro + valid days */}
       <MessageCard state={state} onUpdate={onUpdate} lead={lead} />
 
-      {/* Action buttons */}
-      {/* Send error — shown inline above the buttons */}
-      {sendError && (
-        <div
-          role="alert"
-          style={{
-            background: "var(--amber-bg)",
-            border: "1px solid var(--amber)",
-            borderRadius: 9,
-            padding: "8px 12px",
-            fontSize: 12.5,
-            color: "var(--amber)",
-            marginTop: 12,
-          }}
-        >
-          {sendError}
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: 10,
-          marginTop: 12,
-        }}
-      >
-        <button className="btn ghost" onClick={onPreview}>
-          Preview
-        </button>
-        <button className="btn ghost" onClick={onSaveDraft} disabled={isSending}>
-          Save draft
-        </button>
-        <button
-          className="btn primary"
-          onClick={onSend}
-          disabled={isSending}
-          aria-busy={isSending}
-          style={{ opacity: isSending ? 0.6 : 1, cursor: isSending ? "not-allowed" : "pointer" }}
-        >
-          {isSending ? "Sending…" : "Send quote"}
-        </button>
-      </div>
+      {/* Send — channel, destination, follow-ups, actions (the last act) */}
+      <SendCard
+        lead={lead}
+        state={state}
+        onUpdate={onUpdate}
+        gateReason={sendGateReason(lead != null, state.lines)}
+        isSending={isSending}
+        sendError={sendError}
+        onPreview={onPreview}
+        onSaveDraft={onSaveDraft}
+        onSend={onSend}
+      />
     </>
   );
 }
@@ -294,15 +246,29 @@ export default function ComposerPage() {
   const selectedLead: Lead | null =
     cs.leadId != null ? (leads.find((l) => l.id === cs.leadId) ?? null) : null;
 
-  // --- persistence helpers --------------------------------------------------
+  // Default the send channel from the customer's contact info, once per lead:
+  // text when they have a mobile on file (or nothing yet), email when email is
+  // all we have. A manual toggle after that sticks until the customer changes.
+  const channelDefaultedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedLead) return;
+    if (channelDefaultedFor.current === selectedLead.id) return;
+    channelDefaultedFor.current = selectedLead.id;
+    const hasPhone = !!selectedLead.phone && selectedLead.phone !== "—";
+    const hasEmail = !!selectedLead.email;
+    setCs((prev) => ({
+      ...prev,
+      sendChannel: !hasPhone && hasEmail ? "email" : "text",
+    }));
+  }, [selectedLead]);
 
-  function hasRealLine(): boolean {
-    return cs.lines.some((l) => (l.d ?? "").trim());
-  }
+  // --- persistence helpers --------------------------------------------------
+  // The action buttons disable (with the reason inline) while these guards
+  // fail — the early returns are defense-in-depth, not the primary gate.
 
   function saveDraftComposer() {
-    if (!hasRealLine()) return; // nothing to save (no toast system — just return)
-    // Draft requires a lead because addEstimate needs a numeric leadId.
+    if (!hasRealLine(cs.lines)) return;
+    // Draft requires a lead because addEstimate needs a real leadId.
     if (!selectedLead) return;
     addEstimate({
       leadId: selectedLead.id,
@@ -345,7 +311,7 @@ export default function ComposerPage() {
 
   async function sendComposer() {
     if (!selectedLead) return; // send requires a lead
-    if (!hasRealLine()) return;
+    if (!hasRealLine(cs.lines)) return;
 
     setSendError(null);
     setIsSending(true);
@@ -366,13 +332,19 @@ export default function ComposerPage() {
           ? `${appOrigin}/q/${drafted.publicToken}`
           : appOrigin; // fallback if token not yet set (shouldn't happen)
 
+      // The intro from the Message card (or the auto-intro fallback) leads the
+      // body on both channels.
+      const body = buildQuoteMessageBody({
+        firstName: selectedLead.name.split(" ")[0] ?? selectedLead.name,
+        intro: cs.intro,
+        quoteNum: drafted.num,
+        quoteLink,
+      });
+
       if (cs.sendChannel === "text") {
         // SMS — gated: requires Twilio + A2P. Server returns PRECONDITION_FAILED
         // when unconfigured (no number provisioned). Wire the call regardless;
         // error is shown inline so the user knows delivery didn't go out.
-        const body =
-          `${selectedLead.name.split(" ")[0]}, your quote ${drafted.num} is ready — ` +
-          `view and approve here: ${quoteLink}`;
         await messagingSendMutation.mutateAsync({
           leadId: selectedLead.id,
           body,
@@ -381,9 +353,6 @@ export default function ComposerPage() {
         // Email — deliver the quote link via the notifications sender (Resend). Gated
         // server-side on RESEND_API_KEY + EMAIL_FROM; a PRECONDITION_FAILED means email
         // isn't configured (caught below and surfaced inline — the quote is still saved).
-        const body =
-          `${selectedLead.name.split(" ")[0]}, your quote ${drafted.num} is ready — ` +
-          `view and approve here: ${quoteLink}`;
         await notificationsSendMutation.mutateAsync({
           channel: "email",
           to: selectedLead.email ?? "",
@@ -462,7 +431,7 @@ export default function ComposerPage() {
   // quote page (/q/<token>) in a new tab — the exact view the customer will see.
   async function previewComposer() {
     if (!selectedLead) return;
-    if (!hasRealLine()) return;
+    if (!hasRealLine(cs.lines)) return;
     setSendError(null);
     try {
       const payload = buildDraftPayload(selectedLead);
