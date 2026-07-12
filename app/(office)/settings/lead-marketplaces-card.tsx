@@ -40,8 +40,8 @@ function ConnectRow({ channel, label, steps }: { channel: "angi" | "thumbtack"; 
 
   return (
     <div className="stage-row" style={{ display: "block" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <b>{label}</b>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <b style={{ flex: 1 }}>{label}</b>
         <span className="muted" style={{ fontSize: 12 }}>{state}</span>
         {!ep && (
           <button className="btn sm" disabled={generate.isPending} onClick={() => generate.mutate({ channel })}>
