@@ -15,7 +15,9 @@
 import { useState } from "react";
 import { fmt$ } from "@/lib/format";
 
-type Phase =
+/** Interaction phase — owned by QuoteLines so the add-on toggles above the
+ *  actions lock while an accept is in flight and stay locked once terminal. */
+export type QuotePhase =
   | "idle"
   | "declining"
   | "requesting_change"
@@ -36,10 +38,21 @@ interface QuoteActionsProps {
   /** Optional add-on line IDs the customer toggled ON — sent with the accept so the
    *  server commits the tuned selection (IDs only; line content stays server-side). */
   readonly selectedLineIds?: readonly string[];
+  /** Controlled phase (lifted into QuoteLines so it can lock the toggles). */
+  readonly phase: QuotePhase;
+  /** Phase transitions. On a successful accept, committedLineIds carries the
+   *  selection that was actually SENT so the totals freeze to the committed amount. */
+  readonly onPhaseChange: (next: QuotePhase, committedLineIds?: readonly string[]) => void;
 }
 
-export function QuoteActions({ token, totalCents, changeAlreadyRequested, selectedLineIds }: QuoteActionsProps) {
-  const [phase, setPhase] = useState<Phase>("idle");
+export function QuoteActions({
+  token,
+  totalCents,
+  changeAlreadyRequested,
+  selectedLineIds,
+  phase,
+  onPhaseChange,
+}: QuoteActionsProps) {
   const [error, setError] = useState<string | null>(null);
   const [changeMessage, setChangeMessage] = useState("");
 
@@ -48,7 +61,7 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested, select
   const showChangeBanner = changeAlreadyRequested || phase === "change_sent";
 
   async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string; selectedLineIds?: string[] }): Promise<void> {
-    setPhase("busy");
+    onPhaseChange("busy");
     setError(null);
     try {
       const res = await fetch(`/api/public/quote/${token}`, {
@@ -59,21 +72,25 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested, select
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         const serverError = (data as { error?: string }).error;
-        if (res.status === 400 && action === "accept") {
-          // The add-on selection no longer matches the stored quote (e.g. it was edited).
+        if ((res.status === 400 || res.status === 409) && action === "accept") {
+          // 400: the add-on selection no longer matches the stored quote (it was
+          // edited). 409: the quote is not in an approvable state (not_ready).
           setError(serverError ?? "This quote was updated — reload the page and try again.");
         } else {
           setError(serverError ?? "Something went wrong. Please try again.");
         }
-        setPhase(action === "request_change" ? "requesting_change" : "idle");
+        onPhaseChange(action === "request_change" ? "requesting_change" : "idle");
         return;
       }
-      if (action === "accept") setPhase("approved");
-      else if (action === "decline") setPhase("declined");
-      else setPhase("change_sent");
+      if (action === "accept") {
+        // Freeze the totals to the selection that was actually SENT (captured at
+        // click time), not whatever the toggles show when the response lands.
+        onPhaseChange("approved", payload?.selectedLineIds ?? []);
+      } else if (action === "decline") onPhaseChange("declined");
+      else onPhaseChange("change_sent");
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
-      setPhase(action === "request_change" ? "requesting_change" : "idle");
+      onPhaseChange(action === "request_change" ? "requesting_change" : "idle");
     }
   }
 
@@ -180,7 +197,7 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested, select
           <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
             <button
               className="btn sm ghost"
-              onClick={() => { setPhase("idle"); setError(null); setChangeMessage(""); }}
+              onClick={() => { onPhaseChange("idle"); setError(null); setChangeMessage(""); }}
             >
               Cancel
             </button>
@@ -217,14 +234,14 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested, select
             <button
               className="linklike"
               style={{ color: "var(--ink-3)", background: "none", border: 0, cursor: "pointer" }}
-              onClick={() => setPhase("declining")}
+              onClick={() => onPhaseChange("declining")}
               disabled={phase === "busy"}
             >
               Not right now
             </button>
             <button
               className="btn ghost"
-              onClick={() => { setPhase("requesting_change"); setError(null); }}
+              onClick={() => { onPhaseChange("requesting_change"); setError(null); }}
               disabled={phase === "busy"}
             >
               Request a change

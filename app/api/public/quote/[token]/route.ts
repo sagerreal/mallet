@@ -101,6 +101,34 @@ export async function GET(
 
 // --- POST -----------------------------------------------------------------
 
+/** Map an accept outcome to its HTTP response (extracted to keep POST small). */
+async function handleAccept(
+  token: string,
+  selectedLineIds: string[] | undefined,
+): Promise<NextResponse> {
+  const acceptResult: AcceptPublicQuoteResult = await acceptPublicQuote(token, selectedLineIds);
+  if (acceptResult.kind === "not_found") {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  if (acceptResult.kind === "invalid_selection") {
+    // A selected add-on id no longer matches a stored optional line — the quote
+    // changed since the page loaded (or the id was fabricated).
+    return NextResponse.json(
+      { error: "This quote was updated — reload the page and try again." },
+      { status: 400 },
+    );
+  }
+  if (acceptResult.kind === "not_ready") {
+    // The estimate exists but is not in an acceptable, non-terminal state
+    // (e.g. a draft link shared early). Nothing was accepted — say so.
+    return NextResponse.json(
+      { error: "This quote isn't ready to approve yet." },
+      { status: 409 },
+    );
+  }
+  return NextResponse.json({ estimate: estimateToJson(acceptResult.estimate) });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -127,19 +155,7 @@ export async function POST(
 
   try {
     if (action === "accept") {
-      const acceptResult: AcceptPublicQuoteResult = await acceptPublicQuote(token, selectedLineIds);
-      if (acceptResult.kind === "not_found") {
-        return NextResponse.json({ error: "not found" }, { status: 404 });
-      }
-      if (acceptResult.kind === "invalid_selection") {
-        // A selected add-on id no longer matches a stored optional line — the quote
-        // changed since the page loaded (or the id was fabricated).
-        return NextResponse.json(
-          { error: "This quote was updated — reload the page and try again." },
-          { status: 400 },
-        );
-      }
-      return NextResponse.json({ estimate: estimateToJson(acceptResult.estimate) });
+      return await handleAccept(token, selectedLineIds);
     }
 
     if (action === "decline") {

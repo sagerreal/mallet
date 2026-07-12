@@ -9,6 +9,8 @@ import type { AcceptLineInput } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
 import { RequestEstimateChangeUseCase } from "./request-estimate-change";
 import { buildAcceptLinesFromSelection } from "./select-optional-lines";
+import { classifyAcceptValidationFailure } from "./public-accept-policy";
+import type { AcceptPublicQuoteResult } from "./public-accept-policy";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 import type { Estimate } from "../domain/estimate";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
@@ -23,13 +25,10 @@ export type RequestChangeResult =
   | { kind: "not_sent"; estimate: Estimate | null }
   | { kind: "not_found" };
 
-// Result type for acceptPublicQuote — "invalid_selection" means a selected optional
-// add-on id did not match a stored OPTIONAL line (unknown id, or a fixed line's id),
-// so the route can return a 400 telling the customer to reload.
-export type AcceptPublicQuoteResult =
-  | { kind: "ok"; estimate: Estimate }
-  | { kind: "invalid_selection" }
-  | { kind: "not_found" };
+// Result type + validation-failure classification for acceptPublicQuote live in
+// public-accept-policy.ts (kept import-light for unit tests); re-exported here so
+// callers keep a single import surface.
+export type { AcceptPublicQuoteResult } from "./public-accept-policy";
 
 // Re-export so callers only need to import from this module.
 export type { PublicQuoteView };
@@ -94,11 +93,20 @@ export async function acceptPublicQuote(
     });
 
     if (!result.ok) {
-      // Idempotent path: the estimate is in a terminal state (accepted or declined) — the domain
-      // model's canAccept() returns false, producing a validation error. Load and return current.
+      // Validation failure — branch on the re-fetched status: TERMINAL (accepted/
+      // declined) is the idempotent double-tap → ok with current state; a
+      // non-terminal estimate (still draft) was NOT accepted → not_ready, so the
+      // route can answer honestly instead of faking an approval.
       if (result.error.kind === "validation") {
         const current = await repo.findById(asEstimateId(estimateId));
-        return current ? { kind: "ok" as const, estimate: current } : { kind: "not_found" as const };
+        const classified = classifyAcceptValidationFailure(current);
+        if (classified.kind === "not_ready") {
+          logger.warn(
+            { estimateId, orgId, status: current?.props.status },
+            "public-quote.accept: estimate not in an acceptable state",
+          );
+        }
+        return classified;
       }
       // Not found inside the tenant tx — shouldn't happen since ownerDb resolved it, but guard.
       return { kind: "not_found" };

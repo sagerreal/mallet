@@ -231,9 +231,11 @@ describe("Job.create — checklist validation", () => {
     expect(isOk(r) && r.value.props.checklist?.items).toEqual([]);
   });
 
-  it("rejects a blank or over-long name", () => {
+  it("rejects a blank or over-long name (bounds match template names: ≤ 200)", () => {
     expect(Job.create(props({ checklist: { name: "  ", items: [] } })).ok).toBe(false);
-    expect(Job.create(props({ checklist: { name: "x".repeat(101), items: [] } })).ok).toBe(false);
+    // 200 is the template-name max — a max-length template must stay attachable.
+    expect(Job.create(props({ checklist: { name: "x".repeat(200), items: [] } })).ok).toBe(true);
+    expect(Job.create(props({ checklist: { name: "x".repeat(201), items: [] } })).ok).toBe(false);
   });
 
   it("rejects more than 50 items", () => {
@@ -244,8 +246,12 @@ describe("Job.create — checklist validation", () => {
   it("rejects an item with a missing id, blank text, over-long text, or unknown type", () => {
     expect(Job.create(props({ checklist: { name: "C", items: [item({ id: " " })] } })).ok).toBe(false);
     expect(Job.create(props({ checklist: { name: "C", items: [item({ text: "  " })] } })).ok).toBe(false);
+    // 500 is the template-item max — a max-length template item must stay attachable.
     expect(
-      Job.create(props({ checklist: { name: "C", items: [item({ text: "x".repeat(201) })] } })).ok,
+      Job.create(props({ checklist: { name: "C", items: [item({ text: "x".repeat(500) })] } })).ok,
+    ).toBe(true);
+    expect(
+      Job.create(props({ checklist: { name: "C", items: [item({ text: "x".repeat(501) })] } })).ok,
     ).toBe(false);
     expect(
       Job.create(props({ checklist: { name: "C", items: [item({ type: "video" as never })] } })).ok,

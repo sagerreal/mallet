@@ -105,4 +105,30 @@ describe("AddItemUseCase", () => {
     await useCase.exec(cmd, ORG);
     expect(repo.lastAddedInput?.required).toBe(false);
   });
+
+  it("rejects the 51st item so every template stays attachable to a job (≤ 50 items)", async () => {
+    const created = await createUseCase.exec({ name: "Heater check", trade: "HVAC", stage: "job", match: [] }, ORG);
+    if (!created.ok) throw new Error("setup failed");
+
+    let n = 0;
+    const filler = new AddItemUseCase(repo, clock, {
+      newId: () => `${String(++n).padStart(8, "0")}-0000-0000-0000-000000000000`,
+    });
+    for (let i = 0; i < 50; i++) {
+      const r = await filler.exec(
+        { checklistId: created.value.props.id, text: `Step ${i + 1}`, type: "check" },
+        ORG,
+      );
+      expect(isOk(r)).toBe(true);
+    }
+
+    repo.lastAddedInput = undefined;
+    const overflow = await useCase.exec(
+      { checklistId: created.value.props.id, text: "One too many", type: "check" },
+      ORG,
+    );
+    expect(overflow.ok).toBe(false);
+    if (!overflow.ok) expect(overflow.error.kind).toBe("validation");
+    expect(repo.lastAddedInput).toBeUndefined();
+  });
 });

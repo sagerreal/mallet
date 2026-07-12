@@ -281,6 +281,118 @@ describe("updateJob reconcile + rollback", () => {
 });
 
 // ---------------------------------------------------------------------------
+// updateJob outcome — callers (e.g. the job checklist block) await the returned
+// promise to surface persist failures instead of failing silently.
+// ---------------------------------------------------------------------------
+
+describe("updateJob returns the mutation outcome", () => {
+  beforeEach(() => { mockUpdate.mockReset(); });
+
+  it("resolves { ok: true } after a successful persist", async () => {
+    mockUpdate.mockResolvedValue(makeJobDTO("ignored", { title: "Renamed" }));
+    const { get } = makeStore();
+    const { job: created } = get().addJob({ ...draft, leadId: "" });
+    await expect(get().updateJob(created.id, { title: "Renamed" })).resolves.toEqual({ ok: true });
+  });
+
+  it("resolves { ok: true } for a local-only patch without a network call", async () => {
+    const { get } = makeStore();
+    const { job: created } = get().addJob({ ...draft, leadId: "" });
+    await expect(
+      get().updateJob(created.id, { lines: [{ d: "x", q: 1, r: 100 }] }),
+    ).resolves.toEqual({ ok: true });
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("resolves { ok: false } on persist failure (never rejects) and still rolls back", async () => {
+    mockUpdate.mockRejectedValue(new Error("network"));
+    const { get } = makeStore();
+    const { job: created } = get().addJob({ ...draft, leadId: "", title: "Original" });
+    await expect(get().updateJob(created.id, { title: "Changed" })).resolves.toEqual({ ok: false });
+    expect(get().jobs.find((j) => j.id === created.id)!.title).toBe("Original");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Checklist merge guard — a snapshot/reconcile whose server read predates a
+// just-persisted checklist write must not wipe (or resurrect) the checklist.
+// Mirrors the adoption guard's stale-window bookkeeping.
+// ---------------------------------------------------------------------------
+
+describe("checklist merge guard (recent checklist writes survive stale snapshots)", () => {
+  beforeEach(() => {
+    mockUpdate.mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-12T00:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const storeChecklist = {
+    name: "Close-out",
+    items: [{ id: "i1", text: "Sweep the work area", type: "check" as const, required: false, position: 0 }],
+  };
+  const wireChecklist = {
+    name: "Close-out",
+    items: [{ id: "i1", text: "Sweep the work area", type: "check", required: false }],
+  };
+
+  it("a stale snapshot without the checklist does not wipe a just-attached one", async () => {
+    mockUpdate.mockResolvedValue(makeJobDTO("ignored", { checklist: wireChecklist }));
+    const { get } = makeStore();
+    const { job: created } = get().addJob({ ...draft, leadId: "" });
+    await get().updateJob(created.id, { checklist: storeChecklist });
+    expect(get().jobs.find((j) => j.id === created.id)!.checklist?.name).toBe("Close-out");
+
+    // Snapshot read before the checklist commit — same job, checklist missing.
+    const stale = { ...get().jobs.find((j) => j.id === created.id)!, checklist: undefined };
+    get().setJobs([stale]);
+    expect(get().jobs.find((j) => j.id === created.id)!.checklist?.name).toBe("Close-out");
+  });
+
+  it("a stale snapshot cannot resurrect a just-removed checklist", async () => {
+    const { get } = makeStore();
+    const { job: created } = get().addJob({ ...draft, leadId: "" });
+    // Attach first (persisted), then remove (persisted).
+    mockUpdate.mockResolvedValueOnce(makeJobDTO("ignored", { checklist: wireChecklist }));
+    await get().updateJob(created.id, { checklist: storeChecklist });
+    expect(get().jobs.find((j) => j.id === created.id)!.checklist?.name).toBe("Close-out");
+    mockUpdate.mockResolvedValueOnce(makeJobDTO("ignored", { checklist: null }));
+    await get().updateJob(created.id, { checklist: undefined });
+    expect(get().jobs.find((j) => j.id === created.id)!.checklist).toBeUndefined();
+
+    const stale = { ...get().jobs.find((j) => j.id === created.id)!, checklist: storeChecklist };
+    get().setJobs([stale]);
+    expect(get().jobs.find((j) => j.id === created.id)!.checklist).toBeUndefined();
+  });
+
+  it("hands authority back to snapshots after the stale window", async () => {
+    mockUpdate.mockResolvedValue(makeJobDTO("ignored", { checklist: wireChecklist }));
+    const { get } = makeStore();
+    const { job: created } = get().addJob({ ...draft, leadId: "" });
+    await get().updateJob(created.id, { checklist: storeChecklist });
+
+    vi.setSystemTime(new Date("2026-07-12T00:00:31Z")); // > 30 s HYDRATOR_STALE_MS
+    const stale = { ...get().jobs.find((j) => j.id === created.id)!, checklist: undefined };
+    get().setJobs([stale]);
+    expect(get().jobs.find((j) => j.id === created.id)!.checklist).toBeUndefined();
+  });
+
+  it("a failed checklist write does not leave a guard entry behind", async () => {
+    mockUpdate.mockRejectedValue(new Error("network"));
+    const { get } = makeStore();
+    const { job: created } = get().addJob({ ...draft, leadId: "" });
+    await get().updateJob(created.id, { checklist: storeChecklist });
+    // Rolled back — and a subsequent snapshot without a checklist stays authoritative.
+    const stale = { ...get().jobs.find((j) => j.id === created.id)!, checklist: undefined };
+    get().setJobs([stale]);
+    expect(get().jobs.find((j) => j.id === created.id)!.checklist).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // adoptJob — insert or replace by id; applies Fix 1 status remap; no network call
 // ---------------------------------------------------------------------------
 

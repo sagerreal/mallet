@@ -40,9 +40,12 @@ const isTerminal = (status: JobStatus): boolean => status === "complete" || stat
 const SVC_MAX_LENGTH = 60;
 
 // Before-you-leave checklist bounds (shared with the router's zod input).
+// Name/text match the checklist TEMPLATE bounds (checklists router: name ≤ 200,
+// item text ≤ 500) so any valid template can always be attached to a job; the
+// item cap is mirrored back onto templates in AddItemUseCase (CHECKLIST_MAX_ITEMS).
 export const JOB_CHECKLIST_MAX_ITEMS = 50;
-export const JOB_CHECKLIST_NAME_MAX = 100;
-export const JOB_CHECKLIST_ITEM_TEXT_MAX = 200;
+export const JOB_CHECKLIST_NAME_MAX = 200;
+export const JOB_CHECKLIST_ITEM_TEXT_MAX = 500;
 
 export interface JobChecklistItemProps {
   readonly id: string;
@@ -70,7 +73,9 @@ function validateChecklistItem(
   }
   const text = typeof it?.text === "string" ? it.text.trim() : "";
   if (text.length === 0 || text.length > JOB_CHECKLIST_ITEM_TEXT_MAX) {
-    return err(validation("checklist item text must be 1–200 characters", "checklist"));
+    return err(
+      validation(`checklist item text must be 1–${JOB_CHECKLIST_ITEM_TEXT_MAX} characters`, "checklist"),
+    );
   }
   if (it.type !== "check" && it.type !== "photo") {
     return err(validation(`unknown checklist item type: ${String(it.type)}`, "checklist"));
@@ -91,10 +96,12 @@ function normalizeChecklist(
   }
   const name = typeof cl.name === "string" ? cl.name.trim() : "";
   if (name.length === 0 || name.length > JOB_CHECKLIST_NAME_MAX) {
-    return err(validation("checklist name must be 1–100 characters", "checklist"));
+    return err(validation(`checklist name must be 1–${JOB_CHECKLIST_NAME_MAX} characters`, "checklist"));
   }
   if (cl.items.length > JOB_CHECKLIST_MAX_ITEMS) {
-    return err(validation("a checklist can hold at most 50 items", "checklist"));
+    return err(
+      validation(`a checklist can hold at most ${JOB_CHECKLIST_MAX_ITEMS} items`, "checklist"),
+    );
   }
   const items: JobChecklistItemProps[] = [];
   for (const it of cl.items) {

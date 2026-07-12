@@ -9,7 +9,7 @@ import {
   type ChecklistItemId,
   type OrgId,
 } from "@mallet/shared/types";
-import { Checklist, type ChecklistProps } from "../domain/checklist";
+import { Checklist, ChecklistItem, type ChecklistProps } from "../domain/checklist";
 import type { ChecklistRepository } from "../domain/checklist-repository";
 import { CreateChecklistUseCase, type CreateChecklistCommand } from "./create-checklist";
 
@@ -71,8 +71,21 @@ export class FakeChecklistRepository implements ChecklistRepository {
     this.lastAddedInput = input;
     const template = this.store.get(input.templateId);
     if (!template) throw new Error("fake addItem: template not found");
-    // Return the template unchanged (tests don't need the mutated aggregate here)
-    return template;
+    // Append for real so item-count invariants (e.g. the ≤ 50 cap) are observable.
+    const item = ChecklistItem.create({
+      id: input.id,
+      text: input.text,
+      type: input.type,
+      required: input.required,
+      position: input.position,
+    });
+    if (!isOk(item)) throw new Error(`fake addItem produced an invalid item: ${item.error.message}`);
+    const updated = template.withItems(
+      [...template.props.items, item.value],
+      new Date("2026-07-01T00:00:00Z"),
+    );
+    this.store.set(updated.props.id, updated);
+    return updated;
   }
 
   async removeItem(templateId: ChecklistId, _itemId: ChecklistItemId): Promise<Checklist | null> {

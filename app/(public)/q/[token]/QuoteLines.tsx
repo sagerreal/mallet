@@ -9,6 +9,11 @@
  * every toggle. Only the selected line IDs are sent on accept — the server builds
  * the committed lines from its stored estimate, never from client content.
  *
+ * LOCK: the accept-flow phase is owned here and passed down to QuoteActions, so
+ * the toggles disable while an accept/decline is in flight and permanently once
+ * approved/declined; on success the selection freezes to the ids actually sent.
+ * The displayed total therefore always matches the committed one.
+ *
  * Cents math lives in quote-totals.ts and mirrors the domain's derivations
  * (modules/quoting/domain/estimate.ts) exactly, so the approved number matches
  * what the server commits.
@@ -21,7 +26,7 @@
 
 import { useState } from "react";
 import { fmt$ } from "@/lib/format";
-import { QuoteActions } from "./QuoteActions";
+import { QuoteActions, type QuotePhase } from "./QuoteActions";
 import { computeQuoteTotals, lineAmountCents } from "./quote-totals";
 
 function centsToDisplay(cents: number): string {
@@ -121,8 +126,22 @@ export function QuoteLines({
   changeAlreadyRequested,
 }: QuoteLinesProps) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  // Accept-flow phase lives HERE (not in QuoteActions) so the toggles lock the
+  // moment an accept/decline is in flight and stay locked once terminal — the
+  // displayed total can never diverge from the committed one.
+  const [phase, setPhase] = useState<QuotePhase>("idle");
+  const locked = phase === "busy" || phase === "approved" || phase === "declined";
+
+  function handlePhaseChange(next: QuotePhase, committedLineIds?: readonly string[]): void {
+    if (next === "approved" && committedLineIds) {
+      // Freeze the totals to the selection that was actually SENT with the accept.
+      setSelectedIds(new Set(committedLineIds));
+    }
+    setPhase(next);
+  }
 
   function toggle(id: string, on: boolean): void {
+    if (locked) return; // belt-and-braces alongside the checkbox disabled prop
     setSelectedIds((prev) => {
       const next = new Set(prev); // new Set per toggle — never mutate state in place
       if (on) next.add(id);
@@ -154,6 +173,7 @@ export function QuoteLines({
                 <input
                   type="checkbox"
                   checked={selectedIds.has(line.id)}
+                  disabled={locked}
                   onChange={(e) => toggle(line.id, e.target.checked)}
                 />
                 <span style={{ flex: 1 }}>
@@ -185,6 +205,8 @@ export function QuoteLines({
         totalCents={totals.totalCents}
         changeAlreadyRequested={changeAlreadyRequested}
         selectedLineIds={[...selectedIds]}
+        phase={phase}
+        onPhaseChange={handlePhaseChange}
       />
     </>
   );

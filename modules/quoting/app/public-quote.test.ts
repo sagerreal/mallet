@@ -48,6 +48,10 @@ import type { AcceptLineInput } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
 import { RequestEstimateChangeUseCase } from "./request-estimate-change";
 import { buildAcceptLinesFromSelection } from "./select-optional-lines";
+import {
+  classifyAcceptValidationFailure,
+  type AcceptPublicQuoteResult,
+} from "./public-accept-policy";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 
 // ---------------------------------------------------------------------------
@@ -198,6 +202,42 @@ const makeSentEstimate = (
   return r.value;
 };
 
+// A still-DRAFT estimate whose token leaked early (the reader does not gate on status).
+const makeDraftEstimate = (
+  estimateId: EstimateId,
+  orgId: OrgId,
+  leadId: LeadId,
+  token: string,
+): Estimate => {
+  const now = new Date("2026-07-01T00:00:00Z");
+  const props: EstimateProps = {
+    id: estimateId,
+    orgId,
+    num: "EST-9002",
+    leadId,
+    title: "Draft quote",
+    status: "draft",
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    depPaid: zeroMoney,
+    validDays: 30,
+    sentAt: null,
+    acceptedAt: null,
+    declinedAt: null,
+    declineReason: null,
+    changeRequestedAt: null,
+    changeRequest: null,
+    publicToken: token,
+    lines: [makeTestLine()],
+    createdAt: now,
+    updatedAt: now,
+  };
+  const r = Estimate.create(props);
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
 // ---------------------------------------------------------------------------
 // Fake PublicEstimateReader — replaces the real ownerDb-based reader
 // ---------------------------------------------------------------------------
@@ -239,11 +279,6 @@ class FakePublicEstimateReader {
 //  but accept injected fakes instead of calling getAppDeps / withTenant.)
 // ---------------------------------------------------------------------------
 
-type TestAcceptResult =
-  | { kind: "ok"; estimate: Estimate }
-  | { kind: "invalid_selection" }
-  | { kind: "not_found" };
-
 async function testAcceptPublicQuote(
   token: string,
   reader: FakePublicEstimateReader,
@@ -251,7 +286,7 @@ async function testAcceptPublicQuote(
   bus: InMemoryEventBus,
   clock: FixedClock,
   selectedLineIds?: readonly string[],
-): Promise<TestAcceptResult> {
+): Promise<AcceptPublicQuoteResult> {
   const resolved = await reader.resolveOrgByToken(token);
   if (!resolved) return { kind: "not_found" };
   const { estimateId, orgId } = resolved;
@@ -277,8 +312,10 @@ async function testAcceptPublicQuote(
   });
   if (!result.ok) {
     if (result.error.kind === "validation") {
+      // Same classification the REAL acceptPublicQuote applies (shared function):
+      // terminal → idempotent ok; non-terminal (draft) → not_ready.
       const current = await repo.findById(asEstimateId(estimateId));
-      return current ? { kind: "ok", estimate: current } : { kind: "not_found" };
+      return classifyAcceptValidationFailure(current);
     }
     return { kind: "not_found" };
   }
@@ -532,6 +569,81 @@ describe("acceptPublicQuote — optional add-on selection", () => {
     if (result.kind !== "ok") return;
     expect(result.estimate.total()).toBe(100_000);
     expect(result.estimate.props.lines.some((l) => l.props.isOptional)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: acceptPublicQuote — honest failure states (not_ready vs idempotent ok)
+// ---------------------------------------------------------------------------
+
+describe("acceptPublicQuote — non-terminal estimates report not_ready, not ok", () => {
+  const DRAFT_TOKEN = "d".repeat(64);
+  let draftEstimateId: EstimateId;
+
+  beforeEach(() => {
+    draftEstimateId = asEstimateId("aaaa0000-0000-0000-0000-00000000000d");
+    const draft = makeDraftEstimate(draftEstimateId, ORG_A, LEAD_A, DRAFT_TOKEN);
+    reader.register(DRAFT_TOKEN, {
+      estimateId: draftEstimateId,
+      orgId: ORG_A,
+      orgName: "Acme Roofing",
+      leadName: "Jane Smith",
+      estimate: draft,
+    });
+    repoA.inject(draft);
+  });
+
+  it("a still-draft estimate (prematurely shared link) → not_ready; stays draft, no event", async () => {
+    const result = await testAcceptPublicQuote(DRAFT_TOKEN, reader, repoByOrg, bus, clock);
+    expect(result.kind).toBe("not_ready");
+    expect((await repoA.findById(draftEstimateId))?.props.status).toBe("draft");
+    expect(bus.recorded.filter((e) => e.name === "estimate.accepted")).toHaveLength(0);
+  });
+
+  it("a draft accept with a selection is NOT reported as approved (kind is not ok)", async () => {
+    const result = await testAcceptPublicQuote(DRAFT_TOKEN, reader, repoByOrg, bus, clock, []);
+    expect(result.kind).toBe("not_ready");
+  });
+
+  it("re-POST on an already-accepted estimate stays the idempotent ok path", async () => {
+    const first = await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+    expect(first.kind).toBe("ok");
+    const second = await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+    expect(second.kind).toBe("ok");
+    if (second.kind !== "ok") return;
+    expect(second.estimate.props.status).toBe("accepted");
+  });
+});
+
+describe("classifyAcceptValidationFailure — status classification", () => {
+  const now = new Date("2026-07-10T00:00:00Z");
+
+  it("accepted → ok with the current estimate (idempotent double-tap)", () => {
+    const accepted = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN).accept(now);
+    if (!accepted.ok) throw new Error("setup failed");
+    const r = classifyAcceptValidationFailure(accepted.value);
+    expect(r.kind).toBe("ok");
+    if (r.kind === "ok") expect(r.estimate.props.status).toBe("accepted");
+  });
+
+  it("declined → ok with the current estimate (terminal state, nothing to accept)", () => {
+    const declined = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN).decline("price", now);
+    if (!declined.ok) throw new Error("setup failed");
+    expect(classifyAcceptValidationFailure(declined.value).kind).toBe("ok");
+  });
+
+  it("draft → not_ready (the quote was never accepted; do not fake an approval)", () => {
+    const draft = makeDraftEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+    expect(classifyAcceptValidationFailure(draft).kind).toBe("not_ready");
+  });
+
+  it("sent → not_ready (a sent estimate that failed validation was not accepted)", () => {
+    const sent = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+    expect(classifyAcceptValidationFailure(sent).kind).toBe("not_ready");
+  });
+
+  it("missing row → not_found", () => {
+    expect(classifyAcceptValidationFailure(null).kind).toBe("not_found");
   });
 });
 
