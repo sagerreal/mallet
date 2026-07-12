@@ -41,7 +41,7 @@ describe("ImportCustomersModalContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /import 1 customer/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByText(/1 added/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/1 customer added/i)).toBeTruthy());
     expect(invalidate).toHaveBeenCalled();
   });
 
@@ -58,7 +58,7 @@ describe("ImportCustomersModalContent", () => {
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
     expect(mutateAsync.mock.calls[0]![0].rows).toHaveLength(500);
     expect(mutateAsync.mock.calls[1]![0].rows).toHaveLength(100);
-    await waitFor(() => expect(screen.getByText(/600 added/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/600 customers added/i)).toBeTruthy());
   });
 
   it("resumes from the failed chunk on retry (does not re-send committed rows)", async () => {
@@ -81,7 +81,7 @@ describe("ImportCustomersModalContent", () => {
 
     // The retry sent ONLY the remaining 100 rows — the committed first chunk was not re-sent.
     expect(mutateAsync.mock.calls[2]![0].rows).toHaveLength(100);
-    await waitFor(() => expect(screen.getByText(/600 added/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/600 customers added/i)).toBeTruthy());
   });
 
   it("re-sends from row 0 when the mapping changes after a partial failure (progress reset)", async () => {
