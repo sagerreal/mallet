@@ -9,9 +9,12 @@
  * directly and calls setSettings. refetchOnWindowFocus:false so a focus-triggered refetch never
  * clobbers an in-flight optimistic write from a settings-slice action.
  *
- * Unit conversions on the read path: cents → dollars (pricebook r/c, labor rate), bps → percent
- * (markup). These mirror the write-path conversions in settings-slice so a value round-trips
- * unchanged.
+ * Unit conversions on the read path: cents → dollars (labor rate), bps → percent (markup). These
+ * mirror the write-path conversions in settings-slice so a value round-trips unchanged.
+ *
+ * The pricebook catalog itself is NOT read here — v1.settings.get still returns a `pricebook`
+ * field (server DTO unchanged, see modules/settings), but the client now sources services from
+ * v1.pricebook.service.list via PricebookHydrator (pricebook-slice), not this snapshot.
  */
 
 import { useEffect } from "react";
@@ -39,12 +42,6 @@ export function SettingsHydrator() {
     if (!data) return;
     const dto: SettingsDTO = data;
     setSettings({
-      pricebook: dto.pricebook.map((p) => ({
-        id: p.id,
-        label: p.label,
-        unitPrice: Math.round(p.unitPriceCents / 100),
-        cost: Math.round(p.costCents / 100),
-      })),
       laborRates: dto.laborRates.map((r) => ({
         id: r.id,
         name: r.label,

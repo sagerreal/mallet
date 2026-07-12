@@ -6,6 +6,7 @@ import { OutboxEventBus } from "@mallet/shared/outbox";
 import type { Principal } from "@mallet/identity";
 import type { AppDeps } from "@/trpc/deps";
 import { buildAgentTools } from "../infra/agent-tools";
+import { fetchCatalogContext } from "../infra/catalog-context";
 import { runAgentTurn, type AgentResult, type ExecuteTool, type ToolMeta } from "../app/run-agent-turn";
 import { LlmError, type AgentMessage } from "../domain/llm-client";
 import type { ToolDeps } from "../domain/tool";
@@ -139,7 +140,12 @@ export const createAiRouter = () =>
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "AI is not configured" });
         }
         try {
-          const lines = await draftEstimateLines(ctx.deps.llmClient, input.description);
+          // Short read-only tx (mirrors execute()'s per-tool-call withTenant below) to fetch a
+          // bounded top-N of the org's real pricebook — closed before the slow LLM round-trip.
+          const catalog = await withTenant(ctx.principal.orgId, (tx) =>
+            fetchCatalogContext(tx, ctx.principal.orgId),
+          );
+          const lines = await draftEstimateLines(ctx.deps.llmClient, input.description, catalog);
           return { lines };
         } catch (error) {
           if (error instanceof LlmError) {

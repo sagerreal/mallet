@@ -7,9 +7,9 @@
  *
  * The line-building primitives (BuildLine model, lineAmt / linesTotal / seedLines,
  * fmt$ / custLabel, and the AddMenu / LineRow render pieces) are shared with the
- * tech GBB builder and live in ./pricing/build-line. The pricebook + labor rates
- * are read from the store and adapted to the shared PricebookItem / LaborRate
- * shape here, then handed to AddMenu as props.
+ * tech GBB builder and live in ./pricing/build-line. The pricebook services +
+ * labor rates are read from the store and adapted to the shared PricebookItem /
+ * LaborRate shape here, then handed to AddMenu as props.
  *
  * OFFICE single-tier mode (fromCreate=true) renders:
  *   - the eyebrow "PRICE THE JOB · <customer>" + <h2>Build the price</h2>
@@ -34,8 +34,8 @@
 import { useMemo, useState } from "react";
 import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, JobLine } from "@/lib/store/types";
-import type { PbItem, LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
+import type { Job, JobLine, Service } from "@/lib/store/types";
+import type { LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
 import {
   type AddSub,
   type BuildLine,
@@ -61,12 +61,15 @@ export function PriceBuilderModalContent() {
   const updateJob = useAppStore((s) => s.updateJob);
   // Reference data straight from the store (raw arrays — never derived in the
   // selector). Adapted below to the shared PricebookItem / LaborRate shape.
-  const pricebookRaw = useAppStore((s) => s.pricebook);
+  const servicesRaw = useAppStore((s) => s.services);
   const laborRatesRaw = useAppStore((s) => s.laborRates);
 
   const pricebook: PricebookItem[] = useMemo(
-    () => pricebookRaw.map((p: PbItem) => ({ d: p.label, r: p.unitPrice, c: p.cost })),
-    [pricebookRaw],
+    () =>
+      [...servicesRaw]
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+        .map((svc: Service) => ({ d: svc.name, r: svc.unitPrice, c: svc.cost })),
+    [servicesRaw],
   );
   const laborRates: LaborRate[] = useMemo(
     () => laborRatesRaw.map((r: StoreLaborRate) => ({ name: r.name, rate: r.rate })),

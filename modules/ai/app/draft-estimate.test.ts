@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import type { LlmClient, LlmRequest, AssistantTurn } from "../domain/llm-client";
 import { LlmError } from "../domain/llm-client";
-import { draftEstimateLines } from "./draft-estimate";
+import { draftEstimateLines, type CatalogServiceContext } from "./draft-estimate";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -149,6 +149,68 @@ describe("draftEstimateLines", () => {
       next: async () => { throw new LlmError(false, "provider error"); },
     };
     await expect(draftEstimateLines(llm, "any job")).rejects.toBeInstanceOf(LlmError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Catalog context (Task 10): when the router passes the org's real pricebook,
+// the system prompt must carry it so the model prices from the shop's actual
+// book — the LLM call itself stays mocked (no real model call in this file).
+// ---------------------------------------------------------------------------
+
+describe("draftEstimateLines — catalog context", () => {
+  const SAMPLE_CATALOG: CatalogServiceContext[] = [
+    { name: "40-gal gas water heater install", unitPriceCents: 165000, category: "Water heaters" },
+    { name: "Drain snake — standard", unitPriceCents: 22500, category: "Drains" },
+    { name: "Diagnostic / trip fee", unitPriceCents: 8900, category: null },
+  ];
+
+  it("includes each catalog service's name, price, and category in the system prompt", async () => {
+    const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
+
+    await draftEstimateLines(llm, "replace water heater", SAMPLE_CATALOG);
+
+    const system = llm.capturedRequest!.system;
+    expect(system).toContain("40-gal gas water heater install");
+    expect(system).toContain("$1650.00");
+    expect(system).toContain("[Water heaters]");
+    expect(system).toContain("Drain snake — standard");
+    expect(system).toContain("$225.00");
+    expect(system).toContain("Diagnostic / trip fee");
+    expect(system).toContain("$89.00");
+  });
+
+  it("instructs the model to prefer catalog prices and flag off-book lines", async () => {
+    const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
+
+    await draftEstimateLines(llm, "replace water heater", SAMPLE_CATALOG);
+
+    const system = llm.capturedRequest!.system;
+    expect(system).toContain("Prefer these exact prices");
+    expect(system).toContain("Off-book:");
+  });
+
+  it("omits the pricebook section and off-book instruction when the catalog is empty", async () => {
+    const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
+
+    await draftEstimateLines(llm, "replace water heater");
+
+    const system = llm.capturedRequest!.system;
+    expect(system).not.toContain("This shop's pricebook");
+    expect(system).not.toContain("Off-book:");
+  });
+
+  it("does not change tools, messages, or effort when a catalog is supplied", async () => {
+    const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
+    const description = "replace water heater";
+
+    await draftEstimateLines(llm, description, SAMPLE_CATALOG);
+
+    const req = llm.capturedRequest!;
+    expect(req.tools).toHaveLength(1);
+    expect(req.tools[0]!.name).toBe("submit_estimate");
+    expect(req.messages).toEqual([{ role: "user", kind: "text", text: description }]);
+    expect(req.effort).toBe("low");
   });
 });
 
