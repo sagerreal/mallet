@@ -154,7 +154,8 @@ export interface Estimate {
 export interface JobLine {
   d: string;
   q: number;
-  r: number;
+  /** Rate in dollars. null = server-redacted (tech device with techSeesPrice off) — not $0. */
+  r: number | null;
   c?: number;
 }
 
@@ -167,7 +168,8 @@ export interface Addon {
   dbId?: string;
   d: string;
   q: number;
-  r: number;
+  /** Rate in dollars. null = server-redacted (tech device with techSeesPrice off) — not $0. */
+  r: number | null;
   c?: number;
   status: "proposed" | "approved" | "declined";
   when?: string;

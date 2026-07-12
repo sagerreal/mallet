@@ -168,20 +168,23 @@ export function toStoreVisit(v: VisitDTO): Visit {
  * Execution DTO shape — the four arrays shared by jobDTO and jobSummaryDTO.
  * All fields are optional so callers that don't have them yet (e.g. legacy
  * test fixtures cast with `as never`) still work without runtime errors.
+ *
+ * rate/cost are nullable: the tech-facing field surface redacts them
+ * server-side (cost always for techs; rate when techSeesPrice is off).
  */
 export interface ExecutionDTO {
   lines?: {
     description: string;
     quantity: number;
-    rate: { cents: number };
-    cost: { cents: number };
+    rate: { cents: number } | null;
+    cost: { cents: number } | null;
   }[];
   addons?: {
     id: string;
     description: string;
     quantity: number;
-    rate: { cents: number };
-    cost: { cents: number };
+    rate: { cents: number } | null;
+    cost: { cents: number } | null;
     isOptional: boolean;
     invoiceSkip: boolean;
     status: "proposed" | "approved" | "declined";
@@ -202,6 +205,9 @@ export interface ExecutionDTO {
  * dtoJobToStoreJob and the jobs-hydrator toStoreJob call this.
  *
  * Money: DTO carries integer cents; store uses dollars (cents / 100).
+ * A server-REDACTED rate (null — tech device, techSeesPrice off) stays null
+ * in the store so the UI can tell "hidden" from "$0"; a redacted cost is
+ * simply omitted (c is optional).
  * Addon.id is derived from the array index (stable numeric id for the
  * prototype UI); dbId carries the DB uuid for persistence.
  */
@@ -209,8 +215,8 @@ export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | 
   const lines: JobLine[] = (dto.lines ?? []).map((l) => ({
     d: l.description,
     q: l.quantity,
-    r: l.rate.cents / 100,
-    ...(l.cost.cents > 0 ? { c: l.cost.cents / 100 } : {}),
+    r: l.rate ? l.rate.cents / 100 : null,
+    ...(l.cost && l.cost.cents > 0 ? { c: l.cost.cents / 100 } : {}),
   }));
 
   const addons: Addon[] = (dto.addons ?? []).map((a, i) => ({
@@ -218,8 +224,8 @@ export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | 
     dbId: a.id,
     d: a.description,
     q: a.quantity,
-    r: a.rate.cents / 100,
-    ...(a.cost.cents > 0 ? { c: a.cost.cents / 100 } : {}),
+    r: a.rate ? a.rate.cents / 100 : null,
+    ...(a.cost && a.cost.cents > 0 ? { c: a.cost.cents / 100 } : {}),
     status: a.status,
     ...(a.invoiceSkip ? { invSkip: true } : {}),
   }));

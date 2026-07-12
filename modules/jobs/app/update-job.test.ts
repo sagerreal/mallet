@@ -33,6 +33,7 @@ class FakeRepo implements JobRepository {
   async listByLead() { return { items: [], nextCursor: null }; }
   // execution stubs — implemented in Task 5
   async listExecution() { return { lines: [], addons: [], verifyAnswers: [], photos: [] }; }
+  async listExecutionForJobs() { return new Map(); }
   async addLine() {}
   async updateLine() { return 0; }
   async removeLine() { return 0; }

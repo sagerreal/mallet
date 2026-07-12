@@ -61,6 +61,13 @@ export interface SettingsRepository {
   /** Persists a mutated OrgSettings back to org_settings. Upsert-safe (idempotent). */
   saveConfig(settings: OrgSettings): Promise<void>;
 
+  /**
+   * Focused read of the org's tech price-visibility flag — used by the tech-facing
+   * field surface to redact money server-side. Returns the schema default (true)
+   * when the org_settings row does not exist yet (no lazy create on this path).
+   */
+  getTechSeesPrice(): Promise<boolean>;
+
   // --- pricebook_items ---------------------------------------------------
 
   /**

@@ -11,7 +11,22 @@ import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "
 
 export interface JobFilter {
   readonly status?: JobStatus;
+  /** Job-level assignee only (the office list's filter). */
   readonly assigneeUserId?: UserId;
+  /**
+   * Visit-aware assignment (the field surface's filter): job-level assignee OR the
+   * assignee of any active (non-canceled) visit — the SQL twin of Job.isAssignedTo,
+   * so a tech can SEE every job they are authorized to act on.
+   */
+  readonly assignedUserId?: UserId;
+}
+
+/** The four execution child collections of one job. */
+export interface JobExecution {
+  lines: JobLine[];
+  addons: JobAddon[];
+  verifyAnswers: JobVerifyAnswer[];
+  photos: JobPhoto[];
 }
 
 export interface JobRepository {
@@ -35,12 +50,10 @@ export interface JobRepository {
   // ── job execution data (Phase 5) ─────────────────────────────────────────
   // Each returns the loaded child collections for a job so a use-case can hand the router the
   // refreshed full-job DTO. All are org-implicit (the tx is tenant-scoped) and non-deleted only.
-  listExecution(jobId: JobId): Promise<{
-    lines: JobLine[];
-    addons: JobAddon[];
-    verifyAnswers: JobVerifyAnswer[];
-    photos: JobPhoto[];
-  }>;
+  listExecution(jobId: JobId): Promise<JobExecution>;
+  // Batched variant for list surfaces (myDay): loads every job's execution in 4 IN-clause
+  // queries instead of 4 per job. Jobs with no execution rows map to empty collections.
+  listExecutionForJobs(jobIds: readonly JobId[]): Promise<Map<string, JobExecution>>;
   addLine(line: JobLine, now: Date): Promise<void>;
   updateLine(line: JobLine, now: Date): Promise<number>; // rows affected; 0 = not found
   removeLine(jobId: JobId, lineId: string, now: Date): Promise<number>;

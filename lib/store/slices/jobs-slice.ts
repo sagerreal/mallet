@@ -1069,21 +1069,49 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   },
 
   // Push a field photo and auto-pass the next unanswered photo checklist item.
-  // This is the prototype demo path — no file param, remains optimistic-only.
-  // For real photo uploads, use uploadJobPhoto from lib/store/upload-job-photo.ts.
-  addJobPhoto: (jobId) =>
+  // The PHOTO stays store-only for now (the prototype demo path — no file param;
+  // real uploads use uploadJobPhoto from lib/store/upload-job-photo.ts), but the
+  // CHECK-OFF persists through the same v1.field.setVerifyAnswer path as
+  // checkVerifyItem (state=pass, via=photo) so it survives a refresh for every role.
+  addJobPhoto: (jobId) => {
+    const current = snapshot(get().jobs, jobId);
+    if (!current) return;
+    const items = current.checklist?.items ?? [];
+    const ans = current.verify?.ans ?? {};
+    const nextPhoto = items.find((it) => it.type === "photo" && !ans[it.id]);
+
+    // 1. Optimistic apply: photo + (when a photo item is open) its pass answer.
     set((s) => ({
       jobs: patchJob(s.jobs, jobId, (j) => {
         const photos = [...j.photos, ""];
-        const items = j.checklist?.items ?? [];
-        const ans = j.verify?.ans ?? {};
-        const nextPhoto = items.find((it) => it.type === "photo" && !ans[it.id]);
         if (!nextPhoto) return { ...j, photos };
         return {
           ...j,
           photos,
-          verify: { ans: { ...ans, [nextPhoto.id]: { st: "pass", via: "photo" } } },
+          verify: { ans: { ...(j.verify?.ans ?? {}), [nextPhoto.id]: { st: "pass", via: "photo" } } },
         };
       }),
-    })),
+    }));
+
+    // 2. Persist the answer (nothing to persist when no photo item was open).
+    if (!nextPhoto || current.origin !== JOB_ORIGIN.DB) return;
+    trpcVanilla.v1.field.setVerifyAnswer
+      .mutate({ jobId, itemId: nextPhoto.id, state: "pass", via: "photo" })
+      .then((dto) =>
+        set((s) => ({
+          jobs: s.jobs.map((j) =>
+            // Keep the store-only photos across the reconcile — the server DTO
+            // can't know them (the file itself is not persisted on this path).
+            j.id === jobId ? { ...mergeIncomingJob(j, dtoJobToStoreJob(dto)), photos: j.photos } : j,
+          ),
+        })),
+      )
+      .catch((err: unknown) => {
+        set((s) => ({ jobs: restoreJob(s.jobs, current) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[jobs-slice] addJobPhoto failed — rolled back", { jobId, err });
+        }
+      });
+  },
 });

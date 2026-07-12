@@ -248,6 +248,10 @@ export class Job {
   canStart(): boolean {
     return this.p.status === "scheduled";
   }
+  /** True once the job is closed (complete/canceled) — no further field writes. */
+  isTerminal(): boolean {
+    return isTerminal(this.p.status);
+  }
   canComplete(): boolean {
     return this.p.status === "in_progress";
   }

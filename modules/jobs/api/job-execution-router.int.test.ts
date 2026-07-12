@@ -69,7 +69,7 @@ suite("v1.jobs execution data (full stack, live RLS)", () => {
     const dto = await caller.v1.jobs.addLine({ jobId, description: "Panel swap", quantity: 2, rateCents: 5000, costCents: 1000 });
     expect(dto.lines).toHaveLength(1);
     expect(dto.lines[0]?.description).toBe("Panel swap");
-    expect(dto.lines[0]?.rate.cents).toBe(5000);
+    expect(dto.lines[0]?.rate?.cents).toBe(5000);
   });
 
   it("updates then removes a line", async () => {
@@ -95,6 +95,17 @@ suite("v1.jobs execution data (full stack, live RLS)", () => {
 
   it("sets a verify answer, overrides it, then clears it", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, ownerA, "owner"));
+    // Answers are validated against the job's ATTACHED checklist — attach one first.
+    await caller.v1.jobs.update({
+      jobId,
+      checklist: {
+        name: "Before you leave",
+        items: [
+          { id: "5", text: "Water back on", type: "check", required: true },
+          { id: "9", text: "Site photo", type: "photo", required: false },
+        ],
+      },
+    });
     const passed = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "5", state: "pass", via: "manual" });
     expect(passed.verifyAnswers.find((v) => v.itemId === "5")?.state).toBe("pass");
     const overridden = await caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "5", state: "override", reason: "N/A on this unit" });
@@ -109,6 +120,15 @@ suite("v1.jobs execution data (full stack, live RLS)", () => {
     await expect(
       caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "9", state: "override" }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects a verify answer for an itemId that is not on the attached checklist", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, ownerA, "owner"));
+    await expect(
+      caller.v1.jobs.setVerifyAnswer({ jobId, itemId: "not-a-real-item", state: "pass", via: "manual" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const rows = await admin`select item_id from job_verify_answers where job_id = ${jobId}`;
+    expect(rows.every((r) => r.item_id !== "not-a-real-item")).toBe(true);
   });
 
   it("records a photo metadata row and removes it", async () => {

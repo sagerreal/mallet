@@ -106,6 +106,46 @@ describe("jobs-slice execution actions persist", () => {
     expect(mutate.setVerifyAnswer.mock.calls[0]![0]).toMatchObject({ jobId: "job-1", itemId: "3", state: "clear" });
   });
 
+  it("addJobPhoto persists the photo check-off via field.setVerifyAnswer (via=photo)", async () => {
+    mutate.setVerifyAnswer.mockResolvedValue({ id: "job-1", leadId: "lead-1", title: "T", status: "scheduled", notes: "", visits: [], lines: [], addons: [], verifyAnswers: [{ itemId: "p1", state: "pass", via: "photo", reason: null }], photos: [] });
+    store.setState({
+      jobs: [{
+        ...store.getState().jobs[0]!,
+        checklist: { name: "BYL", items: [{ id: "p1", text: "Site photo", type: "photo", required: true, position: 0 }] },
+      }],
+    });
+    store.getState().addJobPhoto("job-1");
+    // optimistic: photo pushed + answer set
+    expect(store.getState().jobs[0]!.photos).toHaveLength(1);
+    expect(store.getState().jobs[0]!.verify?.ans["p1"]?.via).toBe("photo");
+    await flush();
+    expect(mutate.setVerifyAnswer.mock.calls[0]![0]).toMatchObject({ jobId: "job-1", itemId: "p1", state: "pass", via: "photo" });
+    // the store-only photo survives the reconcile (the file itself is unpersisted for now)
+    expect(store.getState().jobs[0]!.photos).toHaveLength(1);
+    expect(store.getState().jobs[0]!.verify?.ans["p1"]?.st).toBe("pass");
+  });
+
+  it("addJobPhoto with no unanswered photo item stays store-only (no network)", async () => {
+    store.getState().addJobPhoto("job-1"); // seeded job has no checklist
+    await flush();
+    expect(mutate.setVerifyAnswer).not.toHaveBeenCalled();
+    expect(store.getState().jobs[0]!.photos).toHaveLength(1);
+  });
+
+  it("addJobPhoto rolls back the check-off when the persist fails", async () => {
+    mutate.setVerifyAnswer.mockRejectedValue(new Error("boom"));
+    store.setState({
+      jobs: [{
+        ...store.getState().jobs[0]!,
+        checklist: { name: "BYL", items: [{ id: "p1", text: "Site photo", type: "photo", required: true, position: 0 }] },
+      }],
+    });
+    store.getState().addJobPhoto("job-1");
+    expect(store.getState().jobs[0]!.verify?.ans["p1"]?.st).toBe("pass"); // optimistic
+    await flush();
+    expect(store.getState().jobs[0]!.verify?.ans["p1"]).toBeUndefined(); // rolled back
+  });
+
   it("manual-origin jobs do NOT fire network mutations", async () => {
     store.setState({ jobs: [{ ...store.getState().jobs[0]!, origin: JOB_ORIGIN.MANUAL }] });
     store.getState().addAddon("job-1", { d: "Extra", r: 90 });

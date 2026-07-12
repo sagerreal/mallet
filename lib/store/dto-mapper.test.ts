@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, toStoreVisit, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
+import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, mapExecution, toStoreVisit, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
 import type { Estimate, Invoice } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -531,5 +531,52 @@ describe("toStoreVisit dur precedence", () => {
       durationMinutes: null,
     } as never);
     expect(v.dur).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapExecution — server-redacted money (tech field surface)
+// ---------------------------------------------------------------------------
+
+describe("mapExecution (redacted money)", () => {
+  const line = (rate: { cents: number } | null, cost: { cents: number } | null) => ({
+    description: "Panel swap",
+    quantity: 2,
+    rate,
+    cost,
+  });
+  const addon = (rate: { cents: number } | null, cost: { cents: number } | null) => ({
+    id: "a1",
+    description: "Extra outlet",
+    quantity: 1,
+    rate,
+    cost,
+    isOptional: false,
+    invoiceSkip: false,
+    status: "proposed" as const,
+    position: 0,
+  });
+
+  it("maps rate cents → dollars when present", () => {
+    const out = mapExecution({ lines: [line({ cents: 5000 }, { cents: 1000 })] });
+    expect(out.lines[0]?.r).toBe(50);
+    expect(out.lines[0]?.c).toBe(10);
+  });
+
+  it("maps a server-redacted (null) rate to null — never 0", () => {
+    const out = mapExecution({
+      lines: [line(null, null)],
+      addons: [addon(null, null)],
+    });
+    expect(out.lines[0]?.r).toBeNull();
+    expect(out.lines[0]?.c).toBeUndefined();
+    expect(out.addons[0]?.r).toBeNull();
+    expect(out.addons[0]?.c).toBeUndefined();
+  });
+
+  it("omits cost when the server redacts it but keeps a visible rate", () => {
+    const out = mapExecution({ addons: [addon({ cents: 9000 }, null)] });
+    expect(out.addons[0]?.r).toBe(90);
+    expect(out.addons[0]?.c).toBeUndefined();
   });
 });
