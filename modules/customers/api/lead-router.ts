@@ -49,7 +49,7 @@ const createInput = z.object({
 const importRowInput = z.object({
   name: z.string().min(1).max(255),
   phone: z.string().max(40).nullable(), // raw string; server parses leniently, never rejects the batch
-  email: z.string().email().max(320).nullable(),
+  email: z.string().max(320).nullable(), // raw string; server validates leniently, never rejects the batch
   source: z.string().max(255).nullable(),
   address: z.string().max(500).nullable(),
   notes: z.string().max(2000).nullable(),
@@ -271,11 +271,18 @@ export const createLeadRouter = () =>
             const parsed = Phone.parse(r.phone);
             if (isOk(parsed)) phone = parsed.value;
           }
+          // Lenient email validation: a malformed email is dropped, not fatal — same partial-success
+          // contract as phone, so one bad email can't reject the whole batch at the Zod boundary.
+          let email: string | null = null;
+          if (r.email) {
+            const e = r.email.trim();
+            if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) email = e;
+          }
           // exec returns a Result — NEVER throws for validation, so one bad row can't roll back the tx.
           const result = await useCase.exec({
             name: r.name,
             phone,
-            email: r.email,
+            email,
             source: r.source,
             companyId: null,
             role: null,

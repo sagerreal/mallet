@@ -47,7 +47,7 @@ suite("v1.customers.importCustomers", () => {
     await closeDb();
   });
 
-  it("creates new customers, dedupes by phone, and reports per-row errors", async () => {
+  it("creates new customers, dedupes by phone, tolerates a bad email, and reports per-row errors", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
 
     const res = await caller.v1.customers.importCustomers({
@@ -55,19 +55,29 @@ suite("v1.customers.importCustomers", () => {
         { name: "Gary Pratt", phone: "(925) 555-0100", email: "gary@x.com", source: "Import", address: "1 Pine Rd", notes: null },
         { name: "Gary Again", phone: "925.555.0100", email: null, source: "Import", address: null, notes: null }, // same phone → dedupe
         { name: "No Phone Person", phone: null, email: null, source: "Import", address: null, notes: null },
+        // Malformed email: leniently dropped, row still created. Previously this would have thrown at
+        // the batch-wide Zod boundary (z.string().email()), failing the entire request.
+        { name: "Bad Email", phone: null, email: "not-an-email", source: "Import", address: null, notes: null },
+        // Whitespace-only name: passes z.string().min(1) (raw length) but ensureCustomer trims → empty
+        // → returns err. Increments failed + errors WITHOUT throwing / rolling back the tx.
+        { name: "   ", phone: null, email: null, source: "Import", address: null, notes: null },
       ],
     });
 
-    expect(res.created).toBe(2); // Gary Pratt + No Phone Person
+    expect(res.created).toBe(3); // Gary Pratt + No Phone Person + Bad Email
     expect(res.deduped).toBe(1); // Gary Again (phone collision)
-    expect(res.failed).toBe(0);
+    expect(res.failed).toBe(1); // the whitespace-only name row
+    expect(res.errors).toHaveLength(1);
+    expect(res.errors[0]!.index).toBe(4); // points to the whitespace-only-name row
   });
 
-  it("rejects a batch over the 500-row cap", async () => {
+  it("rejects a batch over the 500-row cap with BAD_REQUEST", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const rows = Array.from({ length: 501 }, (_, i) => ({
       name: `C${i}`, phone: null, email: null, source: null, address: null, notes: null,
     }));
-    await expect(caller.v1.customers.importCustomers({ rows })).rejects.toThrow();
+    await expect(caller.v1.customers.importCustomers({ rows })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
   });
 });
