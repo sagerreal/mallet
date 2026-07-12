@@ -19,6 +19,7 @@
 import { useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
+import { WebsiteFormCard } from "./website-form-card";
 import { FoldCard } from "./fold-card";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
@@ -516,6 +517,8 @@ function SecSources() {
           Upload a spreadsheet (CSV)
         </button>
       </FoldCard>
+
+      <WebsiteFormCard />
 
       <FoldCard title="Source list" summary={`${sources.length} sources`}>
         {sources.length > 0 ? (

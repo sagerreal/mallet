@@ -1,6 +1,6 @@
 {
-  "id": "8b131691-56e2-48c2-90ee-72f71aae6ffc",
-  "prevId": "d3a8a37b-75f7-41a6-8665-9957bcbf86e2",
+  "id": "5dfd839b-6486-4551-aa07-dcede6ae985e",
+  "prevId": "8b131691-56e2-48c2-90ee-72f71aae6ffc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1256,6 +1256,12 @@
         "svc": {
           "name": "svc",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checklist": {
+          "name": "checklist",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
