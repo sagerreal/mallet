@@ -83,7 +83,6 @@ export interface VisitDur {
 
 export interface SettingsToggles {
   techSeesPrice: boolean;
-  techTexts: boolean;
   frontDesk: boolean;
   scopeOn: boolean;
 }
@@ -112,7 +111,6 @@ const EMPTY_TRADE = "plumbing";
 
 const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
-  techTexts: true,
   frontDesk: true,
   scopeOn: false,
 };
@@ -556,7 +554,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     // Explicit mapping: each toggle key → updateConfig field name (type-checked at compile time).
     const toggleToField: Record<keyof SettingsToggles, string> = {
       techSeesPrice: "techSeesPrice",
-      techTexts: "techTexts",
       frontDesk: "frontDesk",
       scopeOn: "scopeOn",
     };

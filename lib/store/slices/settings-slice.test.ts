@@ -305,7 +305,7 @@ describe("settings-slice persistence", () => {
       visitDur: { scope: 1, repair: 2, install: 6 },
       markup: 40,
       trade: "hvac",
-      toggles: { techSeesPrice: false, techTexts: false, frontDesk: false, scopeOn: true },
+      toggles: { techSeesPrice: false, frontDesk: false, scopeOn: true },
     };
     store.get().setSettings(snap);
     expect(store.get().markup).toBe(40);
