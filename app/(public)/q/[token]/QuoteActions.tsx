@@ -197,7 +197,7 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested }: Quot
             ))}
           </div>
         ) : (
-          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 10 }}>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16, marginTop: 12 }}>
             <button
               className="linklike"
               style={{ color: "var(--ink-3)", background: "none", border: 0, cursor: "pointer" }}
@@ -207,8 +207,7 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested }: Quot
               Not right now
             </button>
             <button
-              className="linklike"
-              style={{ color: "var(--ink-3)", background: "none", border: 0, cursor: "pointer" }}
+              className="btn ghost"
               onClick={() => { setPhase("requesting_change"); setError(null); }}
               disabled={phase === "busy"}
             >
