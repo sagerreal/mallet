@@ -9,6 +9,7 @@
  * Reads leads/techs from the store; derivation is pure.
  */
 
+import Link from "next/link";
 import { useAppStore } from "@/lib/store/app-store";
 import { fmt$ } from "@/lib/format";
 import type { Lead, Tech } from "@/lib/store/types";
@@ -101,15 +102,36 @@ function SortTh({
 function RowCell({ col, row }: { col: JobColKey; row: ListRow }) {
   const label = JOB_COLS[col].label; // doubles as the mobile-card row label
   switch (col) {
-    case "status":
+    case "status": {
+      const pillContent = (
+        <>
+          <span className="d" aria-hidden="true" />
+          {row.status.label}
+        </>
+      );
+      if (row.status.href) {
+        return (
+          <td data-label={label}>
+            <Link
+              href={row.status.href}
+              className={`jst jst-${row.status.tone}`}
+              title="Place it on the Schedule board"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              {pillContent}
+            </Link>
+          </td>
+        );
+      }
       return (
         <td data-label={label}>
           <span className={`jst jst-${row.status.tone}`}>
-            <span className="d" aria-hidden="true" />
-            {row.status.label}
+            {pillContent}
           </span>
         </td>
       );
+    }
     case "when":
       return (
         <td data-label={label}>

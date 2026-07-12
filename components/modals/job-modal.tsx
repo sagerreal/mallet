@@ -178,9 +178,10 @@ interface VisitRowProps {
   conflict: boolean;
   onUpdate: (patch: Partial<Visit>) => void;
   onRemove: () => void;
+  onGoToSchedule: () => void;
 }
 
-function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove }: VisitRowProps) {
+function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove, onGoToSchedule }: VisitRowProps) {
   // UNPLACED — dashed row with a "Not placed" pill, Length, and where-to-next hint.
   if (!vPlaced(visit)) {
     return (
@@ -206,6 +207,14 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove }: VisitRowP
         >
           Set the hours, then place it on the Schedule board for the crew, day &amp; time.
         </span>
+        <button
+          type="button"
+          className="linklike"
+          style={{ fontSize: 11.5, alignSelf: "center" }}
+          onClick={onGoToSchedule}
+        >
+          Open the Schedule board →
+        </button>
         <span
           className="linklike"
           style={{ color: "var(--red)", fontSize: 12, alignSelf: "center" }}
@@ -769,6 +778,11 @@ export function JobModalContent() {
     router.push("/money");
   }
 
+  function goToSchedule() {
+    close();
+    router.push("/jobs?tab=schedule");
+  }
+
   function confirmDelete() {
     if (!deleteArmed) {
       setDeleteArmed(true);
@@ -912,6 +926,7 @@ export function JobModalContent() {
             conflict={conflictsWith(v)}
             onUpdate={(patch) => updateVisit(job.id, v.id, patch)}
             onRemove={() => removeVisit(job.id, v.id)}
+            onGoToSchedule={goToSchedule}
           />
         ))
       ) : (

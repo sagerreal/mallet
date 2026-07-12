@@ -62,6 +62,15 @@ describe("jobStatusView — amber is rationed to the states that need the owner"
     expect(s.label).toBe("Archived");
     expect(s.tone).toBe("neutral");
   });
+
+  it("needsSlot carries the schedule board href", () => {
+    expect(jobStatusView("needsSlot", mkJob()).href).toBe("/jobs?tab=schedule");
+  });
+
+  it("other bands do not carry an href", () => {
+    expect(jobStatusView("done", mkJob()).href).toBeUndefined();
+    expect(jobStatusView("thisWeek", mkJob()).href).toBeUndefined();
+  });
 });
 
 describe("jobCrewTech", () => {
