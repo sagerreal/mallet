@@ -10,6 +10,7 @@ import { SendEstimateUseCase } from "../app/send-estimate";
 import { AcceptEstimateUseCase } from "../app/accept-estimate";
 import { DeclineEstimateUseCase } from "../app/decline-estimate";
 import { ListEstimatesUseCase } from "../app/list-estimates";
+import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
 import { logger } from "@mallet/shared/observability";
 
@@ -267,20 +268,29 @@ export const createEstimateRouter = () =>
         );
 
         // After the estimate is accepted, create its job atomically in the same tx.
+        // Wrapped in a savepoint so a job-creation failure does NOT roll back the accepted estimate.
         // CreateJobFromEstimateUseCase is idempotent (partial unique index on source_estimate_id +
         // ON CONFLICT DO NOTHING), so a re-accept is safe. If job creation fails, do NOT fail the
         // accept — log and continue. The manual v1.jobs.createFromEstimate endpoint is the fallback.
         try {
-          const jobRepo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
-          const estimateReader = new DrizzleEstimateReader(ctx.tx, ctx.principal.orgId);
-          const createJob = new CreateJobFromEstimateUseCase(
-            jobRepo,
-            estimateReader,
-            ctx.deps.bus,
-            ctx.deps.clock,
-            ctx.deps.ids,
-          );
-          await createJob.exec({ orgId: ctx.principal.orgId, estimateId: asEstimateId(input.estimateId) });
+          await ctx.tx.transaction(async (sp) => {
+            const jobRepo = new DrizzleJobRepository(sp, ctx.principal.orgId);
+            const estimateReader = new DrizzleEstimateReader(sp, ctx.principal.orgId);
+            const createJob = new CreateJobFromEstimateUseCase(
+              jobRepo,
+              estimateReader,
+              ctx.deps.bus,
+              ctx.deps.clock,
+              ctx.deps.ids,
+            );
+            const result = await createJob.exec({ orgId: ctx.principal.orgId, estimateId: asEstimateId(input.estimateId) });
+            if (!result.ok) {
+              logger.error(
+                { err: result.error, estimateId: input.estimateId, orgId: ctx.principal.orgId },
+                "quoting.accept: job creation returned error (non-fatal)",
+              );
+            }
+          });
         } catch (err) {
           logger.error(
             { err, estimateId: input.estimateId, orgId: ctx.principal.orgId },
@@ -326,5 +336,14 @@ export const createEstimateRouter = () =>
         return toEstimateDTO(
           orThrow(await useCase.exec({ estimateId: asEstimateId(input.estimateId), reason: input.reason })),
         );
+      }),
+
+    clearChangeRequest: ownerOrOffice
+      .input(idInput)
+      .output(estimateDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ClearEstimateChangeRequestUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        return toEstimateDTO(orThrow(await useCase.exec({ estimateId: asEstimateId(input.estimateId) })));
       }),
   });

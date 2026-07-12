@@ -36,9 +36,13 @@ interface QuoteActionsProps {
 }
 
 export function QuoteActions({ token, totalCents, changeAlreadyRequested }: QuoteActionsProps) {
-  const [phase, setPhase] = useState<Phase>(changeAlreadyRequested ? "change_sent" : "idle");
+  const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [changeMessage, setChangeMessage] = useState("");
+
+  // Show the "request sent" banner when the server says a change was already submitted
+  // OR when the customer just submitted one in this session.
+  const showChangeBanner = changeAlreadyRequested || phase === "change_sent";
 
   async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string }): Promise<void> {
     setPhase("busy");
@@ -88,16 +92,14 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested }: Quot
     );
   }
 
-  if (phase === "change_sent") {
-    return (
-      <div className="reqcard" style={{ marginTop: 8 }}>
-        Request sent — they&rsquo;ll get back to you.
-      </div>
-    );
-  }
-
   return (
     <>
+      {showChangeBanner && (
+        <div className="reqcard" style={{ marginTop: 8, marginBottom: 10 }}>
+          Request sent — they&rsquo;ll get back to you.
+        </div>
+      )}
+
       {error && (
         <div
           role="alert"

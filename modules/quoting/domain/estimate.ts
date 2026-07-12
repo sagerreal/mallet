@@ -157,6 +157,9 @@ export class Estimate {
   canRequestChange(): boolean {
     return this.p.status === "sent";
   }
+  canClearChangeRequest(): boolean {
+    return this.p.changeRequestedAt !== null;
+  }
 
   // Draft → sent. Idempotent: re-sending an already-sent estimate is a no-op (same instance).
   send(now: Date): Result<Estimate, ValidationError> {
@@ -217,6 +220,14 @@ export class Estimate {
         updatedAt: now,
       }),
     );
+  }
+
+  // Office clears the pending change request (marks it handled). Returns the updated instance.
+  clearChangeRequest(now: Date): Result<Estimate, ValidationError> {
+    if (!this.p.changeRequestedAt) {
+      return err(validation("no change request to clear", "changeRequest"));
+    }
+    return ok(new Estimate({ ...this.p, changeRequestedAt: null, changeRequest: null, updatedAt: now }));
   }
 
   // Replace the line set — only while still a draft (content is frozen once sent).

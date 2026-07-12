@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
 import { getPublicQuote, acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
+import type { RequestChangeResult } from "@/modules/quoting/app/public-quote";
 import type { Estimate } from "@/modules/quoting/domain/estimate";
 
 // Public, unauthenticated route handlers for the customer-facing quote page.
@@ -20,8 +21,8 @@ const TOKEN_RE = /^[0-9a-f]{64}$/i;
 
 const postBodySchema = z.object({
   action: z.enum(["accept", "decline", "request_change"]),
-  reason: z.string().optional(),
-  message: z.string().optional(),
+  reason: z.string().max(500).optional(),
+  message: z.string().trim().min(1).max(2000).optional(),
 });
 
 // --- Serialisation helpers -------------------------------------------------
@@ -115,34 +116,50 @@ export async function POST(
 
   const parsed = postBodySchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "invalid request", details: parsed.error.flatten() },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
   const { action, reason, message } = parsed.data;
 
   try {
-    let estimate;
-
     if (action === "accept") {
-      estimate = await acceptPublicQuote(token);
-    } else if (action === "decline") {
-      estimate = await declinePublicQuote(token, reason);
-    } else {
-      // action === "request_change"
-      const msg = (message ?? "").trim();
-      if (!msg) {
-        return NextResponse.json({ error: "message is required" }, { status: 400 });
+      const estimate = await acceptPublicQuote(token);
+      if (!estimate) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
       }
-      estimate = await requestChangePublicQuote(token, msg);
+      return NextResponse.json({ estimate: estimateToJson(estimate) });
     }
 
-    if (!estimate) {
+    if (action === "decline") {
+      const estimate = await declinePublicQuote(token, reason);
+      if (!estimate) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
+      }
+      return NextResponse.json({ estimate: estimateToJson(estimate) });
+    }
+
+    // action === "request_change"
+    // Note: the schema already enforces message is non-empty (min(1)) and trimmed.
+    const msg = message ?? "";
+    const changeResult: RequestChangeResult = await requestChangePublicQuote(token, msg);
+
+    if (changeResult.kind === "not_found") {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
-    return NextResponse.json({ estimate: estimateToJson(estimate) });
+    if (changeResult.kind === "cooldown") {
+      return NextResponse.json(
+        { error: "You just sent a request — give it a few minutes before sending another." },
+        { status: 429 },
+      );
+    }
+    if (changeResult.kind === "not_sent") {
+      if (!changeResult.estimate) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
+      }
+      return NextResponse.json({ estimate: estimateToJson(changeResult.estimate) });
+    }
+    // kind === "ok"
+    return NextResponse.json({ estimate: estimateToJson(changeResult.estimate) });
   } catch (err) {
     logger.error({ err, route: "public.quote.POST", action }, "public quote POST failed");
     return NextResponse.json({ error: "temporarily unavailable" }, { status: 503 });

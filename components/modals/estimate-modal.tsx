@@ -98,6 +98,7 @@ export function EstimateModalContent() {
 
   const messagingSend = api.v1.messaging.send.useMutation();
   const notificationsSend = api.v1.notifications.send.useMutation();
+  const clearChangeRequestMutation = api.v1.quoting.clearChangeRequest.useMutation();
 
   const estId = activeModal?.params?.estId as string | undefined;
   const e = estimates.find((x) => x.id === estId);
@@ -118,6 +119,24 @@ export function EstimateModalContent() {
   }, [fullQuery.data]);
 
   if (!e) return null;
+
+  // L2: surface a non-not_found query error inline rather than silently leaving the table empty.
+  if (fullQuery.isError && fullQuery.error?.data?.code !== "NOT_FOUND") {
+    return (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div>
+            <div className="muted">{e.num}</div>
+            <h2>{e.title}</h2>
+          </div>
+        </div>
+        <div className="card" style={{ marginTop: 14, color: "var(--ink-2)", fontSize: 13 }}>
+          Couldn&apos;t load the quote details — close and reopen to retry.
+        </div>
+      </div>
+    );
+  }
+
   const lead = leads.find((l) => l.id === e.leadId);
   const m = calcQuote(e.lines, e.pricing);
   const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
@@ -360,11 +379,30 @@ export function EstimateModalContent() {
 
       {e.status === "sent" && e.changeRequestedAt && (
         <div className="reqcard" style={{ marginTop: 10 }}>
-          <span className="muted" style={{ fontSize: 11.5, display: "block", marginBottom: 3 }}>Change requested</span>
-          {e.changeRequest
-            ? <span>&ldquo;{e.changeRequest}&rdquo;</span>
-            : <span className="muted">Message loading…</span>
-          }
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+            <div>
+              <span className="muted" style={{ fontSize: 11.5, display: "block", marginBottom: 3 }}>Change requested</span>
+              {e.changeRequest
+                ? <span>&ldquo;{e.changeRequest}&rdquo;</span>
+                : <span className="muted">Message loading…</span>
+              }
+            </div>
+            <button
+              className="btn sm ghost"
+              style={{ flexShrink: 0 }}
+              disabled={clearChangeRequestMutation.isPending}
+              onClick={async () => {
+                try {
+                  const updated = await clearChangeRequestMutation.mutateAsync({ estimateId: e.id });
+                  adoptEstimate(updated, e.fu ?? { on: false, stage: 0 });
+                } catch {
+                  // Non-fatal — leave the card in place; the error is swallowed intentionally.
+                }
+              }}
+            >
+              {clearChangeRequestMutation.isPending ? "Clearing…" : "Mark handled"}
+            </button>
+          </div>
         </div>
       )}
       {e.status === "sent" && <FollowUpTrail e={e} />}

@@ -219,3 +219,47 @@ describe("Estimate.requestChange", () => {
     expect(r2.value.props.changeRequestedAt).toEqual(later);
   });
 });
+
+describe("Estimate.clearChangeRequest", () => {
+  const now = new Date("2026-07-11T10:00:00Z");
+  const later = new Date("2026-07-11T11:00:00Z");
+
+  it("returns validation error when no change request is present", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const r = sent.value.clearChangeRequest(later);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe("validation");
+      expect(r.error.field).toBe("changeRequest");
+    }
+  });
+
+  it("clears changeRequestedAt and changeRequest, returns new immutable instance", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const withChange = sent.value.requestChange("Please adjust price", now);
+    if (!isOk(withChange)) throw new Error("requestChange failed");
+
+    const cleared = withChange.value.clearChangeRequest(later);
+    expect(cleared.ok).toBe(true);
+    if (!isOk(cleared)) return;
+    expect(cleared.value.props.changeRequestedAt).toBeNull();
+    expect(cleared.value.props.changeRequest).toBeNull();
+    expect(cleared.value.props.updatedAt).toEqual(later);
+    expect(cleared.value.props.status).toBe("sent"); // status unchanged
+
+    // Immutability: withChange instance is untouched
+    expect(withChange.value.props.changeRequestedAt).toEqual(now);
+    expect(withChange.value.props.changeRequest).toBe("Please adjust price");
+  });
+
+  it("canClearChangeRequest returns true only when a change request is present", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    expect(sent.value.canClearChangeRequest()).toBe(false);
+    const withChange = sent.value.requestChange("change me", now);
+    if (!isOk(withChange)) throw new Error("requestChange failed");
+    expect(withChange.value.canClearChangeRequest()).toBe(true);
+  });
+});

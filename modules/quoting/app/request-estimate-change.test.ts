@@ -182,3 +182,71 @@ describe("RequestEstimateChangeUseCase — happy path", () => {
     expect(r.value.props.status).toBe("sent");
   });
 });
+
+describe("RequestEstimateChangeUseCase — cooldown", () => {
+  let repo: FakeEstimateRepository;
+  let bus: InMemoryEventBus;
+
+  beforeEach(() => {
+    repo = new FakeEstimateRepository();
+    bus = new InMemoryEventBus();
+  });
+
+  it("returns validation error with field=cooldown when within 10 minutes of previous request", async () => {
+    const t0 = new Date("2026-07-11T10:00:00Z");
+    const seedClock = new FixedClock(t0);
+    const id = await seedSentEstimate(repo, new InMemoryEventBus(), seedClock);
+
+    // First request succeeds at t0.
+    const firstClock = new FixedClock(t0);
+    const r1 = await new RequestEstimateChangeUseCase(repo, new InMemoryEventBus(), firstClock).exec({
+      estimateId: id,
+      message: "please lower price",
+    });
+    expect(isOk(r1)).toBe(true);
+
+    // Attempt a second request just 5 minutes later — within the 10-minute cooldown.
+    const t5min = new Date("2026-07-11T10:05:00Z");
+    const secondClock = new FixedClock(t5min);
+    const freshBus = new InMemoryEventBus();
+    const r2 = await new RequestEstimateChangeUseCase(repo, freshBus, secondClock).exec({
+      estimateId: id,
+      message: "actually, also remove tax",
+    });
+    expect(r2.ok).toBe(false);
+    if (!r2.ok) {
+      expect(r2.error.kind).toBe("validation");
+      if (r2.error.kind === "validation") {
+        expect(r2.error.field).toBe("cooldown");
+      }
+    }
+    // No event emitted during cooldown rejection.
+    expect(freshBus.recorded).toHaveLength(0);
+  });
+
+  it("allows re-request after cooldown has passed", async () => {
+    const t0 = new Date("2026-07-11T10:00:00Z");
+    const seedClock = new FixedClock(t0);
+    const id = await seedSentEstimate(repo, new InMemoryEventBus(), seedClock);
+
+    // First request at t0.
+    const r1 = await new RequestEstimateChangeUseCase(repo, new InMemoryEventBus(), new FixedClock(t0)).exec({
+      estimateId: id,
+      message: "first request",
+    });
+    expect(isOk(r1)).toBe(true);
+
+    // Second request after 11 minutes — cooldown has passed.
+    const t11min = new Date("2026-07-11T10:11:00Z");
+    const freshBus = new InMemoryEventBus();
+    const r2 = await new RequestEstimateChangeUseCase(repo, freshBus, new FixedClock(t11min)).exec({
+      estimateId: id,
+      message: "updated request after cooldown",
+    });
+    expect(isOk(r2)).toBe(true);
+    if (!isOk(r2)) return;
+    expect(r2.value.props.changeRequest).toBe("updated request after cooldown");
+    // An event was emitted for the successful re-request.
+    expect(freshBus.recorded.filter((e) => e.name === "estimate.change_requested")).toHaveLength(1);
+  });
+});

@@ -13,6 +13,14 @@ import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCa
 import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { logger } from "@mallet/shared/observability";
 
+// Result type for requestChangePublicQuote — disambiguates cooldown rejection from the
+// idempotent "not sent" path so the route can return the correct HTTP status.
+export type RequestChangeResult =
+  | { kind: "ok"; estimate: Estimate }
+  | { kind: "cooldown" }
+  | { kind: "not_sent"; estimate: Estimate | null }
+  | { kind: "not_found" };
+
 // Re-export so callers only need to import from this module.
 export type { PublicQuoteView };
 
@@ -53,15 +61,19 @@ export async function acceptPublicQuote(token: string): Promise<Estimate | null>
       return null;
     }
 
-    // After the estimate is accepted, create its job atomically in the same tx.
-    // CreateJobFromEstimateUseCase is idempotent (partial unique index on source_estimate_id +
-    // ON CONFLICT DO NOTHING), so a re-accept via the public token is safe. If job creation
-    // fails, do NOT fail the accept — log and continue.
+    // After the estimate is accepted, create its job in a savepoint so a failure does NOT
+    // roll back the accepted estimate. CreateJobFromEstimateUseCase is idempotent (partial
+    // unique index on source_estimate_id + ON CONFLICT DO NOTHING), so re-accepts are safe.
     try {
-      const jobRepo = new DrizzleJobRepository(tx, orgId);
-      const estimateReader = new DrizzleEstimateReader(tx, orgId);
-      const createJob = new CreateJobFromEstimateUseCase(jobRepo, estimateReader, bus, systemClock, uuidGenerator);
-      await createJob.exec({ orgId, estimateId: asEstimateId(estimateId) });
+      await tx.transaction(async (sp) => {
+        const jobRepo = new DrizzleJobRepository(sp, orgId);
+        const estimateReader = new DrizzleEstimateReader(sp, orgId);
+        const createJob = new CreateJobFromEstimateUseCase(jobRepo, estimateReader, bus, systemClock, uuidGenerator);
+        const jobResult = await createJob.exec({ orgId, estimateId: asEstimateId(estimateId) });
+        if (!jobResult.ok) {
+          logger.error({ err: jobResult.error, estimateId, orgId }, "public-quote.accept: job creation returned error (non-fatal)");
+        }
+      });
     } catch (err) {
       logger.error({ err, estimateId, orgId }, "public-quote.accept: job creation failed (non-fatal)");
     }
@@ -71,16 +83,15 @@ export async function acceptPublicQuote(token: string): Promise<Estimate | null>
 }
 
 // Request a change on a sent quote via its public token. The estimate stays "sent" — the office
-// receives a task on the lead. A token that does not match → null. If the estimate is not in
-// "sent" state, the domain rejects it (validation error → returns current state, mirrors other
-// idempotent paths).
+// receives a task on the lead. Returns a RequestChangeResult discriminated union so the route can
+// distinguish a cooldown rejection (→ 429) from an idempotent non-sent path (→ 200).
 export async function requestChangePublicQuote(
   token: string,
   message: string,
-): Promise<Estimate | null> {
+): Promise<RequestChangeResult> {
   const reader = new DrizzlePublicEstimateReader();
   const resolved = await reader.resolveOrgByToken(token);
-  if (!resolved) return null;
+  if (!resolved) return { kind: "not_found" };
 
   const { estimateId, orgId } = resolved;
 
@@ -95,29 +106,43 @@ export async function requestChangePublicQuote(
     });
 
     if (!result.ok) {
-      // Idempotent path: estimate is in a non-sent state → return current state.
-      if (result.error.kind === "validation") {
-        return repo.findById(asEstimateId(estimateId));
+      // Cooldown: propagate as a distinct result kind so the route can return 429.
+      if (result.error.kind === "validation" && result.error.field === "cooldown") {
+        return { kind: "cooldown" };
       }
-      return null;
+      // Idempotent path: estimate is in a non-sent state (wrong status, empty message, etc.)
+      // → return current state without error.
+      if (result.error.kind === "validation") {
+        const current = await repo.findById(asEstimateId(estimateId));
+        return { kind: "not_sent", estimate: current };
+      }
+      return { kind: "not_found" };
     }
 
-    // Create a task on the lead so the office is notified. Non-fatal: if task creation fails,
-    // the change request is still recorded. Pattern mirrors job creation on accept.
+    // Create a task on the lead so the office is notified. Wrapped in a savepoint so a task
+    // creation failure does NOT roll back the recorded change request. Non-fatal.
     try {
-      const taskRepo = new DrizzleTaskRepository(tx, orgId);
-      const createTask = new CreateTaskUseCase(taskRepo, systemClock, uuidGenerator);
-      const est = result.value;
-      const trimmedMsg = est.props.changeRequest ?? message.trim();
-      const taskText = `Quote ${est.props.num}: change requested — "${trimmedMsg.length > 80 ? trimmedMsg.slice(0, 80) + "…" : trimmedMsg}"`;
-      await createTask.exec(
-        {
-          leadId: asLeadId(est.props.leadId),
-          text: taskText,
-          dueDate: null,
-        },
-        orgId,
-      );
+      await tx.transaction(async (sp) => {
+        const taskRepo = new DrizzleTaskRepository(sp, orgId);
+        const createTask = new CreateTaskUseCase(taskRepo, systemClock, uuidGenerator);
+        const est = result.value;
+        const trimmedMsg = est.props.changeRequest ?? message.trim();
+        const taskText = `Quote ${est.props.num}: change requested — "${trimmedMsg.length > 80 ? trimmedMsg.slice(0, 80) + "…" : trimmedMsg}"`;
+        const taskResult = await createTask.exec(
+          {
+            leadId: asLeadId(est.props.leadId),
+            text: taskText,
+            dueDate: null,
+          },
+          orgId,
+        );
+        if (!taskResult.ok) {
+          logger.error(
+            { err: taskResult.error, estimateId, orgId },
+            "public-quote.request_change: task creation returned error (non-fatal)",
+          );
+        }
+      });
     } catch (taskErr) {
       logger.error(
         { err: taskErr, estimateId, orgId },
@@ -125,7 +150,7 @@ export async function requestChangePublicQuote(
       );
     }
 
-    return result.value;
+    return { kind: "ok", estimate: result.value };
   });
 }
 

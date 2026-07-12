@@ -167,7 +167,8 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     return rows.length;
   }
 
-  // Soft-delete all non-archived estimates for a given lead. Returns the count of rows affected.
+  // Soft-delete non-terminal, non-archived estimates for a given lead. Returns the count of rows
+  // affected. Accepted estimates are explicitly excluded so won-revenue quotes survive the cascade.
   // Defense-in-depth: explicit orgId filter in WHERE (mirrors RLS but also aids index use).
   async archiveByLead(leadId: LeadId, now: Date): Promise<number> {
     const rows = await this.tx
@@ -178,6 +179,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           eq(estimates.orgId, this.orgId),
           eq(estimates.leadId, leadId),
           isNull(estimates.deletedAt),
+          inArray(estimates.status, ["draft", "sent", "declined"]),
         ),
       )
       .returning();

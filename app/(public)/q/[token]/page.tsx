@@ -348,18 +348,11 @@ export default async function PublicQuotePage({
 
               {/* Approve / decline / request-change — client island */}
               {!isDone && (
-                <>
-                  {p.changeRequestedAt && (
-                    <div className="reqcard" style={{ marginTop: 8 }}>
-                      Request received — we&rsquo;ll be in touch.
-                    </div>
-                  )}
-                  <QuoteActions
-                    token={token}
-                    totalCents={totalCents}
-                    changeAlreadyRequested={Boolean(p.changeRequestedAt)}
-                  />
-                </>
+                <QuoteActions
+                  token={token}
+                  totalCents={totalCents}
+                  changeAlreadyRequested={Boolean(p.changeRequestedAt)}
+                />
               )}
             </>
           )}

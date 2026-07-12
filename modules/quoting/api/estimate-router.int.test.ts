@@ -169,6 +169,39 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     expect(byLead.items).toHaveLength(0);
   });
 
+  it("archiving a lead does NOT archive accepted estimates (M3: cascade scope)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    // Fresh lead for isolation.
+    const lead = await caller.v1.customers.create({ name: "Accepted Cascade Test Customer" });
+
+    // Draft + send + accept an estimate.
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Accepted cascade test",
+      lines: [{ description: "Won work", quantity: 1, rateCents: 20_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    expect(accepted.status).toBe("accepted");
+
+    // Also create a declined estimate for the same lead.
+    const drafted2 = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Declined estimate",
+      lines: [{ description: "Rejected work", quantity: 1, rateCents: 5_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted2.id });
+    await caller.v1.quoting.decline({ estimateId: drafted2.id, reason: "Too expensive" });
+
+    // Archive the lead — should cascade-delete declined but NOT accepted estimates.
+    await caller.v1.customers.archive({ leadId: lead.id });
+
+    // The accepted estimate should still be queryable directly (not soft-deleted).
+    const fetched = await caller.v1.quoting.get({ estimateId: accepted.id });
+    expect(fetched.status).toBe("accepted");
+  });
+
   it("listByLead returns only that lead's estimates; cross-org RLS blocks other org", async () => {
     // Create a second lead in org A to verify filtering works within the same org.
     const [extraRow] = await admin<{ id: string }[]>`
@@ -216,10 +249,11 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
 
     // The public page path: request a change through the token (no auth).
     const changed = await requestChangePublicQuote(sent.publicToken!, "  Please lower the price  ");
-    expect(changed).not.toBeNull();
-    expect(changed!.props.status).toBe("sent"); // stays sent — office decides what happens next
-    expect(changed!.props.changeRequest).toBe("Please lower the price"); // trimmed
-    expect(changed!.props.changeRequestedAt).toBeInstanceOf(Date);
+    expect(changed.kind).toBe("ok");
+    if (changed.kind !== "ok") throw new Error("expected ok");
+    expect(changed.estimate.props.status).toBe("sent"); // stays sent — office decides what happens next
+    expect(changed.estimate.props.changeRequest).toBe("Please lower the price"); // trimmed
+    expect(changed.estimate.props.changeRequestedAt).toBeInstanceOf(Date);
 
     // The office sees it on the DTO.
     const fetched = await caller.v1.quoting.get({ estimateId: drafted.id });
@@ -243,13 +277,16 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
     await caller.v1.quoting.accept({ estimateId: drafted.id });
 
-    // Accepted quote → domain rejects; the idempotent path returns current state untouched.
+    // Accepted quote → domain rejects; the idempotent "not_sent" path returns current state.
     const result = await requestChangePublicQuote(sent.publicToken!, "actually, change it");
-    expect(result).not.toBeNull();
-    expect(result!.props.status).toBe("accepted");
-    expect(result!.props.changeRequest ?? null).toBeNull();
+    expect(result.kind).toBe("not_sent");
+    if (result.kind !== "not_sent") throw new Error("expected not_sent");
+    expect(result.estimate).not.toBeNull();
+    expect(result.estimate!.props.status).toBe("accepted");
+    expect(result.estimate!.props.changeRequest ?? null).toBeNull();
 
-    // A token that matches nothing → null.
-    expect(await requestChangePublicQuote("not-a-real-token", "hello")).toBeNull();
+    // A token that matches nothing → not_found.
+    const missing = await requestChangePublicQuote("not-a-real-token", "hello");
+    expect(missing.kind).toBe("not_found");
   });
 });
