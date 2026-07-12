@@ -1,14 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { parserFor } from "./registry";
 import { FormLeadParser } from "./form-parser";
+import { AngiLeadParser } from "./angi-parser";
+import { ThumbtackLeadParser } from "./thumbtack-parser";
 
 describe("parserFor", () => {
-  it("returns the form parser for the form channel", () => {
+  it("returns a parser for every live channel", () => {
     expect(parserFor("form")).toBeInstanceOf(FormLeadParser);
-  });
-  it("returns null for channels not yet enabled (angi/thumbtack — PR B)", () => {
-    // Guards the Open/Closed seam: PR B adds these by extending the PARSERS map, not this function.
-    expect(parserFor("angi")).toBeNull();
-    expect(parserFor("thumbtack")).toBeNull();
+    expect(parserFor("angi")).toBeInstanceOf(AngiLeadParser);
+    expect(parserFor("thumbtack")).toBeInstanceOf(ThumbtackLeadParser);
   });
 });
