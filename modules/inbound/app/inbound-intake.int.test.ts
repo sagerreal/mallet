@@ -99,6 +99,11 @@ suite("inbound intake (resolver + ingest, live RLS)", () => {
     expect(inA[0]!.n).toBe(1);
     const inB = await admin<{ n: number }[]>`select count(*)::int as n from leads where org_id = ${orgBId} and name = 'Gary Pratt'`;
     expect(inB[0]!.n).toBe(0);
+
+    // The form channel (externalId=null) must NEVER touch the idempotency ledger — proves the
+    // ensure-before-receipt ordering debt is dead for the only live channel in PR A.
+    const receipts = await admin<{ n: number }[]>`select count(*)::int as n from inbound_lead_receipts where org_id = ${orgAId} and channel = 'form'`;
+    expect(receipts[0]!.n).toBe(0);
   });
 
   it("is idempotent on (channel, externalId): recordIfNew is true then false, one receipt row", async () => {

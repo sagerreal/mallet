@@ -3,8 +3,10 @@
 /**
  * Public "request service" form embedded on (or linked from) a shop's website. Submits to
  * /api/inbound/form/[token], which resolves the org from the token and drops the lead into the
- * pipeline. Bot defenses: a hidden honeypot field + a minimum time-to-submit (both silently
- * drop, so a bot gets no signal). No floating UI.
+ * pipeline. Bot defenses here (honeypot field + minimum time-to-submit) are CLIENT-SIDE ONLY —
+ * they stop naive browser bots but are trivially bypassed by a script POSTing the token directly.
+ * A server-side per-token rate limit is the real defense and is deferred (see the PR/spec) — add
+ * it before promoting the form widely. No floating UI.
  */
 
 import { useState, useRef } from "react";

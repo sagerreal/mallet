@@ -44,12 +44,14 @@ export class DrizzleInboundEndpointRepository implements InboundEndpointReposito
     // Idempotent per (org, channel): a conflict means this channel already has a row (active
     // or soft-deleted) — revive it rather than erroring. Callers check findByChannel first for
     // the "already connected" case, so this path is chiefly for reviving a deleted endpoint.
+    // On revive, adopt the freshly-generated token (do NOT resurrect the old one) — a channel is
+    // typically disabled because its URL leaked/was abused, so re-enabling must mint a new secret.
     const [row] = await this.tx
       .insert(inboundEndpoints)
       .values({ orgId: this.orgId, channel, token })
       .onConflictDoUpdate({
         target: [inboundEndpoints.orgId, inboundEndpoints.channel],
-        set: { deletedAt: null },
+        set: { token, deletedAt: null },
       })
       .returning();
     if (!row) throw new Error("create: insert...onConflictDoUpdate returned no row");
