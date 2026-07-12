@@ -2,7 +2,7 @@ import type { EstimateId, Result, AppError, Clock } from "@mallet/shared/types";
 import { asEstimateLineId, money, notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { EstimateLine } from "../domain/estimate";
-import type { Estimate } from "../domain/estimate";
+import type { Estimate, QuoteTier } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
 
 export interface AcceptLineInput {
@@ -21,6 +21,10 @@ export interface AcceptEstimateCommand {
    *  accepted total reflects what the customer actually chose. Line IDs are
    *  allocated by the server; position is the array index. */
   readonly lines?: readonly AcceptLineInput[];
+  /** Good/Better/Best choice. Required by the domain for tiered estimates; omitted
+   *  here it defaults to the RECOMMENDED tier (the office accept path). Rejected by
+   *  the domain on single-format estimates. */
+  readonly chosenTier?: QuoteTier;
 }
 
 // Customer accepts the quote. Emits estimate.accepted carrying the totals so the jobs slice can
@@ -68,7 +72,11 @@ export class AcceptEstimateUseCase {
       current = estimate.withLinesForAccept(built, now);
     }
 
-    const accepted = current.accept(now);
+    // Tiered estimates need a tier to resolve to; the office path defaults to the
+    // recommended tier. The public path always passes an explicit choice (validated
+    // upstream). Single-format estimates pass nothing — the domain rejects a stray tier.
+    const chosenTier = cmd.chosenTier ?? estimate.props.recommendedTier ?? undefined;
+    const accepted = current.accept(now, chosenTier);
     if (!isOk(accepted)) return accepted;
 
     await this.repo.save(accepted.value);

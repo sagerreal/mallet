@@ -50,6 +50,7 @@ import { RequestEstimateChangeUseCase } from "./request-estimate-change";
 import { buildAcceptLinesFromSelection } from "./select-optional-lines";
 import {
   classifyAcceptValidationFailure,
+  validateTierChoice,
   type AcceptPublicQuoteResult,
 } from "./public-accept-policy";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
@@ -654,6 +655,75 @@ describe("classifyAcceptValidationFailure — status classification", () => {
 
   it("missing row → not_found", () => {
     expect(classifyAcceptValidationFailure(null).kind).toBe("not_found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: validateTierChoice — the Good/Better/Best gate on the public accept path
+// ---------------------------------------------------------------------------
+
+describe("validateTierChoice — tier gate for public accept", () => {
+  const makeTieredEstimate = (): Estimate => {
+    const mk = (id: string, tier: "good" | "better" | "best", isOptional: boolean, rate: number) => {
+      const r = EstimateLine.create({
+        id: asEstimateLineId(id),
+        description: `${tier} work`,
+        quantity: 1,
+        rate: money(rate),
+        cost: zeroMoney,
+        isOptional,
+        needsPhoto: false,
+        position: 0,
+        tier,
+      });
+      if (!r.ok) throw new Error(r.error.message);
+      return r.value;
+    };
+    const base = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+    const r = Estimate.create({
+      ...base.props,
+      recommendedTier: "better",
+      lines: [
+        mk("11110000-0000-0000-0000-000000000001", "good", false, 20_000),
+        mk("11110000-0000-0000-0000-000000000002", "better", false, 35_000),
+        // "best" tier: ONLY an optional line — not an acceptable option.
+        mk("11110000-0000-0000-0000-000000000003", "best", true, 90_000),
+      ],
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    return r.value;
+  };
+
+  it("a single-format estimate with a chosenTier → invalid_tier (not_applicable)", () => {
+    const single = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+    expect(validateTierChoice(single, "good")).toEqual({
+      kind: "invalid_tier",
+      reason: "not_applicable",
+    });
+  });
+
+  it("a single-format estimate without a chosenTier → ok", () => {
+    const single = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+    expect(validateTierChoice(single, undefined).kind).toBe("ok");
+  });
+
+  it("a tiered estimate without a chosenTier → invalid_tier (required)", () => {
+    expect(validateTierChoice(makeTieredEstimate(), undefined)).toEqual({
+      kind: "invalid_tier",
+      reason: "required",
+    });
+  });
+
+  it("a tiered estimate with a valid chosenTier → ok", () => {
+    expect(validateTierChoice(makeTieredEstimate(), "good").kind).toBe("ok");
+    expect(validateTierChoice(makeTieredEstimate(), "better").kind).toBe("ok");
+  });
+
+  it("a chosen tier with no fixed lines → invalid_tier (empty_tier)", () => {
+    expect(validateTierChoice(makeTieredEstimate(), "best")).toEqual({
+      kind: "invalid_tier",
+      reason: "empty_tier",
+    });
   });
 });
 
