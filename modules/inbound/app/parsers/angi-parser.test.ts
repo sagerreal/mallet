@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AngiLeadParser } from "./angi-parser";
-import { isOk, isErr } from "@mallet/shared/types";
+import { isErr } from "@mallet/shared/types";
 const p = new AngiLeadParser();
 const unwrap = <T>(r: { ok: true; value: T } | { ok: false }) => { if (!r.ok) throw new Error("err"); return r.value; };
 
