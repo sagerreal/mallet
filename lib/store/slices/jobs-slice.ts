@@ -27,7 +27,43 @@
  * RESIZE debounce: updateVisit for duration fires on every mousemove.
  * A module-level timer keyed by visitId collapses the stream to ONE
  * updateVisitDuration mutation per drag (~400 ms trailing).  The local
- * optimistic update still runs every move for smoothness.
+ * optimistic update still runs every move for smoothness.  The debounced
+ * mutation captures the LAST duration value in its closure (never re-reads
+ * the store at fire time — a reconcile landing inside the window would make
+ * it persist a stale value) and is serialized through the per-visit op chain
+ * so it can never race the visit's own createVisit.
+ *
+ * PENDING-CREATE MERGE GUARD: reconciles and the hydrator's setJobs replace
+ * job.visits wholesale from server snapshots. A snapshot read before an
+ * in-flight createVisit commits doesn't know the optimistic visit — dropping
+ * it made the user (or the schedule board's auto-add) add it again → two
+ * rows. Every snapshot merge therefore re-attaches store visits whose create
+ * op is still pending and which are absent from the snapshot. Once the op
+ * settles the visit arrives from the server (or is rolled back) and the
+ * guard no longer applies. addVisit also dedupes: while a job has an
+ * unplaced visit with a pending create, it returns THAT visit instead of
+ * minting a second one (an explicitly-passed dur is applied to it).
+ *
+ * PENDING-REMOVAL GUARD (mirror of the above): removeVisit is serialized
+ * through the per-visit op chain so the delete can't reach the server before
+ * the row exists, and while the removal is unsettled no snapshot merge —
+ * including the createVisit reconcile whose DTO still contains the visit —
+ * may re-introduce a visit the user deleted.
+ *
+ * CHAINED-OP EXECUTION GUARD: any op queued behind a createVisit re-checks at
+ * EXECUTION time that the visit is still in the store — the create it waited
+ * on may have rolled back — and skips both the mutate and (in catch) the
+ * snapshot restore when the visit is gone, so a rollback can never resurrect
+ * a phantom visit.
+ *
+ * ADOPTION GUARD: setJobs replaces the job list wholesale. A jobs.list
+ * snapshot whose read predates a quoting.accept commit doesn't contain the
+ * job the client just adoptJob'd — dropping it re-introduces the "accepted
+ * quote's job doesn't appear" bug as an in-then-out flicker. Jobs adopted
+ * within the hydrator stale window (HYDRATOR_STALE_MS) are re-attached when
+ * absent from an incoming snapshot; the guard hands authority back as soon
+ * as a snapshot includes the job, the entry expires, or the job is
+ * deleted/archived locally.
  *
  * EVISIT actions in leads-slice are intentionally NOT persisted (they
  * are lead-owned and deferred to a future phase).
@@ -36,8 +72,12 @@
 import type { StateCreator } from "zustand";
 import type { Job, Visit, Addon, VerifyAns } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
-import { dtoJobToStoreJob, hourToHHMM, storeStatusToBackend } from "@/lib/store/dto-mapper";
-import { JOB_ORIGIN } from "@/lib/store/hydrator-config";
+import { dtoJobToStoreJob, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
+import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
+import type { RouterOutputs } from "@/lib/trpc/client";
+
+/** Narrow type for the job summary embedded in the accept response. */
+type AcceptJobDTO = NonNullable<RouterOutputs["v1"]["quoting"]["accept"]["job"]>;
 
 // ---------------------------------------------------------------------------
 // Module-level debounce timers: keyed by visitId.
@@ -58,6 +98,24 @@ const _durRollback = new Map<string, Job>();
 // strictly in order while different visits stay concurrent.
 // ---------------------------------------------------------------------------
 const _visitOpChain = new Map<string, Promise<unknown>>();
+
+// The create-op leg of _visitOpChain: visit ids whose createVisit mutation has
+// not settled yet. Powers the pending-create merge guard + addVisit dedupe.
+const _pendingVisitCreates = new Set<string>();
+
+// Visit ids the user optimistically removed whose removeVisit outcome has not
+// settled. Consulted by every snapshot merge so neither the pending-create
+// guard nor an older DTO (e.g. the createVisit reconcile racing the removal)
+// re-introduces a visit the user deleted. Cleared when the delete settles, or
+// by addVisit's rollback when the visit's own create failed (no row to delete
+// — the queued delete then skips its mutate).
+const _pendingVisitRemovals = new Set<string>();
+
+// Jobs adopted from a server mutation (adoptJob), keyed to their adoption
+// time. setJobs re-attaches store jobs absent from an incoming snapshot while
+// their adoption is younger than the hydrator stale window — a list read that
+// predates the adopting mutation's commit must not sweep the job out.
+const _recentAdoptions = new Map<string, number>();
 
 function chain(visitId: string, fn: () => Promise<unknown>): void {
   const prev = _visitOpChain.get(visitId) ?? Promise.resolve();
@@ -164,6 +222,12 @@ export interface JobsSlice {
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
   setVisitStatus: (jobId: string, visitId: string, status: string) => void;
   removeVisit: (jobId: string, visitId: string) => void;
+  /**
+   * Adopt a job DTO returned by a server mutation (e.g. the job created by quoting.accept).
+   * Maps via dtoJobToStoreJob (so Fix 1 status remap applies) then either replaces the
+   * existing store entry if a matching id exists, or appends a new one. No network call.
+   */
+  adoptJob: (dto: AcceptJobDTO) => void;
   archiveJob: (id: string) => void;
   deleteJob: (id: string) => void;
   // Found-work / add-ons
@@ -186,14 +250,48 @@ function snapshot(jobs: Job[], jobId: string): Job | undefined {
   return jobs.find((j) => j.id === jobId);
 }
 
-/** Replace one job with the server-reconciled version. */
+/**
+ * Merge guard: re-attach the prior store job's visits whose createVisit is
+ * still in flight and which the incoming server snapshot doesn't know yet
+ * (it was read before that create committed). Without this, snapshot merges
+ * made the optimistic visit vanish → the user / the board's auto-add added
+ * it again → duplicate visits. Only pending-create survivors are kept; once
+ * the op settles they come from the server or are rolled back.
+ *
+ * The inverse also holds: a snapshot must not RE-INTRODUCE a visit whose
+ * optimistic removal is unsettled (the createVisit reconcile's DTO still
+ * contains it, and a stale hydrator snapshot may too) — those are stripped.
+ */
+function withPendingCreateVisits(prior: Job, incoming: Job): Job {
+  const kept = incoming.visits.filter((v) => !_pendingVisitRemovals.has(v.id));
+  const survivors = prior.visits.filter(
+    (v) =>
+      _pendingVisitCreates.has(v.id) &&
+      !_pendingVisitRemovals.has(v.id) &&
+      !kept.some((iv) => iv.id === v.id),
+  );
+  if (kept.length === incoming.visits.length && survivors.length === 0) return incoming;
+  return { ...incoming, visits: [...kept, ...survivors] };
+}
+
+/** Replace one job with the server-reconciled version (pending-create guarded). */
 function reconcileJob(jobs: Job[], reconciled: Job): Job[] {
-  return jobs.map((j) => (j.id === reconciled.id ? reconciled : j));
+  return jobs.map((j) => (j.id === reconciled.id ? withPendingCreateVisits(j, reconciled) : j));
 }
 
 /** Restore the snapshot (rollback). */
 function restoreJob(jobs: Job[], prior: Job): Job[] {
   return jobs.map((j) => (j.id === prior.id ? prior : j));
+}
+
+/**
+ * True while the visit is still present on the store job. Chained ops
+ * re-check this at EXECUTION time — the createVisit they were queued behind
+ * may have rolled back and removed the visit — and again at catch time so a
+ * rollback restore can never resurrect a visit that is no longer in the store.
+ */
+function visitExists(jobs: Job[], jobId: string, visitId: string): boolean {
+  return jobs.find((j) => j.id === jobId)?.visits.some((v) => v.id === visitId) ?? false;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +301,59 @@ function restoreJob(jobs: Job[], prior: Job): Job[] {
 export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set, get) => ({
   jobs: [],
 
-  setJobs: (jobs) => set({ jobs }),
+  // Hydrator path: wholesale list replace, but a list snapshot read before an
+  // in-flight createVisit commits must not drop the optimistic visit (same
+  // pending-create guard as the mutation reconciles), and a snapshot read
+  // before an adopting mutation (quoting.accept) committed must not sweep out
+  // the adopted job (adoption guard).
+  setJobs: (jobs) =>
+    set((s) => {
+      const now = Date.now();
+      const incomingIds = new Set(jobs.map((j) => j.id));
+      // Adoption-guard bookkeeping: an entry expires after the hydrator stale
+      // window, or as soon as a snapshot includes the job (the server list
+      // knows it now — snapshots are authoritative again).
+      for (const [id, adoptedAt] of _recentAdoptions) {
+        if (incomingIds.has(id) || now - adoptedAt > HYDRATOR_STALE_MS) {
+          _recentAdoptions.delete(id);
+        }
+      }
+      const adoptedSurvivors = s.jobs.filter(
+        (j) => !incomingIds.has(j.id) && _recentAdoptions.has(j.id),
+      );
+      const merged = jobs.map((incoming) => {
+        const prior = s.jobs.find((j) => j.id === incoming.id);
+        return prior ? withPendingCreateVisits(prior, incoming) : incoming;
+      });
+      return { jobs: adoptedSurvivors.length ? [...adoptedSurvivors, ...merged] : merged };
+    }),
+
+  // ---------------------------------------------------------------------------
+  // adoptJob — merge a job DTO received from a server mutation into the store
+  // without a network call. Used by the estimates-slice accept path to surface
+  // the job that CreateJobFromEstimateUseCase created during quoting.accept.
+  //
+  // Maps via dtoJobToStoreJob so the Fix 1 status remap (zero active visits +
+  // backend "scheduled" → store "unscheduled") applies automatically.
+  //
+  // Replace by id if the job is already in the store (idempotent re-accept),
+  // else prepend — mirrors the reconcileJob / addJob pattern elsewhere.
+  // ---------------------------------------------------------------------------
+  adoptJob: (dto) => {
+    // Cast: AcceptJobDTO (jobSummaryDTO shape) is structurally compatible with the
+    // fields dtoJobToStoreJob actually reads; the surplus fields on JobDTO are not
+    // accessed by the mapper.
+    const mapped = dtoJobToStoreJob(dto as unknown as JobDTO);
+    // Adoption guard: protect the job from a stale hydrator snapshot (a
+    // jobs.list read that predates the adopting mutation's commit) until the
+    // snapshot stream catches up or the stale window passes.
+    _recentAdoptions.set(mapped.id, Date.now());
+    set((s) => {
+      const exists = s.jobs.some((j) => j.id === mapped.id);
+      const jobs = exists ? reconcileJob(s.jobs, mapped) : [mapped, ...s.jobs];
+      return { jobs };
+    });
+  },
 
   // ---------------------------------------------------------------------------
   // addJob — client-authored id (so the returned id is valid for an immediate
@@ -305,10 +455,30 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // addVisit — optimistic temp id; persist via createVisit; reconcile with
   // server id on success so a subsequent placeVisit references the real id.
   // ---------------------------------------------------------------------------
-  addVisit: (jobId, dur = 2) => {
+  addVisit: (jobId, dur) => {
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job) return null;
 
+    // Duplicate guard: while this job already has an UNPLACED visit whose
+    // createVisit is still in flight, return that visit instead of minting a
+    // second — protects the schedule board's auto-add (and a double-click)
+    // when a snapshot merge briefly raced the create. Settled creates are no
+    // longer in the set, so adding a real second visit later is not blocked.
+    const pendingUnplaced = job.visits.find(
+      (v) => !isPlaced(v) && _pendingVisitCreates.has(v.id),
+    );
+    if (pendingUnplaced) {
+      // An explicitly-requested duration must not be silently dropped — apply
+      // it to the deduped visit via the normal duration path (debounced +
+      // chained behind this visit's own pending create).
+      if (dur != null && dur !== pendingUnplaced.dur) {
+        get().updateVisit(jobId, pendingUnplaced.id, { dur });
+        return { ...pendingUnplaced, dur };
+      }
+      return pendingUnplaced;
+    }
+
+    const initialDur = dur ?? 2;
     // Fix 2a: client-authored id so optimistic id === server row id; no id swap on reconcile.
     const id = crypto.randomUUID();
     const visit: Visit = {
@@ -316,9 +486,13 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       date: null,
       techId: null,
       start: null,
-      dur,
+      dur: initialDur,
       status: "scheduled",
     };
+
+    // Rollback snapshot BEFORE the optimistic insert, so a failed create
+    // removes the optimistic visit instead of restoring a state that has it.
+    const prior = snapshot(get().jobs, jobId);
 
     // 1. Optimistic update (synchronous — schedule-panel reads .id immediately).
     set((s) => ({
@@ -328,23 +502,30 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     // 2. Only persist DB-origin jobs.
     if (job.origin !== JOB_ORIGIN.DB) return visit;
 
-    const prior = snapshot(get().jobs, jobId);
+    // Track the in-flight create for the merge guard + addVisit dedupe.
+    _pendingVisitCreates.add(id);
 
     // Fix 2b: route network op through per-visit chain so scheduleVisit always
     // awaits the createVisit that must precede it.
     chain(id, () =>
       trpcVanilla.v1.visits.createVisit
-        .mutate({ jobId, visitId: id, durationHours: dur })
+        .mutate({ jobId, visitId: id, durationHours: initialDur })
         .then((dto) => {
           // 3. Reconcile — server row id === client id so board state stays valid.
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
         })
         .catch((err: unknown) => {
-          // 4. Roll back.
+          // 4. Roll back. The row never existed, so a removal queued behind this
+          // create has nothing to delete — cancel it (the queued op checks the
+          // set at execution time and skips its mutate).
+          _pendingVisitRemovals.delete(id);
           if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
           if (process.env.NODE_ENV !== "production") {
             console.error("[jobs-slice] addVisit failed — rolled back", { jobId, err });
           }
+        })
+        .finally(() => {
+          _pendingVisitCreates.delete(id);
         }),
     );
 
@@ -374,8 +555,11 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const durationHours = visit?.dur ?? 2;
 
     // Fix 2b: chain scheduleVisit after any pending createVisit for this visitId.
-    chain(visitId, () =>
-      trpcVanilla.v1.visits.scheduleVisit
+    chain(visitId, () => {
+      // Execution-time re-check: the create this op was queued behind may have
+      // rolled back and removed the visit — nothing to schedule.
+      if (!visitExists(get().jobs, jobId, visitId)) return Promise.resolve();
+      return trpcVanilla.v1.visits.scheduleVisit
         .mutate({
           jobId,
           visitId,
@@ -388,12 +572,16 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
         })
         .catch((err: unknown) => {
-          if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+          // Skip the restore when the visit is gone — the snapshot predates
+          // its removal and restoring it would resurrect a phantom.
+          if (prior && visitExists(get().jobs, jobId, visitId)) {
+            set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+          }
           if (process.env.NODE_ENV !== "production") {
             console.error("[jobs-slice] placeVisit failed — rolled back", { jobId, visitId, err });
           }
-        }),
-    );
+        });
+    });
   },
 
   // ---------------------------------------------------------------------------
@@ -419,6 +607,11 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const isDurOnly = "dur" in patch && !("date" in patch) && !("techId" in patch) && !("start" in patch);
 
     if (isDurOnly && patch.dur != null) {
+      // Capture the typed/dragged value NOW. The timer must NOT re-read the
+      // store at fire time — a reconcile landing inside the debounce window
+      // would make it persist a stale value instead of what the user set.
+      const durationHours = patch.dur;
+
       // Fix 3: capture the pre-drag rollback snapshot only on the FIRST call of a
       // new drag (no pending debounce timer yet), so rollback always returns to
       // the state before the drag started, not to the last-move state.
@@ -442,24 +635,38 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           return;
         }
 
-        const currentVisit = guardJob.visits.find((v) => v.id === visitId);
-        const durationHours = currentVisit?.dur ?? patch.dur!;
-
         const preDragSnapshot = _durRollback.get(visitId);
 
-        trpcVanilla.v1.visits.updateVisitDuration
-          .mutate({ jobId, visitId, durationHours })
-          .then((dto) => {
+        // Serialize behind any in-flight createVisit (and other ops) on this
+        // visit so the duration write can never race — or beat — the row's
+        // own creation.
+        chain(visitId, () => {
+          // Execution-time re-check (the timer-fire guard above is not enough):
+          // the createVisit this op was queued behind may have rolled back and
+          // removed the visit — mutating would 404 and the catch's restore
+          // would resurrect a visit with no DB row.
+          if (!visitExists(get().jobs, jobId, visitId)) {
             _durRollback.delete(visitId);
-            set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
-          })
-          .catch((err: unknown) => {
-            _durRollback.delete(visitId);
-            if (preDragSnapshot) set((s) => ({ jobs: restoreJob(s.jobs, preDragSnapshot) }));
-            if (process.env.NODE_ENV !== "production") {
-              console.error("[jobs-slice] updateVisit(dur) failed — rolled back", { jobId, visitId, err });
-            }
-          });
+            return Promise.resolve();
+          }
+          return trpcVanilla.v1.visits.updateVisitDuration
+            .mutate({ jobId, visitId, durationHours })
+            .then((dto) => {
+              _durRollback.delete(visitId);
+              set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+            })
+            .catch((err: unknown) => {
+              _durRollback.delete(visitId);
+              // Skip the restore when the visit is gone at catch time — the
+              // snapshot was captured while it existed and would resurrect it.
+              if (preDragSnapshot && visitExists(get().jobs, jobId, visitId)) {
+                set((s) => ({ jobs: restoreJob(s.jobs, preDragSnapshot) }));
+              }
+              if (process.env.NODE_ENV !== "production") {
+                console.error("[jobs-slice] updateVisit(dur) failed — rolled back", { jobId, visitId, err });
+              }
+            });
+        });
       }, DUR_DEBOUNCE_MS);
 
       _durDebounceTimers.set(visitId, timer);
@@ -511,21 +718,36 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
-    trpcVanilla.v1.visits.setVisitStatus
-      .mutate({ jobId, visitId, status: storeStatusToBackend(status) })
-      .then((dto) => {
-        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
-      })
-      .catch((err: unknown) => {
-        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] setVisitStatus failed — rolled back", { jobId, visitId, status, err });
-        }
-      });
+    // Serialize behind the visit's own createVisit (and any other in-flight op)
+    // so the status write can never race the row's creation or deletion.
+    chain(visitId, () => {
+      // Execution-time re-check: the visit may have been removed (or its
+      // create rolled back) while this op waited in the chain.
+      if (!visitExists(get().jobs, jobId, visitId)) return Promise.resolve();
+      return trpcVanilla.v1.visits.setVisitStatus
+        .mutate({ jobId, visitId, status: storeStatusToBackend(status) })
+        .then((dto) => {
+          set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        })
+        .catch((err: unknown) => {
+          // Skip the restore when the visit is gone at catch time — the
+          // snapshot contains it and restoring would resurrect a phantom.
+          if (prior && visitExists(get().jobs, jobId, visitId)) {
+            set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+          }
+          if (process.env.NODE_ENV !== "production") {
+            console.error("[jobs-slice] setVisitStatus failed — rolled back", { jobId, visitId, status, err });
+          }
+        });
+    });
   },
 
   // ---------------------------------------------------------------------------
-  // removeVisit — persist via removeVisit mutation.
+  // removeVisit — persist via removeVisit mutation, serialized through the
+  // per-visit op chain so the delete can never reach the server before the
+  // row's own createVisit commits. While the removal is unsettled the visit id
+  // sits in _pendingVisitRemovals so no snapshot merge (including the create's
+  // own reconcile, whose DTO still contains the visit) re-introduces it.
   // ---------------------------------------------------------------------------
   removeVisit: (jobId, visitId) => {
     const prior = snapshot(get().jobs, jobId);
@@ -540,17 +762,28 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
-    trpcVanilla.v1.visits.removeVisit
-      .mutate({ jobId, visitId })
-      .then((dto) => {
-        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
-      })
-      .catch((err: unknown) => {
-        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] removeVisit failed — rolled back", { jobId, visitId, err });
-        }
-      });
+    // Track the unsettled removal so no snapshot merge resurrects the visit.
+    _pendingVisitRemovals.add(visitId);
+
+    chain(visitId, () => {
+      // If the create this removal was queued behind rolled back, addVisit's
+      // catch cancelled the removal — the visit never had a DB row, so there
+      // is nothing to delete (and the store no longer shows it).
+      if (!_pendingVisitRemovals.has(visitId)) return Promise.resolve();
+      return trpcVanilla.v1.visits.removeVisit
+        .mutate({ jobId, visitId })
+        .then((dto) => {
+          _pendingVisitRemovals.delete(visitId);
+          set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        })
+        .catch((err: unknown) => {
+          _pendingVisitRemovals.delete(visitId);
+          if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+          if (process.env.NODE_ENV !== "production") {
+            console.error("[jobs-slice] removeVisit failed — rolled back", { jobId, visitId, err });
+          }
+        });
+    });
   },
 
   // ---------------------------------------------------------------------------
@@ -560,6 +793,8 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // Soft-delete server-side; mark archived locally so it drops off the active list.
   archiveJob: (id) => {
     const prior = snapshot(get().jobs, id);
+    // A locally archived job must not be protected from hydrator sweeps.
+    _recentAdoptions.delete(id);
     set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, archived: true } : j)) }));
     if (prior?.origin !== JOB_ORIGIN.DB) return; // local-only draft — nothing to persist
     trpcVanilla.v1.jobs.archive
@@ -576,6 +811,8 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // list optimistically; re-inserts on failure.
   deleteJob: (id) => {
     const prior = snapshot(get().jobs, id);
+    // The adoption guard must not resurrect a job the user just deleted.
+    _recentAdoptions.delete(id);
     set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) }));
     if (prior?.origin !== JOB_ORIGIN.DB) return;
     trpcVanilla.v1.jobs.archive

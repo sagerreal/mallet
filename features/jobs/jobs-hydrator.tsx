@@ -76,13 +76,21 @@ function toStoreJob(dto: JobSummaryDTO): Job {
   const visits = activeVisitDTOs.map(toStoreVisit);
 
   // Prefer recalc when visits exist; fall back to the coarse backend status.
-  const status = visits.length > 0 ? recalcStatus(visits) : toStoreStatus(dto.status);
+  // When there are no active visits AND the backend status is "scheduled", remap to
+  // "unscheduled" — a zero-visit job has not been slotted yet (e.g. freshly created
+  // from an accepted quote via CreateJobFromEstimateUseCase). Only "in_progress",
+  // "complete", and "canceled" are preserved via the coarse fallback.
+  const status = visits.length > 0
+    ? recalcStatus(visits)
+    : dto.status === BACKEND_JOB_STATUS.SCHEDULED
+      ? "unscheduled"
+      : toStoreStatus(dto.status);
 
   return {
     id: dto.id,
     leadId: dto.leadId,
-    // jobSummaryDTO does not carry sourceEstimateId (only jobDTO does); default to "service".
-    svc: "service",
+    sourceEstimateId: dto.sourceEstimateId ?? null,
+    svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
     addr: "",

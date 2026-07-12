@@ -62,6 +62,7 @@ const pendingVisit = (userId: UserId | null = null): JobVisit => {
     scheduledDate: userId ? "2026-07-10" : null,
     scheduledStart: userId ? "09:00" : null,
     scheduledEnd: userId ? "11:00" : null,
+    durationMinutes: userId ? 120 : null,
     status: "pending",
     startedAt: null,
     completedAt: null,
@@ -137,6 +138,8 @@ suite("DrizzleJobRepository — visits round-trip (live RLS)", () => {
     expect(result.loaded!.props.visits).toHaveLength(1);
     expect(result.loaded!.props.visits[0]!.props.id).toBe(visit.props.id);
     expect(result.loaded!.props.visits[0]!.props.status).toBe("pending");
+    // Legacy-null duration round-trips as null (no coercion at the mapper).
+    expect(result.loaded!.props.visits[0]!.props.durationMinutes).toBeNull();
   });
 
   it("batch-loads visits across jobs via loadPage (list)", async () => {

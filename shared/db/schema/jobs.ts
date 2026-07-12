@@ -104,6 +104,9 @@ export const jobVisits = pgTable(
     scheduledDate: date("scheduled_date"), // nullable — no date yet; string "YYYY-MM-DD"
     scheduledStart: time("scheduled_start"), // nullable; string "HH:MM:SS"
     scheduledEnd: time("scheduled_end"), // nullable; string "HH:MM:SS"
+    // Authoritative visit length in minutes (set by create/updateDuration/schedule use-cases).
+    // Nullable: legacy rows fall back to the start→end window at the mapper read boundary.
+    durationMinutes: integer("duration_minutes"),
     status: text("status").notNull().default("pending"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),

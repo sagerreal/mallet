@@ -53,6 +53,9 @@ export class CreateVisitUseCase {
       scheduledDate: cmd.scheduledDate,
       scheduledStart: cmd.scheduledStart,
       scheduledEnd,
+      // Persist the length explicitly — an unplaced visit has no start/end window
+      // to derive it from, so this is the only durable record of the typed hours.
+      durationMinutes: Math.round(cmd.durationHours * 60),
       status: "pending",
       startedAt: null,
       completedAt: null,

@@ -112,6 +112,16 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
     expect(accepted.status).toBe("accepted");
 
+    // Fix 2: the accept response must carry the created job in the "job" field so
+    // the client can adopt it immediately without a separate network call.
+    expect(accepted.job).not.toBeNull();
+    expect(accepted.job).toBeDefined();
+    // jobSummaryDTO does not expose sourceEstimateId directly, but we can verify
+    // the job id by cross-referencing with the full DTO.
+    const jobId = accepted.job!.id;
+    const fullJob = await caller.v1.jobs.get({ jobId });
+    expect(fullJob.sourceEstimateId).toBe(drafted.id);
+
     // A job should exist for this lead — use listByLead since jobSummaryDTO lacks sourceEstimateId.
     // Then fetch the full job to verify sourceEstimateId.
     const jobsPage = await caller.v1.jobs.listByLead({ leadId: leadAId, limit: 50 });

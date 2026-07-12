@@ -39,12 +39,20 @@ const isTerminal = (status: JobStatus): boolean => status === "complete" || stat
 
 const SVC_MAX_LENGTH = 60;
 
+const MAX_VISIT_DURATION_MINUTES = 24 * 60;
+
 export interface JobVisitProps {
   readonly id: VisitId;
   readonly assigneeUserId: UserId | null;
   readonly scheduledDate: string | null; // ISO "YYYY-MM-DD", nullable when unplaced
   readonly scheduledStart: string | null; // "HH:MM", nullable when unplaced
   readonly scheduledEnd: string | null; // "HH:MM", nullable when unplaced
+  /**
+   * Authoritative visit length in whole minutes. Persists for BOTH placed and
+   * unplaced visits (an unplaced visit has no start/end window to derive from).
+   * Null only for legacy rows created before the duration_minutes column.
+   */
+  readonly durationMinutes: number | null;
   readonly status: VisitStatus;
   readonly startedAt: Date | null;
   readonly completedAt: Date | null;
@@ -66,6 +74,14 @@ export class JobVisit {
       props.scheduledEnd <= props.scheduledStart
     ) {
       return err(validation("visit scheduled end must be after start", "scheduledEnd"));
+    }
+    if (
+      props.durationMinutes !== null &&
+      (!Number.isInteger(props.durationMinutes) ||
+        props.durationMinutes <= 0 ||
+        props.durationMinutes > MAX_VISIT_DURATION_MINUTES)
+    ) {
+      return err(validation("visit duration must be 1–1440 whole minutes", "durationMinutes"));
     }
     return ok(new JobVisit({ ...props }));
   }

@@ -195,6 +195,40 @@ suite("visits tRPC router (full stack, live RLS)", () => {
     const visit = updated.visits.find((v) => v.id === visitId)!;
     expect(visit.scheduledStart).toBe("09:00");
     expect(visit.scheduledEnd).toBe("13:00");
+    expect(visit.durationMinutes).toBe(240);
+  });
+
+  it("createVisit persists durationMinutes for an unplaced visit", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+
+    const created = await caller.v1.visits.createVisit({ jobId, durationHours: 1.5 });
+    expect(created.visits[0]!.durationMinutes).toBe(90);
+    expect(created.visits[0]!.scheduledStart).toBeNull();
+  });
+
+  it("updateVisitDuration on an UNPLACED visit persists durationMinutes and survives a re-read", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+
+    // Unplaced visit: no assignee/date/start — the pre-fix silent no-op case.
+    const created = await caller.v1.visits.createVisit({ jobId, durationHours: 2 });
+    const visitId = created.visits[0]!.id;
+
+    const updated = await caller.v1.visits.updateVisitDuration({
+      jobId,
+      visitId,
+      durationHours: 3.5,
+    });
+    const visit = updated.visits.find((v) => v.id === visitId)!;
+    expect(visit.durationMinutes).toBe(210);
+    expect(visit.scheduledStart).toBeNull();
+    expect(visit.scheduledEnd).toBeNull();
+
+    // Survives a fresh read (round-trips through the DB, not just the DTO).
+    const refetched = await caller.v1.jobs.get({ jobId });
+    const reread = refetched.visits.find((v) => v.id === visitId)!;
+    expect(reread.durationMinutes).toBe(210);
   });
 
   // ── patchVisitSchedule ──────────────────────────────────────────────────────

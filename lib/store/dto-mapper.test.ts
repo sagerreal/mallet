@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
+import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, toStoreVisit, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
 import type { Estimate, Invoice } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -427,5 +427,109 @@ describe("dtoJobToStoreJob svc mapping", () => {
   it("falls back to 'service' when svc is null", () => {
     const job = dtoJobToStoreJob({ ...baseJobDto, svc: null } as never);
     expect(job.svc).toBe("service");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dtoJobToStoreJob — sourceEstimateId threading
+// ---------------------------------------------------------------------------
+
+describe("dtoJobToStoreJob sourceEstimateId threading", () => {
+  it("threads a non-null sourceEstimateId through to the store job", () => {
+    const estId = "aaaabbbb-cccc-dddd-eeee-ffffffffffff";
+    const job = dtoJobToStoreJob({ ...baseJobDto, sourceEstimateId: estId } as never);
+    expect(job.sourceEstimateId).toBe(estId);
+  });
+
+  it("maps null sourceEstimateId to null on the store job", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, sourceEstimateId: null } as never);
+    expect(job.sourceEstimateId).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dtoJobToStoreJob — status remap (Fix 1)
+// Zero active visits + backend "scheduled" → store "unscheduled"
+// ---------------------------------------------------------------------------
+
+const visitDTO = {
+  id: "vis-1",
+  assigneeUserId: "tech-1",
+  scheduledDate: "2026-07-15",
+  scheduledStart: "09:00",
+  scheduledEnd: "11:00",
+  durationMinutes: null,
+  status: "pending" as const,
+  startedAt: null,
+  completedAt: null,
+  notes: null,
+  position: 0,
+};
+
+describe("dtoJobToStoreJob status remap (zero-visit fix)", () => {
+  it("zero active visits + backend 'scheduled' → store 'unscheduled'", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "scheduled", visits: [] } as never);
+    expect(job.status).toBe("unscheduled");
+  });
+
+  it("zero active visits + backend 'in_progress' → store 'scheduled' (not remapped)", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "in_progress", visits: [] } as never);
+    expect(job.status).toBe("scheduled");
+  });
+
+  it("zero active visits + backend 'complete' → store 'done'", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "complete", visits: [] } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("with placed visits + backend 'scheduled' → recalcStatus (stays 'scheduled')", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "scheduled", visits: [visitDTO] } as never);
+    // A placed visit (date+tech+start all present) with pending status → recalcStatus → "scheduled"
+    expect(job.status).toBe("scheduled");
+  });
+
+  it("canceled visit is filtered out → treated as zero active visits → 'unscheduled'", () => {
+    const canceledVisit = { ...visitDTO, status: "canceled" as const };
+    const job = dtoJobToStoreJob({ ...baseJobDto, status: "scheduled", visits: [canceledVisit] } as never);
+    expect(job.status).toBe("unscheduled");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toStoreVisit — dur precedence (duration_minutes fix)
+// durationMinutes is authoritative; the start→end window is the legacy fallback.
+// ---------------------------------------------------------------------------
+
+describe("toStoreVisit dur precedence", () => {
+  it("prefers durationMinutes over the start→end window", () => {
+    const v = toStoreVisit({ ...visitDTO, durationMinutes: 90 } as never);
+    expect(v.dur).toBe(1.5); // NOT the 2h window 09:00→11:00
+  });
+
+  it("uses durationMinutes for an unplaced visit (no window at all)", () => {
+    const v = toStoreVisit({
+      ...visitDTO,
+      assigneeUserId: null,
+      scheduledDate: null,
+      scheduledStart: null,
+      scheduledEnd: null,
+      durationMinutes: 30,
+    } as never);
+    expect(v.dur).toBe(0.5);
+  });
+
+  it("falls back to hoursBetween(start, end) when durationMinutes is null (legacy row)", () => {
+    const v = toStoreVisit({ ...visitDTO, durationMinutes: null } as never);
+    expect(v.dur).toBe(2); // 09:00 → 11:00
+  });
+
+  it("falls back to the 2h default when durationMinutes is null and there is no window", () => {
+    const v = toStoreVisit({
+      ...visitDTO,
+      scheduledStart: null,
+      scheduledEnd: null,
+      durationMinutes: null,
+    } as never);
+    expect(v.dur).toBe(2);
   });
 });

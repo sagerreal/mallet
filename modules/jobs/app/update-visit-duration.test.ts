@@ -88,6 +88,7 @@ const makeVisit = (overrides: Partial<JobVisitProps> = {}): JobVisit => {
     scheduledDate: null,
     scheduledStart: null,
     scheduledEnd: null,
+    durationMinutes: null,
     status: "pending",
     startedAt: null,
     completedAt: null,
@@ -200,7 +201,7 @@ describe("UpdateVisitDurationUseCase", () => {
 
   // ── happy path: visit has no start (unplaced) ─────────────────────────────
 
-  it("happy path — unplaced visit: keeps scheduledEnd null, saves job", async () => {
+  it("happy path — unplaced visit: keeps scheduledEnd null, persists durationMinutes", async () => {
     const visit = makeVisit({ scheduledStart: null, scheduledEnd: null });
     const job = makeJob({ visits: [visit] });
     repo.seed(job);
@@ -217,8 +218,31 @@ describe("UpdateVisitDurationUseCase", () => {
     const updatedVisit = result.value.props.visits.find((v) => v.props.id === VISIT_ID);
     expect(updatedVisit).toBeDefined();
     expect(updatedVisit?.props.scheduledEnd).toBeNull();
+    // The typed hours are no longer dropped for unplaced visits.
+    expect(updatedVisit?.props.durationMinutes).toBe(180);
     // updatedAt should have been bumped to the clock's now
     expect(result.value.props.updatedAt).toEqual(clock.now());
+  });
+
+  it("unplaced visit — the persisted job carries durationMinutes (survives a repo re-read)", async () => {
+    const visit = makeVisit({ scheduledStart: null, scheduledEnd: null, durationMinutes: 120 });
+    repo.seed(makeJob({ visits: [visit] }));
+
+    const result = await useCase.exec({ jobId: JOB_ID, visitId: VISIT_ID, durationHours: 0.5 });
+    expect(result.ok).toBe(true);
+
+    const reloaded = await repo.findById(JOB_ID);
+    expect(reloaded?.props.visits[0]?.props.durationMinutes).toBe(30);
+  });
+
+  it("rounds fractional-hour input to whole minutes (1.25h → 75)", async () => {
+    const visit = makeVisit({ scheduledStart: null, scheduledEnd: null });
+    repo.seed(makeJob({ visits: [visit] }));
+
+    const result = await useCase.exec({ jobId: JOB_ID, visitId: VISIT_ID, durationHours: 1.25 });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.visits[0]?.props.durationMinutes).toBe(75);
   });
 
   // ── happy path: visit with a start time ───────────────────────────────────
@@ -243,6 +267,8 @@ describe("UpdateVisitDurationUseCase", () => {
 
     const updatedVisit = result.value.props.visits.find((v) => v.props.id === VISIT_ID);
     expect(updatedVisit?.props.scheduledEnd).toBe("11:30");
+    // Placed visits persist the explicit length too (end recompute is kept).
+    expect(updatedVisit?.props.durationMinutes).toBe(150);
     expect(result.value.props.updatedAt).toEqual(clock.now());
   });
 

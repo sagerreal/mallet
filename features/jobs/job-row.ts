@@ -62,12 +62,13 @@ export interface StatusView {
   label: string;
   tone: "amber" | "neutral";
   live: boolean;
+  href?: string;
 }
 
 export function jobStatusView(bandKey: BandKey, job: Job): StatusView {
   switch (bandKey) {
     case "needsSlot":
-      return { label: "Needs a slot", tone: "amber", live: false };
+      return { label: "Needs a slot", tone: "amber", live: false, href: "/jobs?tab=schedule" };
     case "today": {
       const tv = todayVisit(job);
       if (tv?.status === "onsite") return { label: "On site", tone: "amber", live: true };

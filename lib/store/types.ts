@@ -202,6 +202,8 @@ export interface Checklist {
 export interface Job {
   id: string;
   leadId: string;
+  /** UUID of the accepted estimate this job was created from, or null/undefined. */
+  sourceEstimateId?: string | null;
   svc: string | null;
   origin: string;
   title: string;

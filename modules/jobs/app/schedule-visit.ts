@@ -54,6 +54,9 @@ export class ScheduleVisitUseCase {
       scheduledDate: cmd.scheduledDate,
       scheduledStart: cmd.scheduledStart,
       scheduledEnd,
+      // Keep the explicit length in sync with the start→end window this placement
+      // creates — durationMinutes is the authoritative duration at read time.
+      durationMinutes: Math.round(cmd.durationHours * 60),
     });
     if (!isOk(updated)) return updated;
 

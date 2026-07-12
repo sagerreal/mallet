@@ -1,0 +1,1 @@
+ALTER TABLE "job_visits" ADD COLUMN "duration_minutes" integer;

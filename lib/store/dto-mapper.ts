@@ -127,7 +127,12 @@ export function toStoreVisit(v: VisitDTO): Visit {
     techId: v.assigneeUserId ?? null,
     date: v.scheduledDate ?? null,
     start: v.scheduledStart ? hhmmToHour(v.scheduledStart) : null,
-    dur: hoursBetween(v.scheduledStart, v.scheduledEnd),
+    // durationMinutes is the authoritative length (persists for unplaced visits
+    // too); the start→end window is the fallback for legacy rows without it.
+    dur:
+      v.durationMinutes != null
+        ? v.durationMinutes / 60
+        : hoursBetween(v.scheduledStart, v.scheduledEnd),
     status: toStoreVisitStatusInternal(v.status),
     ...(v.notes ? { scopeNotes: v.notes } : {}),
   };
@@ -224,13 +229,21 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     (v) => v.status !== BACKEND_VISIT_STATUS.CANCELED,
   );
   const visits = activeVisitDTOs.map(toStoreVisit);
+  // When there are active visits, recalc from their placement state.
+  // When there are no active visits AND the backend status is "scheduled", remap to
+  // "unscheduled" — a zero-visit job has not been slotted yet (this is the common state
+  // immediately after a quote is accepted and CreateJobFromEstimateUseCase runs).
+  // Only "in_progress", "complete", and "canceled" are preserved as-is via the fallback.
   const status = visits.length > 0
     ? recalcJobStatus(visits)
-    : toStoreJobStatusInternal(dto.status);
+    : dto.status === BACKEND_JOB_STATUS.SCHEDULED
+      ? "unscheduled"
+      : toStoreJobStatusInternal(dto.status);
 
   return {
     id: dto.id,
     leadId: dto.leadId,
+    sourceEstimateId: dto.sourceEstimateId ?? null,
     svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",

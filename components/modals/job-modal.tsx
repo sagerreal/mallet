@@ -33,9 +33,10 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
+import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
+import { DurField } from "./dur-field";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -125,49 +126,8 @@ function invDue(i: Invoice): number {
   return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
 }
 
-// ---- minute-precise Length field (prototype visitDurField) -----------------
-
-interface DurFieldProps {
-  dur: number;
-  onChange: (dur: number) => void;
-}
-
-/** Length as h + m (not a coarse 0.5h step) — mirrors visitDurField. */
-function DurField({ dur, onChange }: DurFieldProps) {
-  const h = Math.floor(dur || 0);
-  const m = Math.round(((dur || 0) - h) * 60);
-
-  function commit(nextH: number, nextM: number) {
-    const hh = Math.max(0, nextH);
-    const mm = Math.max(0, Math.min(59, nextM));
-    onChange(Math.max(0.25, hh + mm / 60));
-  }
-
-  return (
-    <div className="field" style={{ margin: 0 }}>
-      <label>Length</label>
-      <div className="sched-dur" style={{ flexWrap: "nowrap" }}>
-        <input
-          type="number"
-          min={0}
-          max={24}
-          value={h}
-          onChange={(e) => commit(Number(e.target.value) || 0, m)}
-        />
-        <span className="unit">h</span>
-        <input
-          type="number"
-          min={0}
-          max={59}
-          step={5}
-          value={m}
-          onChange={(e) => commit(h, Number(e.target.value) || 0)}
-        />
-        <span className="unit">m</span>
-      </div>
-    </div>
-  );
-}
+// ---- minute-precise Length field: extracted to ./dur-field (draft-input
+// rewrite — commit on blur/Enter instead of per-keystroke clamping) ----------
 
 // ---- visit row (prototype visitRow, lines 4677-4698) -----------------------
 
@@ -178,9 +138,10 @@ interface VisitRowProps {
   conflict: boolean;
   onUpdate: (patch: Partial<Visit>) => void;
   onRemove: () => void;
+  onGoToSchedule: () => void;
 }
 
-function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove }: VisitRowProps) {
+function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove, onGoToSchedule }: VisitRowProps) {
   // UNPLACED — dashed row with a "Not placed" pill, Length, and where-to-next hint.
   if (!vPlaced(visit)) {
     return (
@@ -206,6 +167,14 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove }: VisitRowP
         >
           Set the hours, then place it on the Schedule board for the crew, day &amp; time.
         </span>
+        <button
+          type="button"
+          className="linklike"
+          style={{ fontSize: 11.5, alignSelf: "center" }}
+          onClick={onGoToSchedule}
+        >
+          Open the Schedule board →
+        </button>
         <span
           className="linklike"
           style={{ color: "var(--red)", fontSize: 12, alignSelf: "center" }}
@@ -312,11 +281,52 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove }: VisitRowP
 interface PriceSummaryProps {
   job: Job;
   onBuildPrice: () => void;
+  onViewQuote: (estId: string) => void;
 }
 
-function PriceSummary({ job, onBuildPrice }: PriceSummaryProps) {
+/**
+ * Derive a display total for the quote pointer row.
+ * Uses cachedTotal when lines are empty (list-hydrated estimate), otherwise sums lines.
+ * Exported for unit testing.
+ */
+export function estDisplayTotal(est: Estimate): number | null {
+  if (est.lines.length > 0) {
+    return est.lines.reduce((sum, l) => sum + (l.q ?? 1) * (l.r ?? 0), 0);
+  }
+  return est.cachedTotal ?? null;
+}
+
+export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryProps) {
+  const estimates = useAppStore((s) => s.estimates);
+
   if (jobMode(job) === "estimate") return null;
   const hasLines = (job.lines ?? []).length > 0;
+
+  // When this job was created from an accepted quote and has no lines of its own,
+  // show a pointer to the source quote instead of the "Build the price" prompt.
+  // LOCKED rule: money lives in Finance, not here — this is a read-only pointer only.
+  if (!hasLines && job.sourceEstimateId) {
+    const est = estimates.find((e) => e.id === job.sourceEstimateId);
+    const total = est ? estDisplayTotal(est) : null;
+    const label =
+      est && total !== null
+        ? `Priced from quote ${est.num} — ${fmt$(total)}`
+        : "Priced from its quote";
+    return (
+      <div style={{ margin: "14px 0 0", display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 13 }}>{label}</span>
+        {est && (
+          <span
+            className="linklike"
+            style={{ fontSize: 12 }}
+            onClick={() => onViewQuote(est.id)}
+          >
+            View the quote →
+          </span>
+        )}
+      </div>
+    );
+  }
 
   if (!hasLines) {
     return (
@@ -769,6 +779,11 @@ export function JobModalContent() {
     router.push("/money");
   }
 
+  function goToSchedule() {
+    close();
+    router.push("/jobs?tab=schedule");
+  }
+
   function confirmDelete() {
     if (!deleteArmed) {
       setDeleteArmed(true);
@@ -886,7 +901,11 @@ export function JobModalContent() {
       </div>
 
       {/* 7. Price summary — PRICE + Total only, never cost/margin/profit */}
-      <PriceSummary job={job} onBuildPrice={() => openModal(MODAL.PRICE_BUILDER, { jobId: job.id })} />
+      <PriceSummary
+        job={job}
+        onBuildPrice={() => openModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
+        onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
+      />
 
       {/* 8. View signed agreement — deferred (signed-doc viewer not built) */}
 
@@ -912,6 +931,7 @@ export function JobModalContent() {
             conflict={conflictsWith(v)}
             onUpdate={(patch) => updateVisit(job.id, v.id, patch)}
             onRemove={() => removeVisit(job.id, v.id)}
+            onGoToSchedule={goToSchedule}
           />
         ))
       ) : (

@@ -11,8 +11,9 @@ import { AcceptEstimateUseCase } from "../app/accept-estimate";
 import { DeclineEstimateUseCase } from "../app/decline-estimate";
 import { ListEstimatesUseCase } from "../app/list-estimates";
 import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
-import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
+import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase, jobSummaryDTO, toJobSummaryDTO } from "@mallet/jobs";
 import { logger } from "@mallet/shared/observability";
+import { createJobSummaryInSavepoint } from "./job-creation-savepoint";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -249,7 +250,7 @@ export const createEstimateRouter = () =>
 
     accept: ownerOrOffice
       .input(acceptInput)
-      .output(estimateDTO)
+      .output(estimateDTO.extend({ job: jobSummaryDTO.nullable() }))
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new AcceptEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
@@ -272,8 +273,13 @@ export const createEstimateRouter = () =>
         // CreateJobFromEstimateUseCase is idempotent (partial unique index on source_estimate_id +
         // ON CONFLICT DO NOTHING), so a re-accept is safe. If job creation fails, do NOT fail the
         // accept — log and continue. The manual v1.jobs.createFromEstimate endpoint is the fallback.
-        try {
-          await ctx.tx.transaction(async (sp) => {
+        // The created (or existing) job is returned so the client can adopt it into the jobs store
+        // immediately without a network round-trip. createJobSummaryInSavepoint guarantees a
+        // savepoint failure yields null even when the use-case had already produced a summary —
+        // the insert rolled back, and a non-null return would leak a phantom job to the client.
+        const jobSummary = await createJobSummaryInSavepoint(
+          ctx.tx,
+          async (sp) => {
             const jobRepo = new DrizzleJobRepository(sp, ctx.principal.orgId);
             const estimateReader = new DrizzleEstimateReader(sp, ctx.principal.orgId);
             const createJob = new CreateJobFromEstimateUseCase(
@@ -289,16 +295,19 @@ export const createEstimateRouter = () =>
                 { err: result.error, estimateId: input.estimateId, orgId: ctx.principal.orgId },
                 "quoting.accept: job creation returned error (non-fatal)",
               );
+              return null;
             }
-          });
-        } catch (err) {
-          logger.error(
-            { err, estimateId: input.estimateId, orgId: ctx.principal.orgId },
-            "quoting.accept: job creation failed (non-fatal)",
-          );
-        }
+            return toJobSummaryDTO(result.value);
+          },
+          (err) => {
+            logger.error(
+              { err, estimateId: input.estimateId, orgId: ctx.principal.orgId },
+              "quoting.accept: job creation failed (non-fatal)",
+            );
+          },
+        );
 
-        return toEstimateDTO(accepted);
+        return { ...toEstimateDTO(accepted), job: jobSummary };
       }),
 
     archive: ownerOrOffice
