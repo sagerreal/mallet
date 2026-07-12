@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { pricebookItems } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import {
@@ -101,12 +101,14 @@ export class DrizzleServiceRepository implements ServiceRepository {
     if (page.cursor) {
       const cursor = decodeCursor(page.cursor);
       if (isOk(cursor)) {
-        // Keyset tiebreaker: rows are ordered by (position, label, createdAt, id) so the list
-        // respects the shop's manual ordering; the cursor itself carries (createdAt, id) — the
-        // same shared Cursor shape every list in this codebase uses (mirrors modules/tasks's
-        // list, which orders by dueDate/createdAt/id but keys the cursor on createdAt/id only).
+        // Keyset: rows strictly after the cursor in (created_at desc, id desc) order — the ORDER
+        // BY below must match this exactly (mirrors drizzle-company-repository.ts) or the keyset
+        // comparison skips/duplicates rows across page boundaries. Display ordering by
+        // (position, name) is a presentation concern the store/UI hydrator handles, not this repo.
+        // Pass created_at as an ISO string, not a JS Date: postgres.js cannot bind a Date inside
+        // a row-value tuple ("Received an instance of Date"). The ::timestamptz cast parses it.
         conds.push(
-          sql`(${pricebookItems.createdAt}, ${pricebookItems.id}) > (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
+          sql`(${pricebookItems.createdAt}, ${pricebookItems.id}) < (${cursor.value.createdAt.toISOString()}::timestamptz, ${cursor.value.id}::uuid)`,
         );
       }
     }
@@ -115,12 +117,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
       .select()
       .from(pricebookItems)
       .where(and(...conds))
-      .orderBy(
-        asc(pricebookItems.position),
-        asc(pricebookItems.label),
-        asc(pricebookItems.createdAt),
-        asc(pricebookItems.id),
-      )
+      .orderBy(desc(pricebookItems.createdAt), desc(pricebookItems.id))
       .limit(page.limit + 1);
 
     return buildPage(rows.map(rowToService), page, (service) => ({
