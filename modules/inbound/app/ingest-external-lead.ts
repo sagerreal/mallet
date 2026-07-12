@@ -35,7 +35,10 @@ export class IngestExternalLeadUseCase {
       name: lead.name, phone, email, source,
       companyId: null, role: null, notes: lead.notes, address: lead.address,
     });
-    if (!isOk(result)) return result;
+    if (!isOk(result)) {
+      logger.info({ channel }, "inbound.ensure_failed");
+      return result;
+    }
 
     // Idempotency: record AFTER a successful create so a mid-flight failure can be retried.
     // A repeat (channel, externalId) that was already recorded → treat as duplicate.

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { IngestExternalLeadUseCase } from "./ingest-external-lead";
-import { ok, isOk } from "@mallet/shared/types";
+import { ok, err, isOk, isErr, validation } from "@mallet/shared/types";
 
 function makeDeps(receiptSeen = false) {
   const calls = { ensure: [] as unknown[], touched: [] as unknown[] };
@@ -39,5 +39,17 @@ describe("IngestExternalLeadUseCase", () => {
     const r = await uc.exec({ channel: "form", source: "Website", lead: { ...lead, externalId: null } });
     if (isOk(r)) expect(r.value.outcome).toBe("created");
     expect(calls.ensure).toHaveLength(1);
+  });
+  it("passes an EnsureCustomer failure straight through without recording or touching", async () => {
+    const calls = { record: 0, touched: 0 };
+    const ensure = { exec: async () => err(validation("name required", "name")) };
+    const receipts = { recordIfNew: async () => { calls.record++; return true; } };
+    const endpoints = { touchLastLead: async () => { calls.touched++; } };
+    const clock = { now: () => new Date("2026-07-12T00:00:00Z") };
+    const uc = new IngestExternalLeadUseCase(ensure as never, receipts as never, endpoints as never, clock as never);
+    const r = await uc.exec({ channel: "angi", source: "Angi", lead: { name: "Gary", phone: null, email: null, address: null, notes: null, externalId: "angi-9" } });
+    expect(isErr(r)).toBe(true);
+    expect(calls.record).toBe(0);
+    expect(calls.touched).toBe(0);
   });
 });
