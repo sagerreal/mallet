@@ -142,6 +142,32 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     expect(matchCount).toBe(1);
   });
 
+  it("archiving a lead archives its estimates (cascade)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    // Create a fresh lead for isolation (avoids interference with other tests).
+    const lead = await caller.v1.customers.create({ name: "Archive Test Customer" });
+
+    // Draft + send an estimate for it.
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Cascade test",
+      lines: [{ description: "Work", quantity: 1, rateCents: 10_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+
+    // Archive the lead — this should cascade the estimate soft-delete.
+    await caller.v1.customers.archive({ leadId: lead.id });
+
+    // The estimate should no longer appear in the list (soft-deleted by cascade).
+    const estimates = await caller.v1.quoting.list({ limit: 50 });
+    expect(estimates.items.find((e) => e.id === drafted.id)).toBeUndefined();
+
+    // listByLead should also return 0 since the estimate is soft-deleted.
+    const byLead = await caller.v1.quoting.listByLead({ leadId: lead.id, limit: 10 });
+    expect(byLead.items).toHaveLength(0);
+  });
+
   it("listByLead returns only that lead's estimates; cross-org RLS blocks other org", async () => {
     // Create a second lead in org A to verify filtering works within the same org.
     const [extraRow] = await admin<{ id: string }[]>`

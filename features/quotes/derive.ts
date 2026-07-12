@@ -131,15 +131,21 @@ function deriveDelta(out: RailRow[]): string | null {
 export function deriveRail(estimates: Estimate[], leads: Lead[], jobs: Job[]): Rail {
   const alive = estimates.filter((e) => !e.archived && !e.trash);
 
+  // Defensive: exclude estimates whose lead is absent (archived or not yet loaded).
+  // These are orphans — they would render as "—" in the Out/Won rails. Server-side,
+  // archiving a customer now cascades to their estimates, but old data or timing gaps
+  // could leave orphans; this filter is the UI-side guard.
+  const activeLeadIds = new Set(leads.filter((l) => !l.archived).map((l) => l.id));
+
   const shop = alive.filter((e) => e.status === "draft").map((e) => toRailRow(e, leads));
 
   const out = alive
-    .filter((e) => e.status === "sent")
+    .filter((e) => e.status === "sent" && activeLeadIds.has(e.leadId))
     .map((e) => toRailRow(e, leads))
     .sort((a, b) => a.quietDays - b.quietDays || b.total - a.total);
 
   const won = alive
-    .filter((e) => e.status === "accepted" && e.age <= WON_WINDOW_DAYS)
+    .filter((e) => e.status === "accepted" && e.age <= WON_WINDOW_DAYS && activeLeadIds.has(e.leadId))
     .map((e) => toWonRow(e, leads, jobs))
     .sort((a, b) => Number(b.unscheduled) - Number(a.unscheduled) || b.total - a.total);
 

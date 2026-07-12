@@ -163,6 +163,23 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     return rows.length;
   }
 
+  // Soft-delete all non-archived estimates for a given lead. Returns the count of rows affected.
+  // Defense-in-depth: explicit orgId filter in WHERE (mirrors RLS but also aids index use).
+  async archiveByLead(leadId: LeadId, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(estimates)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(estimates.orgId, this.orgId),
+          eq(estimates.leadId, leadId),
+          isNull(estimates.deletedAt),
+        ),
+      )
+      .returning();
+    return rows.length;
+  }
+
   // Clear deleted_at on a soft-deleted estimate (restore). Returns the restored aggregate, or null
   // if the estimate was not currently archived (already active or does not exist).
   async restore(id: EstimateId, now: Date): Promise<Estimate | null> {

@@ -5,6 +5,7 @@ import { orThrow } from "@/trpc/errors";
 import { Phone, isOk, toPage, asLeadId, asCompanyId, money } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
+import { DrizzleEstimateRepository } from "@mallet/quoting";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
 import { ListLeadsUseCase } from "../app/list-leads";
 import { Lead, LEAD_STAGES, type LeadStage } from "../domain/lead";
@@ -161,11 +162,25 @@ export const createLeadRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId);
         const { leadId } = input;
-        const count = await repo.archive(asLeadId(leadId), ctx.deps.clock.now());
+        // Capture the clock once so both the lead archive and the estimate cascade share the same
+        // timestamp — atomically consistent within the tenant tx.
+        const now = ctx.deps.clock.now();
+        const count = await repo.archive(asLeadId(leadId), now);
         if (count === 0) {
           throw new TRPCError({ code: "NOT_FOUND", message: "customer not found or already archived" });
         }
+        // Cascade: archive all non-deleted estimates for this lead atomically in the same tx.
+        // This prevents orphaned "—" cards from appearing in the pipeline Out/Won rails.
+        // Intentionally NOT reversed on lead restore — an unarchived customer's quotes stay
+        // archived; the office re-sends if needed.
+        const estimateRepo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const archivedCount = await estimateRepo.archiveByLead(asLeadId(leadId), now);
+        // Log after the cascade completes so the entry only fires on clean exit — if archiveByLead
+        // throws, the tx rolls back and no misleading audit entry is left behind.
         logger.info({ leadId, orgId: ctx.principal.orgId }, "lead.archived");
+        if (archivedCount > 0) {
+          logger.info({ leadId, orgId: ctx.principal.orgId, archivedCount }, "lead.archived: estimates cascaded");
+        }
         return { ok: true };
       }),
 

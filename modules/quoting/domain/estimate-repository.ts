@@ -21,4 +21,8 @@ export interface EstimateRepository {
   // Clear deleted_at on a soft-deleted estimate (restore). Returns the restored aggregate, or null
   // if the estimate was not currently archived (already active or does not exist).
   restore(id: EstimateId, now: Date): Promise<Estimate | null>;
+  // Soft-delete all non-archived estimates for a lead. Returns the number of affected rows.
+  // Called when a lead is archived. Does NOT cascade on restore — an unarchived customer's
+  // quotes stay archived; the office re-sends if needed.
+  archiveByLead(leadId: LeadId, now: Date): Promise<number>;
 }

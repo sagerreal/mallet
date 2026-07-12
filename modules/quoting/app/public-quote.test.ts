@@ -92,6 +92,17 @@ class FakeEstimateRepository implements EstimateRepository {
     return this.store.get(id) ?? null;
   }
 
+  async archiveByLead(leadId: LeadId, _now: Date): Promise<number> {
+    let count = 0;
+    for (const [id, est] of this.store) {
+      if (est.props.leadId === leadId && !this.archived.has(id)) {
+        this.archived.add(id);
+        count++;
+      }
+    }
+    return count;
+  }
+
   // Test helper: put an estimate directly into the store
   inject(estimate: Estimate): void {
     this.store.set(estimate.props.id, estimate);
