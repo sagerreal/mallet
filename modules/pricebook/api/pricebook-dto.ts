@@ -37,6 +37,13 @@ export const paginatedServiceDTO = z.object({
 
 export type PaginatedServiceDTO = z.infer<typeof paginatedServiceDTO>;
 
+export const seedPricebookDTO = z.object({
+  services: z.array(serviceDTO),
+  categories: z.array(categoryDTO),
+});
+
+export type SeedPricebookDTO = z.infer<typeof seedPricebookDTO>;
+
 export const toServiceDTO = (service: Service): ServiceDTO => {
   const p = service.props;
   return {

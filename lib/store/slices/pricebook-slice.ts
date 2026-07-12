@@ -20,6 +20,7 @@ import {
   serviceCreatePayload,
   serviceUpdatePayload,
   categoryCreatePayload,
+  seedResultDtoToStore,
   type AddServiceFields,
   type ServiceUpdateFields,
   type ServiceDTO,
@@ -42,6 +43,18 @@ function reconcileCategory(list: Category[], id: string, dto: CategoryDTO): Cate
   return list.map((c) => (c.id === id ? updated : c));
 }
 
+/**
+ * Append any items not already present (by id) — returns a new array, or the same reference
+ * when there is nothing to add. Used to fold v1.pricebook.seed's result into the existing
+ * catalog: seeding never touches existing rows, and the response is empty when the org was
+ * already seeded, so appending (never replacing) can't lose anything already loaded.
+ */
+function mergeNewById<T extends { id: string }>(existing: T[], incoming: T[]): T[] {
+  const existingIds = new Set(existing.map((x) => x.id));
+  const additions = incoming.filter((x) => !existingIds.has(x.id));
+  return additions.length === 0 ? existing : [...existing, ...additions];
+}
+
 export interface PricebookSlice {
   services: Service[];
   categories: Category[];
@@ -54,6 +67,10 @@ export interface PricebookSlice {
   archiveService: (id: string) => void;
 
   addCategory: (name: string, parentId?: string | null) => Promise<AddResult>;
+
+  /** Task 8: one-click plumbing starter pack for an empty pricebook. Idempotent server-side
+   * (v1.pricebook.seed no-ops if the org already has a service) — safe to call more than once. */
+  seedPricebook: () => Promise<AddResult>;
 }
 
 export const createPricebookSlice: StateCreator<PricebookSlice, [], [], PricebookSlice> = (
@@ -163,6 +180,25 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     } catch (e) {
       set((s) => ({ categories: s.categories.filter((x) => x.id !== id) }));
       if (process.env.NODE_ENV !== "production") console.warn("[addCategory] create failed", e);
+      return { ok: false, reason: "failed" };
+    }
+  },
+
+  // ---- seed ---------------------------------------------------------------
+
+  seedPricebook: async () => {
+    try {
+      const dto = await trpcVanilla.v1.pricebook.seed.mutate();
+      const { services, categories } = seedResultDtoToStore(dto);
+      // Append-only: never replace the loaded catalog. The server no-ops (empty arrays) if
+      // the org was already seeded, so this can't clobber anything already in the store.
+      set((s) => ({
+        services: mergeNewById(s.services, services),
+        categories: mergeNewById(s.categories, categories),
+      }));
+      return { ok: true };
+    } catch (e) {
+      if (process.env.NODE_ENV !== "production") console.warn("[seedPricebook] seed failed", e);
       return { ok: false, reason: "failed" };
     }
   },

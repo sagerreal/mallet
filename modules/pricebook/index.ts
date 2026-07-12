@@ -10,5 +10,7 @@ export { ArchiveServiceUseCase } from "./app/archive-service";
 export { ListServicesUseCase } from "./app/list-services";
 export { CreateCategoryUseCase } from "./app/create-category";
 export { ListCategoriesUseCase } from "./app/list-categories";
+export { SeedPricebookUseCase } from "./app/seed-pricebook";
+export type { SeedPricebookInput, SeedPricebookResult } from "./app/seed-pricebook";
 export { DrizzleServiceRepository } from "./infra/drizzle-service-repository";
 export { DrizzleCategoryRepository } from "./infra/drizzle-category-repository";

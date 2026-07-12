@@ -21,6 +21,7 @@ const mutate = {
   updateService: vi.fn(),
   archiveService: vi.fn(),
   createCategory: vi.fn(),
+  seed: vi.fn(),
 };
 
 vi.mock("@/lib/trpc/vanilla", () => ({
@@ -35,6 +36,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         category: {
           create: { mutate: (...a: unknown[]) => mutate.createCategory(...a) },
         },
+        seed: { mutate: (...a: unknown[]) => mutate.seed(...a) },
       },
     },
   },
@@ -293,5 +295,95 @@ describe("pricebookSlice", () => {
     const r = await store.getState().addCategory("Drains");
     expect(r).toEqual({ ok: false, reason: "failed" });
     expect(store.getState().categories.some((c) => c.name === "Drains")).toBe(false);
+  });
+
+  // ---- seedPricebook (Task 8) --------------------------------------------------
+
+  it("seedPricebook appends the seeded services and categories into an empty store", async () => {
+    mutate.seed.mockResolvedValue({
+      services: [baseServiceDto({ id: "seed-s1", name: "Toilet reset" })],
+      categories: [baseCategoryDto({ id: "seed-c1", name: "Fixtures" })],
+    });
+
+    const r = await store.getState().seedPricebook();
+
+    expect(r).toEqual({ ok: true });
+    expect(mutate.seed).toHaveBeenCalledTimes(1);
+    expect(store.getState().services.some((s) => s.id === "seed-s1")).toBe(true);
+    expect(store.getState().categories.some((c) => c.id === "seed-c1")).toBe(true);
+  });
+
+  it("seedPricebook never drops services/categories already loaded in the store", async () => {
+    store.getState().setPricebook({
+      services: [
+        {
+          id: "already-loaded",
+          categoryId: null,
+          code: null,
+          name: "Existing Service",
+          unitPrice: 100,
+          cost: 20,
+          laborHours: null,
+          taxable: false,
+          warrantyText: null,
+          imageUrl: null,
+          isAddon: false,
+          active: true,
+          position: 0,
+        },
+      ],
+      categories: [{ id: "already-loaded-cat", parentId: null, name: "Existing Category", sortOrder: 0 }],
+    });
+    mutate.seed.mockResolvedValue({
+      services: [baseServiceDto({ id: "seed-s1" })],
+      categories: [baseCategoryDto({ id: "seed-c1" })],
+    });
+
+    await store.getState().seedPricebook();
+
+    expect(store.getState().services.some((s) => s.id === "already-loaded")).toBe(true);
+    expect(store.getState().categories.some((c) => c.id === "already-loaded-cat")).toBe(true);
+    expect(store.getState().services).toHaveLength(2);
+    expect(store.getState().categories).toHaveLength(2);
+  });
+
+  it("seedPricebook is a no-op when the org is already seeded (empty response)", async () => {
+    store.getState().setPricebook({
+      services: [
+        {
+          id: "already-loaded",
+          categoryId: null,
+          code: null,
+          name: "Existing Service",
+          unitPrice: 100,
+          cost: 20,
+          laborHours: null,
+          taxable: false,
+          warrantyText: null,
+          imageUrl: null,
+          isAddon: false,
+          active: true,
+          position: 0,
+        },
+      ],
+      categories: [],
+    });
+    mutate.seed.mockResolvedValue({ services: [], categories: [] });
+
+    const r = await store.getState().seedPricebook();
+
+    expect(r).toEqual({ ok: true });
+    expect(store.getState().services).toHaveLength(1);
+    expect(store.getState().services[0]!.id).toBe("already-loaded");
+  });
+
+  it("seedPricebook reports {ok:false, reason:'failed'} and leaves the store untouched on rejection", async () => {
+    mutate.seed.mockRejectedValueOnce(new Error("boom"));
+
+    const r = await store.getState().seedPricebook();
+
+    expect(r).toEqual({ ok: false, reason: "failed" });
+    expect(store.getState().services).toHaveLength(0);
+    expect(store.getState().categories).toHaveLength(0);
   });
 });

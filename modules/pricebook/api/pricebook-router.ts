@@ -2,6 +2,10 @@ import { z } from "zod";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asServiceId, asCategoryId, toPage } from "@mallet/shared/types";
+import {
+  PLUMBING_SEED_CATEGORIES,
+  PLUMBING_SEED_SERVICES,
+} from "@/app/(office)/settings/pricebook-seed";
 import { DrizzleServiceRepository } from "../infra/drizzle-service-repository";
 import { DrizzleCategoryRepository } from "../infra/drizzle-category-repository";
 import { CreateServiceUseCase } from "../app/create-service";
@@ -10,7 +14,15 @@ import { ArchiveServiceUseCase } from "../app/archive-service";
 import { ListServicesUseCase } from "../app/list-services";
 import { CreateCategoryUseCase } from "../app/create-category";
 import { ListCategoriesUseCase } from "../app/list-categories";
-import { serviceDTO, categoryDTO, paginatedServiceDTO, toServiceDTO, toCategoryDTO } from "./pricebook-dto";
+import { SeedPricebookUseCase } from "../app/seed-pricebook";
+import {
+  serviceDTO,
+  categoryDTO,
+  paginatedServiceDTO,
+  toServiceDTO,
+  toCategoryDTO,
+  seedPricebookDTO,
+} from "./pricebook-dto";
 
 const serviceListInput = z.object({
   limit: z.number().int().positive().max(500).optional(),
@@ -183,4 +195,31 @@ export const createPricebookRouter = () =>
           return toCategoryDTO(orThrow(result));
         }),
     }),
+
+    // One-click starter pack for a brand-new org's empty pricebook (Task 8). Idempotent —
+    // SeedPricebookUseCase no-ops if the org already has any service, so this is safe to
+    // invoke more than once (a retry, a double click). The concrete plumbing content lives
+    // in app/(office)/settings/pricebook-seed.ts, composed in here rather than hardcoded
+    // into the module, which stays vertical-agnostic.
+    seed: ownerOrOffice
+      .output(seedPricebookDTO)
+      .mutation(async ({ ctx }) => {
+        const serviceRepo = new DrizzleServiceRepository(ctx.tx, ctx.principal.orgId);
+        const categoryRepo = new DrizzleCategoryRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new SeedPricebookUseCase(
+          serviceRepo,
+          categoryRepo,
+          ctx.deps.clock,
+          ctx.deps.ids,
+        );
+        const result = await useCase.exec(ctx.principal.orgId, {
+          categories: PLUMBING_SEED_CATEGORIES.map((name) => ({ name })),
+          services: PLUMBING_SEED_SERVICES,
+        });
+        const seeded = orThrow(result);
+        return {
+          services: seeded.services.map(toServiceDTO),
+          categories: seeded.categories.map(toCategoryDTO),
+        };
+      }),
   });

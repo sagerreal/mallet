@@ -12,6 +12,7 @@ import type { Service, Category } from "./types";
 
 export type ServiceDTO = RouterOutputs["v1"]["pricebook"]["service"]["create"];
 export type CategoryDTO = RouterOutputs["v1"]["pricebook"]["category"]["create"];
+export type SeedPricebookDTO = RouterOutputs["v1"]["pricebook"]["seed"];
 
 // ---------------------------------------------------------------------------
 // DTO -> store (dollars)
@@ -41,6 +42,17 @@ export function categoryDtoToStore(dto: CategoryDTO): Category {
     parentId: dto.parentId,
     name: dto.name,
     sortOrder: dto.sortOrder,
+  };
+}
+
+/** Maps v1.pricebook.seed's response (possibly empty, when already-seeded) to store shapes. */
+export function seedResultDtoToStore(dto: SeedPricebookDTO): {
+  services: Service[];
+  categories: Category[];
+} {
+  return {
+    services: dto.services.map(serviceDtoToStore),
+    categories: dto.categories.map(categoryDtoToStore),
   };
 }
 

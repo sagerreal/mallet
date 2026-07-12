@@ -9,10 +9,11 @@
  * in-flow reveal beneath the add row (CategoryManager). A search box appears only once
  * the book is big enough to need one (>15 services) — a small shop never sees it.
  *
- * Deferred to later tasks: the "Start with plumbing basics" seed button (Task 8,
- * wires v1.pricebook.seed), CSV import, materials ("Break into parts"), and
- * Good/Better/Best option groups (Phase 2/3) — omitted here rather than left as
- * dead buttons.
+ * The empty state offers a one-click "Start with plumbing basics" seed (Task 8,
+ * v1.pricebook.seed via seedPricebook()) so a new shop isn't staring at a blank grid.
+ *
+ * Deferred to later tasks: CSV import, materials ("Break into parts"), and Good/Better/
+ * Best option groups (Phase 2/3) — omitted here rather than left as dead buttons.
  */
 
 import { useState } from "react";
@@ -37,6 +38,7 @@ export function PricebookCard() {
   const updateService = useAppStore((s) => s.updateService);
   const archiveService = useAppStore((s) => s.archiveService);
   const addCategory = useAppStore((s) => s.addCategory);
+  const seedPricebook = useAppStore((s) => s.seedPricebook);
 
   // Cost/margin are sensitive — hidden from tech role (fail closed until role loads),
   // matching the isOffice gate already used elsewhere (e.g. tech-job-modal.tsx).
@@ -44,6 +46,18 @@ export function PricebookCard() {
   const canSeeCost = me.data?.role === "owner" || me.data?.role === "office";
 
   const [query, setQuery] = useState("");
+  const [seeding, setSeeding] = useState(false);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  async function handleSeed() {
+    setSeeding(true);
+    setSeedError(null);
+    const result = await seedPricebook();
+    setSeeding(false);
+    if (!result.ok) {
+      setSeedError("Couldn’t load the starter pack — check your connection and try again.");
+    }
+  }
 
   const sorted = sortServices(services);
   const showSearch = services.length > SEARCH_THRESHOLD;
@@ -64,8 +78,15 @@ export function PricebookCard() {
 
       {services.length === 0 ? (
         <div className="empty-att">
-          Add your common jobs — e.g. “Replace 40gal water heater”.
-          {/* TODO(Task 8): "Start with plumbing basics" seed button → v1.pricebook.seed */}
+          <p style={{ margin: "0 0 10px" }}>
+            Add your common jobs — e.g. “Replace 40gal water heater”.
+          </p>
+          <button className="btn" onClick={() => void handleSeed()} disabled={seeding}>
+            {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
+          </button>
+          {seedError && (
+            <p style={{ color: "var(--red)", fontSize: 12, margin: "8px 0 0" }}>{seedError}</p>
+          )}
         </div>
       ) : (
         <div>
