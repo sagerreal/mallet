@@ -89,12 +89,11 @@ export function StandardsModalContent() {
   const checklists = useAppStore((s) => s.checklists);
   const addChecklist = useAppStore((s) => s.addChecklist);
   const [newName, setNewName] = useState("");
-  const [newStage, setNewStage] = useState<"job" | "scope">("job");
 
   function create() {
     const n = newName.trim();
     if (!n) return;
-    addChecklist(n, newStage);
+    addChecklist(n, "job");
     setNewName("");
   }
 
@@ -102,7 +101,7 @@ export function StandardsModalContent() {
     <div>
       <h2>Checklist templates</h2>
       <p className="muted" style={{ marginBottom: 14, fontSize: 13 }}>
-        Reusable checklists the office attaches per job or estimate visit.
+        Reusable “before you leave” checklists the office attaches to a job.
       </p>
 
       {checklists.map((chk) => (
@@ -117,24 +116,9 @@ export function StandardsModalContent() {
             placeholder="Name — e.g. Repipe walkthrough"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); create(); } }}
             style={{ flex: 1, minWidth: 180 }}
           />
-          <div className="chips">
-            <button
-              type="button"
-              className={`chip${newStage === "job" ? " sel" : ""}`}
-              onClick={() => setNewStage("job")}
-            >
-              Job
-            </button>
-            <button
-              type="button"
-              className={`chip${newStage === "scope" ? " sel" : ""}`}
-              onClick={() => setNewStage("scope")}
-            >
-              Estimate visit
-            </button>
-          </div>
           <button type="button" className="btn sm primary" onClick={create}>
             Create
           </button>

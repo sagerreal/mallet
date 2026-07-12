@@ -574,94 +574,6 @@ function SecSources() {
 }
 
 // ============================================================================
-// Section: Pipeline
-// ============================================================================
-
-function SecPipeline() {
-  const checklists = useAppStore((s) => s.checklists);
-  const scopeChecklists = checklists.filter((c) => c.stage === "scope");
-  const addChecklist = useAppStore((s) => s.addChecklist);
-  const visitDur = useAppStore((s) => s.visitDur);
-  const setVisitDur = useAppStore((s) => s.setVisitDur);
-  const setToggle = useAppStore((s) => s.setToggle);
-  const scopeOn = useAppStore((s) => s.toggles.scopeOn);
-  const openModal = useOpenModal();
-
-  const [chkNew, setChkNew] = useState("");
-
-  function handleAddChecklist() {
-    const name = chkNew.trim();
-    if (!name) return;
-    addChecklist(name, "scope");
-    setChkNew("");
-  }
-
-  return (
-    <>
-      <FoldCard title="Visit checklists" summary={`${scopeChecklists.length} lists`}>
-        <div className="stage-row" style={{ borderTop: "none", marginTop: 0 }}>
-          <div style={{ flex: 1 }}>
-            <b style={{ fontWeight: 700 }}>Visit checks</b>
-            <div className="muted" style={{ fontSize: 12 }}>
-              A per-job-type checklist on the site visit; flags what&apos;s missing before you quote.
-            </div>
-          </div>
-          <label className="switch">
-            <input type="checkbox" checked={scopeOn} onChange={(e) => setToggle("scopeOn", e.target.checked)} />
-            <i />
-          </label>
-        </div>
-        {scopeChecklists.map((c) => {
-          const requiredCount = c.items.filter((i) => i.required).length;
-          return (
-            <div key={c.id} className="stage-row">
-              <span style={{ fontWeight: 700 }}>{c.name}</span>
-              <span className="trig">{c.trade} · {c.items.length} items · {requiredCount} required</span>
-              <button className="btn sm" onClick={() => openModal(MODAL.STANDARDS)}>Edit</button>
-            </div>
-          );
-        })}
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <input type="text" id="chkNew" placeholder="job type — e.g. Sump pump" value={chkNew} onChange={(e) => setChkNew(e.target.value)}
-            style={{ flex: 1, minWidth: 140, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <button className="btn" onClick={handleAddChecklist}>+ Create blank</button>
-          {/* Always reachable — the per-row Edit above only renders once a list exists. */}
-          <button className="btn" onClick={() => openModal(MODAL.STANDARDS)}>Manage templates</button>
-          {/* deferred: SOP paste import */}
-          <span className="linklike" style={{ fontSize: 12 }} onClick={() => {}}>paste an SOP</span>
-        </div>
-      </FoldCard>
-
-      <FoldCard
-        title="Visit lengths"
-        summary={`${Math.round(visitDur.scope * 60)} · ${Math.round(visitDur.repair * 60)} · ${Math.round(visitDur.install * 60)} min`}
-      >
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-          {(["scope", "repair", "install"] as const).map((k) => {
-            const lbl = k === "scope" ? "Scope / look" : k === "repair" ? "Repair" : "Install";
-            return (
-              <div key={k} className="field" style={{ margin: 0 }}>
-                <label>{lbl} (min)</label>
-                <input
-                  type="number"
-                  min={15}
-                  defaultValue={Math.round(visitDur[k] * 60)}
-                  onChange={(e) => setVisitDur(k, Number(e.target.value))}
-                  style={{ width: 96 }}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
-          A planning estimate for the schedule block — the real time is clocked Arrived → Done.
-        </p>
-      </FoldCard>
-    </>
-  );
-}
-
-// ============================================================================
 // Section: Pricing & quotes
 // ============================================================================
 
@@ -1058,7 +970,7 @@ function SecArchive() {
 // Main page
 // ============================================================================
 
-type SetTab = "workspace" | "sources" | "pipeline" | "pricing" | "booking" | "fields" | "archive";
+type SetTab = "workspace" | "sources" | "pricing" | "booking" | "fields" | "archive";
 
 interface SectionDef {
   k: SetTab;
@@ -1075,7 +987,6 @@ export default function SettingsPage() {
   const allSections = [
     { k: "workspace" as SetTab, label: "Workspace",         body: <SecWorkspace role={role} /> },
     { k: "sources"   as SetTab, label: "Lead sources",      body: <SecSources /> },
-    { k: "pipeline"  as SetTab, label: "Pipeline",          body: <SecPipeline /> },
     { k: "pricing"   as SetTab, label: "Pricing & quotes", ownerOnly: true, body: <SecPricing /> },
     { k: "booking"   as SetTab, label: "Booking",           ownerOnly: true, body: <SecBooking /> },
     { k: "fields"    as SetTab, label: "Custom fields",     body: <SecFields /> },

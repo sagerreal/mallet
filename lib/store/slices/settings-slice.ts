@@ -2,7 +2,7 @@
  * lib/store/slices/settings-slice.ts
  * Editable workspace configuration for the Settings page — pricebook, labor
  * rates, terms library, lead sources, the AI Front Desk booking playbook,
- * visit durations, parts markup, trade, and permission toggles.
+ * parts markup, trade, and permission toggles.
  *
  * All collections carry stable server-assigned string UUIDs.
  * All mutating actions follow the pattern:
@@ -81,16 +81,9 @@ export interface BookingCfg {
   area: BookingArea;
 }
 
-export interface VisitDur {
-  scope: number;   // hours
-  repair: number;  // hours
-  install: number; // hours
-}
-
 export interface SettingsToggles {
   techSeesPrice: boolean;
   frontDesk: boolean;
-  scopeOn: boolean;
 }
 
 // ---- pre-hydration placeholders (NOT a source of truth) --------------------
@@ -111,21 +104,15 @@ const EMPTY_BOOKING: BookingCfg = {
   area: { cities: "", radiusMi: 25 },
 };
 
-const EMPTY_VISIT_DUR: VisitDur = { scope: 0.5, repair: 1.5, install: 4 };
 const EMPTY_MARKUP = 35;
 const EMPTY_TRADE = "plumbing";
 
 const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
   frontDesk: true,
-  scopeOn: false,
 };
 
 // ---- helpers ---------------------------------------------------------------
-
-function clampInt(v: number, min: number): number {
-  return Math.max(min, Math.round(Number.isFinite(v) ? v : 0));
-}
 
 // Internal types for the set/get callbacks used by persistBooking.
 type SetFn = (
@@ -202,7 +189,6 @@ export interface SettingsSlice {
   terms: TermItem[];
   sources: SourceItem[];
   booking: BookingCfg;
-  visitDur: VisitDur;
   markup: number;
   trade: string;
   toggles: SettingsToggles;
@@ -214,7 +200,6 @@ export interface SettingsSlice {
     terms: TermItem[];
     sources: SourceItem[];
     booking: BookingCfg;
-    visitDur: VisitDur;
     markup: number;
     trade: string;
     toggles: SettingsToggles;
@@ -249,7 +234,6 @@ export interface SettingsSlice {
   setBookingArea: (field: keyof BookingArea, value: string) => void;
 
   // misc config
-  setVisitDur: (key: keyof VisitDur, minutes: number) => void;
   setMarkup: (n: number) => void;
   setTrade: (t: string) => void;
   setToggle: (key: keyof SettingsToggles, value: boolean) => void;
@@ -266,7 +250,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   terms: EMPTY_TERMS,
   sources: EMPTY_SOURCES,
   booking: EMPTY_BOOKING,
-  visitDur: EMPTY_VISIT_DUR,
   markup: EMPTY_MARKUP,
   trade: EMPTY_TRADE,
   toggles: EMPTY_TOGGLES,
@@ -528,21 +511,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
 
   // ---- misc config (scalars → updateConfig) ----------------------------------
 
-  setVisitDur: (key, minutes) => {
-    const snapshot = { visitDur: get().visitDur };
-    const hours = clampInt(minutes, 15) / 60;
-    set((s) => ({ visitDur: { ...s.visitDur, [key]: hours } }));
-    const col =
-      key === "scope"
-        ? "visitScopeMinutes"
-        : key === "repair"
-        ? "visitRepairMinutes"
-        : "visitInstallMinutes";
-    void trpcVanilla.v1.settings.updateConfig
-      .mutate({ [col]: Math.round(hours * 60) })
-      .catch(() => set(snapshot));
-  },
-
   setMarkup: (n) => {
     const snapshot = { markup: get().markup };
     const markup = Math.max(0, Number(n) || 0);
@@ -565,7 +533,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     const toggleToField: Record<keyof SettingsToggles, string> = {
       techSeesPrice: "techSeesPrice",
       frontDesk: "frontDesk",
-      scopeOn: "scopeOn",
     };
     const col = toggleToField[key];
     void trpcVanilla.v1.settings.updateConfig
