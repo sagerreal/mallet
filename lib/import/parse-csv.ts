@@ -26,7 +26,15 @@ export function parseCsv(file: File): Promise<ParsedCsv> {
           return;
         }
         const records = result.data.filter((r) => Object.values(r).some((v) => (v ?? "").length > 0));
-        resolve({ headers, records });
+        // papaparse OMITS trailing header keys when a data row has fewer columns than the header
+        // row (a common export quirk). Backfill so every header key is always present, keeping the
+        // declared `Record<string, string>` contract honest for downstream `record[header]` lookups.
+        const normalized = records.map((r) => {
+          const row: Record<string, string> = {};
+          for (const h of headers) row[h] = r[h] ?? "";
+          return row;
+        });
+        resolve({ headers, records: normalized });
       },
       error: (err) => reject(new Error(`Could not read the file: ${err.message}`)),
     });

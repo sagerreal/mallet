@@ -19,4 +19,9 @@ describe("parseCsv", () => {
     const out = await parseCsv(fileOf(`Name\nGary\n\n,\n`));
     expect(out.records).toHaveLength(1);
   });
+
+  it("backfills missing trailing columns as empty strings (ragged rows)", async () => {
+    const out = await parseCsv(fileOf(`Name,Phone,Address\nGary,555-0100\n`));
+    expect(out.records[0]).toEqual({ Name: "Gary", Phone: "555-0100", Address: "" });
+  });
 });
