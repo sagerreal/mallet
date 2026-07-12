@@ -574,8 +574,6 @@ function SecSources() {
 // ============================================================================
 
 function SecPricing() {
-  const trade = useAppStore((s) => s.trade);
-  const setTrade = useAppStore((s) => s.setTrade);
   const laborRates = useAppStore((s) => s.laborRates);
   const addLaborRate = useAppStore((s) => s.addLaborRate);
   const updateLaborRate = useAppStore((s) => s.updateLaborRate);
@@ -605,22 +603,6 @@ function SecPricing() {
 
   return (
     <>
-      <FoldCard title="Your trade" summary={cap(trade)}>
-        <select
-          id="setTrade"
-          value={trade}
-          onChange={(e) => setTrade(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: 13 }}
-        >
-          {[["plumbing","Plumbing"],["hvac","HVAC"],["electrical","Electrical"],["remodel","Remodeling"],["fence","Fencing"],["other","Other / general"]].map(([v,l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </select>
-        <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
-          Switching reloads that trade&apos;s starter pricebook &amp; labor rates.
-        </p>
-      </FoldCard>
-
       <FoldCard title="Labor rates" defaultOpen summary={`${laborRates.length} rate${laborRates.length === 1 ? "" : "s"}`}>
         <div>
           {laborRates.map((lr) => (
