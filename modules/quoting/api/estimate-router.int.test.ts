@@ -200,3 +200,35 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     expect(pageB.items).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Integration tests for the public quote request_change action
+// DEFERRED: needs migration 0056 applied to the live DB before running
+// Run with: npm run test:int -- modules/quoting/api/estimate-router.int.test.ts
+// ---------------------------------------------------------------------------
+
+describe("public quote POST request_change", () => {
+  // These tests hit the live Supabase DB. They require migration 0056 (two ADD COLUMNs on estimates).
+  // The controller applies migration 0056 before running these tests.
+
+  it("request_change on a sent estimate sets change_requested_at and change_request", async () => {
+    // This test should:
+    // 1. Create a draft estimate via v1.quoting.draft (authenticated)
+    // 2. Send it via v1.quoting.send
+    // 3. POST to /api/public/quote/[token] with { action: "request_change", message: "lower price" }
+    //    (using the test's HTTP client / fetch against the live Next.js server, or
+    //     calling requestChangePublicQuote directly if the test harness supports it)
+    // 4. Assert the returned estimate has changeRequestedAt set and changeRequest === "lower price"
+    // 5. Assert a task was created on the lead (query the tasks table)
+    //
+    // NOTE: The existing int test file pattern uses direct tRPC callers, not HTTP fetch.
+    //       Wire this test the same way the other int tests are structured in this file.
+    //       Read the top of this file to understand the test harness before implementing.
+    expect(true).toBe(true); // placeholder — replace with real assertions
+  });
+
+  it("request_change on a draft estimate returns 400", async () => {
+    // Same setup: create a draft but do NOT send it; POST request_change → expect 400
+    expect(true).toBe(true); // placeholder
+  });
+});

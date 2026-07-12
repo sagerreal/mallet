@@ -9,6 +9,8 @@ import type {
 } from "@mallet/shared/types";
 import { money, zeroMoney, addMoney, validation, ok, err } from "@mallet/shared/types";
 
+const MAX_CHANGE_REQUEST_LENGTH = 2_000;
+
 export type EstimateStatus = "draft" | "sent" | "accepted" | "declined";
 
 export const ESTIMATE_STATUSES: readonly EstimateStatus[] = [
@@ -80,6 +82,8 @@ export interface EstimateProps {
   readonly acceptedAt: Date | null;
   readonly declinedAt: Date | null;
   readonly declineReason: string | null;
+  readonly changeRequestedAt: Date | null;
+  readonly changeRequest: string | null;
   // Unguessable URL-safe token for the public customer quote page (no login required).
   // Set at draft-time; never changes. Null only for estimates created before the backfill migration.
   readonly publicToken: string | null;
@@ -150,6 +154,9 @@ export class Estimate {
   canDecline(): boolean {
     return this.p.status === "sent";
   }
+  canRequestChange(): boolean {
+    return this.p.status === "sent";
+  }
 
   // Draft → sent. Idempotent: re-sending an already-sent estimate is a no-op (same instance).
   send(now: Date): Result<Estimate, ValidationError> {
@@ -183,6 +190,30 @@ export class Estimate {
         status: "declined",
         declinedAt: now,
         declineReason: reason,
+        updatedAt: now,
+      }),
+    );
+  }
+
+  // Customer requests a change to the sent quote. Only valid while the quote is in "sent" state.
+  // Re-requesting overwrites the previous message (latest message wins). Status stays "sent" —
+  // the quote is not moved to a terminal state by a change request.
+  requestChange(message: string, now: Date): Result<Estimate, ValidationError> {
+    if (!this.canRequestChange()) {
+      return err(validation("only a sent estimate can receive a change request", "status"));
+    }
+    const trimmed = message.trim();
+    if (trimmed.length === 0) {
+      return err(validation("a change request message is required", "message"));
+    }
+    if (trimmed.length > MAX_CHANGE_REQUEST_LENGTH) {
+      return err(validation("change request message must be 2000 characters or fewer", "message"));
+    }
+    return ok(
+      new Estimate({
+        ...this.p,
+        changeRequestedAt: now,
+        changeRequest: trimmed,
         updatedAt: now,
       }),
     );

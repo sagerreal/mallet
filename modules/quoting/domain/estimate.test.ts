@@ -46,6 +46,8 @@ const estimate = (overrides: Partial<EstimateProps> = {}): Estimate => {
     acceptedAt: null,
     declinedAt: null,
     declineReason: null,
+    changeRequestedAt: null,
+    changeRequest: null,
     publicToken: null,
     lines: [line()],
     createdAt: new Date("2026-06-01T00:00:00Z"),
@@ -152,5 +154,68 @@ describe("Estimate lifecycle", () => {
     const sent = estimate().send(now);
     if (!isOk(sent)) throw new Error("send failed");
     expect(sent.value.withLines([line()], now).ok).toBe(false);
+  });
+});
+
+describe("Estimate.requestChange", () => {
+  const now = new Date("2026-07-11T10:00:00Z");
+
+  it("rejects a change request on a draft (not sent)", () => {
+    const draft = estimate();
+    const r = draft.requestChange("Please add gutters", now);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+  });
+
+  it("rejects a change request on an accepted estimate", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const accepted = sent.value.accept(now);
+    if (!isOk(accepted)) throw new Error("accept failed");
+    const r = accepted.value.requestChange("add gutters", now);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+  });
+
+  it("rejects an empty message (whitespace only)", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const r = sent.value.requestChange("   ", now);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("message");
+  });
+
+  it("rejects a message over 2000 characters", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const r = sent.value.requestChange("x".repeat(2001), now);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+  });
+
+  it("happy path: sets changeRequestedAt and trimmed changeRequest, returns new immutable instance", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const r = sent.value.requestChange("  Please add a discount  ", now);
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.changeRequestedAt).toEqual(now);
+    expect(r.value.props.changeRequest).toBe("Please add a discount");
+    expect(r.value.props.status).toBe("sent"); // status unchanged
+    // Immutability: sent instance is untouched
+    expect(sent.value.props.changeRequestedAt).toBeNull();
+  });
+
+  it("re-request overwrites the previous message (latest wins)", () => {
+    const sent = estimate().send(now);
+    if (!isOk(sent)) throw new Error("send failed");
+    const r1 = sent.value.requestChange("first request", now);
+    if (!isOk(r1)) throw new Error("first requestChange failed");
+    const later = new Date("2026-07-11T11:00:00Z");
+    const r2 = r1.value.requestChange("updated request", later);
+    expect(isOk(r2)).toBe(true);
+    if (!isOk(r2)) return;
+    expect(r2.value.props.changeRequest).toBe("updated request");
+    expect(r2.value.props.changeRequestedAt).toEqual(later);
   });
 });

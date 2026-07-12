@@ -60,6 +60,8 @@ const draftEstimate = (
     acceptedAt: null,
     declinedAt: null,
     declineReason: null,
+    changeRequestedAt: null,
+    changeRequest: null,
     publicToken: null,
     lines,
     createdAt: now,

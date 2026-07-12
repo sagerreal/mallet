@@ -47,6 +47,8 @@ const estimateDTO = z.object({
   acceptedAt: z.string().nullable(),
   declinedAt: z.string().nullable(),
   declineReason: z.string().nullable(),
+  changeRequestedAt: z.string().nullable(),
+  changeRequest: z.string().nullable(),
   // The unguessable public_token generated at draft time. Exposed here so the send screen
   // can construct the customer-facing link /q/<token>. Never exposed to end-customers via
   // this authed endpoint — they receive only the link, not the ability to enumerate tokens.
@@ -66,6 +68,7 @@ const estimateSummaryDTO = z.object({
   // Share-link token — carried on summaries so list-hydrated estimates can be
   // sent by text/email from the estimate modal (the link is /q/<token>).
   publicToken: z.string().nullable(),
+  changeRequestedAt: z.string().nullable(),
 });
 
 const lineInput = z.object({
@@ -147,6 +150,8 @@ const toEstimateDTO = (estimate: Estimate) => {
     acceptedAt: p.acceptedAt?.toISOString() ?? null,
     declinedAt: p.declinedAt?.toISOString() ?? null,
     declineReason: p.declineReason,
+    changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
+    changeRequest: p.changeRequest ?? null,
     publicToken: p.publicToken ?? null,
     createdAt: p.createdAt.toISOString(),
   };
@@ -163,6 +168,7 @@ const toSummaryDTO = (estimate: Estimate) => {
     total: money(estimate.total()),
     createdAt: p.createdAt.toISOString(),
     publicToken: p.publicToken ?? null,
+    changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
   };
 };
 

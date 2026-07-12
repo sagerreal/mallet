@@ -359,6 +359,15 @@ export function EstimateModalContent() {
         </div>
       )}
 
+      {e.status === "sent" && e.changeRequestedAt && (
+        <div className="reqcard" style={{ marginTop: 10 }}>
+          <span className="muted" style={{ fontSize: 11.5, display: "block", marginBottom: 3 }}>Change requested</span>
+          {e.changeRequest
+            ? <span>&ldquo;{e.changeRequest}&rdquo;</span>
+            : <span className="muted">Message loading…</span>
+          }
+        </div>
+      )}
       {e.status === "sent" && <FollowUpTrail e={e} />}
 
       {(e.status === "draft" || e.status === "sent") && (

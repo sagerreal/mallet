@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
-import { getPublicQuote, acceptPublicQuote, declinePublicQuote } from "@/modules/quoting/app/public-quote";
+import { getPublicQuote, acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
 import type { Estimate } from "@/modules/quoting/domain/estimate";
 
 // Public, unauthenticated route handlers for the customer-facing quote page.
@@ -19,8 +19,9 @@ export const dynamic = "force-dynamic";
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
 
 const postBodySchema = z.object({
-  action: z.enum(["accept", "decline"]),
+  action: z.enum(["accept", "decline", "request_change"]),
   reason: z.string().optional(),
+  message: z.string().optional(),
 });
 
 // --- Serialisation helpers -------------------------------------------------
@@ -58,6 +59,7 @@ const estimateToJson = (estimate: Estimate) => {
     acceptedAt: p.acceptedAt?.toISOString() ?? null,
     declinedAt: p.declinedAt?.toISOString() ?? null,
     declineReason: p.declineReason,
+    changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
     createdAt: p.createdAt.toISOString(),
   };
 };
@@ -119,13 +121,23 @@ export async function POST(
     );
   }
 
-  const { action, reason } = parsed.data;
+  const { action, reason, message } = parsed.data;
 
   try {
-    const estimate =
-      action === "accept"
-        ? await acceptPublicQuote(token)
-        : await declinePublicQuote(token, reason);
+    let estimate;
+
+    if (action === "accept") {
+      estimate = await acceptPublicQuote(token);
+    } else if (action === "decline") {
+      estimate = await declinePublicQuote(token, reason);
+    } else {
+      // action === "request_change"
+      const msg = (message ?? "").trim();
+      if (!msg) {
+        return NextResponse.json({ error: "message is required" }, { status: 400 });
+      }
+      estimate = await requestChangePublicQuote(token, msg);
+    }
 
     if (!estimate) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
