@@ -7,7 +7,7 @@ drift — grep the label.
 ## Tier 1 — dead controls (visible, clickable, do nothing)
 
 Settings (`app/(office)/settings/page.tsx`):
-- [ ] "Full demo — new customer to paid" + "AI Front Desk" guided-demo buttons (~L71, 74)
+- [x] "Full demo — new customer to paid" + "AI Front Desk" guided-demo buttons — REMOVED (Guided demos card deleted)
 - [ ] "Forward your existing number" / "Port your number in" (~L522, 524)
 - [ ] "Connect" ×4 — Angi, Thumbtack, Google LSA, Yelp marketplaces (~L539)
 - [ ] "Import from QuickBooks" / "Google Contacts" / "Upload a spreadsheet" (~L547–549)
