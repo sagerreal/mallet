@@ -8,6 +8,7 @@ import {
   asEstimateId,
   asUserId,
   asJobId,
+  asVisitId,
   zeroMoney,
   money,
   toPage,
@@ -19,7 +20,7 @@ import {
 } from "@mallet/shared/types";
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
-import { Job } from "../domain/job";
+import { Job, JobVisit } from "../domain/job";
 import { DrizzleJobRepository } from "./drizzle-job-repository";
 
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
@@ -29,7 +30,27 @@ interface JobOverrides {
   sourceEstimateId?: EstimateId | null;
   assigneeUserId?: UserId | null;
   num?: string;
+  visits?: readonly JobVisit[];
 }
+
+// Builds an unplaced default-length visit (mirrors the one CreateJobFromEstimateUseCase seeds).
+const makeVisit = (position = 1, durationMinutes = 120): JobVisit => {
+  const r = JobVisit.create({
+    id: asVisitId(randomUUID()),
+    assigneeUserId: null,
+    scheduledDate: null,
+    scheduledStart: null,
+    scheduledEnd: null,
+    durationMinutes,
+    status: "pending",
+    startedAt: null,
+    completedAt: null,
+    notes: null,
+    position,
+  });
+  if (!isOk(r)) throw new Error(r.error.message);
+  return r.value;
+};
 
 interface ManualJobOverrides {
   num: string;
@@ -56,7 +77,7 @@ const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
     cancelReason: null,
     total: zeroMoney,
     notes: null,
-    visits: [],
+    visits: o.visits ?? [],
     createdAt: now,
     updatedAt: now,
   });
@@ -222,6 +243,67 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
       rejected = true;
     }
     expect(rejected).toBe(true);
+  });
+
+  it("insertForEstimate persists the aggregate's visits alongside the header", async () => {
+    const orgA = asOrgId(orgAId);
+    const [est] = await admin<{ id: string }[]>`
+      insert into estimates (org_id, num, lead_id, status)
+      values (${orgAId}, 'EST-A-VISIT', ${leadAId}, 'accepted') returning id`;
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const job = draftJob(orgA, asLeadId(leadAId), {
+        sourceEstimateId: asEstimateId(est!.id),
+        num: await repo.nextNumber(),
+        visits: [makeVisit()],
+      });
+      const inserted = await repo.insertForEstimate(job);
+      const back = await repo.findById(job.props.id);
+      return { inserted, visits: back?.props.visits ?? [] };
+    });
+    expect(result.inserted).toBe(true);
+    expect(result.visits).toHaveLength(1);
+    expect(result.visits[0]!.props.durationMinutes).toBe(120);
+    expect(result.visits[0]!.props.position).toBe(1);
+    expect(result.visits[0]!.props.status).toBe("pending");
+  });
+
+  it("insertForEstimate that loses the conflict inserts no visits", async () => {
+    const orgA = asOrgId(orgAId);
+    const [est] = await admin<{ id: string }[]>`
+      insert into estimates (org_id, num, lead_id, status)
+      values (${orgAId}, 'EST-A-RACE', ${leadAId}, 'accepted') returning id`;
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const src = asEstimateId(est!.id);
+      const winner = draftJob(orgA, asLeadId(leadAId), {
+        sourceEstimateId: src,
+        num: await repo.nextNumber(),
+        visits: [makeVisit()],
+      });
+      const won = await repo.insertForEstimate(winner);
+      const loser = draftJob(orgA, asLeadId(leadAId), {
+        sourceEstimateId: src,
+        num: await repo.nextNumber(),
+        visits: [makeVisit()],
+      });
+      const lost = await repo.insertForEstimate(loser);
+      const raced = await repo.findBySourceEstimate(src);
+      return {
+        won,
+        lost,
+        winnerId: winner.props.id,
+        winnerVisitId: winner.props.visits[0]!.props.id,
+        racedId: raced?.props.id,
+        racedVisits: raced?.props.visits ?? [],
+      };
+    });
+    expect(result.won).toBe(true);
+    expect(result.lost).toBe(false);
+    expect(result.racedId).toBe(result.winnerId);
+    // Only the winner's visit exists — the losing insert must not attach a phantom visit.
+    expect(result.racedVisits).toHaveLength(1);
+    expect(result.racedVisits[0]!.props.id).toBe(result.winnerVisitId);
   });
 
   it("persists svc on insertManual and reads it back", async () => {

@@ -119,8 +119,16 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     // jobSummaryDTO does not expose sourceEstimateId directly, but we can verify
     // the job id by cross-referencing with the full DTO.
     const jobId = accepted.job!.id;
+    // The auto-created job starts with ONE unplaced default-length (2h) visit so the job
+    // modal always shows an editable Length row and the schedule tray's "2h" is real data.
+    expect(accepted.job!.visits).toHaveLength(1);
+    expect(accepted.job!.visits[0]!.durationMinutes).toBe(120);
     const fullJob = await caller.v1.jobs.get({ jobId });
     expect(fullJob.sourceEstimateId).toBe(drafted.id);
+    // Persisted, not a phantom: the visit survives a re-fetch from the DB (insertForEstimate
+    // must write job_visits, or the next hydrator sweep would remove it).
+    expect(fullJob.visits).toHaveLength(1);
+    expect(fullJob.visits[0]!.durationMinutes).toBe(120);
 
     // A job should exist for this lead — use listByLead since jobSummaryDTO lacks sourceEstimateId.
     // Then fetch the full job to verify sourceEstimateId.

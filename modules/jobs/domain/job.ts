@@ -41,6 +41,10 @@ const SVC_MAX_LENGTH = 60;
 
 const MAX_VISIT_DURATION_MINUTES = 24 * 60;
 
+// Default length (2h) seeded onto the single unplaced visit of a quote-created job, so the
+// job modal always has an editable Length row and the schedule tray shows real data.
+export const DEFAULT_VISIT_DURATION_MINUTES = 120;
+
 export interface JobVisitProps {
   readonly id: VisitId;
   readonly assigneeUserId: UserId | null;

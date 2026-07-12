@@ -1,7 +1,17 @@
 import type { OrgId, EstimateId, Result, AppError, Clock } from "@mallet/shared/types";
-import { asJobId, money, zeroMoney, notFound, conflict, ok, err, isOk } from "@mallet/shared/types";
+import {
+  asJobId,
+  asVisitId,
+  money,
+  zeroMoney,
+  notFound,
+  conflict,
+  ok,
+  err,
+  isOk,
+} from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
-import { Job } from "../domain/job";
+import { Job, JobVisit, DEFAULT_VISIT_DURATION_MINUTES } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
 import type { EstimateReader } from "../domain/estimate-reader";
 
@@ -35,6 +45,24 @@ export class CreateJobFromEstimateUseCase {
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
     const total = estimate.totalCents > 0 ? money(estimate.totalCents) : zeroMoney;
+
+    // Seed ONE unplaced default-length visit so the job modal always shows an editable
+    // Length row and the schedule tray's "2h" reflects persisted data, not a display fallback.
+    const visit = JobVisit.create({
+      id: asVisitId(this.ids.newId()),
+      assigneeUserId: null,
+      scheduledDate: null,
+      scheduledStart: null,
+      scheduledEnd: null,
+      durationMinutes: DEFAULT_VISIT_DURATION_MINUTES,
+      status: "pending",
+      startedAt: null,
+      completedAt: null,
+      notes: null,
+      position: 1,
+    });
+    if (!isOk(visit)) return visit;
+
     const job = Job.create({
       id: asJobId(this.ids.newId()),
       orgId: cmd.orgId,
@@ -53,7 +81,7 @@ export class CreateJobFromEstimateUseCase {
       cancelReason: null,
       total,
       notes: null,
-      visits: [],
+      visits: [visit.value],
       createdAt: now,
       updatedAt: now,
     });

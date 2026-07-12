@@ -142,7 +142,13 @@ export class DrizzleJobRepository implements JobRepository {
         where: sql`source_estimate_id is not null and deleted_at is null`,
       })
       .returning({ id: jobs.id });
-    return inserted.length > 0;
+    if (inserted.length === 0) return false; // lost the race — the winner is re-fetched with its own visits
+    // Persist the aggregate's visits in the same savepoint; without this the caller's seeded
+    // visit would be a phantom that the next hydrator sweep removes.
+    for (const visit of p.visits) {
+      await this.upsertVisit(p.id, p.orgId, visit, p.updatedAt);
+    }
+    return true;
   }
 
   async findById(id: JobId): Promise<Job | null> {

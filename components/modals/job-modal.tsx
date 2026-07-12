@@ -941,7 +941,7 @@ export function JobModalContent() {
       )}
 
       <button className="btn sm" onClick={() => addVisit(job.id)}>
-        + Add a visit
+        {visits.length ? "+ Add a visit" : "+ Add a visit — set the length"}
       </button>
 
       {/* 11. Note feed */}
