@@ -16,17 +16,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import type { Job } from "@/lib/store/types";
 import { AddressInput } from "@/components/ui/address-input";
-
-const SOURCES = [
-  "Google",
-  "Referral",
-  "Nextdoor / FB",
-  "Repeat customer",
-  "Yard sign",
-  "Angi",
-  "Thumbtack",
-  "Yelp",
-] as const;
+import { DEFAULT_SOURCES, mergeSources } from "@/features/customers/merge-sources";
 
 type VisitPurpose = "job" | "look" | null;
 
@@ -37,6 +27,9 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const addJob = useAppStore((s) => s.addJob);
   const companies = useAppStore((s) => s.companies);
   const addCompany = useAppStore((s) => s.addCompany);
+  const storeSources = useAppStore((s) => s.sources);
+  const addSource = useAppStore((s) => s.addSource);
+  const mergedSources = mergeSources(DEFAULT_SOURCES, storeSources);
 
   const utils = api.useUtils();
   const createMutation = api.v1.customers.create.useMutation({
@@ -263,8 +256,13 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
   function commitNewSource() {
     const val = newSourceValue.trim().slice(0, 100);
-    if (val) selectSource(val);
-    else { setShowAddSource(false); setNewSourceValue(""); }
+    if (val) {
+      addSource(val);
+      selectSource(val);
+    } else {
+      setShowAddSource(false);
+      setNewSourceValue("");
+    }
   }
 
   return (
@@ -356,15 +354,15 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           </button>
           {sourceOpen && (
             <div className="qa-srclist">
-              {SOURCES.map((s) => (
+              {mergedSources.map((s) => (
                 <button
-                  key={s}
+                  key={s.label}
                   type="button"
-                  className={`qa-srcopt${source === s ? " on" : ""}`}
-                  onClick={() => selectSource(s)}
+                  className={`qa-srcopt${source === s.label ? " on" : ""}`}
+                  onClick={() => selectSource(s.label)}
                 >
-                  <span>{s}</span>
-                  {source === s ? <span className="qa-srcok">✓</span> : null}
+                  <span>{s.label}</span>
+                  {source === s.label ? <span className="qa-srcok">✓</span> : null}
                 </button>
               ))}
               {showAddSource ? (
