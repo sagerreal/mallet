@@ -584,10 +584,10 @@ function SecPricing() {
   const addLaborRate = useAppStore((s) => s.addLaborRate);
   const updateLaborRate = useAppStore((s) => s.updateLaborRate);
   const removeLaborRate = useAppStore((s) => s.removeLaborRate);
-  const pricebook = useAppStore((s) => s.pricebook);
-  const addPricebookItem = useAppStore((s) => s.addPricebookItem);
-  const updatePricebookItem = useAppStore((s) => s.updatePricebookItem);
-  const removePricebookItem = useAppStore((s) => s.removePricebookItem);
+  const pricebook = useAppStore((s) => s.services);
+  const addService = useAppStore((s) => s.addService);
+  const updateService = useAppStore((s) => s.updateService);
+  const archiveService = useAppStore((s) => s.archiveService);
   const markup = useAppStore((s) => s.markup);
   const setMarkup = useAppStore((s) => s.setMarkup);
   const terms = useAppStore((s) => s.terms);
@@ -609,7 +609,7 @@ function SecPricing() {
   }
 
   function handleAddPb() {
-    addPricebookItem(pbName, Number(pbRate), Number(pbCost));
+    void addService({ name: pbName, unitPrice: Number(pbRate) || 0, cost: Number(pbCost) || 0 });
     setPbName("");
     setPbRate("");
     setPbCost("");
@@ -672,25 +672,25 @@ function SecPricing() {
         <div>
           {pricebook.map((p) => (
             <div key={p.id} className="stage-row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <input type="text" defaultValue={p.label}
-                onChange={(e) => updatePricebookItem(p.id, "label", e.target.value)}
+              <input type="text" defaultValue={p.name}
+                onChange={(e) => updateService(p.id, { name: e.target.value })}
                 style={{ flex: 1, minWidth: 150, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
               <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <span className="muted">$</span>
                 <input type="number" defaultValue={p.unitPrice}
-                  onChange={(e) => updatePricebookItem(p.id, "unitPrice", e.target.value)}
+                  onChange={(e) => updateService(p.id, { unitPrice: Math.max(0, Number(e.target.value) || 0) })}
                   style={{ width: 78, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <span className="muted" style={{ fontSize: 11 }}>cost</span>
                 <input type="number" defaultValue={p.cost}
-                  onChange={(e) => updatePricebookItem(p.id, "cost", e.target.value)}
+                  onChange={(e) => updateService(p.id, { cost: Math.max(0, Number(e.target.value) || 0) })}
                   style={{ width: 64, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
               </span>
               <span className="muted" style={{ fontSize: "11.5px", minWidth: 62, textAlign: "right" }}>
                 {p.cost ? `${pbMarginPct(p)}% margin` : ""}
               </span>
-              <button className="btn sm ghost" onClick={() => removePricebookItem(p.id)}>✕</button>
+              <button className="btn sm ghost" onClick={() => archiveService(p.id)}>✕</button>
             </div>
           ))}
         </div>
@@ -708,7 +708,7 @@ function SecPricing() {
           <button className="btn ghost sm" onClick={() => {}}>Upload price book</button>
         </div>
         <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
-          Enter a cost and the price pre-fills at your default markup. Techs never see cost or margin.
+          Techs never see cost or margin.
         </p>
       </FoldCard>
 

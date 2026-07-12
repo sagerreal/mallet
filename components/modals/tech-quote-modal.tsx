@@ -13,7 +13,7 @@
  *       tqSigInit) — commits the chosen tier + approvedOnSite on accept.
  *
  * All builder state is LOCAL React state (the prototype's global state.tq). The
- * store is read via raw selectors (jobs / leads / pricebook / laborRates, never
+ * store is read via raw selectors (jobs / leads / services / laborRates, never
  * derived in the selector); the only commit is updateJob at sign time.
  */
 
@@ -22,8 +22,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { JobLine } from "@/lib/store/types";
-import type { PbItem, LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
+import type { JobLine, Service } from "@/lib/store/types";
+import type { LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
 import {
   type AddSub,
   type BuildLine,
@@ -224,12 +224,15 @@ export function TechQuoteModalContent() {
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const updateJob = useAppStore((s) => s.updateJob);
-  const pricebookRaw = useAppStore((s) => s.pricebook);
+  const servicesRaw = useAppStore((s) => s.services);
   const laborRatesRaw = useAppStore((s) => s.laborRates);
 
   const pricebook: PricebookItem[] = useMemo(
-    () => pricebookRaw.map((p: PbItem) => ({ d: p.label, r: p.unitPrice, c: p.cost })),
-    [pricebookRaw],
+    () =>
+      [...servicesRaw]
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+        .map((svc: Service) => ({ d: svc.name, r: svc.unitPrice, c: svc.cost })),
+    [servicesRaw],
   );
   const laborRates: LaborRate[] = useMemo(
     () => laborRatesRaw.map((r: StoreLaborRate) => ({ name: r.name, rate: r.rate })),

@@ -201,6 +201,33 @@ export interface Checklist {
   items: ChecklistItem[];
 }
 
+// ---- Pricebook (services + categories) -------------------------------------
+// Dollars in the store; the DB/domain/DTOs carry integer cents (unitPriceCents/
+// costCents) — conversion lives only in lib/store/pricebook-mapper.ts.
+
+export interface Service {
+  id: string;
+  categoryId: string | null;
+  code: string | null;
+  name: string;
+  unitPrice: number; // dollars
+  cost: number; // dollars
+  laborHours: number | null;
+  taxable: boolean;
+  warrantyText: string | null;
+  imageUrl: string | null;
+  isAddon: boolean;
+  active: boolean;
+  position: number;
+}
+
+export interface Category {
+  id: string;
+  parentId: string | null;
+  name: string;
+  sortOrder: number;
+}
+
 export interface Job {
   id: string;
   leadId: string;

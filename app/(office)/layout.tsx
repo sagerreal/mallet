@@ -17,6 +17,7 @@ import { TimesheetsHydrator } from "@/features/timesheets/timesheets-hydrator";
 import { CompaniesHydrator } from "@/features/customers/companies-hydrator";
 import { ChecklistsHydrator } from "@/features/checklists/checklists-hydrator";
 import { SettingsHydrator } from "@/features/settings/settings-hydrator";
+import { PricebookHydrator } from "@/features/pricebook/pricebook-hydrator";
 import { BrandHydrator } from "@/features/settings/brand-hydrator";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
       <CompaniesHydrator />
       <ChecklistsHydrator />
       <SettingsHydrator />
+      <PricebookHydrator />
       <BrandHydrator />
     </div>
   );

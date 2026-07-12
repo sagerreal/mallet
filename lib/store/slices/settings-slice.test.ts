@@ -19,21 +19,6 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockCreatePb = vi.fn().mockResolvedValue({
-  id: "srv-pb",
-  label: "Camera",
-  unitPriceCents: 28500,
-  costCents: 0,
-  position: 0,
-});
-const mockUpdatePb = vi.fn().mockResolvedValue({
-  id: "srv-pb",
-  label: "Camera",
-  unitPriceCents: 30000,
-  costCents: 0,
-  position: 0,
-});
-const mockRemovePb = vi.fn().mockResolvedValue({ ok: true });
 const mockUpdateConfig = vi.fn().mockResolvedValue({ markupBps: 4200 });
 const mockCreateSource = vi.fn().mockResolvedValue({ id: "srv-src", label: "Home show", position: 0 });
 const mockRemoveSource = vi.fn().mockResolvedValue({ ok: true });
@@ -48,11 +33,6 @@ vi.mock("@/lib/trpc/vanilla", () => ({
     v1: {
       settings: {
         updateConfig: { mutate: (...a: unknown[]) => mockUpdateConfig(...a) },
-        pricebook: {
-          create: { mutate: (...a: unknown[]) => mockCreatePb(...a) },
-          update: { mutate: (...a: unknown[]) => mockUpdatePb(...a) },
-          remove: { mutate: (...a: unknown[]) => mockRemovePb(...a) },
-        },
         laborRates: {
           create: { mutate: (...a: unknown[]) => mockCreateLabor(...a) },
           update: { mutate: (...a: unknown[]) => mockUpdateLabor(...a) },
@@ -102,77 +82,6 @@ function makeStore() {
 describe("settings-slice persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  // --- pricebook -------------------------------------------------------------
-
-  it("addPricebookItem optimistically appends then reconciles the server id", async () => {
-    const store = makeStore();
-    store.get().addPricebookItem("Camera", 285, 0);
-
-    // Optimistic row present immediately (unitPrice is cents in server, dollars in store)
-    expect(store.get().pricebook.some((p) => p.label === "Camera")).toBe(true);
-
-    // Let the promise resolve
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(mockCreatePb).toHaveBeenCalledTimes(1);
-
-    // Mutation payload carries the label and cents
-    const arg = mockCreatePb.mock.calls[0]![0] as {
-      label: string;
-      unitPriceCents: number;
-    };
-    expect(arg.label).toBe("Camera");
-    expect(arg.unitPriceCents).toBe(28500); // 285 * 100
-
-    // After reconciliation the row carries the server id
-    expect(store.get().pricebook.some((p) => p.id === "srv-pb")).toBe(true);
-  });
-
-  it("addPricebookItem dedupes by label (case-insensitive)", () => {
-    const store = makeStore();
-    store.get().addPricebookItem("Camera", 285, 0);
-    const before = store.get().pricebook.length;
-    store.get().addPricebookItem("camera", 285, 0); // duplicate
-    expect(store.get().pricebook).toHaveLength(before);
-    expect(mockCreatePb).toHaveBeenCalledTimes(1);
-  });
-
-  it("removePricebookItem rolls back on rejection", async () => {
-    mockRemovePb.mockRejectedValueOnce(new Error("boom"));
-    const store = makeStore();
-    // Seed a pricebook item with a string id
-    store.set({ pricebook: [{ id: "p1", label: "Camera", unitPrice: 285, cost: 0 }] });
-    store.get().removePricebookItem("p1");
-
-    // Optimistic removal
-    expect(store.get().pricebook).toHaveLength(0);
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    // Rolled back
-    expect(store.get().pricebook.some((p) => p.id === "p1")).toBe(true);
-  });
-
-  it("updatePricebookItem rolls back on rejection", async () => {
-    mockUpdatePb.mockRejectedValueOnce(new Error("fail"));
-    const store = makeStore();
-    store.set({
-      pricebook: [{ id: "p1", label: "Old label", unitPrice: 100, cost: 0 }],
-    });
-    store.get().updatePricebookItem("p1", "label", "New label");
-
-    // Optimistic update
-    expect(store.get().pricebook.find((p) => p.id === "p1")?.label).toBe("New label");
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    // Rolled back
-    expect(store.get().pricebook.find((p) => p.id === "p1")?.label).toBe("Old label");
   });
 
   // --- setMarkup -------------------------------------------------------------
@@ -326,7 +235,6 @@ describe("settings-slice persistence", () => {
   it("setSettings replaces the whole slice state", () => {
     const store = makeStore();
     const snap = {
-      pricebook: [{ id: "p99", label: "Item", unitPrice: 100, cost: 0 }],
       laborRates: [{ id: "lr99", name: "Flat rate", rate: 200 }],
       terms: [{ id: "tm99", t: "Warranty", body: "12mo" }],
       sources: [{ id: "src99", label: "Google" }],
@@ -390,11 +298,6 @@ describe("settings-slice persistence", () => {
   });
 
   // --- collections start empty -----------------------------------------------
-
-  it("pricebook starts empty (no SEED_* data)", () => {
-    const store = makeStore();
-    expect(store.get().pricebook).toHaveLength(0);
-  });
 
   it("laborRates starts empty (no SEED_* data)", () => {
     const store = makeStore();
