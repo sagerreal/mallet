@@ -20,6 +20,7 @@ export * from "./messages";
 export * from "./checklists";
 export * from "./job-execution";
 export * from "./org-settings";
+export * from "./pricebook-categories";
 export * from "./pricebook-items";
 export * from "./labor-rates";
 export * from "./job-terms";
