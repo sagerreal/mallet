@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import type { LlmClient } from "../domain/llm-client";
-import { LlmError } from "../domain/llm-client";
+import { extractJsonFromText } from "./extract-json";
 
 // ---------------------------------------------------------------------------
 // One-shot LLM-powered estimate drafter.
@@ -68,35 +68,6 @@ const parseSubmitInput = (raw: unknown): SubmitEstimateInput | null => {
 };
 
 /**
- * Attempt to extract a `{lines:[...]}` JSON object from a text string.
- * Looks for the first `{` … `}` balanced span that parses + validates.
- */
-const extractJsonFromText = (text: string): SubmitEstimateInput | null => {
-  // Find all candidate JSON substrings by scanning for `{`.
-  for (let i = 0; i < text.length; i += 1) {
-    if (text[i] !== "{") continue;
-    let depth = 0;
-    let j = i;
-    for (; j < text.length; j += 1) {
-      if (text[j] === "{") depth += 1;
-      else if (text[j] === "}") {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-    if (depth !== 0) continue;
-    try {
-      const candidate: unknown = JSON.parse(text.slice(i, j + 1));
-      const parsed = parseSubmitInput(candidate);
-      if (parsed) return parsed;
-    } catch {
-      // not valid JSON — keep scanning
-    }
-  }
-  return null;
-};
-
-/**
  * Call the LLM once to produce a structured estimate from a plain-English
  * job description. Returns an array of `EstimateLineDraft` (with rateCents).
  * Throws `TRPCError(BAD_GATEWAY)` if the model returns nothing parseable;
@@ -131,7 +102,7 @@ export const draftEstimateLines = async (
   // well-instructed model + a single tool, but handle gracefully).
   for (const block of turn.blocks) {
     if (block.type === "text") {
-      const parsed = extractJsonFromText(block.text);
+      const parsed = extractJsonFromText(block.text, parseSubmitInput);
       if (parsed) return mapLines(parsed);
     }
   }
