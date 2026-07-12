@@ -4,9 +4,14 @@
  * ComposerState lives here in one place; the section components under
  * app/(office)/composer/ receive `state` + an `onUpdate` patcher explicitly.
  * Everything in this file is pure data / pure functions — no React.
+ *
+ * The composer has ONE layout (Customer → The quote → Pricing → Message →
+ * Send) and TWO quote formats: "single" (one line table) and "gbb"
+ * (Good/Better/Best tier panels). Whatever the format, the lines that save /
+ * preview / send are derived at call time via linesForSend() — in GBB that is
+ * always the RECOMMENDED tier's lines, never a stale copy.
  */
 
-import type { SampleEstimateLine } from "@/lib/prototype-sample";
 import type { EstimateLine } from "@/lib/store/types";
 
 // ---- composer line + state types --------------------------------------------
@@ -18,17 +23,40 @@ export interface ComposerLine {
   c?: number;
   opt?: boolean;
   photo?: boolean;
-  tune?: boolean;
-  lc?: boolean;
 }
 
-export type ComposerMode = "builder" | "gbb-prompt" | "gbb-review";
+export type QuoteFormat = "single" | "gbb";
+export type TierKey = "good" | "better" | "best";
+
+/** One Good/Better/Best tier — name/title editable, lines share the line editor. */
+export interface GBBTier {
+  k: TierKey;
+  /** Editable tier name — leads the panel and the send-button label. */
+  name: string;
+  /** Editable one-line summary of what this option covers. */
+  title: string;
+  /** Display-only blurb set by the suggest heuristics ("" when hand-built). */
+  note: string;
+  lines: ComposerLine[];
+}
+
+export interface GBBDraft {
+  /** Exactly one recommended tier — its lines are what the customer receives. */
+  rec: TierKey;
+  opts: GBBTier[];
+}
 
 export interface ComposerState {
   leadId: string | null;
   custQuery: string;
-  mode: ComposerMode;
+  /** Quote format — toggled in the quote-card header, both directions, any time. */
+  format: QuoteFormat;
+  /** Single-format lines. In GBB format the tiers in `gbb` hold the lines. */
   lines: ComposerLine[];
+  /** GBB tiers — kept across format switches so toggling never loses tier edits. */
+  gbb: GBBDraft | null;
+  /** One-line in-flow note describing what the last format switch did. */
+  switchNote: string | null;
   desc: string;
   aiOpen: boolean;
   aiDrafted: boolean;
@@ -39,18 +67,25 @@ export interface ComposerState {
   pricing: { disc: number; dep: number; tax: number };
   validDays: number;
   intro: string;
-  gbb: GBBDraft | null;
-  gbbType?: string;
-  gbbEdit?: "good" | "better" | "best" | null;
   /** Channel for quote delivery. "text" = SMS via Twilio; "email" = Resend. Default: "text". */
   sendChannel: "text" | "email";
+}
+
+export function emptyLine(): ComposerLine {
+  return { d: "", q: 1, r: 0 };
+}
+
+export function cloneLines(lines: ComposerLine[]): ComposerLine[] {
+  return lines.map((l) => ({ ...l }));
 }
 
 export const INITIAL_STATE: ComposerState = {
   leadId: null, // overridden from ?lead= in ComposerPage; else the customer picker shows
   custQuery: "",
-  mode: "builder",
-  lines: [{ d: "", q: 1, r: 0 }],
+  format: "single",
+  lines: [emptyLine()],
+  gbb: null,
+  switchNote: null,
   desc: "",
   aiOpen: false,
   aiDrafted: false,
@@ -61,212 +96,117 @@ export const INITIAL_STATE: ComposerState = {
   pricing: { disc: 0, dep: 0, tax: 0 },
   validDays: 14,
   intro: "",
-  gbb: null,
-  gbbType: undefined,
-  gbbEdit: null,
   sendChannel: "text",
 };
 
-// ---- job-type + draft helpers (mirror the prototype) ------------------------
+// ---- GBB tier helpers --------------------------------------------------------
 
-/** Classify a free-text job description into a seed bucket. */
-export function jobTypeOf(t: string): string {
-  const s = (t || "").toLowerCase();
-  if (/water heater|tankless|no hot water|pilot|heater/.test(s)) return "water heater";
-  if (/drain|clog|jet|sewer|camera|backup/.test(s)) return "drain";
-  if (/toilet/.test(s)) return "toilet";
-  return "general";
-}
-
-// ---- GBB seed data (mirrors prototype's GBB_SEEDS) --------------------------
-
-/** A GBB tier line — extends the sample line with the AI-confidence flag. */
-export interface GBBLine extends SampleEstimateLine {
-  lc?: boolean;
-}
-
-export interface GBBTier {
-  k: "good" | "better" | "best";
-  name: string;
-  title: string;
-  note: string;
-  lines: GBBLine[];
-}
-
-export interface GBBDraft {
-  rec: "good" | "better" | "best";
-  opts: GBBTier[];
-}
-
-const WATER_HEATER_GBB: GBBDraft = {
-  rec: "better",
-  opts: [
-    {
-      k: "good",
-      name: "Good",
-      title: "Like-for-like swap",
-      note: "Same size, same spot — back in hot water today.",
-      lines: [
-        { d: "40-gal gas water heater (standard)", q: 1, r: 1495 },
-        { d: "Install & haul away", q: 1, r: 585 },
-        { d: "City permit", q: 1, r: 110 },
-      ],
-    },
-    {
-      k: "better",
-      name: "Better",
-      title: "Replace + bring to code",
-      note: "What most neighbors pick — code-safe, warrantied, done right.",
-      lines: [
-        { d: "40-gal gas water heater (Rheem Performance)", q: 1, r: 1650 },
-        { d: "Expansion tank + seismic straps (code)", q: 1, r: 385, tune: true },
-        { d: "Drip pan + leak alarm", q: 1, r: 145, tune: true },
-        { d: "Install, test & haul away", q: 1, r: 585 },
-        { d: "City permit", q: 1, r: 110 },
-      ],
-    },
-    {
-      k: "best",
-      name: "Best",
-      title: "Tankless upgrade",
-      note: "Endless hot water, ~40% lower gas use, twice the lifespan.",
-      lines: [
-        { d: "Tankless unit (Navien NPE-240)", q: 1, r: 2890 },
-        { d: "Venting + gas line upsize", q: 1, r: 1160 },
-        { d: "Recirc pump — instant hot at the tap", q: 1, r: 420, tune: true },
-        { d: "Install, descale kit & startup", q: 1, r: 690 },
-        { d: "City permit", q: 1, r: 110 },
-      ],
-    },
-  ],
-};
-
-const DRAIN_GBB: GBBDraft = {
-  rec: "better",
-  opts: [
-    {
-      k: "good",
-      name: "Good",
-      title: "Clear the clog",
-      note: "Cable the line, water flowing again today.",
-      lines: [{ d: "Cable / snake the line", q: 1, r: 295 }],
-    },
-    {
-      k: "better",
-      name: "Better",
-      title: "Clear + see why",
-      note: "Jetting scours the pipe; the camera shows what caused it.",
-      lines: [
-        { d: "Hydro-jet the line", q: 1, r: 450 },
-        { d: "Camera inspection w/ locate", q: 1, r: 285, tune: true },
-      ],
-    },
-    {
-      k: "best",
-      name: "Best",
-      title: "Fix it for good",
-      note: "Adds the cleanout that makes every future clear cheap.",
-      lines: [
-        { d: "Hydro-jet the line", q: 1, r: 450 },
-        { d: "Camera inspection w/ locate", q: 1, r: 285 },
-        { d: "Install exterior cleanout", q: 1, r: 780, tune: true },
-      ],
-    },
-  ],
-};
-
-const TOILET_GBB: GBBDraft = {
-  rec: "better",
-  opts: [
-    {
-      k: "good",
-      name: "Good",
-      title: "Install yours",
-      note: "You buy the toilet, we set it right.",
-      lines: [
-        { d: "Install customer-supplied toilet", q: 1, r: 225 },
-        { d: "Wax-free seal + new bolts", q: 1, r: 45 },
-      ],
-    },
-    {
-      k: "better",
-      name: "Better",
-      title: "Supplied & installed",
-      note: "Toto Drake — the workhorse. Supplied, set, hauled away.",
-      lines: [
-        { d: "Toilet — Toto Drake, supplied & installed", q: 1, r: 460 },
-        { d: "Haul away old fixture", q: 1, r: 45, tune: true },
-      ],
-    },
-    {
-      k: "best",
-      name: "Best",
-      title: "Upgrade + stop future leaks",
-      note: "Comfort-height Toto + the shut-off valves that always fail, replaced now.",
-      lines: [
-        { d: "Toilet — Toto Drake II comfort height, supplied & installed", q: 1, r: 585 },
-        { d: "Replace angle stop + supply line", q: 1, r: 95, tune: true },
-        { d: "Haul away old fixture", q: 1, r: 45 },
-      ],
-    },
-  ],
-};
-
-/** Deep-clone a GBB draft so builder edits never mutate a shared seed. */
-export function cloneGbb(g: GBBDraft): GBBDraft {
+/** Immutably patch one tier of a GBB draft. */
+export function updateTier(
+  gbb: GBBDraft,
+  k: TierKey,
+  patch: Partial<Omit<GBBTier, "k">>
+): GBBDraft {
   return {
-    rec: g.rec,
-    opts: g.opts.map((o) => ({ ...o, lines: o.lines.map((l) => ({ ...l })) })),
+    ...gbb,
+    opts: gbb.opts.map((o) => (o.k === k ? { ...o, ...patch } : o)),
   };
+}
+
+/** The recommended tier when the composer is in GBB format, else null. */
+export function recommendedTier(
+  state: Pick<ComposerState, "format" | "gbb">
+): GBBTier | null {
+  if (state.format !== "gbb" || !state.gbb) return null;
+  const g = state.gbb;
+  return g.opts.find((o) => o.k === g.rec) ?? g.opts[0] ?? null;
 }
 
 /**
- * Pick the seed GBBDraft for a known job type, else build a generic 3-tier
- * draft from the current builder lines (mirrors the prototype's gbbFor()).
+ * The lines that save / preview / send right now — derived at call time.
+ * GBB format: the RECOMMENDED tier's lines (starring a different tier changes
+ * what sends). Single format: the line table.
  */
-export function gbbFor(type: string, baseLines: ComposerLine[]): GBBDraft {
-  if (type === "water heater") return cloneGbb(WATER_HEATER_GBB);
-  if (type === "drain") return cloneGbb(DRAIN_GBB);
-  if (type === "toilet") return cloneGbb(TOILET_GBB);
+export function linesForSend(
+  state: Pick<ComposerState, "format" | "gbb" | "lines">
+): ComposerLine[] {
+  const rec = recommendedTier(state);
+  return rec ? rec.lines : state.lines;
+}
 
-  // Generic fallback — no seed for this type.
-  const filtered: GBBLine[] = baseLines
-    .filter((l) => (l.d ?? "").trim())
-    .map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0, lc: true }));
-  const base: GBBLine[] =
-    filtered.length > 0
-      ? filtered
-      : [{ d: "Labor & materials — as described", q: 1, r: 850, lc: true }];
-  const sum = base.reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
+export function gbbTierTotal(tier: GBBTier): number {
+  return tier.lines.reduce((s, x) => s + (x.q ?? 1) * (x.r ?? 0), 0);
+}
 
-  const good: GBBLine[] = base.map((l) => ({ ...l }));
-  const better: GBBLine[] = [
-    ...base.map((l) => ({ ...l })),
-    {
-      d: "Preventive maintenance & 12-mo protection",
-      q: 1,
-      r: Math.max(89, Math.round((sum * 0.12) / 10) * 10),
-      lc: true,
-      tune: true,
-    },
-  ];
-  const best: GBBLine[] = [
-    {
-      d: "Full replacement / upgrade (scoped on site)",
-      q: 1,
-      r: Math.round((sum * 1.8) / 10) * 10,
-      lc: true,
-    },
-  ];
+// ---- format switching --------------------------------------------------------
+// Both directions, always available, no confirm dialogs. Each switch returns a
+// state patch plus a one-line note (rendered in-flow under the card header).
 
+/**
+ * single → GBB. First switch seeds Good with the current lines (Better & Best
+ * start empty). If tiers already exist from an earlier GBB session, the current
+ * lines go back into the recommended tier (the tier they came from) and the
+ * other tiers keep their edits.
+ */
+export function switchToGbb(state: ComposerState): Partial<ComposerState> {
+  if (state.format === "gbb") return {};
+  const lines = state.lines.length > 0 ? cloneLines(state.lines) : [emptyLine()];
+  if (state.gbb) {
+    const gbb = updateTier(state.gbb, state.gbb.rec, { lines });
+    const recName =
+      gbb.opts.find((o) => o.k === gbb.rec)?.name ?? "the recommended";
+    return {
+      format: "gbb",
+      gbb,
+      switchNote: `Your lines moved into ${recName} — the other tiers kept their edits.`,
+    };
+  }
   return {
-    rec: "better",
-    opts: [
-      { k: "good", name: "Good", title: "The essentials", note: "Covers the job as described.", lines: good },
-      { k: "better", name: "Better", title: "Job + protection", note: "Adds maintenance so it lasts.", lines: better },
-      { k: "best", name: "Best", title: "Full upgrade", note: "Replace / upgrade — scoped on site.", lines: best },
-    ],
+    format: "gbb",
+    gbb: {
+      rec: "good",
+      opts: [
+        { k: "good", name: "Good", title: "", note: "", lines },
+        { k: "better", name: "Better", title: "", note: "", lines: [emptyLine()] },
+        { k: "best", name: "Best", title: "", note: "", lines: [emptyLine()] },
+      ],
+    },
+    switchNote: "Your lines moved into Good — Better & Best start empty.",
   };
+}
+
+/** GBB → single. Keeps the RECOMMENDED tier's lines; tier edits stay in `gbb`. */
+export function switchToSingle(state: ComposerState): Partial<ComposerState> {
+  if (state.format === "single") return {};
+  const rec = recommendedTier(state);
+  const lines =
+    rec && rec.lines.length > 0 ? cloneLines(rec.lines) : [emptyLine()];
+  return {
+    format: "single",
+    lines,
+    switchNote: rec ? `Kept the ${rec.name} option's lines.` : null,
+  };
+}
+
+// ---- AI draft routing --------------------------------------------------------
+
+/**
+ * Apply AI-drafted lines to the right target: the Good tier in GBB format
+ * (the panel copy says so), else the single-format line table.
+ */
+export function applyAiDraftLines(
+  state: ComposerState,
+  lines: ComposerLine[]
+): ComposerState {
+  const drafted = { aiOpen: false, aiDrafted: true };
+  if (state.format === "gbb" && state.gbb) {
+    return {
+      ...state,
+      ...drafted,
+      gbb: updateTier(state.gbb, "good", { lines: cloneLines(lines) }),
+    };
+  }
+  return { ...state, ...drafted, lines: cloneLines(lines) };
 }
 
 // ---- Pricebook items (mirrors prototype seed) -------------------------------
@@ -281,12 +221,6 @@ export const PRICEBOOK = [
   { d: "City permit", r: 110 },
 ];
 
-// ---- GBB tier total ---------------------------------------------------------
-
-export function gbbTierTotal(tier: GBBTier): number {
-  return tier.lines.reduce((s, x) => s + (x.q ?? 1) * (x.r ?? 0), 0);
-}
-
 // ---- Pricing summary label --------------------------------------------------
 
 export function pricingSummary(p: { disc: number; dep: number; tax: number }): string {
@@ -297,7 +231,7 @@ export function pricingSummary(p: { disc: number; dep: number; tax: number }): s
   return parts.join(" · ");
 }
 
-// ---- ComposerLine[] → EstimateLine[] (drop tune/lc; keep d,q,r,c,opt,photo) -
+// ---- ComposerLine[] → EstimateLine[] (keep d,q,r,c,opt,photo) ----------------
 
 export function toEstimateLines(lines: ComposerLine[]): EstimateLine[] {
   return lines.map((l) => {
@@ -319,13 +253,20 @@ export function hasRealLine(lines: ComposerLine[]): boolean {
 /**
  * Why Preview / Save draft / Send are disabled right now — or null when the
  * quote is sendable. Shown inline next to the action row (no silent no-ops).
+ * In GBB format pass the recommended tier's name so the reason names the tier
+ * whose lines would send.
  */
 export function sendGateReason(
   hasLead: boolean,
-  lines: ComposerLine[]
+  lines: ComposerLine[],
+  tierName?: string | null
 ): string | null {
   if (!hasLead) return "Pick a customer first.";
-  if (!hasRealLine(lines)) return "Add at least one line.";
+  if (!hasRealLine(lines)) {
+    return tierName
+      ? `Add at least one line to the ${tierName} option.`
+      : "Add at least one line.";
+  }
   return null;
 }
 

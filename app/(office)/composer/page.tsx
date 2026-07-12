@@ -1,23 +1,23 @@
 "use client";
 
 /**
- * Composer page — pixel-faithful port of the prototype's vComposer().
- * Renders the "New quote" Good · Better · Best composer.
- * Wired to the Zustand app-store (leads + estimates). The markup mirrors the
- * prototype; only the action handlers are live.
- *
- * The page reads top-to-bottom: Customer → The quote → Pricing → Message →
- * Send. The page orchestrates; the sections live in sibling components:
+ * Composer page — "New quote".
+ * Wired to the Zustand app-store (leads + estimates). One layout, read
+ * top-to-bottom: Customer → The quote → Pricing → Message → Send. The quote
+ * card carries the format toggle (single quote ↔ Good/Better/Best); the page
+ * orchestrates, the sections live in sibling components:
  *   composer-state.ts   — ComposerState + pure helpers (single source of truth)
  *   customer-selector   — pick / quick-add the customer
- *   quote-card          — line items, totals, pricebook, AI panel
- *   line-table          — the shared line-editor grid
+ *   quote-card          — format toggle, authoring tools, AI panel, totals
+ *   line-table          — the shared line-editor grid (single + tier panels)
+ *   gbb-tiers           — the Good/Better/Best tier panels
+ *   gbb-suggest         — "Suggest Better & Best from Good" heuristics (not AI)
  *   pricing-card        — discount / deposit / tax
  *   message-card        — intro (leads the send body) + valid days
  *   send-card           — channel, destination, follow-ups, action row
- *   gbb-modes           — Good/Better/Best prompt + review
  *
- * Prototype reference: elas-crm-prototype.html lines 7031–7139.
+ * Whatever the format, the lines that save / preview / send are derived AT
+ * CALL TIME via linesForSend() — in GBB that is the recommended tier's lines.
  *
  * Deferred (intentional no-ops — see inline comments in the components):
  *   - savePbLine(i)      — needs a store pricebook
@@ -32,135 +32,22 @@ import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import {
   INITIAL_STATE,
+  applyAiDraftLines,
   buildQuoteMessageBody,
   hasRealLine,
+  linesForSend,
+  recommendedTier,
   sendGateReason,
   toEstimateLines,
   type ComposerLine,
   type ComposerState,
-  type GBBDraft,
 } from "./composer-state";
+import { suggestFromGood } from "./gbb-suggest";
 import { CustomerSelector } from "./customer-selector";
 import { QuoteCard } from "./quote-card";
 import { PricingCard } from "./pricing-card";
 import { MessageCard } from "./message-card";
 import { SendCard } from "./send-card";
-import { GBBPromptMode, GBBReviewMode } from "./gbb-modes";
-
-// ---- Builder mode (standard single-quote) -----------------------------------
-
-function BuilderMode({
-  state,
-  onUpdate,
-  leads,
-  onSaveDraft,
-  onSend,
-  onPreview,
-  onAiDraft,
-  isDrafting,
-  aiDraftError,
-  isSending,
-  sendError,
-}: {
-  state: ComposerState;
-  onUpdate: (patch: Partial<ComposerState>) => void;
-  leads: Lead[];
-  onSaveDraft: () => void;
-  onSend: () => void;
-  onPreview: () => void;
-  onAiDraft: () => void;
-  isDrafting: boolean;
-  aiDraftError: string | null;
-  isSending: boolean;
-  sendError: string | null;
-}) {
-  const lead: Lead | null =
-    state.leadId != null
-      ? (leads.find((l) => l.id === state.leadId) ?? null)
-      : null;
-
-  // Return to the 3-option review: write current lines back into the edited
-  // tier, then restore the builder to the recommended tier's lines.
-  function backToAll3() {
-    const g = state.gbb;
-    const edited = state.gbbEdit;
-    if (!g || !edited) {
-      onUpdate({ mode: "gbb-review", gbbEdit: null });
-      return;
-    }
-    const nextGbb: GBBDraft = {
-      ...g,
-      opts: g.opts.map((o) =>
-        o.k === edited
-          ? {
-              ...o,
-              lines: state.lines.map((l) => ({
-                d: l.d,
-                q: l.q,
-                r: l.r,
-                ...(l.c != null ? { c: l.c } : {}),
-                ...(l.opt != null ? { opt: l.opt } : {}),
-                ...(l.photo != null ? { photo: l.photo } : {}),
-                ...(l.tune != null ? { tune: l.tune } : {}),
-                ...(l.lc != null ? { lc: l.lc } : {}),
-              })),
-            }
-          : o
-      ),
-    };
-    const rec = nextGbb.opts.find((o) => o.k === nextGbb.rec) ?? nextGbb.opts[0];
-    onUpdate({
-      mode: "gbb-review",
-      gbbEdit: null,
-      gbb: nextGbb,
-      lines: (rec?.lines ?? []).map((l) => ({ ...l })),
-    });
-  }
-
-  return (
-    <>
-      {state.gbbEdit && (
-        <div className="banner">
-          Editing the <b>{state.gbbEdit.toUpperCase()}</b> option — changes save
-          into that tier.{" "}
-          <span className="linklike" onClick={backToAll3}>
-            ← back to all 3
-          </span>
-        </div>
-      )}
-
-      {/* The quote — line items, totals, authoring tools */}
-      <QuoteCard
-        state={state}
-        onUpdate={onUpdate}
-        onAiDraft={onAiDraft}
-        isDrafting={isDrafting}
-        aiDraftError={aiDraftError}
-      />
-
-      {/* Pricing — discount, deposit, tax */}
-      <PricingCard state={state} onUpdate={onUpdate} />
-
-      {/* Message — intro + valid days */}
-      <MessageCard state={state} onUpdate={onUpdate} lead={lead} />
-
-      {/* Send — channel, destination, follow-ups, actions (the last act) */}
-      <SendCard
-        lead={lead}
-        state={state}
-        onUpdate={onUpdate}
-        gateReason={sendGateReason(lead != null, state.lines)}
-        isSending={isSending}
-        sendError={sendError}
-        onPreview={onPreview}
-        onSaveDraft={onSaveDraft}
-        onSend={onSend}
-      />
-    </>
-  );
-}
-
-// ---- Main page --------------------------------------------------------------
 
 export default function ComposerPage() {
   const router = useRouter();
@@ -213,12 +100,8 @@ export default function ComposerPage() {
         // rateCents → dollars (ComposerLine.r is in dollars, e.g. r:170 = $170)
         r: l.rateCents / 100,
       }));
-      setCs((prev) => ({
-        ...prev,
-        lines,
-        aiOpen: false,
-        aiDrafted: true,
-      }));
+      // Routes to the right target: the Good tier in GBB format, else the table.
+      setCs((prev) => applyAiDraftLines(prev, lines));
       setAiDraftError(null);
     },
     onError: (err) => {
@@ -246,6 +129,24 @@ export default function ComposerPage() {
   const selectedLead: Lead | null =
     cs.leadId != null ? (leads.find((l) => l.id === cs.leadId) ?? null) : null;
 
+  // "Suggest Better & Best from Good" — pure heuristics (gbb-suggest.ts), NOT
+  // AI: keeps the user's Good tier verbatim and fills Better/Best from the
+  // trade seed matching the job wording (Good's lines + the AI-describe text +
+  // the lead's job), else the generic fallback derived from Good's lines.
+  function suggestBetterBest() {
+    setCs((prev) => {
+      if (prev.format !== "gbb" || !prev.gbb) return prev;
+      const good = prev.gbb.opts.find((o) => o.k === "good") ?? prev.gbb.opts[0];
+      if (!good) return prev;
+      const jobText = [
+        good.lines.map((l) => l.d).join(" "),
+        prev.desc,
+        selectedLead?.job ?? "",
+      ].join(" ");
+      return { ...prev, gbb: suggestFromGood(good, jobText) };
+    });
+  }
+
   // Default the send channel from the customer's contact info, once per lead:
   // text when they have a mobile on file (or nothing yet), email when email is
   // all we have. A manual toggle after that sticks until the customer changes.
@@ -265,9 +166,11 @@ export default function ComposerPage() {
   // --- persistence helpers --------------------------------------------------
   // The action buttons disable (with the reason inline) while these guards
   // fail — the early returns are defense-in-depth, not the primary gate.
+  // ALL of them derive the lines at call time (recommended tier in GBB).
 
   function saveDraftComposer() {
-    if (!hasRealLine(cs.lines)) return;
+    const sendLines = linesForSend(cs);
+    if (!hasRealLine(sendLines)) return;
     // Draft requires a lead because addEstimate needs a real leadId.
     if (!selectedLead) return;
     addEstimate({
@@ -277,7 +180,7 @@ export default function ComposerPage() {
       age: 0,
       viewed: false,
       fu: { on: cs.fuOn, stage: 0 },
-      lines: toEstimateLines(cs.lines),
+      lines: toEstimateLines(sendLines),
       pricing: { ...cs.pricing },
       validDays: cs.validDays,
     });
@@ -287,7 +190,8 @@ export default function ComposerPage() {
   }
 
   // The v1.quoting.draft payload built from the current composer state — shared by the
-  // send flow and the preview flow so they draft an identical estimate.
+  // send flow and the preview flow so they draft an identical estimate. Lines come
+  // from linesForSend so a GBB quote always drafts the RECOMMENDED tier.
   function buildDraftPayload(lead: NonNullable<typeof selectedLead>) {
     return {
       leadId: lead.id,
@@ -296,22 +200,22 @@ export default function ComposerPage() {
       taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
       depBps: Math.round((cs.pricing.dep ?? 0) * 100),
       validDays: cs.validDays,
-      lines: cs.lines
+      lines: linesForSend(cs)
         .filter((l) => (l.d ?? "").trim())
         .map((l) => ({
           description: l.d,
           quantity: l.q ?? 1,
           rateCents: Math.round((l.r ?? 0) * 100),
-          costCents: Math.round(((l as ComposerLine).c ?? 0) * 100),
-          isOptional: (l as ComposerLine).opt ?? false,
-          needsPhoto: (l as ComposerLine).photo ?? false,
+          costCents: Math.round((l.c ?? 0) * 100),
+          isOptional: l.opt ?? false,
+          needsPhoto: l.photo ?? false,
         })),
     };
   }
 
   async function sendComposer() {
     if (!selectedLead) return; // send requires a lead
-    if (!hasRealLine(cs.lines)) return;
+    if (!hasRealLine(linesForSend(cs))) return;
 
     setSendError(null);
     setIsSending(true);
@@ -429,9 +333,10 @@ export default function ComposerPage() {
 
   // Preview: persist a draft to mint a public token, then open the customer-facing
   // quote page (/q/<token>) in a new tab — the exact view the customer will see.
+  // In GBB format that draft is the recommended tier (the Preview button says so).
   async function previewComposer() {
     if (!selectedLead) return;
-    if (!hasRealLine(cs.lines)) return;
+    if (!hasRealLine(linesForSend(cs))) return;
     setSendError(null);
     try {
       const payload = buildDraftPayload(selectedLead);
@@ -490,16 +395,6 @@ export default function ComposerPage() {
     }
   }
 
-  function editTier(k: "good" | "better" | "best") {
-    const tier = cs.gbb?.opts.find((o) => o.k === k);
-    if (!tier) return;
-    update({
-      mode: "builder",
-      gbbEdit: k,
-      lines: tier.lines.map((l) => ({ ...l })),
-    });
-  }
-
   return (
     <div>
       <h1>New quote</h1>
@@ -517,33 +412,38 @@ export default function ComposerPage() {
         </p>
       )}
 
-      {cs.mode === "gbb-prompt" && (
-        <GBBPromptMode state={cs} onUpdate={update} selectedLead={selectedLead} />
-      )}
-      {cs.mode === "gbb-review" && cs.gbb && (
-        <GBBReviewMode
-          state={cs}
-          onUpdate={update}
-          onEditTier={editTier}
-          onSendAll3={sendComposer}
-          onPreview={previewComposer}
-        />
-      )}
-      {cs.mode === "builder" && (
-        <BuilderMode
-          state={cs}
-          onUpdate={update}
-          leads={leads}
-          onSaveDraft={saveDraftComposer}
-          onSend={sendComposer}
-          onPreview={previewComposer}
-          onAiDraft={triggerAiDraft}
-          isDrafting={draftEstimateMutation.isPending}
-          aiDraftError={aiDraftError}
-          isSending={isSending}
-          sendError={sendError}
-        />
-      )}
+      {/* The quote — format toggle, authoring tools, line editor / tier panels */}
+      <QuoteCard
+        state={cs}
+        onUpdate={update}
+        onAiDraft={triggerAiDraft}
+        onSuggestBetterBest={suggestBetterBest}
+        isDrafting={draftEstimateMutation.isPending}
+        aiDraftError={aiDraftError}
+      />
+
+      {/* Pricing — discount, deposit, tax */}
+      <PricingCard state={cs} onUpdate={update} />
+
+      {/* Message — intro + valid days */}
+      <MessageCard state={cs} onUpdate={update} lead={selectedLead} />
+
+      {/* Send — channel, destination, follow-ups, actions (the last act) */}
+      <SendCard
+        lead={selectedLead}
+        state={cs}
+        onUpdate={update}
+        gateReason={sendGateReason(
+          selectedLead != null,
+          linesForSend(cs),
+          recommendedTier(cs)?.name ?? null,
+        )}
+        isSending={isSending}
+        sendError={sendError}
+        onPreview={previewComposer}
+        onSaveDraft={saveDraftComposer}
+        onSend={sendComposer}
+      />
     </div>
   );
 }

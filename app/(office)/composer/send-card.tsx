@@ -13,7 +13,7 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
-import type { ComposerState } from "./composer-state";
+import { recommendedTier, type ComposerState } from "./composer-state";
 
 // ---- Delivery contact field -------------------------------------------------
 // Editable phone/email for the chosen send channel. A customer can be added by
@@ -112,6 +112,8 @@ export function SendCard({
   onSend: () => void;
 }) {
   const gated = gateReason != null;
+  // GBB format sends the recommended tier's lines — the labels say which.
+  const rec = recommendedTier(state);
 
   return (
     <div className="card" style={{ borderColor: "#E6DCC4" }}>
@@ -222,7 +224,7 @@ export function SendCard({
           </span>
         )}
         <button className="btn ghost" onClick={onPreview} disabled={gated}>
-          Preview
+          {rec ? `Preview — ${rec.name}` : "Preview"}
         </button>
         <button
           className="btn ghost"
@@ -241,7 +243,11 @@ export function SendCard({
             cursor: gated || isSending ? "not-allowed" : "pointer",
           }}
         >
-          {isSending ? "Sending…" : "Send quote"}
+          {isSending
+            ? "Sending…"
+            : rec
+              ? `Send quote — ${rec.name} option`
+              : "Send quote"}
         </button>
       </div>
     </div>
