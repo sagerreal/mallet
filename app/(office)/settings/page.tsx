@@ -65,18 +65,6 @@ function SecWorkspace({ role }: { role: string }) {
     <>
       <BrandingCard />
 
-      <FoldCard title="Guided demos" summary="replay">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {/* deferred: demo tours are a separate feature */}
-          <button className="btn" onClick={() => {}}>
-            Full demo — new customer to paid
-          </button>
-          <button className="btn" onClick={() => {}}>
-            AI Front Desk — missed call to booked job
-          </button>
-        </div>
-      </FoldCard>
-
       {(role === "owner" || role === "office") && (
         <>
           <h3 className="setgrp" style={{ margin: "20px 0 10px" }}>
