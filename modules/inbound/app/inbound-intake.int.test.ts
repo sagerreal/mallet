@@ -100,19 +100,34 @@ suite("inbound intake (resolver + ingest, live RLS)", () => {
     const inB = await admin<{ n: number }[]>`select count(*)::int as n from leads where org_id = ${orgBId} and name = 'Gary Pratt'`;
     expect(inB[0]!.n).toBe(0);
 
-    // The form channel (externalId=null) must NEVER touch the idempotency ledger — proves the
-    // ensure-before-receipt ordering debt is dead for the only live channel in PR A.
+    // The form channel (externalId=null) must NEVER touch the idempotency ledger.
     const receipts = await admin<{ n: number }[]>`select count(*)::int as n from inbound_lead_receipts where org_id = ${orgAId} and channel = 'form'`;
     expect(receipts[0]!.n).toBe(0);
   });
 
-  it("is idempotent on (channel, externalId): recordIfNew is true then false, one receipt row", async () => {
+  it("is idempotent on (channel, externalId): reserve is true then false, one receipt row", async () => {
     const orgA = asOrgId(orgAId);
     const ext = `ext-${randomUUID()}`;
-    const first = await withTenant(orgA, (tx) => new DrizzleLeadReceiptRepository(tx, orgA).recordIfNew("angi", ext, randomUUID()));
-    const second = await withTenant(orgA, (tx) => new DrizzleLeadReceiptRepository(tx, orgA).recordIfNew("angi", ext, randomUUID()));
+    const first = await withTenant(orgA, (tx) => new DrizzleLeadReceiptRepository(tx, orgA).reserve("angi", ext));
+    const second = await withTenant(orgA, (tx) => new DrizzleLeadReceiptRepository(tx, orgA).reserve("angi", ext));
     expect(first).toBe(true);
     expect(second).toBe(false);
+    const rows = await admin<{ n: number }[]>`select count(*)::int as n from inbound_lead_receipts where org_id = ${orgAId} and channel = 'angi' and external_id = ${ext}`;
+    expect(rows[0]!.n).toBe(1);
+  });
+
+  it("release rolls back a reservation so a subsequent reserve succeeds again", async () => {
+    const orgA = asOrgId(orgAId);
+    const ext = `ext-${randomUUID()}`;
+    const { first, second } = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleLeadReceiptRepository(tx, orgA);
+      const first = await repo.reserve("angi", ext);
+      await repo.release("angi", ext);
+      const second = await repo.reserve("angi", ext); // released → re-reservable
+      return { first, second };
+    });
+    expect(first).toBe(true);
+    expect(second).toBe(true);
     const rows = await admin<{ n: number }[]>`select count(*)::int as n from inbound_lead_receipts where org_id = ${orgAId} and channel = 'angi' and external_id = ${ext}`;
     expect(rows[0]!.n).toBe(1);
   });

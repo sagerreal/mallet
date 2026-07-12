@@ -26,32 +26,40 @@ export class IngestExternalLeadUseCase {
 
   async exec(input: IngestInput): Promise<Result<{ outcome: IngestOutcome }, AppError>> {
     const { channel, source, lead } = input;
-    // Lenient phone/email — drop if unreadable, never reject the whole ingest.
-    const parsedPhone = lead.phone ? Phone.parse(lead.phone) : null;
-    const phone = parsedPhone && isOk(parsedPhone) ? parsedPhone.value : null;
-    const email = lead.email && EMAIL_RE.test(lead.email) ? lead.email : null;
 
+    // Record-first idempotency LOCK: for a channel that carries a stable external id (marketplaces),
+    // reserve it before creating. A duplicate reservation means we already ingested this lead — skip
+    // the create entirely (crucial for phoneless leads, which dedupe-by-phone can't catch on retry).
+    if (lead.externalId) {
+      const reserved = await this.receipts.reserve(channel, lead.externalId);
+      if (!reserved) {
+        logger.info({ channel }, "inbound.duplicate_ignored");
+        return ok({ outcome: "duplicate_ignored" });
+      }
+    }
+
+    const phone = this.parsePhone(lead.phone);
+    const email = lead.email && EMAIL_RE.test(lead.email) ? lead.email : null;
     const result = await this.ensureCustomer.exec({
       name: lead.name, phone, email, source,
       companyId: null, role: null, notes: lead.notes, address: lead.address,
     });
     if (!isOk(result)) {
+      // Roll back the reservation so a genuine retry isn't wrongly treated as a duplicate.
+      if (lead.externalId) await this.receipts.release(channel, lead.externalId);
       logger.info({ channel }, "inbound.ensure_failed");
       return result;
     }
 
-    // Idempotency: record AFTER a successful create so a mid-flight failure can be retried.
-    // A repeat (channel, externalId) that was already recorded → treat as duplicate.
-    if (lead.externalId) {
-      const fresh = await this.receipts.recordIfNew(channel, lead.externalId, result.value.lead.props.id);
-      if (!fresh) {
-        logger.info({ channel }, "inbound.duplicate_ignored");
-        return ok({ outcome: "duplicate_ignored" });
-      }
-    }
     await this.endpoints.touchLastLead(channel, this.clock.now());
     const outcome = result.value.created ? "created" : "deduped";
     logger.info({ channel, outcome }, `inbound.${outcome}`);
     return ok({ outcome });
+  }
+
+  private parsePhone(raw: string | null) {
+    if (!raw) return null;
+    const parsed = Phone.parse(raw);
+    return isOk(parsed) ? parsed.value : null;
   }
 }
