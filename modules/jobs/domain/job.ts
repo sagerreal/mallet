@@ -39,7 +39,84 @@ const isTerminal = (status: JobStatus): boolean => status === "complete" || stat
 
 const SVC_MAX_LENGTH = 60;
 
+// Before-you-leave checklist bounds (shared with the router's zod input).
+// Name/text match the checklist TEMPLATE bounds (checklists router: name ≤ 200,
+// item text ≤ 500) so any valid template can always be attached to a job; the
+// item cap is mirrored back onto templates in AddItemUseCase (CHECKLIST_MAX_ITEMS).
+export const JOB_CHECKLIST_MAX_ITEMS = 50;
+export const JOB_CHECKLIST_NAME_MAX = 200;
+export const JOB_CHECKLIST_ITEM_TEXT_MAX = 500;
+
+export interface JobChecklistItemProps {
+  readonly id: string;
+  readonly text: string;
+  readonly type: "check" | "photo";
+  readonly required: boolean;
+}
+
+// Snapshot of the checklist the office attached to this job (denormalized from the
+// template on purpose — later template edits must not rewrite job history). Item order
+// is the array order. Crew ANSWERS live in job_verify_answers, not here.
+export interface JobChecklistProps {
+  readonly name: string;
+  readonly items: readonly JobChecklistItemProps[];
+}
+
+// Validate + normalize one checklist item. Field types are re-checked at runtime
+// because jsonb rows are not trustworthy.
+function validateChecklistItem(
+  it: JobChecklistItemProps,
+): Result<JobChecklistItemProps, ValidationError> {
+  const id = typeof it?.id === "string" ? it.id.trim() : "";
+  if (id.length === 0) {
+    return err(validation("every checklist item needs an id", "checklist"));
+  }
+  const text = typeof it?.text === "string" ? it.text.trim() : "";
+  if (text.length === 0 || text.length > JOB_CHECKLIST_ITEM_TEXT_MAX) {
+    return err(
+      validation(`checklist item text must be 1–${JOB_CHECKLIST_ITEM_TEXT_MAX} characters`, "checklist"),
+    );
+  }
+  if (it.type !== "check" && it.type !== "photo") {
+    return err(validation(`unknown checklist item type: ${String(it.type)}`, "checklist"));
+  }
+  return ok({ id, text, type: it.type, required: it.required === true });
+}
+
+// Validate + normalize an attached checklist (null passes through). Runs inside
+// Job.create so BOTH boundaries are covered: the API input (via UpdateJobUseCase →
+// patchFields) and the infra read boundary (corrupt jsonb fails loud through the
+// mapper's Job.create call).
+function normalizeChecklist(
+  cl: JobChecklistProps | null,
+): Result<JobChecklistProps | null, ValidationError> {
+  if (cl === null) return ok(null);
+  if (typeof cl !== "object" || !Array.isArray(cl.items)) {
+    return err(validation("checklist needs a name and an items list", "checklist"));
+  }
+  const name = typeof cl.name === "string" ? cl.name.trim() : "";
+  if (name.length === 0 || name.length > JOB_CHECKLIST_NAME_MAX) {
+    return err(validation(`checklist name must be 1–${JOB_CHECKLIST_NAME_MAX} characters`, "checklist"));
+  }
+  if (cl.items.length > JOB_CHECKLIST_MAX_ITEMS) {
+    return err(
+      validation(`a checklist can hold at most ${JOB_CHECKLIST_MAX_ITEMS} items`, "checklist"),
+    );
+  }
+  const items: JobChecklistItemProps[] = [];
+  for (const it of cl.items) {
+    const item = validateChecklistItem(it);
+    if (!item.ok) return item;
+    items.push(item.value);
+  }
+  return ok({ name, items });
+}
+
 const MAX_VISIT_DURATION_MINUTES = 24 * 60;
+
+// Default length (2h) seeded onto the single unplaced visit of a quote-created job, so the
+// job modal always has an editable Length row and the schedule tray shows real data.
+export const DEFAULT_VISIT_DURATION_MINUTES = 120;
 
 export interface JobVisitProps {
   readonly id: VisitId;
@@ -118,6 +195,7 @@ export interface JobProps {
   readonly cancelReason: string | null;
   readonly total: Money; // integer cents, snapshot from the source estimate at creation
   readonly notes: string | null;
+  readonly checklist: JobChecklistProps | null; // optional before-you-leave checklist
   readonly visits: readonly JobVisit[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -150,7 +228,13 @@ export class Job {
     if (svc !== null && (svc.length === 0 || svc.length > SVC_MAX_LENGTH)) {
       return err(validation("service type must be 1–60 characters", "svc"));
     }
-    return ok(new Job({ ...props, num, svc }));
+    let checklist: JobChecklistProps | null = null;
+    if (props.checklist !== null) {
+      const validated = normalizeChecklist(props.checklist);
+      if (!validated.ok) return validated;
+      checklist = validated.value;
+    }
+    return ok(new Job({ ...props, num, svc, checklist }));
   }
 
   // Replace the visit set — only allowed while the job is not yet terminal.
@@ -213,11 +297,16 @@ export class Job {
     return ok(new Job({ ...this.p, assigneeUserId: userId, updatedAt: now }));
   }
 
-  // Patch DB-backed scalar fields (title/svc/notes) while the job is not terminal.
+  // Patch DB-backed fields (title/svc/notes/checklist) while the job is not terminal.
   // Undefined = keep current; explicit null clears an optional field. Re-validates
   // through Job.create (mirrors Company.patch).
   patchFields(
-    fields: { title?: string | null; svc?: string | null; notes?: string | null },
+    fields: {
+      title?: string | null;
+      svc?: string | null;
+      notes?: string | null;
+      checklist?: JobChecklistProps | null;
+    },
     now: Date,
   ): Result<Job, ValidationError> {
     if (isTerminal(this.p.status)) {
@@ -228,6 +317,7 @@ export class Job {
       title: fields.title !== undefined ? fields.title : this.p.title,
       svc: fields.svc !== undefined ? fields.svc : this.p.svc,
       notes: fields.notes !== undefined ? fields.notes : this.p.notes,
+      checklist: fields.checklist !== undefined ? fields.checklist : this.p.checklist,
       updatedAt: now,
     });
   }

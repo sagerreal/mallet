@@ -149,6 +149,52 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     expect(listed.items.some((j) => j.id === created.id && j.svc === "estimate")).toBe(true);
   });
 
+  it("attaches a checklist via update; it persists, survives a re-read, and detaches with null", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Checklist Job Cust" });
+    const created = await caller.v1.jobs.create({ leadId: lead.id, title: "Repipe" });
+    expect(created.checklist).toBeNull();
+
+    const checklist = {
+      name: "Before you leave",
+      items: [
+        { id: randomUUID(), text: "Photo of the manifold", type: "photo" as const, required: true },
+        { id: randomUUID(), text: "Test water pressure", type: "check" as const, required: false },
+      ],
+    };
+    const updated = await caller.v1.jobs.update({ jobId: created.id, checklist });
+    expect(updated.checklist).toEqual(checklist);
+
+    // Survives a fresh read (separate request/tx — proves it hit the jsonb column).
+    const reread = await caller.v1.jobs.get({ jobId: created.id });
+    expect(reread.checklist).toEqual(checklist);
+
+    // And rides the summary DTO the office hydrator consumes (→ crew's device).
+    const listed = await caller.v1.jobs.list({ limit: 500 });
+    expect(listed.items.find((j) => j.id === created.id)?.checklist).toEqual(checklist);
+
+    // Explicit null detaches; unrelated updates keep it intact.
+    const kept = await caller.v1.jobs.update({ jobId: created.id, title: "Repipe day 2" });
+    expect(kept.checklist).toEqual(checklist);
+    const detached = await caller.v1.jobs.update({ jobId: created.id, checklist: null });
+    expect(detached.checklist).toBeNull();
+  });
+
+  it("rejects an invalid checklist (blank name / >50 items) with BAD_REQUEST", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Bad Checklist Cust" });
+    const created = await caller.v1.jobs.create({ leadId: lead.id, title: "Temp" });
+    await expect(
+      caller.v1.jobs.update({ jobId: created.id, checklist: { name: "", items: [] } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const tooMany = Array.from({ length: 51 }, (_, i) => ({
+      id: `i${i}`, text: "step", type: "check" as const, required: false,
+    }));
+    await expect(
+      caller.v1.jobs.update({ jobId: created.id, checklist: { name: "Big", items: tooMany } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("archive soft-deletes a job; it disappears from list", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const lead = await caller.v1.customers.create({ name: "Archive Job Cust" });

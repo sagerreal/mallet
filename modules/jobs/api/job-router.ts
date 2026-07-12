@@ -15,6 +15,11 @@ import { CancelJobUseCase } from "../app/cancel-job";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { CreateManualJobUseCase } from "../app/create-manual-job";
 import { UpdateJobUseCase } from "../app/update-job";
+import {
+  JOB_CHECKLIST_MAX_ITEMS,
+  JOB_CHECKLIST_NAME_MAX,
+  JOB_CHECKLIST_ITEM_TEXT_MAX,
+} from "../domain/job";
 import { ArchiveJobUseCase } from "../app/archive-job";
 import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO } from "./job-dto";
 import {
@@ -77,11 +82,29 @@ export const createJobInput = z.object({
   phone: z.string().max(50).optional(),
   notes: z.string().max(10_000).optional(),
 });
+// Before-you-leave checklist payload — bounds come from the domain constants
+// (name ≤ 200, item text ≤ 500, ≤ 50 items — matched to the checklist TEMPLATE
+// bounds so any valid template attaches). Exported for store-side reuse.
+export const jobChecklistInput = z.object({
+  name: z.string().min(1).max(JOB_CHECKLIST_NAME_MAX),
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(100),
+        text: z.string().min(1).max(JOB_CHECKLIST_ITEM_TEXT_MAX),
+        type: z.enum(["check", "photo"]),
+        required: z.boolean().default(false),
+      }),
+    )
+    .max(JOB_CHECKLIST_MAX_ITEMS),
+});
 export const updateJobInput = z.object({
   jobId: z.string().uuid(),
   title: z.string().max(200).nullable().optional(),
   svc: z.string().min(1).max(60).nullable().optional(),
   notes: z.string().max(10_000).nullable().optional(),
+  // undefined = keep; null = detach; object = attach/replace.
+  checklist: jobChecklistInput.nullable().optional(),
 });
 export const archiveJobInput = z.object({ jobId: z.string().uuid() });
 
@@ -408,8 +431,8 @@ export const createJobRouter = () =>
         return toJobDTO(r.job, r.execution);
       }),
 
-    // Patch title/svc/notes on a non-terminal job. undefined fields are kept as-is;
-    // explicit null clears an optional field. org isolation enforced by RLS via ctx.tx.
+    // Patch title/svc/notes/checklist on a non-terminal job. undefined fields are kept
+    // as-is; explicit null clears an optional field. org isolation enforced by RLS via ctx.tx.
     update: ownerOrOffice
       .input(updateJobInput)
       .output(jobDTO)
@@ -423,6 +446,7 @@ export const createJobRouter = () =>
               title: input.title,
               svc: input.svc,
               notes: input.notes,
+              checklist: input.checklist,
             }),
           ),
         );

@@ -72,7 +72,7 @@
 import type { StateCreator } from "zustand";
 import type { Job, Visit, Addon, VerifyAns } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
-import { dtoJobToStoreJob, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
+import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
 
@@ -117,6 +117,16 @@ const _pendingVisitRemovals = new Set<string>();
 // predates the adopting mutation's commit must not sweep the job out.
 const _recentAdoptions = new Map<string, number>();
 
+// Jobs whose checklist was just written through updateJob, keyed to the write
+// time. Visit mutations and hydrator snapshots reconcile the WHOLE job from a
+// server read that may predate the checklist commit — without this guard a
+// late-arriving reconcile transiently wipes a just-attached checklist (or
+// resurrects a just-removed one). While an entry is younger than the hydrator
+// stale window, merges keep the store job's checklist; updateJob's own
+// reconcile (the authoritative answer for that write) bypasses the guard.
+// Mirrors _recentAdoptions. Cleared on write failure or entry expiry.
+const _recentChecklistWrites = new Map<string, number>();
+
 function chain(visitId: string, fn: () => Promise<unknown>): void {
   const prev = _visitOpChain.get(visitId) ?? Promise.resolve();
   const next = prev.then(fn).finally(() => {
@@ -135,19 +145,33 @@ let _nextAuxId = 6000; // addons + other field-created ids (mirrors state.nextId
 // Job fields that have a DB column via v1.jobs.update. Everything else on Job is
 // local-only (visits ride their own mutations; lines/addons/verify/photos are
 // Phase-5; addr/phone have no job column; status/archived derive server-side).
-const JOB_UPDATE_KEYS = new Set<keyof Job>(["title", "svc", "notes"]);
+const JOB_UPDATE_KEYS = new Set<keyof Job>(["title", "svc", "notes", "checklist"]);
+
+/** Wire shape of a checklist item for v1.jobs.update (no store-only `position` —
+ *  order on the wire is the array order). */
+interface JobChecklistItemPayload {
+  id: string;
+  text: string;
+  type: "check" | "photo";
+  required: boolean;
+}
 
 export interface JobUpdatePayload {
   jobId: string;
   title?: string | null;
   svc?: string | null;
   notes?: string | null;
+  checklist?: { name: string; items: JobChecklistItemPayload[] } | null;
 }
 
 /**
  * Build the v1.jobs.update payload from a Job patch, keeping only DB-backed
  * fields. Returns null when the patch touches only local-only fields (skip the
  * network call). Mirrors buildLeadUpdatePayload in leads-slice.
+ *
+ * checklist: the key being PRESENT in the patch signals intent — an object
+ * attaches/replaces; undefined (the store's "removed" representation) maps to
+ * an explicit null so the server detaches it.
  */
 export function buildJobUpdatePayload(
   jobId: string,
@@ -161,6 +185,19 @@ export function buildJobUpdatePayload(
     if (key === "title") payload.title = patch.title;
     else if (key === "svc") payload.svc = patch.svc;
     else if (key === "notes") payload.notes = patch.notes;
+    else if (key === "checklist") {
+      payload.checklist = patch.checklist
+        ? {
+            name: patch.checklist.name,
+            items: patch.checklist.items.map(({ id, text, type, required }) => ({
+              id,
+              text,
+              type,
+              required,
+            })),
+          }
+        : null;
+    }
   }
   return hasPersisted ? payload : null;
 }
@@ -215,7 +252,13 @@ export interface JobsSlice {
    * await `persisted` first.
    */
   addJob: (draft: Omit<Job, "id">) => { job: Job; persisted: Promise<Job> };
-  updateJob: (id: string, patch: Partial<Job>) => void;
+  /**
+   * Optimistic apply + persist DB-backed fields. Resolves { ok: true } once the
+   * server confirms (or when the patch was local-only), { ok: false } after a
+   * rollback — it NEVER rejects, so fire-and-forget callers stay safe while
+   * interactive callers can await and surface the failure.
+   */
+  updateJob: (id: string, patch: Partial<Job>) => Promise<{ ok: boolean }>;
   setJobSvc: (id: string, svc: string | null) => void;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
@@ -274,9 +317,31 @@ function withPendingCreateVisits(prior: Job, incoming: Job): Job {
   return { ...incoming, visits: [...kept, ...survivors] };
 }
 
-/** Replace one job with the server-reconciled version (pending-create guarded). */
+/**
+ * Checklist merge guard: while a checklist write on this job is younger than
+ * the hydrator stale window, snapshot/reconcile merges keep the STORE job's
+ * checklist — the incoming server read may predate the checklist commit.
+ * Expired entries are dropped here (same lazy cleanup as the adoption guard).
+ */
+function withRecentChecklist(prior: Job, incoming: Job): Job {
+  const writtenAt = _recentChecklistWrites.get(incoming.id);
+  if (writtenAt === undefined) return incoming;
+  if (Date.now() - writtenAt > HYDRATOR_STALE_MS) {
+    _recentChecklistWrites.delete(incoming.id);
+    return incoming;
+  }
+  if (incoming.checklist === prior.checklist) return incoming;
+  return { ...incoming, checklist: prior.checklist };
+}
+
+/** Compose every snapshot-merge guard (pending visits + recent checklist write). */
+function mergeIncomingJob(prior: Job, incoming: Job): Job {
+  return withRecentChecklist(prior, withPendingCreateVisits(prior, incoming));
+}
+
+/** Replace one job with the server-reconciled version (merge-guarded). */
 function reconcileJob(jobs: Job[], reconciled: Job): Job[] {
-  return jobs.map((j) => (j.id === reconciled.id ? withPendingCreateVisits(j, reconciled) : j));
+  return jobs.map((j) => (j.id === reconciled.id ? mergeIncomingJob(j, reconciled) : j));
 }
 
 /** Restore the snapshot (rollback). */
@@ -323,7 +388,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       );
       const merged = jobs.map((incoming) => {
         const prior = s.jobs.find((j) => j.id === incoming.id);
-        return prior ? withPendingCreateVisits(prior, incoming) : incoming;
+        return prior ? mergeIncomingJob(prior, incoming) : incoming;
       });
       return { jobs: adoptedSurvivors.length ? [...adoptedSurvivors, ...merged] : merged };
     }),
@@ -425,27 +490,45 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     set((s) => ({ jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...patch } : j)) }));
     // 2. Persist only DB-backed fields; skip if the patch is local-only.
     const mutPayload = buildJobUpdatePayload(id, patch);
-    if (mutPayload === null) return;
-    trpcVanilla.v1.jobs.update
+    if (mutPayload === null) return Promise.resolve({ ok: true });
+    // Checklist merge guard: from the optimistic apply on, snapshot merges must
+    // not overwrite the checklist with a server read that predates this write.
+    const touchesChecklist = "checklist" in patch;
+    if (touchesChecklist) _recentChecklistWrites.set(id, Date.now());
+    // 3. Return the outcome ({ ok }) — never rejects — so interactive callers
+    //    (the job checklist block) can surface a failure instead of losing it.
+    return trpcVanilla.v1.jobs.update
       .mutate(mutPayload)
       .then((dto) => {
-        // 3. Reconcile server truth for the persisted scalars, preserving local-only
-        //    fields already on the store record (lines/addons/verify/photos/visits).
+        // Reconcile server truth for the persisted fields, preserving local-only
+        // fields already on the store record (lines/addons/verify/photos/visits).
+        // checklist adopts the DTO value outright (undefined when detached) —
+        // it is DB-backed now, so the server answer is authoritative.
+        if (touchesChecklist) _recentChecklistWrites.set(id, Date.now());
         set((s) => ({
           jobs: s.jobs.map((j) =>
             j.id === id
-              ? { ...j, title: dto.title ?? j.title, svc: dto.svc !== undefined ? dto.svc : j.svc, notes: dto.notes ?? j.notes }
+              ? {
+                  ...j,
+                  title: dto.title ?? j.title,
+                  svc: dto.svc !== undefined ? dto.svc : j.svc,
+                  notes: dto.notes ?? j.notes,
+                  checklist: dtoChecklistToStore(dto.checklist),
+                }
               : j,
           ),
         }));
+        return { ok: true };
       })
       .catch((err: unknown) => {
         // 4. Roll back the whole job to the pre-patch snapshot.
+        if (touchesChecklist) _recentChecklistWrites.delete(id);
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
         if (process.env.NODE_ENV !== "production") {
           // eslint-disable-next-line no-console
           console.error("[jobs-slice] updateJob failed — rolled back", { id, patch, err });
         }
+        return { ok: false };
       });
   },
 

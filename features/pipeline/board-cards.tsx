@@ -282,6 +282,7 @@ export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
 
 export function WonCard({ row }: { row: WonRow }) {
   const openModal = useOpenModal();
+  const router = useRouter();
   return (
     <div
       className="kcard"
@@ -301,7 +302,7 @@ export function WonCard({ row }: { row: WonRow }) {
       <div className="cstamp fig">{row.stamp}</div>
       {row.unscheduled && row.job && (
         <div className="cardacts" onClick={(e) => e.stopPropagation()}>
-          <button className="btn sm approve" onClick={() => openModal(MODAL.JOB, { jobId: row.job?.id })}>
+          <button className="btn sm approve" onClick={() => router.push("/jobs?tab=schedule")}>
             Pick the day
           </button>
         </div>

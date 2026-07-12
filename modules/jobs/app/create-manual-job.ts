@@ -19,6 +19,16 @@ export interface CreateManualJobCommand {
 
 // A dispatcher creating a standalone job by hand (no source estimate). total is 0:
 // money lives in Finance/invoicing, not on the work order (mirrors ScheduleJobUseCase).
+//
+// VISITS: deliberately NOT seeded here (visits: []) — unlike CreateJobFromEstimateUseCase,
+// which seeds a default 2h unplaced visit because no client flow follows the accept.
+// Every manual-create client flow authors its visits explicitly right after this
+// returns (new-job-modal: one addVisit per hours row; visit-modal and
+// new-customer-modal: one default addVisit) — seeding here would DOUBLE them, and
+// the store's addJob reconcile keeps the client's optimistic visits, so a
+// server-seeded visit would stay invisible until the next hydrate and then appear
+// as a duplicate. If a server-side caller with no client flow ever creates manual
+// jobs (e.g. an AI tool), seed the default visit THERE.
 export class CreateManualJobUseCase {
   constructor(
     private readonly repo: JobRepository,
@@ -48,6 +58,7 @@ export class CreateManualJobUseCase {
       cancelReason: null,
       total: zeroMoney,
       notes: cmd.notes,
+      checklist: null,
       visits: [],
       createdAt: now,
       updatedAt: now,

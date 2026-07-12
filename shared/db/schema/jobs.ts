@@ -7,6 +7,7 @@ import {
   timestamp,
   date,
   time,
+  jsonb,
   index,
   uniqueIndex,
   unique,
@@ -17,6 +18,14 @@ import { orgs } from "./orgs";
 import { leads } from "./leads";
 import { estimates } from "./estimates";
 import { users } from "./users";
+
+// Office-attached "before you leave" checklist SNAPSHOT (denormalized on purpose: the job
+// carries its own copy so later edits to the source template never rewrite job history).
+// Item order is the array order. Crew ANSWERS live in job_verify_answers, not here.
+export interface JobChecklistColumn {
+  name: string;
+  items: { id: string; text: string; type: "check" | "photo"; required: boolean }[];
+}
 
 // Scheduled field work. Optionally sourced from an accepted estimate (idempotent one-job-per-
 // estimate). All tenant references are COMPOSITE FKs (org_id, ref_id) so a job can never point at
@@ -45,6 +54,9 @@ export const jobs = pgTable(
     // Service type ("service" | "estimate" | free-text trade label). Mirrors the store
     // Job.svc field; nullable because estimate-sourced jobs may not set one at creation.
     svc: text("svc"),
+    // Optional before-you-leave checklist attached by the office (see JobChecklistColumn).
+    // Nullable: most jobs have none.
+    checklist: jsonb("checklist").$type<JobChecklistColumn>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

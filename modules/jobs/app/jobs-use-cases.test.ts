@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   asOrgId,
   asLeadId,
@@ -10,6 +10,8 @@ import {
   buildPage,
   decodeCursor,
   isOk,
+  err,
+  validation,
   type OrgId,
   type LeadId,
   type EstimateId,
@@ -18,7 +20,7 @@ import {
   type Paginated,
 } from "@mallet/shared/types";
 import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
-import type { Job } from "../domain/job";
+import { JobVisit, type Job } from "../domain/job";
 import type { JobRepository, JobFilter } from "../domain/job-repository";
 import type { EstimateReader, EstimateSummary } from "../domain/estimate-reader";
 import { ScheduleJobUseCase } from "./schedule-job";
@@ -215,6 +217,43 @@ describe("CreateJobFromEstimateUseCase", () => {
     const second = await uc.exec({ orgId: ORG, estimateId: EST });
     expect(isOk(first) && isOk(second) && first.value.props.id === second.value.props.id).toBe(true);
     expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
+  });
+
+  it("seeds exactly one unplaced 120-minute visit at position 1", async () => {
+    const r = await useCase(new FakeEstimateReader(acceptedEstimate())).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const visits = r.value.props.visits;
+    expect(visits).toHaveLength(1);
+    const v = visits[0]!.props;
+    expect(v.durationMinutes).toBe(120);
+    expect(v.position).toBe(1);
+    expect(v.status).toBe("pending");
+    // Unplaced: no assignee, date, or time window — the office places it from the tray.
+    expect(v.assigneeUserId).toBeNull();
+    expect(v.scheduledDate).toBeNull();
+    expect(v.scheduledStart).toBeNull();
+    expect(v.scheduledEnd).toBeNull();
+  });
+
+  it("propagates a visit-create failure instead of silently creating a visitless job", async () => {
+    const spy = vi
+      .spyOn(JobVisit, "create")
+      .mockReturnValue(err(validation("visit duration must be 1–1440 whole minutes", "durationMinutes")));
+    try {
+      const r = await useCase(new FakeEstimateReader(acceptedEstimate())).exec({
+        orgId: ORG,
+        estimateId: EST,
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe("validation");
+      expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("uses zeroMoney when estimate totalCents is 0", async () => {

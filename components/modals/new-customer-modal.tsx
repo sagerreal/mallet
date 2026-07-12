@@ -25,6 +25,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const openModal = useOpenModal();
   const activeModal = useActiveModal();
   const addJob = useAppStore((s) => s.addJob);
+  const addVisit = useAppStore((s) => s.addVisit);
   const companies = useAppStore((s) => s.companies);
   const addCompany = useAppStore((s) => s.addCompany);
   const storeSources = useAppStore((s) => s.sources);
@@ -210,26 +211,36 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           // addJob now returns { job, persisted }; destructure to get the optimistic job.
           // The lead (data.id) is already persisted by the createMutation, so addJob
           // will fire v1.jobs.create immediately. We do not need to await persisted
-          // here because the modal's primary purpose is customer creation; visits are
-          // not created here (only the price-builder is opened if job was chosen).
-          const job: Job | null = visitPurpose === "job"
-            ? addJob({
-                leadId: data.id,
-                svc: "service",
-                origin: "manual",
-                title: jobDesc.trim() || data.name,
-                addr: serviceAddr.trim() || "",
-                phone: data.phone ?? "",
-                status: "unscheduled",
-                archived: false,
-                lines: [],
-                addons: [],
-                photos: [],
-                notes: notes.trim(),
-                acts: [],
-                visits: [],
-              }).job
-            : null;
+          // before closing — the modal's primary purpose is customer creation.
+          let job: Job | null = null;
+          if (visitPurpose === "job") {
+            const { job: created, persisted } = addJob({
+              leadId: data.id,
+              svc: "service",
+              origin: "manual",
+              title: jobDesc.trim() || data.name,
+              addr: serviceAddr.trim() || "",
+              phone: data.phone ?? "",
+              status: "unscheduled",
+              archived: false,
+              lines: [],
+              addons: [],
+              photos: [],
+              notes: notes.trim(),
+              acts: [],
+              visits: [],
+            });
+            job = created;
+            // Every job starts with one editable unplaced visit (same default as
+            // quote-created jobs and the other manual-create flows). addVisit only
+            // persists once the job is DB-origin, so run it after the create's
+            // reconcile — in the background; the modal doesn't wait on it.
+            persisted
+              .then(() => addVisit(created.id))
+              .catch(() => {
+                // addJob already rolled back and dev-logged; no job to attach to.
+              });
+          }
           reset();
           close();
           if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });

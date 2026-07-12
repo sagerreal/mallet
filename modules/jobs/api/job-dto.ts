@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { JOB_STATUSES, JOB_VISIT_STATUSES, type Job, type JobStatus, type VisitStatus } from "../domain/job";
+import {
+  JOB_STATUSES,
+  JOB_VISIT_STATUSES,
+  type Job,
+  type JobStatus,
+  type VisitStatus,
+  type JobChecklistProps,
+} from "../domain/job";
 import type {
   JobLine,
   JobAddon,
@@ -58,6 +65,20 @@ export const jobVerifyAnswerDTO = z.object({
   reason: z.string().nullable(),
 });
 
+// Before-you-leave checklist snapshot on the job (order = array order). Crew
+// ANSWERS ride jobVerifyAnswerDTO — this is only the attached list itself.
+export const jobChecklistDTO = z.object({
+  name: z.string(),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      text: z.string(),
+      type: z.enum(["check", "photo"]),
+      required: z.boolean(),
+    }),
+  ),
+});
+
 export const jobPhotoDTO = z.object({
   id: z.string().uuid(),
   storagePath: z.string(),
@@ -83,6 +104,7 @@ export const jobDTO = z.object({
   cancelReason: z.string().nullable(),
   total: moneyDTO,
   notes: z.string().nullable(),
+  checklist: jobChecklistDTO.nullable(),
   visits: z.array(visitDTO),
   createdAt: z.string(),
   lines: z.array(jobLineDTO),
@@ -103,6 +125,7 @@ export const jobSummaryDTO = z.object({
   scheduledStart: z.string().nullable(),
   total: moneyDTO,
   notes: z.string().nullable(),
+  checklist: jobChecklistDTO.nullable(),
   visits: z.array(visitDTO),
   createdAt: z.string(),
   lines: z.array(jobLineDTO),
@@ -160,6 +183,19 @@ const executionFields = (execution: Execution) => ({
   photos: execution.photos.map(toPhotoDTO),
 });
 
+const toChecklistDTO = (cl: JobChecklistProps | null) =>
+  cl
+    ? {
+        name: cl.name,
+        items: cl.items.map((it) => ({
+          id: it.id,
+          text: it.text,
+          type: it.type,
+          required: it.required,
+        })),
+      }
+    : null;
+
 export const toVisitDTO = (visit: import("../domain/job").JobVisit) => {
   const v = visit.props;
   return {
@@ -196,6 +232,7 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
     cancelReason: p.cancelReason,
     total: money(p.total),
     notes: p.notes,
+    checklist: toChecklistDTO(p.checklist),
     visits: p.visits.map(toVisitDTO),
     createdAt: p.createdAt.toISOString(),
     ...executionFields(execution),
@@ -216,6 +253,7 @@ export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution)
     scheduledStart: iso(p.scheduledStart),
     total: money(p.total),
     notes: p.notes,
+    checklist: toChecklistDTO(p.checklist),
     visits: p.visits.map(toVisitDTO),
     createdAt: p.createdAt.toISOString(),
     ...executionFields(execution),

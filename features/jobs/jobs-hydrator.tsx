@@ -26,6 +26,7 @@ import {
   hoursBetween,
   toStoreVisit,
   mapExecution,
+  dtoChecklistToStore,
 } from "@/lib/store/dto-mapper";
 
 // Re-export the pure time helpers so existing unit tests importing from here
@@ -98,6 +99,7 @@ function toStoreJob(dto: JobSummaryDTO): Job {
     status,
     archived: false,
     notes: dto.notes ?? "",
+    checklist: dtoChecklistToStore(dto.checklist),
     acts: [],
     visits,
     ...mapExecution(dto),

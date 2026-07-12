@@ -120,6 +120,27 @@ function recalcJobStatus(visits: Visit[]): string {
   return "scheduled";
 }
 
+/**
+ * Map a job DTO's checklist (nullable) to the store shape. The DTO carries no
+ * per-item position (order = array order); synthesize it from the index so the
+ * store's ChecklistItem shape stays satisfied.
+ */
+export function dtoChecklistToStore(
+  cl: JobDTO["checklist"],
+): Job["checklist"] {
+  if (!cl) return undefined;
+  return {
+    name: cl.name,
+    items: cl.items.map((it, i) => ({
+      id: it.id,
+      text: it.text,
+      type: it.type,
+      required: it.required,
+      position: i,
+    })),
+  };
+}
+
 /** Map a single visitDTO to a store Visit. */
 export function toStoreVisit(v: VisitDTO): Visit {
   return {
@@ -253,6 +274,9 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     status,
     archived: false,
     notes: dto.notes ?? "",
+    // Explicitly set (undefined when the DTO carries null) so a reconcile after a
+    // detach actually REMOVES the checklist from the store record.
+    checklist: dtoChecklistToStore(dto.checklist),
     acts: [],
     visits,
     ...mapExecution(dto),

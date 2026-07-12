@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
 import { getPublicQuote, acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
-import type { RequestChangeResult } from "@/modules/quoting/app/public-quote";
+import type { AcceptPublicQuoteResult, RequestChangeResult } from "@/modules/quoting/app/public-quote";
 import type { Estimate } from "@/modules/quoting/domain/estimate";
 
 // Public, unauthenticated route handlers for the customer-facing quote page.
@@ -23,6 +23,10 @@ const postBodySchema = z.object({
   action: z.enum(["accept", "decline", "request_change"]),
   reason: z.string().max(500).optional(),
   message: z.string().trim().min(1).max(2000).optional(),
+  // Accept-time selection of OPTIONAL add-on line IDs. SECURITY: an ID subset only —
+  // line content (descriptions, quantities, prices) always comes from the stored
+  // estimate, so a token holder can never author or reprice lines.
+  selectedLineIds: z.array(z.string().uuid()).max(50).optional(),
 });
 
 // --- Serialisation helpers -------------------------------------------------
@@ -97,6 +101,34 @@ export async function GET(
 
 // --- POST -----------------------------------------------------------------
 
+/** Map an accept outcome to its HTTP response (extracted to keep POST small). */
+async function handleAccept(
+  token: string,
+  selectedLineIds: string[] | undefined,
+): Promise<NextResponse> {
+  const acceptResult: AcceptPublicQuoteResult = await acceptPublicQuote(token, selectedLineIds);
+  if (acceptResult.kind === "not_found") {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  if (acceptResult.kind === "invalid_selection") {
+    // A selected add-on id no longer matches a stored optional line — the quote
+    // changed since the page loaded (or the id was fabricated).
+    return NextResponse.json(
+      { error: "This quote was updated — reload the page and try again." },
+      { status: 400 },
+    );
+  }
+  if (acceptResult.kind === "not_ready") {
+    // The estimate exists but is not in an acceptable, non-terminal state
+    // (e.g. a draft link shared early). Nothing was accepted — say so.
+    return NextResponse.json(
+      { error: "This quote isn't ready to approve yet." },
+      { status: 409 },
+    );
+  }
+  return NextResponse.json({ estimate: estimateToJson(acceptResult.estimate) });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -119,15 +151,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const { action, reason, message } = parsed.data;
+  const { action, reason, message, selectedLineIds } = parsed.data;
 
   try {
     if (action === "accept") {
-      const estimate = await acceptPublicQuote(token);
-      if (!estimate) {
-        return NextResponse.json({ error: "not found" }, { status: 404 });
-      }
-      return NextResponse.json({ estimate: estimateToJson(estimate) });
+      return await handleAccept(token, selectedLineIds);
     }
 
     if (action === "decline") {
