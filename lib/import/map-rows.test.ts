@@ -18,6 +18,18 @@ describe("autoMap", () => {
     expect(m.phone).toBe("Mobile");
     expect(m.email).toBe("E-mail");
   });
+
+  it("does not double-assign a header (email header not also grabbed as address)", () => {
+    const m = autoMap(["Name", "Phone", "Email Address"]);
+    expect(m.email).toBe("Email Address");
+    expect(m.address).toBeNull();
+  });
+
+  it("gives a shared 'contact' header to phone, not name", () => {
+    const m = autoMap(["Customer", "Contact Phone"]);
+    expect(m.phone).toBe("Contact Phone");
+    expect(m.name).toBe("Customer");
+  });
 });
 
 describe("buildImportRows", () => {

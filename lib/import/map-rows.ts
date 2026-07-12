@@ -47,26 +47,29 @@ const SYNONYMS: Record<keyof Omit<MappingConfig, "sourceTag" | "lastName">, stri
   notes: ["notes", "note", "description", "memo"],
 };
 
-function findHeader(headers: string[], candidates: string[]): string | null {
+function findHeader(headers: string[], candidates: string[], claimed: Set<string>): string | null {
   const lower = headers.map((h) => h.toLowerCase());
   for (const cand of candidates) {
-    const idx = lower.findIndex((h) => h.includes(cand));
+    const idx = lower.findIndex((h, i) => !claimed.has(headers[i]!) && h.includes(cand));
     if (idx >= 0) return headers[idx]!;
   }
   return null;
 }
 
 export function autoMap(headers: string[]): MappingConfig {
-  const last = findHeader(headers, ["last name", "surname", "family name"]);
-  return {
-    name: findHeader(headers, SYNONYMS.name),
-    lastName: last,
-    phone: findHeader(headers, SYNONYMS.phone),
-    email: findHeader(headers, SYNONYMS.email),
-    address: findHeader(headers, SYNONYMS.address),
-    notes: findHeader(headers, SYNONYMS.notes),
-    sourceTag: "Import",
+  const claimed = new Set<string>();
+  const claim = (h: string | null): string | null => {
+    if (h) claimed.add(h);
+    return h;
   };
+  // Specific / collision-prone fields claim their header first, so no header is double-assigned.
+  const lastName = claim(findHeader(headers, ["last name", "surname", "family name"], claimed));
+  const email = claim(findHeader(headers, SYNONYMS.email, claimed));
+  const phone = claim(findHeader(headers, SYNONYMS.phone, claimed));
+  const name = claim(findHeader(headers, SYNONYMS.name, claimed));
+  const address = claim(findHeader(headers, SYNONYMS.address, claimed));
+  const notes = claim(findHeader(headers, SYNONYMS.notes, claimed));
+  return { name, lastName, phone, email, address, notes, sourceTag: "Import" };
 }
 
 // Mirrors Phone.parse (shared/types/ids.ts): 10 US digits, or 11 with leading 1.
