@@ -16,8 +16,10 @@
  *   message-card        — intro (leads the send body) + valid days
  *   send-card           — channel, destination, follow-ups, action row
  *
- * Whatever the format, the lines that save / preview / send are derived AT
- * CALL TIME via linesForSend() — in GBB that is the recommended tier's lines.
+ * A GBB quote saves / previews / sends the FULL three-tier structure (every
+ * real line tagged with its tier + recommendedTier + tierNames) — customers
+ * pick one of the three options on their quote page. linesForSend() (the
+ * recommended tier at call time) drives gating + the totals display only.
  *
  * Deferred (intentional no-ops — see inline comments in the components):
  *   - savePbLine(i)      — needs a store pricebook
@@ -33,6 +35,7 @@ import { api } from "@/lib/trpc/client";
 import {
   INITIAL_STATE,
   applyAiDraftLines,
+  applyAiDraftTiers,
   applyComposerPatch,
   buildQuoteMessageBody,
   deliveryGateReason,
@@ -42,9 +45,13 @@ import {
   recommendedTier,
   sendGateReason,
   tierDisplayName,
+  tieredLinesForPayload,
+  tierNamesForPayload,
   toEstimateLines,
+  type AiTiersDraft,
   type ComposerLine,
   type ComposerState,
+  type TierKey,
 } from "./composer-state";
 import { suggestFromGood } from "./gbb-suggest";
 import { CustomerSelector } from "./customer-selector";
@@ -96,28 +103,46 @@ export default function ComposerPage() {
   // Inline "+ Add new customer" — persists a real DB lead so quotes can reference it.
   const createCustomerMutation = api.v1.customers.create.useMutation();
 
+  // Shared error copy for both AI drafters (single + tiered) — same failure modes.
+  function onAiDraftError(err: { data?: { code?: string } | null }) {
+    const code = err.data?.code;
+    if (code === "PRECONDITION_FAILED") {
+      setAiDraftError("AI isn't enabled yet — ask your admin to add the API key.");
+    } else if (code === "TOO_MANY_REQUESTS") {
+      setAiDraftError("AI is busy right now — try again in a moment.");
+    } else {
+      setAiDraftError("Couldn't draft with AI — try rephrasing, or add lines manually.");
+    }
+  }
+
+  // rateCents → dollars (ComposerLine.r is in dollars, e.g. r:170 = $170)
+  function toComposerLines(lines: { description: string; quantity: number; rateCents: number }[]): ComposerLine[] {
+    return lines.map((l) => ({ d: l.description, q: l.quantity, r: l.rateCents / 100 }));
+  }
+
+  // Single-format drafter: one set of lines into the table (or the Good tier
+  // when a mid-flight format switch landed the response in GBB).
   const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
     onSuccess: (data) => {
-      const lines: ComposerLine[] = data.lines.map((l) => ({
-        d: l.description,
-        q: l.quantity,
-        // rateCents → dollars (ComposerLine.r is in dollars, e.g. r:170 = $170)
-        r: l.rateCents / 100,
-      }));
-      // Routes to the right target: the Good tier in GBB format, else the table.
-      setCs((prev) => applyAiDraftLines(prev, lines));
+      setCs((prev) => applyAiDraftLines(prev, toComposerLines(data.lines)));
       setAiDraftError(null);
     },
-    onError: (err) => {
-      const code = err.data?.code;
-      if (code === "PRECONDITION_FAILED") {
-        setAiDraftError("AI isn't enabled yet — ask your admin to add the API key.");
-      } else if (code === "TOO_MANY_REQUESTS") {
-        setAiDraftError("AI is busy right now — try again in a moment.");
-      } else {
-        setAiDraftError("Couldn't draft with AI — try rephrasing, or add lines manually.");
-      }
+    onError: onAiDraftError,
+  });
+
+  // GBB drafter: fills ALL THREE tier panels + stars the AI's recommended key.
+  const draftTiersMutation = api.v1.ai.draftEstimateTiers.useMutation({
+    onSuccess: (data) => {
+      const draft: AiTiersDraft = {
+        recommended: data.recommended,
+        good: { note: data.good.note, lines: toComposerLines(data.good.lines) },
+        better: { note: data.better.note, lines: toComposerLines(data.better.lines) },
+        best: { note: data.best.note, lines: toComposerLines(data.best.lines) },
+      };
+      setCs((prev) => applyAiDraftTiers(prev, draft));
+      setAiDraftError(null);
     },
+    onError: onAiDraftError,
   });
 
   function update(patch: Partial<ComposerState>) {
@@ -128,7 +153,12 @@ export default function ComposerPage() {
   function triggerAiDraft() {
     if (!cs.desc.trim()) return;
     setAiDraftError(null);
-    draftEstimateMutation.mutate({ description: cs.desc });
+    // GBB format drafts all three options; single format keeps the one-shot lines.
+    if (cs.format === "gbb" && cs.gbb) {
+      draftTiersMutation.mutate({ description: cs.desc });
+    } else {
+      draftEstimateMutation.mutate({ description: cs.desc });
+    }
   }
 
   const selectedLead: Lead | null =
@@ -174,16 +204,19 @@ export default function ComposerPage() {
   // --- persistence helpers --------------------------------------------------
   // The action buttons disable (with the reason inline) while these guards
   // fail — the early returns are defense-in-depth, not the primary gate.
-  // ALL of them derive the lines at call time (recommended tier in GBB).
+  // ALL of them derive the payload at call time; a GBB quote always carries
+  // the full three-tier structure (gating keys off the recommended tier).
 
   function saveDraftComposer() {
-    // Filter blank rows exactly like buildDraftPayload does — the server's
-    // draft schema rejects `description: ""` and the optimistic estimate
-    // would roll back silently AFTER the redirect (draft vanishes).
-    const sendLines = realLines(linesForSend(cs));
-    if (sendLines.length === 0) return;
+    // Gate on the recommended tier's real lines (mirrors the domain's send
+    // rule) — the server's draft schema rejects `description: ""` and the
+    // optimistic estimate would roll back silently AFTER the redirect.
+    const gateLines = realLines(linesForSend(cs));
+    if (gateLines.length === 0) return;
     // Draft requires a lead because addEstimate needs a real leadId.
     if (!selectedLead) return;
+    // GBB saves the FULL three-tier structure; single saves the line table.
+    const gbb = cs.format === "gbb" && cs.gbb ? cs.gbb : null;
     addEstimate({
       leadId: selectedLead.id,
       title: selectedLead.job || "Quote draft",
@@ -191,9 +224,13 @@ export default function ComposerPage() {
       age: 0,
       viewed: false,
       fu: { on: cs.fuOn, stage: 0 },
-      lines: toEstimateLines(sendLines),
+      lines: toEstimateLines(gbb ? tieredLinesForPayload(gbb) : gateLines),
       pricing: { ...cs.pricing },
       validDays: cs.validDays,
+      ...(gbb
+        ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
+        : {}),
+      ...(cs.terms ? { termsSnapshot: cs.terms.text } : {}),
     });
     // Quotes live in the Pipeline rail (the /quotes route just redirects here);
     // the new draft lands in the "in the shop" lane.
@@ -201,9 +238,14 @@ export default function ComposerPage() {
   }
 
   // The v1.quoting.draft payload built from the current composer state — shared by the
-  // send flow and the preview flow so they draft an identical estimate. Lines come
-  // from linesForSend so a GBB quote always drafts the RECOMMENDED tier.
+  // send flow and the preview flow so they draft an identical estimate. A GBB quote
+  // carries ALL tiers' lines (tier-tagged) + recommendedTier + tierNames; the customer
+  // picks one of the three options on their quote page. termsSnapshot rides both formats.
   function buildDraftPayload(lead: NonNullable<typeof selectedLead>) {
+    const gbb = cs.format === "gbb" && cs.gbb ? cs.gbb : null;
+    const payloadLines: (ComposerLine & { tier?: TierKey })[] = gbb
+      ? tieredLinesForPayload(gbb)
+      : realLines(cs.lines);
     return {
       leadId: lead.id,
       title: lead.job || "Quote",
@@ -211,15 +253,19 @@ export default function ComposerPage() {
       taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
       depBps: Math.round((cs.pricing.dep ?? 0) * 100),
       validDays: cs.validDays,
-      lines: realLines(linesForSend(cs))
-        .map((l) => ({
-          description: l.d,
-          quantity: l.q ?? 1,
-          rateCents: Math.round((l.r ?? 0) * 100),
-          costCents: Math.round((l.c ?? 0) * 100),
-          isOptional: l.opt ?? false,
-          needsPhoto: l.photo ?? false,
-        })),
+      lines: payloadLines.map((l) => ({
+        description: l.d,
+        quantity: l.q ?? 1,
+        rateCents: Math.round((l.r ?? 0) * 100),
+        costCents: Math.round((l.c ?? 0) * 100),
+        isOptional: l.opt ?? false,
+        needsPhoto: l.photo ?? false,
+        tier: l.tier,
+      })),
+      ...(gbb
+        ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
+        : {}),
+      ...(cs.terms?.text.trim() ? { termsSnapshot: cs.terms.text } : {}),
     };
   }
 
@@ -349,7 +395,7 @@ export default function ComposerPage() {
 
   // Preview: persist a draft to mint a public token, then open the customer-facing
   // quote page (/q/<token>) in a new tab — the exact view the customer will see.
-  // In GBB format that draft is the recommended tier (the Preview button says so).
+  // In GBB format that includes the three-option tier picker.
   async function previewComposer() {
     if (!selectedLead) return;
     if (!hasRealLine(linesForSend(cs))) return;
@@ -439,7 +485,7 @@ export default function ComposerPage() {
         onUpdate={update}
         onAiDraft={triggerAiDraft}
         onSuggestBetterBest={suggestBetterBest}
-        isDrafting={draftEstimateMutation.isPending}
+        isDrafting={draftEstimateMutation.isPending || draftTiersMutation.isPending}
         aiDraftError={aiDraftError}
       />
 

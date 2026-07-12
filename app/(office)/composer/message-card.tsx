@@ -1,14 +1,18 @@
 "use client";
 
 /**
- * Message section — the intro that leads the quote text/email, plus the
- * price-valid window. Boxed card shell; collapsible in-flow.
+ * Message section — the intro that leads the quote text/email, the terms
+ * attached to the quote, and the price-valid window. Boxed card shell;
+ * collapsible in-flow.
  *
  * The intro (or the auto-intro fallback) IS the lead text of the send body —
- * see buildQuoteMessageBody in composer-state.ts. Terms return in a later PR
- * with a terms snapshot on the estimate.
+ * see buildQuoteMessageBody in composer-state.ts. Terms come from the real
+ * job_terms library (settings store, hydrated by SettingsHydrator); selecting
+ * one SNAPSHOTS its text into the draft payload (terms_snapshot) — later term
+ * edits never rewrite a sent quote. "None" attaches nothing.
  */
 
+import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
 import type { ComposerState } from "./composer-state";
 
@@ -29,6 +33,22 @@ export function MessageCard({
   onUpdate: (patch: Partial<ComposerState>) => void;
   lead: Lead | null;
 }) {
+  // Real job_terms from settings (t = title, body = the text that snapshots).
+  const terms = useAppStore((s) => s.terms);
+  const selectedTerm = state.terms
+    ? terms.find((t) => t.id === state.terms!.id) ?? null
+    : null;
+
+  function selectTerms(id: string) {
+    if (id === "") {
+      onUpdate({ terms: null });
+      return;
+    }
+    const term = terms.find((t) => t.id === id);
+    // Freeze the TEXT at selection — snapshot semantics.
+    onUpdate({ terms: term ? { id: term.id, text: term.body } : null });
+  }
+
   return (
     <div className="card">
       <div className={`reveal${state.msgOpen ? " open" : ""}`}>
@@ -40,6 +60,7 @@ export function MessageCard({
           <span className="muted" style={{ fontWeight: 500 }}>
             — {state.intro ? "custom intro" : "auto intro"} · valid{" "}
             {state.validDays}d
+            {state.terms ? ` · terms: ${selectedTerm?.t ?? "attached"}` : ""}
           </span>
         </div>
         <div className="reveal-body">
@@ -67,6 +88,41 @@ export function MessageCard({
                 {state.intro.length}/{INTRO_MAX_CHARS}
                 {state.intro.length >= INTRO_MAX_CHARS ? " — at the limit" : ""}
               </div>
+            )}
+          </div>
+          <div className="field">
+            <label>
+              Terms{" "}
+              <span className="muted">
+                (shown on the quote page — attached as written now)
+              </span>
+            </label>
+            <select
+              value={state.terms?.id ?? ""}
+              onChange={(e) => selectTerms(e.target.value)}
+              aria-label="Terms"
+              style={{ maxWidth: 320 }}
+            >
+              <option value="">None</option>
+              {terms.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.t}
+                </option>
+              ))}
+            </select>
+            {state.terms && (
+              <p
+                className="muted"
+                style={{
+                  fontSize: 12,
+                  whiteSpace: "pre-wrap",
+                  margin: "6px 0 0",
+                  maxHeight: 120,
+                  overflowY: "auto",
+                }}
+              >
+                {state.terms.text}
+              </p>
             )}
           </div>
           <div className="field" style={{ maxWidth: 200, marginBottom: 0 }}>

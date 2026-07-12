@@ -134,7 +134,14 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
           costCents:   Math.round((l.c ?? 0) * 100),     // dollars → cents; 0 when absent
           isOptional:  l.opt ?? false,
           needsPhoto:  l.photo ?? false,
+          tier:        l.tier,                           // GBB tier tag; absent on single quotes
         })),
+        // Good/Better/Best: the full three-tier structure persists. The server's
+        // draft schema rejects inconsistent payloads (tiered lines require
+        // recommendedTier and vice versa) — callers set both or neither.
+        recommendedTier: draft.recommendedTier,
+        tierNames: draft.tierNames,
+        termsSnapshot: draft.termsSnapshot?.trim() ? draft.termsSnapshot : undefined,
       })
       .then((dto) => {
         // 3. Reconcile — id stays stable (client-authored); server overwrites num.

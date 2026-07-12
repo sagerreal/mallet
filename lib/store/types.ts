@@ -91,6 +91,16 @@ export interface Company {
 
 // ---- Estimate / Quote ------------------------------------------------------
 
+/** Good/Better/Best tier key — mirrors the DB CHECK on estimates/estimate_lines. */
+export type QuoteTierKey = "good" | "better" | "best";
+
+/** Editable display names for the three tiers ("Good"/"Better"/"Best" defaults). */
+export interface TierNames {
+  good: string;
+  better: string;
+  best: string;
+}
+
 export interface EstimateLine {
   d: string;
   q: number;
@@ -99,6 +109,8 @@ export interface EstimateLine {
   opt?: boolean;
   c?: number;
   h?: number;
+  /** GBB tier tag. Set on every line of a tiered estimate; absent on single quotes. */
+  tier?: QuoteTierKey;
 }
 
 /** One customer open of the quote page — the telemetry unit the Rail renders. */
@@ -145,6 +157,17 @@ export interface Estimate {
   changeRequestedAt?: string;
   /** The customer's change request message. */
   changeRequest?: string;
+  /**
+   * Good/Better/Best: set = tiered estimate (every line carries a tier tag).
+   * Totals derive from this tier pre-accept; absent on single quotes.
+   */
+  recommendedTier?: QuoteTierKey;
+  /** The tier the customer (or office) chose at accept — lines are resolved by then. */
+  acceptedTier?: QuoteTierKey;
+  /** Display names for the three tiers (fallback: Good/Better/Best). */
+  tierNames?: TierNames;
+  /** Terms text frozen at draft time — later term edits never rewrite sent quotes. */
+  termsSnapshot?: string;
   archived?: boolean;
   trash?: boolean;
 }

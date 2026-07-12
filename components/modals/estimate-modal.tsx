@@ -23,7 +23,7 @@ import { calcQuote } from "@/lib/prototype-sample";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import type { Estimate } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
-import { isExpired } from "@/lib/estimates";
+import { isExpired, gbbTierLine } from "@/lib/estimates";
 import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
 import { api } from "@/lib/trpc/client";
 
@@ -311,6 +311,7 @@ export function EstimateModalContent() {
           <div className="muted">
             {lead ? lead.name : ""} · {lead ? lead.phone : ""}
           </div>
+          {gbbTierLine(e) && <div className="muted">{gbbTierLine(e)}</div>}
         </div>
         <div>
           <SoftPill tone={stamp.cls as PillTone}>{stamp.label}</SoftPill>

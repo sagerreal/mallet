@@ -15,7 +15,7 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
-import { recommendedTier, tierDisplayName, type ComposerState } from "./composer-state";
+import { recommendedTier, type ComposerState } from "./composer-state";
 
 // ---- Delivery contact field -------------------------------------------------
 // Editable phone/email for the chosen send channel. A customer can be added by
@@ -122,9 +122,8 @@ export function SendCard({
   // The reason shown next to the action row — the all-actions gate first,
   // else the send-only destination gate.
   const shownReason = gateReason ?? deliveryGateReason;
-  // GBB format sends the recommended tier's lines — the labels say which.
-  const rec = recommendedTier(state);
-  const recName = rec ? tierDisplayName(rec) : null;
+  // GBB format sends all three options — the customer picks on their quote page.
+  const isGbb = recommendedTier(state) != null;
 
   return (
     <div className="card" style={{ borderColor: "#E6DCC4" }}>
@@ -235,7 +234,7 @@ export function SendCard({
           </span>
         )}
         <button className="btn ghost" onClick={onPreview} disabled={gated}>
-          {recName ? `Preview — ${recName}` : "Preview"}
+          Preview
         </button>
         <button
           className="btn ghost"
@@ -256,8 +255,8 @@ export function SendCard({
         >
           {isSending
             ? "Sending…"
-            : recName
-              ? `Send quote — ${recName} option`
+            : isGbb
+              ? "Send quote — 3 options"
               : "Send quote"}
         </button>
       </div>

@@ -145,8 +145,7 @@ export function GbbTiers({
       })}
 
       <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-        For now the customer receives the recommended option only — tier picking
-        for customers is coming.
+        Customers pick one of the three options on their quote page.
       </p>
     </div>
   );
