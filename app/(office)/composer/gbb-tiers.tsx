@@ -8,6 +8,7 @@
  */
 
 import { fmt$ } from "@/lib/format";
+import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 import {
   emptyLine,
   gbbTierTotal,
@@ -33,10 +34,12 @@ export function GbbTiers({
   state,
   onUpdate,
   showCost,
+  onSaveToBook,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
   showCost: boolean;
+  onSaveToBook: (line: ComposerLine) => Promise<AddResult>;
 }) {
   const g = state.gbb;
   if (!g) return null;
@@ -132,6 +135,7 @@ export function GbbTiers({
               showCost={showCost}
               onUpdateLine={(i, patch) => updateLine(tier, i, patch)}
               onRemoveLine={(i) => removeLine(tier, i)}
+              onSaveToBook={onSaveToBook}
             />
             <button
               className="btn sm ghost"

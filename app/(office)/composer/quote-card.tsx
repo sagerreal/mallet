@@ -14,8 +14,9 @@
 import { useState, useEffect } from "react";
 import { calcQuote } from "@/lib/prototype-sample";
 import { fmt$ } from "@/lib/format";
+import type { Service } from "@/lib/store/types";
+import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 import {
-  PRICEBOOK,
   hasRealLine,
   linesForSend,
   recommendedTier,
@@ -35,6 +36,8 @@ export function QuoteCard({
   onSuggestBetterBest,
   isDrafting,
   aiDraftError,
+  services,
+  onSaveToBook,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
@@ -42,11 +45,17 @@ export function QuoteCard({
   onSuggestBetterBest: () => void;
   isDrafting: boolean;
   aiDraftError: string | null;
+  /** The real pricebook catalog — read direction for "From pricebook". */
+  services: Service[];
+  /** Write direction for each line's "Save to book" chip. */
+  onSaveToBook: (line: ComposerLine) => Promise<AddResult>;
 }) {
   // View-only: show/hide the owner "Your cost" column (single table + tier
   // panels alike). Never touches the store — hiding only omits cells; entered
   // costs live on in the lines.
   const [showCost, setShowCost] = useState(false);
+  // "From pricebook" search — the catalog can run to dozens of services.
+  const [pbQuery, setPbQuery] = useState("");
 
   const isGbb = state.format === "gbb";
   const rec = recommendedTier(state);
@@ -89,11 +98,19 @@ export function QuoteCard({
     });
   }
 
-  function addPbLine(pb: { d: string; r: number }) {
+  // Appends a snapshot of the service — later edits to the pricebook entry
+  // never retroactively change a quote already built from it.
+  function addPbLine(svc: Service) {
     onUpdate({
-      lines: [...state.lines, { d: pb.d, q: 1, r: pb.r }],
+      lines: [...state.lines, { d: svc.name, q: 1, r: svc.unitPrice, c: svc.cost }],
     });
   }
+
+  const pbMatches = pbQuery.trim()
+    ? services.filter((svc) =>
+        svc.name.toLowerCase().includes(pbQuery.trim().toLowerCase())
+      )
+    : services;
 
   return (
     <div className="card" style={{ marginTop: 18 }}>
@@ -274,7 +291,12 @@ export function QuoteCard({
 
       {/* Format body */}
       {isGbb ? (
-        <GbbTiers state={state} onUpdate={onUpdate} showCost={showCost} />
+        <GbbTiers
+          state={state}
+          onUpdate={onUpdate}
+          showCost={showCost}
+          onSaveToBook={onSaveToBook}
+        />
       ) : (
         <>
           <LineTable
@@ -282,14 +304,41 @@ export function QuoteCard({
             showCost={showCost}
             onUpdateLine={updateLine}
             onRemoveLine={removeLine}
+            onSaveToBook={onSaveToBook}
           />
           {state.pbOpen && (
             <div className="pbpanel">
-              {PRICEBOOK.map((p, pi) => (
-                <button key={pi} className="chip" onClick={() => addPbLine(p)}>
-                  {p.d} · <b>{fmt$(p.r)}</b>
-                </button>
-              ))}
+              <input
+                type="text"
+                value={pbQuery}
+                onChange={(e) => setPbQuery(e.target.value)}
+                placeholder="Search your pricebook…"
+                style={{
+                  flexBasis: "100%",
+                  border: "1.5px solid var(--line)",
+                  borderRadius: 9,
+                  padding: "7px 10px",
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                }}
+              />
+              {pbMatches.length === 0 ? (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {services.length === 0
+                    ? "Your pricebook is empty — add services in Settings → Pricebook."
+                    : "No matches — try a different search."}
+                </span>
+              ) : (
+                pbMatches.map((svc) => (
+                  <button
+                    key={svc.id}
+                    className="chip"
+                    onClick={() => addPbLine(svc)}
+                  >
+                    {svc.name} · <b>{fmt$(svc.unitPrice)}</b>
+                  </button>
+                ))
+              )}
             </div>
           )}
         </>

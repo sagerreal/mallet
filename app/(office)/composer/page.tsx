@@ -19,8 +19,11 @@
  * Whatever the format, the lines that save / preview / send are derived AT
  * CALL TIME via linesForSend() — in GBB that is the recommended tier's lines.
  *
- * Deferred (intentional no-ops — see inline comments in the components):
- *   - savePbLine(i)      — needs a store pricebook
+ * The quote card reads the real pricebook (s.services) for "From pricebook"
+ * and writes to it via saveLineToBook (s.addService) for each line's "Save
+ * to book" chip — both directions wired to the store, no sample data.
+ *
+ * Deferred (intentional no-op — see inline comment in quote-card.tsx):
  *   - descMic() / 🎤     — no speech API in the app yet
  */
 
@@ -28,6 +31,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLeads, useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
+import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import {
@@ -61,6 +65,9 @@ export default function ComposerPage() {
   const adoptEstimate = useAppStore((s) => s.adoptEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const addLeadNote = useAppStore((s) => s.addLeadNote);
+  // The real pricebook catalog — "From pricebook" reads it; "Save to book" writes to it.
+  const services = useAppStore((s) => s.services);
+  const addService = useAppStore((s) => s.addService);
 
   // Seed leadId from ?lead= once (read-only initializer so state edits persist).
   const [cs, setCs] = useState<ComposerState>(() => {
@@ -129,6 +136,13 @@ export default function ComposerPage() {
     if (!cs.desc.trim()) return;
     setAiDraftError(null);
     draftEstimateMutation.mutate({ description: cs.desc });
+  }
+
+  // "Save to book" (line-table.tsx) — snapshots the line's current values into
+  // a new pricebook service. Editing the line afterward never rewrites the
+  // saved service (and vice versa) — they're independent from this point on.
+  function saveLineToBook(line: ComposerLine): Promise<AddResult> {
+    return addService({ name: line.d, unitPrice: line.r, cost: line.c ?? 0 });
   }
 
   const selectedLead: Lead | null =
@@ -441,6 +455,8 @@ export default function ComposerPage() {
         onSuggestBetterBest={suggestBetterBest}
         isDrafting={draftEstimateMutation.isPending}
         aiDraftError={aiDraftError}
+        services={services}
+        onSaveToBook={saveLineToBook}
       />
 
       {/* Pricing — discount, deposit, tax */}
