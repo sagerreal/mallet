@@ -25,6 +25,12 @@ const TARGETS: { key: keyof Omit<MappingConfig, "sourceTag">; label: string }[] 
 type Phase = "upload" | "map" | "importing" | "done";
 interface Summary { created: number; deduped: number; failed: number; }
 
+// Committed-offset progress. `done` is the count of rows already sent AND acknowledged by the
+// server, so a retry resumes from there instead of re-sending committed rows (server dedupe is
+// phone-only, so a phoneless row re-sent would be created AGAIN as a duplicate). Reset to ZERO
+// whenever the file or mapping changes, since `done` only ever indexes into the CURRENT rows.
+const ZERO = { done: 0, created: 0, deduped: 0, failed: 0 };
+
 export function ImportCustomersModalContent() {
   const utils = api.useUtils();
   const importMut = api.v1.customers.importCustomers.useMutation();
@@ -35,6 +41,7 @@ export function ImportCustomersModalContent() {
   const [records, setRecords] = useState<Record<string, string>[]>([]);
   const [map, setMap] = useState<MappingConfig | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [progress, setProgress] = useState(ZERO);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -45,6 +52,7 @@ export function ImportCustomersModalContent() {
       setHeaders(h);
       setRecords(r);
       setMap(autoMap(h));
+      setProgress(ZERO); // new file → committed offset is meaningless; start fresh
       setPhase("map");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not read the file.");
@@ -56,23 +64,32 @@ export function ImportCustomersModalContent() {
   async function runImport() {
     if (!built) return;
     setPhase("importing");
-    let created = 0, deduped = 0, failed = 0;
+    setError(null);
+    let { done, created, deduped, failed } = progress;
     try {
-      for (let i = 0; i < built.rows.length; i += CHUNK) {
+      // Resume from the committed offset; a retry after a mid-batch failure must not re-send
+      // already-created rows (server dedupe is phone-only, so phoneless rows would duplicate).
+      for (let i = done; i < built.rows.length; i += CHUNK) {
         const res = await importMut.mutateAsync({ rows: built.rows.slice(i, i + CHUNK) });
-        created += res.created; deduped += res.deduped; failed += res.failed;
+        created += res.created;
+        deduped += res.deduped;
+        failed += res.failed;
+        done = Math.min(i + CHUNK, built.rows.length);
+        setProgress({ done, created, deduped, failed });
+        await utils.v1.customers.list.invalidate(); // refresh after each chunk, not only at the end
       }
-      await utils.v1.customers.list.invalidate();
       setSummary({ created, deduped, failed });
       setPhase("done");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Import failed. Nothing was changed for the failed batch.");
+      setProgress({ done, created, deduped, failed }); // persist so a retry RESUMES, not re-sends
+      setError(err instanceof Error ? err.message : "Import stopped partway. Saved rows were kept — click Import to finish the rest.");
       setPhase("map");
     }
   }
 
   function setField(key: keyof Omit<MappingConfig, "sourceTag">, value: string) {
     setMap((m) => (m ? { ...m, [key]: value || null } : m));
+    setProgress(ZERO); // mapping changed → the committed offset no longer indexes these rows
   }
 
   return (
@@ -106,7 +123,7 @@ export function ImportCustomersModalContent() {
             ))}
             <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ width: 150, fontSize: 13 }}>Tag source as</span>
-              <input value={map.sourceTag} onChange={(e) => setMap((m) => m ? { ...m, sourceTag: e.target.value } : m)}
+              <input value={map.sourceTag} onChange={(e) => { setMap((m) => m ? { ...m, sourceTag: e.target.value } : m); setProgress(ZERO); }}
                 style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 9px", fontFamily: "inherit", fontSize: 13 }} />
             </label>
           </div>
