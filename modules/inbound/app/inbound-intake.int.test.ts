@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
-import { asOrgId, systemClock } from "@mallet/shared/types";
+import { asOrgId, systemClock, isOk } from "@mallet/shared/types";
 import { withTenant } from "@mallet/shared/db/tx";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { closeDb } from "@mallet/shared/db/client";
@@ -18,6 +18,8 @@ import {
   IngestExternalLeadUseCase,
 } from "@mallet/inbound";
 import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers";
+import { AngiLeadParser } from "./parsers/angi-parser";
+import { ThumbtackLeadParser } from "./parsers/thumbtack-parser";
 
 // The privileged token→org resolution (no session) + the ingest path (create a lead in the right
 // org, idempotency, soft-delete). Complements the router int test (which covers generate/list/
@@ -103,6 +105,81 @@ suite("inbound intake (resolver + ingest, live RLS)", () => {
     // The form channel (externalId=null) must NEVER touch the idempotency ledger.
     const receipts = await admin<{ n: number }[]>`select count(*)::int as n from inbound_lead_receipts where org_id = ${orgAId} and channel = 'form'`;
     expect(receipts[0]!.n).toBe(0);
+  });
+
+  it("ingests an Angi lead (source=Angi) and is idempotent on retry (same leadOid → duplicate_ignored, still one lead)", async () => {
+    const orgA = asOrgId(orgAId);
+    const leadOid = `angi-${randomUUID()}`;
+    const parsed = new AngiLeadParser().parse({
+      name: "Priya Nair", primaryPhone: "(510) 555-0177", email: "priya@x.com",
+      address: "42 Elm St", city: "Fremont", stateProvince: "CA", postalCode: "94536",
+      taskName: "Water heater repair", comments: "No hot water", leadOid,
+    });
+    expect(isOk(parsed)).toBe(true);
+    if (!isOk(parsed)) return;
+    const lead = parsed.value;
+
+    const first = await withTenant(orgA, (tx) => ingestFor(tx, orgA).exec({ channel: "angi", source: "Angi", lead }));
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.value.outcome).toBe("created");
+
+    const rows = await admin<{ n: number }[]>`select count(*)::int as n from leads where org_id = ${orgAId} and name = 'Priya Nair' and source = 'Angi'`;
+    expect(rows[0]!.n).toBe(1);
+
+    // A real marketplace retry (webhook redelivery) resends the identical payload → same leadOid.
+    const second = await withTenant(orgA, (tx) => ingestFor(tx, orgA).exec({ channel: "angi", source: "Angi", lead }));
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value.outcome).toBe("duplicate_ignored");
+
+    const rowsAfterRetry = await admin<{ n: number }[]>`select count(*)::int as n from leads where org_id = ${orgAId} and name = 'Priya Nair' and source = 'Angi'`;
+    expect(rowsAfterRetry[0]!.n).toBe(1);
+  });
+
+  it("dedupes a phoneless Angi lead by externalId on retry (phone dedupe alone can't catch this)", async () => {
+    const orgA = asOrgId(orgAId);
+    const leadOid = `angi-phoneless-${randomUUID()}`;
+    const parsed = new AngiLeadParser().parse({
+      name: "Devon Cole", taskName: "Drain cleaning", comments: "Slow drain in bathroom", leadOid,
+      // No primaryPhone / email on this payload.
+    });
+    expect(isOk(parsed)).toBe(true);
+    if (!isOk(parsed)) return;
+    const lead = parsed.value;
+    expect(lead.phone).toBeNull();
+
+    const first = await withTenant(orgA, (tx) => ingestFor(tx, orgA).exec({ channel: "angi", source: "Angi", lead }));
+    expect(first.ok).toBe(true);
+    if (first.ok) expect(first.value.outcome).toBe("created");
+
+    const second = await withTenant(orgA, (tx) => ingestFor(tx, orgA).exec({ channel: "angi", source: "Angi", lead }));
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value.outcome).toBe("duplicate_ignored");
+
+    const rows = await admin<{ n: number }[]>`select count(*)::int as n from leads where org_id = ${orgAId} and name = 'Devon Cole' and source = 'Angi'`;
+    expect(rows[0]!.n).toBe(1);
+  });
+
+  it("ingests a Thumbtack lead into the resolving org (source=Thumbtack)", async () => {
+    const orgA = asOrgId(orgAId);
+    const leadID = `tt-${randomUUID()}`;
+    const parsed = new ThumbtackLeadParser().parse({
+      leadID,
+      customer: { name: "Maria Sanchez", phone: "925-555-0142" },
+      request: {
+        title: "Leaky faucet", description: "Kitchen faucet drips",
+        location: { city: "Fremont", state: "CA", zipCode: "94536" },
+      },
+    });
+    expect(isOk(parsed)).toBe(true);
+    if (!isOk(parsed)) return;
+    const lead = parsed.value;
+
+    const outcome = await withTenant(orgA, (tx) => ingestFor(tx, orgA).exec({ channel: "thumbtack", source: "Thumbtack", lead }));
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.value.outcome).toBe("created");
+
+    const rows = await admin<{ n: number }[]>`select count(*)::int as n from leads where org_id = ${orgAId} and name = 'Maria Sanchez' and source = 'Thumbtack'`;
+    expect(rows[0]!.n).toBe(1);
   });
 
   it("is idempotent on (channel, externalId): reserve is true then false, one receipt row", async () => {
