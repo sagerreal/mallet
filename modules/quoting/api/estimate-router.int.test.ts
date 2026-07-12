@@ -98,6 +98,50 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  it("accept creates a job automatically (idempotent)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    // Draft + send + accept
+    const drafted = await caller.v1.quoting.draft({
+      leadId: leadAId,
+      title: "Auto-job test",
+      lines: [{ description: "Labor", quantity: 2, rateCents: 15_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    expect(accepted.status).toBe("accepted");
+
+    // A job should exist for this lead — use listByLead since jobSummaryDTO lacks sourceEstimateId.
+    // Then fetch the full job to verify sourceEstimateId.
+    const jobsPage = await caller.v1.jobs.listByLead({ leadId: leadAId, limit: 50 });
+    expect(jobsPage.items.length).toBeGreaterThan(0);
+
+    // Find the job whose full DTO has sourceEstimateId matching our estimate.
+    let matchingJobId: string | undefined;
+    for (const summary of jobsPage.items) {
+      const full = await caller.v1.jobs.get({ jobId: summary.id });
+      if (full.sourceEstimateId === drafted.id) {
+        matchingJobId = full.id;
+        expect(full.status).toMatch(/^(unscheduled|scheduled)$/);
+        break;
+      }
+    }
+    expect(matchingJobId).toBeDefined();
+
+    // Re-accept on an already-accepted estimate throws a validation error (domain rule).
+    // The important thing is that only ONE job exists for this estimate.
+    await expect(caller.v1.quoting.accept({ estimateId: drafted.id })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    const jobsAgain = await caller.v1.jobs.listByLead({ leadId: leadAId, limit: 50 });
+    let matchCount = 0;
+    for (const summary of jobsAgain.items) {
+      const full = await caller.v1.jobs.get({ jobId: summary.id });
+      if (full.sourceEstimateId === drafted.id) matchCount++;
+    }
+    expect(matchCount).toBe(1);
+  });
+
   it("listByLead returns only that lead's estimates; cross-org RLS blocks other org", async () => {
     // Create a second lead in org A to verify filtering works within the same org.
     const [extraRow] = await admin<{ id: string }[]>`

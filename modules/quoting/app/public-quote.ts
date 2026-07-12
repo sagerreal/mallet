@@ -8,6 +8,8 @@ import { AcceptEstimateUseCase } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 import type { Estimate } from "../domain/estimate";
+import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
+import { logger } from "@mallet/shared/observability";
 
 // Re-export so callers only need to import from this module.
 export type { PublicQuoteView };
@@ -47,6 +49,19 @@ export async function acceptPublicQuote(token: string): Promise<Estimate | null>
       }
       // Not found inside the tenant tx — shouldn't happen since ownerDb resolved it, but guard.
       return null;
+    }
+
+    // After the estimate is accepted, create its job atomically in the same tx.
+    // CreateJobFromEstimateUseCase is idempotent (partial unique index on source_estimate_id +
+    // ON CONFLICT DO NOTHING), so a re-accept via the public token is safe. If job creation
+    // fails, do NOT fail the accept — log and continue.
+    try {
+      const jobRepo = new DrizzleJobRepository(tx, orgId);
+      const estimateReader = new DrizzleEstimateReader(tx, orgId);
+      const createJob = new CreateJobFromEstimateUseCase(jobRepo, estimateReader, bus, systemClock, uuidGenerator);
+      await createJob.exec({ orgId, estimateId: asEstimateId(estimateId) });
+    } catch (err) {
+      logger.error({ err, estimateId, orgId }, "public-quote.accept: job creation failed (non-fatal)");
     }
 
     return result.value;
