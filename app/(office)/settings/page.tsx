@@ -21,6 +21,8 @@ import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
+import { IconWell } from "./icon-well";
+import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
@@ -445,10 +447,20 @@ function SecSources() {
   const openModal = useOpenModal();
 
   const [srcName, setSrcName] = useState("");
+  const [srcError, setSrcError] = useState<string | null>(null);
 
-  function handleAddSource() {
-    addSource(srcName);
-    setSrcName("");
+  async function handleAddSource() {
+    const result = await addSource(srcName);
+    if (result.ok) {
+      setSrcName("");
+      setSrcError(null);
+    } else if (result.reason === "duplicate") {
+      setSrcError("That source is already in your list.");
+    } else if (result.reason === "failed") {
+      setSrcError("Couldn’t add that source — check your connection and try again.");
+    } else {
+      setSrcError(null); // empty input — no-op, no error needed
+    }
   }
 
   return (
@@ -497,38 +509,65 @@ function SecSources() {
       <LeadMarketplacesCard />
 
       <FoldCard title="Import customers" summary="CSV">
-        <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-          Coming from QuickBooks, Google Contacts, or another tool? Export a CSV and upload it here.
-        </p>
-        <button className="btn primary" onClick={() => openModal(MODAL.IMPORT_CUSTOMERS)}>
-          Upload a spreadsheet (CSV)
-        </button>
+        <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+          <IconWell>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+          </IconWell>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="muted" style={{ fontSize: 13, margin: "1px 0 11px", lineHeight: 1.45 }}>
+              Bring your existing customers over from QuickBooks, Google Contacts, Jobber, or any spreadsheet — export a CSV and upload it.
+            </p>
+            <button className="btn primary" onClick={() => openModal(MODAL.IMPORT_CUSTOMERS)}>
+              Upload a spreadsheet (CSV)
+            </button>
+          </div>
+        </div>
       </FoldCard>
 
       <WebsiteFormCard />
 
-      <FoldCard title="Source list" summary={`${sources.length} sources`}>
-        {sources.length > 0 ? (
-          sources.map((s) => {
-            const count = leads.filter((l) => l.source === s.label).length;
+      <FoldCard title="Source list" summary={`${DEFAULT_SOURCES.length + sources.length} sources`}>
+        <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>
+          Where your leads come from — tag each lead with one. Built-in sources are always available; add your own below.
+        </p>
+        <div>
+          {DEFAULT_SOURCES.map((label) => {
+            const n = leads.filter((l) => l.source === label).length;
             return (
-              <div key={s.id} className="stage-row">
-                <span style={{ fontWeight: 700 }}>{s.label}</span>
-                <span className="trig">{count} lead{count === 1 ? "" : "s"}</span>
-                <button className="btn sm ghost" onClick={() => removeSource(s.id)}>✕</button>
+              <div key={label} className="stage-row">
+                <span style={{ fontWeight: 600, flex: 1 }}>{label}</span>
+                <span className="muted" style={{ fontSize: 12, minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-3)", background: "var(--manila)", border: "1px solid var(--manila-line)", borderRadius: 999, padding: "2px 8px" }}>
+                  Built-in
+                </span>
               </div>
             );
-          })
-        ) : (
-          <div className="empty-att">
-            Empty — a brand-new shop starts blank and builds its own list from the first lead.
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="setSrcName" placeholder="e.g. Home show, Truck wrap" value={srcName} onChange={(e) => setSrcName(e.target.value)}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <button className="btn" onClick={handleAddSource}>+ Add</button>
+          })}
+          {sources.map((s) => {
+            const n = leads.filter((l) => l.source === s.label).length;
+            return (
+              <div key={s.id} className="stage-row">
+                <span style={{ fontWeight: 700, flex: 1 }}>{s.label}</span>
+                <span className="muted" style={{ fontSize: 12, minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
+                <button className="btn sm ghost" aria-label={`Remove ${s.label}`} onClick={() => removeSource(s.id)}>✕</button>
+              </div>
+            );
+          })}
         </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <input type="text" id="setSrcName" placeholder="Add a source — e.g. Home show, Truck wrap" value={srcName}
+            onChange={(e) => { setSrcName(e.target.value); if (srcError) setSrcError(null); }}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleAddSource(); }}
+            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+          <button className="btn" onClick={() => void handleAddSource()}>+ Add</button>
+        </div>
+        {srcError && (
+          <p style={{ color: "var(--red)", fontSize: 12, margin: "8px 0 0" }}>{srcError}</p>
+        )}
       </FoldCard>
     </>
   );

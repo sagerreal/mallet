@@ -67,12 +67,6 @@ export function LeadMarketplacesCard() {
     <FoldCard title="Lead marketplaces" summary="Angi · Thumbtack">
       <ConnectRow channel="angi" label="Angi" steps="In Angi, email crmintegrations@angi.com with this webhook URL to route your leads here." />
       <ConnectRow channel="thumbtack" label="Thumbtack" steps="In Thumbtack → integrations, add this URL as a custom lead webhook." />
-      <div className="stage-row">
-        <b>Google LSA</b><span className="muted" style={{ fontSize: 12 }}>Not available yet</span>
-      </div>
-      <div className="stage-row">
-        <b>Yelp</b><span className="muted" style={{ fontSize: 12 }}>Not available yet</span>
-      </div>
     </FoldCard>
   );
 }

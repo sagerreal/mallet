@@ -228,6 +228,23 @@ describe("settings-slice persistence", () => {
     expect(store.get().sources).toHaveLength(0);
   });
 
+  it("addSource reports its outcome so the UI can give feedback (no silent failures)", async () => {
+    const store = makeStore();
+    expect(await store.get().addSource("   ")).toEqual({ ok: false, reason: "empty" });
+    expect(await store.get().addSource("Google")).toEqual({ ok: false, reason: "duplicate" }); // a default
+    store.set({ sources: [{ id: "x", label: "Truck wrap" }] });
+    expect(await store.get().addSource("truck wrap")).toEqual({ ok: false, reason: "duplicate" }); // existing custom
+    expect(await store.get().addSource("Home show")).toEqual({ ok: true });
+  });
+
+  it("addSource returns {ok:false, reason:'failed'} and rolls back when the persist rejects", async () => {
+    mockCreateSource.mockRejectedValueOnce(new Error("boom"));
+    const store = makeStore();
+    const r = await store.get().addSource("Home show");
+    expect(r).toEqual({ ok: false, reason: "failed" });
+    expect(store.get().sources.some((x) => x.label === "Home show")).toBe(false); // rolled back
+  });
+
   it("removeSource rolls back on rejection", async () => {
     mockRemoveSource.mockRejectedValueOnce(new Error("boom"));
     const store = makeStore();
