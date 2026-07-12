@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
 import { getPublicQuote, acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
-import type { RequestChangeResult } from "@/modules/quoting/app/public-quote";
+import type { AcceptPublicQuoteResult, RequestChangeResult } from "@/modules/quoting/app/public-quote";
 import type { Estimate } from "@/modules/quoting/domain/estimate";
 
 // Public, unauthenticated route handlers for the customer-facing quote page.
@@ -23,6 +23,10 @@ const postBodySchema = z.object({
   action: z.enum(["accept", "decline", "request_change"]),
   reason: z.string().max(500).optional(),
   message: z.string().trim().min(1).max(2000).optional(),
+  // Accept-time selection of OPTIONAL add-on line IDs. SECURITY: an ID subset only —
+  // line content (descriptions, quantities, prices) always comes from the stored
+  // estimate, so a token holder can never author or reprice lines.
+  selectedLineIds: z.array(z.string().uuid()).max(50).optional(),
 });
 
 // --- Serialisation helpers -------------------------------------------------
@@ -119,15 +123,23 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const { action, reason, message } = parsed.data;
+  const { action, reason, message, selectedLineIds } = parsed.data;
 
   try {
     if (action === "accept") {
-      const estimate = await acceptPublicQuote(token);
-      if (!estimate) {
+      const acceptResult: AcceptPublicQuoteResult = await acceptPublicQuote(token, selectedLineIds);
+      if (acceptResult.kind === "not_found") {
         return NextResponse.json({ error: "not found" }, { status: 404 });
       }
-      return NextResponse.json({ estimate: estimateToJson(estimate) });
+      if (acceptResult.kind === "invalid_selection") {
+        // A selected add-on id no longer matches a stored optional line — the quote
+        // changed since the page loaded (or the id was fabricated).
+        return NextResponse.json(
+          { error: "This quote was updated — reload the page and try again." },
+          { status: 400 },
+        );
+      }
+      return NextResponse.json({ estimate: estimateToJson(acceptResult.estimate) });
     }
 
     if (action === "decline") {

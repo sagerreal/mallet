@@ -33,9 +33,12 @@ interface QuoteActionsProps {
   readonly totalCents: number;
   /** If the customer already submitted a change request, show the received state immediately. */
   readonly changeAlreadyRequested?: boolean;
+  /** Optional add-on line IDs the customer toggled ON — sent with the accept so the
+   *  server commits the tuned selection (IDs only; line content stays server-side). */
+  readonly selectedLineIds?: readonly string[];
 }
 
-export function QuoteActions({ token, totalCents, changeAlreadyRequested }: QuoteActionsProps) {
+export function QuoteActions({ token, totalCents, changeAlreadyRequested, selectedLineIds }: QuoteActionsProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [changeMessage, setChangeMessage] = useState("");
@@ -44,7 +47,7 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested }: Quot
   // OR when the customer just submitted one in this session.
   const showChangeBanner = changeAlreadyRequested || phase === "change_sent";
 
-  async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string }): Promise<void> {
+  async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string; selectedLineIds?: string[] }): Promise<void> {
     setPhase("busy");
     setError(null);
     try {
@@ -55,7 +58,13 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested }: Quot
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError((data as { error?: string }).error ?? "Something went wrong. Please try again.");
+        const serverError = (data as { error?: string }).error;
+        if (res.status === 400 && action === "accept") {
+          // The add-on selection no longer matches the stored quote (e.g. it was edited).
+          setError(serverError ?? "This quote was updated — reload the page and try again.");
+        } else {
+          setError(serverError ?? "Something went wrong. Please try again.");
+        }
         setPhase(action === "request_change" ? "requesting_change" : "idle");
         return;
       }
@@ -68,7 +77,14 @@ export function QuoteActions({ token, totalCents, changeAlreadyRequested }: Quot
     }
   }
 
-  function handleApprove() { void callApi("accept"); }
+  function handleApprove() {
+    void callApi(
+      "accept",
+      selectedLineIds && selectedLineIds.length > 0
+        ? { selectedLineIds: [...selectedLineIds] }
+        : undefined,
+    );
+  }
   function handleDecline(reason: string) { void callApi("decline", { reason }); }
   function handleRequestChange() {
     const msg = changeMessage.trim();

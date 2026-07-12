@@ -8,7 +8,7 @@ import { closeDb } from "@mallet/shared/db/client";
 import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
-import { requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
+import { acceptPublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
 
 // Capstone: the whole quoting stack via createCaller — auth, RBAC, org-scoped tx, use-cases,
 // Drizzle repo, live RLS. Owner in org A drafts -> sends -> accepts; org B sees nothing; a tech
@@ -298,5 +298,79 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     // A token that matches nothing → not_found.
     const missing = await requestChangePublicQuote("not-a-real-token", "hello");
     expect(missing.kind).toBe("not_found");
+  });
+
+  it("customer accepts via the public token with a selected optional add-on — total and deposit reflect the selection", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    // Fresh lead for isolation. Odd-cent pricing so every rounding step is exercised:
+    // fixed 3 × $33.33 = 9_999c; optional 1.5 × $9.99 = round(1498.5) = 1_499c;
+    // disc 10%, tax 8.25%, dep 33% → tuned total 11_202c, deposit 3_697c.
+    const lead = await caller.v1.customers.create({ name: "Addon Accept Customer" });
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Water heater",
+      discBps: 1_000,
+      taxBps: 825,
+      depBps: 3_300,
+      lines: [
+        { description: "Labor", quantity: 3, rateCents: 3_333 },
+        { description: "Optional anode rod", quantity: 1.5, rateCents: 999, isOptional: true },
+      ],
+    });
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+    expect(sent.publicToken).toBeTruthy();
+    const optLine = sent.lines.find((l) => l.isOptional);
+    expect(optLine).toBeDefined();
+
+    // The public page path: accept through the token with the add-on toggled ON.
+    const result = await acceptPublicQuote(sent.publicToken!, [optLine!.id]);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("expected ok");
+    expect(result.estimate.props.status).toBe("accepted");
+    expect(result.estimate.total()).toBe(11_202);
+    // depPaid is stamped from the COMMITTED (tuned) lines.
+    expect(result.estimate.props.depPaid).toBe(3_697);
+    expect(result.estimate.props.lines.every((l) => !l.props.isOptional)).toBe(true);
+
+    // Stored state matches what was returned: the office sees the tuned total.
+    const fetched = await caller.v1.quoting.get({ estimateId: drafted.id });
+    expect(fetched.status).toBe("accepted");
+    expect(fetched.total.cents).toBe(11_202);
+    expect(fetched.lines).toHaveLength(2);
+    expect(fetched.lines.every((l) => !l.isOptional)).toBe(true);
+  });
+
+  it("accept with an invalid selection id is rejected and the estimate stays sent", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const lead = await caller.v1.customers.create({ name: "Bad Selection Customer" });
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Bad selection test",
+      lines: [
+        { description: "Labor", quantity: 1, rateCents: 50_000 },
+        { description: "Optional extra", quantity: 1, rateCents: 7_500, isOptional: true },
+      ],
+    });
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+
+    // An id that names no stored OPTIONAL line → invalid_selection, nothing committed.
+    const invalid = await acceptPublicQuote(sent.publicToken!, [randomUUID()]);
+    expect(invalid.kind).toBe("invalid_selection");
+    const afterInvalid = await caller.v1.quoting.get({ estimateId: drafted.id });
+    expect(afterInvalid.status).toBe("sent");
+    expect(afterInvalid.total.cents).toBe(50_000);
+
+    // A fixed (non-optional) line id is also not toggleable.
+    const fixedLine = sent.lines.find((l) => !l.isOptional);
+    const nonOptional = await acceptPublicQuote(sent.publicToken!, [fixedLine!.id]);
+    expect(nonOptional.kind).toBe("invalid_selection");
+
+    // Accept with NO selection still works — the optional line stays excluded.
+    const accepted = await acceptPublicQuote(sent.publicToken!);
+    expect(accepted.kind).toBe("ok");
+    if (accepted.kind !== "ok") throw new Error("expected ok");
+    expect(accepted.estimate.total()).toBe(50_000);
   });
 });

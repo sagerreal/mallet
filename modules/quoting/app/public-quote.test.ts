@@ -13,11 +13,14 @@
  *  4. getPublicQuote: stamps the view (idempotent view-tracking)
  *  5. acceptPublicQuote: normal accept transitions status to "accepted"
  *  6. acceptPublicQuote: already-accepted → idempotent (returns current state)
- *  7. acceptPublicQuote: unknown token → null
+ *  7. acceptPublicQuote: unknown token → not_found
  *  8. declinePublicQuote: unknown token → null
  *  9. declinePublicQuote: already-terminal → idempotent (returns current state)
  * 10. token isolation: a token resolves only its own estimate, not another's
  * 11. DraftEstimateUseCase: every draft gets a unique, non-empty publicToken
+ * 12. acceptPublicQuote selection: valid subset commits the chosen add-ons from
+ *     STORED lines only; unknown/non-optional id → invalid_selection; empty or
+ *     omitted selection passes no lines (original line set untouched)
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -41,8 +44,10 @@ import { Estimate, EstimateLine, type EstimateProps } from "../domain/estimate";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
 import { DraftEstimateUseCase } from "./draft-estimate";
 import { AcceptEstimateUseCase } from "./accept-estimate";
+import type { AcceptLineInput } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
 import { RequestEstimateChangeUseCase } from "./request-estimate-change";
+import { buildAcceptLinesFromSelection } from "./select-optional-lines";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 
 // ---------------------------------------------------------------------------
@@ -135,11 +140,34 @@ const makeTestLine = (): EstimateLine => {
   return r.value;
 };
 
+const makeLineWith = (
+  id: string,
+  description: string,
+  rateCents: number,
+  isOptional: boolean,
+  position: number,
+): EstimateLine => {
+  const r = EstimateLine.create({
+    id: asEstimateLineId(id),
+    description,
+    quantity: 1,
+    rate: money(rateCents),
+    cost: zeroMoney,
+    isOptional,
+    needsPhoto: false,
+    position,
+  });
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
 const makeSentEstimate = (
   estimateId: EstimateId,
   orgId: OrgId,
   leadId: LeadId,
   token: string,
+  lines?: readonly EstimateLine[],
+  pricing?: { discBps: number; taxBps: number; depBps: number },
 ): Estimate => {
   const now = new Date("2026-07-01T00:00:00Z");
   const props: EstimateProps = {
@@ -149,9 +177,9 @@ const makeSentEstimate = (
     leadId,
     title: "Test quote",
     status: "sent",
-    discBps: 0,
-    taxBps: 0,
-    depBps: 0,
+    discBps: pricing?.discBps ?? 0,
+    taxBps: pricing?.taxBps ?? 0,
+    depBps: pricing?.depBps ?? 0,
     depPaid: zeroMoney,
     validDays: 30,
     sentAt: now,
@@ -161,7 +189,7 @@ const makeSentEstimate = (
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: token,
-    lines: [makeTestLine()],
+    lines: lines ?? [makeTestLine()],
     createdAt: now,
     updatedAt: now,
   };
@@ -211,27 +239,50 @@ class FakePublicEstimateReader {
 //  but accept injected fakes instead of calling getAppDeps / withTenant.)
 // ---------------------------------------------------------------------------
 
+type TestAcceptResult =
+  | { kind: "ok"; estimate: Estimate }
+  | { kind: "invalid_selection" }
+  | { kind: "not_found" };
+
 async function testAcceptPublicQuote(
   token: string,
   reader: FakePublicEstimateReader,
   repoByOrg: Map<OrgId, FakeEstimateRepository>,
   bus: InMemoryEventBus,
   clock: FixedClock,
-): Promise<Estimate | null> {
+  selectedLineIds?: readonly string[],
+): Promise<TestAcceptResult> {
   const resolved = await reader.resolveOrgByToken(token);
-  if (!resolved) return null;
+  if (!resolved) return { kind: "not_found" };
   const { estimateId, orgId } = resolved;
   const repo = repoByOrg.get(orgId);
-  if (!repo) return null;
+  if (!repo) return { kind: "not_found" };
+
+  // Selection is validated against — and committed lines built from — STORED data only,
+  // via the same buildAcceptLinesFromSelection the real acceptPublicQuote uses.
+  const stored = await repo.findById(asEstimateId(estimateId));
+  if (!stored) return { kind: "not_found" };
+
+  let lines: readonly AcceptLineInput[] | undefined;
+  if (stored.props.status === "sent") {
+    const selection = buildAcceptLinesFromSelection(stored, selectedLineIds);
+    if (selection.kind === "invalid") return { kind: "invalid_selection" };
+    if (selection.kind === "lines") lines = selection.lines;
+  }
+
   const useCase = new AcceptEstimateUseCase(repo, bus, clock);
-  const result = await useCase.exec({ estimateId: asEstimateId(estimateId) });
+  const result = await useCase.exec({
+    estimateId: asEstimateId(estimateId),
+    ...(lines ? { lines } : {}),
+  });
   if (!result.ok) {
     if (result.error.kind === "validation") {
-      return repo.findById(asEstimateId(estimateId));
+      const current = await repo.findById(asEstimateId(estimateId));
+      return current ? { kind: "ok", estimate: current } : { kind: "not_found" };
     }
-    return null;
+    return { kind: "not_found" };
   }
-  return result.value;
+  return { kind: "ok", estimate: result.value };
 }
 
 async function testDeclinePublicQuote(
@@ -338,15 +389,17 @@ describe("getPublicQuote — token-scoped read", () => {
 // ---------------------------------------------------------------------------
 
 describe("acceptPublicQuote", () => {
-  it("unknown token → null (not-found)", async () => {
+  it("unknown token → not_found", async () => {
     const result = await testAcceptPublicQuote(UNKNOWN_TOKEN, reader, repoByOrg, bus, clock);
-    expect(result).toBeNull();
+    expect(result.kind).toBe("not_found");
   });
 
   it("known token transitions the estimate to accepted", async () => {
     const result = await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
-    expect(result?.props.status).toBe("accepted");
-    expect(result?.props.acceptedAt).not.toBeNull();
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.estimate.props.status).toBe("accepted");
+    expect(result.estimate.props.acceptedAt).not.toBeNull();
   });
 
   it("emits exactly one estimate.accepted event with the correct orgId", async () => {
@@ -361,7 +414,9 @@ describe("acceptPublicQuote", () => {
     const second = await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
 
     // Second call returns the already-accepted estimate without error.
-    expect(second?.props.status).toBe("accepted");
+    expect(second.kind).toBe("ok");
+    if (second.kind !== "ok") return;
+    expect(second.estimate.props.status).toBe("accepted");
 
     // Only one estimate.accepted event was ever emitted.
     const events = bus.recorded.filter((e) => e.name === "estimate.accepted");
@@ -390,6 +445,93 @@ describe("acceptPublicQuote", () => {
     expect((await repoA.findById(estimateIdA))?.props.status).toBe("accepted");
     // Estimate B is untouched — still "sent"
     expect((await repoB.findById(estimateIdB))?.props.status).toBe("sent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: acceptPublicQuote — optional add-on selection
+// ---------------------------------------------------------------------------
+
+describe("acceptPublicQuote — optional add-on selection", () => {
+  const OPT_TOKEN = "e".repeat(64);
+  const FIXED_LINE_ID = "cccc0000-0000-0000-0000-0000000000f1";
+  const OPT_LINE_ID = "cccc0000-0000-0000-0000-0000000000a1";
+  const UNKNOWN_LINE_ID = "99999999-9999-9999-9999-999999999999";
+  let optEstimateId: EstimateId;
+
+  beforeEach(() => {
+    optEstimateId = asEstimateId("aaaa0000-0000-0000-0000-00000000000a");
+    const est = makeSentEstimate(
+      optEstimateId,
+      ORG_A,
+      LEAD_A,
+      OPT_TOKEN,
+      [
+        makeLineWith(FIXED_LINE_ID, "Labor", 100_000, false, 0),
+        makeLineWith(OPT_LINE_ID, "Optional sealant", 5_000, true, 1),
+      ],
+      { discBps: 0, taxBps: 0, depBps: 5_000 }, // 50% deposit
+    );
+    reader.register(OPT_TOKEN, {
+      estimateId: optEstimateId,
+      orgId: ORG_A,
+      orgName: "Acme Roofing",
+      leadName: "Jane Smith",
+      estimate: est,
+    });
+    repoA.inject(est);
+  });
+
+  it("valid subset → the selected add-on is committed: total and depPaid reflect the tuned lines", async () => {
+    const result = await testAcceptPublicQuote(OPT_TOKEN, reader, repoByOrg, bus, clock, [OPT_LINE_ID]);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.estimate.props.status).toBe("accepted");
+    // 100_000 fixed + 5_000 committed add-on
+    expect(result.estimate.total()).toBe(105_000);
+    // depPaid is stamped from the COMMITTED lines (50% of the tuned total).
+    expect(result.estimate.props.depPaid).toBe(52_500);
+    // Both lines are now non-optional.
+    expect(result.estimate.props.lines).toHaveLength(2);
+    expect(result.estimate.props.lines.every((l) => !l.props.isOptional)).toBe(true);
+    // Persisted, not just returned.
+    const stored = await repoA.findById(optEstimateId);
+    expect(stored?.total()).toBe(105_000);
+  });
+
+  it("unknown line id → invalid_selection and the estimate stays sent", async () => {
+    const result = await testAcceptPublicQuote(OPT_TOKEN, reader, repoByOrg, bus, clock, [UNKNOWN_LINE_ID]);
+    expect(result.kind).toBe("invalid_selection");
+    const stored = await repoA.findById(optEstimateId);
+    expect(stored?.props.status).toBe("sent");
+    expect(bus.recorded.filter((e) => e.name === "estimate.accepted")).toHaveLength(0);
+  });
+
+  it("a NON-optional line id → invalid_selection (fixed lines are not toggleable)", async () => {
+    const result = await testAcceptPublicQuote(OPT_TOKEN, reader, repoByOrg, bus, clock, [FIXED_LINE_ID]);
+    expect(result.kind).toBe("invalid_selection");
+    const stored = await repoA.findById(optEstimateId);
+    expect(stored?.props.status).toBe("sent");
+  });
+
+  it("empty selection → no lines passed: the optional line survives untouched and stays excluded", async () => {
+    const result = await testAcceptPublicQuote(OPT_TOKEN, reader, repoByOrg, bus, clock, []);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.estimate.props.status).toBe("accepted");
+    expect(result.estimate.total()).toBe(100_000);
+    expect(result.estimate.props.depPaid).toBe(50_000);
+    // Original line set untouched — the add-on keeps its id and stays optional.
+    const opt = result.estimate.props.lines.find((l) => l.props.isOptional);
+    expect(opt?.props.id).toBe(OPT_LINE_ID);
+  });
+
+  it("omitted selection behaves like the pre-feature accept (no lines passed)", async () => {
+    const result = await testAcceptPublicQuote(OPT_TOKEN, reader, repoByOrg, bus, clock);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.estimate.total()).toBe(100_000);
+    expect(result.estimate.props.lines.some((l) => l.props.isOptional)).toBe(true);
   });
 });
 

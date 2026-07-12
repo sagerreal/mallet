@@ -5,8 +5,10 @@
  * URL: /q/<64-hex-char-token>   (generated at draft time, 256 bits of entropy)
  *
  * Server component: calls getPublicQuote(token) which stamps first_viewed_at,
- * then renders a mobile-first branded quote. The approve/decline interaction is
- * delegated to the QuoteActions client island so the static markup is SSR-safe.
+ * then renders a mobile-first branded quote. Header, terminal states, fixed line
+ * rows and footer are server-rendered; the optional add-on toggles, live totals
+ * and approve/decline interaction are delegated to the QuoteLines client island
+ * (which renders QuoteActions) so the static markup stays SSR-safe.
  *
  * Reuses custhead / custbody / custline / addonrow / deltabanner CSS classes from
  * prototype.css (same visual DNA as cust-quote-modal.tsx) but as a full page,
@@ -20,7 +22,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicQuote } from "@/modules/quoting/app/public-quote";
 import { fmt$ } from "@/lib/format";
-import { QuoteActions } from "./QuoteActions";
+import { QuoteLines } from "./QuoteLines";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
@@ -70,69 +72,6 @@ function LineRow({
         {quantity !== 1 ? ` × ${quantity}` : ""}
       </span>
       <b>{centsToDisplay(amount)}</b>
-    </div>
-  );
-}
-
-// ---- totals block ----------------------------------------------------------
-
-function TotalsBlock({
-  subtotalCents,
-  discountCents,
-  taxCents,
-  totalCents,
-  depositCents,
-  discBps,
-  taxBps,
-  depBps,
-}: {
-  subtotalCents: number;
-  discountCents: number;
-  taxCents: number;
-  totalCents: number;
-  depositCents: number;
-  discBps: number;
-  taxBps: number;
-  depBps: number;
-}) {
-  const disc = discBps / 100; // bps → percent
-  const tax = taxBps / 100;
-  const dep = depBps / 100;
-  const showSub = discBps > 0 || taxBps > 0;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        gap: 4,
-        padding: "14px 0 4px",
-      }}
-    >
-      {showSub && (
-        <div className="muted" style={{ fontSize: 12.5 }}>
-          Subtotal {centsToDisplay(subtotalCents)}
-        </div>
-      )}
-      {discBps > 0 && (
-        <div className="muted" style={{ fontSize: 12.5 }}>
-          Discount {disc}% −{centsToDisplay(discountCents)}
-        </div>
-      )}
-      {taxBps > 0 && (
-        <div className="muted" style={{ fontSize: 12.5 }}>
-          Tax {tax}% +{centsToDisplay(taxCents)}
-        </div>
-      )}
-      <div style={{ fontWeight: 900, fontSize: 19 }}>
-        Total {centsToDisplay(totalCents)}
-      </div>
-      {dep > 0 && (
-        <div className="muted" style={{ fontSize: 12 }}>
-          {centsToDisplay(depositCents)} deposit due today &middot; the rest when the job&rsquo;s done
-        </div>
-      )}
     </div>
   );
 }
@@ -221,22 +160,17 @@ export default async function PublicQuotePage({
     .join("")
     .toUpperCase();
 
-  const subtotalCents = estimate.subtotal();
-  const discountCents = estimate.discountAmount();
-  const taxCents = estimate.taxAmount();
-  const totalCents = estimate.total();
-  const depositCents = estimate.depositDue();
-
   const isAccepted = p.status === "accepted";
   const isDeclined = p.status === "declined";
   const isDone = isAccepted || isDeclined;
 
-  // Fixed (non-optional) lines — the primary line set for this page.
-  // Optional add-ons: the public page shows them as view-only rows marked "(optional)".
-  // Interactive toggling is a deferred feature for when we model customer-selected addons
-  // on the server; for now we show them statically so the quote is fully readable.
+  // Fixed (non-optional) lines stay server-rendered. Optional add-ons are interactive:
+  // the QuoteLines client island renders them as toggles and recomputes the totals +
+  // approve amount on every change. estimate.subtotal() counts only non-optional lines,
+  // so it is the island's fixed base.
   const fixedLines = p.lines.filter((l) => !l.props.isOptional);
   const optLines = p.lines.filter((l) => l.props.isOptional);
+  const fixedSubtotalCents = estimate.subtotal();
 
   return (
     <main
@@ -312,48 +246,24 @@ export default async function PublicQuotePage({
                 );
               })}
 
-              {/* Optional lines — view-only, marked */}
-              {optLines.length > 0 && (
-                <>
-                  <div className="muted" style={{ fontSize: 11, marginTop: 12, marginBottom: 4 }}>
-                    Optional add-ons (not included in total)
-                  </div>
-                  {optLines.map((line) => {
-                    const lp = line.props;
-                    const amount = Math.round(lp.quantity * lp.rate);
-                    return (
-                      <div key={lp.id} className="addonrow" style={{ cursor: "default" }}>
-                        <span style={{ flex: 1 }}>
-                          <b>Add:</b> {lp.description}
-                          {lp.quantity !== 1 ? ` × ${lp.quantity}` : ""}
-                        </span>
-                        <b>+{centsToDisplay(amount)}</b>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* Totals */}
-              <TotalsBlock
-                subtotalCents={subtotalCents}
-                discountCents={discountCents}
-                taxCents={taxCents}
-                totalCents={totalCents}
-                depositCents={depositCents}
+              {/* Optional add-on toggles + live totals + actions — client island */}
+              <QuoteLines
+                fixedSubtotalCents={fixedSubtotalCents}
+                optionalLines={optLines.map((line) => {
+                  const lp = line.props;
+                  return {
+                    id: lp.id,
+                    description: lp.description,
+                    quantity: lp.quantity,
+                    rateCents: lp.rate,
+                  };
+                })}
                 discBps={p.discBps}
                 taxBps={p.taxBps}
                 depBps={p.depBps}
+                token={token}
+                changeAlreadyRequested={Boolean(p.changeRequestedAt)}
               />
-
-              {/* Approve / decline / request-change — client island */}
-              {!isDone && (
-                <QuoteActions
-                  token={token}
-                  totalCents={totalCents}
-                  changeAlreadyRequested={Boolean(p.changeRequestedAt)}
-                />
-              )}
             </>
           )}
 
