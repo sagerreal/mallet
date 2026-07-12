@@ -12,7 +12,12 @@ export default function SignupPage() {
     e.preventDefault();
     setBusy(true);
     const form = new FormData(e.currentTarget);
-    const failure = await signUp(String(form.get("email")), String(form.get("password")), String(form.get("orgName")));
+    const failure = await signUp(
+      String(form.get("email")),
+      String(form.get("password")),
+      String(form.get("orgName")),
+      String(form.get("fullName")),
+    );
     if (failure) {
       setError(failure);
       setBusy(false);
@@ -41,6 +46,10 @@ export default function SignupPage() {
         <label className="auth-field">
           <span>Business name</span>
           <input className="auth-input" name="orgName" required maxLength={80} placeholder="Rivera Plumbing" />
+        </label>
+        <label className="auth-field">
+          <span>Your name</span>
+          <input className="auth-input" name="fullName" required maxLength={80} autoComplete="name" placeholder="Mike Rivera" />
         </label>
         <label className="auth-field">
           <span>Email</span>
