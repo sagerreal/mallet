@@ -13,6 +13,7 @@ import { ListEstimatesUseCase } from "../app/list-estimates";
 import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase, jobSummaryDTO, toJobSummaryDTO } from "@mallet/jobs";
 import { logger } from "@mallet/shared/observability";
+import { createJobSummaryInSavepoint } from "./job-creation-savepoint";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -273,10 +274,12 @@ export const createEstimateRouter = () =>
         // ON CONFLICT DO NOTHING), so a re-accept is safe. If job creation fails, do NOT fail the
         // accept — log and continue. The manual v1.jobs.createFromEstimate endpoint is the fallback.
         // The created (or existing) job is returned so the client can adopt it into the jobs store
-        // immediately without a network round-trip.
-        let jobSummary: ReturnType<typeof toJobSummaryDTO> | null = null;
-        try {
-          await ctx.tx.transaction(async (sp) => {
+        // immediately without a network round-trip. createJobSummaryInSavepoint guarantees a
+        // savepoint failure yields null even when the use-case had already produced a summary —
+        // the insert rolled back, and a non-null return would leak a phantom job to the client.
+        const jobSummary = await createJobSummaryInSavepoint(
+          ctx.tx,
+          async (sp) => {
             const jobRepo = new DrizzleJobRepository(sp, ctx.principal.orgId);
             const estimateReader = new DrizzleEstimateReader(sp, ctx.principal.orgId);
             const createJob = new CreateJobFromEstimateUseCase(
@@ -287,21 +290,22 @@ export const createEstimateRouter = () =>
               ctx.deps.ids,
             );
             const result = await createJob.exec({ orgId: ctx.principal.orgId, estimateId: asEstimateId(input.estimateId) });
-            if (result.ok) {
-              jobSummary = toJobSummaryDTO(result.value);
-            } else {
+            if (!result.ok) {
               logger.error(
                 { err: result.error, estimateId: input.estimateId, orgId: ctx.principal.orgId },
                 "quoting.accept: job creation returned error (non-fatal)",
               );
+              return null;
             }
-          });
-        } catch (err) {
-          logger.error(
-            { err, estimateId: input.estimateId, orgId: ctx.principal.orgId },
-            "quoting.accept: job creation failed (non-fatal)",
-          );
-        }
+            return toJobSummaryDTO(result.value);
+          },
+          (err) => {
+            logger.error(
+              { err, estimateId: input.estimateId, orgId: ctx.principal.orgId },
+              "quoting.accept: job creation failed (non-fatal)",
+            );
+          },
+        );
 
         return { ...toEstimateDTO(accepted), job: jobSummary };
       }),

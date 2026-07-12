@@ -3,18 +3,13 @@
  * Pure helper: merges the hardcoded default source labels with org-specific
  * custom sources from the DB. Defaults come first; custom sources that don't
  * match any default (case-insensitive) are appended.
+ *
+ * The default labels live in lib/store/default-sources.ts (re-exported here
+ * for existing importers) so the settings slice can dedupe against the same
+ * list when persisting a new custom source.
  */
 
-export const DEFAULT_SOURCES = [
-  "Google",
-  "Referral",
-  "Nextdoor / FB",
-  "Repeat customer",
-  "Yard sign",
-  "Angi",
-  "Thumbtack",
-  "Yelp",
-] as const;
+export { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 
 export type MergedSource = { label: string };
 

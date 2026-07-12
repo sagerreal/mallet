@@ -6,6 +6,8 @@ const mockArchive = vi.fn();
 const mockCreateVisit = vi.fn();
 const mockUpdateVisitDuration = vi.fn();
 const mockSetVisitStatus = vi.fn();
+const mockRemoveVisit = vi.fn();
+const mockScheduleVisit = vi.fn();
 
 // jobs-slice imports RouterOutputs from @/lib/trpc/client for type purposes only.
 vi.mock("@/lib/trpc/client", () => ({ api: {} }));
@@ -22,6 +24,8 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         createVisit: { mutate: (...a: unknown[]) => mockCreateVisit(...a) },
         updateVisitDuration: { mutate: (...a: unknown[]) => mockUpdateVisitDuration(...a) },
         setVisitStatus: { mutate: (...a: unknown[]) => mockSetVisitStatus(...a) },
+        removeVisit: { mutate: (...a: unknown[]) => mockRemoveVisit(...a) },
+        scheduleVisit: { mutate: (...a: unknown[]) => mockScheduleVisit(...a) },
       },
     },
   },
@@ -562,6 +566,271 @@ describe("updateVisit duration debounce", () => {
     expect(mockUpdateVisitDuration).toHaveBeenCalledWith(
       expect.objectContaining({ visitId: visit.id, durationHours: 3 }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 2 — Fix 1 (HIGH): removeVisit must be chained behind the visit's
+// own createVisit, and no snapshot merge may re-introduce a visit the user
+// optimistically removed while its delete is unsettled.
+// ---------------------------------------------------------------------------
+
+describe("removeVisit vs in-flight createVisit", () => {
+  beforeEach(() => {
+    mockCreateVisit.mockReset();
+    mockRemoveVisit.mockReset();
+  });
+
+  it("queues the delete behind the create and keeps the visit gone after the create reconciles", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-rm-race");
+
+    const visit = get().addVisit("j-rm-race")!;
+    get().removeVisit("j-rm-race", visit.id);
+    expect(get().jobs[0]!.visits).toHaveLength(0); // optimistic removal
+
+    await flush();
+    // The delete waits for the create — nothing sent yet.
+    expect(mockRemoveVisit).not.toHaveBeenCalled();
+
+    // The create commits; its reconcile DTO still CONTAINS the removed visit.
+    mockRemoveVisit.mockResolvedValue(makeJobDTO("j-rm-race", { visits: [] }));
+    create.resolve(makeJobDTO("j-rm-race", { visits: [makeVisitDTO(visit.id)] }));
+    await flush();
+
+    expect(get().jobs[0]!.visits).toHaveLength(0); // create reconcile did NOT resurrect it
+    expect(mockRemoveVisit).toHaveBeenCalledTimes(1);
+    expect(mockRemoveVisit).toHaveBeenCalledWith({ jobId: "j-rm-race", visitId: visit.id });
+  });
+
+  it("skips the delete entirely when the create rolled back (no row to remove)", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-rm-dead");
+
+    const visit = get().addVisit("j-rm-dead")!;
+    get().removeVisit("j-rm-dead", visit.id);
+    create.reject(new Error("network"));
+    await flush();
+
+    expect(mockRemoveVisit).not.toHaveBeenCalled();
+    expect(get().jobs[0]!.visits).toHaveLength(0); // stays deleted — not resurrected
+  });
+
+  it("a snapshot merge cannot re-introduce a visit whose removal is still in flight", async () => {
+    const remove = deferred<unknown>();
+    mockRemoveVisit.mockReturnValue(remove.promise);
+    const serverVisit = { id: "cccccccc-0000-0000-0000-000000000001", date: null, techId: null, start: null, dur: 2, status: "scheduled" };
+    const { get } = makeStore();
+    seedDbJob(get, "j-rm-snap", [serverVisit]);
+
+    get().removeVisit("j-rm-snap", serverVisit.id);
+    await flush();
+
+    // A stale hydrator snapshot that still contains the removed visit.
+    get().setJobs([{ ...draft, id: "j-rm-snap", origin: "db", visits: [serverVisit] }]);
+    expect(get().jobs[0]!.visits).toHaveLength(0);
+
+    remove.resolve(makeJobDTO("j-rm-snap", { visits: [] }));
+    await flush();
+    expect(get().jobs[0]!.visits).toHaveLength(0);
+  });
+
+  it("rolls the visit back when the delete itself fails", async () => {
+    mockRemoveVisit.mockRejectedValue(new Error("boom"));
+    const serverVisit = { id: "cccccccc-0000-0000-0000-000000000002", date: null, techId: null, start: null, dur: 2, status: "scheduled" };
+    const { get } = makeStore();
+    seedDbJob(get, "j-rm-fail", [serverVisit]);
+
+    get().removeVisit("j-rm-fail", serverVisit.id);
+    expect(get().jobs[0]!.visits).toHaveLength(0); // optimistic
+    await flush();
+    expect(get().jobs[0]!.visits).toHaveLength(1); // restored on failure
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 2 — Fix 2 (MEDIUM): a chained mutation queued behind a
+// createVisit that rolled back must re-check the visit at EXECUTION time and
+// must not restore a rollback snapshot for a visit that is no longer in the
+// store (that would resurrect a phantom).
+// ---------------------------------------------------------------------------
+
+describe("chained op execution guards (create rollback / mid-flight removal)", () => {
+  beforeEach(() => {
+    mockCreateVisit.mockReset();
+    mockUpdateVisitDuration.mockReset();
+    mockRemoveVisit.mockReset();
+    mockScheduleVisit.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const storeVisit = (id: string) =>
+    ({ id, date: null, techId: null, start: null, dur: 2, status: "scheduled" });
+
+  it("skips the queued duration mutate when its createVisit rolled back", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-dur-dead");
+
+    const visit = get().addVisit("j-dur-dead")!;
+    get().updateVisit("j-dur-dead", visit.id, { dur: 3 });
+    await vi.advanceTimersByTimeAsync(400); // timer fires while the create is in flight
+    create.reject(new Error("network"));    // create rolls back; optimistic visit removed
+    await flush();
+
+    expect(mockUpdateVisitDuration).not.toHaveBeenCalled();
+    expect(get().jobs[0]!.visits).toHaveLength(0); // NOT resurrected by a rollback restore
+  });
+
+  it("does not restore a removed visit when the duration mutate fails after the removal", async () => {
+    const dur = deferred<unknown>();
+    mockUpdateVisitDuration.mockReturnValue(dur.promise);
+    mockRemoveVisit.mockResolvedValue(makeJobDTO("j-dur-rm", { visits: [] }));
+    const v = storeVisit("cccccccc-0000-0000-0000-000000000003");
+    const { get } = makeStore();
+    seedDbJob(get, "j-dur-rm", [v]);
+
+    get().updateVisit("j-dur-rm", v.id, { dur: 4 });
+    await vi.advanceTimersByTimeAsync(400);
+    await flush(); // duration mutate now in flight
+
+    get().removeVisit("j-dur-rm", v.id); // optimistic removal; delete queued behind the dur op
+    dur.reject(new Error("conflict"));
+    await flush();
+
+    expect(get().jobs[0]!.visits).toHaveLength(0); // preDragSnapshot NOT restored
+  });
+
+  it("skips the queued scheduleVisit when its createVisit rolled back", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-place-dead");
+
+    const visit = get().addVisit("j-place-dead")!;
+    get().placeVisit("j-place-dead", visit.id, { techId: "t1", date: "2026-07-13", start: 9 });
+    create.reject(new Error("network"));
+    await flush();
+
+    expect(mockScheduleVisit).not.toHaveBeenCalled();
+    expect(get().jobs[0]!.visits).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 2 — Fix 3 (MEDIUM): a stale hydrator setJobs snapshot must not
+// sweep out a job adopted from a server mutation (quoting.accept) after the
+// snapshot's read started. Mirrors the pending-create visit guard.
+// ---------------------------------------------------------------------------
+
+describe("setJobs adoption guard (adoptJob vs stale hydrator snapshot)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps a recently-adopted job that is absent from an older snapshot", () => {
+    const { get } = makeStore();
+    get().adoptJob(makeAcceptJobDTO("adopt-guard-1") as never);
+    // Stale snapshot (read before the accept committed) without the adopted job.
+    get().setJobs([{ ...draft, id: "other-job", origin: "db" }]);
+    expect(get().jobs.some((j) => j.id === "adopt-guard-1")).toBe(true);
+    expect(get().jobs.some((j) => j.id === "other-job")).toBe(true);
+  });
+
+  it("stops protecting once the adoption is older than the hydrator stale window", () => {
+    vi.setSystemTime(new Date("2026-07-12T00:00:00Z"));
+    const { get } = makeStore();
+    get().adoptJob(makeAcceptJobDTO("adopt-guard-2") as never);
+    vi.setSystemTime(new Date("2026-07-12T00:00:31Z")); // > 30 s HYDRATOR_STALE_MS
+    get().setJobs([]);
+    expect(get().jobs.some((j) => j.id === "adopt-guard-2")).toBe(false);
+  });
+
+  it("hands authority back to the server once a snapshot includes the job", () => {
+    const { get } = makeStore();
+    get().adoptJob(makeAcceptJobDTO("adopt-guard-3") as never);
+    get().setJobs([{ ...draft, id: "adopt-guard-3", origin: "db" }]); // server knows it now
+    get().setJobs([]); // later authoritative snapshot without it
+    expect(get().jobs.some((j) => j.id === "adopt-guard-3")).toBe(false);
+  });
+
+  it("deleteJob clears the guard so a snapshot cannot resurrect a deleted job", () => {
+    mockArchive.mockResolvedValue({ ok: true });
+    const { get } = makeStore();
+    get().adoptJob(makeAcceptJobDTO("adopt-guard-4") as never);
+    get().deleteJob("adopt-guard-4");
+    get().setJobs([]);
+    expect(get().jobs.some((j) => j.id === "adopt-guard-4")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 2 — LOW: the addVisit dedupe silently ignored a caller-passed
+// dur; an explicitly-requested duration now applies to the deduped visit.
+// ---------------------------------------------------------------------------
+
+describe("addVisit dedupe applies an explicit dur", () => {
+  beforeEach(() => {
+    mockCreateVisit.mockReset();
+    mockUpdateVisitDuration.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("applies an explicitly-passed dur to the deduped pending visit and persists it", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-dedupe-dur");
+
+    const first = get().addVisit("j-dedupe-dur")!;      // default dur 2
+    const second = get().addVisit("j-dedupe-dur", 4)!;  // dedupe + explicit dur
+    expect(second.id).toBe(first.id);
+    expect(second.dur).toBe(4);
+    expect(get().jobs[0]!.visits[0]!.dur).toBe(4); // optimistic
+
+    mockUpdateVisitDuration.mockResolvedValue(
+      makeJobDTO("j-dedupe-dur", { visits: [makeVisitDTO(first.id, { durationMinutes: 240 })] }),
+    );
+    await vi.advanceTimersByTimeAsync(400);
+    create.resolve(makeJobDTO("j-dedupe-dur", { visits: [makeVisitDTO(first.id)] }));
+    await flush();
+
+    expect(mockUpdateVisitDuration).toHaveBeenCalledWith(
+      expect.objectContaining({ visitId: first.id, durationHours: 4 }),
+    );
+    expect(get().jobs[0]!.visits[0]!.dur).toBe(4);
+  });
+
+  it("without an explicit dur the deduped visit keeps its duration", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-dedupe-nodur");
+
+    const first = get().addVisit("j-dedupe-nodur", 3)!;
+    const second = get().addVisit("j-dedupe-nodur")!; // no dur passed — leave as-is
+    expect(second.id).toBe(first.id);
+    expect(get().jobs[0]!.visits[0]!.dur).toBe(3);
+    await vi.advanceTimersByTimeAsync(400);
+    await flush();
+    expect(mockUpdateVisitDuration).not.toHaveBeenCalled();
   });
 });
 

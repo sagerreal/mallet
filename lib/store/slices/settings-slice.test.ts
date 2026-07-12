@@ -216,6 +216,18 @@ describe("settings-slice persistence", () => {
     expect(store.get().sources).toHaveLength(1);
   });
 
+  it("addSource is a no-op for a hardcoded default label (case-insensitive)", async () => {
+    const store = makeStore();
+    // "Google" is a DEFAULT_SOURCES entry that is NOT in the store's custom
+    // sources — persisting it would create an invisible duplicate row (the
+    // merged picker already shows the default).
+    store.get().addSource("google");
+    store.get().addSource("NEXTDOOR / fb");
+    await Promise.resolve();
+    expect(mockCreateSource).not.toHaveBeenCalled();
+    expect(store.get().sources).toHaveLength(0);
+  });
+
   it("removeSource rolls back on rejection", async () => {
     mockRemoveSource.mockRejectedValueOnce(new Error("boom"));
     const store = makeStore();

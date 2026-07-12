@@ -18,6 +18,7 @@
 
 import type { StateCreator } from "zustand";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { isDefaultSourceLabel } from "@/lib/store/default-sources";
 
 // ---- shapes ----------------------------------------------------------------
 
@@ -409,7 +410,10 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   addSource: (name) => {
     const nm = name.trim();
     if (!nm) return;
-    // Dedupe case-insensitively before persisting.
+    // Dedupe case-insensitively before persisting — against BOTH the store's
+    // custom sources and the hardcoded defaults; a persisted default duplicate
+    // would be an invisible row (the merged picker already shows the default).
+    if (isDefaultSourceLabel(nm)) return;
     if (get().sources.some((x) => x.label.toLowerCase() === nm.toLowerCase())) return;
     const id = crypto.randomUUID();
     set((s) => ({ sources: [...s.sources, { id, label: nm }] }));
