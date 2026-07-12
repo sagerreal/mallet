@@ -20,7 +20,8 @@ import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers"
 // token in the URL is the sole credential — the org is resolved from it via a privileged ownerDb
 // lookup (same model as the public quote page + Twilio webhook); org id is NEVER taken from the
 // body. All writes run inside withTenant so RLS still scopes them. PR A wires the `form` channel;
-// angi/thumbtack parsers arrive in PR B (parserFor returns null → 404 until then).
+// Channels are enabled by having a parser registered (form, angi, thumbtack); an unregistered
+// channel yields parserFor === null → 404.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ export async function POST(req: Request, { params }: Params): Promise<Response> 
     return new NextResponse("not found", { status: 404 });
   }
   const parser = parserFor(channel);
-  if (!parser) return new NextResponse("channel not enabled", { status: 404 }); // angi/thumbtack → PR B
+  if (!parser) return new NextResponse("channel not enabled", { status: 404 }); // no parser registered for this channel
 
   let payload: unknown;
   try {
