@@ -110,7 +110,8 @@ export function buildImportRows(records: Record<string, string>[], map: MappingC
     const rawEmail = cell(record, map.email);
     let email: string | null = null;
     if (rawEmail) {
-      if (EMAIL_RE.test(rawEmail)) email = rawEmail;
+      // Clamp to the server's 320-char boundary: sending a longer value would reject the batch.
+      if (EMAIL_RE.test(rawEmail)) email = rawEmail.slice(0, 320);
       else warnings.push({ rowIndex, kind: "warning", message: `Couldn't read email "${rawEmail}" — imported without it.` });
     }
 
@@ -119,7 +120,9 @@ export function buildImportRows(records: Record<string, string>[], map: MappingC
       phone,
       email,
       address: cell(record, map.address).slice(0, 500) || null,
-      source: map.sourceTag.trim() || null,
+      // sourceTag is one constant applied to every row, so an over-long tag would reject the WHOLE
+      // batch at the server's z.string().max(255). Clamp here to keep "client sends only valid rows".
+      source: map.sourceTag.trim().slice(0, 255) || null,
       notes: cell(record, map.notes).slice(0, 2000) || null,
     });
   });

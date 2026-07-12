@@ -123,7 +123,7 @@ export function ImportCustomersModalContent() {
             ))}
             <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ width: 150, fontSize: 13 }}>Tag source as</span>
-              <input value={map.sourceTag} onChange={(e) => { setMap((m) => m ? { ...m, sourceTag: e.target.value } : m); setProgress(ZERO); }}
+              <input value={map.sourceTag} maxLength={255} onChange={(e) => { setMap((m) => m ? { ...m, sourceTag: e.target.value } : m); setProgress(ZERO); }}
                 style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 9px", fontFamily: "inherit", fontSize: 13 }} />
             </label>
           </div>
@@ -135,8 +135,14 @@ export function ImportCustomersModalContent() {
           </div>
 
           {error && <p className="auth-error">{error}</p>}
-          <button className="btn primary" disabled={built.rows.length === 0} onClick={runImport}>
-            Import {built.rows.length} customer{built.rows.length === 1 ? "" : "s"}
+          <button
+            className="btn primary"
+            disabled={built.rows.length === 0 || importMut.isPending}
+            onClick={runImport}
+          >
+            {progress.done > 0
+              ? `Resume — ${built.rows.length - progress.done} left`
+              : `Import ${built.rows.length} customer${built.rows.length === 1 ? "" : "s"}`}
           </button>
         </>
       )}

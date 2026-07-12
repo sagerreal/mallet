@@ -74,13 +74,38 @@ describe("ImportCustomersModalContent", () => {
     fireEvent.click(screen.getByRole("button", { name: /import 600 customers/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
 
-    // Back on the map phase after the mid-batch failure; retry.
-    await waitFor(() => expect(screen.getByRole("button", { name: /import/i })).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /import/i }));
+    // Back on the map phase after the mid-batch failure; the button now reads "Resume — N left".
+    await waitFor(() => expect(screen.getByRole("button", { name: /resume — 100 left/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /resume/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(3));
 
     // The retry sent ONLY the remaining 100 rows — the committed first chunk was not re-sent.
     expect(mutateAsync.mock.calls[2]![0].rows).toHaveLength(100);
     await waitFor(() => expect(screen.getByText(/600 added/i)).toBeTruthy());
+  });
+
+  it("re-sends from row 0 when the mapping changes after a partial failure (progress reset)", async () => {
+    mutateAsync
+      .mockResolvedValueOnce({ created: 500, deduped: 0, failed: 0, errors: [] }) // chunk 1 ok
+      .mockRejectedValueOnce(new Error("network"))                                // chunk 2 fails
+      .mockResolvedValue({ created: 0, deduped: 500, failed: 0, errors: [] });     // subsequent chunks
+
+    render(<ImportCustomersModalContent />);
+    selectCsv(bigCsv(600));
+    await waitFor(() => expect(screen.getByText(/600 ready/i)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: /import 600 customers/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: /resume/i })).toBeTruthy());
+
+    // Change the source tag — this alters built.rows, so the committed offset is now stale and must reset.
+    fireEvent.change(screen.getByDisplayValue("Import"), { target: { value: "Migration" } });
+
+    // Button returns to the full-import label (progress cleared), and importing re-sends chunk 0.
+    await waitFor(() => expect(screen.getByRole("button", { name: /import 600 customers/i })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /import 600 customers/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(3));
+    expect(mutateAsync.mock.calls[2]![0].rows).toHaveLength(500); // restarted at row 0, not resumed at 500
+    expect(mutateAsync.mock.calls[2]![0].rows[0].source).toBe("Migration"); // new tag applied
   });
 });
