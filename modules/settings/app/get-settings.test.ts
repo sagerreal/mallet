@@ -46,6 +46,8 @@ export class FakeSettingsRepository implements SettingsRepository {
 
   async saveConfig(s: OrgSettings): Promise<void> { this.config = s; }
 
+  async getTechSeesPrice(): Promise<boolean> { return this.config?.props.techSeesPrice ?? true; }
+
   async listPricebook(): Promise<PricebookItem[]> { return this.pricebook; }
 
   async createPricebook(i: {

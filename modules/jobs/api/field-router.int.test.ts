@@ -9,7 +9,8 @@ import type { Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 
-// Integration tests for the tech-facing field surface: v1.field.myDay / start / complete.
+// Integration tests for the tech-facing field surface: v1.field.myDay / start / complete /
+// setVerifyAnswer.
 // The assignment boundary is the security primitive: a tech may only act on jobs assigned to them.
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
@@ -180,5 +181,249 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id})`;
       await admin`delete from users where id = ${orderTechId}`;
     }
+  });
+
+  // ── v1.field.setVerifyAnswer — checklist check-offs from the job site ──────
+
+  const CHECKLIST = JSON.stringify({
+    name: "Before you leave",
+    items: [{ id: "i1", text: "Water back on", type: "check", required: true }],
+  });
+
+  const seedChecklistJob = async (num: string, assigneeId: string | null): Promise<string> => {
+    const [row] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, checklist)
+      values (${orgId}, ${leadId}, ${num}, 'in_progress', 0, ${assigneeId}, ${CHECKLIST}::jsonb)
+      returning id
+    `;
+    return row!.id;
+  };
+
+  it("assigned tech saves a verify answer, it survives a myDay re-read, and clear removes it", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-01", techAId);
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+      const dto = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(dto.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
+
+      // Survives a re-read through the tech's own surface — myDay must carry the
+      // checklist AND the saved answers (execution data), not just job headers.
+      const day = await caller.v1.field.myDay();
+      const mine = day.items.find((i) => i.id === jobId);
+      expect(mine?.checklist?.items[0]?.id).toBe("i1");
+      expect(mine?.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
+
+      const cleared = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "clear" });
+      expect(cleared.verifyAnswers).toEqual([]);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  it("tech assigned only via an ACTIVE VISIT can save (job-level assignee is someone else)", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-02", techBId);
+    await admin`
+      insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+      values (${orgId}, ${jobId}, ${techAId}, 'pending', 1)
+    `;
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      const dto = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(dto.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  it("tech NOT on the job gets FORBIDDEN and nothing is written (a canceled visit is no claim)", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-03", techBId);
+    // techA once had a visit here, but it was canceled — that must not grant access.
+    await admin`
+      insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+      values (${orgId}, ${jobId}, ${techAId}, 'canceled', 1)
+    `;
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await expect(
+        caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      const rows = await admin`select id from job_verify_answers where job_id = ${jobId}`;
+      expect(rows).toHaveLength(0);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  it("office/owner saves through the field procedure without an assignment (override with reason)", async () => {
+    const jobId = await seedChecklistJob("JOB-VER-04", techBId);
+    try {
+      const caller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const dto = await caller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "override", reason: "N/A today" });
+      expect(dto.verifyAnswers).toEqual([{ itemId: "i1", state: "override", via: null, reason: "N/A today" }]);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  // ── Converged assignment semantics: visit-assigned techs SEE and can START ──
+
+  it("tech assigned only via an ACTIVE VISIT sees the job in myDay and can start it", async () => {
+    // Fresh tech so myDay is isolated from the beforeAll jobs.
+    const [vTech] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role)
+      values (${orgId}, ${randomUUID()}, 'visittech@field.test', 'tech')
+      returning id
+    `;
+    const visitTechId = vTech!.id;
+    const [row] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-VISIT-SEE', 'scheduled', 0, ${techBId})
+      returning id
+    `;
+    const jobId = row!.id;
+    await admin`
+      insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+      values (${orgId}, ${jobId}, ${visitTechId}, 'pending', 1)
+    `;
+    try {
+      const caller = appRouter.createCaller(ctxFor(visitTechId, orgId, "tech"));
+      const day = await caller.v1.field.myDay();
+      expect(day.items.map((i) => i.id)).toContain(jobId);
+
+      const started = await caller.v1.field.start({ jobId });
+      expect(started.status).toBe("in_progress");
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+      await admin`delete from users where id = ${visitTechId}`;
+    }
+  });
+
+  it("a job claimed only through a CANCELED visit stays out of myDay", async () => {
+    const [cTech] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role)
+      values (${orgId}, ${randomUUID()}, 'canceledtech@field.test', 'tech')
+      returning id
+    `;
+    const canceledTechId = cTech!.id;
+    const [row] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-VISIT-CANC', 'scheduled', 0, ${techBId})
+      returning id
+    `;
+    const jobId = row!.id;
+    await admin`
+      insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+      values (${orgId}, ${jobId}, ${canceledTechId}, 'canceled', 1)
+    `;
+    try {
+      const caller = appRouter.createCaller(ctxFor(canceledTechId, orgId, "tech"));
+      const day = await caller.v1.field.myDay();
+      expect(day.items.map((i) => i.id)).not.toContain(jobId);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+      await admin`delete from users where id = ${canceledTechId}`;
+    }
+  });
+
+  // ── Terminal-status gate: closed jobs reject tech check-off writes ─────────
+
+  it("tech write on a COMPLETE job is BAD_REQUEST; office may still correct it", async () => {
+    const [row] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, checklist)
+      values (${orgId}, ${leadId}, 'JOB-CLOSED-01', 'complete', 0, ${techAId}, ${CHECKLIST}::jsonb)
+      returning id
+    `;
+    const jobId = row!.id;
+    try {
+      const techCaller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await expect(
+        techCaller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "This job is closed — ask the office to change it.",
+      });
+      const rows = await admin`select id from job_verify_answers where job_id = ${jobId}`;
+      expect(rows).toHaveLength(0);
+
+      // Office corrections stay allowed on closed jobs.
+      const ownerCaller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const dto = await ownerCaller.v1.field.setVerifyAnswer({ jobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(dto.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
+    } finally {
+      await admin`delete from jobs where id = ${jobId}`;
+    }
+  });
+
+  // ── Server-side money redaction on the field surface ───────────────────────
+
+  describe("money redaction (tech devices)", () => {
+    let redactTechId = "";
+    let pricedJobId = "";
+
+    beforeAll(async () => {
+      const [rt] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgId}, ${randomUUID()}, 'redacttech@field.test', 'tech')
+        returning id
+      `;
+      redactTechId = rt!.id;
+      const [row] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, checklist)
+        values (${orgId}, ${leadId}, 'JOB-REDACT-01', 'in_progress', 25000, ${redactTechId}, ${CHECKLIST}::jsonb)
+        returning id
+      `;
+      pricedJobId = row!.id;
+      await admin`
+        insert into job_lines (org_id, job_id, description, quantity, rate_cents, cost_cents)
+        values (${orgId}, ${pricedJobId}, 'Panel swap', 1, 25000, 9000)
+      `;
+      await admin`
+        insert into job_addons (org_id, job_id, description, quantity, rate_cents, cost_cents)
+        values (${orgId}, ${pricedJobId}, 'Extra outlet', 1, 12000, 4000)
+      `;
+    });
+
+    afterAll(async () => {
+      if (pricedJobId) await admin`delete from jobs where id = ${pricedJobId}`;
+      if (redactTechId) await admin`delete from users where id = ${redactTechId}`;
+      await admin`delete from org_settings where org_id = ${orgId}`;
+    });
+
+    it("tech myDay ALWAYS strips cost; rate stays while techSeesPrice is on (default)", async () => {
+      const caller = appRouter.createCaller(ctxFor(redactTechId, orgId, "tech"));
+      const day = await caller.v1.field.myDay();
+      const mine = day.items.find((i) => i.id === pricedJobId);
+      expect(mine?.lines[0]?.rate?.cents).toBe(25000);
+      expect(mine?.lines[0]?.cost).toBeNull();
+      expect(mine?.addons[0]?.rate?.cents).toBe(12000);
+      expect(mine?.addons[0]?.cost).toBeNull();
+    });
+
+    it("tech myDay strips rate too when the org turns techSeesPrice off; owner unchanged", async () => {
+      await admin`
+        insert into org_settings (org_id, tech_sees_price, booking)
+        values (${orgId}, false, '{"services": [], "notServices": "", "serviceFee": 0, "feeCredited": false}'::jsonb)
+        on conflict (org_id) do update set tech_sees_price = false
+      `;
+      const techCaller = appRouter.createCaller(ctxFor(redactTechId, orgId, "tech"));
+      const day = await techCaller.v1.field.myDay();
+      const mine = day.items.find((i) => i.id === pricedJobId);
+      expect(mine?.lines[0]?.rate).toBeNull();
+      expect(mine?.lines[0]?.cost).toBeNull();
+      expect(mine?.addons[0]?.rate).toBeNull();
+
+      // setVerifyAnswer's returned jobDTO is redacted the same way for techs.
+      const dto = await techCaller.v1.field.setVerifyAnswer({ jobId: pricedJobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(dto.lines[0]?.rate).toBeNull();
+      expect(dto.lines[0]?.cost).toBeNull();
+
+      // Owner/office responses are never redacted — same procedure, full figures.
+      const ownerCaller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const officeDto = await ownerCaller.v1.field.setVerifyAnswer({ jobId: pricedJobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(officeDto.lines[0]?.rate?.cents).toBe(25000);
+      expect(officeDto.lines[0]?.cost?.cents).toBe(9000);
+    });
   });
 });

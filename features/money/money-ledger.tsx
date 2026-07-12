@@ -111,14 +111,15 @@ export function MoneyLedger() {
     const j = jobs.find((x) => x.id === jobId);
     if (!j) return;
     const lead = leads.find((l) => l.id === j.leadId);
-    const total = (j.lines ?? []).reduce((s, l) => s + l.q * l.r, 0);
+    // Office surface: rates are never redacted here; ?? 0 only satisfies the shared type.
+    const total = (j.lines ?? []).reduce((s, l) => s + l.q * (l.r ?? 0), 0);
     const inv = addInvoice({
       jobId: j.id,
       leadId: j.leadId,
       cust: lead?.name ?? "",
       phone: j.phone || (lead?.phone ?? ""),
       title: j.title,
-      lines: (j.lines ?? []).map((l) => ({ d: l.d, q: l.q, r: l.r, c: l.c })),
+      lines: (j.lines ?? []).map((l) => ({ d: l.d, q: l.q, r: l.r ?? 0, c: l.c })),
       total,
       depPaid: 0,
       payments: [],

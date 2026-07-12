@@ -248,6 +248,10 @@ export class Job {
   canStart(): boolean {
     return this.p.status === "scheduled";
   }
+  /** True once the job is closed (complete/canceled) — no further field writes. */
+  isTerminal(): boolean {
+    return isTerminal(this.p.status);
+  }
   canComplete(): boolean {
     return this.p.status === "in_progress";
   }
@@ -286,6 +290,18 @@ export class Job {
     if (!this.canCancel()) return err(validation("this job can no longer be canceled", "status"));
     return ok(
       new Job({ ...this.p, status: "canceled", canceledAt: now, cancelReason: trimmed, updatedAt: now }),
+    );
+  }
+
+  // Field-surface authorization predicate: is this user ON the job — the job-level
+  // assignee, or the assignee of any active (non-canceled) visit? Visit-level
+  // assignment counts because the schedule board dispatches crew per visit; a
+  // canceled visit is no longer a claim to the job. Used by the tech-facing
+  // field-router to scope writes (e.g. checklist verify answers) to a tech's own jobs.
+  isAssignedTo(userId: UserId): boolean {
+    if (this.p.assigneeUserId === userId) return true;
+    return this.p.visits.some(
+      (v) => v.props.status !== "canceled" && v.props.assigneeUserId === userId,
     );
   }
 

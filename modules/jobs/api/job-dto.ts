@@ -37,12 +37,15 @@ export const visitDTO = z.object({
   position: z.number().int(),
 });
 
+// rate/cost are nullable because the tech-facing field-router REDACTS them server-side
+// (cost always for techs; rate too when the org's techSeesPrice is off). Office routers
+// never emit null — they serve the full figures to owner/office only.
 export const jobLineDTO = z.object({
   id: z.string().uuid(),
   description: z.string(),
   quantity: z.number(),
-  rate: moneyDTO,
-  cost: moneyDTO,
+  rate: moneyDTO.nullable(),
+  cost: moneyDTO.nullable(),
   position: z.number().int(),
 });
 
@@ -50,8 +53,8 @@ export const jobAddonDTO = z.object({
   id: z.string().uuid(),
   description: z.string(),
   quantity: z.number(),
-  rate: moneyDTO,
-  cost: moneyDTO,
+  rate: moneyDTO.nullable(),
+  cost: moneyDTO.nullable(),
   isOptional: z.boolean(),
   invoiceSkip: z.boolean(),
   status: z.enum(["proposed", "approved", "declined"]),
@@ -63,6 +66,18 @@ export const jobVerifyAnswerDTO = z.object({
   state: z.enum(["pass", "override"]),
   via: z.string().nullable(),
   reason: z.string().nullable(),
+});
+
+// Input for writing one verify answer. Shared by BOTH surfaces — the office
+// job-router and the tech field-router — so the contract can't drift between them.
+export const setVerifyAnswerInput = z.object({
+  jobId: z.string().uuid(),
+  // Bounded like checklist item ids (jobChecklistInput) — the use-case additionally
+  // validates membership against the job's attached checklist.
+  itemId: z.string().min(1).max(100),
+  state: z.enum(["pass", "override", "clear"]),
+  via: z.string().max(50).nullable().optional(),
+  reason: z.string().max(2000).nullable().optional(),
 });
 
 // Before-you-leave checklist snapshot on the job (order = array order). Crew

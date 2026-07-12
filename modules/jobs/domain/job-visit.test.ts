@@ -234,3 +234,39 @@ describe("Job.withVisits()", () => {
     expect(startedR.value.withVisits([makeVisit()], now).ok).toBe(true);
   });
 });
+
+// ── Job.isAssignedTo (field-surface authorization predicate) ─────────────────
+
+describe("Job.isAssignedTo", () => {
+  const tech = asUserId("44444444-4444-4444-4444-444444444444");
+  const otherTech = asUserId("55555555-5555-5555-5555-555555555555");
+
+  it("true for the job-level assignee", () => {
+    expect(makeJob({ assigneeUserId: tech }).isAssignedTo(tech)).toBe(true);
+  });
+
+  it("true for the assignee of an active (non-canceled) visit", () => {
+    for (const status of ["pending", "in_progress", "complete"] as const) {
+      const job = makeJob({ visits: [makeVisit({ assigneeUserId: tech, status })] });
+      expect(job.isAssignedTo(tech)).toBe(true);
+    }
+  });
+
+  it("false when the user's only visit is canceled", () => {
+    const job = makeJob({ visits: [makeVisit({ assigneeUserId: tech, status: "canceled" })] });
+    expect(job.isAssignedTo(tech)).toBe(false);
+  });
+
+  it("false for a user with no claim on the job", () => {
+    const job = makeJob({
+      assigneeUserId: tech,
+      visits: [makeVisit({ assigneeUserId: tech })],
+    });
+    expect(job.isAssignedTo(otherTech)).toBe(false);
+  });
+
+  it("false when neither job nor visits carry an assignee", () => {
+    const job = makeJob({ visits: [makeVisit({ assigneeUserId: null })] });
+    expect(job.isAssignedTo(tech)).toBe(false);
+  });
+});

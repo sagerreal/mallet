@@ -19,8 +19,17 @@ const ORG = asOrgId("22222222-2222-2222-2222-222222222222");
 const JOB: JobId = asJobId("11111111-1111-1111-1111-111111111111");
 const MISSING: JobId = asJobId("99999999-9999-9999-9999-999999999999");
 
-// A fake job aggregate is enough for these use-cases — they only read findById !== null.
-const fakeJob = { props: { id: JOB } } as unknown as Job;
+// A fake job aggregate is enough for these use-cases — findById !== null plus the attached
+// checklist SetVerifyAnswerUseCase validates itemId against.
+const fakeJob = {
+  props: {
+    id: JOB,
+    checklist: {
+      name: "Before you leave",
+      items: [{ id: "3", text: "Water back on", type: "check", required: true }],
+    },
+  },
+} as unknown as Job;
 
 class FakeRepo implements Partial<JobRepository> {
   jobs = new Map<string, Job>([[JOB, fakeJob]]);
@@ -163,6 +172,29 @@ describe("job execution use-cases", () => {
     const r = await uc.exec({ jobId: JOB, itemId: "3", state: "override", via: null, reason: " " }, ORG);
     expect(isErr(r)).toBe(true);
     if (isErr(r)) expect(r.error.kind).toBe("validation");
+  });
+
+  it("SetVerifyAnswer rejects an itemId that is not on the job's checklist", async () => {
+    const uc = new SetVerifyAnswerUseCase(repo as unknown as JobRepository, clock);
+    const r = await uc.exec({ jobId: JOB, itemId: "not-an-item", state: "pass", via: "manual", reason: null }, ORG);
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("not_found");
+    expect(repo.answers).toHaveLength(0);
+  });
+
+  it("SetVerifyAnswer rejects when the job has no checklist attached", async () => {
+    repo.jobs.set(JOB, { props: { id: JOB, checklist: null } } as unknown as Job);
+    const uc = new SetVerifyAnswerUseCase(repo as unknown as JobRepository, clock);
+    const r = await uc.exec({ jobId: JOB, itemId: "3", state: "pass", via: "manual", reason: null }, ORG);
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+  });
+
+  it("SetVerifyAnswer state=clear also rejects an itemId not on the checklist", async () => {
+    const uc = new SetVerifyAnswerUseCase(repo as unknown as JobRepository, clock);
+    const r = await uc.exec({ jobId: JOB, itemId: "ghost", state: "clear", via: null, reason: null }, ORG);
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("not_found");
   });
 
   it("SetVerifyAnswer with state=clear removes the answer", async () => {

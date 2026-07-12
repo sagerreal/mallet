@@ -74,7 +74,8 @@ export function linesTotal(lines: ReadonlyArray<BuildLine>): number {
 interface SeedJobLine {
   d: string;
   q?: number;
-  r?: number;
+  /** null = server-redacted rate (tech device) — seeded as 0 like an unpriced line. */
+  r?: number | null;
   c?: number;
 }
 

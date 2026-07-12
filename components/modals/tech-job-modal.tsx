@@ -31,6 +31,7 @@ import {
   useCloseModal,
   useAppStore,
 } from "@/lib/store/app-store";
+import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
@@ -294,10 +295,12 @@ function FieldTimer({ visit }: FieldTimerProps) {
 interface VisitRowProps {
   visit: Visit;
   quoted: boolean;
+  /** Tech role: the step/done buttons call v1.visits.setVisitStatus (ownerOrOffice) — hidden. */
+  readOnly: boolean;
   onStatus: (status: string) => void;
 }
 
-function VisitRow({ visit, quoted, onStatus }: VisitRowProps) {
+function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
   // guarded: only PLACED visits reach here, so date/start are non-null.
   const date = visit.date ?? "";
   const start = visit.start ?? 0;
@@ -385,10 +388,12 @@ function VisitRow({ visit, quoted, onStatus }: VisitRowProps) {
           </div>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        {step}
-        {doneB}
-      </div>
+      {!readOnly && (
+        <div style={{ display: "flex", gap: 8 }}>
+          {step}
+          {doneB}
+        </div>
+      )}
     </div>
   );
 }
@@ -481,9 +486,10 @@ function WorkOrderSec({ job, seesPrice }: WorkOrderSecProps) {
                 {x.d}
                 {(x.q ?? 1) > 1 ? <span className="muted"> × {x.q}</span> : null}
               </span>
-              {seesPrice && (
+              {/* x.r === null = server-redacted (techSeesPrice off) — show nothing, never $0. */}
+              {seesPrice && x.r != null && (
                 <span className="muted fig" style={{ fontSize: 12 }}>
-                  {fmt$((x.q ?? 1) * (x.r ?? 0))}
+                  {fmt$((x.q ?? 1) * x.r)}
                 </span>
               )}
             </div>
@@ -579,16 +585,21 @@ function AddonStatusPill({ status }: AddonStatusPillProps) {
 interface FoundWorkSecProps {
   job: Job;
   seesPrice: boolean;
+  /** Tech role: add + status controls call ownerOrOffice endpoints — list stays read-only. */
+  readOnly: boolean;
   addAddon: (jobId: string, draft: { d: string; r: number }) => Addon | null;
   setAddonStatus: (jobId: string, addonId: number, status: Addon["status"]) => void;
 }
 
-function FoundWorkSec({ job, seesPrice, addAddon, setAddonStatus }: FoundWorkSecProps) {
+function FoundWorkSec({ job, seesPrice, readOnly, addAddon, setAddonStatus }: FoundWorkSecProps) {
   const [desc, setDesc] = useState("");
   const [price, setPrice] = useState("");
 
   const addons = job.addons ?? [];
   const awaiting = addons.filter((a) => a.status === "proposed").length;
+
+  // Read-only with nothing to read = nothing to render (no dead empty section).
+  if (readOnly && addons.length === 0) return null;
 
   function submit() {
     const d = desc.trim();
@@ -612,10 +623,11 @@ function FoundWorkSec({ job, seesPrice, addAddon, setAddonStatus }: FoundWorkSec
         <div key={a.id} className="stage-row">
           <div style={{ flex: 1 }}>
             <b style={{ fontWeight: 600 }}>{a.d}</b>
-            {seesPrice && <span className="muted"> · {fmt$(a.r)}</span>}
+            {/* a.r === null = server-redacted (techSeesPrice off) — show nothing, never $0. */}
+            {seesPrice && a.r != null && <span className="muted"> · {fmt$(a.r)}</span>}
           </div>
           <AddonStatusPill status={a.status} />
-          {a.status === "proposed" && (
+          {!readOnly && a.status === "proposed" && (
             <>
               <button
                 className="btn sm primary"
@@ -631,33 +643,35 @@ function FoundWorkSec({ job, seesPrice, addAddon, setAddonStatus }: FoundWorkSec
         </div>
       ))}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <input
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
-          }}
-          placeholder="extra work found…"
-          style={{ flex: 2, minWidth: 140, ...AO_INPUT }}
-        />
-        {seesPrice && (
+      {!readOnly && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           <input
-            type="number"
-            inputMode="decimal"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") submit();
             }}
-            placeholder="price $"
-            style={{ flex: "0 0 92px", ...AO_INPUT }}
+            placeholder="extra work found…"
+            style={{ flex: 2, minWidth: 140, ...AO_INPUT }}
           />
-        )}
-        <button className="btn sm primary" onClick={submit}>
-          Add
-        </button>
-      </div>
+          {seesPrice && (
+            <input
+              type="number"
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+              placeholder="price $"
+              style={{ flex: "0 0 92px", ...AO_INPUT }}
+            />
+          )}
+          <button className="btn sm primary" onClick={submit}>
+            Add
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1132,6 +1146,13 @@ export function TechJobModalContent() {
   const openModal = useOpenModal();
   const close = useCloseModal();
 
+  // Role gate: this modal is shared by owner/office (full controls) and techs.
+  // Controls wired to ownerOrOffice endpoints (visit status, add-ons, payments,
+  // send-to-office) would FORBIDDEN + silently roll back for a tech — they are
+  // office-only. Fail closed: until the role loads, show the tech (reduced) view.
+  const me = useMe();
+  const isOffice = me.data?.role === "owner" || me.data?.role === "office";
+
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const invoices = useAppStore((s) => s.invoices);
@@ -1202,25 +1223,29 @@ export function TechJobModalContent() {
       {/* 1. Header — avatar + name + service word + title. NO status pill. */}
       <TechHeader job={job} custName={custName} />
 
-      {/* 2. Call / Text (only when a lead is linked). */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
-        <button
-          className="btn"
-          onClick={() => {
-            if (lead) openModal(MODAL.CALL, { leadId: lead.id });
-          }}
-        >
-          Call
-        </button>
-        <button
-          className="btn"
-          onClick={() => {
-            if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
-          }}
-        >
-          Text
-        </button>
-      </div>
+      {/* 2. Call / Text — office only. Leads never hydrate under the field shell and
+          the myDay summary carries no customer phone, so for a tech these would be
+          dead buttons (no dead buttons rule). */}
+      {isOffice && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
+          <button
+            className="btn"
+            onClick={() => {
+              if (lead) openModal(MODAL.CALL, { leadId: lead.id });
+            }}
+          >
+            Call
+          </button>
+          <button
+            className="btn"
+            onClick={() => {
+              if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
+            }}
+          >
+            Text
+          </button>
+        </div>
+      )}
 
       {/* 3. Address — tappable Navigate row, or the muted no-address line. */}
       {addr ? (
@@ -1247,20 +1272,24 @@ export function TechJobModalContent() {
         </div>
       )}
 
-      {/* 4. Field timer (hero when not done) — or the on-site close-out HERO. */}
+      {/* 4. Field timer (hero when not done) — or the on-site close-out HERO.
+          The close-out hero is office-only: charge-on-file / take-payment /
+          send-to-office all write through ownerOrOffice endpoints. */}
       {done ? (
-        <DoneBlock
-          job={job}
-          lead={lead}
-          invoice={invoice}
-          onOpenCloseOut={openCloseOut}
-          onOpenInvoice={(invoiceId) => openModal(MODAL.INVOICE, { invoiceId })}
-          onChargeOnFile={chargeOnFile}
-          onSendToOffice={sendToOffice}
-          onReopen={() => {
-            if (curVisit) onVisitStatus(curVisit.id, "scheduled");
-          }}
-        />
+        isOffice ? (
+          <DoneBlock
+            job={job}
+            lead={lead}
+            invoice={invoice}
+            onOpenCloseOut={openCloseOut}
+            onOpenInvoice={(invoiceId) => openModal(MODAL.INVOICE, { invoiceId })}
+            onChargeOnFile={chargeOnFile}
+            onSendToOffice={sendToOffice}
+            onReopen={() => {
+              if (curVisit) onVisitStatus(curVisit.id, "scheduled");
+            }}
+          />
+        ) : null
       ) : curVisit ? (
         <FieldTimer key={curVisit.id} visit={curVisit} />
       ) : null}
@@ -1287,14 +1316,17 @@ export function TechJobModalContent() {
                 ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site`
                 : "Completed"}
             </span>
-            <button
-              className="btn sm ghost"
-              onClick={() => {
-                if (curVisit) onVisitStatus(curVisit.id, "scheduled");
-              }}
-            >
-              ↩ Reopen
-            </button>
+            {/* Reopen writes visit status (ownerOrOffice) — office only. */}
+            {isOffice && (
+              <button
+                className="btn sm ghost"
+                onClick={() => {
+                  if (curVisit) onVisitStatus(curVisit.id, "scheduled");
+                }}
+              >
+                ↩ Reopen
+              </button>
+            )}
           </div>
         ) : placed.length ? (
           placed.map((v) => (
@@ -1302,6 +1334,7 @@ export function TechJobModalContent() {
               key={v.id}
               visit={v}
               quoted={quoted}
+              readOnly={!isOffice}
               onStatus={(status) => onVisitStatus(v.id, status)}
             />
           ))
@@ -1321,10 +1354,11 @@ export function TechJobModalContent() {
         />
       )}
 
-      {/* Found work / add-ons (5b). */}
+      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes). */}
       <FoundWorkSec
         job={job}
         seesPrice={seesPrice}
+        readOnly={!isOffice}
         addAddon={addAddon}
         setAddonStatus={setAddonStatus}
       />

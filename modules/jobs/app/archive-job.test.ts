@@ -18,6 +18,7 @@ function repoWith(archiveResult: number): JobRepository {
     listByLead: async () => ({ items: [], nextCursor: null }),
     // execution stubs — implemented in Task 5
     listExecution: async () => ({ lines: [], addons: [], verifyAnswers: [], photos: [] }),
+    listExecutionForJobs: async () => new Map(),
     addLine: async () => {},
     updateLine: async () => 0,
     removeLine: async () => 0,

@@ -4,8 +4,9 @@
  * My Day page — tech-scoped agenda.
  *
  * Fetches the caller's assigned jobs via v1.field.myDay (anyRole, assignee-scoped).
- * Does NOT depend on the office Zustand store (jobs / techs), which is only hydrated
- * under the ownerOrOffice layout and is empty for a tech caller.
+ * The agenda renders straight from the query; the Zustand jobs slice is hydrated
+ * from the SAME query by FieldJobsHydrator in the (field) layout, which is what
+ * the tech-job-modal (checklist check-offs, found work) reads when a card is tapped.
  *
  * Actions: v1.field.start / v1.field.complete — assignee-guarded on the server.
  * Time clock card: kept as local/deferred state (clock → timesheets not yet wired).
@@ -14,6 +15,8 @@
 import { useState } from "react";
 import { api } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/client";
+import { useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -45,12 +48,13 @@ function statusLabel(status: string): { l: string; c: string; bg: string } {
 
 interface JobCardProps {
   job: JobSummary;
+  onOpen: (jobId: string) => void;
   onStart: (jobId: string) => void;
   onComplete: (jobId: string) => void;
   isPending: boolean;
 }
 
-function JobCard({ job, onStart, onComplete, isPending }: JobCardProps) {
+function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) {
   const s = statusLabel(job.status);
 
   const acts =
@@ -73,7 +77,21 @@ function JobCard({ job, onStart, onComplete, isPending }: JobCardProps) {
     ) : null;
 
   return (
-    <div className="md-stop">
+    // Card tap opens the tech job view (checklist, found work). The action
+    // buttons stopPropagation below so Start/Complete don't also open it.
+    <div
+      className="md-stop"
+      role="button"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      onClick={() => onOpen(job.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(job.id);
+        }
+      }}
+    >
       <div className="md-time">{timeLabel(job.scheduledStart)}</div>
       <div className="md-body">
         <div className="md-line1">
@@ -169,8 +187,15 @@ export default function MyDayPage() {
   });
 
   const [clockState, setClockState] = useState<"idle" | "travel" | "break" | "shop">("idle");
+  const openModal = useOpenModal();
 
   const isPending = startMutation.isPending || completeMutation.isPending;
+
+  function handleOpen(jobId: string): void {
+    // The modal reads store.jobs — hydrated from this same myDay query by
+    // FieldJobsHydrator in the (field) layout.
+    openModal(MODAL.TECH_JOB, { jobId });
+  }
 
   function handleStart(jobId: string): void {
     startMutation.mutate({ jobId });
@@ -220,6 +245,7 @@ export default function MyDayPage() {
             <JobCard
               key={job.id}
               job={job}
+              onOpen={handleOpen}
               onStart={handleStart}
               onComplete={handleComplete}
               isPending={isPending}

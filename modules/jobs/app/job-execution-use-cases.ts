@@ -224,6 +224,17 @@ export class SetVerifyAnswerUseCase {
   async exec(cmd: SetVerifyAnswerCommand, orgId: string): Promise<Result<JobWithExecution, AppError>> {
     const job = await this.repo.findById(cmd.jobId);
     if (!job) return err(notFound("job not found"));
+    // Answers only exist for items on the job's ATTACHED checklist. Without this, any
+    // itemId upserts a fresh row (row spam) and answers written before a checklist is
+    // attached pre-seed its items as already checked. Applies to every role and to
+    // "clear" too — clearing a nonexistent item is a caller bug, not a no-op.
+    const checklist = job.props.checklist;
+    if (!checklist) {
+      return err(validation("this job has no checklist attached — nothing to check off", "itemId"));
+    }
+    if (!checklist.items.some((item) => item.id === cmd.itemId)) {
+      return err(notFound("that item isn't on this job's checklist"));
+    }
     if (cmd.state === "clear") {
       await this.repo.removeVerifyAnswer(cmd.jobId, cmd.itemId);
       logger.info({ jobId: cmd.jobId, itemId: cmd.itemId, orgId }, "job_verify.cleared");

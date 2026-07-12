@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, inArray, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import {
@@ -13,7 +13,7 @@ import {
   type Paginated,
 } from "@mallet/shared/types";
 import type { Job } from "../domain/job";
-import type { JobRepository, JobFilter } from "../domain/job-repository";
+import type { JobRepository, JobFilter, JobExecution } from "../domain/job-repository";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
 import { lineToDomain, addonToDomain, verifyToDomain, photoToDomain, type JobLineRow, type JobAddonRow, type JobVerifyAnswerRow, type JobPhotoRow } from "./job-execution-mapper";
@@ -197,6 +197,28 @@ export class DrizzleJobRepository implements JobRepository {
     const conds: SQL[] = [isNull(jobs.deletedAt)];
     if (filter?.status) conds.push(eq(jobs.status, filter.status));
     if (filter?.assigneeUserId) conds.push(eq(jobs.assigneeUserId, filter.assigneeUserId));
+    if (filter?.assignedUserId) {
+      // Visit-aware assignment — the SQL twin of Job.isAssignedTo: the job-level
+      // assignee OR the assignee of any active (non-canceled, non-deleted) visit.
+      const cond = or(
+        eq(jobs.assigneeUserId, filter.assignedUserId),
+        exists(
+          this.tx
+            .select({ one: sql`1` })
+            .from(jobVisits)
+            .where(
+              and(
+                eq(jobVisits.orgId, jobs.orgId),
+                eq(jobVisits.jobId, jobs.id),
+                eq(jobVisits.assigneeUserId, filter.assignedUserId),
+                ne(jobVisits.status, "canceled"),
+                isNull(jobVisits.deletedAt),
+              ),
+            ),
+        ),
+      );
+      if (cond) conds.push(cond);
+    }
     return this.loadPage(conds, page);
   }
 
@@ -239,6 +261,47 @@ export class DrizzleJobRepository implements JobRepository {
       verifyAnswers: (answerRows as JobVerifyAnswerRow[]).map(verifyToDomain),
       photos: (photoRows as JobPhotoRow[]).map(photoToDomain),
     };
+  }
+
+  // Batched twin of listExecution for list surfaces (myDay): 4 IN-clause queries for the
+  // whole page instead of 4 per job. Same ordering and soft-delete filters per collection.
+  async listExecutionForJobs(jobIds: readonly JobId[]): Promise<Map<string, JobExecution>> {
+    const byJob = new Map<string, JobExecution>();
+    for (const id of jobIds) {
+      byJob.set(id, { lines: [], addons: [], verifyAnswers: [], photos: [] });
+    }
+    if (jobIds.length === 0) return byJob;
+
+    const ids = [...jobIds];
+    const [lineRows, addonRows, answerRows, photoRows] = await Promise.all([
+      this.tx
+        .select()
+        .from(jobLines)
+        .where(and(inArray(jobLines.jobId, ids), isNull(jobLines.deletedAt)))
+        .orderBy(jobLines.position, jobLines.createdAt),
+      this.tx
+        .select()
+        .from(jobAddons)
+        .where(and(inArray(jobAddons.jobId, ids), isNull(jobAddons.deletedAt)))
+        .orderBy(jobAddons.position, jobAddons.createdAt),
+      this.tx
+        .select()
+        .from(jobVerifyAnswers)
+        .where(inArray(jobVerifyAnswers.jobId, ids)),
+      this.tx
+        .select()
+        .from(jobPhotos)
+        .where(and(inArray(jobPhotos.jobId, ids), isNull(jobPhotos.deletedAt)))
+        .orderBy(jobPhotos.position, jobPhotos.createdAt),
+    ]);
+
+    for (const row of lineRows as JobLineRow[]) byJob.get(row.jobId)?.lines.push(lineToDomain(row));
+    for (const row of addonRows as JobAddonRow[]) byJob.get(row.jobId)?.addons.push(addonToDomain(row));
+    for (const row of answerRows as JobVerifyAnswerRow[]) {
+      byJob.get(row.jobId)?.verifyAnswers.push(verifyToDomain(row));
+    }
+    for (const row of photoRows as JobPhotoRow[]) byJob.get(row.jobId)?.photos.push(photoToDomain(row));
+    return byJob;
   }
 
   async addLine(line: JobLine, now: Date): Promise<void> {

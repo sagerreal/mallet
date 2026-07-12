@@ -108,6 +108,16 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
       .where(eq(orgSettings.orgId, this.orgId));
   }
 
+  async getTechSeesPrice(): Promise<boolean> {
+    const rows = await this.tx
+      .select({ techSeesPrice: orgSettings.techSeesPrice })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    // No row yet (settings never opened) → the column's schema default: visible.
+    return rows[0]?.techSeesPrice ?? true;
+  }
+
   // ── OrgNameWriter ──────────────────────────────────────────────────────────
 
   /**
