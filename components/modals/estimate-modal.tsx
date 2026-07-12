@@ -84,6 +84,7 @@ export function EstimateModalContent() {
   const deleteEstimate = useAppStore((s) => s.deleteEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const updateLead = useAppStore((s) => s.updateLead);
+  const adoptEstimate = useAppStore((s) => s.adoptEstimate);
 
   const [deleteArmed, setDeleteArmed] = useState(false);
 
@@ -100,6 +101,23 @@ export function EstimateModalContent() {
 
   const estId = activeModal?.params?.estId as string | undefined;
   const e = estimates.find((x) => x.id === estId);
+
+  // Full-record fetch: list hydration carries only headers (the summary DTO omits
+  // lines/pricing), so without this a refreshed session opens every quote as an
+  // empty table with a $0 total. Fetch once per open and adopt into the store.
+  // retry:false — store-local drafts (never persisted) 404 here; that's expected.
+  const needsFull = Boolean(e) && e!.lines.length === 0;
+  const fullQuery = api.v1.quoting.get.useQuery(
+    { estimateId: estId ?? "" },
+    { enabled: Boolean(estId) && needsFull, staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (fullQuery.data) adoptEstimate(fullQuery.data, e?.fu ?? { on: false, stage: 0 });
+    // e?.fu intentionally not a dep — adopt fires once per fetched record; fu is
+    // read from the store copy at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullQuery.data]);
+
   if (!e) return null;
   const lead = leads.find((l) => l.id === e.leadId);
   const m = calcQuote(e.lines, e.pricing);
@@ -318,7 +336,9 @@ export function EstimateModalContent() {
             ) : null}
             <tr>
               <td colSpan={3} style={{ textAlign: "right", fontWeight: 800 }}>Total</td>
-              <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt$(m.total)}</td>
+              {/* cachedTotal fallback: header-only estimates (lines still loading) show the
+                  list total instead of a $0 flash. */}
+              <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt$(e.lines.length ? m.total : (e.cachedTotal ?? 0))}</td>
             </tr>
             {p.dep ? (
               <tr>
