@@ -293,6 +293,8 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     },
     cachedTotal: dto.total.cents / 100,   // cents → dollars
     publicToken: dto.publicToken ?? undefined,  // null → undefined (absent when not yet set)
+    changeRequestedAt: dto.changeRequestedAt ?? undefined,
+    changeRequest: dto.changeRequest ?? undefined,
     reads: [],                             // client-local — not persisted
     archived: false,
     trash: false,

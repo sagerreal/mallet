@@ -84,6 +84,17 @@ class FakeEstimateRepository implements EstimateRepository {
     this.archived.delete(id);
     return this.store.get(id) ?? null;
   }
+
+  async archiveByLead(leadId: LeadId, _now: Date): Promise<number> {
+    let count = 0;
+    for (const [id, est] of this.store) {
+      if (est.props.leadId === leadId && !this.archived.has(id)) {
+        this.archived.add(id);
+        count++;
+      }
+    }
+    return count;
+  }
 }
 
 const oneLine = (overrides: Partial<EstimateLineInput> = {}): EstimateLineInput => ({

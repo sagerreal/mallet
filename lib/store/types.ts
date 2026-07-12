@@ -141,6 +141,10 @@ export interface Estimate {
    * records (the summary DTO omits it) and locally-created estimates.
    */
   publicToken?: string;
+  /** ISO timestamp when the customer last requested a change. */
+  changeRequestedAt?: string;
+  /** The customer's change request message. */
+  changeRequest?: string;
   archived?: boolean;
   trash?: boolean;
 }

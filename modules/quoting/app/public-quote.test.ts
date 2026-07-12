@@ -42,6 +42,7 @@ import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repo
 import { DraftEstimateUseCase } from "./draft-estimate";
 import { AcceptEstimateUseCase } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
+import { RequestEstimateChangeUseCase } from "./request-estimate-change";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,17 @@ class FakeEstimateRepository implements EstimateRepository {
     if (!this.archived.has(id)) return null;
     this.archived.delete(id);
     return this.store.get(id) ?? null;
+  }
+
+  async archiveByLead(leadId: LeadId, _now: Date): Promise<number> {
+    let count = 0;
+    for (const [id, est] of this.store) {
+      if (est.props.leadId === leadId && !this.archived.has(id)) {
+        this.archived.add(id);
+        count++;
+      }
+    }
+    return count;
   }
 
   // Test helper: put an estimate directly into the store
@@ -146,6 +158,8 @@ const makeSentEstimate = (
     acceptedAt: null,
     declinedAt: null,
     declineReason: null,
+    changeRequestedAt: null,
+    changeRequest: null,
     publicToken: token,
     lines: [makeTestLine()],
     createdAt: now,
@@ -482,5 +496,66 @@ describe("DraftEstimateUseCase — publicToken generation", () => {
     expect(isOk(r2)).toBe(true);
     if (!isOk(r1) || !isOk(r2)) return;
     expect(r1.value.props.publicToken).not.toBe(r2.value.props.publicToken);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// App-layer helper for testing requestChangePublicQuote
+// ---------------------------------------------------------------------------
+
+async function testRequestChangePublicQuote(
+  token: string,
+  message: string,
+  reader: FakePublicEstimateReader,
+  repoByOrg: Map<OrgId, FakeEstimateRepository>,
+  bus: InMemoryEventBus,
+  clock: FixedClock,
+): Promise<Estimate | null> {
+  const resolved = await reader.resolveOrgByToken(token);
+  if (!resolved) return null;
+  const { estimateId, orgId } = resolved;
+  const repo = repoByOrg.get(orgId);
+  if (!repo) return null;
+  const useCase = new RequestEstimateChangeUseCase(repo, bus, clock);
+  const result = await useCase.exec({ estimateId: asEstimateId(estimateId), message });
+  if (!result.ok) {
+    if (result.error.kind === "validation") {
+      return repo.findById(asEstimateId(estimateId));
+    }
+    return null;
+  }
+  return result.value;
+}
+
+// ---------------------------------------------------------------------------
+// Tests: requestChangePublicQuote
+// ---------------------------------------------------------------------------
+
+describe("requestChangePublicQuote", () => {
+  it("unknown token → null", async () => {
+    const result = await testRequestChangePublicQuote(UNKNOWN_TOKEN, "lower price", reader, repoByOrg, bus, clock);
+    expect(result).toBeNull();
+  });
+
+  it("sets changeRequest and changeRequestedAt on a sent estimate", async () => {
+    const result = await testRequestChangePublicQuote(KNOWN_TOKEN, "can you lower the price?", reader, repoByOrg, bus, clock);
+    expect(result?.props.changeRequest).toBe("can you lower the price?");
+    expect(result?.props.changeRequestedAt).not.toBeNull();
+  });
+
+  it("emits estimate.change_requested event", async () => {
+    const freshBus = new InMemoryEventBus();
+    await testRequestChangePublicQuote(KNOWN_TOKEN, "please adjust", reader, repoByOrg, freshBus, clock);
+    const events = freshBus.recorded.filter((e) => e.name === "estimate.change_requested");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.orgId).toBe(ORG_A);
+  });
+
+  it("returns current state when estimate is not in sent state (already accepted)", async () => {
+    // First accept the estimate
+    await testAcceptPublicQuote(KNOWN_TOKEN, reader, repoByOrg, bus, clock);
+    // Now try to request a change — should return current (accepted) state
+    const result = await testRequestChangePublicQuote(KNOWN_TOKEN, "adjust please", reader, repoByOrg, bus, clock);
+    expect(result?.props.status).toBe("accepted");
   });
 });

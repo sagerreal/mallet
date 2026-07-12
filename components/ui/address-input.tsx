@@ -157,7 +157,9 @@ export function AddressInput({
   }, []);
 
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
+    // flex + minWidth: the wrapper must grow inside flex rows (e.g. the lead-header
+    // address row) or it shrinks to content width and long addresses get cut off.
+    <div ref={containerRef} style={{ position: "relative", flex: "1 1 auto", minWidth: 0, width: "100%" }}>
       <input
         type="text"
         value={value}
@@ -170,7 +172,7 @@ export function AddressInput({
         aria-autocomplete={apiKey ? "list" : "none"}
         aria-expanded={open}
         autoComplete="off"
-        style={inputStyle}
+        style={{ width: "100%", ...inputStyle }}
       />
       {open && suggestions.length > 0 && (
         <ul

@@ -85,6 +85,8 @@ export class DraftEstimateUseCase {
       acceptedAt: null,
       declinedAt: null,
       declineReason: null,
+      changeRequestedAt: null,
+      changeRequest: null,
       publicToken: generatePublicToken(),
       lines: built,
       createdAt: now,

@@ -1,13 +1,25 @@
 import { withTenant } from "@mallet/shared/db/tx";
-import { asEstimateId, systemClock } from "@mallet/shared/types";
+import { asEstimateId, asLeadId, systemClock } from "@mallet/shared/types";
 import { uuidGenerator } from "@mallet/shared/ports";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
 import { DrizzlePublicEstimateReader } from "../infra/drizzle-public-estimate-reader";
 import { AcceptEstimateUseCase } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
+import { RequestEstimateChangeUseCase } from "./request-estimate-change";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 import type { Estimate } from "../domain/estimate";
+import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
+import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
+import { logger } from "@mallet/shared/observability";
+
+// Result type for requestChangePublicQuote — disambiguates cooldown rejection from the
+// idempotent "not sent" path so the route can return the correct HTTP status.
+export type RequestChangeResult =
+  | { kind: "ok"; estimate: Estimate }
+  | { kind: "cooldown" }
+  | { kind: "not_sent"; estimate: Estimate | null }
+  | { kind: "not_found" };
 
 // Re-export so callers only need to import from this module.
 export type { PublicQuoteView };
@@ -49,7 +61,96 @@ export async function acceptPublicQuote(token: string): Promise<Estimate | null>
       return null;
     }
 
+    // After the estimate is accepted, create its job in a savepoint so a failure does NOT
+    // roll back the accepted estimate. CreateJobFromEstimateUseCase is idempotent (partial
+    // unique index on source_estimate_id + ON CONFLICT DO NOTHING), so re-accepts are safe.
+    try {
+      await tx.transaction(async (sp) => {
+        const jobRepo = new DrizzleJobRepository(sp, orgId);
+        const estimateReader = new DrizzleEstimateReader(sp, orgId);
+        const createJob = new CreateJobFromEstimateUseCase(jobRepo, estimateReader, bus, systemClock, uuidGenerator);
+        const jobResult = await createJob.exec({ orgId, estimateId: asEstimateId(estimateId) });
+        if (!jobResult.ok) {
+          logger.error({ err: jobResult.error, estimateId, orgId }, "public-quote.accept: job creation returned error (non-fatal)");
+        }
+      });
+    } catch (err) {
+      logger.error({ err, estimateId, orgId }, "public-quote.accept: job creation failed (non-fatal)");
+    }
+
     return result.value;
+  });
+}
+
+// Request a change on a sent quote via its public token. The estimate stays "sent" — the office
+// receives a task on the lead. Returns a RequestChangeResult discriminated union so the route can
+// distinguish a cooldown rejection (→ 429) from an idempotent non-sent path (→ 200).
+export async function requestChangePublicQuote(
+  token: string,
+  message: string,
+): Promise<RequestChangeResult> {
+  const reader = new DrizzlePublicEstimateReader();
+  const resolved = await reader.resolveOrgByToken(token);
+  if (!resolved) return { kind: "not_found" };
+
+  const { estimateId, orgId } = resolved;
+
+  return withTenant(orgId, async (tx) => {
+    const bus = new OutboxEventBus(tx, orgId);
+    const repo = new DrizzleEstimateRepository(tx, orgId);
+    const useCase = new RequestEstimateChangeUseCase(repo, bus, systemClock);
+
+    const result = await useCase.exec({
+      estimateId: asEstimateId(estimateId),
+      message,
+    });
+
+    if (!result.ok) {
+      // Cooldown: propagate as a distinct result kind so the route can return 429.
+      if (result.error.kind === "validation" && result.error.field === "cooldown") {
+        return { kind: "cooldown" };
+      }
+      // Idempotent path: estimate is in a non-sent state (wrong status, empty message, etc.)
+      // → return current state without error.
+      if (result.error.kind === "validation") {
+        const current = await repo.findById(asEstimateId(estimateId));
+        return { kind: "not_sent", estimate: current };
+      }
+      return { kind: "not_found" };
+    }
+
+    // Create a task on the lead so the office is notified. Wrapped in a savepoint so a task
+    // creation failure does NOT roll back the recorded change request. Non-fatal.
+    try {
+      await tx.transaction(async (sp) => {
+        const taskRepo = new DrizzleTaskRepository(sp, orgId);
+        const createTask = new CreateTaskUseCase(taskRepo, systemClock, uuidGenerator);
+        const est = result.value;
+        const trimmedMsg = est.props.changeRequest ?? message.trim();
+        const taskText = `Quote ${est.props.num}: change requested — "${trimmedMsg.length > 80 ? trimmedMsg.slice(0, 80) + "…" : trimmedMsg}"`;
+        const taskResult = await createTask.exec(
+          {
+            leadId: asLeadId(est.props.leadId),
+            text: taskText,
+            dueDate: null,
+          },
+          orgId,
+        );
+        if (!taskResult.ok) {
+          logger.error(
+            { err: taskResult.error, estimateId, orgId },
+            "public-quote.request_change: task creation returned error (non-fatal)",
+          );
+        }
+      });
+    } catch (taskErr) {
+      logger.error(
+        { err: taskErr, estimateId, orgId },
+        "public-quote.request_change: task creation failed (non-fatal)",
+      );
+    }
+
+    return { kind: "ok", estimate: result.value };
   });
 }
 

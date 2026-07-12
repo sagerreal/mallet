@@ -84,6 +84,7 @@ export function EstimateModalContent() {
   const deleteEstimate = useAppStore((s) => s.deleteEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const updateLead = useAppStore((s) => s.updateLead);
+  const adoptEstimate = useAppStore((s) => s.adoptEstimate);
 
   const [deleteArmed, setDeleteArmed] = useState(false);
 
@@ -97,20 +98,30 @@ export function EstimateModalContent() {
 
   const messagingSend = api.v1.messaging.send.useMutation();
   const notificationsSend = api.v1.notifications.send.useMutation();
+  const clearChangeRequestMutation = api.v1.quoting.clearChangeRequest.useMutation();
 
   const estId = activeModal?.params?.estId as string | undefined;
   const e = estimates.find((x) => x.id === estId);
-  if (!e) return null;
-  const lead = leads.find((l) => l.id === e.leadId);
-  const m = calcQuote(e.lines, e.pricing);
-  const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
-  const stamp = STATUS_STAMP[e.status] ?? { cls: "ink", label: e.status };
 
-  // Derive default channel: text if lead has a phone, else email.
-  const defaultChannel: "text" | "email" =
-    lead?.phone && lead.phone !== "—" ? "text" : "email";
+  // Full-record fetch: list hydration carries only headers (the summary DTO omits
+  // lines/pricing), so without this a refreshed session opens every quote as an
+  // empty table with a $0 total. Fetch once per open and adopt into the store.
+  // retry:false — store-local drafts (never persisted) 404 here; that's expected.
+  const needsFull = Boolean(e) && e!.lines.length === 0;
+  const fullQuery = api.v1.quoting.get.useQuery(
+    { estimateId: estId ?? "" },
+    { enabled: Boolean(estId) && needsFull, staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (fullQuery.data) adoptEstimate(fullQuery.data, e?.fu ?? { on: false, stage: 0 });
+    // e?.fu intentionally not a dep — adopt fires once per fetched record; fu is
+    // read from the store copy at that moment.
+  }, [fullQuery.data]);
 
-  // Sync dest when the panel opens or channel changes.
+  const lead = leads.find((l) => l.id === e?.leadId);
+
+  // Sync dest when the panel opens or channel changes. Lives ABOVE the early returns —
+  // every hook must run on every render or React throws when the returns start firing.
   useEffect(() => {
     if (!sendOpen) return;
     const val =
@@ -125,6 +136,33 @@ export function EstimateModalContent() {
   // lead?.id is the stable dep: re-run when panel opens/channel changes/customer changes.
   // lead.phone / lead.email are intentionally excluded to avoid spurious resets on every render.
   }, [sendOpen, sendChannel, lead?.id]);
+
+  if (!e) return null;
+
+  // L2: surface a non-not_found query error inline rather than silently leaving the table empty.
+  if (fullQuery.isError && fullQuery.error?.data?.code !== "NOT_FOUND") {
+    return (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div>
+            <div className="muted">{e.num}</div>
+            <h2>{e.title}</h2>
+          </div>
+        </div>
+        <div className="card" style={{ marginTop: 14, color: "var(--ink-2)", fontSize: 13 }}>
+          Couldn&apos;t load the quote details — close and reopen to retry.
+        </div>
+      </div>
+    );
+  }
+
+  const m = calcQuote(e.lines, e.pricing);
+  const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
+  const stamp = STATUS_STAMP[e.status] ?? { cls: "ink", label: e.status };
+
+  // Derive default channel: text if lead has a phone, else email.
+  const defaultChannel: "text" | "email" =
+    lead?.phone && lead.phone !== "—" ? "text" : "email";
 
   function openSendPanel() {
     setSendChannel(defaultChannel);
@@ -318,7 +356,9 @@ export function EstimateModalContent() {
             ) : null}
             <tr>
               <td colSpan={3} style={{ textAlign: "right", fontWeight: 800 }}>Total</td>
-              <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt$(m.total)}</td>
+              {/* cachedTotal fallback: header-only estimates (lines still loading) show the
+                  list total instead of a $0 flash. */}
+              <td style={{ textAlign: "right", fontWeight: 800 }}>{fmt$(e.lines.length ? m.total : (e.cachedTotal ?? 0))}</td>
             </tr>
             {p.dep ? (
               <tr>
@@ -339,6 +379,34 @@ export function EstimateModalContent() {
         </div>
       )}
 
+      {e.status === "sent" && e.changeRequestedAt && (
+        <div className="reqcard" style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+            <div>
+              <span className="muted" style={{ fontSize: 11.5, display: "block", marginBottom: 3 }}>Change requested</span>
+              {e.changeRequest
+                ? <span>&ldquo;{e.changeRequest}&rdquo;</span>
+                : <span className="muted">Message loading…</span>
+              }
+            </div>
+            <button
+              className="btn sm ghost"
+              style={{ flexShrink: 0 }}
+              disabled={clearChangeRequestMutation.isPending}
+              onClick={async () => {
+                try {
+                  const updated = await clearChangeRequestMutation.mutateAsync({ estimateId: e.id });
+                  adoptEstimate(updated, e.fu ?? { on: false, stage: 0 });
+                } catch {
+                  // Non-fatal — leave the card in place; the error is swallowed intentionally.
+                }
+              }}
+            >
+              {clearChangeRequestMutation.isPending ? "Clearing…" : "Mark handled"}
+            </button>
+          </div>
+        </div>
+      )}
       {e.status === "sent" && <FollowUpTrail e={e} />}
 
       {(e.status === "draft" || e.status === "sent") && (

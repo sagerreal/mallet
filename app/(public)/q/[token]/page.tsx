@@ -346,9 +346,13 @@ export default async function PublicQuotePage({
                 depBps={p.depBps}
               />
 
-              {/* Approve / decline — client island */}
+              {/* Approve / decline / request-change — client island */}
               {!isDone && (
-                <QuoteActions token={token} totalCents={totalCents} />
+                <QuoteActions
+                  token={token}
+                  totalCents={totalCents}
+                  changeAlreadyRequested={Boolean(p.changeRequestedAt)}
+                />
               )}
             </>
           )}

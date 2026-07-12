@@ -262,6 +262,11 @@ export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
       </div>
       <div className="cjob">{row.est.title}</div>
       <div className="cstamp fig">{row.stamp}</div>
+      {row.est.changeRequestedAt && (
+        <div className="cstamp fig" style={{ color: "var(--amber, #b45309)" }}>
+          change requested
+        </div>
+      )}
       {cold && item && (
         <SendBlock
           item={item}

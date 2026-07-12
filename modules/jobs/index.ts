@@ -17,6 +17,9 @@ export type { EstimateReader, EstimateSummary } from "./domain/estimate-reader";
 // Exposed so other modules (e.g. invoicing) can read jobs through this seam without touching
 // jobs internals.
 export { DrizzleJobRepository } from "./infra/drizzle-job-repository";
+// Exposed so the quoting router can wire CreateJobFromEstimateUseCase without reaching into
+// jobs infra directly.
+export { DrizzleEstimateReader } from "./infra/drizzle-estimate-reader";
 export { ScheduleJobUseCase } from "./app/schedule-job";
 export { CreateJobFromEstimateUseCase } from "./app/create-job-from-estimate";
 export { RescheduleJobUseCase } from "./app/reschedule-job";

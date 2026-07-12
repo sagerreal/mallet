@@ -40,6 +40,8 @@ export const estimates = pgTable(
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     declinedAt: timestamp("declined_at", { withTimezone: true }),
     declineReason: text("decline_reason"),
+    changeRequestedAt: timestamp("change_requested_at", { withTimezone: true }),
+    changeRequest: text("change_request"),
     // Unguessable URL-safe token for the customer-facing public quote page (no login required).
     // Generated at draft time; null only for estimates created before the migration (backfilled).
     publicToken: text("public_token"),

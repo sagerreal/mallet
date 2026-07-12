@@ -69,6 +69,8 @@ function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
     // publicToken: the /q/<token> share link — carried on summaries so the
     // estimate modal can send the quote by text/email after a refresh.
     publicToken: dto.publicToken ?? undefined,
+    // changeRequestedAt from the summary DTO — indicates a pending customer request.
+    changeRequestedAt: dto.changeRequestedAt ?? undefined,
     archived: false,
     trash: false,
   };

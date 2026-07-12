@@ -10,6 +10,9 @@ import { SendEstimateUseCase } from "../app/send-estimate";
 import { AcceptEstimateUseCase } from "../app/accept-estimate";
 import { DeclineEstimateUseCase } from "../app/decline-estimate";
 import { ListEstimatesUseCase } from "../app/list-estimates";
+import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
+import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
+import { logger } from "@mallet/shared/observability";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -45,6 +48,8 @@ const estimateDTO = z.object({
   acceptedAt: z.string().nullable(),
   declinedAt: z.string().nullable(),
   declineReason: z.string().nullable(),
+  changeRequestedAt: z.string().nullable(),
+  changeRequest: z.string().nullable(),
   // The unguessable public_token generated at draft time. Exposed here so the send screen
   // can construct the customer-facing link /q/<token>. Never exposed to end-customers via
   // this authed endpoint — they receive only the link, not the ability to enumerate tokens.
@@ -64,6 +69,7 @@ const estimateSummaryDTO = z.object({
   // Share-link token — carried on summaries so list-hydrated estimates can be
   // sent by text/email from the estimate modal (the link is /q/<token>).
   publicToken: z.string().nullable(),
+  changeRequestedAt: z.string().nullable(),
 });
 
 const lineInput = z.object({
@@ -145,6 +151,8 @@ const toEstimateDTO = (estimate: Estimate) => {
     acceptedAt: p.acceptedAt?.toISOString() ?? null,
     declinedAt: p.declinedAt?.toISOString() ?? null,
     declineReason: p.declineReason,
+    changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
+    changeRequest: p.changeRequest ?? null,
     publicToken: p.publicToken ?? null,
     createdAt: p.createdAt.toISOString(),
   };
@@ -161,6 +169,7 @@ const toSummaryDTO = (estimate: Estimate) => {
     total: money(estimate.total()),
     createdAt: p.createdAt.toISOString(),
     publicToken: p.publicToken ?? null,
+    changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
   };
 };
 
@@ -244,21 +253,52 @@ export const createEstimateRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new AcceptEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
-        return toEstimateDTO(
-          orThrow(
-            await useCase.exec({
-              estimateId: asEstimateId(input.estimateId),
-              lines: input.lines?.map((line) => ({
-                description: line.description,
-                quantity: line.quantity,
-                rateCents: line.rateCents,
-                costCents: line.costCents ?? 0,
-                isOptional: line.isOptional ?? false,
-                needsPhoto: line.needsPhoto ?? false,
-              })),
-            }),
-          ),
+        const accepted = orThrow(
+          await useCase.exec({
+            estimateId: asEstimateId(input.estimateId),
+            lines: input.lines?.map((line) => ({
+              description: line.description,
+              quantity: line.quantity,
+              rateCents: line.rateCents,
+              costCents: line.costCents ?? 0,
+              isOptional: line.isOptional ?? false,
+              needsPhoto: line.needsPhoto ?? false,
+            })),
+          }),
         );
+
+        // After the estimate is accepted, create its job atomically in the same tx.
+        // Wrapped in a savepoint so a job-creation failure does NOT roll back the accepted estimate.
+        // CreateJobFromEstimateUseCase is idempotent (partial unique index on source_estimate_id +
+        // ON CONFLICT DO NOTHING), so a re-accept is safe. If job creation fails, do NOT fail the
+        // accept — log and continue. The manual v1.jobs.createFromEstimate endpoint is the fallback.
+        try {
+          await ctx.tx.transaction(async (sp) => {
+            const jobRepo = new DrizzleJobRepository(sp, ctx.principal.orgId);
+            const estimateReader = new DrizzleEstimateReader(sp, ctx.principal.orgId);
+            const createJob = new CreateJobFromEstimateUseCase(
+              jobRepo,
+              estimateReader,
+              ctx.deps.bus,
+              ctx.deps.clock,
+              ctx.deps.ids,
+            );
+            const result = await createJob.exec({ orgId: ctx.principal.orgId, estimateId: asEstimateId(input.estimateId) });
+            if (!result.ok) {
+              logger.error(
+                { err: result.error, estimateId: input.estimateId, orgId: ctx.principal.orgId },
+                "quoting.accept: job creation returned error (non-fatal)",
+              );
+            }
+          });
+        } catch (err) {
+          logger.error(
+            { err, estimateId: input.estimateId, orgId: ctx.principal.orgId },
+            "quoting.accept: job creation failed (non-fatal)",
+          );
+        }
+
+        return toEstimateDTO(accepted);
       }),
 
     archive: ownerOrOffice
@@ -296,5 +336,14 @@ export const createEstimateRouter = () =>
         return toEstimateDTO(
           orThrow(await useCase.exec({ estimateId: asEstimateId(input.estimateId), reason: input.reason })),
         );
+      }),
+
+    clearChangeRequest: ownerOrOffice
+      .input(idInput)
+      .output(estimateDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ClearEstimateChangeRequestUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        return toEstimateDTO(orThrow(await useCase.exec({ estimateId: asEstimateId(input.estimateId) })));
       }),
   });

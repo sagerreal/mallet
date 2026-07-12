@@ -61,6 +61,8 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         acceptedAt: p.acceptedAt,
         declinedAt: p.declinedAt,
         declineReason: p.declineReason,
+        changeRequestedAt: p.changeRequestedAt,
+        changeRequest: p.changeRequest,
         publicToken: p.publicToken,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
@@ -81,6 +83,8 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           acceptedAt: p.acceptedAt,
           declinedAt: p.declinedAt,
           declineReason: p.declineReason,
+          changeRequestedAt: p.changeRequestedAt,
+          changeRequest: p.changeRequest,
           // publicToken is set once at draft time and never overwritten on subsequent saves.
           updatedAt: p.updatedAt,
         },
@@ -159,6 +163,25 @@ export class DrizzleEstimateRepository implements EstimateRepository {
       .update(estimates)
       .set({ deletedAt: now, updatedAt: now })
       .where(and(eq(estimates.id, id), isNull(estimates.deletedAt)))
+      .returning();
+    return rows.length;
+  }
+
+  // Soft-delete non-terminal, non-archived estimates for a given lead. Returns the count of rows
+  // affected. Accepted estimates are explicitly excluded so won-revenue quotes survive the cascade.
+  // Defense-in-depth: explicit orgId filter in WHERE (mirrors RLS but also aids index use).
+  async archiveByLead(leadId: LeadId, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(estimates)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(estimates.orgId, this.orgId),
+          eq(estimates.leadId, leadId),
+          isNull(estimates.deletedAt),
+          inArray(estimates.status, ["draft", "sent", "declined"]),
+        ),
+      )
       .returning();
     return rows.length;
   }
