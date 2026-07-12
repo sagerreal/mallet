@@ -38,5 +38,6 @@ export const inboundLeadReceipts = pgTable(
   (t) => [
     unique("inbound_receipts_dedupe_uq").on(t.orgId, t.channel, t.externalId),
     index("inbound_receipts_org_idx").on(t.orgId),
+    check("inbound_receipts_channel_check", sql`${t.channel} in ('form','angi','thumbtack')`),
   ],
 );
