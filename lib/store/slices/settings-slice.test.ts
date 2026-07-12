@@ -331,15 +331,14 @@ describe("settings-slice persistence", () => {
       terms: [{ id: "tm99", t: "Warranty", body: "12mo" }],
       sources: [{ id: "src99", label: "Google" }],
       booking: store.get().booking,
-      visitDur: { scope: 1, repair: 2, install: 6 },
       markup: 40,
       trade: "hvac",
-      toggles: { techSeesPrice: false, frontDesk: false, scopeOn: true },
+      toggles: { techSeesPrice: false, frontDesk: false },
     };
     store.get().setSettings(snap);
     expect(store.get().markup).toBe(40);
     expect(store.get().trade).toBe("hvac");
-    expect(store.get().visitDur.scope).toBe(1);
+    expect(store.get().toggles.frontDesk).toBe(false);
     expect(store.get().sources[0]?.id).toBe("src99");
   });
 
@@ -388,14 +387,6 @@ describe("settings-slice persistence", () => {
     expect(store.get().toggles.techSeesPrice).toBe(false);
     await Promise.resolve();
     expect(mockUpdateConfig).toHaveBeenCalledWith({ techSeesPrice: false });
-  });
-
-  it("setVisitDur converts minutes to hours and persists via updateConfig", async () => {
-    const store = makeStore();
-    store.get().setVisitDur("scope", 30); // 30 minutes → 0.5 hours
-    expect(store.get().visitDur.scope).toBeCloseTo(0.5);
-    await Promise.resolve();
-    expect(mockUpdateConfig).toHaveBeenCalledWith({ visitScopeMinutes: 30 });
   });
 
   // --- collections start empty -----------------------------------------------

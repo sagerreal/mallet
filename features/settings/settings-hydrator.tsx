@@ -10,8 +10,8 @@
  * clobbers an in-flight optimistic write from a settings-slice action.
  *
  * Unit conversions on the read path: cents → dollars (pricebook r/c, labor rate), bps → percent
- * (markup), minutes → hours (visit durations). These mirror the write-path conversions in
- * settings-slice so a value round-trips unchanged.
+ * (markup). These mirror the write-path conversions in settings-slice so a value round-trips
+ * unchanged.
  */
 
 import { useEffect } from "react";
@@ -77,17 +77,11 @@ export function SettingsHydrator() {
           radiusMi: dto.config.areaRadiusMi,
         },
       },
-      visitDur: {
-        scope: dto.config.visitScopeMinutes / 60,
-        repair: dto.config.visitRepairMinutes / 60,
-        install: dto.config.visitInstallMinutes / 60,
-      },
       markup: Math.round(dto.config.markupBps / 100),
       trade: dto.config.trade,
       toggles: {
         techSeesPrice: dto.config.techSeesPrice,
         frontDesk: dto.config.frontDesk,
-        scopeOn: dto.config.scopeOn,
       },
     });
   }, [data, isError, error, setSettings]);
