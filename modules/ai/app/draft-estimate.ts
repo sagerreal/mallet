@@ -19,6 +19,53 @@ export interface EstimateLineDraft {
   readonly rateCents: number; // integer cents
 }
 
+// ---- refine loop -------------------------------------------------------------
+
+/** The office's correction to an earlier draft: the lines they saw + what's wrong. */
+export interface DraftRefineInput {
+  readonly previousLines: readonly EstimateLineDraft[];
+  readonly feedback: string;
+}
+
+/**
+ * A durable fact the model extracted from the correction — rendered as a
+ * one-tap chip in the composer ("Update 'X' labor to 5h in your pricebook?").
+ * labor_hours → pricebook write-back (L1); rule → quoting_rules (L2).
+ */
+export type DraftProposal =
+  | { readonly kind: "labor_hours"; readonly serviceName: string; readonly hours: number }
+  | { readonly kind: "rule"; readonly rule: string };
+
+const proposalSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("labor_hours"),
+    serviceName: z.string().min(1).max(200),
+    hours: z.number().positive().max(1_000),
+  }),
+  z.object({ kind: z.literal("rule"), rule: z.string().min(1).max(300) }),
+]);
+
+/** Renders the refine block appended to either drafter's prompt. */
+export const buildRefineBlock = (refine: DraftRefineInput): string => {
+  const rows = refine.previousLines
+    .slice(0, 30)
+    .map((l) => `- ${l.description.slice(0, 160)} ×${l.quantity} @ $${(l.rateCents / 100).toFixed(2)}`);
+  return [
+    "## Refine an earlier draft",
+    "The office reviewed your previous draft and gave a correction. Regenerate the FULL",
+    "estimate with the correction applied (keep everything that was right).",
+    "Previous draft:",
+    ...rows,
+    `Correction from the office: "${refine.feedback.slice(0, 1_000)}"`,
+    "",
+    "If — and only if — the correction states a durable, service-general fact (a labor-hours",
+    "or pricing norm for a service, or a standing rule for jobs like this), ALSO return it in",
+    "`proposals`: {kind:'labor_hours', serviceName, hours} for a pricebook scalar, or",
+    "{kind:'rule', rule} for a one-sentence conditional. Job-specific details (this customer,",
+    "this address, this one unit) are NOT proposals. When in doubt, return none.",
+  ].join("\n");
+};
+
 // One line of model output, capped to what the draft boundary + domain accept:
 // description ≤ 500 chars, quantity ≤ 10,000 at 2-decimal precision (the domain's
 // numeric(12,2) guard — EstimateLine.create rejects finer), unit price ≤ $1,000,000.
@@ -43,9 +90,12 @@ export interface CatalogServiceContext {
   readonly laborHours: number | null;
 }
 
-// The shape the model is asked to fill in (unit prices in whole USD).
+// The shape the model is asked to fill in (unit prices in whole USD). `proposals`
+// carries durable facts extracted from a refine correction — always optional in
+// the schema, but only consumed (and only prompted for) on refine runs.
 const submitEstimateInputSchema = z.object({
   lines: z.array(draftLineInputSchema).min(1).max(10),
+  proposals: z.array(proposalSchema).max(5).optional(),
 });
 
 type SubmitEstimateInput = z.infer<typeof submitEstimateInputSchema>;
@@ -63,16 +113,21 @@ const BASE_SYSTEM_PROMPT = [
   "Do not write prose — only call the tool.",
 ].join("\n");
 
-// Renders the full org context (job info, pricebook, labor rates, won quotes) after the base
-// instructions. Retrieval only — this never triggers an extra model call; it just enriches the
-// single existing one. Block building lives in estimate-context.ts (shared with the tiered
-// drafter so both price from the same knowledge).
-const buildSystemPrompt = (context: EstimateContext): string => {
+// Renders the full org context (job info, pricebook, labor rates, rules, won quotes) after the
+// base instructions, plus the refine block when the office is correcting an earlier draft.
+// Retrieval only — this never triggers an extra model call; it just enriches the single
+// existing one. Block building lives in estimate-context.ts (shared with the tiered drafter
+// so both price from the same knowledge).
+const buildSystemPrompt = (context: EstimateContext, refine?: DraftRefineInput): string => {
   const blocks = buildContextBlocks(context);
+  const parts = [BASE_SYSTEM_PROMPT];
   if (blocks === "") {
-    return [BASE_SYSTEM_PROMPT, "", "This shop has no pricebook yet — price from typical trade pricing."].join("\n");
+    parts.push("", "This shop has no pricebook yet — price from typical trade pricing.");
+  } else {
+    parts.push("", blocks);
   }
-  return [BASE_SYSTEM_PROMPT, "", blocks].join("\n");
+  if (refine) parts.push("", buildRefineBlock(refine));
+  return parts.join("\n");
 };
 
 // JSON Schema for the submit_estimate tool (stripped of $schema for Anthropic).
@@ -95,11 +150,25 @@ const parseSubmitInput = (raw: unknown): SubmitEstimateInput | null => {
   return result.success ? result.data : null;
 };
 
+/** One draft run's outcome: the lines, plus refine-extracted proposals (empty outside refine). */
+export interface EstimateDraftResult {
+  readonly lines: EstimateLineDraft[];
+  readonly proposals: DraftProposal[];
+}
+
+// Proposals are a refine-loop feature: outside a refine run the model was never
+// instructed to extract them, so anything it volunteers is dropped.
+const toResult = (raw: SubmitEstimateInput, refining: boolean): EstimateDraftResult => ({
+  lines: mapLines(raw),
+  proposals: refining ? (raw.proposals ?? []) : [],
+});
+
 /**
  * Call the LLM once to produce a structured estimate from a plain-English
- * job description. Returns an array of `EstimateLineDraft` (with rateCents).
+ * job description. Returns the drafted lines (rateCents) plus any durable-fact
+ * `proposals` when `refine` carried an office correction.
  * `context` carries the org's real knowledge (job info, pricebook, labor
- * rates, won quotes) — retrieval only, no extra model call.
+ * rates, rules, won quotes) — retrieval only, no extra model call.
  * Throws `TRPCError(BAD_GATEWAY)` if the model returns nothing parseable;
  * propagates `LlmError` for the router to map to the appropriate TRPC code.
  */
@@ -107,9 +176,10 @@ export const draftEstimateLines = async (
   llm: LlmClient,
   description: string,
   context: EstimateContext = EMPTY_ESTIMATE_CONTEXT,
-): Promise<EstimateLineDraft[]> => {
+  refine?: DraftRefineInput,
+): Promise<EstimateDraftResult> => {
   const turn = await llm.next({
-    system: buildSystemPrompt(context),
+    system: buildSystemPrompt(context, refine),
     tools: [
       {
         name: "submit_estimate",
@@ -125,7 +195,7 @@ export const draftEstimateLines = async (
   for (const block of turn.blocks) {
     if (block.type === "tool_use" && block.name === "submit_estimate") {
       const parsed = parseSubmitInput(block.input);
-      if (parsed) return mapLines(parsed);
+      if (parsed) return toResult(parsed, refine !== undefined);
     }
   }
 
@@ -134,7 +204,7 @@ export const draftEstimateLines = async (
   for (const block of turn.blocks) {
     if (block.type === "text") {
       const parsed = extractJsonFromText(block.text, parseSubmitInput);
-      if (parsed) return mapLines(parsed);
+      if (parsed) return toResult(parsed, refine !== undefined);
     }
   }
 

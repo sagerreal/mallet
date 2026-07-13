@@ -144,6 +144,28 @@ const draftTierDTO = z.object({
   lines: z.array(draftLineDTO),
 });
 
+// The office's correction to an earlier draft — regenerates with the prior
+// lines + feedback in the prompt, and may extract durable-fact proposals.
+const refineInput = z.object({
+  feedback: z.string().min(1).max(1_000),
+  previousLines: z
+    .array(
+      z.object({
+        description: z.string().min(1).max(500),
+        quantity: z.number().nonnegative(),
+        rateCents: z.number().int().nonnegative(),
+      }),
+    )
+    .min(1)
+    .max(30),
+});
+
+// One-tap chips: labor_hours → pricebook write-back; rule → quoting_rules.
+const proposalDTO = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("labor_hours"), serviceName: z.string(), hours: z.number() }),
+  z.object({ kind: z.literal("rule"), rule: z.string() }),
+]);
+
 // Real-artifact counts for the composer's run reveal — every number reflects data actually
 // read for THIS draft (labor-illusion honesty: never render a stage that didn't happen).
 const draftStagesDTO = z.object({
@@ -162,10 +184,17 @@ export const createAiRouter = () =>
     // One-shot LLM call: given a plain-English job description, return itemised estimate lines.
     // Does NOT require the agent loop — single round-trip, forced tool call.
     draftEstimate: ownerOrOfficeNoTx
-      .input(z.object({ description: z.string().min(1).max(2000), leadId: z.string().uuid().optional() }))
+      .input(
+        z.object({
+          description: z.string().min(1).max(2000),
+          leadId: z.string().uuid().optional(),
+          refine: refineInput.optional(),
+        }),
+      )
       .output(
         z.object({
           lines: z.array(z.object({ description: z.string(), quantity: z.number(), rateCents: z.number().int() })),
+          proposals: z.array(proposalDTO),
           stages: draftStagesDTO,
         }),
       )
@@ -180,8 +209,8 @@ export const createAiRouter = () =>
           const context = await withTenant(ctx.principal.orgId, (tx) =>
             fetchEstimateContext(tx, ctx.principal.orgId, input.description, input.leadId),
           );
-          const lines = await draftEstimateLines(ctx.deps.llmClient, input.description, context);
-          return { lines, stages: stagesFor(context) };
+          const result = await draftEstimateLines(ctx.deps.llmClient, input.description, context, input.refine);
+          return { lines: result.lines, proposals: result.proposals, stages: stagesFor(context) };
         } catch (error) {
           if (error instanceof LlmError) {
             throw new TRPCError({
@@ -197,13 +226,20 @@ export const createAiRouter = () =>
     // draft — three tiers of lines plus the model's recommended key. Mirrors draftEstimate
     // (single round-trip, forced tool call); the unconfigured guard lives in the use-case.
     draftEstimateTiers: ownerOrOfficeNoTx
-      .input(z.object({ description: z.string().min(1).max(2000), leadId: z.string().uuid().optional() }))
+      .input(
+        z.object({
+          description: z.string().min(1).max(2000),
+          leadId: z.string().uuid().optional(),
+          refine: refineInput.optional(),
+        }),
+      )
       .output(
         z.object({
           recommended: z.enum(["good", "better", "best"]),
           good: draftTierDTO,
           better: draftTierDTO,
           best: draftTierDTO,
+          proposals: z.array(proposalDTO),
           stages: draftStagesDTO,
         }),
       )
@@ -216,7 +252,7 @@ export const createAiRouter = () =>
                 fetchEstimateContext(tx, ctx.principal.orgId, input.description, input.leadId),
               )
             : undefined;
-          const tiers = await draftEstimateTiers(ctx.deps.llmClient, input.description, context);
+          const tiers = await draftEstimateTiers(ctx.deps.llmClient, input.description, context, input.refine);
           return { ...tiers, stages: stagesFor(context ?? EMPTY_ESTIMATE_CONTEXT) };
         } catch (error) {
           if (error instanceof LlmError) {

@@ -23,6 +23,7 @@ import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PricebookCard } from "./pricebook-card";
+import { EstimatorMemoryCard } from "./estimator-memory-card";
 import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
@@ -654,6 +655,8 @@ function SecPricing() {
       </FoldCard>
 
       <PricebookCard />
+
+      <EstimatorMemoryCard />
 
       <FoldCard title="Default parts markup" summary={`${markup}%`}>
         <div className="field" style={{ maxWidth: 200, margin: 0 }}>

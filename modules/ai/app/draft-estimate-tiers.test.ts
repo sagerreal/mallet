@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import type { LlmClient, LlmRequest, AssistantTurn } from "../domain/llm-client";
 import { LlmError } from "../domain/llm-client";
 import { draftEstimateTiers } from "./draft-estimate-tiers";
+import { EMPTY_ESTIMATE_CONTEXT } from "./estimate-context";
 
 // ---------------------------------------------------------------------------
 // Helpers (fake LLM pattern from draft-estimate.test.ts)
@@ -67,6 +68,34 @@ const SAMPLE_TOOL_INPUT = {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("draftEstimateTiers — refine loop", () => {
+  const REFINE = {
+    previousLines: [{ description: "Toilet rebuild", quantity: 1, rateCents: 30_000 }],
+    feedback: "the rebuild is $250 around here, not $300",
+  };
+
+  it("carries the correction into the prompt and returns proposals on refine", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: [{ kind: "rule", rule: "Toilet rebuilds go out at $250" }],
+      }),
+    );
+    const result = await draftEstimateTiers(llm, "rebuild the toilet", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(llm.capturedRequest!.system).toContain("Refine an earlier draft");
+    expect(llm.capturedRequest!.system).toContain("the rebuild is $250 around here, not $300");
+    expect(result.proposals).toEqual([{ kind: "rule", rule: "Toilet rebuilds go out at $250" }]);
+  });
+
+  it("returns [] proposals outside refine even when the model volunteers them", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({ ...SAMPLE_TOOL_INPUT, proposals: [{ kind: "rule", rule: "unsolicited" }] }),
+    );
+    const result = await draftEstimateTiers(llm, "rebuild the toilet");
+    expect(result.proposals).toEqual([]);
+  });
+});
 
 describe("draftEstimateTiers — org context", () => {
   it("carries the shop's pricebook, rates, and won quotes into the system prompt", async () => {

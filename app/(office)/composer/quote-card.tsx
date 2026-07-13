@@ -23,6 +23,7 @@ import {
   switchToGbb,
   switchToSingle,
   tierDisplayName,
+  type AiProposal,
   type ComposerLine,
   type ComposerState,
 } from "./composer-state";
@@ -41,6 +42,12 @@ export function QuoteCard({
   state,
   onUpdate,
   onAiDraft,
+  onRefine,
+  proposals,
+  onAcceptProposal,
+  onDismissProposal,
+  proposalError,
+  isSavingProposal,
   onSuggestBetterBest,
   isDrafting,
   aiDraftError,
@@ -53,6 +60,14 @@ export function QuoteCard({
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
   onAiDraft: () => void;
+  /** Re-run the drafter with the on-screen lines + this correction. */
+  onRefine: (feedback: string) => void;
+  /** Refine-extracted durable facts — one-tap chips, never auto-written. */
+  proposals: AiProposal[];
+  onAcceptProposal: (index: number) => void;
+  onDismissProposal: (index: number) => void;
+  proposalError: string | null;
+  isSavingProposal: boolean;
   onSuggestBetterBest: () => void;
   isDrafting: boolean;
   aiDraftError: string | null;
@@ -66,6 +81,8 @@ export function QuoteCard({
   /** Brief window after a reveal: rows animate in (CSS, reduced-motion safe). */
   materialize: boolean;
 }) {
+  // Refine field text — local to the card; cleared on submit.
+  const [refineText, setRefineText] = useState("");
   // View-only: show/hide the owner "Your cost" column (single table + tier
   // panels alike). Never touches the store — hiding only omits cells; entered
   // costs live on in the lines.
@@ -438,6 +455,75 @@ export function QuoteCard({
           )}
         </>
       ))}
+
+      {/* Refine — the AI draft's front door for corrections: regenerate with
+          the office's feedback; durable facts come back as one-tap chips. */}
+      {!run && state.aiDrafted && !quoteIsEmpty && (
+        <div style={{ padding: "12px 8px 0" }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="text"
+              value={refineText}
+              aria-label="Refine the draft"
+              placeholder="Tell it what's wrong — e.g. that's 5h of labor, not 10"
+              onChange={(e) => setRefineText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && refineText.trim() && !isDrafting) {
+                  onRefine(refineText);
+                  setRefineText("");
+                }
+              }}
+              style={{
+                flex: 1,
+                border: "1.5px solid var(--line)",
+                borderRadius: 9,
+                padding: "8px 12px",
+                fontFamily: "inherit",
+                fontSize: 13,
+                background: "var(--card)",
+                color: "var(--ink)",
+              }}
+            />
+            <button
+              className="btn sm"
+              disabled={isDrafting || !refineText.trim()}
+              onClick={() => {
+                onRefine(refineText);
+                setRefineText("");
+              }}
+            >
+              {isDrafting ? "Working…" : "Refine"}
+            </button>
+          </div>
+
+          {/* One-tap proposals — visible, explicit, never written silently. */}
+          {proposals.map((p, i) => (
+            <div
+              key={`${p.kind}-${i}`}
+              style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}
+            >
+              <span style={{ fontSize: 12.5 }}>
+                {p.kind === "labor_hours"
+                  ? `Update “${p.serviceName}” labor to ${p.hours}h in your pricebook?`
+                  : `Add to your shop's rules: “${p.rule}”?`}
+              </span>
+              <button
+                className="btn sm primary"
+                disabled={isSavingProposal}
+                onClick={() => onAcceptProposal(i)}
+              >
+                {p.kind === "labor_hours" ? "Update" : "Save rule"}
+              </button>
+              <button className="btn sm ghost" onClick={() => onDismissProposal(i)}>
+                Just this quote
+              </button>
+            </div>
+          ))}
+          {proposalError && (
+            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 6 }}>{proposalError}</div>
+          )}
+        </div>
+      )}
 
       {/* Totals — what the customer receives (recommended tier in GBB) */}
       {!run && hasRealLine(sendLines) && (

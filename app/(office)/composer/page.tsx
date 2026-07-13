@@ -53,6 +53,7 @@ import {
   tieredLinesForPayload,
   tierNamesForPayload,
   toEstimateLines,
+  type AiProposal,
   type AiTiersDraft,
   type ComposerLine,
   type ComposerState,
@@ -77,6 +78,8 @@ export default function ComposerPage() {
   const services = useAppStore((s) => s.services);
   const laborRates = useAppStore((s) => s.laborRates);
   const addService = useAppStore((s) => s.addService);
+  // One-tap "Update labor to Nh" chips write back through the store's service update.
+  const updateService = useAppStore((s) => s.updateService);
 
   // Seed leadId from ?lead= once (read-only initializer so state edits persist).
   const [cs, setCs] = useState<ComposerState>(() => {
@@ -160,12 +163,19 @@ export default function ComposerPage() {
     setTimeout(() => setMaterialize(false), 1_600);
   }
 
+  // Durable-fact proposals extracted from a refine correction — rendered as
+  // one-tap chips under the quote ("Update 'X' labor to 5h in your pricebook?").
+  const [proposals, setProposals] = useState<AiProposal[]>([]);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const createRuleMutation = api.v1.quoting.rules.create.useMutation();
+
   // Single-format drafter: one set of lines into the table (or the Good tier
   // when a mid-flight format switch landed the response in GBB).
   const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
     onSuccess: (data) => {
       setCs((prev) => applyAiDraftLines(prev, toComposerLines(data.lines)));
       setAiDraftError(null);
+      setProposals(data.proposals);
       setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
@@ -182,6 +192,7 @@ export default function ComposerPage() {
       };
       setCs((prev) => applyAiDraftTiers(prev, draft));
       setAiDraftError(null);
+      setProposals(data.proposals);
       setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
@@ -195,6 +206,8 @@ export default function ComposerPage() {
   function triggerAiDraft() {
     if (!cs.desc.trim()) return;
     setAiDraftError(null);
+    setProposals([]);
+    setProposalError(null);
     const leadId = uuidOrUndefined(cs.leadId);
     setRun({ leadId });
     setRunResult(null);
@@ -204,6 +217,74 @@ export default function ComposerPage() {
     } else {
       draftEstimateMutation.mutate({ description: cs.desc, leadId });
     }
+  }
+
+  // Refine: re-run the drafter with the lines currently on screen + the
+  // office's correction. The model regenerates and may return durable-fact
+  // proposals (labor hours / rules) — never written without a tap.
+  function triggerRefine(feedback: string) {
+    const text = feedback.trim();
+    if (!text) return;
+    const shown = cs.format === "gbb" && cs.gbb ? tieredLinesForPayload(cs.gbb) : realLines(cs.lines);
+    const previousLines = shown.slice(0, 30).map((l) => ({
+      description: l.d,
+      quantity: l.q ?? 1,
+      rateCents: Math.round((l.r ?? 0) * 100),
+    }));
+    if (previousLines.length === 0) return;
+    setAiDraftError(null);
+    setProposals([]);
+    setProposalError(null);
+    const leadId = uuidOrUndefined(cs.leadId);
+    setRun({ leadId });
+    setRunResult(null);
+    const description = cs.desc.trim() || previousLines.map((l) => l.description).join(", ").slice(0, 2000);
+    const refine = { feedback: text.slice(0, 1000), previousLines };
+    if (cs.format === "gbb" && cs.gbb) {
+      draftTiersMutation.mutate({ description, leadId, refine });
+    } else {
+      draftEstimateMutation.mutate({ description, leadId, refine });
+    }
+  }
+
+  function dismissProposal(index: number) {
+    setProposals((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // Accept a proposal: labor_hours writes back to the matching pricebook
+  // service (store action syncs the server); rules persist via
+  // v1.quoting.rules.create (source 'refine' — confirmed for owner/office
+  // unless it contradicts an existing rule, which lands it in review).
+  function acceptProposal(index: number) {
+    const p = proposals[index];
+    if (!p) return;
+    setProposalError(null);
+    if (p.kind === "labor_hours") {
+      const svc = services.find(
+        (s) => s.name.trim().toLowerCase() === p.serviceName.trim().toLowerCase(),
+      );
+      if (svc) {
+        updateService(svc.id, { laborHours: p.hours });
+        dismissProposal(index);
+        return;
+      }
+      // No pricebook match — keep the fact as a shop rule instead of dropping it.
+      createRuleMutation.mutate(
+        { rule: `${p.serviceName} takes ${p.hours}h of labor`, jobTag: p.serviceName, source: "refine" },
+        {
+          onSuccess: () => dismissProposal(index),
+          onError: () => setProposalError("Couldn't save the rule — check your connection and try again."),
+        },
+      );
+      return;
+    }
+    createRuleMutation.mutate(
+      { rule: p.rule, source: "refine" },
+      {
+        onSuccess: () => dismissProposal(index),
+        onError: () => setProposalError("Couldn't save the rule — check your connection and try again."),
+      },
+    );
   }
 
   // "Save to book" (line-table.tsx) — snapshots the line's current values into
@@ -542,6 +623,12 @@ export default function ComposerPage() {
         state={cs}
         onUpdate={update}
         onAiDraft={triggerAiDraft}
+        onRefine={triggerRefine}
+        proposals={proposals}
+        onAcceptProposal={acceptProposal}
+        onDismissProposal={dismissProposal}
+        proposalError={proposalError}
+        isSavingProposal={createRuleMutation.isPending}
         onSuggestBetterBest={suggestBetterBest}
         isDrafting={draftEstimateMutation.isPending || draftTiersMutation.isPending}
         aiDraftError={aiDraftError}

@@ -56,6 +56,15 @@ export interface AiOriginalLine {
   tier?: TierKey;
 }
 
+/**
+ * A durable fact the refine loop extracted from the office's correction.
+ * Rendered as a one-tap chip — labor_hours writes back to the pricebook
+ * service, rule persists to the shop's quoting rules. Never auto-written.
+ */
+export type AiProposal =
+  | { kind: "labor_hours"; serviceName: string; hours: number }
+  | { kind: "rule"; rule: string };
+
 export interface ComposerState {
   leadId: string | null;
   custQuery: string;
