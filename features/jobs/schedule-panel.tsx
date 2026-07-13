@@ -12,7 +12,7 @@
  * DayView / WeekView / the tray card into leaf components.
  */
 
-import { useState } from "react";
+import { useState, type DragEvent as ReactDragEvent } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -236,7 +236,11 @@ export function SchedulePanel() {
                       className={`gv-block${m.est ? " est" : ""}`}
                       style={{ left, width: w, opacity: v.status === "done" ? DONE_VISIT_OPACITY : 1 }}
                       draggable
-                      onDragStart={() => setDrag({ kind, ownerId, visitId: v.id })}
+                      onDragStart={(e) => {
+                        // Firefox refuses to start a drag with no data payload.
+                        e.dataTransfer.setData("text/plain", "");
+                        setDrag({ kind, ownerId, visitId: v.id });
+                      }}
                       onDragEnd={() => setDrag(null)}
                       onClick={(e) => { e.stopPropagation(); openIt(); }}
                       title={`${name} · ${timeLabelShort(vStart)}–${timeLabelShort(vStart + (v.dur ?? 0))}`}
@@ -434,7 +438,9 @@ export function SchedulePanel() {
                 if (isJob) armJob(card.j);
                 else armEvisit(card.l.id, card.v.id);
               }
-              function onDragStart() {
+              function onDragStart(e: ReactDragEvent) {
+                // Firefox refuses to start a drag with no data payload.
+                e.dataTransfer.setData("text/plain", "");
                 if (isJob) {
                   const v = firstUnplaced(card.j) ?? addVisit(card.j.id);
                   if (v) setDrag({ kind: "job", ownerId: card.j.id, visitId: v.id });
@@ -476,7 +482,11 @@ export function SchedulePanel() {
                           key={v.id}
                           className={`vchip${placing?.kind === "job" && placing.visitId === v.id ? " arm" : ""}`}
                           draggable
-                          onDragStart={() => setDrag({ kind: "job", ownerId: card.j.id, visitId: v.id })}
+                          onDragStart={(e) => {
+                            // Firefox refuses to start a drag with no data payload.
+                            e.dataTransfer.setData("text/plain", "");
+                            setDrag({ kind: "job", ownerId: card.j.id, visitId: v.id });
+                          }}
                           onDragEnd={() => setDrag(null)}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -587,7 +597,15 @@ export function SchedulePanel() {
         {nav}
       </div>
 
-      {day ? <DayView /> : <WeekView />}
+      {/* Called as plain functions ON PURPOSE (not <DayView/>): DayView/WeekView are
+          re-declared on every render, so mounting them as JSX components changes the
+          element type identity each render and React REMOUNTS the whole grid — the
+          setDrag re-render inside a block's dragstart then destroyed the drag-source
+          DOM node and Chrome aborted the drag (placed blocks could never be dropped).
+          Plain calls keep the grid in SchedulePanel's own element tree so re-renders
+          reconcile in place. These functions MUST stay hook-free while they are
+          called conditionally like this. */}
+      {day ? DayView() : WeekView()}
     </>
   );
 }
