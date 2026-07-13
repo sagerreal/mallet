@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { asServiceId, asMaterialId, toPage } from "@mallet/shared/types";
+import { asServiceId, asMaterialId, toPage, isOk } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 import {
   PLUMBING_SEED_CATEGORIES,
   PLUMBING_SEED_SERVICES,
@@ -82,6 +83,28 @@ const serviceUpdateInput = z.object({
 
 const serviceArchiveInput = z.object({
   serviceId: z.string().uuid(),
+});
+
+// Bulk CSV import (mirrors `importCustomers` in lead-router.ts). `category` is a NAME, not an
+// id — the client never sees category ids; the server resolves/creates them per row. Cents are
+// re-validated server-side (never trust the client, even though it already parsed the money
+// strings) — non-negative ints only.
+const importServiceRowInput = z.object({
+  name: z.string().min(1).max(500),
+  category: z.string().max(255).nullable(),
+  description: z.string().max(10_000).nullable(),
+  code: z.string().max(120).nullable(),
+  unitPriceCents: z.number().int().nonnegative(),
+  costCents: z.number().int().nonnegative(),
+  taxable: z.boolean(),
+});
+const importServicesInput = z.object({ rows: z.array(importServiceRowInput).min(1).max(500) });
+
+const importResultDTO = z.object({
+  created: z.number().int(),
+  deduped: z.number().int(),
+  failed: z.number().int(),
+  errors: z.array(z.object({ index: z.number().int(), message: z.string() })),
 });
 
 const categoryCreateInput = z.object({
@@ -237,6 +260,101 @@ export const createPricebookRouter = () =>
           return orThrow(result);
         }),
     }),
+
+    // Bulk CSV import (mirrors `importCustomers` in lead-router.ts). Parse/validate happens
+    // client-side (money strings → cents, column mapping); this endpoint re-validates and
+    // writes. Every row is classified — never throws for an expected per-row failure, so one
+    // bad row can't roll back the batch. Category find-or-create is cached for the whole batch
+    // (loaded once up front) to avoid an N+1 lookup per row.
+    importServices: ownerOrOffice
+      .input(importServicesInput)
+      .output(importResultDTO)
+      .mutation(async ({ ctx, input }) => {
+        const serviceRepo = new DrizzleServiceRepository(ctx.tx, ctx.principal.orgId);
+        const categoryRepo = new DrizzleCategoryRepository(ctx.tx, ctx.principal.orgId);
+        const createService = new CreateServiceUseCase(serviceRepo, ctx.deps.clock, ctx.deps.ids);
+        const createCategory = new CreateCategoryUseCase(categoryRepo, ctx.deps.clock, ctx.deps.ids);
+        const listCategories = new ListCategoriesUseCase(categoryRepo);
+
+        // Load the org's categories ONCE, keyed by lowercased name — every row's category
+        // lookup then hits this in-memory map instead of a per-row query (no N+1). Newly
+        // created categories are added to the same map so later rows in the batch that share a
+        // category name reuse the id rather than creating a duplicate.
+        const existingCategories = await listCategories.exec();
+        const categoryIdByName = new Map<string, string>();
+        for (const category of existingCategories) {
+          categoryIdByName.set(category.props.name.toLowerCase(), category.props.id);
+        }
+
+        let created = 0;
+        let deduped = 0;
+        let failed = 0;
+        const errors: { index: number; message: string }[] = [];
+
+        for (let i = 0; i < input.rows.length; i++) {
+          const row = input.rows[i]!;
+
+          // Resolve category find-or-create first — a row can't be created until its category
+          // (if any) has an id. A blank/null category name means "uncategorised" (categoryId
+          // null), not an error.
+          const categoryName = row.category?.trim() || null;
+          let categoryId: string | null = null;
+          if (categoryName) {
+            const key = categoryName.toLowerCase();
+            const cachedId = categoryIdByName.get(key);
+            if (cachedId) {
+              categoryId = cachedId;
+            } else {
+              const categoryResult = await createCategory.exec(
+                { name: categoryName },
+                ctx.principal.orgId,
+              );
+              if (isOk(categoryResult)) {
+                categoryId = categoryResult.value.props.id;
+                categoryIdByName.set(key, categoryId);
+              } else {
+                // Category creation failed (e.g. blank-after-trim name) — count the row as
+                // failed with the reason rather than aborting the batch.
+                failed += 1;
+                errors.push({ index: i, message: categoryResult.error.message });
+                continue;
+              }
+            }
+          }
+
+          // exec returns a Result — NEVER throws for validation/dedupe, so one bad row can't
+          // roll back the batch. CreateServiceUseCase signals a duplicate name via
+          // err(conflict(...)) rather than an ok-side flag, so dedupe is detected by error kind.
+          const serviceResult = await createService.exec(
+            {
+              id: undefined,
+              name: row.name,
+              categoryId,
+              code: row.code,
+              description: row.description,
+              unitPriceCents: row.unitPriceCents,
+              costCents: row.costCents,
+              taxable: row.taxable,
+            },
+            ctx.principal.orgId,
+          );
+
+          if (isOk(serviceResult)) {
+            created += 1;
+          } else if (serviceResult.error.kind === "conflict") {
+            deduped += 1;
+          } else {
+            failed += 1;
+            errors.push({ index: i, message: serviceResult.error.message });
+          }
+        }
+
+        logger.info(
+          { orgId: ctx.principal.orgId, created, deduped, failed },
+          "pricebook.services.imported",
+        );
+        return { created, deduped, failed, errors };
+      }),
 
     category: router({
       list: ownerOrOffice

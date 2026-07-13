@@ -31,6 +31,7 @@ import { VisitModalContent } from "./visit-modal";
 import { CleanUpModalContent } from "./placeholder-modals";
 import { CompanyViewModalContent } from "./company-view-modal";
 import { ImportCustomersModalContent } from "./import-customers-modal";
+import { ImportServicesModalContent } from "./import-services-modal";
 
 export function ModalHost() {
   const activeModal = useActiveModal();
@@ -85,6 +86,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.IMPORT_CUSTOMERS} onClose={close}>
         <ImportCustomersModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.IMPORT_SERVICES} onClose={close}>
+        <ImportServicesModalContent />
       </Modal>
 
       <Modal open={id === MODAL.QUOTE_SWEEP} onClose={close}>
