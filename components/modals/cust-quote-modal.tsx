@@ -1,8 +1,9 @@
 /**
  * components/modals/cust-quote-modal.tsx
- * Faithful port of the prototype's openCust (7898) / renderCust (8027) /
- * renderCustGbb (7951) — the CUSTOMER-facing quote page, i.e. what the customer
- * sees when they open a quote link to review, tune, and approve/decline it.
+ * Port of the prototype's openCust (7898) / renderCust (8027) — the CUSTOMER-
+ * facing quote view, i.e. what the customer sees when they open a quote link
+ * to review, tune, and approve/decline it. The office reaches it via
+ * "Preview as customer" on the estimate modal.
  *
  * This is a BRANDED customer surface (brand-colored header, "here's your quote",
  * line-by-line with tunable optional add-ons, one fat Approve button), distinct
@@ -13,13 +14,14 @@
  * rendered faithfully but WITHOUT a duplicate ✕ (the prototype's custCloseBtn()),
  * matching cust-invoice-modal.tsx.
  *
- * Two render paths, mirroring renderCust's branch:
- *   • GBB tier path (renderCustGbb) — only when the estimate carries a `gbb`
- *     tier draft. The store's Estimate type has NO `gbb` field (tiers aren't
- *     persisted), so this is gated on an optional cast and will NOT render for
- *     our sample data — expected. Built and ready for when tiers are modeled.
- *   • Line-items path (the primary path for our data) — `.custline` rows, opt
- *     lines as toggleable `.addonrow` add-ons, running total via calcQuote.
+ * Two render paths, keyed off the REAL store estimate:
+ *   • Tiered path — pre-accept Good/Better/Best (recommendedTier set, not yet
+ *     resolved). Tiers derive from the tier-tagged lines + tierNames; the user
+ *     picks one, toggles its add-ons, and Approve commits THAT tier only
+ *     (chosenTier + its line set), mirroring the public page's accept.
+ *   • Line-items path — single quotes and resolved (accepted) tiered quotes:
+ *     `.custline` rows, opt lines as toggleable `.addonrow` add-ons, running
+ *     total via calcQuote.
  *
  * DEFERRED (see `// deferred` markers): on-glass signature pad, financing
  * "from $X/mo", join-a-plan add-on, and the "request a change" card.
@@ -30,46 +32,63 @@
 import { useEffect, useState } from "react";
 import { useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { calcQuote } from "@/lib/prototype-sample";
-import type { Brand, Estimate, EstimateLine } from "@/lib/store/types";
+import type { Brand, Estimate, EstimateLine, QuoteTierKey } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { estTierName } from "@/lib/estimates";
 import { clockNow } from "@/features/home/send";
 
-// ---- money helper (ported 1:1 from prototype fmt$) --------------------------
+// ---- Real GBB tier views (from the tier-tagged lines + tierNames) -----------
 
-
-// ---- GBB tier shape (prototype e.gbb — not persisted in the store) ----------
-//
-// The store's Estimate has no `gbb` field; a quote that carries tiers would
-// shape like this. We read it through an optional cast so the tier path is
-// ready without forcing the store type to grow a field it never fills today.
-
-interface GbbTierLine {
-  d: string;
-  q?: number;
-  r?: number;
-  tune?: boolean;
-}
-
-interface GbbTier {
-  k: "good" | "better" | "best";
+interface TierView {
+  k: QuoteTierKey;
   name: string;
-  title: string;
-  lines: GbbTierLine[];
+  /** All of this tier's lines — fixed rows + optional add-ons. */
+  lines: EstimateLine[];
 }
 
-interface GbbDraft {
-  rec: "good" | "better" | "best";
-  opts: GbbTier[];
+const TIER_ORDER: readonly QuoteTierKey[] = ["good", "better", "best"];
+
+/**
+ * The tier picker structure from the REAL store estimate: lines grouped by
+ * their tier tag, display names via estTierName, recommended from
+ * recommendedTier. Pre-accept tiered estimates only (post-accept the lines are
+ * already resolved to one quote). Tiers with no fixed line are dropped — the
+ * server refuses them at accept, so they are not options. Null when nothing
+ * renderable remains (e.g. the full line set hasn't loaded).
+ */
+function tierViewsFromEstimate(
+  e: Estimate
+): { rec: QuoteTierKey; tiers: TierView[] } | null {
+  if (!e.recommendedTier || e.acceptedTier) return null;
+  const tiers = TIER_ORDER.map((k) => ({
+    k,
+    name: estTierName(e, k),
+    lines: e.lines.filter((l) => l.tier === k),
+  })).filter((t) => t.lines.some((l) => !l.opt));
+  if (tiers.length === 0) return null;
+  const rec = tiers.some((t) => t.k === e.recommendedTier)
+    ? e.recommendedTier
+    : tiers[0]!.k;
+  return { rec, tiers };
 }
 
-/** Read the optional, non-persisted `gbb` tier draft off an estimate. */
-function readGbb(estimate: Estimate): GbbDraft | undefined {
-  return (estimate as Estimate & { gbb?: GbbDraft }).gbb;
-}
-
-/** gbbTierTotal — sum of a tier's line amounts (prototype gbbTierTotal). */
-function gbbTierTotal(tier: GbbTier): number {
-  return tier.lines.reduce((s, x) => s + (x.q ?? 1) * (x.r ?? 0), 0);
+/**
+ * The committed line set for a tier choice: the tier's fixed lines plus the
+ * toggled add-ons flipped non-optional; unselected add-ons drop off and tier
+ * tags clear (the accepted quote is a resolved single quote) — the exact
+ * semantics of the public page's accept (buildAcceptLinesForTier).
+ */
+function resolvedTierLines(
+  tier: TierView,
+  selected: Readonly<Record<number, boolean>>
+): EstimateLine[] {
+  return tier.lines
+    .map((l, i): EstimateLine | null => {
+      if (!l.opt) return l;
+      return selected[i] ? { ...l, opt: false } : null;
+    })
+    .filter((l): l is EstimateLine => l !== null)
+    .map(({ tier: _tier, ...rest }) => rest);
 }
 
 // ---- decline reasons (prototype declineQuote chips) -------------------------
@@ -162,7 +181,7 @@ function DeclineBlock({ onDecline }: { onDecline: (reason: string) => void }) {
 }
 
 // ===========================================================================
-//  LINE-ITEMS PATH (prototype renderCust — the primary path for our data)
+//  SHARED LINE RENDERING (prototype renderCust)
 // ===========================================================================
 
 /** Fixed (non-opt) line rows — `.custline` (prototype §e.lines.filter(!opt)). */
@@ -187,7 +206,7 @@ function CustLines({ lines }: { lines: EstimateLine[] }) {
 /**
  * Optional add-on rows — `.addonrow` with a checkbox the customer can toggle
  * to add the line (prototype §optIdx.map). Selection state lives in the parent
- * so the total reacts.
+ * so the total reacts. Keyed by the line's index within `lines`.
  */
 function CustAddons({
   lines,
@@ -263,6 +282,10 @@ function CustTotals({
   );
 }
 
+// ===========================================================================
+//  LINE-ITEMS PATH (single quotes + resolved tiered quotes)
+// ===========================================================================
+
 interface LineItemsPathProps {
   estimate: Estimate;
   brand: Brand;
@@ -328,176 +351,127 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
 }
 
 // ===========================================================================
-//  GBB TIER PATH (prototype renderCustGbb) — gated; won't render for our data
+//  TIERED PATH — pre-accept Good/Better/Best from the REAL store fields
 // ===========================================================================
 
-interface GbbPathProps {
-  gbb: GbbDraft;
-  brand: Brand;
+interface TieredPathProps {
   estimate: Estimate;
-  onApprove: (total: number) => void;
+  brand: Brand;
+  rec: QuoteTierKey;
+  tiers: TierView[];
+  /** Approve commits ONE tier: its key + its resolved line set. */
+  onApprove: (tier: QuoteTierKey, lines: EstimateLine[]) => void;
   onDecline: (reason: string) => void;
 }
 
-function GbbPath({ gbb, brand, estimate, onApprove, onDecline }: GbbPathProps) {
-  // Selected tier (defaults to recommended) + tunable lines toggled OFF + adds
-  // pulled from the tier above (prototype custSel.gbbSel / gbbOff / gbbAdd).
-  const [sel, setSel] = useState<GbbDraft["rec"]>(gbb.rec);
-  const [offs, setOffs] = useState<Record<string, boolean>>({});
-  const [adds, setAdds] = useState<Record<string, boolean>>({});
+function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: TieredPathProps) {
+  // Selected tier (defaults to recommended) + this tier's toggled add-ons.
+  // Add-on selection is tier-scoped: switching tiers resets it, so the total
+  // can never mix lines across tiers.
+  const [sel, setSel] = useState<QuoteTierKey>(rec);
+  const [selected, setSelected] = useState<Record<number, boolean>>({});
 
-  const order: readonly GbbDraft["rec"][] = ["good", "better", "best"];
-  const idx = order.indexOf(sel);
-  const selOpt = gbb.opts.find((o) => o.k === sel);
-  const above = idx >= 0 && idx < 2 ? gbb.opts.find((o) => o.k === order[idx + 1]) : undefined;
+  const pricing = estimate.pricing ?? { disc: 0, dep: 0, tax: 0 };
+  const selTier = tiers.find((t) => t.k === sel) ?? tiers[0]!;
 
-  if (!selOpt) return null;
-
-  const selKeys = new Set(selOpt.lines.map((x) => x.d));
-  const addable: GbbTierLine[] = above
-    ? above.lines.filter((x) => !selKeys.has(x.d) && x.tune)
-    : [];
-
-  let total = selOpt.lines.reduce(
-    (s, x) => s + (offs[x.d] ? 0 : (x.q ?? 1) * (x.r ?? 0)),
-    0
-  );
-  addable.forEach((x) => {
-    if (adds[x.d]) total += (x.q ?? 1) * (x.r ?? 0);
-  });
-
-  function pickTier(k: GbbDraft["rec"]) {
+  function pickTier(k: QuoteTierKey) {
     setSel(k);
-    setOffs({});
-    setAdds({});
+    setSelected({});
   }
+
+  function toggle(index: number, on: boolean) {
+    setSelected((prev) => ({ ...prev, [index]: on }));
+  }
+
+  // What Approve commits: the selected tier's fixed lines + toggled add-ons.
+  const finalLines = resolvedTierLines(selTier, selected);
+  const m = calcQuote(finalLines, pricing);
 
   return (
     <>
       <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 6 }}>
-        Here&rsquo;s your quote from <b>{brand.name}</b> — here are{" "}
-        <b>three ways to do this</b>. Pick one, tweak it, approve right here.
+        Here&rsquo;s your quote from <b>{brand.name}</b>
+        {tiers.length > 1 ? (
+          <>
+            {" "}
+            — pick an option, tweak it, approve right here.
+          </>
+        ) : (
+          <> — take a look.</>
+        )}
       </p>
       <p className="muted" style={{ marginBottom: 10 }}>
         Quote {estimate.num}
       </p>
 
-      {/* tier cards — Good / Better / Best, "most popular" on the recommended */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        {gbb.opts.map((o) => {
-          const isSel = o.k === sel;
-          const isRec = gbb.rec === o.k;
-          return (
-            <div
-              key={o.k}
-              onClick={() => pickTier(o.k)}
-              style={{
-                flex: 1,
-                minWidth: 110,
-                cursor: "pointer",
-                border: `2px solid ${isSel ? brand.color : "var(--line)"}`,
-                borderRadius: 12,
-                padding: 11,
-                textAlign: "center",
-                ...(isSel ? { background: "var(--green-50)" } : {}),
-              }}
-            >
-              {isRec ? (
-                <div
-                  style={{
-                    fontSize: 9.5,
-                    fontWeight: 800,
-                    letterSpacing: 0.6,
-                    color: brand.color,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  most popular
+      {/* tier cards — hidden when only one real option remains */}
+      {tiers.length > 1 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {tiers.map((t) => {
+            const isSel = t.k === sel;
+            const isRec = t.k === rec;
+            return (
+              <button
+                key={t.k}
+                type="button"
+                onClick={() => pickTier(t.k)}
+                aria-pressed={isSel}
+                style={{
+                  flex: 1,
+                  minWidth: 110,
+                  cursor: "pointer",
+                  border: `2px solid ${isSel ? brand.color : "var(--line)"}`,
+                  borderRadius: 12,
+                  padding: 11,
+                  textAlign: "center",
+                  background: isSel ? "var(--green-50)" : "var(--card)",
+                  color: "var(--ink)",
+                  fontFamily: "inherit",
+                }}
+              >
+                {isRec ? (
+                  <div
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 800,
+                      letterSpacing: 0.6,
+                      color: brand.color,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    recommended
+                  </div>
+                ) : null}
+                <div style={{ fontWeight: 800, fontSize: 14 }}>{t.name}</div>
+                <div style={{ fontWeight: 900, fontSize: 16.5, marginTop: 3 }}>
+                  {fmt$(calcQuote(t.lines, pricing).total)}
                 </div>
-              ) : null}
-              <div style={{ fontWeight: 800, fontSize: 14 }}>{o.name}</div>
-              <div className="muted" style={{ fontSize: 11 }}>
-                {o.title}
-              </div>
-              <div style={{ fontWeight: 900, fontSize: 16.5, marginTop: 3 }}>
-                {fmt$(gbbTierTotal(o))}
-              </div>
-              {/* deferred: financing "from $X/mo" hint */}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* selected tier's lines — tunable ones as toggles, rest as custline rows */}
-      {selOpt.lines.map((x, i) =>
-        x.tune ? (
-          <label key={i} className="addonrow">
-            <input
-              type="checkbox"
-              checked={!offs[x.d]}
-              onChange={(e) =>
-                setOffs((prev) => ({ ...prev, [x.d]: !e.target.checked }))
-              }
-            />
-            <span style={{ flex: 1 }}>{x.d}</span>
-            <b>{fmt$((x.q ?? 1) * (x.r ?? 0))}</b>
-          </label>
-        ) : (
-          <div key={i} className="custline">
-            <span>
-              {x.d}
-              {(x.q ?? 1) !== 1 ? ` × ${x.q}` : ""}
-            </span>
-            <b>{fmt$((x.q ?? 1) * (x.r ?? 0))}</b>
-          </div>
-        )
+                {/* deferred: financing "from $X/mo" hint */}
+              </button>
+            );
+          })}
+        </div>
       )}
 
-      {/* add-ons pulled down from the tier above */}
-      {addable.map((x, i) => (
-        <label
-          key={i}
-          className="addonrow"
-          style={{ borderColor: "var(--manila-line)", background: "#FFFBEF" }}
-        >
-          <input
-            type="checkbox"
-            checked={!!adds[x.d]}
-            onChange={(e) => setAdds((prev) => ({ ...prev, [x.d]: e.target.checked }))}
-          />
-          <span style={{ flex: 1 }}>
-            <b>Add from {above ? above.name : ""}:</b> {x.d}
-          </span>
-          <b>+{fmt$((x.q ?? 1) * (x.r ?? 0))}</b>
-        </label>
-      ))}
+      {/* the selected tier's fixed lines + its optional add-ons */}
+      <CustLines lines={selTier.lines} />
+      <CustAddons lines={selTier.lines} selected={selected} onToggle={toggle} />
 
-      {/* running total for the tuned tier */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-end",
-          gap: 4,
-          padding: "14px 0 4px",
-        }}
-      >
-        <div style={{ fontWeight: 900, fontSize: 19 }}>Total {fmt$(total)}</div>
-        <div className="muted" style={{ fontSize: 11.5 }}>
-          {selOpt.name} — {selOpt.title}
-          {Object.values(offs).some(Boolean) || Object.values(adds).some(Boolean)
-            ? " · tuned by you"
-            : ""}
+      {/* totals for the selected tier (+ toggled add-ons) */}
+      <CustTotals m={m} pricing={pricing} />
+      {tiers.length > 1 && (
+        <div className="muted" style={{ fontSize: 11.5, textAlign: "right" }}>
+          {selTier.name} option
         </div>
-      </div>
+      )}
 
-      {/* Approve the selected tier. deferred: on-glass signature. */}
+      {/* Approve THE SELECTED TIER. deferred: on-glass signature. */}
       <button
         className="btn primary"
         style={{ width: "100%", padding: 13, fontSize: 14.5, marginTop: 6 }}
-        onClick={() => onApprove(total)}
+        onClick={() => onApprove(selTier.k, finalLines)}
       >
-        ✓ Approve {selOpt.name} — {fmt$(total)}
+        ✓ Approve {selTier.name} — {fmt$(m.total)}
       </button>
 
       {/* deferred: "Request a change" card */}
@@ -540,8 +514,9 @@ export function CustQuoteModalContent() {
   if (!estimate) return null;
 
   const lead = leads.find((l) => l.id === estimate.leadId);
-  const gbb = readGbb(estimate);
-  const isDone = estimate.status === "accepted" || estimate.status === "declined";
+  // Pre-accept GBB: the picker structure from the real tier-tagged lines.
+  const tierViews = tierViewsFromEstimate(estimate);
+  const isTieredUnresolved = Boolean(estimate.recommendedTier) && !estimate.acceptedTier;
 
   // approveQuote(id, fromCust): mark accepted, move the lead to Won.
   // The store update re-renders this view into the accepted confirmation state.
@@ -564,6 +539,15 @@ export function CustQuoteModalContent() {
     } else {
       updateEstimate(estimate.id, { status: "accepted" });
     }
+    if (lead) moveLeadStage(lead.id, "Won");
+  }
+
+  // Tiered approve: commit ONE tier — its key + its resolved line set (fixed
+  // lines + toggled add-ons, tags cleared). The slice forwards acceptedTier as
+  // chosenTier to v1.quoting.accept, mirroring the public page's semantics.
+  function approveTier(tier: QuoteTierKey, lines: EstimateLine[]) {
+    if (!estimate) return;
+    updateEstimate(estimate.id, { status: "accepted", acceptedTier: tier, lines });
     if (lead) moveLeadStage(lead.id, "Won");
   }
 
@@ -593,21 +577,32 @@ export function CustQuoteModalContent() {
             <DeclinedState />
             <CustFooter />
           </>
-        ) : gbb && !isDone ? (
-          // GBB tier path — only when the estimate carries a `gbb` tier draft.
-          // The store never persists this, so it won't render for sample data.
+        ) : tierViews ? (
+          // Tiered path — pre-accept Good/Better/Best from the real store fields.
           <>
-            <GbbPath
-              gbb={gbb}
-              brand={brand}
+            <TieredPath
               estimate={estimate}
-              onApprove={(total) => approve(total)}
+              brand={brand}
+              rec={tierViews.rec}
+              tiers={tierViews.tiers}
+              onApprove={approveTier}
               onDecline={decline}
             />
             <CustFooter />
           </>
+        ) : isTieredUnresolved ? (
+          // Tiered estimate whose lines aren't loaded (or hold no fixed line):
+          // rendering it flat would show a wrong total and Approve couldn't
+          // carry a valid tier — say so instead of faking a quote.
+          <>
+            <div className="reqcard">
+              Couldn&rsquo;t load the quote options — close this preview and
+              reopen it from the quote.
+            </div>
+            <CustFooter />
+          </>
         ) : (
-          // Line-items path — the primary path for our data.
+          // Line-items path — single quotes + resolved tiered quotes.
           <>
             <LineItemsPath
               estimate={estimate}

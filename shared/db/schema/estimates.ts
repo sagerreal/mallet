@@ -6,6 +6,7 @@ import {
   integer,
   boolean,
   numeric,
+  jsonb,
   timestamp,
   index,
   uniqueIndex,
@@ -15,6 +16,9 @@ import {
 } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 import { leads } from "./leads";
+
+// Customer-facing display names for the three Good/Better/Best tiers (jsonb column shape).
+type TierNamesColumn = { good: string; better: string; best: string };
 
 // A customer quote. Header + lines (see estimate_lines). Money is integer cents; percentages are
 // integer basis points. RLS isolates by org_id.
@@ -42,6 +46,19 @@ export const estimates = pgTable(
     declineReason: text("decline_reason"),
     changeRequestedAt: timestamp("change_requested_at", { withTimezone: true }),
     changeRequest: text("change_request"),
+    // Good/Better/Best: an estimate is tiered iff recommended_tier is non-null. Then every line
+    // carries a tier tag (domain-validated); totals derive from the recommended tier pre-accept
+    // and the accepted tier post-accept. Single quotes keep all four columns null.
+    recommendedTier: text("recommended_tier"),
+    // Stamped at accept with the customer's (or office's) tier choice. The accepted estimate's
+    // lines are resolved to that tier (tags cleared) — this records which option won.
+    acceptedTier: text("accepted_tier"),
+    // Customer-facing display names for the three tiers, e.g. {good: "Patch", better: "Repair",
+    // best: "Replace"}. Null → default labels.
+    tierNames: jsonb("tier_names").$type<TierNamesColumn>(),
+    // Snapshot of the selected job terms TEXT at draft time (no live reference — later term
+    // edits must not rewrite sent quotes). Rendered on the public quote page and the modal.
+    termsSnapshot: text("terms_snapshot"),
     // Unguessable URL-safe token for the customer-facing public quote page (no login required).
     // Generated at draft time; null only for estimates created before the migration (backfilled).
     publicToken: text("public_token"),
@@ -75,6 +92,11 @@ export const estimates = pgTable(
       .on(t.publicToken)
       .where(sql`${t.publicToken} is not null`),
     check("estimates_status_check", sql`${t.status} in ('draft', 'sent', 'accepted', 'declined')`),
+    check(
+      "estimates_recommended_tier_check",
+      sql`${t.recommendedTier} in ('good', 'better', 'best')`,
+    ),
+    check("estimates_accepted_tier_check", sql`${t.acceptedTier} in ('good', 'better', 'best')`),
     check("estimates_disc_bps_check", sql`${t.discBps} between 0 and 10000`),
     check("estimates_tax_bps_check", sql`${t.taxBps} >= 0`),
     check("estimates_dep_bps_check", sql`${t.depBps} between 0 and 10000`),
@@ -95,6 +117,8 @@ export const estimateLines = pgTable(
     isOptional: boolean("is_optional").notNull().default(false),
     needsPhoto: boolean("needs_photo").notNull().default(false),
     position: integer("position").notNull().default(0),
+    // Good/Better/Best tag. Null on single-format estimates and on resolved (accepted) ones.
+    tier: text("tier"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -107,6 +131,7 @@ export const estimateLines = pgTable(
     }).onDelete("cascade"),
     index("estimate_lines_org_est_idx").on(t.orgId, t.estimateId),
     check("estimate_lines_qty_check", sql`${t.quantity} >= 0`),
+    check("estimate_lines_tier_check", sql`${t.tier} in ('good', 'better', 'best')`),
     check("estimate_lines_rate_check", sql`${t.rateCents} >= 0`),
     check("estimate_lines_cost_check", sql`${t.costCents} >= 0`),
   ],

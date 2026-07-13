@@ -7,12 +7,14 @@
  *
  * The composer has ONE layout (Customer → The quote → Pricing → Message →
  * Send) and TWO quote formats: "single" (one line table) and "gbb"
- * (Good/Better/Best tier panels). Whatever the format, the lines that save /
- * preview / send are derived at call time via linesForSend() — in GBB that is
- * always the RECOMMENDED tier's lines, never a stale copy.
+ * (Good/Better/Best tier panels). A GBB quote saves / previews / sends the
+ * FULL three-tier structure (tier-tagged lines + recommendedTier + tierNames);
+ * customers pick one of the three options on their quote page. linesForSend()
+ * derives the RECOMMENDED tier's lines at call time for gating and the totals
+ * display only — it is no longer what limits the payload.
  */
 
-import type { EstimateLine } from "@/lib/store/types";
+import type { EstimateLine, QuoteTierKey, TierNames } from "@/lib/store/types";
 
 // ---- composer line + state types --------------------------------------------
 
@@ -41,7 +43,7 @@ export interface GBBTier {
 }
 
 export interface GBBDraft {
-  /** Exactly one recommended tier — its lines are what the customer receives. */
+  /** Exactly one recommended tier — shown first to the customer; totals derive from it. */
   rec: TierKey;
   opts: GBBTier[];
 }
@@ -67,6 +69,11 @@ export interface ComposerState {
   pricing: { disc: number; dep: number; tax: number };
   validDays: number;
   intro: string;
+  /**
+   * Selected job terms — the TEXT is frozen at selection (snapshot semantics:
+   * later term edits never rewrite this quote). null = no terms attached.
+   */
+  terms: { id: string; text: string } | null;
   /** Channel for quote delivery. "text" = SMS via Twilio; "email" = Resend. Default: "text". */
   sendChannel: "text" | "email";
 }
@@ -96,6 +103,7 @@ export const INITIAL_STATE: ComposerState = {
   pricing: { disc: 0, dep: 0, tax: 0 },
   validDays: 14,
   intro: "",
+  terms: null,
   sendChannel: "text",
 };
 
@@ -139,9 +147,11 @@ export function recommendedTier(
 }
 
 /**
- * The lines that save / preview / send right now — derived at call time.
- * GBB format: the RECOMMENDED tier's lines (starring a different tier changes
- * what sends). Single format: the line table.
+ * The lines the send GATE and the totals display derive from, at call time.
+ * GBB format: the RECOMMENDED tier's lines — mirrors the domain's send rule
+ * (the recommended tier needs ≥1 real line; server totals derive from it).
+ * Single format: the line table. NOTE: the GBB payload itself carries ALL
+ * tiers' lines (tieredLinesForPayload) — this is gating/display only.
  */
 export function linesForSend(
   state: Pick<ComposerState, "format" | "gbb" | "lines">
@@ -152,6 +162,42 @@ export function linesForSend(
 
 export function gbbTierTotal(tier: GBBTier): number {
   return tier.lines.reduce((s, x) => s + (x.q ?? 1) * (x.r ?? 0), 0);
+}
+
+/**
+ * How many tiers hold at least one real line — what the GBB payload will carry
+ * (empty tiers emit no lines, so the customer never sees them). Drives the
+ * send button's option count. 0 outside GBB format.
+ */
+export function realTierCount(
+  state: Pick<ComposerState, "format" | "gbb">
+): number {
+  if (state.format !== "gbb" || !state.gbb) return 0;
+  return state.gbb.opts.filter((o) => hasRealLine(o.lines)).length;
+}
+
+// ---- GBB payload derivation ----------------------------------------------------
+// A GBB quote persists the FULL three-tier structure: every real line tagged with
+// its tier, plus recommendedTier + tierNames. The server rejects a tiered payload
+// with untagged lines (and vice versa), so these two always travel together.
+
+export interface TieredComposerLine extends ComposerLine {
+  tier: TierKey;
+}
+
+/** All tiers' real (non-blank) lines, each tagged with its tier key. */
+export function tieredLinesForPayload(gbb: GBBDraft): TieredComposerLine[] {
+  return gbb.opts.flatMap((o) => realLines(o.lines).map((l) => ({ ...l, tier: o.k })));
+}
+
+// The server caps tier display names at 60 chars (tierNamesInput).
+const TIER_NAME_MAX = 60;
+
+/** The three tiers' display names for the draft payload (fallbacks applied, server cap enforced). */
+export function tierNamesForPayload(gbb: GBBDraft): TierNames {
+  const names: Record<QuoteTierKey, string> = { ...TIER_DEFAULT_NAMES };
+  for (const o of gbb.opts) names[o.k] = tierDisplayName(o).slice(0, TIER_NAME_MAX);
+  return names;
 }
 
 // ---- format switching --------------------------------------------------------
@@ -228,9 +274,10 @@ export function applyComposerPatch(
 
 /**
  * Apply AI-drafted lines to the right target: the Good tier in GBB format
- * (the panel copy says so), else the single-format line table. In GBB the
- * star moves to Good — the user just drafted it, so it's what they expect to
- * send. Any format-switch note is stale after the rewrite and clears.
+ * (a mid-flight format switch can land a single-format draft here), else the
+ * single-format line table. In GBB the star moves to Good — the user just
+ * drafted it, so it's what they expect to send. Any format-switch note is
+ * stale after the rewrite and clears.
  */
 export function applyAiDraftLines(
   state: ComposerState,
@@ -250,6 +297,58 @@ export function applyAiDraftLines(
   return { ...state, ...drafted, lines: cloneLines(lines) };
 }
 
+/** One AI-drafted tier: the display-only note + its lines (rates in dollars). */
+export interface AiTierDraft {
+  note: string;
+  lines: ComposerLine[];
+}
+
+/** The full AI Good/Better/Best draft, plus the model's recommended key. */
+export interface AiTiersDraft {
+  recommended: TierKey;
+  good: AiTierDraft;
+  better: AiTierDraft;
+  best: AiTierDraft;
+}
+
+/**
+ * Apply a full AI Good/Better/Best draft: fills ALL THREE tier panels (lines +
+ * the display-only note) and moves the star to the AI's recommended key. Tier
+ * names/titles the user typed are kept. No-op when no GBB draft exists (the
+ * tiers endpoint is only called from GBB format, which seeds one).
+ *
+ * Mid-flight format switch (GBB → single before the response lands): the tier
+ * panels are hidden, so filling them silently would look like "Draft with AI"
+ * did nothing. The draft still lands in the panels (they survive switches) and
+ * the in-flow card note says where it went — no silent invisible state. The
+ * single-format line table is never touched.
+ */
+export function applyAiDraftTiers(
+  state: ComposerState,
+  draft: AiTiersDraft
+): ComposerState {
+  if (!state.gbb) return state;
+  const gbb: GBBDraft = {
+    rec: draft.recommended,
+    opts: state.gbb.opts.map((o) => ({
+      ...o,
+      note: draft[o.k].note,
+      lines: cloneLines(draft[o.k].lines),
+    })),
+  };
+  if (state.format !== "gbb") {
+    return {
+      ...state,
+      aiOpen: false,
+      aiDrafted: true,
+      gbb,
+      switchNote:
+        "AI drafted three options after you switched formats — switch to Good, Better & Best to see them.",
+    };
+  }
+  return { ...state, aiOpen: false, aiDrafted: true, switchNote: null, gbb };
+}
+
 // ---- Pricing summary label --------------------------------------------------
 
 export function pricingSummary(p: { disc: number; dep: number; tax: number }): string {
@@ -260,14 +359,15 @@ export function pricingSummary(p: { disc: number; dep: number; tax: number }): s
   return parts.join(" · ");
 }
 
-// ---- ComposerLine[] → EstimateLine[] (keep d,q,r,c,opt,photo) ----------------
+// ---- ComposerLine[] → EstimateLine[] (keep d,q,r,c,opt,photo,tier) -----------
 
-export function toEstimateLines(lines: ComposerLine[]): EstimateLine[] {
+export function toEstimateLines(lines: (ComposerLine | TieredComposerLine)[]): EstimateLine[] {
   return lines.map((l) => {
     const e: EstimateLine = { d: l.d, q: l.q, r: l.r };
     if (l.c != null) e.c = l.c;
     if (l.opt != null) e.opt = l.opt;
     if (l.photo != null) e.photo = l.photo;
+    if ("tier" in l && l.tier != null) e.tier = l.tier;
     return e;
   });
 }

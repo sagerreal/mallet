@@ -16,8 +16,8 @@ import {
   money,
   zeroMoney,
 } from "@mallet/shared/types";
-import { Estimate, EstimateLine, type EstimateProps } from "../domain/estimate";
-import { buildAcceptLinesFromSelection } from "./select-optional-lines";
+import { Estimate, EstimateLine, type EstimateProps, type QuoteTier } from "../domain/estimate";
+import { buildAcceptLinesFromSelection, buildAcceptLinesForTier } from "./select-optional-lines";
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -47,6 +47,7 @@ const makeLine = (
     isOptional,
     needsPhoto,
     position,
+    tier: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -73,6 +74,10 @@ const makeSentEstimate = (lines: readonly EstimateLine[]): Estimate => {
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: "d".repeat(64),
+    recommendedTier: null,
+    acceptedTier: null,
+    tierNames: null,
+    termsSnapshot: null,
     lines,
     createdAt: now,
     updatedAt: now,
@@ -142,5 +147,103 @@ describe("buildAcceptLinesFromSelection", () => {
     expect(buildAcceptLinesFromSelection(fixture(), [OPT_A_ID, UNKNOWN_ID])).toEqual({
       kind: "invalid",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildAcceptLinesForTier — the Good/Better/Best variant. Same security model:
+// ID subset only, committed lines built from STORED data, scoped to the CHOSEN tier.
+// ---------------------------------------------------------------------------
+
+const GOOD_FIXED_ID = "00000000-0000-0000-0000-00000000001f";
+const BETTER_FIXED_ID = "00000000-0000-0000-0000-00000000002f";
+const BETTER_OPT_ID = "00000000-0000-0000-0000-0000000000c1";
+const BEST_FIXED_ID = "00000000-0000-0000-0000-00000000003f";
+const GOOD_OPT_ID = "00000000-0000-0000-0000-0000000000d1";
+
+const makeTierLine = (
+  id: string,
+  description: string,
+  rateCents: number,
+  isOptional: boolean,
+  tier: QuoteTier,
+  position: number,
+): EstimateLine => {
+  const r = EstimateLine.create({
+    id: asEstimateLineId(id),
+    description,
+    quantity: 1,
+    rate: money(rateCents),
+    cost: money(100),
+    isOptional,
+    needsPhoto: false,
+    position,
+    tier,
+  });
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
+const gbbFixture = (): Estimate => {
+  const props: EstimateProps = {
+    ...makeSentEstimate([makeLine(FIXED_ID, "x", 1, 1_000, 0, false, false, 0)]).props,
+    recommendedTier: "better",
+    lines: [
+      makeTierLine(GOOD_FIXED_ID, "Patch leak", 20_000, false, "good", 0),
+      makeTierLine(GOOD_OPT_ID, "Good add-on", 2_000, true, "good", 1),
+      makeTierLine(BETTER_FIXED_ID, "Repair section", 35_000, false, "better", 2),
+      makeTierLine(BETTER_OPT_ID, "Camera inspection", 5_000, true, "better", 3),
+      makeTierLine(BEST_FIXED_ID, "Replace run", 90_000, false, "best", 4),
+    ],
+  };
+  const r = Estimate.create(props);
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
+describe("buildAcceptLinesForTier", () => {
+  it("no selection → the chosen tier's fixed lines only, from STORED data", () => {
+    const result = buildAcceptLinesForTier(gbbFixture(), "better", undefined);
+    expect(result.kind).toBe("lines");
+    if (result.kind !== "lines") throw new Error("expected lines");
+    expect(result.lines).toEqual([
+      { description: "Repair section", quantity: 1, rateCents: 35_000, costCents: 100, isOptional: false, needsPhoto: false },
+    ]);
+  });
+
+  it("selecting the chosen tier's optional flips it non-optional and commits it", () => {
+    const result = buildAcceptLinesForTier(gbbFixture(), "better", [BETTER_OPT_ID]);
+    expect(result.kind).toBe("lines");
+    if (result.kind !== "lines") throw new Error("expected lines");
+    expect(result.lines).toHaveLength(2);
+    expect(result.lines.every((l) => !l.isOptional)).toBe(true);
+    expect(result.lines.map((l) => l.description)).toEqual(["Repair section", "Camera inspection"]);
+  });
+
+  it("an optional id from ANOTHER tier → invalid (selection is scoped to the chosen tier)", () => {
+    expect(buildAcceptLinesForTier(gbbFixture(), "better", [GOOD_OPT_ID])).toEqual({
+      kind: "invalid",
+    });
+  });
+
+  it("a fixed line id of the chosen tier → invalid (fixed lines are not toggleable)", () => {
+    expect(buildAcceptLinesForTier(gbbFixture(), "better", [BETTER_FIXED_ID])).toEqual({
+      kind: "invalid",
+    });
+  });
+
+  it("an unknown id → invalid", () => {
+    expect(buildAcceptLinesForTier(gbbFixture(), "better", [UNKNOWN_ID])).toEqual({
+      kind: "invalid",
+    });
+  });
+
+  it("a tier with no optionals accepts an empty selection and commits its fixed lines", () => {
+    const result = buildAcceptLinesForTier(gbbFixture(), "best", []);
+    expect(result.kind).toBe("lines");
+    if (result.kind !== "lines") throw new Error("expected lines");
+    expect(result.lines).toEqual([
+      { description: "Replace run", quantity: 1, rateCents: 90_000, costCents: 100, isOptional: false, needsPhoto: false },
+    ]);
   });
 });

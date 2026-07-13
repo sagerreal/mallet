@@ -4,6 +4,7 @@ import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asEstimateId, asLeadId, toPage } from "@mallet/shared/types";
 import { ESTIMATE_STATUSES, type Estimate, type EstimateStatus } from "../domain/estimate";
+import type { QuoteTier } from "../domain/estimate";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
 import { DraftEstimateUseCase } from "../app/draft-estimate";
 import { SendEstimateUseCase } from "../app/send-estimate";
@@ -17,6 +18,16 @@ import { createJobSummaryInSavepoint } from "./job-creation-savepoint";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
+// Mirrors the DB CHECK on estimates.recommended_tier / accepted_tier / estimate_lines.tier.
+const tierEnum = z.enum(["good", "better", "best"]) satisfies z.ZodType<QuoteTier>;
+// Output shape (plain strings — never transforms/rejects stored data).
+const tierNamesDTO = z.object({ good: z.string(), better: z.string(), best: z.string() });
+// Input shape (boundary-validated display names).
+const tierNamesInput = z.object({
+  good: z.string().trim().min(1).max(60),
+  better: z.string().trim().min(1).max(60),
+  best: z.string().trim().min(1).max(60),
+});
 
 const estimateLineDTO = z.object({
   id: z.string().uuid(),
@@ -27,6 +38,7 @@ const estimateLineDTO = z.object({
   isOptional: z.boolean(),
   needsPhoto: z.boolean(),
   position: z.number().int(),
+  tier: tierEnum.nullable(),
 });
 
 const estimateDTO = z.object({
@@ -51,6 +63,13 @@ const estimateDTO = z.object({
   declineReason: z.string().nullable(),
   changeRequestedAt: z.string().nullable(),
   changeRequest: z.string().nullable(),
+  // Good/Better/Best: non-null recommendedTier marks a tiered quote; acceptedTier records the
+  // customer's (or office's) resolved choice; tierNames are the display labels; termsSnapshot
+  // is the terms text frozen at draft time.
+  recommendedTier: tierEnum.nullable(),
+  acceptedTier: tierEnum.nullable(),
+  tierNames: tierNamesDTO.nullable(),
+  termsSnapshot: z.string().nullable(),
   // The unguessable public_token generated at draft time. Exposed here so the send screen
   // can construct the customer-facing link /q/<token>. Never exposed to end-customers via
   // this authed endpoint — they receive only the link, not the ability to enumerate tokens.
@@ -71,6 +90,12 @@ const estimateSummaryDTO = z.object({
   // sent by text/email from the estimate modal (the link is /q/<token>).
   publicToken: z.string().nullable(),
   changeRequestedAt: z.string().nullable(),
+  // Tier fields on summaries too — the modal/rails show "3 options · recommended Better"
+  // pre-accept and "Accepted: Best" post-accept from list-hydrated data.
+  recommendedTier: tierEnum.nullable(),
+  acceptedTier: tierEnum.nullable(),
+  tierNames: tierNamesDTO.nullable(),
+  termsSnapshot: z.string().nullable(),
 });
 
 const lineInput = z.object({
@@ -80,17 +105,50 @@ const lineInput = z.object({
   costCents: z.number().int().nonnegative().optional(),
   isOptional: z.boolean().optional(),
   needsPhoto: z.boolean().optional(),
+  tier: tierEnum.optional(),
 });
 
-const draftInput = z.object({
-  leadId: z.string().uuid(),
-  title: z.string().optional(),
-  discBps: z.number().int().min(0).max(10_000).optional(),
-  taxBps: z.number().int().min(0).optional(),
-  depBps: z.number().int().min(0).max(10_000).optional(),
-  validDays: z.number().int().positive().optional(),
-  lines: z.array(lineInput).min(1),
-});
+const draftInput = z
+  .object({
+    leadId: z.string().uuid(),
+    title: z.string().optional(),
+    discBps: z.number().int().min(0).max(10_000).optional(),
+    taxBps: z.number().int().min(0).optional(),
+    depBps: z.number().int().min(0).max(10_000).optional(),
+    validDays: z.number().int().positive().optional(),
+    lines: z.array(lineInput).min(1),
+    recommendedTier: tierEnum.optional(),
+    tierNames: tierNamesInput.optional(),
+    termsSnapshot: z.string().trim().min(1).max(10_000).optional(),
+  })
+  // Boundary consistency: a tiered draft tags EVERY line; a single draft tags none and
+  // carries no tier names. (The domain re-validates — this just fails fast with a clear path.)
+  .superRefine((val, ctx) => {
+    if (val.recommendedTier) {
+      if (val.lines.some((line) => !line.tier)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "every line needs a tier when recommendedTier is set",
+          path: ["lines"],
+        });
+      }
+      return;
+    }
+    if (val.lines.some((line) => line.tier)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "tiered lines require recommendedTier",
+        path: ["recommendedTier"],
+      });
+    }
+    if (val.tierNames) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "tierNames require recommendedTier",
+        path: ["tierNames"],
+      });
+    }
+  });
 
 const listInput = z.object({
   limit: z.number().int().positive().max(500).optional(),
@@ -104,6 +162,9 @@ const acceptInput = z.object({
   /** Optional customer-tuned lines to commit before accepting. Sent as rateCents/costCents
    *  (integer cents) — the client converts store dollars × 100 before calling. */
   lines: z.array(lineInput).optional(),
+  /** Good/Better/Best choice. Omitted on a tiered estimate → defaults to the recommended
+   *  tier (office accept). Rejected on single-format estimates. */
+  chosenTier: tierEnum.optional(),
 });
 const declineInput = z.object({ estimateId: z.string().uuid(), reason: z.string().min(1) });
 const listByLeadInput = z.object({
@@ -140,6 +201,7 @@ const toEstimateDTO = (estimate: Estimate) => {
         isOptional: lp.isOptional,
         needsPhoto: lp.needsPhoto,
         position: lp.position,
+        tier: lp.tier,
       };
     }),
     subtotal: money(estimate.subtotal()),
@@ -154,6 +216,10 @@ const toEstimateDTO = (estimate: Estimate) => {
     declineReason: p.declineReason,
     changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
     changeRequest: p.changeRequest ?? null,
+    recommendedTier: p.recommendedTier,
+    acceptedTier: p.acceptedTier,
+    tierNames: p.tierNames,
+    termsSnapshot: p.termsSnapshot,
     publicToken: p.publicToken ?? null,
     createdAt: p.createdAt.toISOString(),
   };
@@ -171,6 +237,10 @@ const toSummaryDTO = (estimate: Estimate) => {
     createdAt: p.createdAt.toISOString(),
     publicToken: p.publicToken ?? null,
     changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
+    recommendedTier: p.recommendedTier,
+    acceptedTier: p.acceptedTier,
+    tierNames: p.tierNames,
+    termsSnapshot: p.termsSnapshot,
   };
 };
 
@@ -199,7 +269,11 @@ export const createEstimateRouter = () =>
             costCents: line.costCents ?? 0,
             isOptional: line.isOptional ?? false,
             needsPhoto: line.needsPhoto ?? false,
+            tier: line.tier ?? null,
           })),
+          recommendedTier: input.recommendedTier ?? null,
+          tierNames: input.tierNames ?? null,
+          termsSnapshot: input.termsSnapshot ?? null,
         });
         return toEstimateDTO(orThrow(result));
       }),
@@ -265,6 +339,7 @@ export const createEstimateRouter = () =>
               isOptional: line.isOptional ?? false,
               needsPhoto: line.needsPhoto ?? false,
             })),
+            chosenTier: input.chosenTier,
           }),
         );
 

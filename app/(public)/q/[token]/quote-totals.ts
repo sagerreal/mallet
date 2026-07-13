@@ -39,6 +39,19 @@ export function lineAmountCents(quantity: number, rateCents: number): number {
   return Math.round(quantity * rateCents);
 }
 
+/**
+ * Sum of per-line amounts (each rounded first, like Estimate.subtotalOf).
+ * Used client-side to derive the SELECTED tier's fixed subtotal on a
+ * Good/Better/Best quote — feeds computeQuoteTotals so the tier the customer
+ * is looking at recomputes through the same rounding chain the server commits.
+ */
+export function sumLineAmountsCents(lines: readonly OptionalLineAmount[]): number {
+  return lines.reduce(
+    (sum, line) => sum + lineAmountCents(line.quantity, line.rateCents),
+    0,
+  );
+}
+
 /** Derive all quote totals from the fixed subtotal plus the selected optional lines. */
 export function computeQuoteTotals(input: QuoteTotalsInput): QuoteTotals {
   const subtotalCents = input.selectedOptionalLines.reduce(

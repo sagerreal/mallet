@@ -2,48 +2,69 @@
  * app/(public)/q/[token]/QuoteLines.tsx
  *
  * Client-component island for the interactive part of the public quote page:
- * optional add-on toggles + live totals + the approve/decline actions.
+ * optional add-on toggles + live totals + the approve/decline actions — and,
+ * on a Good/Better/Best quote, the three-option tier picker above them.
+ *
+ * Two modes, discriminated by the `tiers` prop:
+ *   - single (tiers absent): fixed lines are server-rendered by the page; the
+ *     island gets their subtotal + the optional add-ons. Unchanged behavior.
+ *   - tiered (tiers present): the island renders the picker (default selection
+ *     = recommended tier), the SELECTED tier's fixed lines, and that tier's
+ *     optional add-ons. Switching tiers resets the add-on selection (line ids
+ *     are scoped to a tier) and recomputes every total.
  *
  * The customer can include/exclude OPTIONAL add-on lines before accepting; the
  * subtotal/discount/tax/total/deposit and the Approve button amount recompute on
- * every toggle. Only the selected line IDs are sent on accept — the server builds
- * the committed lines from its stored estimate, never from client content.
+ * every toggle. Only the chosen tier + selected line IDs are sent on accept —
+ * the server builds the committed lines from its stored estimate, never from
+ * client content.
  *
  * LOCK: the accept-flow phase is owned here and passed down to QuoteActions, so
- * the toggles disable while an accept/decline is in flight and permanently once
- * approved/declined; on success the selection freezes to the ids actually sent.
- * The displayed total therefore always matches the committed one.
+ * the toggles AND the tier cards disable while an accept/decline is in flight
+ * and permanently once approved/declined; on success the selection freezes to
+ * the ids actually sent. The displayed total therefore always matches the
+ * committed one.
  *
  * Cents math lives in quote-totals.ts and mirrors the domain's derivations
  * (modules/quoting/domain/estimate.ts) exactly, so the approved number matches
  * what the server commits.
  *
  * Design rules: anchored, in-flow, no floating UI. With zero optional lines the
- * rendered output is identical to the previous static totals + actions.
+ * single-mode rendered output is identical to the previous static totals + actions.
  */
 
 "use client";
 
 import { useState } from "react";
 import { fmt$ } from "@/lib/format";
+import type { QuoteTier } from "@/modules/quoting/domain/estimate";
+import { LineRow } from "./LineRow";
 import { QuoteActions, type QuotePhase } from "./QuoteActions";
-import { computeQuoteTotals, lineAmountCents } from "./quote-totals";
+import { TierPicker } from "./TierPicker";
+import { computeQuoteTotals, lineAmountCents, sumLineAmountsCents } from "./quote-totals";
 
 function centsToDisplay(cents: number): string {
   return fmt$(cents / 100);
 }
 
-export interface OptionalLineView {
+export interface QuoteLineView {
   readonly id: string;
   readonly description: string;
   readonly quantity: number;
   readonly rateCents: number;
 }
 
-interface QuoteLinesProps {
-  /** Sum of the fixed (non-optional) line amounts, computed server-side. */
-  readonly fixedSubtotalCents: number;
-  readonly optionalLines: readonly OptionalLineView[];
+/** One Good/Better/Best option as the public page sees it (redacted — no costs). */
+export interface TierLinesView {
+  readonly tier: QuoteTier;
+  readonly name: string;
+  readonly fixedLines: readonly QuoteLineView[];
+  readonly optionalLines: readonly QuoteLineView[];
+  /** The tier's full total (fixed lines through discount/tax), server-computed. */
+  readonly totalCents: number;
+}
+
+interface QuoteLinesBaseProps {
   readonly discBps: number;
   readonly taxBps: number;
   readonly depBps: number;
@@ -51,7 +72,21 @@ interface QuoteLinesProps {
   readonly changeAlreadyRequested: boolean;
 }
 
-// ---- totals block (moved from page.tsx so it recomputes on toggle) ----------
+interface SingleQuoteLinesProps extends QuoteLinesBaseProps {
+  readonly tiers?: null;
+  /** Sum of the fixed (non-optional) line amounts, computed server-side. */
+  readonly fixedSubtotalCents: number;
+  readonly optionalLines: readonly QuoteLineView[];
+}
+
+interface TieredQuoteLinesProps extends QuoteLinesBaseProps {
+  readonly tiers: readonly TierLinesView[];
+  readonly recommendedTier: QuoteTier;
+}
+
+export type QuoteLinesProps = SingleQuoteLinesProps | TieredQuoteLinesProps;
+
+// ---- totals block (recomputes on every toggle / tier switch) -----------------
 
 function TotalsBlock({
   subtotalCents,
@@ -114,23 +149,93 @@ function TotalsBlock({
   );
 }
 
+// ---- optional add-on toggles --------------------------------------------------
+
+function AddonToggles({
+  lines,
+  selectedIds,
+  locked,
+  onToggle,
+}: {
+  lines: readonly QuoteLineView[];
+  selectedIds: ReadonlySet<string>;
+  locked: boolean;
+  onToggle: (id: string, on: boolean) => void;
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <>
+      <div className="muted" style={{ fontSize: 11, marginTop: 12, marginBottom: 4 }}>
+        Optional add-ons &mdash; tap to include
+      </div>
+      {lines.map((line) => {
+        const amount = lineAmountCents(line.quantity, line.rateCents);
+        return (
+          <label key={line.id} className="addonrow">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(line.id)}
+              disabled={locked}
+              onChange={(e) => onToggle(line.id, e.target.checked)}
+            />
+            <span style={{ flex: 1 }}>
+              <b>Add:</b> {line.description}
+              {line.quantity !== 1 ? ` × ${line.quantity}` : ""}
+            </span>
+            <b>+{centsToDisplay(amount)}</b>
+          </label>
+        );
+      })}
+    </>
+  );
+}
+
+// ---- line resolution ----------------------------------------------------------
+
+interface ResolvedLines {
+  readonly activeTier: TierLinesView | null;
+  readonly optionalLines: readonly QuoteLineView[];
+  readonly fixedSubtotalCents: number;
+}
+
+/** Which lines the totals derive from: the selected tier's on a GBB quote
+ *  (fixed subtotal derived client-side with the domain's per-line rounding),
+ *  the page-provided ones on a single quote. */
+function resolveLines(props: QuoteLinesProps, selectedTier: QuoteTier | null): ResolvedLines {
+  if (props.tiers == null) {
+    return {
+      activeTier: null,
+      optionalLines: props.optionalLines,
+      fixedSubtotalCents: props.fixedSubtotalCents,
+    };
+  }
+  const activeTier = props.tiers.find((t) => t.tier === selectedTier) ?? null;
+  return {
+    activeTier,
+    optionalLines: activeTier?.optionalLines ?? [],
+    fixedSubtotalCents: activeTier ? sumLineAmountsCents(activeTier.fixedLines) : 0,
+  };
+}
+
 // ---- island -----------------------------------------------------------------
 
-export function QuoteLines({
-  fixedSubtotalCents,
-  optionalLines,
-  discBps,
-  taxBps,
-  depBps,
-  token,
-  changeAlreadyRequested,
-}: QuoteLinesProps) {
+export function QuoteLines(props: QuoteLinesProps) {
+  const { discBps, taxBps, depBps, token, changeAlreadyRequested } = props;
+  const tiered = props.tiers != null ? props : null;
+
+  // Good/Better/Best: which option the customer is looking at. Defaults to the
+  // recommended tier; null on single quotes.
+  const [selectedTier, setSelectedTier] = useState<QuoteTier | null>(
+    tiered?.recommendedTier ?? null,
+  );
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  // Accept-flow phase lives HERE (not in QuoteActions) so the toggles lock the
-  // moment an accept/decline is in flight and stay locked once terminal — the
-  // displayed total can never diverge from the committed one.
+  // Accept-flow phase lives HERE (not in QuoteActions) so the toggles and tier
+  // cards lock the moment an accept/decline is in flight and stay locked once
+  // terminal — the displayed total can never diverge from the committed one.
   const [phase, setPhase] = useState<QuotePhase>("idle");
   const locked = phase === "busy" || phase === "approved" || phase === "declined";
+
+  const { activeTier, optionalLines, fixedSubtotalCents } = resolveLines(props, selectedTier);
 
   function handlePhaseChange(next: QuotePhase, committedLineIds?: readonly string[]): void {
     if (next === "approved" && committedLineIds) {
@@ -138,6 +243,14 @@ export function QuoteLines({
       setSelectedIds(new Set(committedLineIds));
     }
     setPhase(next);
+  }
+
+  function selectTier(tier: QuoteTier): void {
+    if (locked || tier === selectedTier) return; // same lock as the add-on toggles
+    setSelectedTier(tier);
+    // Optional add-on ids are scoped to a tier — switching resets the selection
+    // so the accept POST can never carry another tier's line ids.
+    setSelectedIds(new Set());
   }
 
   function toggle(id: string, on: boolean): void {
@@ -160,44 +273,37 @@ export function QuoteLines({
 
   return (
     <>
-      {/* Optional add-ons — customer toggles what to include */}
-      {optionalLines.length > 0 && (
-        <>
-          <div className="muted" style={{ fontSize: 11, marginTop: 12, marginBottom: 4 }}>
-            Optional add-ons &mdash; tap to include
-          </div>
-          {optionalLines.map((line) => {
-            const amount = lineAmountCents(line.quantity, line.rateCents);
-            return (
-              <label key={line.id} className="addonrow">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(line.id)}
-                  disabled={locked}
-                  onChange={(e) => toggle(line.id, e.target.checked)}
-                />
-                <span style={{ flex: 1 }}>
-                  <b>Add:</b> {line.description}
-                  {line.quantity !== 1 ? ` × ${line.quantity}` : ""}
-                </span>
-                <b>+{centsToDisplay(amount)}</b>
-              </label>
-            );
-          })}
-        </>
+      {/* Good/Better/Best picker + the selected tier's fixed lines. With one
+          real tier there is nothing to choose — the picker hides and the tier
+          renders as a single quote (accept still carries its tier key). */}
+      {tiered && selectedTier && tiered.tiers.length > 1 && (
+        <TierPicker
+          options={tiered.tiers}
+          selectedTier={selectedTier}
+          recommendedTier={tiered.recommendedTier}
+          locked={locked}
+          onSelect={selectTier}
+        />
       )}
+      {activeTier?.fixedLines.map((line) => (
+        <LineRow
+          key={line.id}
+          description={line.description}
+          quantity={line.quantity}
+          rateCents={line.rateCents}
+        />
+      ))}
 
-      {/* Totals — recompute on every toggle */}
-      <TotalsBlock
-        subtotalCents={totals.subtotalCents}
-        discountCents={totals.discountCents}
-        taxCents={totals.taxCents}
-        totalCents={totals.totalCents}
-        depositCents={totals.depositCents}
-        discBps={discBps}
-        taxBps={taxBps}
-        depBps={depBps}
+      {/* Optional add-ons — customer toggles what to include */}
+      <AddonToggles
+        lines={optionalLines}
+        selectedIds={selectedIds}
+        locked={locked}
+        onToggle={toggle}
       />
+
+      {/* Totals — recompute on every toggle / tier switch */}
+      <TotalsBlock {...totals} discBps={discBps} taxBps={taxBps} depBps={depBps} />
 
       {/* Approve / decline / request-change */}
       <QuoteActions
@@ -205,6 +311,7 @@ export function QuoteLines({
         totalCents={totals.totalCents}
         changeAlreadyRequested={changeAlreadyRequested}
         selectedLineIds={[...selectedIds]}
+        chosenTier={selectedTier}
         phase={phase}
         onPhaseChange={handlePhaseChange}
       />

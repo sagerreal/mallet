@@ -1,6 +1,6 @@
 import { asEstimateId, asEstimateLineId, asOrgId, asLeadId, money } from "@mallet/shared/types";
 import { estimates, estimateLines } from "@mallet/shared/db/schema";
-import { Estimate, EstimateLine, isEstimateStatus } from "../domain/estimate";
+import { Estimate, EstimateLine, isEstimateStatus, type QuoteTier, type TierNames } from "../domain/estimate";
 
 export type EstimateRow = typeof estimates.$inferSelect;
 export type EstimateLineRow = typeof estimateLines.$inferSelect;
@@ -15,6 +15,8 @@ const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
     isOptional: row.isOptional,
     needsPhoto: row.needsPhoto,
     position: row.position,
+    // DB CHECK constrains the value set; EstimateLine.create re-validates and fails loud.
+    tier: row.tier as QuoteTier | null,
   });
   if (!result.ok) throw new Error(`corrupt estimate_line ${row.id}: ${result.error.message}`);
   return result.value;
@@ -49,6 +51,11 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     changeRequestedAt: row.changeRequestedAt,
     changeRequest: row.changeRequest,
     publicToken: row.publicToken,
+    // Tier columns are DB CHECK-constrained; Estimate.create re-validates (incl. jsonb shape).
+    recommendedTier: row.recommendedTier as QuoteTier | null,
+    acceptedTier: row.acceptedTier as QuoteTier | null,
+    tierNames: row.tierNames as TierNames | null,
+    termsSnapshot: row.termsSnapshot,
     lines,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

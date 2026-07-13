@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { fmt$ } from "@/lib/format";
+import type { QuoteTier } from "@/modules/quoting/domain/estimate";
 
 /** Interaction phase — owned by QuoteLines so the add-on toggles above the
  *  actions lock while an accept is in flight and stay locked once terminal. */
@@ -38,6 +39,9 @@ interface QuoteActionsProps {
   /** Optional add-on line IDs the customer toggled ON — sent with the accept so the
    *  server commits the tuned selection (IDs only; line content stays server-side). */
   readonly selectedLineIds?: readonly string[];
+  /** Good/Better/Best: the tier the customer selected — sent with the accept.
+   *  Null/absent on single quotes (the server rejects a tier there). */
+  readonly chosenTier?: QuoteTier | null;
   /** Controlled phase (lifted into QuoteLines so it can lock the toggles). */
   readonly phase: QuotePhase;
   /** Phase transitions. On a successful accept, committedLineIds carries the
@@ -50,6 +54,7 @@ export function QuoteActions({
   totalCents,
   changeAlreadyRequested,
   selectedLineIds,
+  chosenTier,
   phase,
   onPhaseChange,
 }: QuoteActionsProps) {
@@ -60,7 +65,7 @@ export function QuoteActions({
   // OR when the customer just submitted one in this session.
   const showChangeBanner = changeAlreadyRequested || phase === "change_sent";
 
-  async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string; selectedLineIds?: string[] }): Promise<void> {
+  async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string; selectedLineIds?: string[]; chosenTier?: QuoteTier }): Promise<void> {
     onPhaseChange("busy");
     setError(null);
     try {
@@ -73,8 +78,9 @@ export function QuoteActions({
         const data = await res.json().catch(() => ({}));
         const serverError = (data as { error?: string }).error;
         if ((res.status === 400 || res.status === 409) && action === "accept") {
-          // 400: the add-on selection no longer matches the stored quote (it was
-          // edited). 409: the quote is not in an approvable state (not_ready).
+          // 400: the add-on selection or tier choice no longer matches the stored
+          // quote (invalid_selection / invalid_tier — the server's copy names the
+          // problem). 409: the quote is not in an approvable state (not_ready).
           setError(serverError ?? "This quote was updated — reload the page and try again.");
         } else {
           setError(serverError ?? "Something went wrong. Please try again.");
@@ -95,12 +101,12 @@ export function QuoteActions({
   }
 
   function handleApprove() {
-    void callApi(
-      "accept",
-      selectedLineIds && selectedLineIds.length > 0
+    void callApi("accept", {
+      ...(selectedLineIds && selectedLineIds.length > 0
         ? { selectedLineIds: [...selectedLineIds] }
-        : undefined,
-    );
+        : {}),
+      ...(chosenTier ? { chosenTier } : {}),
+    });
   }
   function handleDecline(reason: string) { void callApi("decline", { reason }); }
   function handleRequestChange() {

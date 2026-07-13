@@ -23,7 +23,7 @@ import { calcQuote } from "@/lib/prototype-sample";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import type { Estimate } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
-import { isExpired } from "@/lib/estimates";
+import { isExpired, gbbTierLine, effectiveEstLines } from "@/lib/estimates";
 import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
 import { api } from "@/lib/trpc/client";
 
@@ -156,7 +156,11 @@ export function EstimateModalContent() {
     );
   }
 
-  const m = calcQuote(e.lines, e.pricing);
+  // Tier-aware lines: a pre-accept GBB estimate shows the RECOMMENDED tier only
+  // (effectiveEstLines) so the table and total match the pipeline card's figure —
+  // never the sum of all three tiers. Single/resolved quotes pass through as-is.
+  const displayLines = effectiveEstLines(e);
+  const m = calcQuote(displayLines, e.pricing);
   const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
   const stamp = STATUS_STAMP[e.status] ?? { cls: "ink", label: e.status };
 
@@ -311,6 +315,7 @@ export function EstimateModalContent() {
           <div className="muted">
             {lead ? lead.name : ""} · {lead ? lead.phone : ""}
           </div>
+          {gbbTierLine(e) && <div className="muted">{gbbTierLine(e)}</div>}
         </div>
         <div>
           <SoftPill tone={stamp.cls as PillTone}>{stamp.label}</SoftPill>
@@ -328,7 +333,7 @@ export function EstimateModalContent() {
             </tr>
           </thead>
           <tbody>
-            {e.lines.map((x, i) => (
+            {displayLines.map((x, i) => (
               <tr key={i}>
                 <td>{x.d}</td>
                 <td>{x.q}</td>

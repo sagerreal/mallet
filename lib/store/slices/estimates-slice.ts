@@ -14,7 +14,8 @@
  * WIRED mutations (backend endpoint exists):
  *   addEstimate                    → v1.quoting.draft
  *   updateEstimate({ status:"sent" })      → v1.quoting.send
- *   updateEstimate({ status:"accepted" })  → v1.quoting.accept (with optional lines)
+ *   updateEstimate({ status:"accepted" })  → v1.quoting.accept (with optional lines;
+ *                                            acceptedTier forwards as chosenTier on GBB)
  *   declineEstimate                → v1.quoting.decline (dedicated — requires reason string)
  *   updateEstimate({ archived:true })      → v1.quoting.archive (soft-delete)
  *   restoreEstimate                → v1.quoting.restore
@@ -134,7 +135,14 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
           costCents:   Math.round((l.c ?? 0) * 100),     // dollars → cents; 0 when absent
           isOptional:  l.opt ?? false,
           needsPhoto:  l.photo ?? false,
+          tier:        l.tier,                           // GBB tier tag; absent on single quotes
         })),
+        // Good/Better/Best: the full three-tier structure persists. The server's
+        // draft schema rejects inconsistent payloads (tiered lines require
+        // recommendedTier and vice versa) — callers set both or neither.
+        recommendedTier: draft.recommendedTier,
+        tierNames: draft.tierNames,
+        termsSnapshot: draft.termsSnapshot?.trim() ? draft.termsSnapshot : undefined,
       })
       .then((dto) => {
         // 3. Reconcile — id stays stable (client-authored); server overwrites num.
@@ -208,7 +216,10 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
       }));
 
       trpcVanilla.v1.quoting.accept
-        .mutate({ estimateId: id, lines: backendLines })
+        // Good/Better/Best: patch.acceptedTier carries the tier the user chose
+        // in the preview — forwarded as chosenTier so the server resolves the
+        // estimate to THAT tier (undefined on single quotes: unchanged path).
+        .mutate({ estimateId: id, lines: backendLines, chosenTier: patch.acceptedTier })
         .then((dto) => {
           // Reconcile with the persisted accepted lines (including any customer-selected add-ons).
           const reconciled = dtoEstimateToStore(dto, prior?.fu ?? { on: false, stage: 0 });

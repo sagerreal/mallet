@@ -13,6 +13,7 @@ import type { ToolDeps } from "../domain/tool";
 import { describeProposal } from "../domain/proposal-summary";
 import type { JsonValue } from "@mallet/shared/ports";
 import { draftEstimateLines, type EstimateLineDraft } from "../app/draft-estimate";
+import { draftEstimateTiers, type EstimateTiersDraft } from "../app/draft-estimate-tiers";
 
 // Structural validation of an untrusted resume transcript (round-tripped through the client). Mirrors
 // the AgentMessage union so a malformed element becomes a clean BAD_REQUEST, not a 500 deep in the
@@ -125,8 +126,21 @@ const toOutput = (result: AgentResult) => {
   return { status: result.status, text: result.text, pending: [], transcript, usage: result.usage };
 };
 
-// ---- Estimate line draft type (re-exported for tests) -----------------------
-export type { EstimateLineDraft };
+// ---- Estimate line draft types (re-exported for tests) ----------------------
+export type { EstimateLineDraft, EstimateTiersDraft };
+
+// Output shapes for the one-shot drafters (integer cents on the wire).
+const draftLineDTO = z.object({
+  description: z.string(),
+  quantity: z.number(),
+  rateCents: z.number().int(),
+});
+const draftTierDTO = z.object({
+  // One-line "what this option covers" blurb; "" when the model omitted it.
+  // Display-only — it fills the composer panel and is never persisted.
+  note: z.string(),
+  lines: z.array(draftLineDTO),
+});
 
 export const createAiRouter = () =>
   router({
@@ -147,6 +161,33 @@ export const createAiRouter = () =>
           );
           const lines = await draftEstimateLines(ctx.deps.llmClient, input.description, catalog);
           return { lines };
+        } catch (error) {
+          if (error instanceof LlmError) {
+            throw new TRPCError({
+              code: error.retryable ? "TOO_MANY_REQUESTS" : "BAD_GATEWAY",
+              message: "the AI assistant is temporarily unavailable — please try again",
+            });
+          }
+          throw error;
+        }
+      }),
+
+    // One-shot LLM call: given a plain-English job description, return a full Good/Better/Best
+    // draft — three tiers of lines plus the model's recommended key. Mirrors draftEstimate
+    // (single round-trip, forced tool call); the unconfigured guard lives in the use-case.
+    draftEstimateTiers: ownerOrOfficeNoTx
+      .input(z.object({ description: z.string().min(1).max(2000) }))
+      .output(
+        z.object({
+          recommended: z.enum(["good", "better", "best"]),
+          good: draftTierDTO,
+          better: draftTierDTO,
+          best: draftTierDTO,
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await draftEstimateTiers(ctx.deps.llmClient, input.description);
         } catch (error) {
           if (error instanceof LlmError) {
             throw new TRPCError({
