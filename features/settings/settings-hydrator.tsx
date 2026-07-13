@@ -46,6 +46,7 @@ export function SettingsHydrator() {
         id: r.id,
         name: r.label,
         rate: Math.round(r.rateCentsPerHour / 100),
+        kind: r.kind ?? "hourly",
       })),
       terms: dto.terms.map((t) => ({
         id: t.id,
