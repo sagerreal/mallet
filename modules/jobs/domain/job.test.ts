@@ -97,6 +97,34 @@ describe("Job state machine", () => {
     expect(make().cancel("   ", now).ok).toBe(false);
   });
 
+  it("reopens only from complete, returning to in_progress with completedAt cleared", () => {
+    const started = make().start(now);
+    if (!isOk(started)) throw new Error("start failed");
+    const done = started.value.complete(now);
+    if (!isOk(done)) throw new Error("complete failed");
+
+    const later = new Date("2026-06-12T00:00:00Z");
+    const reopened = done.value.reopen(later);
+    expect(isOk(reopened) && reopened.value.props.status).toBe("in_progress");
+    if (isOk(reopened)) {
+      expect(reopened.value.props.completedAt).toBeNull();
+      expect(reopened.value.props.updatedAt.toISOString()).toBe(later.toISOString());
+      // and the reopened job can complete again (office endpoint semantics intact)
+      const redone = reopened.value.complete(later);
+      expect(isOk(redone) && redone.value.props.status).toBe("complete");
+    }
+  });
+
+  it("rejects reopen from scheduled, in_progress, and canceled", () => {
+    expect(make().reopen(now).ok).toBe(false); // scheduled
+    const started = make().start(now);
+    if (!isOk(started)) throw new Error("start failed");
+    expect(started.value.reopen(now).ok).toBe(false); // in_progress
+    const canceled = make().cancel("x", now);
+    if (!isOk(canceled)) throw new Error("cancel failed");
+    expect(canceled.value.reopen(now).ok).toBe(false); // canceled stays terminal
+  });
+
   it("schedules a window only when not terminal and end >= start", () => {
     const s = new Date("2026-06-12T09:00:00Z");
     const e = new Date("2026-06-12T12:00:00Z");

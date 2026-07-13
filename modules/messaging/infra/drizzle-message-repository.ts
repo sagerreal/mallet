@@ -121,7 +121,7 @@ export class DrizzleMessageRepository implements MessageRepository {
       SELECT
         latest.lead_id    AS "leadId",
         l.name            AS "leadName",
-        l.phone           AS "phone",
+        l.phone_e164      AS "phone",
         latest.body       AS "lastBody",
         latest.direction  AS "lastDirection",
         latest.created_at AS "lastAt",

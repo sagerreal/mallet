@@ -183,7 +183,7 @@ export const createVisitRouter = () =>
       .output(jobDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
-        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.clock);
+        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock);
         const job = orThrow(
           await useCase.exec({
             jobId: asJobId(input.jobId),
