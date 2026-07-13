@@ -600,6 +600,41 @@
   .lineitems td{padding:7px 8px}
   .lineitems input{width:100%;border:1px solid transparent;border-radius:7px;padding:6px 8px;font-size:13px;background:var(--paper);color:var(--ink)}
   .lineitems input:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+
+  /* ---------- line editor (contained) ----------
+     One bordered surface owns the whole editor: header band, rows, footer
+     toolbar. Inputs are transparent — the ROW is the surface; focus draws a
+     ring. Row actions stay quiet until hover/focus (active chips persist). */
+  .lineedit{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden;margin-top:12px}
+  .lineedit table{width:100%;border-collapse:collapse;table-layout:fixed}
+  .lineedit thead th{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3);font-weight:700;text-align:left;padding:9px 12px 8px;background:var(--green-50);border-bottom:1px solid var(--line)}
+  .lineedit thead th.num{text-align:right}
+  .lineedit tbody td{padding:2px 4px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+  .lineedit tbody tr:last-child td{border-bottom:none}
+  .lineedit tbody input{width:100%;border:1.5px solid transparent;border-radius:8px;padding:8px;font-family:inherit;font-size:13px;background:transparent;color:var(--ink)}
+  .lineedit tbody input::placeholder{color:var(--ink-3)}
+  .lineedit tbody input:hover{background:var(--green-50)}
+  .lineedit tbody input:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+  .lineedit tbody input.num{text-align:right;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
+  .lineedit tbody input.num::-webkit-outer-spin-button,.lineedit tbody input.num::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .lineedit .amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;padding-right:12px;white-space:nowrap}
+  .lineedit .amt.zero{color:var(--ink-3);font-weight:600}
+  .lineedit .rowacts{white-space:nowrap;text-align:right;padding-right:8px}
+  .lineedit .rowacts>*{opacity:0;transition:opacity .12s}
+  .lineedit tr:hover .rowacts>*,.lineedit tr:focus-within .rowacts>*,.lineedit .rowacts>.on{opacity:1}
+  .lineedit tfoot td{border-top:1px solid var(--line);background:var(--green-50);padding:0}
+  .lineedit-bar{display:flex;align-items:center;gap:2px;padding:4px 6px}
+  .lineedit-tool{border:0;background:transparent;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink-2);padding:7px 10px;border-radius:8px;cursor:pointer;white-space:nowrap}
+  .lineedit-tool:hover{background:var(--card);color:var(--ink)}
+  .lineedit-tool.primary{color:var(--ink)}
+  .lineedit-tool[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+  .lineedit-sep{width:1px;height:16px;background:var(--line);margin:0 6px;flex-shrink:0}
+  .lineedit-spring{margin-left:auto}
+
+  /* segmented control — one container, dark-filled active segment */
+  .seg{display:inline-flex;border:1.5px solid var(--line);border-radius:10px;background:var(--card);padding:2px;gap:2px}
+  .seg button{border:0;background:transparent;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-2);padding:6px 13px;border-radius:8px;cursor:pointer;white-space:nowrap}
+  .seg button[aria-pressed="true"]{background:var(--ink);color:var(--card)}
   .totalrow{display:flex;justify-content:flex-end;gap:30px;padding:12px 8px;font-weight:800;font-size:15px}
   .fu-toggle{display:flex;align-items:center;gap:11px;background:var(--green-50);border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:11px;padding:11px 14px;margin:14px 0}
   .switch{width:38px;height:22px;border-radius:20px;background:var(--green-600);position:relative;flex-shrink:0;cursor:pointer;margin-top:2px}

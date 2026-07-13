@@ -139,10 +139,9 @@ export function QuoteCard({
             </span>
           )}
         </h3>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className="seg" role="group" aria-label="Quote format">
           <button
             type="button"
-            className={`btn sm${!isGbb ? " primary" : " ghost"}`}
             onClick={() => onUpdate(switchToSingle(state))}
             aria-pressed={!isGbb}
           >
@@ -150,7 +149,6 @@ export function QuoteCard({
           </button>
           <button
             type="button"
-            className={`btn sm${isGbb ? " primary" : " ghost"}`}
             onClick={() => onUpdate(switchToGbb(state))}
             aria-pressed={isGbb}
           >
@@ -166,34 +164,21 @@ export function QuoteCard({
         </p>
       )}
 
-      {/* Authoring tools row — always visible, both formats */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "center",
-          marginTop: 12,
-        }}
-      >
-        <button
-          className={`btn sm ghost${state.aiOpen ? " primary" : ""}`}
-          onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
-        >
-          ✦ Draft with AI
-        </button>
-        {!isGbb && (
+      {/* GBB-only toolbar — Suggest lives at card level (it spans all tiers).
+          Same quiet .lineedit-tool style as the table footers for uniformity. */}
+      {isGbb && (
+        <div className="lineedit-bar" style={{ padding: "8px 0 0" }}>
           <button
-            className="btn sm ghost"
-            onClick={() => onUpdate({ pbOpen: !state.pbOpen })}
+            className="lineedit-tool primary"
+            onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
+            aria-pressed={state.aiOpen}
           >
-            From pricebook
+            ✦ Draft with AI
           </button>
-        )}
-        {isGbb && !confirmSuggest && (
-          <>
+          {!confirmSuggest ? (
             <button
-              className="btn sm ghost"
+              className="lineedit-tool"
+              title="Builds Better & Best from Good — replaces what's there"
               onClick={() => {
                 // Typed Better/Best lines would be overwritten — confirm
                 // in place first. Empty tiers have nothing to lose: run.
@@ -203,40 +188,36 @@ export function QuoteCard({
             >
               Suggest Better &amp; Best from Good
             </button>
-            <span className="muted" style={{ fontSize: 11 }}>
-              Builds Better &amp; Best from Good — replaces what&apos;s there.
-            </span>
-          </>
-        )}
-        {isGbb && confirmSuggest && (
-          <>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>
-              Replaces Better &amp; Best — sure?
-            </span>
-            <button
-              className="btn sm primary"
-              onClick={() => {
-                setConfirmSuggest(false);
-                onSuggestBetterBest();
-              }}
-            >
-              Replace
-            </button>
-            <button className="btn sm ghost" onClick={() => setConfirmSuggest(false)}>
-              Cancel
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          className="linklike"
-          style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-3)" }}
-          title="Owner-only cost column with margin — never shown to the customer"
-          onClick={() => setShowCost((v) => !v)}
-        >
-          {showCost ? "Hide your cost" : "Show your cost"}
-        </button>
-      </div>
+          ) : (
+            <>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>
+                Replaces Better &amp; Best — sure?
+              </span>
+              <button
+                className="btn sm primary"
+                onClick={() => {
+                  setConfirmSuggest(false);
+                  onSuggestBetterBest();
+                }}
+              >
+                Replace
+              </button>
+              <button className="btn sm ghost" onClick={() => setConfirmSuggest(false)}>
+                Cancel
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className="lineedit-tool lineedit-spring"
+            title="Owner-only cost column with margin — never shown to the customer"
+            aria-pressed={showCost}
+            onClick={() => setShowCost((v) => !v)}
+          >
+            {showCost ? "Hide your cost" : "Show your cost"}
+          </button>
+        </div>
+      )}
 
       {/* AI draft panel (in-flow, inside the card) */}
       {state.aiOpen && (
@@ -307,6 +288,34 @@ export function QuoteCard({
             onRemoveLine={removeLine}
             onSaveToBook={onSaveToBook}
             onAddLine={addLine}
+            footerTools={
+              <>
+                <span className="lineedit-sep" aria-hidden="true" />
+                <button
+                  className="lineedit-tool"
+                  onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
+                  aria-pressed={state.aiOpen}
+                >
+                  ✦ Draft with AI
+                </button>
+                <button
+                  className="lineedit-tool"
+                  onClick={() => onUpdate({ pbOpen: !state.pbOpen })}
+                  aria-pressed={state.pbOpen}
+                >
+                  From pricebook
+                </button>
+                <button
+                  type="button"
+                  className="lineedit-tool lineedit-spring"
+                  title="Owner-only cost column with margin — never shown to the customer"
+                  aria-pressed={showCost}
+                  onClick={() => setShowCost((v) => !v)}
+                >
+                  {showCost ? "Hide your cost" : "Show your cost"}
+                </button>
+              </>
+            }
           />
           {state.pbOpen && (
             <div className="pbpanel">
