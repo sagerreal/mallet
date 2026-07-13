@@ -20,6 +20,19 @@ import { leads } from "./leads";
 // Customer-facing display names for the three Good/Better/Best tiers (jsonb column shape).
 type TierNamesColumn = { good: string; better: string; best: string };
 
+// Snapshot of the AI's original draft lines (jsonb column shape) — written ONCE at draft time
+// when the estimate originated from the AI drafter, never updated after. The send path diffs
+// this against the lines actually sent to mine edit-delta corrections (quoting_rules proposals).
+type AiDraftColumn = {
+  lines: {
+    description: string;
+    quantity: number;
+    rateCents: number;
+    tier?: "good" | "better" | "best" | null;
+  }[];
+  at: string; // ISO timestamp of the AI draft
+};
+
 // A customer quote. Header + lines (see estimate_lines). Money is integer cents; percentages are
 // integer basis points. RLS isolates by org_id.
 export const estimates = pgTable(
@@ -64,6 +77,11 @@ export const estimates = pgTable(
     publicToken: text("public_token"),
     // Stamped the first time a customer opens the public quote link. Idempotent; never updated.
     firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+    // The AI drafter's original lines, present only on AI-originated estimates. Write-once
+    // snapshot semantics: set at draft via a dedicated repo method; the save() upsert never
+    // touches it (deliberately absent from BOTH the insert values and the conflict set), so a
+    // later save can never clobber the snapshot the edit-delta miner diffs against.
+    aiDraft: jsonb("ai_draft").$type<AiDraftColumn>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
