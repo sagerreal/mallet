@@ -20,6 +20,51 @@ const SOURCE_LABEL: Record<string, string> = {
   edit_delta: "learned from your edits",
 };
 
+interface RuleView {
+  id: string;
+  rule: string;
+  source: string;
+  timesConfirmed: number;
+}
+
+function RuleRow({
+  rule,
+  busy,
+  actions,
+}: {
+  rule: RuleView;
+  busy: boolean;
+  actions: { label: string; primary?: boolean; onClick: () => void }[];
+}) {
+  return (
+    <div className="stage-row">
+      <span style={{ flex: 1, fontSize: 13 }}>
+        {rule.rule}
+        <span className="muted" style={{ fontSize: 11.5 }}>
+          {" "}
+          — {SOURCE_LABEL[rule.source] ?? rule.source}
+          {rule.source === "edit_delta" ? `, seen ${rule.timesConfirmed}×` : ""}
+        </span>
+      </span>
+      {actions.map((a) => (
+        <button
+          key={a.label}
+          className={`btn sm ${a.primary ? "primary" : "ghost"}`}
+          disabled={busy}
+          onClick={a.onClick}
+        >
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const summaryFor = (confirmedCount: number, proposedCount: number): string => {
+  const rules = `${confirmedCount} rule${confirmedCount === 1 ? "" : "s"}`;
+  return proposedCount > 0 ? `${rules} · ${proposedCount} to review` : rules;
+};
+
 export function EstimatorMemoryCard() {
   const utils = api.useUtils();
   const list = api.v1.quoting.rules.list.useQuery(undefined, { refetchOnWindowFocus: false });
@@ -37,14 +82,14 @@ export function EstimatorMemoryCard() {
   const confirmed = list.data?.confirmed ?? [];
   const proposed = list.data?.proposed ?? [];
   const busy = confirm.isPending || dismiss.isPending;
-
-  const summary =
-    proposed.length > 0
-      ? `${confirmed.length} rule${confirmed.length === 1 ? "" : "s"} · ${proposed.length} to review`
-      : `${confirmed.length} rule${confirmed.length === 1 ? "" : "s"}`;
+  const empty = !list.isLoading && confirmed.length === 0 && proposed.length === 0;
 
   return (
-    <FoldCard title="Estimator memory" summary={summary} defaultOpen={proposed.length > 0}>
+    <FoldCard
+      title="Estimator memory"
+      summary={summaryFor(confirmed.length, proposed.length)}
+      defaultOpen={proposed.length > 0}
+    >
       <p className="muted" style={{ margin: "0 0 10px", fontSize: "11.5px" }}>
         Rules the AI estimator follows when it drafts quotes for this shop. It proposes new ones
         from your corrections and repeated edits — nothing is used until you confirm it.
@@ -61,64 +106,38 @@ export function EstimatorMemoryCard() {
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 4 }}>To review</div>
           {proposed.map((r) => (
-            <div key={r.id} className="stage-row">
-              <span style={{ flex: 1, fontSize: 13 }}>
-                {r.rule}
-                <span className="muted" style={{ fontSize: 11.5 }}>
-                  {" "}
-                  — {SOURCE_LABEL[r.source] ?? r.source}
-                  {r.source === "edit_delta" ? `, seen ${r.timesConfirmed}×` : ""}
-                </span>
-              </span>
-              <button
-                className="btn sm primary"
-                disabled={busy}
-                onClick={() => confirm.mutate({ ruleId: r.id })}
-              >
-                Confirm
-              </button>
-              <button
-                className="btn sm ghost"
-                disabled={busy}
-                onClick={() => dismiss.mutate({ ruleId: r.id })}
-              >
-                Dismiss
-              </button>
-            </div>
+            <RuleRow
+              key={r.id}
+              rule={r}
+              busy={busy}
+              actions={[
+                { label: "Confirm", primary: true, onClick: () => confirm.mutate({ ruleId: r.id }) },
+                { label: "Dismiss", onClick: () => dismiss.mutate({ ruleId: r.id }) },
+              ]}
+            />
           ))}
         </div>
       )}
 
-      {confirmed.length > 0 ? (
+      {confirmed.length > 0 && (
         <div>
           <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 4 }}>Rules in use</div>
           {confirmed.map((r) => (
-            <div key={r.id} className="stage-row">
-              <span style={{ flex: 1, fontSize: 13 }}>
-                {r.rule}
-                <span className="muted" style={{ fontSize: 11.5 }}>
-                  {" "}
-                  — {SOURCE_LABEL[r.source] ?? r.source}
-                </span>
-              </span>
-              <button
-                className="btn sm ghost"
-                disabled={busy}
-                onClick={() => dismiss.mutate({ ruleId: r.id })}
-              >
-                Forget
-              </button>
-            </div>
+            <RuleRow
+              key={r.id}
+              rule={r}
+              busy={busy}
+              actions={[{ label: "Forget", onClick: () => dismiss.mutate({ ruleId: r.id }) }]}
+            />
           ))}
         </div>
-      ) : (
-        !list.isLoading &&
-        proposed.length === 0 && (
-          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-            Nothing learned yet. Correct an AI draft in the composer (&quot;Refine&quot;) or keep
-            editing its quotes — repeated corrections show up here for review.
-          </p>
-        )
+      )}
+
+      {empty && (
+        <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+          Nothing learned yet. Correct an AI draft in the composer (&quot;Refine&quot;) or keep
+          editing its quotes — repeated corrections show up here for review.
+        </p>
       )}
 
       {error && (
