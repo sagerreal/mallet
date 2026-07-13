@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { asOrgId, isOk, type OrgId } from "@mallet/shared/types";
 import { OrgSettings, type BookingCfg } from "../domain/org-settings";
 import type {
-  SettingsRepository, PricebookItem, LaborRate, JobTerm, LeadSource,
+  SettingsRepository, PricebookItem, LaborRate, LaborRateKind, JobTerm, LeadSource,
 } from "../domain/settings-repository";
 import { GetSettingsUseCase } from "./get-settings";
 
@@ -84,9 +84,16 @@ export class FakeSettingsRepository implements SettingsRepository {
     orgId: string;
     label: string;
     rateCentsPerHour: number;
+    kind: LaborRateKind;
     position: number;
   }): Promise<LaborRate> {
-    const row: LaborRate = { id: i.id, label: i.label, rateCentsPerHour: i.rateCentsPerHour, position: i.position };
+    const row: LaborRate = {
+      id: i.id,
+      label: i.label,
+      rateCentsPerHour: i.rateCentsPerHour,
+      kind: i.kind,
+      position: i.position,
+    };
     this.laborRates = [...this.laborRates, row];
     return row;
   }

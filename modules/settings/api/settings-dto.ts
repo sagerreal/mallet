@@ -67,10 +67,15 @@ export const pricebookItemDTO = z.object({
   position: z.number().int(),
 });
 
+// Mirrors the domain LaborRateKind union; kept as a local literal enum here so the wire
+// contract doesn't import a domain type (DTO≠domain).
+export const laborRateKindDTO = z.enum(["hourly", "flat_fee"]);
+
 export const laborRateDTO = z.object({
   id: z.string().uuid(),
   label: z.string(),
   rateCentsPerHour: z.number().int(),
+  kind: laborRateKindDTO,
   position: z.number().int(),
 });
 
@@ -129,6 +134,7 @@ export const laborRateCreateInput = z.object({
   id: z.string().uuid().optional(),
   label: z.string().min(1).max(200),
   rateCentsPerHour: z.number().int().min(0),
+  kind: laborRateKindDTO.optional(),
   position: z.number().int().optional(),
 });
 
@@ -136,6 +142,7 @@ export const laborRateUpdateInput = z.object({
   id: z.string().uuid(),
   label: z.string().min(1).max(200).optional(),
   rateCentsPerHour: z.number().int().min(0).optional(),
+  kind: laborRateKindDTO.optional(),
   position: z.number().int().optional(),
 });
 
