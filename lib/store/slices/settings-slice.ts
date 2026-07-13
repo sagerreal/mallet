@@ -23,10 +23,16 @@ import { isDefaultSourceLabel } from "@/lib/store/default-sources";
 
 // ---- shapes ----------------------------------------------------------------
 
+// Mirrors modules/settings/domain/settings-repository.ts LaborRateKind. Kept as a local
+// literal union here so the store doesn't import a domain type (store shapes are their own
+// contract, distinct from DTO and domain).
+export type LaborRateKind = "hourly" | "flat_fee";
+
 export interface LaborRate {
   id: string;
   name: string;
-  rate: number; // dollars/hour in the store
+  rate: number; // dollars — per hour when kind is "hourly", a flat charge when "flat_fee"
+  kind: LaborRateKind;
 }
 
 export interface TermItem {
@@ -197,8 +203,8 @@ export interface SettingsSlice {
   }) => void;
 
   // labor rates
-  addLaborRate: (name: string, rate: number) => void;
-  updateLaborRate: (id: string, field: "name" | "rate", value: string) => void;
+  addLaborRate: (name: string, rate: number, kind?: LaborRateKind) => void;
+  updateLaborRate: (id: string, field: "name" | "rate" | "kind", value: string) => void;
   removeLaborRate: (id: string) => void;
 
   // terms
@@ -245,19 +251,19 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
 
   // ---- labor rates ----------------------------------------------------------
 
-  addLaborRate: (name, rate) => {
+  addLaborRate: (name, rate, kind = "hourly") => {
     const nm = name.trim();
     if (!nm) return;
     const r = Math.max(1, Math.round(Number.isFinite(rate) ? rate : 0)) || 170;
     const id = crypto.randomUUID();
-    set((s) => ({ laborRates: [...s.laborRates, { id, name: nm, rate: r }] }));
+    set((s) => ({ laborRates: [...s.laborRates, { id, name: nm, rate: r, kind }] }));
     void trpcVanilla.v1.settings.laborRates.create
-      .mutate({ id, label: nm, rateCentsPerHour: r * 100 })
+      .mutate({ id, label: nm, rateCentsPerHour: r * 100, kind })
       .then((dto) => {
         set((s) => ({
           laborRates: s.laborRates.map((x) =>
             x.id === id
-              ? { id: dto.id, name: dto.label, rate: Math.round(dto.rateCentsPerHour / 100) }
+              ? { id: dto.id, name: dto.label, rate: Math.round(dto.rateCentsPerHour / 100), kind: dto.kind }
               : x,
           ),
         }));
@@ -273,13 +279,14 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
       laborRates: s.laborRates.map((lr) => {
         if (lr.id !== id) return lr;
         if (field === "rate") return { ...lr, rate: Math.max(1, Number(value) || lr.rate) };
+        if (field === "kind") return { ...lr, kind: value === "flat_fee" ? "flat_fee" : "hourly" };
         return { ...lr, name: value.trim() || lr.name };
       }),
     }));
     const next = get().laborRates.find((x) => x.id === id);
     if (!next) return;
     void trpcVanilla.v1.settings.laborRates.update
-      .mutate({ id, label: next.name, rateCentsPerHour: next.rate * 100 })
+      .mutate({ id, label: next.name, rateCentsPerHour: next.rate * 100, kind: next.kind })
       .catch(() => set({ laborRates: snapshot }));
   },
 

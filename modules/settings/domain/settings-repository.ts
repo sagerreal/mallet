@@ -14,11 +14,15 @@ export interface PricebookItem {
   readonly position: number;
 }
 
+/** 'hourly' = billed per hour (hours × rate); 'flat_fee' = a fixed charge (diagnostic/trip fee). */
+export type LaborRateKind = "hourly" | "flat_fee";
+
 export interface LaborRate {
   readonly id: string;
   readonly label: string;
-  /** Rate in cents per hour. */
+  /** Rate in cents — per hour when kind is 'hourly', or a flat charge when kind is 'flat_fee'. */
   readonly rateCentsPerHour: number;
+  readonly kind: LaborRateKind;
   readonly position: number;
 }
 
@@ -106,6 +110,7 @@ export interface SettingsRepository {
     orgId: string;
     label: string;
     rateCentsPerHour: number;
+    kind: LaborRateKind;
     position: number;
   }): Promise<LaborRate>;
 

@@ -18,6 +18,7 @@
 
 import { useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
@@ -586,13 +587,15 @@ function SecPricing() {
 
   const [lrName, setLrName] = useState("");
   const [lrRate, setLrRate] = useState("");
+  const [lrKind, setLrKind] = useState<LaborRateKind>("hourly");
   const [tlName, setTlName] = useState("");
   const [tlBody, setTlBody] = useState("");
 
   function handleAddLabor() {
-    addLaborRate(lrName, Number(lrRate));
+    addLaborRate(lrName, Number(lrRate), lrKind);
     setLrName("");
     setLrRate("");
+    setLrKind("hourly");
   }
 
   function handleAddTerm() {
@@ -615,7 +618,15 @@ function SecPricing() {
                 <input type="number" defaultValue={lr.rate}
                   onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
                   style={{ width: 80, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-                <span className="muted" style={{ fontSize: 12 }}>/hr</span>
+                <select
+                  aria-label={`Unit for ${lr.name}`}
+                  value={lr.kind}
+                  onChange={(e) => updateLaborRate(lr.id, "kind", e.target.value)}
+                  style={{ border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 6px", fontFamily: "inherit", fontSize: 12, color: "var(--ink-2)", background: "var(--card)" }}
+                >
+                  <option value="hourly">/hr</option>
+                  <option value="flat_fee">flat</option>
+                </select>
               </span>
               {laborRates.length > 1 && (
                 <button className="btn sm ghost" onClick={() => removeLaborRate(lr.id)}>✕</button>
@@ -623,12 +634,22 @@ function SecPricing() {
             </div>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <input type="number" id="lrRate" placeholder="$/hr" value={lrRate} onChange={(e) => setLrRate(e.target.value)}
-            style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <button className="btn" onClick={handleAddLabor}>+ Add</button>
+        <div style={{ marginTop: 12 }}>
+          <div className="chips" style={{ marginBottom: 8 }}>
+            <button type="button" className={`chip${lrKind === "hourly" ? " sel" : ""}`} onClick={() => setLrKind("hourly")}>
+              Hourly
+            </button>
+            <button type="button" className={`chip${lrKind === "flat_fee" ? " sel" : ""}`} onClick={() => setLrKind("flat_fee")}>
+              Flat fee
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
+              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+            <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
+              style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+            <button className="btn" onClick={handleAddLabor}>+ Add</button>
+          </div>
         </div>
       </FoldCard>
 

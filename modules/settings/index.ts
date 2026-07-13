@@ -6,6 +6,7 @@ export type {
   SettingsRepository,
   PricebookItem,
   LaborRate,
+  LaborRateKind,
   JobTerm,
   LeadSource,
 } from "./domain/settings-repository";

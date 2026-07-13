@@ -47,6 +47,7 @@ export interface PricebookItem {
 export interface LaborRate {
   name: string;
   rate: number;
+  kind: "hourly" | "flat_fee";
 }
 
 // ---- add-a-line sublist selector (prototype tq.add) ------------------------
@@ -273,7 +274,7 @@ export function AddMenu({
           <BrowseRow
             key={i}
             label={r.name}
-            right={<b className="fig">{fmt$(r.rate)}/hr</b>}
+            right={<b className="fig">{r.kind === "flat_fee" ? `${fmt$(r.rate)} flat` : `${fmt$(r.rate)}/hr`}</b>}
             onClick={() => onPickRate(r)}
           />
         ))}

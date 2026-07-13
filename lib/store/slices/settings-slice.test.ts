@@ -22,8 +22,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockUpdateConfig = vi.fn().mockResolvedValue({ markupBps: 4200 });
 const mockCreateSource = vi.fn().mockResolvedValue({ id: "srv-src", label: "Home show", position: 0 });
 const mockRemoveSource = vi.fn().mockResolvedValue({ ok: true });
-const mockCreateLabor = vi.fn().mockResolvedValue({ id: "srv-lr", label: "Standard", rateCentsPerHour: 17000, position: 0 });
-const mockUpdateLabor = vi.fn().mockResolvedValue({ id: "srv-lr", label: "Standard", rateCentsPerHour: 18000, position: 0 });
+const mockCreateLabor = vi.fn().mockResolvedValue({ id: "srv-lr", label: "Standard", rateCentsPerHour: 17000, kind: "hourly", position: 0 });
+const mockUpdateLabor = vi.fn().mockResolvedValue({ id: "srv-lr", label: "Standard", rateCentsPerHour: 18000, kind: "hourly", position: 0 });
 const mockRemoveLabor = vi.fn().mockResolvedValue({ ok: true });
 const mockCreateTerm = vi.fn().mockResolvedValue({ id: "srv-term", title: "Warranty", body: "12 months", position: 0 });
 const mockRemoveTerm = vi.fn().mockResolvedValue({ ok: true });
@@ -174,10 +174,59 @@ describe("settings-slice persistence", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(mockCreateLabor).toHaveBeenCalledTimes(1);
-    const arg = mockCreateLabor.mock.calls[0]![0] as { label: string; rateCentsPerHour: number };
+    const arg = mockCreateLabor.mock.calls[0]![0] as { label: string; rateCentsPerHour: number; kind: string };
     expect(arg.label).toBe("Standard");
     expect(arg.rateCentsPerHour).toBe(17000); // 170 * 100
     expect(store.get().laborRates.some((r) => r.id === "srv-lr")).toBe(true);
+  });
+
+  it("addLaborRate defaults kind to 'hourly' when omitted", async () => {
+    const store = makeStore();
+    store.get().addLaborRate("Standard", 170);
+    expect(store.get().laborRates.find((r) => r.name === "Standard")?.kind).toBe("hourly");
+    await Promise.resolve();
+    await Promise.resolve();
+    const arg = mockCreateLabor.mock.calls[0]![0] as { kind: string };
+    expect(arg.kind).toBe("hourly");
+  });
+
+  it("addLaborRate passes an explicit 'flat_fee' kind through to create and the optimistic row", async () => {
+    mockCreateLabor.mockResolvedValueOnce({ id: "srv-flat", label: "Diagnostic fee", rateCentsPerHour: 9500, kind: "flat_fee", position: 0 });
+    const store = makeStore();
+    store.get().addLaborRate("Diagnostic fee", 95, "flat_fee");
+    expect(store.get().laborRates.find((r) => r.name === "Diagnostic fee")?.kind).toBe("flat_fee");
+    await Promise.resolve();
+    await Promise.resolve();
+    const arg = mockCreateLabor.mock.calls[0]![0] as { kind: string };
+    expect(arg.kind).toBe("flat_fee");
+    expect(store.get().laborRates.find((r) => r.id === "srv-flat")?.kind).toBe("flat_fee");
+  });
+
+  it("addLaborRate rolls back (removes the optimistic row) when create rejects", async () => {
+    mockCreateLabor.mockRejectedValueOnce(new Error("boom"));
+    const store = makeStore();
+    store.get().addLaborRate("Diagnostic fee", 95, "flat_fee");
+    expect(store.get().laborRates.some((r) => r.name === "Diagnostic fee")).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.get().laborRates.some((r) => r.name === "Diagnostic fee")).toBe(false);
+  });
+
+  it("updateLaborRate supports switching kind and persists it, rolling back on rejection", async () => {
+    const store = makeStore();
+    store.set({ laborRates: [{ id: "lr1", name: "Standard", rate: 170, kind: "hourly" }] });
+    store.get().updateLaborRate("lr1", "kind", "flat_fee");
+    expect(store.get().laborRates.find((r) => r.id === "lr1")?.kind).toBe("flat_fee");
+    await Promise.resolve();
+    const arg = mockUpdateLabor.mock.calls[0]![0] as { kind: string };
+    expect(arg.kind).toBe("flat_fee");
+
+    mockUpdateLabor.mockRejectedValueOnce(new Error("fail"));
+    store.get().updateLaborRate("lr1", "kind", "hourly");
+    expect(store.get().laborRates.find((r) => r.id === "lr1")?.kind).toBe("hourly");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.get().laborRates.find((r) => r.id === "lr1")?.kind).toBe("flat_fee"); // rolled back
   });
 
   it("removeLaborRate rolls back on rejection", async () => {
@@ -185,8 +234,8 @@ describe("settings-slice persistence", () => {
     const store = makeStore();
     store.set({
       laborRates: [
-        { id: "lr1", name: "Standard", rate: 170 },
-        { id: "lr2", name: "After hours", rate: 255 },
+        { id: "lr1", name: "Standard", rate: 170, kind: "hourly" },
+        { id: "lr2", name: "After hours", rate: 255, kind: "hourly" },
       ],
     });
     store.get().removeLaborRate("lr1");
@@ -198,7 +247,7 @@ describe("settings-slice persistence", () => {
 
   it("removeLaborRate does nothing when only one rate remains", () => {
     const store = makeStore();
-    store.set({ laborRates: [{ id: "lr1", name: "Standard", rate: 170 }] });
+    store.set({ laborRates: [{ id: "lr1", name: "Standard", rate: 170, kind: "hourly" }] });
     store.get().removeLaborRate("lr1");
     expect(store.get().laborRates).toHaveLength(1);
     expect(mockRemoveLabor).not.toHaveBeenCalled();
@@ -235,7 +284,7 @@ describe("settings-slice persistence", () => {
   it("setSettings replaces the whole slice state", () => {
     const store = makeStore();
     const snap = {
-      laborRates: [{ id: "lr99", name: "Flat rate", rate: 200 }],
+      laborRates: [{ id: "lr99", name: "Flat rate", rate: 200, kind: "hourly" as const }],
       terms: [{ id: "tm99", t: "Warranty", body: "12mo" }],
       sources: [{ id: "src99", label: "Google" }],
       booking: store.get().booking,

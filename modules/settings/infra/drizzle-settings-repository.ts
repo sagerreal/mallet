@@ -14,6 +14,7 @@ import type {
   SettingsRepository,
   PricebookItem,
   LaborRate,
+  LaborRateKind,
   JobTerm,
   LeadSource,
 } from "../domain/settings-repository";
@@ -23,6 +24,12 @@ import { toOrgSettings } from "./settings-mapper";
 // Per-tenant list cap: these collections are small per-org (pilot scale). A hard cap protects
 // against runaway data while a cursor pagination is not yet needed. Revisit if orgs grow large sets.
 const LIST_LIMIT = 500;
+
+// Maps a persisted labor_rates.kind value to the typed domain union. The column is a plain
+// `text` with a DB check constraint (not a Postgres enum), so a legacy or otherwise unexpected
+// value is defensively coerced to 'hourly' rather than thrown — reads must never break on data
+// that predates this column (it was added with a NOT NULL default, but this stays defensive).
+const toLaborRateKind = (kind: string): LaborRateKind => (kind === "flat_fee" ? "flat_fee" : "hourly");
 
 /**
  * Real persistence. Constructed with a tenant-scoped tx (withTenant already set
@@ -227,6 +234,7 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
       id: r.id,
       label: r.label,
       rateCentsPerHour: r.rateCentsPerHour,
+      kind: toLaborRateKind(r.kind),
       position: r.position,
     }));
   }
@@ -236,6 +244,7 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
     orgId: string;
     label: string;
     rateCentsPerHour: number;
+    kind: LaborRateKind;
     position: number;
   }): Promise<LaborRate> {
     const rows = await this.tx
@@ -245,18 +254,31 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         orgId: this.orgId,
         label: input.label,
         rateCentsPerHour: input.rateCentsPerHour,
+        kind: input.kind,
         position: input.position,
       })
       .returning();
     const r = rows[0];
     if (!r) throw new Error("labor_rates insert returned no row");
-    return { id: r.id, label: r.label, rateCentsPerHour: r.rateCentsPerHour, position: r.position };
+    return {
+      id: r.id,
+      label: r.label,
+      rateCentsPerHour: r.rateCentsPerHour,
+      kind: toLaborRateKind(r.kind),
+      position: r.position,
+    };
   }
 
   async saveLaborRate(rate: LaborRate, updatedAt: Date): Promise<number> {
     const rows = await this.tx
       .update(laborRates)
-      .set({ label: rate.label, rateCentsPerHour: rate.rateCentsPerHour, position: rate.position, updatedAt })
+      .set({
+        label: rate.label,
+        rateCentsPerHour: rate.rateCentsPerHour,
+        kind: rate.kind,
+        position: rate.position,
+        updatedAt,
+      })
       .where(
         and(
           eq(laborRates.id, rate.id),

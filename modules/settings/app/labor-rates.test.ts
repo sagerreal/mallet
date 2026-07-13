@@ -31,8 +31,39 @@ describe("LaborRate use-cases", () => {
     if (isOk(r)) expect(r.value.rateCentsPerHour).toBe(17000);
   });
 
+  it("create: defaults kind to hourly when omitted", async () => {
+    const uc = new CreateLaborRateUseCase(repo, fixedIds("l1"));
+    const r = await uc.exec({ label: "Standard", rateCentsPerHour: 17000 }, ORG);
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.kind).toBe("hourly");
+  });
+
+  it("create: persists kind: flat_fee", async () => {
+    const uc = new CreateLaborRateUseCase(repo, fixedIds("l1"));
+    const r = await uc.exec(
+      { label: "Diagnostic fee", rateCentsPerHour: 9500, kind: "flat_fee" },
+      ORG,
+    );
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.kind).toBe("flat_fee");
+      expect(repo.laborRates[0]?.kind).toBe("flat_fee");
+    }
+  });
+
+  it("create: rejects an invalid kind", async () => {
+    const uc = new CreateLaborRateUseCase(repo, fixedIds("l1"));
+    const r = await uc.exec(
+      { label: "Standard", rateCentsPerHour: 17000, kind: "bogus" },
+      ORG,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === "validation") expect(r.error.field).toBe("kind");
+    expect(repo.laborRates).toHaveLength(0);
+  });
+
   it("remove: refuses to delete the last active rate (conflict)", async () => {
-    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, position: 0 });
+    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, kind: "hourly", position: 0 });
     const uc = new RemoveLaborRateUseCase(repo, clock);
     const r = await uc.exec({ id: "l1" }, ORG);
     expect(r.ok).toBe(false);
@@ -41,8 +72,8 @@ describe("LaborRate use-cases", () => {
   });
 
   it("remove: deletes when more than one remains", async () => {
-    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, position: 0 });
-    await repo.createLaborRate({ id: "l2", orgId: ORG, label: "Emergency", rateCentsPerHour: 25500, position: 1 });
+    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, kind: "hourly", position: 0 });
+    await repo.createLaborRate({ id: "l2", orgId: ORG, label: "Emergency", rateCentsPerHour: 25500, kind: "hourly", position: 1 });
     const uc = new RemoveLaborRateUseCase(repo, clock);
     const r = await uc.exec({ id: "l2" }, ORG);
     expect(isOk(r)).toBe(true);
@@ -57,10 +88,34 @@ describe("LaborRate use-cases", () => {
   });
 
   it("update: forwards clock.now() as updatedAt to the repository", async () => {
-    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, position: 0 });
+    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, kind: "hourly", position: 0 });
     const uc = new UpdateLaborRateUseCase(repo, clock);
     const r = await uc.exec({ id: "l1", label: "Standard Plus" }, ORG);
     expect(isOk(r)).toBe(true);
     expect(repo.lastLaborRateUpdatedAt).toEqual(new Date("2026-07-09T12:00:00Z"));
+  });
+
+  it("update: changes kind from hourly to flat_fee", async () => {
+    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, kind: "hourly", position: 0 });
+    const uc = new UpdateLaborRateUseCase(repo, clock);
+    const r = await uc.exec({ id: "l1", kind: "flat_fee" }, ORG);
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.kind).toBe("flat_fee");
+  });
+
+  it("update: keeps existing kind when omitted", async () => {
+    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, kind: "flat_fee", position: 0 });
+    const uc = new UpdateLaborRateUseCase(repo, clock);
+    const r = await uc.exec({ id: "l1", label: "Standard Plus" }, ORG);
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.kind).toBe("flat_fee");
+  });
+
+  it("update: rejects an invalid kind", async () => {
+    await repo.createLaborRate({ id: "l1", orgId: ORG, label: "Standard", rateCentsPerHour: 17000, kind: "hourly", position: 0 });
+    const uc = new UpdateLaborRateUseCase(repo, clock);
+    const r = await uc.exec({ id: "l1", kind: "bogus" }, ORG);
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === "validation") expect(r.error.field).toBe("kind");
   });
 });
