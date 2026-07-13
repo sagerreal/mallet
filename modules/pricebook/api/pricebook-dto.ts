@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { Service } from "../domain/service";
 import type { Category } from "../domain/category";
+import type { Material } from "../domain/material";
+import type { ServiceMaterial } from "../domain/service-material";
 
 export const serviceDTO = z.object({
   id: z.string().uuid(),
@@ -37,6 +39,38 @@ export const paginatedServiceDTO = z.object({
 
 export type PaginatedServiceDTO = z.infer<typeof paginatedServiceDTO>;
 
+export const materialDTO = z.object({
+  id: z.string().uuid(),
+  categoryId: z.string().uuid().nullable(),
+  code: z.string().nullable(),
+  name: z.string(),
+  description: z.string().nullable(),
+  unitCostCents: z.number().int().nonnegative(),
+  unitOfMeasure: z.string(),
+  markupBps: z.number().int().nullable(),
+  taxable: z.boolean(),
+  vendor: z.string().nullable(),
+  active: z.boolean(),
+  position: z.number().int(),
+});
+
+export type MaterialDTO = z.infer<typeof materialDTO>;
+
+export const serviceMaterialDTO = z.object({
+  serviceId: z.string().uuid(),
+  materialId: z.string().uuid(),
+  quantity: z.number(),
+});
+
+export type ServiceMaterialDTO = z.infer<typeof serviceMaterialDTO>;
+
+export const paginatedMaterialDTO = z.object({
+  items: z.array(materialDTO),
+  nextCursor: z.string().nullable(),
+});
+
+export type PaginatedMaterialDTO = z.infer<typeof paginatedMaterialDTO>;
+
 export const seedPricebookDTO = z.object({
   services: z.array(serviceDTO),
   categories: z.array(categoryDTO),
@@ -71,5 +105,32 @@ export const toCategoryDTO = (category: Category): CategoryDTO => {
     parentId: p.parentId,
     name: p.name,
     sortOrder: p.sortOrder,
+  };
+};
+
+export const toMaterialDTO = (material: Material): MaterialDTO => {
+  const p = material.props;
+  return {
+    id: p.id,
+    categoryId: p.categoryId,
+    code: p.code,
+    name: p.name,
+    description: p.description,
+    unitCostCents: p.unitCostCents,
+    unitOfMeasure: p.unitOfMeasure,
+    markupBps: p.markupBps,
+    taxable: p.taxable,
+    vendor: p.vendor,
+    active: p.active,
+    position: p.position,
+  };
+};
+
+export const toServiceMaterialDTO = (serviceMaterial: ServiceMaterial): ServiceMaterialDTO => {
+  const p = serviceMaterial.props;
+  return {
+    serviceId: p.serviceId,
+    materialId: p.materialId,
+    quantity: p.quantity,
   };
 };

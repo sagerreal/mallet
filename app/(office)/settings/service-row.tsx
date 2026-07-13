@@ -3,16 +3,17 @@
 /**
  * Settings → Pricebook → one service row. Level 0 shows just name → price; clicking
  * the row (▸/▾) reveals its details IN-FLOW underneath (no floating UI): category,
- * cost/margin (owner-only), labor hours, taxable, warranty, and a Remove action.
- * "Break into parts" (materials) and "Add Good/Better/Best" (option groups) are
- * Phase 2/3 — intentionally absent here (no dead buttons for features that don't
- * exist yet).
+ * cost/margin (owner-only), labor hours, taxable, warranty, a "Break into parts"
+ * materials reveal (owner-only — cost data), and a Remove action.
+ * "Add Good/Better/Best" (option groups) is Phase 3 — intentionally absent here
+ * (no dead buttons for features that don't exist yet).
  */
 
 import { useState } from "react";
 import type { Service, Category } from "@/lib/store/types";
 import type { ServiceUpdateFields } from "@/lib/store/pricebook-mapper";
 import { fmt$ } from "@/lib/format";
+import { MaterialManager } from "./material-manager";
 
 export interface ServiceRowProps {
   service: Service;
@@ -38,6 +39,7 @@ function marginPct(service: Service): number {
 
 export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchive }: ServiceRowProps) {
   const [open, setOpen] = useState(false);
+  const [partsOpen, setPartsOpen] = useState(false);
 
   return (
     <div style={{ borderBottom: "1px solid var(--line-2)" }}>
@@ -124,6 +126,20 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
               style={{ ...fieldInputStyle, flex: 1, minWidth: 170 }}
             />
           </div>
+
+          {canSeeCost && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <button
+                className="btn sm ghost"
+                style={{ justifySelf: "start" }}
+                onClick={() => setPartsOpen((v) => !v)}
+                aria-expanded={partsOpen}
+              >
+                {partsOpen ? "▾" : "▸"} Break into parts
+              </button>
+              {partsOpen && <MaterialManager serviceId={service.id} canSeeCost={canSeeCost} />}
+            </div>
+          )}
 
           <div>
             <button className="btn sm ghost" onClick={() => onArchive(service.id)}>✕ Remove</button>

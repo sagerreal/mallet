@@ -34,6 +34,10 @@ export const pricebookItems = pgTable(
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => [
+    // Composite-unique target so pricebook_service_materials can FK on (org_id, id) — a service
+    // can only be linked to its own org's materials. Safe additively: id is already the PK
+    // (globally unique), so (org_id, id) can never have duplicates.
+    unique("pricebook_items_org_id_uq").on(t.orgId, t.id),
     index("pricebook_items_org_deleted_idx").on(t.orgId, t.deletedAt),
     // Browse/filter services within a category; equality on category_id uses this.
     index("pricebook_items_org_category_idx").on(t.orgId, t.categoryId),
