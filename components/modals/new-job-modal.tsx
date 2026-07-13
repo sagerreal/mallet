@@ -26,7 +26,7 @@
 
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useCloseModal, useOpenModal, useLeads, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { ChecklistItem, Job, Lead, Visit } from "@/lib/store/types";
@@ -104,6 +104,12 @@ export function NewJobModalContent() {
   const [moreOpen, setMoreOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+
+  // Set when a submit created the job but the checklist attach failed — a retry
+  // re-attaches to THIS job instead of minting a duplicate (mirrors
+  // job-checklist-block's createdRef). The modal unmounts on close, so the ref
+  // cannot leak into the next open.
+  const chkRetryJobRef = useRef<Job | null>(null);
 
   // ---- type + visit helpers (mirror njSetType / njNudge / njAddVisit) -------
 
@@ -283,6 +289,10 @@ export function NewJobModalContent() {
    *  Returns false on failure (error already set via setError).
    */
   async function createJob(job: string): Promise<{ ok: boolean; createdJob: Job | null }> {
+    // Retry after a failed checklist attach: the job (and its visits) already
+    // persisted — only the attach is outstanding, so don't create a duplicate.
+    if (chkRetryJobRef.current) return attachPickedChecklist(chkRetryJobRef.current);
+
     const rows = resolvedVisits();
     const custName = customer.trim();
     const match = matchLead(custName);
@@ -341,11 +351,25 @@ export function NewJobModalContent() {
     // Each visit is created UNPLACED (hours only) — dragged onto the Schedule later.
     rows.forEach((v) => addVisit(created.id, v.h));
 
-    // Attach the picked before-you-leave checklist. Must run AFTER jobPersisted
-    // (above) — updateJob only persists once the job is DB-origin. Fire-and-
-    // forget like the visits: a failure rolls back in the store with a dev log.
+    return attachPickedChecklist(created);
+  }
+
+  /** Attach the picked before-you-leave checklist to the created job. Must run
+   *  AFTER jobPersisted — updateJob only persists once the job is DB-origin.
+   *  AWAITED: updateJob resolves { ok:false } on a failed persist (the slice
+   *  rolls back with a dev-only log), so a fire-and-forget here would ship the
+   *  job with its checklist silently missing. */
+  async function attachPickedChecklist(created: Job): Promise<{ ok: boolean; createdJob: Job | null }> {
     const checklist = checklistSnapshot();
-    if (checklist) void updateJob(created.id, { checklist });
+    if (checklist) {
+      const { ok } = await updateJob(created.id, { checklist });
+      if (!ok) {
+        chkRetryJobRef.current = created;
+        setError("The job was saved, but the checklist wasn't — try again.");
+        return { ok: false, createdJob: null };
+      }
+    }
+    chkRetryJobRef.current = null;
     return { ok: true, createdJob: created };
   }
 

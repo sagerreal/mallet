@@ -155,63 +155,6 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
     return rows.length;
   }
 
-  async addItem(input: {
-    id: ChecklistItemId;
-    templateId: ChecklistId;
-    text: string;
-    type: ChecklistItemType;
-    required: boolean;
-    position: number;
-  }): Promise<Checklist> {
-    await this.tx.insert(checklistItems).values({
-      id: input.id,
-      orgId: this.orgId,
-      templateId: input.templateId,
-      text: input.text,
-      type: input.type,
-      required: input.required,
-      position: input.position,
-    });
-    const reloaded = await this.findById(input.templateId);
-    if (!reloaded) throw new Error("checklist disappeared after addItem");
-    return reloaded;
-  }
-
-  async removeItem(templateId: ChecklistId, itemId: ChecklistItemId, now: Date): Promise<Checklist | null> {
-    await this.tx
-      .update(checklistItems)
-      .set({ deletedAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(checklistItems.id, itemId),
-          eq(checklistItems.templateId, templateId),
-          eq(checklistItems.orgId, this.orgId),
-          isNull(checklistItems.deletedAt),
-        ),
-      );
-    return this.findById(templateId);
-  }
-
-  async setItemRequired(
-    templateId: ChecklistId,
-    itemId: ChecklistItemId,
-    required: boolean,
-    now: Date,
-  ): Promise<Checklist | null> {
-    await this.tx
-      .update(checklistItems)
-      .set({ required, updatedAt: now })
-      .where(
-        and(
-          eq(checklistItems.id, itemId),
-          eq(checklistItems.templateId, templateId),
-          eq(checklistItems.orgId, this.orgId),
-          isNull(checklistItems.deletedAt),
-        ),
-      );
-    return this.findById(templateId);
-  }
-
   // Batch-load non-deleted items for the given template ids. One DB round-trip regardless
   // of page size — avoids N+1 per the design principles.
   private async loadItems(templateIds: readonly string[]): Promise<ChecklistItemRow[]> {

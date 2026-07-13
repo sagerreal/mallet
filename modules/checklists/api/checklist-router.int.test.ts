@@ -53,19 +53,22 @@ suite("checklists tRPC router (full stack, live RLS)", () => {
     await closeDb();
   });
 
-  it("owner creates a template, adds items, toggles required, lists it back with ordered items", async () => {
+  it("owner creates a template with typed/required items and lists it back ordered", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
-    const chk = await caller.v1.checklists.create({ name: "Water heater", trade: "Plumbing", stage: "job", match: ["water heater"] });
+    const chk = await caller.v1.checklists.create({
+      name: "Water heater",
+      trade: "Plumbing",
+      stage: "job",
+      match: ["water heater"],
+      items: [
+        { text: "Photo of the finished install", type: "photo" },
+        { text: "Test T&P valve", type: "check", required: true },
+      ],
+    });
     expect(chk.name).toBe("Water heater");
-    expect(chk.items).toHaveLength(0);
-
-    const withPhoto = await caller.v1.checklists.addItem({ checklistId: chk.id, text: "Photo of the finished install", type: "photo" });
-    const withCheck = await caller.v1.checklists.addItem({ checklistId: chk.id, text: "Test T&P valve", type: "check" });
-    expect(withCheck.items.map((i) => i.position)).toEqual([0, 1]);
-    expect(withPhoto.items[0]!.type).toBe("photo");
-
-    const toggled = await caller.v1.checklists.setItemRequired({ checklistId: chk.id, itemId: withCheck.items[1]!.id, required: true });
-    expect(toggled.items[1]!.required).toBe(true);
+    expect(chk.items.map((i) => i.position)).toEqual([0, 1]);
+    expect(chk.items[0]!.type).toBe("photo");
+    expect(chk.items[1]!.required).toBe(true);
 
     const listed = await caller.v1.checklists.list({ limit: 50 });
     const found = listed.items.find((c) => c.id === chk.id);
@@ -93,13 +96,13 @@ suite("checklists tRPC router (full stack, live RLS)", () => {
     expect(found?.items).toHaveLength(3);
   });
 
-  it("removeItem soft-deletes one item; remove archives the whole template", async () => {
+  it("remove archives the whole template (gone from list, items and all)", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
-    const chk = await caller.v1.checklists.create({ name: "Repipe", stage: "scope" });
-    const withItem = await caller.v1.checklists.addItem({ checklistId: chk.id, text: "Access notes", type: "check" });
-    const afterRemove = await caller.v1.checklists.removeItem({ checklistId: chk.id, itemId: withItem.items[0]!.id });
-    expect(afterRemove.items).toHaveLength(0);
-
+    const chk = await caller.v1.checklists.create({
+      name: "Repipe",
+      stage: "scope",
+      items: [{ text: "Access notes", type: "check" }],
+    });
     const gone = await caller.v1.checklists.remove({ checklistId: chk.id });
     expect(gone.ok).toBe(true);
     const listed = await caller.v1.checklists.list({ limit: 500 });
@@ -112,17 +115,31 @@ suite("checklists tRPC router (full stack, live RLS)", () => {
     expect(listed.items).toHaveLength(0);
   });
 
-  it("org B cannot addItem/remove org A's template (NOT_FOUND via RLS)", async () => {
+  it("org B cannot remove org A's template (NOT_FOUND via RLS)", async () => {
     const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const chk = await callerA.v1.checklists.create({ name: "RLS Boundary", stage: "job" });
     const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
-    await expect(callerB.v1.checklists.addItem({ checklistId: chk.id, text: "x", type: "check" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(callerB.v1.checklists.remove({ checklistId: chk.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("create rejects an empty name with BAD_REQUEST", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     await expect(caller.v1.checklists.create({ name: "   ", stage: "job" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("create rejects duplicate client item ids with BAD_REQUEST (not a PK 500)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const dup = randomUUID();
+    await expect(
+      caller.v1.checklists.create({
+        name: "Dup ids",
+        stage: "job",
+        items: [
+          { id: dup, text: "First", type: "check" },
+          { id: dup, text: "Second", type: "check" },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("a tech is forbidden from checklist mutations", async () => {

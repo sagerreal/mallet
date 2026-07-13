@@ -48,10 +48,18 @@ export class CreateChecklistUseCase {
       required: boolean;
       position: number;
     }[] = [];
+    // Client-supplied item ids must be unique within the payload — a duplicate
+    // would only surface later as a Postgres PK violation (an opaque 500).
+    // Minted ids are exempt: the generator guarantees uniqueness.
+    const seenClientIds = new Set<string>();
     for (const [i, it] of rawItems.entries()) {
       const text = it.text.trim();
       if (text.length === 0) return err(validation("item text is required", "items"));
       if (!isChecklistItemType(it.type)) return err(validation(`unknown item type: ${it.type}`, "items"));
+      if (it.id !== undefined) {
+        if (seenClientIds.has(it.id)) return err(validation("duplicate item id in payload", "items"));
+        seenClientIds.add(it.id);
+      }
       items.push({
         id: asChecklistItemId(it.id ?? this.ids.newId()),
         text,

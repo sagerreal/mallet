@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   asChecklistId,
-  asChecklistItemId,
   asOrgId,
   FixedClock,
   isOk,
   type ChecklistId,
-  type ChecklistItemId,
   type OrgId,
 } from "@mallet/shared/types";
 import { Checklist, ChecklistItem, type ChecklistProps } from "../domain/checklist";
@@ -38,7 +36,6 @@ export const baseProps = (over: Partial<ChecklistProps> = {}): ChecklistProps =>
 export class FakeChecklistRepository implements ChecklistRepository {
   readonly store = new Map<ChecklistId, Checklist>();
   lastCreatedInput: Parameters<ChecklistRepository["create"]>[0] | undefined;
-  lastAddedInput: Parameters<ChecklistRepository["addItem"]>[0] | undefined;
 
   async create(input: Parameters<ChecklistRepository["create"]>[0]): Promise<Checklist> {
     this.lastCreatedInput = input;
@@ -72,39 +69,6 @@ export class FakeChecklistRepository implements ChecklistRepository {
 
   async archive(id: ChecklistId): Promise<number> {
     return this.store.delete(id) ? 1 : 0;
-  }
-
-  async addItem(input: Parameters<ChecklistRepository["addItem"]>[0]): Promise<Checklist> {
-    this.lastAddedInput = input;
-    const template = this.store.get(input.templateId);
-    if (!template) throw new Error("fake addItem: template not found");
-    // Append for real so item-count invariants (e.g. the ≤ 50 cap) are observable.
-    const item = ChecklistItem.create({
-      id: input.id,
-      text: input.text,
-      type: input.type,
-      required: input.required,
-      position: input.position,
-    });
-    if (!isOk(item)) throw new Error(`fake addItem produced an invalid item: ${item.error.message}`);
-    const updated = template.withItems(
-      [...template.props.items, item.value],
-      new Date("2026-07-01T00:00:00Z"),
-    );
-    this.store.set(updated.props.id, updated);
-    return updated;
-  }
-
-  async removeItem(templateId: ChecklistId, _itemId: ChecklistItemId): Promise<Checklist | null> {
-    return this.store.get(templateId) ?? null;
-  }
-
-  async setItemRequired(
-    templateId: ChecklistId,
-    _itemId: ChecklistItemId,
-    _required: boolean,
-  ): Promise<Checklist | null> {
-    return this.store.get(templateId) ?? null;
   }
 }
 
@@ -185,8 +149,6 @@ describe("CreateChecklistUseCase", () => {
       required: false,
       position: 1,
     });
-    // One repo call carried everything — nothing to race.
-    expect(repo.lastAddedInput).toBeUndefined();
   });
 
   it("rejects a create whose items exceed the 50-item cap", async () => {
@@ -196,6 +158,24 @@ describe("CreateChecklistUseCase", () => {
       stage: "job",
       match: [],
       items: Array.from({ length: 51 }, (_, i) => ({ text: `Item ${i}`, type: "check" as const })),
+    };
+    const r = await useCase.exec(cmd, ORG);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+    expect(repo.lastCreatedInput).toBeUndefined();
+  });
+
+  it("rejects duplicate client-supplied item ids without calling the repo (validation, not a PK 500)", async () => {
+    const dup = "33333333-3333-3333-3333-333333333333";
+    const cmd: CreateChecklistCommand = {
+      name: "Dup ids",
+      trade: "Custom",
+      stage: "job",
+      match: [],
+      items: [
+        { id: dup, text: "First", type: "check" },
+        { id: dup, text: "Second", type: "check" },
+      ],
     };
     const r = await useCase.exec(cmd, ORG);
     expect(r.ok).toBe(false);

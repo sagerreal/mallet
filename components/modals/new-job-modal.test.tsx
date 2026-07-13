@@ -197,6 +197,8 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     addJob.mockReset();
     addVisit.mockReset();
     updateJob.mockReset();
+    // updateJob resolves { ok } (jobs-slice contract) — default to success.
+    updateJob.mockResolvedValue({ ok: true });
     storeChecklists = [];
     closeMock = vi.fn();
   });
@@ -273,6 +275,50 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     expect(patch.checklist.items).toEqual([
       expect.objectContaining({ text: "Photo of the repair", type: "photo", required: true }),
     ]);
+  });
+
+  it("keeps the modal open with an error when the checklist attach fails, and a retry re-attaches to the SAME job", async () => {
+    storeChecklists = [
+      {
+        id: "chk-2",
+        name: "Drain close-out",
+        trade: "Custom",
+        stage: "job",
+        match: [],
+        items: [{ id: "i1", text: "Flow tested", type: "check", required: true, position: 0 }],
+      },
+    ];
+    const persistedLead = { id: "lead-50", name: "Retry Customer", evisits: [] };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-50", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-50", origin: "db", visits: [] }),
+    });
+    // First attach fails ({ ok:false } — the slice rolled back), second succeeds.
+    updateJob.mockResolvedValueOnce({ ok: false });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "clear main line" },
+    });
+    fireEvent.click(screen.getByText("No checklist"));
+    fireEvent.click(screen.getByText("Drain close-out"));
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    // Failure surfaced, no silent close — the job exists but its checklist doesn't.
+    await waitFor(() =>
+      expect(screen.getByText(/job was saved, but the checklist wasn't/i)).toBeTruthy(),
+    );
+    expect(closeMock).not.toHaveBeenCalled();
+
+    // Retry: re-attaches to job-50 — no duplicate job, no duplicate visits.
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+    await waitFor(() => expect(closeMock).toHaveBeenCalled());
+    expect(addJob).toHaveBeenCalledTimes(1);
+    expect(updateJob).toHaveBeenCalledTimes(2);
+    expect(updateJob).toHaveBeenLastCalledWith("job-50", expect.objectContaining({
+      checklist: expect.objectContaining({ name: "Drain close-out" }),
+    }));
   });
 
   it("no checklist section for the Estimate type; none attached without a pick", async () => {

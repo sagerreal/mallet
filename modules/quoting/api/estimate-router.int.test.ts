@@ -592,6 +592,59 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     expect(await leadStage(lead.id)).toBe("lost");
   });
 
+  it("declining a SECOND quote does not flip a WON lead back to lost (won is sticky)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Sticky Won Customer" });
+    const draftA = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Option A",
+      lines: [{ description: "Work A", quantity: 1, rateCents: 10_000 }],
+    });
+    const sentA = await caller.v1.quoting.send({ estimateId: draftA.id });
+    const draftB = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Option B",
+      lines: [{ description: "Work B", quantity: 1, rateCents: 20_000 }],
+    });
+    const sentB = await caller.v1.quoting.send({ estimateId: draftB.id });
+
+    // Customer accepts quote A → lead won (job created in the accept savepoint).
+    const accepted = await acceptPublicQuote(sentA.publicToken!);
+    expect(accepted.kind).toBe("ok");
+    expect(await leadStage(lead.id)).toBe("won");
+
+    // Anyone holding quote B's token declines it: B records the decline, but
+    // the WON lead (with its live job) must NOT flip to lost.
+    const declined = await declinePublicQuote(sentB.publicToken!, "went with the other option");
+    expect(declined?.props.status).toBe("declined");
+    expect(await leadStage(lead.id)).toBe("won");
+  });
+
+  it("accept after a decline still wins the lead (lost → won stays unconditional)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Lost Then Won Customer" });
+    const draftA = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Option A",
+      lines: [{ description: "Work A", quantity: 1, rateCents: 10_000 }],
+    });
+    const sentA = await caller.v1.quoting.send({ estimateId: draftA.id });
+    const draftB = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Option B",
+      lines: [{ description: "Work B", quantity: 1, rateCents: 20_000 }],
+    });
+    const sentB = await caller.v1.quoting.send({ estimateId: draftB.id });
+
+    const declined = await declinePublicQuote(sentB.publicToken!, "too expensive");
+    expect(declined?.props.status).toBe("declined");
+    expect(await leadStage(lead.id)).toBe("lost");
+
+    const accepted = await acceptPublicQuote(sentA.publicToken!);
+    expect(accepted.kind).toBe("ok");
+    expect(await leadStage(lead.id)).toBe("won");
+  });
+
   it("office accept leaves the lead stage to the client (unchanged server-side)", async () => {
     // The office flow moves the lead via moveLeadStage in cust-quote-modal; the
     // server-side inline move is scoped to the PUBLIC token paths. Pin that.

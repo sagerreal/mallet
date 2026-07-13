@@ -7,7 +7,7 @@
  *   dedup hit               → NO work created (the phone belongs to someone else)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { NewCustomerModal } from "./new-customer-modal";
 
 // ---- store mock ---------------------------------------------------------------
@@ -49,12 +49,16 @@ vi.mock("@/lib/store/app-store", () => ({
 // ---- trpc mock ------------------------------------------------------------------
 
 const invalidate = vi.fn();
-const mutateMock = vi.fn();
+const mutateAsyncMock = vi.fn();
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     useUtils: () => ({ v1: { customers: { list: { invalidate } } } }),
-    v1: { customers: { create: { useMutation: () => ({ mutate: mutateMock, isPending: false }) } } },
+    v1: {
+      customers: {
+        create: { useMutation: () => ({ mutateAsync: mutateAsyncMock, isPending: false }) },
+      },
+    },
   },
 }));
 
@@ -81,11 +85,9 @@ function createdDto(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** mutate(input, { onSuccess }) → resolve immediately with the given DTO. */
+/** mutateAsync(input) → resolve with the given DTO. */
 function resolveCreateWith(dto: ReturnType<typeof createdDto>) {
-  mutateMock.mockImplementation(
-    (_input: unknown, opts: { onSuccess: (d: unknown) => void }) => opts.onSuccess(dto),
-  );
+  mutateAsyncMock.mockResolvedValue(dto);
 }
 
 function fillNameAndOpenBooking(name: string) {
@@ -127,8 +129,65 @@ describe("NewCustomerModal — submit with the Job purpose", () => {
     expect(addVisit).not.toHaveBeenCalled();
     resolvePersist();
     await waitFor(() => expect(addVisit).toHaveBeenCalledWith("job-1"));
+    await waitFor(() => expect(closeMock).toHaveBeenCalled());
     expect(invalidate).toHaveBeenCalled();
-    expect(closeMock).toHaveBeenCalled();
+  });
+
+  it("keeps the modal open with an error when the job persist fails (customer already created)", async () => {
+    resolveCreateWith(createdDto());
+    addJob.mockReturnValue({
+      job: { id: "job-1" },
+      persisted: Promise.reject(new Error("db down")),
+    });
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create job" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/customer was saved, but the job wasn't/i)).toBeTruthy(),
+    );
+    // No silent close — the office must see the failure and be able to retry.
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(addVisit).not.toHaveBeenCalled();
+    // The customer row DID persist — the list refresh must still happen.
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("double-fired submit creates ONE customer and ONE job", async () => {
+    resolveCreateWith(createdDto());
+    addJob.mockReturnValue({ job: { id: "job-1" }, persisted: Promise.resolve() });
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    const submit = screen.getByRole("button", { name: "Create job" });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(closeMock).toHaveBeenCalled());
+    expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
+    expect(addJob).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("NewCustomerModal — Build the price", () => {
+  it("double-click creates ONE customer + ONE job and opens the builder once", async () => {
+    resolveCreateWith(createdDto());
+    addJob.mockReturnValue({ job: { id: "job-9" }, persisted: Promise.resolve() });
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    const build = screen.getByRole("button", { name: /Build the price/ });
+    fireEvent.click(build);
+    fireEvent.click(build);
+
+    await waitFor(() => expect(openModalMock).toHaveBeenCalledTimes(1));
+    expect(openModalMock).toHaveBeenCalledWith("price-builder", { jobId: "job-9" });
+    expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
+    expect(addJob).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -193,5 +252,28 @@ describe("NewCustomerModal — dedup hit", () => {
     expect(updateLead).not.toHaveBeenCalled();
     expect(setLeads).not.toHaveBeenCalled();
     expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("a dedup response landing AFTER the modal was closed does not re-arm the notice", async () => {
+    // The create is still in flight when the office cancels out of the modal —
+    // the late `created:false` must be dropped, not parked as a stale notice
+    // that disables the submit button on the next open.
+    let resolveCreate: (d: unknown) => void = () => {};
+    mutateAsyncMock.mockReturnValue(new Promise((res) => { resolveCreate = res; }));
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create job" }));
+
+    // Close while the create is pending, then let the dedup response land.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(closeMock).toHaveBeenCalled();
+    await act(async () => {
+      resolveCreate(createdDto({ created: false, id: "existing-9" }));
+    });
+
+    expect(screen.queryByText(/customer with that phone already exists/i)).toBeNull();
+    expect(addJob).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,11 @@ import { logger } from "@mallet/shared/observability";
  * and should roll the whole action back rather than record a silent estimate/
  * lead stage mismatch. Idempotent: a lead already at the target stage (e.g. a
  * re-accepted quote whose lead is already won) is left untouched.
+ *
+ * Won is stickier than lost: a lead can hold several open quotes, and declining
+ * one via its public token must not flip a lead that already ACCEPTED another
+ * (stage "won", job created) back to lost. →won stays unconditional — an accept
+ * always wins the lead, even after a prior decline moved it to lost.
  */
 async function moveLeadToStage(
   tx: TenantTx,
@@ -45,6 +50,10 @@ async function moveLeadToStage(
     return;
   }
   if (lead.props.stage === target) return;
+  if (target === "lost" && lead.props.stage === "won") {
+    logger.info({ leadId, orgId }, "public-quote: skipped lost move — lead already won");
+    return;
+  }
   await repo.save(lead.moveStage(target, systemClock.now()));
 }
 
