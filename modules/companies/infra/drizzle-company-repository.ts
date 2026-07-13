@@ -1,6 +1,7 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { companies } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetBefore } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -68,9 +69,7 @@ export class DrizzleCompanyRepository implements CompanyRepository {
       const cursor = decodeCursor(page.cursor);
       if (isOk(cursor)) {
         // Keyset: rows strictly after the cursor in (created_at desc, id desc) order.
-        conds.push(
-          sql`(${companies.createdAt}, ${companies.id}) < (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        conds.push(keysetBefore(companies.createdAt, companies.id, cursor.value));
       }
     }
 

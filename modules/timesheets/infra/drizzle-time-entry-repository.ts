@@ -1,6 +1,7 @@
-import { and, asc, eq, gte, isNull, lte, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, inArray } from "drizzle-orm";
 import { timeEntries } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetAfter } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -94,9 +95,10 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
       if (isOk(cursor)) {
         // Keyset: ordered by (workDate asc, createdAt asc, id asc).
         // Cursor encodes (createdAt, id) as the tiebreaker.
-        conds.push(
-          sql`(${timeEntries.createdAt}, ${timeEntries.id}) > (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        // NOTE: order-by leads with workDate but the cursor only keys on (createdAt, id) — if
+        // workDate order disagrees with createdAt order across a page boundary, a row can be
+        // skipped or duplicated. Separate, subtler bug; needs a multi-key cursor. Out of scope here.
+        conds.push(keysetAfter(timeEntries.createdAt, timeEntries.id, cursor.value));
       }
     }
 

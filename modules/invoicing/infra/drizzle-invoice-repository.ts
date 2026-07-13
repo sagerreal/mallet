@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, lt, inArray, notInArray, sql, type SQL } from "drizzle-orm";
 import { invoices, invoiceLines, payments } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetBefore } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -217,9 +218,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     if (page.cursor) {
       const cursor = decodeCursor(page.cursor);
       if (isOk(cursor)) {
-        conds.push(
-          sql`(${invoices.createdAt}, ${invoices.id}) < (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        conds.push(keysetBefore(invoices.createdAt, invoices.id, cursor.value));
       }
     }
     const rows = await this.tx

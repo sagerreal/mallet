@@ -1,6 +1,7 @@
 import { and, desc, eq, exists, inArray, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetBefore } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -474,9 +475,7 @@ export class DrizzleJobRepository implements JobRepository {
     if (page.cursor) {
       const cursor = decodeCursor(page.cursor);
       if (isOk(cursor)) {
-        conds.push(
-          sql`(${jobs.createdAt}, ${jobs.id}) < (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        conds.push(keysetBefore(jobs.createdAt, jobs.id, cursor.value));
       }
     }
 

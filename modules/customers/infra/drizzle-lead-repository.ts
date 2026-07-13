@@ -1,6 +1,7 @@
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetBefore } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -90,9 +91,7 @@ export class DrizzleLeadRepository implements LeadRepository {
       const cursor = decodeCursor(page.cursor);
       if (isOk(cursor)) {
         // Keyset: rows strictly after the cursor in (created_at desc, id desc) order.
-        conds.push(
-          sql`(${leads.createdAt}, ${leads.id}) < (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        conds.push(keysetBefore(leads.createdAt, leads.id, cursor.value));
       }
     }
     // Fetch one extra row so buildPage can tell whether a next page exists.
