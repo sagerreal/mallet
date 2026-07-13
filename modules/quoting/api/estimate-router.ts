@@ -15,6 +15,7 @@ import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase, jobSummaryDTO, toJobSummaryDTO } from "@mallet/jobs";
 import { logger } from "@mallet/shared/observability";
 import { createJobSummaryInSavepoint } from "./job-creation-savepoint";
+import { createQuotingRulesRouter } from "./quoting-rules-router";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -248,6 +249,9 @@ const toSummaryDTO = (estimate: Estimate) => {
 // map the result. No business logic here.
 export const createEstimateRouter = () =>
   router({
+    // The estimator's learned-rule surface (v1.quoting.rules.*).
+    rules: createQuotingRulesRouter(),
+
     draft: ownerOrOffice
       .input(draftInput)
       .output(estimateDTO)

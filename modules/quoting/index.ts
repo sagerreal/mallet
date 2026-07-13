@@ -15,3 +15,9 @@ export { ListEstimatesUseCase } from "./app/list-estimates";
 // Public (unauthenticated) quote functions — used by the customer-facing quote page routes.
 export { getPublicQuote, acceptPublicQuote, declinePublicQuote } from "./app/public-quote";
 export type { PublicQuoteView } from "./app/public-quote";
+// The estimator's learned rules — modules/ai reads confirmed rules through this seam.
+export { QuotingRule } from "./domain/quoting-rule";
+export type { QuotingRuleProps, QuotingRuleStatus, QuotingRuleSource } from "./domain/quoting-rule";
+export type { QuotingRuleRepository } from "./domain/quoting-rule-repository";
+export type { RuleCandidate } from "./domain/rule-match";
+export { DrizzleQuotingRuleRepository } from "./infra/drizzle-quoting-rule-repository";
