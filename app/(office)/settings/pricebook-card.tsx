@@ -11,14 +11,17 @@
  *
  * The empty state offers a one-click "Start with plumbing basics" seed (Task 8,
  * v1.pricebook.seed via seedPricebook()) so a new shop isn't staring at a blank grid.
+ * Owner/office can also bring in an existing book via "Import from CSV" (mirrors the
+ * customer CSV import) — gated alongside cost, since a book carries cost data.
  *
- * Deferred to later tasks: CSV import, materials ("Break into parts"), and Good/Better/
- * Best option groups (Phase 2/3) — omitted here rather than left as dead buttons.
+ * Deferred to later tasks: materials ("Break into parts") and Good/Better/Best option
+ * groups (Phase 2/3) — omitted here rather than left as dead buttons.
  */
 
 import { useState } from "react";
-import { useAppStore } from "@/lib/store/app-store";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import { MODAL } from "@/lib/store/modal-ids";
 import type { Service } from "@/lib/store/types";
 import { FoldCard } from "./fold-card";
 import { ServiceRow } from "./service-row";
@@ -45,6 +48,8 @@ export function PricebookCard() {
   const me = useMe();
   const canSeeCost = me.data?.role === "owner" || me.data?.role === "office";
 
+  const openModal = useOpenModal();
+
   const [query, setQuery] = useState("");
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
@@ -66,6 +71,14 @@ export function PricebookCard() {
 
   return (
     <FoldCard title="Pricebook" defaultOpen summary={`${services.length} service${services.length === 1 ? "" : "s"}`}>
+      {canSeeCost && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <button className="btn sm ghost" onClick={() => openModal(MODAL.IMPORT_SERVICES)}>
+            Import from CSV
+          </button>
+        </div>
+      )}
+
       {showSearch && (
         <input
           type="text"
