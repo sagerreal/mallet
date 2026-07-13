@@ -68,6 +68,44 @@ const SAMPLE_TOOL_INPUT = {
 // Tests
 // ---------------------------------------------------------------------------
 
+describe("draftEstimateTiers — org context", () => {
+  it("carries the shop's pricebook, rates, and won quotes into the system prompt", async () => {
+    const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
+
+    await draftEstimateTiers(llm, "replace water heater", {
+      catalog: [{ name: "WH install", unitPriceCents: 165000, category: "Water heaters", laborHours: 3 }],
+      laborRates: [{ label: "Standard", rateCentsPerHour: 14500, kind: "hourly" }],
+      jobInfo: {
+        lead: { name: "Dana", source: "Angi", notes: "gate code 4411", address: null },
+        messages: [{ direction: "inbound", body: "heater leaking" }],
+        visitNotes: [],
+      },
+      wonQuotes: [
+        {
+          num: "EST-1042",
+          title: "Water heater replacement",
+          lines: [{ description: "40-gal heater", quantity: 1, rateCents: 165000 }],
+          totalCents: 165000,
+        },
+      ],
+    });
+
+    const system = llm.capturedRequest!.system;
+    expect(system).toContain("This shop's pricebook");
+    expect(system).toContain("WH install [Water heaters]: $1650.00 — 3h labor");
+    expect(system).toContain("This shop's labor rates");
+    expect(system).toContain("Customer: heater leaking");
+    expect(system).toContain("Quotes this shop sent and WON");
+    expect(system).not.toContain("no pricebook yet");
+  });
+
+  it("falls back to the no-pricebook line on an empty context", async () => {
+    const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
+    await draftEstimateTiers(llm, "replace water heater");
+    expect(llm.capturedRequest!.system).toContain("no pricebook yet");
+  });
+});
+
 describe("draftEstimateTiers", () => {
   it("returns all three mapped tiers (dollars → cents) plus the recommended key", async () => {
     const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));

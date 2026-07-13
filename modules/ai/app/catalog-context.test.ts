@@ -50,7 +50,7 @@ describe("toCatalogContext", () => {
     const result = toCatalogContext(services, categories);
 
     expect(result).toEqual([
-      { name: "Water Heater Install", unitPriceCents: 150000, category: "Water Heaters" },
+      { name: "Water Heater Install", unitPriceCents: 150000, category: "Water Heaters", laborHours: null },
     ]);
   });
 
@@ -59,7 +59,7 @@ describe("toCatalogContext", () => {
 
     const result = toCatalogContext(services, []);
 
-    expect(result).toEqual([{ name: "Water Heater Install", unitPriceCents: 150000, category: null }]);
+    expect(result).toEqual([{ name: "Water Heater Install", unitPriceCents: 150000, category: null, laborHours: null }]);
   });
 
   it("maps category to null when categoryId doesn't resolve to any known category (orphaned reference)", () => {
@@ -67,7 +67,7 @@ describe("toCatalogContext", () => {
 
     const result = toCatalogContext(services, [baseCategory()]);
 
-    expect(result).toEqual([{ name: "Water Heater Install", unitPriceCents: 150000, category: null }]);
+    expect(result).toEqual([{ name: "Water Heater Install", unitPriceCents: 150000, category: null, laborHours: null }]);
   });
 
   it("excludes inactive services from the catalog context", () => {

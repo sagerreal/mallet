@@ -6,7 +6,7 @@ import { OutboxEventBus } from "@mallet/shared/outbox";
 import type { Principal } from "@mallet/identity";
 import type { AppDeps } from "@/trpc/deps";
 import { buildAgentTools } from "../infra/agent-tools";
-import { fetchCatalogContext } from "../infra/catalog-context";
+import { fetchEstimateContext, fetchJobInfoContext } from "../infra/estimate-context";
 import { runAgentTurn, type AgentResult, type ExecuteTool, type ToolMeta } from "../app/run-agent-turn";
 import { LlmError, type AgentMessage } from "../domain/llm-client";
 import type { ToolDeps } from "../domain/tool";
@@ -14,6 +14,8 @@ import { describeProposal } from "../domain/proposal-summary";
 import type { JsonValue } from "@mallet/shared/ports";
 import { draftEstimateLines, type EstimateLineDraft } from "../app/draft-estimate";
 import { draftEstimateTiers, type EstimateTiersDraft } from "../app/draft-estimate-tiers";
+import { stagesFor } from "../app/estimate-context";
+import { asLeadId } from "@mallet/shared/types";
 
 // Structural validation of an untrusted resume transcript (round-tripped through the client). Mirrors
 // the AgentMessage union so a malformed element becomes a clean BAD_REQUEST, not a 500 deep in the
@@ -142,25 +144,41 @@ const draftTierDTO = z.object({
   lines: z.array(draftLineDTO),
 });
 
+// Real-artifact counts for the composer's run reveal — every number reflects data actually
+// read for THIS draft (labor-illusion honesty: never render a stage that didn't happen).
+const draftStagesDTO = z.object({
+  jobInfo: z
+    .object({ notes: z.number().int(), texts: z.number().int(), visitNotes: z.number().int() })
+    .nullable(),
+  pricebook: z.object({ services: z.number().int(), laborRates: z.number().int() }),
+  wonQuotes: z.object({ count: z.number().int(), nums: z.array(z.string()) }),
+});
+
 export const createAiRouter = () =>
   router({
     // One-shot LLM call: given a plain-English job description, return itemised estimate lines.
     // Does NOT require the agent loop — single round-trip, forced tool call.
     draftEstimate: ownerOrOfficeNoTx
-      .input(z.object({ description: z.string().min(1).max(2000) }))
-      .output(z.object({ lines: z.array(z.object({ description: z.string(), quantity: z.number(), rateCents: z.number().int() })) }))
+      .input(z.object({ description: z.string().min(1).max(2000), leadId: z.string().uuid().optional() }))
+      .output(
+        z.object({
+          lines: z.array(z.object({ description: z.string(), quantity: z.number(), rateCents: z.number().int() })),
+          stages: draftStagesDTO,
+        }),
+      )
       .mutation(async ({ ctx, input }) => {
         if (!ctx.deps.llmClient) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "AI is not configured" });
         }
         try {
-          // Short read-only tx (mirrors execute()'s per-tool-call withTenant below) to fetch a
-          // bounded top-N of the org's real pricebook — closed before the slow LLM round-trip.
-          const catalog = await withTenant(ctx.principal.orgId, (tx) =>
-            fetchCatalogContext(tx, ctx.principal.orgId),
+          // Short read-only tx (mirrors execute()'s per-tool-call withTenant below) to gather the
+          // org's real context (pricebook, labor rates, lead's job info, won-quote exemplars) —
+          // closed before the slow LLM round-trip.
+          const context = await withTenant(ctx.principal.orgId, (tx) =>
+            fetchEstimateContext(tx, ctx.principal.orgId, input.description, input.leadId),
           );
-          const lines = await draftEstimateLines(ctx.deps.llmClient, input.description, catalog);
-          return { lines };
+          const lines = await draftEstimateLines(ctx.deps.llmClient, input.description, context);
+          return { lines, stages: stagesFor(context) };
         } catch (error) {
           if (error instanceof LlmError) {
             throw new TRPCError({
@@ -176,18 +194,27 @@ export const createAiRouter = () =>
     // draft — three tiers of lines plus the model's recommended key. Mirrors draftEstimate
     // (single round-trip, forced tool call); the unconfigured guard lives in the use-case.
     draftEstimateTiers: ownerOrOfficeNoTx
-      .input(z.object({ description: z.string().min(1).max(2000) }))
+      .input(z.object({ description: z.string().min(1).max(2000), leadId: z.string().uuid().optional() }))
       .output(
         z.object({
           recommended: z.enum(["good", "better", "best"]),
           good: draftTierDTO,
           better: draftTierDTO,
           best: draftTierDTO,
+          stages: draftStagesDTO,
         }),
       )
       .mutation(async ({ ctx, input }) => {
         try {
-          return await draftEstimateTiers(ctx.deps.llmClient, input.description);
+          // Same context as the single drafter — the tiers previously ran on "typical trade
+          // pricing" alone while the composer claimed pricebook grounding.
+          const context = ctx.deps.llmClient
+            ? await withTenant(ctx.principal.orgId, (tx) =>
+                fetchEstimateContext(tx, ctx.principal.orgId, input.description, input.leadId),
+              )
+            : undefined;
+          const tiers = await draftEstimateTiers(ctx.deps.llmClient, input.description, context);
+          return { ...tiers, stages: stagesFor(context ?? { catalog: [], laborRates: [], jobInfo: null, wonQuotes: [] }) };
         } catch (error) {
           if (error instanceof LlmError) {
             throw new TRPCError({
@@ -201,6 +228,46 @@ export const createAiRouter = () =>
 
     // Start (or continue) an agent conversation from a user instruction.
     // When `transcript` is supplied it is the client-round-tripped conversation state from a prior
+    // Pre-flight job context for the composer's run reveal: what we already know about the
+    // lead's job (notes, texts, field findings) with real counts. Deterministic DB reads only —
+    // no LLM. The drafters gather the same context server-side; this exists so the UI can show
+    // true artifact counts the moment a run starts.
+    gatherJobContext: ownerOrOfficeNoTx
+      .input(z.object({ leadId: z.string().uuid() }))
+      .output(
+        z.object({
+          lead: z
+            .object({
+              name: z.string(),
+              source: z.string().nullable(),
+              notes: z.string().nullable(),
+              address: z.string().nullable(),
+            })
+            .nullable(),
+          messages: z.array(z.object({ direction: z.enum(["inbound", "outbound"]), body: z.string() })),
+          visitNotes: z.array(z.string()),
+          counts: z.object({ notes: z.number().int(), texts: z.number().int(), visitNotes: z.number().int() }),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const jobInfo = await withTenant(ctx.principal.orgId, (tx) =>
+          fetchJobInfoContext(tx, ctx.principal.orgId, asLeadId(input.leadId)),
+        );
+        if (!jobInfo) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "customer not found" });
+        }
+        return {
+          lead: jobInfo.lead,
+          messages: [...jobInfo.messages],
+          visitNotes: [...jobInfo.visitNotes],
+          counts: {
+            notes: jobInfo.lead?.notes?.trim() ? 1 : 0,
+            texts: jobInfo.messages.length,
+            visitNotes: jobInfo.visitNotes.length,
+          },
+        };
+      }),
+
     // turn — validated with the same transcriptSchema that `resume` uses so a malformed payload
     // yields a clean BAD_REQUEST, not a 500. The org is ALWAYS re-derived from the verified
     // principal; the transcript carries conversation content only and is never trusted for tenancy.

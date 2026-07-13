@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import type { LlmClient, LlmRequest, AssistantTurn } from "../domain/llm-client";
 import { LlmError } from "../domain/llm-client";
+import { EMPTY_ESTIMATE_CONTEXT } from "./estimate-context";
 import { draftEstimateLines, type CatalogServiceContext } from "./draft-estimate";
 
 // ---------------------------------------------------------------------------
@@ -190,15 +191,19 @@ describe("draftEstimateLines", () => {
 
 describe("draftEstimateLines — catalog context", () => {
   const SAMPLE_CATALOG: CatalogServiceContext[] = [
-    { name: "40-gal gas water heater install", unitPriceCents: 165000, category: "Water heaters" },
-    { name: "Drain snake — standard", unitPriceCents: 22500, category: "Drains" },
-    { name: "Diagnostic / trip fee", unitPriceCents: 8900, category: null },
+    { name: "40-gal gas water heater install", unitPriceCents: 165000, category: "Water heaters", laborHours: 3 },
+    { name: "Drain snake — standard", unitPriceCents: 22500, category: "Drains", laborHours: null },
+    { name: "Diagnostic / trip fee", unitPriceCents: 8900, category: null, laborHours: null },
   ];
+  const catalogContext = (catalog: CatalogServiceContext[]) => ({
+    ...EMPTY_ESTIMATE_CONTEXT,
+    catalog,
+  });
 
   it("includes each catalog service's name, price, and category in the system prompt", async () => {
     const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
 
-    await draftEstimateLines(llm, "replace water heater", SAMPLE_CATALOG);
+    await draftEstimateLines(llm, "replace water heater", catalogContext(SAMPLE_CATALOG));
 
     const system = llm.capturedRequest!.system;
     expect(system).toContain("40-gal gas water heater install");
@@ -213,7 +218,7 @@ describe("draftEstimateLines — catalog context", () => {
   it("instructs the model to prefer catalog prices and flag off-book lines", async () => {
     const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
 
-    await draftEstimateLines(llm, "replace water heater", SAMPLE_CATALOG);
+    await draftEstimateLines(llm, "replace water heater", catalogContext(SAMPLE_CATALOG));
 
     const system = llm.capturedRequest!.system;
     expect(system).toContain("Prefer these exact prices");
@@ -234,7 +239,7 @@ describe("draftEstimateLines — catalog context", () => {
     const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
     const description = "replace water heater";
 
-    await draftEstimateLines(llm, description, SAMPLE_CATALOG);
+    await draftEstimateLines(llm, description, catalogContext(SAMPLE_CATALOG));
 
     const req = llm.capturedRequest!;
     expect(req.tools).toHaveLength(1);

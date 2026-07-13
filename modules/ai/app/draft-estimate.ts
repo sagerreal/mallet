@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import type { LlmClient } from "../domain/llm-client";
 import { extractJsonFromText } from "./extract-json";
+import { buildContextBlocks, EMPTY_ESTIMATE_CONTEXT, type EstimateContext } from "./estimate-context";
 
 // ---------------------------------------------------------------------------
 // One-shot LLM-powered estimate drafter.
@@ -34,10 +35,12 @@ export const draftLineInputSchema = z.object({
 // One line of the org's real pricebook, passed in as retrieval context so the model prices
 // from the shop's actual book instead of inventing "typical trade pricing". Bounded top-N —
 // the caller (the router) is responsible for capping how many it fetches.
+// Deliberately customer-facing fields only: no cost basis, no markup (Owen's call).
 export interface CatalogServiceContext {
   readonly name: string;
   readonly unitPriceCents: number;
   readonly category: string | null;
+  readonly laborHours: number | null;
 }
 
 // The shape the model is asked to fill in (unit prices in whole USD).
@@ -60,27 +63,16 @@ const BASE_SYSTEM_PROMPT = [
   "Do not write prose — only call the tool.",
 ].join("\n");
 
-// Renders the org's pricebook (when non-empty) as a system-prompt block instructing the model
-// to price from it, and appends pricing-source rules. Retrieval only — this never triggers an
-// extra model call; it just enriches the single existing one.
-const buildSystemPrompt = (catalog: readonly CatalogServiceContext[]): string => {
-  if (catalog.length === 0) {
+// Renders the full org context (job info, pricebook, labor rates, won quotes) after the base
+// instructions. Retrieval only — this never triggers an extra model call; it just enriches the
+// single existing one. Block building lives in estimate-context.ts (shared with the tiered
+// drafter so both price from the same knowledge).
+const buildSystemPrompt = (context: EstimateContext): string => {
+  const blocks = buildContextBlocks(context);
+  if (blocks === "") {
     return [BASE_SYSTEM_PROMPT, "", "This shop has no pricebook yet — price from typical trade pricing."].join("\n");
   }
-  const catalogLines = catalog.map((s) => {
-    const price = (s.unitPriceCents / 100).toFixed(2);
-    return s.category ? `- ${s.name} [${s.category}]: $${price}` : `- ${s.name}: $${price}`;
-  });
-  return [
-    BASE_SYSTEM_PROMPT,
-    "",
-    "## This shop's pricebook",
-    "Prefer these exact prices for any line that matches a catalog service below (match by",
-    "description/intent, not exact wording). For any line that is NOT in the catalog, prefix its",
-    "description with \"Off-book: \" so the office knows to double-check that price, and price it",
-    "from typical trade pricing.",
-    ...catalogLines,
-  ].join("\n");
+  return [BASE_SYSTEM_PROMPT, "", blocks].join("\n");
 };
 
 // JSON Schema for the submit_estimate tool (stripped of $schema for Anthropic).
@@ -106,18 +98,18 @@ const parseSubmitInput = (raw: unknown): SubmitEstimateInput | null => {
 /**
  * Call the LLM once to produce a structured estimate from a plain-English
  * job description. Returns an array of `EstimateLineDraft` (with rateCents).
- * When `catalog` is non-empty, the system prompt instructs the model to price
- * from the org's real pricebook (retrieval only — no extra model call).
+ * `context` carries the org's real knowledge (job info, pricebook, labor
+ * rates, won quotes) — retrieval only, no extra model call.
  * Throws `TRPCError(BAD_GATEWAY)` if the model returns nothing parseable;
  * propagates `LlmError` for the router to map to the appropriate TRPC code.
  */
 export const draftEstimateLines = async (
   llm: LlmClient,
   description: string,
-  catalog: readonly CatalogServiceContext[] = [],
+  context: EstimateContext = EMPTY_ESTIMATE_CONTEXT,
 ): Promise<EstimateLineDraft[]> => {
   const turn = await llm.next({
-    system: buildSystemPrompt(catalog),
+    system: buildSystemPrompt(context),
     tools: [
       {
         name: "submit_estimate",

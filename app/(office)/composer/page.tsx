@@ -127,6 +127,13 @@ export default function ComposerPage() {
     return lines.map((l) => ({ d: l.description, q: l.quantity, r: l.rateCents / 100 }));
   }
 
+  // The drafters gather lead context server-side when given a real (persisted)
+  // lead id. Store-local drafts can carry non-uuid ids — send nothing for those.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function uuidOrUndefined(id: string | null): string | undefined {
+    return id && UUID_RE.test(id) ? id : undefined;
+  }
+
   // Single-format drafter: one set of lines into the table (or the Good tier
   // when a mid-flight format switch landed the response in GBB).
   const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
@@ -162,9 +169,9 @@ export default function ComposerPage() {
     setAiDraftError(null);
     // GBB format drafts all three options; single format keeps the one-shot lines.
     if (cs.format === "gbb" && cs.gbb) {
-      draftTiersMutation.mutate({ description: cs.desc });
+      draftTiersMutation.mutate({ description: cs.desc, leadId: uuidOrUndefined(cs.leadId) });
     } else {
-      draftEstimateMutation.mutate({ description: cs.desc });
+      draftEstimateMutation.mutate({ description: cs.desc, leadId: uuidOrUndefined(cs.leadId) });
     }
   }
 
