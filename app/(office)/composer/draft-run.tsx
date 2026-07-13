@@ -9,8 +9,9 @@
  *   - Every count is real: job-info counts come from v1.ai.gatherJobContext
  *     (fired at t=0 alongside the draft), pricebook/rates counts from the
  *     hydrated store, won-quote nums from the draft response itself.
- *   - A stage that ran is shown; a stage that didn't (no lead → no job-info
- *     read) is omitted, never faked.
+ *   - The job stage always runs: with a customer it reads their history;
+ *     without one the typed description IS the job info — both true. The
+ *     rules stage appears only when rules actually matched, never faked.
  *   - Concurrent pacing: the model call starts at t=0 and the fast read
  *     stages play during its dead time — the choreography adds zero latency.
  *     Each stage holds ≥1s so it reads; when the model returns early, the
@@ -63,25 +64,28 @@ const plural = (n: number, s: string) => `${n} ${s}${n === 1 ? "" : "s"}`;
 /** Pure stage builder — exported for tests (the honesty rules live here). */
 export function stageViews(p: DraftRunProps): StageView[] {
   const stages: StageView[] = [];
-  if (p.hasLead) {
-    stages.push({
-      key: "job",
-      label: "Reading the job",
-      detail: p.gather
+  // The job stage always runs: with a customer attached it reads their
+  // history (real counts); without one, the typed description IS the job
+  // info — both are true statements, so neither renders a fake stage.
+  stages.push({
+    key: "job",
+    label: "Reading the job",
+    detail: p.hasLead
+      ? p.gather
         ? [
             p.gather.notes > 0 ? plural(p.gather.notes, "note") : null,
             p.gather.texts > 0 ? plural(p.gather.texts, "text") : null,
             p.gather.visitNotes > 0 ? "visit findings" : null,
           ]
             .filter(Boolean)
-            .join(" · ") || "no history yet"
-        : null,
-      ready: p.gather !== null,
-    });
-  }
+            .join(" · ") || "your description"
+        : null
+      : "your description",
+    ready: !p.hasLead || p.gather !== null,
+  });
   stages.push({
     key: "book",
-    label: "Your pricebook & rates",
+    label: "Pricing from your book & rates",
     detail:
       p.pricebook.services > 0 || p.pricebook.laborRates > 0
         ? `${plural(p.pricebook.services, "service")} · ${plural(p.pricebook.laborRates, "labor rate")}`
@@ -98,25 +102,25 @@ export function stageViews(p: DraftRunProps): StageView[] {
   if ((p.result?.rules?.count ?? 0) > 0) {
     stages.push({
       key: "rules",
-      label: "Your shop's rules",
+      label: "Applying your shop's rules",
       detail: plural(p.result!.rules!.count, "rule"),
       ready: true,
     });
   }
   stages.push({
     key: "won",
-    label: "Comparing against quotes you've won",
+    label: "Comparing to quotes you've won",
     detail: p.result
       ? p.result.wonQuotes.count > 0
         ? p.result.wonQuotes.nums.join(", ")
-        : "no close matches"
+        : "no close matches yet"
       : null,
     ready: p.result !== null,
   });
   stages.push({
     key: "build",
-    label: "Building the quote",
-    detail: p.result ? "done" : null,
+    label: "Writing the quote",
+    detail: p.result ? "every line editable" : null,
     ready: p.result !== null,
   });
   return stages;
@@ -152,38 +156,21 @@ export function DraftRun(props: DraftRunProps) {
   }, [ticked, stages.length, props.onDone]);
 
   return (
-    <div style={{ padding: "18px 8px 10px" }} aria-live="polite">
+    <div className="runpanel" aria-live="polite">
+      <p className="runpanel-head">Building the quote from your shop&rsquo;s numbers</p>
       {stages.map((s, i) => {
         const state = i < ticked ? "done" : i === ticked ? "active" : "pending";
         return (
-          <div
-            key={s.key}
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: 9,
-              padding: "5px 0",
-              fontSize: 13,
-              opacity: state === "pending" ? 0.35 : 1,
-              transition: "opacity .2s",
-            }}
-          >
-            <span style={{ width: 16, textAlign: "center", flexShrink: 0 }} aria-hidden="true">
-              {state === "done" ? "✓" : state === "active" ? <span className="run-pulse">●</span> : "·"}
-            </span>
-            <span style={{ fontWeight: state === "active" ? 700 : 600, color: "var(--ink)" }}>
-              {s.label}
-            </span>
-            {state !== "pending" && s.detail && (
-              <span className="muted fig" style={{ fontSize: 12 }}>
-                {s.detail}
+          <div key={s.key} className={`runstep ${state}`}>
+            <div className="runrail">
+              <span className="runnode" aria-hidden="true">
+                {state === "done" ? "✓" : ""}
               </span>
-            )}
-            {state === "active" && !s.detail && (
-              <span className="muted" style={{ fontSize: 12 }}>
-                …
-              </span>
-            )}
+            </div>
+            <div className="body">
+              <div className="label">{s.label}</div>
+              {state !== "pending" && <div className="detail fig">{s.detail ?? "…"}</div>}
+            </div>
           </div>
         );
       })}

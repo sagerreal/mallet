@@ -2,7 +2,8 @@
 
 /**
  * The quote card — format toggle (Single quote | Good, Better & Best), the
- * authoring tools row, the in-flow AI draft panel, and the format body:
+ * command bar (the ONE AI surface — build/refine/rebuild by state), and the
+ * format body:
  * single = the shared line table + pricebook chips; GBB = the three tier
  * panels (gbb-tiers.tsx). Totals always reflect what would send right now —
  * in GBB that is the recommended tier (linesForSend).
@@ -80,8 +81,10 @@ export function QuoteCard({
   /** Brief window after a reveal: rows animate in (CSS, reduced-motion safe). */
   materialize: boolean;
 }) {
-  // Refine field text — local to the card; cleared on submit.
-  const [refineText, setRefineText] = useState("");
+  // Command-bar text — local to the card; mirrored into state.desc in build/
+  // rebuild modes (the drafter reads it there), cleared after a refine.
+  const [barText, setBarText] = useState("");
+  const [confirmRebuild, setConfirmRebuild] = useState(false);
   // View-only: show/hide the owner "Your cost" column (single table + tier
   // panels alike). Never touches the store — hiding only omits cells; entered
   // costs live on in the lines.
@@ -102,6 +105,38 @@ export function QuoteCard({
   const quoteIsEmpty = isGbb
     ? !(state.gbb?.opts.some((o) => hasRealLine(o.lines)) ?? false)
     : !hasRealLine(state.lines);
+  // The bar's mode follows the quote's state.
+  const barMode: "build" | "refine" | "rebuild" = quoteIsEmpty
+    ? "build"
+    : state.aiDrafted
+      ? "refine"
+      : "rebuild";
+
+  function runBar() {
+    setConfirmRebuild(false);
+    if (barMode === "refine") {
+      onRefine(barText);
+      setBarText("");
+    } else {
+      onAiDraft();
+    }
+  }
+
+  function submitBar() {
+    // Hand-typed lines are never replaced without an in-flow confirm.
+    if (barMode === "rebuild" && !confirmRebuild) {
+      setConfirmRebuild(true);
+      return;
+    }
+    runBar();
+  }
+
+  // Entering refine mode (a draft just landed) clears the bar — the build
+  // text served its purpose; the field now awaits corrections.
+  useEffect(() => {
+    if (barMode === "refine") setBarText("");
+  }, [barMode]);
+
   const [confirmSuggest, setConfirmSuggest] = useState(false);
   useEffect(() => {
     // The confirm state is only meaningful while there is something to lose.
@@ -177,31 +212,21 @@ export function QuoteCard({
             </span>
           )}
         </h3>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="seg" role="group" aria-label="Quote format">
           <button
             type="button"
-            className={`btn sm${state.aiOpen ? " primary" : " ghost"}`}
-            onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
-            aria-pressed={state.aiOpen}
+            onClick={() => onUpdate(switchToSingle(state))}
+            aria-pressed={!isGbb}
           >
-            ✦ Draft with AI
+            Single quote
           </button>
-          <div className="seg" role="group" aria-label="Quote format">
-            <button
-              type="button"
-              onClick={() => onUpdate(switchToSingle(state))}
-              aria-pressed={!isGbb}
-            >
-              Single quote
-            </button>
-            <button
-              type="button"
-              onClick={() => onUpdate(switchToGbb(state))}
-              aria-pressed={isGbb}
-            >
-              Good, Better &amp; Best
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => onUpdate(switchToGbb(state))}
+            aria-pressed={isGbb}
+          >
+            Good, Better &amp; Best
+          </button>
         </div>
       </div>
 
@@ -210,6 +235,76 @@ export function QuoteCard({
         <p className="muted" style={{ fontSize: 12, margin: "8px 0 0" }}>
           {state.switchNote}
         </p>
+      )}
+
+      {/* The command bar — the ONE AI surface (the bar IS the AI). Manual entry
+          stays the default: the table below is untouched and nothing autofocuses.
+          Mode follows the quote: empty → build; AI-drafted → refine; hand-typed
+          lines → rebuild behind an in-flow confirm (never silently replaced). */}
+      {!run && (
+        <div style={{ marginBottom: 2 }}>
+          <div className="aibar">
+            <input
+              type="text"
+              value={barText}
+              aria-label={
+                barMode === "refine"
+                  ? "Tell it what to change"
+                  : "Describe the job"
+              }
+              placeholder={
+                barMode === "refine"
+                  ? "Tell it what to change — “that's 5h of labor, not 10”…"
+                  : barMode === "rebuild"
+                    ? "Describe the job — rebuilds this quote from your pricebook…"
+                    : "Type the job — the quote builds itself from your pricebook…"
+              }
+              disabled={isDrafting}
+              onChange={(e) => {
+                setBarText(e.target.value);
+                setConfirmRebuild(false);
+                if (barMode !== "refine") onUpdate({ desc: e.target.value });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && barText.trim() && !isDrafting) submitBar();
+              }}
+            />
+            <button
+              type="button"
+              className="aibar-go"
+              disabled={isDrafting || !barText.trim()}
+              onClick={submitBar}
+            >
+              {isDrafting ? "Working…" : barMode === "refine" ? "Update it" : "Build it"}
+            </button>
+          </div>
+          {confirmRebuild ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                Replaces the lines you typed — sure?
+              </span>
+              <button className="btn sm primary" onClick={runBar}>
+                Build it
+              </button>
+              <button className="btn sm ghost" onClick={() => setConfirmRebuild(false)}>
+                Keep mine
+              </button>
+            </div>
+          ) : (
+            <p className="aibar-hint">
+              {barMode === "refine"
+                ? "Corrections it should keep come back as one-tap saves below."
+                : isGbb
+                  ? "Reads the job, prices all three options from your book, and compares to quotes you've won."
+                  : "Reads the job, prices from your book & rates, and compares to quotes you've won."}
+            </p>
+          )}
+          {aiDraftError && (
+            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 6 }}>
+              {aiDraftError}
+            </div>
+          )}
+        </div>
       )}
 
       {/* GBB-only toolbar — Suggest lives at card level (it spans all tiers).
@@ -257,110 +352,6 @@ export function QuoteCard({
           >
             {showCost ? "Hide your cost" : "Show your cost"}
           </button>
-        </div>
-      )}
-
-      {/* Empty-state hero — the blank quote invites a description; drafting is
-          the primary path, the table below stays as the manual fallback. */}
-      {!run && quoteIsEmpty && (
-        <div style={{ padding: "18px 8px 6px" }}>
-          <textarea
-            rows={2}
-            autoFocus
-            value={state.desc}
-            placeholder="What's the job? e.g. 40-gal gas water heater swap, haul away the old unit"
-            aria-label="Describe the job"
-            onChange={(e) => onUpdate({ desc: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (state.desc.trim() && !isDrafting) onAiDraft();
-              }
-            }}
-            style={{
-              width: "100%",
-              border: "1.5px solid var(--line)",
-              borderRadius: 11,
-              padding: "12px 14px",
-              fontFamily: "inherit",
-              fontSize: 15,
-              background: "var(--card)",
-              color: "var(--ink)",
-              resize: "vertical",
-              boxSizing: "border-box",
-            }}
-          />
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-            <button
-              className="btn sm primary"
-              disabled={isDrafting || !state.desc.trim()}
-              onClick={onAiDraft}
-            >
-              {isDrafting ? "Working…" : "Build the quote"}
-            </button>
-            <span className="muted" style={{ fontSize: 11.5 }}>
-              {isGbb
-                ? "Builds all three options from your pricebook, rates & won quotes"
-                : "Built from your pricebook, rates & won quotes — every line editable"}
-            </span>
-          </div>
-          {aiDraftError && (
-            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 8 }}>
-              {aiDraftError}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* AI draft panel (in-flow, inside the card) */}
-      {!quoteIsEmpty && state.aiOpen && (
-        <div className="card" style={{ padding: 14, margin: "14px 0 0" }}>
-          <div className="field" style={{ marginBottom: 8 }}>
-            <textarea
-              rows={2}
-              placeholder="Describe the job — e.g. replace 40-gal gas water heater, haul away, bring to code"
-              value={state.desc}
-              onChange={(e) => onUpdate({ desc: e.target.value })}
-            />
-          </div>
-          <button
-            className="btn sm primary"
-            disabled={isDrafting || !state.desc.trim()}
-            onClick={onAiDraft}
-          >
-            {isDrafting ? "Drafting…" : "Draft lines"}
-          </button>{" "}
-          <button
-            className="btn sm ghost"
-            onClick={() => {
-              // deferred: no speech API — dictate is a no-op for now
-            }}
-            title="talk it instead of typing it"
-          >
-            Dictate
-          </button>{" "}
-          <button
-            className="btn sm ghost"
-            disabled={isDrafting}
-            onClick={() => onUpdate({ aiOpen: false })}
-          >
-            Cancel
-          </button>{" "}
-          <span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>
-            {isGbb
-              ? "Drafts all three options from your pricebook, rates & won quotes"
-              : "Drafted from your pricebook, rates & won quotes — every line editable"}
-          </span>
-          {aiDraftError && (
-            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 8 }}>
-              {aiDraftError}
-            </div>
-          )}
-          {!aiDraftError && hasRealLine(aiTargetLines) && (
-            <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
-              {isGbb ? "Replaces the Good option's lines" : "Replaces current lines"}
-            </div>
-          )}
         </div>
       )}
 
@@ -455,46 +446,10 @@ export function QuoteCard({
         </>
       ))}
 
-      {/* Refine — the AI draft's front door for corrections: regenerate with
-          the office's feedback; durable facts come back as one-tap chips. */}
-      {!run && state.aiDrafted && !quoteIsEmpty && (
+      {/* One-tap proposals — under the quote they refine (the bar above is the
+          input; these are its answers). */}
+      {!run && proposals.length > 0 && (
         <div style={{ padding: "12px 8px 0" }}>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              type="text"
-              value={refineText}
-              aria-label="Refine the draft"
-              placeholder="Tell it what's wrong — e.g. that's 5h of labor, not 10"
-              onChange={(e) => setRefineText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && refineText.trim() && !isDrafting) {
-                  onRefine(refineText);
-                  setRefineText("");
-                }
-              }}
-              style={{
-                flex: 1,
-                border: "1.5px solid var(--line)",
-                borderRadius: 9,
-                padding: "8px 12px",
-                fontFamily: "inherit",
-                fontSize: 13,
-                background: "var(--card)",
-                color: "var(--ink)",
-              }}
-            />
-            <button
-              className="btn sm"
-              disabled={isDrafting || !refineText.trim()}
-              onClick={() => {
-                onRefine(refineText);
-                setRefineText("");
-              }}
-            >
-              {isDrafting ? "Working…" : "Refine"}
-            </button>
-          </div>
-
           {/* One-tap proposals — visible, explicit, never written silently. A
               labor_hours proposal without a pricebook match saves as a shop
               rule instead; the label says which (same matcher as the handler).
