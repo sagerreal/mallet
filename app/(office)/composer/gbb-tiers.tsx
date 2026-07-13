@@ -35,11 +35,13 @@ export function GbbTiers({
   onUpdate,
   showCost,
   onSaveToBook,
+  materialize,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
   showCost: boolean;
   onSaveToBook: (line: ComposerLine) => Promise<AddResult>;
+  materialize?: boolean;
 }) {
   const g = state.gbb;
   if (!g) return null;
@@ -138,6 +140,7 @@ export function GbbTiers({
               onRemoveLine={(i) => removeLine(tier, i)}
               onSaveToBook={onSaveToBook}
               onAddLine={() => addLine(tier)}
+              materialize={materialize}
             />
           </div>
         );

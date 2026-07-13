@@ -39,6 +39,7 @@ export function LineTable({
   onSaveToBook,
   onAddLine,
   footerTools,
+  materialize,
 }: {
   lines: ComposerLine[];
   showCost: boolean;
@@ -49,6 +50,8 @@ export function LineTable({
   onAddLine?: () => void;
   /** Extra tools for the footer toolbar (uniform .lineedit-tool styling). */
   footerTools?: React.ReactNode;
+  /** Brief post-draft window: rows animate in (CSS only, reduced-motion safe). */
+  materialize?: boolean;
 }) {
   // Per-row save-to-book status, keyed by row index (matches the index-keyed
   // rows below — lines have no stable id of their own).
@@ -63,7 +66,7 @@ export function LineTable({
   const cols = showCost ? 6 : 5;
 
   return (
-    <div className="lineedit">
+    <div className={`lineedit${materialize ? " materialize" : ""}`}>
       <table>
         <colgroup>
           <col />
