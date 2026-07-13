@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { fmt$ } from "@/lib/format";
-import { estTotal } from "@/lib/estimates";
+import { estTotal, gbbTierLine } from "@/lib/estimates";
 import { firstName, type OkItem } from "@/features/home/derive";
 import { clockNow, commitOkSend } from "@/features/home/send";
 import { draftFor } from "@/features/home/drafts";
@@ -262,6 +262,7 @@ export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
       </div>
       <div className="cjob">{row.est.title}</div>
       <div className="cstamp fig">{row.stamp}</div>
+      {gbbTierLine(row.est) && <div className="cstamp fig">{gbbTierLine(row.est)}</div>}
       {row.est.changeRequestedAt && (
         <div className="cstamp fig" style={{ color: "var(--amber, #b45309)" }}>
           change requested
@@ -300,6 +301,7 @@ export function WonCard({ row }: { row: WonRow }) {
       </div>
       <div className="cjob">{row.est.title}</div>
       <div className="cstamp fig">{row.stamp}</div>
+      {gbbTierLine(row.est) && <div className="cstamp fig">{gbbTierLine(row.est)}</div>}
       {row.unscheduled && row.job && (
         <div className="cardacts" onClick={(e) => e.stopPropagation()}>
           <button className="btn sm approve" onClick={() => router.push("/jobs?tab=schedule")}>

@@ -23,6 +23,33 @@ export const ESTIMATE_STATUSES: readonly EstimateStatus[] = [
 export const isEstimateStatus = (value: string): value is EstimateStatus =>
   (ESTIMATE_STATUSES as readonly string[]).includes(value);
 
+// Good/Better/Best. An estimate is tiered iff recommendedTier is non-null; then every line
+// carries a tier tag until accept resolves the estimate to the customer's chosen tier.
+export type QuoteTier = "good" | "better" | "best";
+
+export const QUOTE_TIERS: readonly QuoteTier[] = ["good", "better", "best"];
+
+export const isQuoteTier = (value: string): value is QuoteTier =>
+  (QUOTE_TIERS as readonly string[]).includes(value);
+
+// Customer-facing display names for the three tiers (persisted as jsonb).
+export interface TierNames {
+  readonly good: string;
+  readonly better: string;
+  readonly best: string;
+}
+
+// One tier's full money derivation — produced by the SAME rounding chain as the
+// estimate-level totals (totalsFrom), never a parallel implementation.
+export interface TierTotals {
+  readonly subtotal: Money;
+  readonly discount: Money;
+  readonly net: Money;
+  readonly tax: Money;
+  readonly total: Money;
+  readonly depositDue: Money;
+}
+
 const BPS_DENOMINATOR = 10_000; // basis points: 10000 bps = 100%
 
 export interface EstimateLineProps {
@@ -34,6 +61,8 @@ export interface EstimateLineProps {
   readonly isOptional: boolean;
   readonly needsPhoto: boolean;
   readonly position: number;
+  // Good/Better/Best tag. Null on single-format estimates and on resolved (accepted) ones.
+  readonly tier: QuoteTier | null;
 }
 
 // A single priced line on an estimate. Immutable value object; its extended amount is derived,
@@ -53,12 +82,20 @@ export class EstimateLine {
     }
     if (props.rate < 0) return err(validation("line rate cannot be negative", "rate"));
     if (props.cost < 0) return err(validation("line cost cannot be negative", "cost"));
+    if (props.tier !== null && !isQuoteTier(props.tier)) {
+      return err(validation(`unknown line tier: ${props.tier}`, "tier"));
+    }
     return ok(new EstimateLine({ ...props, description }));
   }
 
   // Extended amount = quantity × unit rate, rounded to whole cents.
   amount(): Money {
     return money(Math.round(this.p.quantity * this.p.rate));
+  }
+
+  // Same line with the tier tag cleared — used when accept resolves a tiered estimate.
+  withoutTier(): EstimateLine {
+    return new EstimateLine({ ...this.p, tier: null });
   }
 
   get props(): EstimateLineProps {
@@ -87,6 +124,13 @@ export interface EstimateProps {
   // Unguessable URL-safe token for the public customer quote page (no login required).
   // Set at draft-time; never changes. Null only for estimates created before the backfill migration.
   readonly publicToken: string | null;
+  // Good/Better/Best: non-null recommendedTier marks the estimate as tiered. Totals derive from
+  // this tier's lines until accept resolves the estimate (acceptedTier stamped, tags cleared).
+  readonly recommendedTier: QuoteTier | null;
+  readonly acceptedTier: QuoteTier | null;
+  readonly tierNames: TierNames | null;
+  // Snapshot of the selected job terms text at draft time (no live reference).
+  readonly termsSnapshot: string | null;
   readonly lines: readonly EstimateLine[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -111,36 +155,122 @@ export class Estimate {
     if (props.depBps < 0 || props.depBps > BPS_DENOMINATOR) {
       return err(validation("deposit must be between 0 and 10000 bps", "depBps"));
     }
+    const tierError = Estimate.validateTiers(props);
+    if (tierError) return err(tierError);
     return ok(new Estimate({ ...props, num }));
+  }
+
+  // Tier consistency invariants. A tier may be empty while drafting (only send gates on the
+  // recommended tier having a positive subtotal), but line tags must always match the format.
+  private static validateTiers(props: EstimateProps): ValidationError | null {
+    const { recommendedTier, acceptedTier, tierNames, lines } = props;
+    if (recommendedTier !== null && !isQuoteTier(recommendedTier)) {
+      return validation(`unknown recommended tier: ${recommendedTier}`, "recommendedTier");
+    }
+    if (acceptedTier !== null && !isQuoteTier(acceptedTier)) {
+      return validation(`unknown accepted tier: ${acceptedTier}`, "acceptedTier");
+    }
+    if (recommendedTier === null) {
+      if (acceptedTier !== null) {
+        return validation("an accepted tier requires a tiered estimate", "acceptedTier");
+      }
+      if (tierNames !== null) {
+        return validation("tier names require a tiered estimate", "tierNames");
+      }
+      if (lines.some((line) => line.props.tier !== null)) {
+        return validation("a single-format estimate cannot carry tiered lines", "lines");
+      }
+      return null;
+    }
+    if (acceptedTier === null) {
+      // Unresolved tiered estimate: EVERY line must carry a tier tag.
+      if (lines.some((line) => line.props.tier === null)) {
+        return validation("every line on a tiered estimate must carry a tier", "lines");
+      }
+    } else if (lines.some((line) => line.props.tier !== null)) {
+      // Resolved (accepted) tiered estimate: lines were committed with tags cleared.
+      return validation("an accepted estimate's lines must have resolved tier tags", "lines");
+    }
+    return Estimate.validateTierNames(tierNames);
+  }
+
+  private static validateTierNames(tierNames: TierNames | null): ValidationError | null {
+    if (tierNames === null) return null;
+    for (const tier of QUOTE_TIERS) {
+      const name: unknown = tierNames[tier];
+      // typeof guard: tierNames round-trips through jsonb — malformed rows fail loud here.
+      if (typeof name !== "string" || name.trim().length === 0) {
+        return validation(`tier name for "${tier}" is required`, "tierNames");
+      }
+    }
+    return null;
   }
 
   // --- Pure money derivations (the prototype's calcQuote, one source of truth) ---
 
-  // Sum of non-optional line amounts. Optional add-ons are excluded until toggled (pilot: always).
-  subtotal(): Money {
-    return this.p.lines
+  // True while the estimate carries Good/Better/Best options (resolved or not).
+  isTiered(): boolean {
+    return this.p.recommendedTier !== null;
+  }
+
+  // All lines tagged with the given tier (fixed + optional).
+  linesForTier(tier: QuoteTier): readonly EstimateLine[] {
+    return this.p.lines.filter((line) => line.props.tier === tier);
+  }
+
+  // The line subset money derives from: the recommended tier pre-accept on a tiered estimate,
+  // everything otherwise (single format, or resolved lines after accept).
+  private effectiveLines(): readonly EstimateLine[] {
+    if (this.p.recommendedTier === null || this.p.acceptedTier !== null) return this.p.lines;
+    return this.linesForTier(this.p.recommendedTier);
+  }
+
+  // Sum of non-optional line amounts. Optional add-ons are excluded until toggled at accept.
+  private static subtotalOf(lines: readonly EstimateLine[]): Money {
+    return lines
       .filter((line) => !line.props.isOptional)
       .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
   }
 
+  // THE rounding chain: discount on the subtotal, tax on the net, deposit on the total —
+  // each step rounded to whole cents. Every total (estimate-level or per-tier) runs through
+  // here so there is exactly one money implementation.
+  private totalsFrom(subtotal: Money): TierTotals {
+    const discount = money(Math.round((subtotal * this.p.discBps) / BPS_DENOMINATOR));
+    const net = money(subtotal - discount);
+    const tax = money(Math.round((net * this.p.taxBps) / BPS_DENOMINATOR));
+    const total = money(net + tax);
+    const depositDue = money(Math.round((total * this.p.depBps) / BPS_DENOMINATOR));
+    return { subtotal, discount, net, tax, total, depositDue };
+  }
+
+  // One tier's full derivation through the shared chain (public quote picker, DTO tier totals).
+  totalsForTier(tier: QuoteTier): TierTotals {
+    return this.totalsFrom(Estimate.subtotalOf(this.linesForTier(tier)));
+  }
+
+  subtotal(): Money {
+    return Estimate.subtotalOf(this.effectiveLines());
+  }
+
   discountAmount(): Money {
-    return money(Math.round((this.subtotal() * this.p.discBps) / BPS_DENOMINATOR));
+    return this.totalsFrom(this.subtotal()).discount;
   }
 
   netAfterDiscount(): Money {
-    return money(this.subtotal() - this.discountAmount());
+    return this.totalsFrom(this.subtotal()).net;
   }
 
   taxAmount(): Money {
-    return money(Math.round((this.netAfterDiscount() * this.p.taxBps) / BPS_DENOMINATOR));
+    return this.totalsFrom(this.subtotal()).tax;
   }
 
   total(): Money {
-    return money(this.netAfterDiscount() + this.taxAmount());
+    return this.totalsFrom(this.subtotal()).total;
   }
 
   depositDue(): Money {
-    return money(Math.round((this.total() * this.p.depBps) / BPS_DENOMINATOR));
+    return this.totalsFrom(this.subtotal()).depositDue;
   }
 
   // --- Lifecycle ---
@@ -171,17 +301,36 @@ export class Estimate {
   }
 
   // Sent → accepted. Stamps the expected deposit (derived, not charged — payment is Phase 2).
-  accept(now: Date): Result<Estimate, ValidationError> {
+  // Tiered estimates REQUIRE a chosenTier and resolve to it: only that tier's lines survive
+  // (plus any already-resolved untiered lines the accept use-case committed), tags clear, and
+  // acceptedTier records the choice — the accepted estimate is a single quote from here on.
+  // Single-format estimates reject a chosenTier.
+  accept(now: Date, chosenTier?: QuoteTier): Result<Estimate, ValidationError> {
     if (!this.canAccept()) return err(validation("only a sent estimate can be accepted", "status"));
-    return ok(
-      new Estimate({
-        ...this.p,
-        status: "accepted",
-        acceptedAt: now,
-        depPaid: this.depositDue(),
-        updatedAt: now,
-      }),
-    );
+    const tiered = this.p.recommendedTier !== null;
+    if (tiered && !chosenTier) {
+      return err(validation("a tier choice is required to accept this estimate", "chosenTier"));
+    }
+    if (!tiered && chosenTier) {
+      return err(validation("this estimate has no tier options", "chosenTier"));
+    }
+    const lines =
+      tiered && chosenTier
+        ? this.p.lines
+            .filter((line) => line.props.tier === chosenTier || line.props.tier === null)
+            .map((line) => line.withoutTier())
+        : this.p.lines;
+    // Two-step build: depPaid derives from the RESOLVED instance so the deposit reflects the
+    // chosen tier's committed lines, not the recommended tier's pre-accept subset.
+    const resolved = new Estimate({
+      ...this.p,
+      status: "accepted",
+      acceptedAt: now,
+      acceptedTier: chosenTier ?? null,
+      lines,
+      updatedAt: now,
+    });
+    return ok(new Estimate({ ...resolved.p, depPaid: resolved.depositDue() }));
   }
 
   // Sent → declined, capturing the reason.

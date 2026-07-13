@@ -328,6 +328,7 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
       opt: l.isOptional || undefined,
       photo: l.needsPhoto || undefined,
+      tier: l.tier ?? undefined,                              // GBB tier tag (null → absent)
     })),
     pricing: {
       disc: dto.discBps / 100,   // basis points → percent (1000 bps = 10%)
@@ -338,6 +339,12 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     publicToken: dto.publicToken ?? undefined,  // null → undefined (absent when not yet set)
     changeRequestedAt: dto.changeRequestedAt ?? undefined,
     changeRequest: dto.changeRequest ?? undefined,
+    // Good/Better/Best — tier fields ride the DTO as-is (no money units involved;
+    // the DTO's total above already derives from the recommended/accepted tier).
+    recommendedTier: dto.recommendedTier ?? undefined,
+    acceptedTier: dto.acceptedTier ?? undefined,
+    tierNames: dto.tierNames ?? undefined,
+    termsSnapshot: dto.termsSnapshot ?? undefined,
     reads: [],                             // client-local — not persisted
     archived: false,
     trash: false,

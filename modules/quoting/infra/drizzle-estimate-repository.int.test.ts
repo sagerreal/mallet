@@ -16,13 +16,13 @@ import {
 } from "@mallet/shared/types";
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
-import { Estimate, EstimateLine } from "../domain/estimate";
+import { Estimate, EstimateLine, type EstimateProps, type QuoteTier } from "../domain/estimate";
 import { DrizzleEstimateRepository } from "./drizzle-estimate-repository";
 
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
 
-const line = (desc: string, rateCents: number): EstimateLine => {
+const line = (desc: string, rateCents: number, tier: QuoteTier | null = null): EstimateLine => {
   const r = EstimateLine.create({
     id: asEstimateLineId(randomUUID()),
     description: desc,
@@ -32,6 +32,7 @@ const line = (desc: string, rateCents: number): EstimateLine => {
     isOptional: false,
     needsPhoto: false,
     position: 0,
+    tier,
   });
   if (!isOk(r)) throw new Error(r.error.message);
   return r.value;
@@ -42,6 +43,7 @@ const draftEstimate = (
   leadId: LeadId,
   num: string,
   lines: EstimateLine[],
+  overrides: Partial<EstimateProps> = {},
 ): Estimate => {
   const now = new Date("2026-06-01T00:00:00Z");
   const r = Estimate.create({
@@ -63,9 +65,14 @@ const draftEstimate = (
     changeRequestedAt: null,
     changeRequest: null,
     publicToken: null,
+    recommendedTier: null,
+    acceptedTier: null,
+    tierNames: null,
+    termsSnapshot: null,
     lines,
     createdAt: now,
     updatedAt: now,
+    ...overrides,
   });
   if (!isOk(r)) throw new Error(r.error.message);
   return r.value;
@@ -138,6 +145,55 @@ suite("DrizzleEstimateRepository against live Supabase RLS", () => {
     expect(descriptions).toEqual(["A", "C", "D"]); // B removed, D added
     // subtotal reflects the edited l1 rate (1500) + 3000 + 4000
     expect(result.second?.subtotal()).toBe(8_500);
+  });
+
+  it("round-trips the tier columns and persists changes on re-save (onConflictDoUpdate path)", async () => {
+    const orgA = asOrgId(orgAId);
+    const leadA = asLeadId(leadAId);
+    const names = { good: "Patch", better: "Repair", best: "Replace" };
+    const terms = "Net 15. Workmanship warranty: 1 year.";
+
+    const out = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleEstimateRepository(tx, orgA);
+      const est = draftEstimate(
+        orgA,
+        leadA,
+        await repo.nextNumber(),
+        [line("Good fix", 10_000, "good"), line("Better fix", 20_000, "better"), line("Best fix", 30_000, "best")],
+        { recommendedTier: "better", tierNames: names, termsSnapshot: terms },
+      );
+      await repo.save(est);
+      const first = await repo.findById(est.props.id);
+
+      // Send → accept("best") → re-save: exercises the header UPDATE set list (acceptedTier)
+      // and the line UPDATE (tier cleared) — the paths the change-request columns once missed.
+      const sent = est.send(new Date("2026-06-02T00:00:00Z"));
+      if (!isOk(sent)) throw new Error("send failed");
+      const accepted = sent.value.accept(new Date("2026-06-03T00:00:00Z"), "best");
+      if (!isOk(accepted)) throw new Error("accept failed");
+      await repo.save(accepted.value);
+      const second = await repo.findById(est.props.id);
+      return { first, second };
+    });
+
+    // INSERT path: all four header columns + the line tags round-trip.
+    expect(out.first?.props.recommendedTier).toBe("better");
+    expect(out.first?.props.acceptedTier).toBeNull();
+    expect(out.first?.props.tierNames).toEqual(names);
+    expect(out.first?.props.termsSnapshot).toBe(terms);
+    expect([...(out.first?.props.lines ?? [])].map((l) => l.props.tier).sort()).toEqual([
+      "best",
+      "better",
+      "good",
+    ]);
+    expect(out.first?.total()).toBe(20_000); // recommended tier pre-accept
+
+    // UPDATE path: acceptedTier stamped, lines resolved to the chosen tier with tags cleared.
+    expect(out.second?.props.acceptedTier).toBe("best");
+    expect(out.second?.props.recommendedTier).toBe("better");
+    expect(out.second?.props.lines).toHaveLength(1);
+    expect(out.second?.props.lines[0]?.props.tier).toBeNull();
+    expect(out.second?.total()).toBe(30_000); // resolved (chosen-tier) total
   });
 
   it("cannot see another org's estimate — by id or in a list", async () => {

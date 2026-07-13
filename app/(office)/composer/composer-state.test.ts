@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   INITIAL_STATE,
   applyAiDraftLines,
+  applyAiDraftTiers,
   applyComposerPatch,
   buildQuoteMessageBody,
   deliveryGateReason,
@@ -17,6 +18,7 @@ import {
   linesForSend,
   pricingSummary,
   realLines,
+  realTierCount,
   recommendedTier,
   sendGateReason,
   switchToGbb,
@@ -24,6 +26,7 @@ import {
   tierDisplayName,
   toEstimateLines,
   updateTier,
+  type AiTiersDraft,
   type ComposerLine,
   type ComposerState,
   type GBBDraft,
@@ -391,6 +394,92 @@ describe("applyAiDraftLines", () => {
     expect(next.lines[0]!.d).toBe("drafted");
     expect(state.lines[0]!.d).toBe("old");
     expect(state.aiDrafted).toBe(false);
+  });
+});
+
+describe("applyAiDraftTiers", () => {
+  const tiersDraft: AiTiersDraft = {
+    recommended: "better",
+    good: { note: "Fix it", lines: [line("Snake the drain", 1, 250)] },
+    better: { note: "Fix + prevent", lines: [line("Hydro-jet the line", 1, 450)] },
+    best: { note: "Replace", lines: [line("Install exterior cleanout", 1, 780)] },
+  };
+
+  it("fills all three tier panels, moves the star, and closes the AI panel in GBB format", () => {
+    const gbb = makeGbb({ rec: "good" });
+    const state = makeState({ format: "gbb", gbb, aiOpen: true });
+    const next = applyAiDraftTiers(state, tiersDraft);
+
+    expect(next.gbb!.rec).toBe("better");
+    expect(next.gbb!.opts.map((o) => o.note)).toEqual(["Fix it", "Fix + prevent", "Replace"]);
+    expect(next.gbb!.opts[1]!.lines).toEqual([line("Hydro-jet the line", 1, 450)]);
+    expect(next.aiOpen).toBe(false);
+    expect(next.aiDrafted).toBe(true);
+    expect(next.switchNote).toBeNull();
+  });
+
+  it("keeps user-typed tier names and titles", () => {
+    const gbb = updateTier(makeGbb(), "better", { name: "Most popular", title: "Repair + prevent" });
+    const next = applyAiDraftTiers(makeState({ format: "gbb", gbb }), tiersDraft);
+    const better = next.gbb!.opts.find((o) => o.k === "better")!;
+    expect(better.name).toBe("Most popular");
+    expect(better.title).toBe("Repair + prevent");
+  });
+
+  it("is a no-op when no GBB draft exists", () => {
+    const state = makeState({ format: "gbb", gbb: null });
+    expect(applyAiDraftTiers(state, tiersDraft)).toBe(state);
+  });
+
+  // Mid-flight GBB → single switch: the response must not land invisibly.
+  it("after a switch to single: leaves the line table alone, fills the panels, and says where the draft went", () => {
+    const tableLines = [line("Kept single line", 1, 500)];
+    const state = makeState({
+      format: "single",
+      lines: tableLines,
+      gbb: makeGbb({ rec: "good" }),
+      aiOpen: true,
+    });
+    const next = applyAiDraftTiers(state, tiersDraft);
+
+    // The visible single-format table never changes...
+    expect(next.format).toBe("single");
+    expect(next.lines).toEqual(tableLines);
+    // ...the draft lands in the (hidden but persistent) tier panels...
+    expect(next.gbb!.rec).toBe("better");
+    expect(next.gbb!.opts[0]!.lines).toEqual([line("Snake the drain", 1, 250)]);
+    // ...and the in-flow note names what happened and the next step.
+    expect(next.aiOpen).toBe(false);
+    expect(next.switchNote).toBe(
+      "AI drafted three options after you switched formats — switch to Good, Better & Best to see them."
+    );
+  });
+
+  it("clones the drafted lines — later edits never mutate the draft input", () => {
+    const draft: AiTiersDraft = {
+      ...tiersDraft,
+      good: { note: "Fix it", lines: [line("Snake the drain", 1, 250)] },
+    };
+    const next = applyAiDraftTiers(makeState({ format: "gbb", gbb: makeGbb() }), draft);
+    next.gbb!.opts[0]!.lines[0]!.d = "MUTATED";
+    expect(draft.good.lines[0]!.d).toBe("Snake the drain");
+  });
+});
+
+describe("realTierCount — the send button's option count", () => {
+  it("is 0 in single format and without a GBB draft", () => {
+    expect(realTierCount(makeState())).toBe(0);
+    expect(realTierCount(makeState({ format: "gbb", gbb: null }))).toBe(0);
+  });
+
+  it("counts only tiers with at least one real line", () => {
+    expect(realTierCount(makeState({ format: "gbb", gbb: makeGbb() }))).toBe(3);
+
+    const twoReal = updateTier(makeGbb(), "best", { lines: [line("")] });
+    expect(realTierCount(makeState({ format: "gbb", gbb: twoReal }))).toBe(2);
+
+    const oneReal = updateTier(twoReal, "better", { lines: [line("   ")] });
+    expect(realTierCount(makeState({ format: "gbb", gbb: oneReal }))).toBe(1);
   });
 });
 

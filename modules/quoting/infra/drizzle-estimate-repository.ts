@@ -65,6 +65,10 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         changeRequestedAt: p.changeRequestedAt,
         changeRequest: p.changeRequest,
         publicToken: p.publicToken,
+        recommendedTier: p.recommendedTier,
+        acceptedTier: p.acceptedTier,
+        tierNames: p.tierNames,
+        termsSnapshot: p.termsSnapshot,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
       })
@@ -87,6 +91,10 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           changeRequestedAt: p.changeRequestedAt,
           changeRequest: p.changeRequest,
           // publicToken is set once at draft time and never overwritten on subsequent saves.
+          recommendedTier: p.recommendedTier,
+          acceptedTier: p.acceptedTier,
+          tierNames: p.tierNames,
+          termsSnapshot: p.termsSnapshot,
           updatedAt: p.updatedAt,
         },
       });
@@ -118,6 +126,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
       isOptional: lp.isOptional,
       needsPhoto: lp.needsPhoto,
       position: lp.position,
+      tier: lp.tier,
       updatedAt,
       deletedAt: null,
     };

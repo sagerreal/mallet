@@ -381,4 +381,174 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     if (accepted.kind !== "ok") throw new Error("expected ok");
     expect(accepted.estimate.total()).toBe(50_000);
   });
+
+  // -------------------------------------------------------------------------
+  // Good/Better/Best
+  // -------------------------------------------------------------------------
+
+  const GBB_TIER_NAMES = { good: "Patch", better: "Repair", best: "Replace" };
+
+  const draftGbb = async (caller: ReturnType<typeof appRouter.createCaller>, leadId: string) =>
+    caller.v1.quoting.draft({
+      leadId,
+      title: "Sewer line",
+      taxBps: 1_000, // 10%
+      depBps: 5_000, // 50%
+      recommendedTier: "better",
+      tierNames: GBB_TIER_NAMES,
+      termsSnapshot: "Net 15. Workmanship warranty: 1 year.",
+      lines: [
+        { description: "Patch leak", quantity: 1, rateCents: 20_000, tier: "good" },
+        { description: "Repair section", quantity: 1, rateCents: 35_000, tier: "better" },
+        { description: "Camera inspection", quantity: 1, rateCents: 5_000, isOptional: true, tier: "better" },
+        { description: "Replace run", quantity: 1, rateCents: 90_000, tier: "best" },
+      ],
+    });
+
+  it("GBB lifecycle: tiers persist, totals follow the recommended tier, the customer's pick resolves the quote, the job reads the resolved total", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "GBB Customer" });
+    const drafted = await draftGbb(caller, lead.id);
+
+    // Draft DTO carries the tier structure.
+    expect(drafted.recommendedTier).toBe("better");
+    expect(drafted.acceptedTier).toBeNull();
+    expect(drafted.tierNames).toEqual(GBB_TIER_NAMES);
+    expect(drafted.termsSnapshot).toContain("Net 15");
+    expect(drafted.lines.map((l) => l.tier)).toEqual(["good", "better", "better", "best"]);
+    // Totals derive from the RECOMMENDED tier's fixed lines: 35_000 + 10% tax.
+    expect(drafted.subtotal.cents).toBe(35_000);
+    expect(drafted.total.cents).toBe(38_500);
+    expect(drafted.depositDue.cents).toBe(19_250);
+    // Summary totals agree (list views show the recommended tier's figure).
+    const listed = await caller.v1.quoting.listByLead({ leadId: lead.id, limit: 10 });
+    expect(listed.items.find((e) => e.id === drafted.id)?.total.cents).toBe(38_500);
+    expect(listed.items.find((e) => e.id === drafted.id)?.recommendedTier).toBe("better");
+
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+    expect(sent.publicToken).toBeTruthy();
+    const optId = sent.lines.find((l) => l.isOptional && l.tier === "better")!.id;
+    const goodFixedId = sent.lines.find((l) => l.tier === "good")!.id;
+
+    // A fixed line id — even from another tier — is not toggleable.
+    const badSelection = await acceptPublicQuote(sent.publicToken!, [goodFixedId], "better");
+    expect(badSelection.kind).toBe("invalid_selection");
+
+    // The customer picks Better + the camera add-on.
+    const result = await acceptPublicQuote(sent.publicToken!, [optId], "better");
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("expected ok");
+    expect(result.estimate.props.status).toBe("accepted");
+    expect(result.estimate.props.acceptedTier).toBe("better");
+    // Committed lines = the chosen tier's fixed line + the selected add-on, resolved.
+    expect(result.estimate.props.lines).toHaveLength(2);
+    expect(
+      result.estimate.props.lines.every((l) => l.props.tier === null && !l.props.isOptional),
+    ).toBe(true);
+    expect(result.estimate.total()).toBe(44_000); // (35_000 + 5_000) + 10% tax
+    expect(result.estimate.props.depPaid).toBe(22_000);
+
+    // The office sees the resolved quote.
+    const fetched = await caller.v1.quoting.get({ estimateId: drafted.id });
+    expect(fetched.status).toBe("accepted");
+    expect(fetched.acceptedTier).toBe("better");
+    expect(fetched.total.cents).toBe(44_000);
+    expect(fetched.lines).toHaveLength(2);
+
+    // The auto-created job reads the RESOLVED (chosen-tier) total, not the recommended one.
+    const jobsPage = await caller.v1.jobs.listByLead({ leadId: lead.id, limit: 50 });
+    let jobTotalCents: number | undefined;
+    for (const summary of jobsPage.items) {
+      const full = await caller.v1.jobs.get({ jobId: summary.id });
+      if (full.sourceEstimateId === drafted.id) {
+        jobTotalCents = full.total.cents;
+        break;
+      }
+    }
+    expect(jobTotalCents).toBe(44_000);
+  });
+
+  it("GBB public accept without a chosenTier is refused and the quote stays sent", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "GBB No-Tier Customer" });
+    const drafted = await draftGbb(caller, lead.id);
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+
+    const result = await acceptPublicQuote(sent.publicToken!);
+    expect(result).toEqual({ kind: "invalid_tier", reason: "required" });
+
+    const after = await caller.v1.quoting.get({ estimateId: drafted.id });
+    expect(after.status).toBe("sent");
+    expect(after.acceptedTier).toBeNull();
+  });
+
+  it("single-quote public accept with a chosenTier is refused; accept without one still works", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Single No-Tier Customer" });
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Plain quote",
+      lines: [{ description: "Work", quantity: 1, rateCents: 30_000 }],
+    });
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+
+    const refused = await acceptPublicQuote(sent.publicToken!, undefined, "good");
+    expect(refused).toEqual({ kind: "invalid_tier", reason: "not_applicable" });
+    expect((await caller.v1.quoting.get({ estimateId: drafted.id })).status).toBe("sent");
+
+    const accepted = await acceptPublicQuote(sent.publicToken!);
+    expect(accepted.kind).toBe("ok");
+    if (accepted.kind !== "ok") throw new Error("expected ok");
+    expect(accepted.estimate.props.acceptedTier).toBeNull();
+  });
+
+  it("office accept on a GBB estimate defaults to the recommended tier", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "GBB Office Accept Customer" });
+    const drafted = await draftGbb(caller, lead.id);
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.acceptedTier).toBe("better");
+    // Resolved to the recommended tier's lines. The un-toggled add-on survives as an
+    // optional line (mirrors single-format office accept) and stays out of the totals.
+    expect(accepted.lines).toHaveLength(2);
+    expect(accepted.lines.every((l) => l.tier === null)).toBe(true);
+    expect(accepted.lines.filter((l) => l.isOptional)).toHaveLength(1);
+    expect(accepted.total.cents).toBe(38_500);
+  });
+
+  it("office accept can pick a NON-recommended tier explicitly", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "GBB Office Best Customer" });
+    const drafted = await draftGbb(caller, lead.id);
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id, chosenTier: "best" });
+    expect(accepted.acceptedTier).toBe("best");
+    expect(accepted.total.cents).toBe(99_000); // 90_000 + 10% tax
+  });
+
+  it("draft boundary rejects inconsistent tier payloads", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    // Tiered lines without recommendedTier.
+    await expect(
+      caller.v1.quoting.draft({
+        leadId: leadAId,
+        lines: [{ description: "x", quantity: 1, rateCents: 1_000, tier: "good" }],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // recommendedTier with an untagged line.
+    await expect(
+      caller.v1.quoting.draft({
+        leadId: leadAId,
+        recommendedTier: "good",
+        lines: [
+          { description: "x", quantity: 1, rateCents: 1_000, tier: "good" },
+          { description: "y", quantity: 1, rateCents: 2_000 },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
 });

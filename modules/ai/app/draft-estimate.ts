@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import type { LlmClient } from "../domain/llm-client";
-import { LlmError } from "../domain/llm-client";
+import { extractJsonFromText } from "./extract-json";
 
 // ---------------------------------------------------------------------------
 // One-shot LLM-powered estimate drafter.
@@ -18,6 +18,19 @@ export interface EstimateLineDraft {
   readonly rateCents: number; // integer cents
 }
 
+// One line of model output, capped to what the draft boundary + domain accept:
+// description ≤ 500 chars, quantity ≤ 10,000 at 2-decimal precision (the domain's
+// numeric(12,2) guard — EstimateLine.create rejects finer), unit price ≤ $1,000,000.
+// Out-of-bounds model output fails the parse here, so it takes the existing
+// fallback/BAD_GATEWAY path instead of dying later at the tRPC draft boundary
+// (which would silently roll back the optimistic estimate after the redirect).
+// Shared with the tiered drafter (draft-estimate-tiers.ts) — one set of caps.
+export const draftLineInputSchema = z.object({
+  description: z.string().min(1).max(500),
+  quantity: z.number().positive().max(10_000).multipleOf(0.01),
+  unitPriceUsd: z.number().nonnegative().max(1_000_000),
+});
+
 // One line of the org's real pricebook, passed in as retrieval context so the model prices
 // from the shop's actual book instead of inventing "typical trade pricing". Bounded top-N —
 // the caller (the router) is responsible for capping how many it fetches.
@@ -29,16 +42,7 @@ export interface CatalogServiceContext {
 
 // The shape the model is asked to fill in (unit prices in whole USD).
 const submitEstimateInputSchema = z.object({
-  lines: z
-    .array(
-      z.object({
-        description: z.string().min(1),
-        quantity: z.number().positive(),
-        unitPriceUsd: z.number().nonnegative(),
-      }),
-    )
-    .min(1)
-    .max(10),
+  lines: z.array(draftLineInputSchema).min(1).max(10),
 });
 
 type SubmitEstimateInput = z.infer<typeof submitEstimateInputSchema>;
@@ -100,35 +104,6 @@ const parseSubmitInput = (raw: unknown): SubmitEstimateInput | null => {
 };
 
 /**
- * Attempt to extract a `{lines:[...]}` JSON object from a text string.
- * Looks for the first `{` … `}` balanced span that parses + validates.
- */
-const extractJsonFromText = (text: string): SubmitEstimateInput | null => {
-  // Find all candidate JSON substrings by scanning for `{`.
-  for (let i = 0; i < text.length; i += 1) {
-    if (text[i] !== "{") continue;
-    let depth = 0;
-    let j = i;
-    for (; j < text.length; j += 1) {
-      if (text[j] === "{") depth += 1;
-      else if (text[j] === "}") {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-    if (depth !== 0) continue;
-    try {
-      const candidate: unknown = JSON.parse(text.slice(i, j + 1));
-      const parsed = parseSubmitInput(candidate);
-      if (parsed) return parsed;
-    } catch {
-      // not valid JSON — keep scanning
-    }
-  }
-  return null;
-};
-
-/**
  * Call the LLM once to produce a structured estimate from a plain-English
  * job description. Returns an array of `EstimateLineDraft` (with rateCents).
  * When `catalog` is non-empty, the system prompt instructs the model to price
@@ -166,7 +141,7 @@ export const draftEstimateLines = async (
   // well-instructed model + a single tool, but handle gracefully).
   for (const block of turn.blocks) {
     if (block.type === "text") {
-      const parsed = extractJsonFromText(block.text);
+      const parsed = extractJsonFromText(block.text, parseSubmitInput);
       if (parsed) return mapLines(parsed);
     }
   }

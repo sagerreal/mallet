@@ -1,6 +1,8 @@
 // Public surface for the quoting module — the only sanctioned import seam (architecture rule).
 export { createEstimateRouter } from "./api/estimate-router";
 export type { Estimate, EstimateStatus, EstimateProps, EstimateLine } from "./domain/estimate";
+export { QUOTE_TIERS, isQuoteTier } from "./domain/estimate";
+export type { QuoteTier, TierNames, TierTotals } from "./domain/estimate";
 export type { EstimateRepository } from "./domain/estimate-repository";
 // Exposed so other modules (e.g. jobs) can read estimates through this seam without touching
 // quoting internals.

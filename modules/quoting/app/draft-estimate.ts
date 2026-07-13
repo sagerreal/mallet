@@ -3,6 +3,7 @@ import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/type
 import { asEstimateId, asEstimateLineId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
+import type { QuoteTier, TierNames } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
 
 // Generate an unguessable, URL-safe token for the public quote page.
@@ -17,6 +18,8 @@ export interface EstimateLineInput {
   readonly costCents: number;
   readonly isOptional: boolean;
   readonly needsPhoto: boolean;
+  /** Good/Better/Best tag — required on every line of a tiered draft, absent otherwise. */
+  readonly tier?: QuoteTier | null;
 }
 
 export interface DraftEstimateCommand {
@@ -28,6 +31,11 @@ export interface DraftEstimateCommand {
   readonly depBps: number;
   readonly validDays: number | null;
   readonly lines: readonly EstimateLineInput[];
+  /** Non-null marks the draft as Good/Better/Best (domain validates line tags match). */
+  readonly recommendedTier?: QuoteTier | null;
+  readonly tierNames?: TierNames | null;
+  /** Snapshot of the selected job terms TEXT (no live reference). */
+  readonly termsSnapshot?: string | null;
 }
 
 // Create a new draft estimate for a customer: validate + build the line value objects, allocate
@@ -59,6 +67,7 @@ export class DraftEstimateUseCase {
         isOptional: input.isOptional,
         needsPhoto: input.needsPhoto,
         position: i,
+        tier: input.tier ?? null,
       });
       if (!isOk(line)) return line;
       built.push(line.value);
@@ -88,6 +97,10 @@ export class DraftEstimateUseCase {
       changeRequestedAt: null,
       changeRequest: null,
       publicToken: generatePublicToken(),
+      recommendedTier: cmd.recommendedTier ?? null,
+      acceptedTier: null,
+      tierNames: cmd.tierNames ?? null,
+      termsSnapshot: cmd.termsSnapshot ?? null,
       lines: built,
       createdAt: now,
       updatedAt: now,

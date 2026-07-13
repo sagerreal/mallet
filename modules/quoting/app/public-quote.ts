@@ -8,11 +8,11 @@ import { AcceptEstimateUseCase } from "./accept-estimate";
 import type { AcceptLineInput } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
 import { RequestEstimateChangeUseCase } from "./request-estimate-change";
-import { buildAcceptLinesFromSelection } from "./select-optional-lines";
-import { classifyAcceptValidationFailure } from "./public-accept-policy";
+import { buildAcceptLinesFromSelection, buildAcceptLinesForTier } from "./select-optional-lines";
+import { classifyAcceptValidationFailure, validateTierChoice } from "./public-accept-policy";
 import type { AcceptPublicQuoteResult } from "./public-accept-policy";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
-import type { Estimate } from "../domain/estimate";
+import type { Estimate, QuoteTier } from "../domain/estimate";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
 import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { logger } from "@mallet/shared/observability";
@@ -30,6 +30,44 @@ export type RequestChangeResult =
 // callers keep a single import surface.
 export type { AcceptPublicQuoteResult } from "./public-accept-policy";
 
+// Outcome of resolving the accept-time inputs (tier gate + committed line set) against the
+// STORED estimate while it is still open ("sent").
+type ResolvedAcceptInputs =
+  | { kind: "proceed"; lines?: readonly AcceptLineInput[]; chosenTier?: QuoteTier }
+  | { kind: "rejected"; result: AcceptPublicQuoteResult };
+
+// Validate the tier choice and build the committed line set from STORED data only.
+// Tiered quotes route through buildAcceptLinesForTier (selection scoped to the chosen tier);
+// single quotes keep the original ID-subset builder.
+function resolveAcceptInputs(
+  stored: Estimate,
+  chosenTier: QuoteTier | undefined,
+  selectedOptionalLineIds: readonly string[] | undefined,
+  logCtx: { estimateId: string; orgId: string },
+): ResolvedAcceptInputs {
+  const tierChoice = validateTierChoice(stored, chosenTier);
+  if (tierChoice.kind === "invalid_tier") {
+    logger.warn(
+      { ...logCtx, chosenTier: chosenTier ?? null, reason: tierChoice.reason },
+      "public-quote.accept: tier choice rejected",
+    );
+    return { kind: "rejected", result: tierChoice };
+  }
+  const tiered = stored.isTiered() && chosenTier !== undefined;
+  const selection = tiered
+    ? buildAcceptLinesForTier(stored, chosenTier, selectedOptionalLineIds)
+    : buildAcceptLinesFromSelection(stored, selectedOptionalLineIds);
+  if (selection.kind === "invalid") {
+    logger.warn(logCtx, "public-quote.accept: selection did not match stored optional lines");
+    return { kind: "rejected", result: { kind: "invalid_selection" } };
+  }
+  return {
+    kind: "proceed",
+    ...(selection.kind === "lines" ? { lines: selection.lines } : {}),
+    ...(tiered ? { chosenTier } : {}),
+  };
+}
+
 // Re-export so callers only need to import from this module.
 export type { PublicQuoteView };
 
@@ -42,16 +80,18 @@ export async function getPublicQuote(token: string): Promise<PublicQuoteView | n
 }
 
 // Accept an estimate via its public token, optionally committing the customer's selection of
-// OPTIONAL add-on lines. Idempotent: an already-accepted estimate returns its current state
-// without error. A token that does not match → not_found.
-// Reuses AcceptEstimateUseCase inside withTenant — no parallel accept path.
+// OPTIONAL add-on lines and — for Good/Better/Best quotes — their chosen tier. Idempotent: an
+// already-accepted estimate returns its current state without error. A token that does not
+// match → not_found. Reuses AcceptEstimateUseCase inside withTenant — no parallel accept path.
 //
-// SECURITY: the selection is an ID SUBSET only. Committed lines are built from the STORED
-// estimate's lines (buildAcceptLinesFromSelection) — an unauthenticated token holder can
-// toggle add-ons but can never author line content or rewrite prices.
+// SECURITY: the selection is an ID SUBSET only, and chosenTier is an enum naming stored data.
+// Committed lines are built from the STORED estimate's lines (buildAcceptLinesFromSelection /
+// buildAcceptLinesForTier) — an unauthenticated token holder can pick a tier and toggle its
+// add-ons but can never author line content or rewrite prices.
 export async function acceptPublicQuote(
   token: string,
   selectedOptionalLineIds?: readonly string[],
+  chosenTier?: QuoteTier,
 ): Promise<AcceptPublicQuoteResult> {
   const reader = new DrizzlePublicEstimateReader();
   const resolved = await reader.resolveOrgByToken(token);
@@ -70,26 +110,23 @@ export async function acceptPublicQuote(
     const stored = await repo.findById(asEstimateId(estimateId));
     if (!stored) return { kind: "not_found" };
 
-    // Only validate the selection while the quote is still open. Accept regenerates line ids,
-    // so validating a retried selection against a terminal estimate would wrongly reject the
-    // idempotent re-accept path.
-    let lines: readonly AcceptLineInput[] | undefined;
+    // Only validate the tier choice + selection while the quote is still open. Accept clears
+    // tier tags and regenerates line ids, so validating a retried POST against a terminal
+    // estimate would wrongly reject the idempotent re-accept path.
+    let resolved: ResolvedAcceptInputs = { kind: "proceed" };
     if (stored.props.status === "sent") {
-      const selection = buildAcceptLinesFromSelection(stored, selectedOptionalLineIds);
-      if (selection.kind === "invalid") {
-        logger.warn(
-          { estimateId, orgId },
-          "public-quote.accept: selection did not match stored optional lines",
-        );
-        return { kind: "invalid_selection" };
-      }
-      if (selection.kind === "lines") lines = selection.lines;
+      resolved = resolveAcceptInputs(stored, chosenTier, selectedOptionalLineIds, {
+        estimateId,
+        orgId,
+      });
+      if (resolved.kind === "rejected") return resolved.result;
     }
 
     const useCase = new AcceptEstimateUseCase(repo, bus, systemClock, uuidGenerator);
     const result = await useCase.exec({
       estimateId: asEstimateId(estimateId),
-      ...(lines ? { lines } : {}),
+      ...(resolved.lines ? { lines: resolved.lines } : {}),
+      ...(resolved.chosenTier ? { chosenTier: resolved.chosenTier } : {}),
     });
 
     if (!result.ok) {

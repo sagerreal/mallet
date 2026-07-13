@@ -71,6 +71,13 @@ function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
     publicToken: dto.publicToken ?? undefined,
     // changeRequestedAt from the summary DTO — indicates a pending customer request.
     changeRequestedAt: dto.changeRequestedAt ?? undefined,
+    // Good/Better/Best fields — on summaries so the modal/rails can show the
+    // tier line ("3 options · recommended Better" / "Accepted: Best") from
+    // list-hydrated data. The summary total already derives from the right tier.
+    recommendedTier: dto.recommendedTier ?? undefined,
+    acceptedTier: dto.acceptedTier ?? undefined,
+    tierNames: dto.tierNames ?? undefined,
+    termsSnapshot: dto.termsSnapshot ?? undefined,
     archived: false,
     trash: false,
   };
