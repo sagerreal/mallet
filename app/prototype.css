@@ -635,6 +635,22 @@
   .lineedit-sep{width:1px;height:16px;background:var(--line);margin:0 6px;flex-shrink:0}
   .lineedit-spring{margin-left:auto}
 
+  /* draft-run reveal: active-stage pulse + row materialization */
+  .run-pulse{display:inline-block;animation:runpulse 1s ease-in-out infinite;color:var(--green-600)}
+  @keyframes runpulse{0%,100%{opacity:.3}50%{opacity:1}}
+  .materialize tbody tr{animation:settle .32s ease-out both}
+  .materialize tbody tr:nth-child(2){animation-delay:.12s}
+  .materialize tbody tr:nth-child(3){animation-delay:.24s}
+  .materialize tbody tr:nth-child(4){animation-delay:.36s}
+  .materialize tbody tr:nth-child(5){animation-delay:.48s}
+  .materialize tbody tr:nth-child(6){animation-delay:.6s}
+  .materialize tbody tr:nth-child(n+7){animation-delay:.72s}
+  @keyframes settle{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion: reduce){
+    .run-pulse{animation:none}
+    .materialize tbody tr{animation:none}
+  }
+
   /* segmented control — one container, dark-filled active segment */
   .seg{display:inline-flex;border:1.5px solid var(--line);border-radius:10px;background:var(--card);padding:2px;gap:2px}
   .seg button{border:0;background:transparent;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink-2);padding:6px 13px;border-radius:8px;cursor:pointer;white-space:nowrap}

@@ -27,6 +27,14 @@ import {
   type ComposerState,
 } from "./composer-state";
 import { LineTable } from "./line-table";
+import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
+
+interface DraftRunProps2 {
+  hasLead: boolean;
+  gather: DraftRunGather | null;
+  pricebook: { services: number; laborRates: number };
+  result: DraftRunResult | null;
+}
 import { GbbTiers } from "./gbb-tiers";
 
 export function QuoteCard({
@@ -38,6 +46,9 @@ export function QuoteCard({
   aiDraftError,
   services,
   onSaveToBook,
+  run,
+  onRunDone,
+  materialize,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
@@ -49,6 +60,11 @@ export function QuoteCard({
   services: Service[];
   /** Write direction for each line's "Save to book" chip. */
   onSaveToBook: (line: ComposerLine) => Promise<AddResult>;
+  /** The staged run reveal — non-null while a draft is in flight/revealing. */
+  run: DraftRunProps2 | null;
+  onRunDone: () => void;
+  /** Brief window after a reveal: rows animate in (CSS, reduced-motion safe). */
+  materialize: boolean;
 }) {
   // View-only: show/hide the owner "Your cost" column (single table + tier
   // panels alike). Never touches the store — hiding only omits cells; entered
@@ -64,6 +80,12 @@ export function QuoteCard({
   // lines, the button swaps to an in-flow confirm state before running.
   const suggestReplacesTypedTiers =
     state.gbb?.opts.some((o) => o.k !== "good" && hasRealLine(o.lines)) ?? false;
+
+  // Empty quote → the describe-the-job hero is the primary path (AI as the
+  // empty state, not a button); any real line anywhere dismisses it.
+  const quoteIsEmpty = isGbb
+    ? !(state.gbb?.opts.some((o) => hasRealLine(o.lines)) ?? false)
+    : !hasRealLine(state.lines);
   const [confirmSuggest, setConfirmSuggest] = useState(false);
   useEffect(() => {
     // The confirm state is only meaningful while there is something to lose.
@@ -222,8 +244,60 @@ export function QuoteCard({
         </div>
       )}
 
+      {/* Empty-state hero — the blank quote invites a description; drafting is
+          the primary path, the table below stays as the manual fallback. */}
+      {!run && quoteIsEmpty && (
+        <div style={{ padding: "18px 8px 6px" }}>
+          <textarea
+            rows={2}
+            autoFocus
+            value={state.desc}
+            placeholder="What's the job? e.g. 40-gal gas water heater swap, haul away the old unit"
+            aria-label="Describe the job"
+            onChange={(e) => onUpdate({ desc: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (state.desc.trim() && !isDrafting) onAiDraft();
+              }
+            }}
+            style={{
+              width: "100%",
+              border: "1.5px solid var(--line)",
+              borderRadius: 11,
+              padding: "12px 14px",
+              fontFamily: "inherit",
+              fontSize: 15,
+              background: "var(--card)",
+              color: "var(--ink)",
+              resize: "vertical",
+              boxSizing: "border-box",
+            }}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+            <button
+              className="btn sm primary"
+              disabled={isDrafting || !state.desc.trim()}
+              onClick={onAiDraft}
+            >
+              {isDrafting ? "Working…" : "Build the quote"}
+            </button>
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              {isGbb
+                ? "Builds all three options from your pricebook, rates & won quotes"
+                : "Built from your pricebook, rates & won quotes — every line editable"}
+            </span>
+          </div>
+          {aiDraftError && (
+            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 8 }}>
+              {aiDraftError}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* AI draft panel (in-flow, inside the card) */}
-      {state.aiOpen && (
+      {!quoteIsEmpty && state.aiOpen && (
         <div className="card" style={{ padding: 14, margin: "14px 0 0" }}>
           <div className="field" style={{ marginBottom: 8 }}>
             <textarea
@@ -274,13 +348,27 @@ export function QuoteCard({
         </div>
       )}
 
+      {/* Staged run reveal — replaces the body while the estimator works. The
+          drafted lines apply to state the moment the mutation resolves; this
+          checklist is presentational on top (see draft-run.tsx). */}
+      {run && (
+        <DraftRun
+          hasLead={run.hasLead}
+          gather={run.gather}
+          pricebook={run.pricebook}
+          result={run.result}
+          onDone={onRunDone}
+        />
+      )}
+
       {/* Format body */}
-      {isGbb ? (
+      {!run && (isGbb ? (
         <GbbTiers
           state={state}
           onUpdate={onUpdate}
           showCost={showCost}
           onSaveToBook={onSaveToBook}
+          materialize={materialize}
         />
       ) : (
         <>
@@ -291,6 +379,7 @@ export function QuoteCard({
             onRemoveLine={removeLine}
             onSaveToBook={onSaveToBook}
             onAddLine={addLine}
+            materialize={materialize}
             footerTools={
               <>
                 <button
@@ -348,10 +437,10 @@ export function QuoteCard({
             </div>
           )}
         </>
-      )}
+      ))}
 
       {/* Totals — what the customer receives (recommended tier in GBB) */}
-      {hasRealLine(sendLines) && (
+      {!run && hasRealLine(sendLines) && (
         <div
           style={{
             display: "flex",
