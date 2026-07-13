@@ -8,11 +8,14 @@
  */
 
 import type { RouterOutputs } from "@/lib/trpc/client";
-import type { Service, Category } from "./types";
+import type { Service, Category, Material, ServiceMaterialLink } from "./types";
 
 export type ServiceDTO = RouterOutputs["v1"]["pricebook"]["service"]["create"];
 export type CategoryDTO = RouterOutputs["v1"]["pricebook"]["category"]["create"];
 export type SeedPricebookDTO = RouterOutputs["v1"]["pricebook"]["seed"];
+export type MaterialDTO = RouterOutputs["v1"]["pricebook"]["material"]["create"];
+export type ServiceMaterialDTO =
+  RouterOutputs["v1"]["pricebook"]["serviceMaterial"]["listForService"][number];
 
 // ---------------------------------------------------------------------------
 // DTO -> store (dollars)
@@ -53,6 +56,31 @@ export function seedResultDtoToStore(dto: SeedPricebookDTO): {
   return {
     services: dto.services.map(serviceDtoToStore),
     categories: dto.categories.map(categoryDtoToStore),
+  };
+}
+
+export function materialDtoToStore(dto: MaterialDTO): Material {
+  return {
+    id: dto.id,
+    categoryId: dto.categoryId,
+    code: dto.code,
+    name: dto.name,
+    description: dto.description,
+    unitCost: dto.unitCostCents / 100,
+    unitOfMeasure: dto.unitOfMeasure,
+    markupBps: dto.markupBps,
+    taxable: dto.taxable,
+    vendor: dto.vendor,
+    active: dto.active,
+    position: dto.position,
+  };
+}
+
+export function serviceMaterialDtoToStore(dto: ServiceMaterialDTO): ServiceMaterialLink {
+  return {
+    serviceId: dto.serviceId,
+    materialId: dto.materialId,
+    quantity: dto.quantity,
   };
 }
 
@@ -175,4 +203,105 @@ export function categoryCreatePayload(
   parentId?: string | null,
 ): CategoryCreatePayload {
   return { id, name, parentId: parentId ?? null };
+}
+
+// ---------------------------------------------------------------------------
+// material create/update payloads (cents) — mirrors the service payloads above
+// ---------------------------------------------------------------------------
+
+/** Fields the caller supplies to add a material — dollars (mirrors the store Material shape). */
+export interface AddMaterialFields {
+  name: string;
+  unitCost: number; // dollars
+  categoryId?: string | null;
+  code?: string | null;
+  description?: string | null;
+  unitOfMeasure?: string;
+  markupBps?: number | null;
+  taxable?: boolean;
+  vendor?: string | null;
+}
+
+/** Payload for v1.pricebook.material.create (cents) — the client authors `id` for optimistic UI. */
+export interface MaterialCreatePayload {
+  id: string;
+  name: string;
+  categoryId: string | null;
+  code: string | null;
+  description: string | null;
+  unitCostCents: number;
+  unitOfMeasure: string;
+  markupBps: number | null;
+  taxable: boolean;
+  vendor: string | null;
+}
+
+export function materialCreatePayload(id: string, fields: AddMaterialFields): MaterialCreatePayload {
+  return {
+    id,
+    name: fields.name,
+    categoryId: fields.categoryId ?? null,
+    code: fields.code ?? null,
+    description: fields.description ?? null,
+    unitCostCents: Math.max(0, Math.round(fields.unitCost * 100)),
+    unitOfMeasure: fields.unitOfMeasure ?? "each",
+    markupBps: fields.markupBps ?? null,
+    taxable: fields.taxable ?? false,
+    vendor: fields.vendor ?? null,
+  };
+}
+
+/** Patchable material fields (dollars) — a subset of the store Material shape. */
+export type MaterialUpdateFields = Partial<
+  Pick<
+    Material,
+    | "name"
+    | "categoryId"
+    | "code"
+    | "description"
+    | "unitCost"
+    | "unitOfMeasure"
+    | "markupBps"
+    | "taxable"
+    | "vendor"
+    | "active"
+    | "position"
+  >
+>;
+
+export interface MaterialUpdatePayload {
+  materialId: string;
+  name?: string;
+  categoryId?: string | null;
+  code?: string | null;
+  description?: string | null;
+  unitCostCents?: number;
+  unitOfMeasure?: string;
+  markupBps?: number | null;
+  taxable?: boolean;
+  vendor?: string | null;
+  active?: boolean;
+  position?: number;
+}
+
+export function materialUpdatePayload(
+  materialId: string,
+  fields: MaterialUpdateFields,
+): MaterialUpdatePayload {
+  return {
+    materialId,
+    ...(fields.name !== undefined ? { name: fields.name } : {}),
+    ...(fields.categoryId !== undefined ? { categoryId: fields.categoryId } : {}),
+    ...(fields.code !== undefined ? { code: fields.code } : {}),
+    ...(fields.description !== undefined ? { description: fields.description } : {}),
+    ...(fields.unitCost !== undefined
+      ? { unitCostCents: Math.max(0, Math.round(fields.unitCost * 100)) }
+      : {}),
+    ...(fields.unitOfMeasure !== undefined ? { unitOfMeasure: fields.unitOfMeasure } : {}),
+    ...(fields.markupBps !== undefined ? { markupBps: fields.markupBps } : {}),
+    ...(fields.taxable !== undefined ? { taxable: fields.taxable } : {}),
+    ...(fields.vendor !== undefined ? { vendor: fields.vendor } : {}),
+    ...(fields.active !== undefined ? { active: fields.active } : {}),
+    ...(fields.position !== undefined ? { position: fields.position } : {}),
+  };
 }

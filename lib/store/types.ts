@@ -228,6 +228,33 @@ export interface Category {
   sortOrder: number;
 }
 
+// ---- Pricebook materials (hidden cost ingredients, Phase 2a) ---------------
+// Dollars in the store; the DB/domain/DTOs carry integer cents (unitCostCents) —
+// conversion lives only in lib/store/pricebook-mapper.ts. markupBps stays basis
+// points end-to-end (no dollars conversion applies to it).
+
+export interface Material {
+  id: string;
+  categoryId: string | null;
+  code: string | null;
+  name: string;
+  description: string | null;
+  unitCost: number; // dollars
+  unitOfMeasure: string;
+  markupBps: number | null;
+  taxable: boolean;
+  vendor: string | null;
+  active: boolean;
+  position: number;
+}
+
+/** A service<->material join row: how much of a material a service consumes. */
+export interface ServiceMaterialLink {
+  serviceId: string;
+  materialId: string;
+  quantity: number;
+}
+
 export interface Job {
   id: string;
   leadId: string;
