@@ -72,7 +72,7 @@ export function PriceBuilderModalContent() {
     [servicesRaw],
   );
   const laborRates: LaborRate[] = useMemo(
-    () => laborRatesRaw.map((r: StoreLaborRate) => ({ name: r.name, rate: r.rate })),
+    () => laborRatesRaw.map((r: StoreLaborRate) => ({ name: r.name, rate: r.rate, kind: r.kind })),
     [laborRatesRaw],
   );
 
@@ -110,7 +110,11 @@ export function PriceBuilderModalContent() {
   }
 
   function pickRate(r: LaborRate) {
-    appendLine({ kind: "tm", d: "Labor", h: 1, rate: r.rate });
+    if (r.kind === "flat_fee") {
+      appendLine({ kind: "custom", d: r.name, amt: r.rate });
+    } else {
+      appendLine({ kind: "tm", d: "Labor", h: 1, rate: r.rate });
+    }
     // labor pick keeps the sublist open (prototype tqPickRate leaves add).
   }
 
