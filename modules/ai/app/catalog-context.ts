@@ -16,5 +16,6 @@ export const toCatalogContext = (
       name: s.name,
       unitPriceCents: s.unitPriceCents,
       category: s.categoryId ? (categoryNameById.get(s.categoryId) ?? null) : null,
+      laborHours: s.laborHours,
     }));
 };

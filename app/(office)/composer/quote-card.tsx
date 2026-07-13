@@ -258,8 +258,8 @@ export function QuoteCard({
           </button>{" "}
           <span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>
             {isGbb
-              ? "Drafts into the Good option — every line editable"
-              : "Drafted from your pricebook & rates — every line editable"}
+              ? "Drafts all three options from your pricebook, rates & won quotes"
+              : "Drafted from your pricebook, rates & won quotes — every line editable"}
           </span>
           {aiDraftError && (
             <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 8 }}>

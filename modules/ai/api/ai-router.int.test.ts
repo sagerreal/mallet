@@ -112,6 +112,64 @@ suite("ai agent tRPC entry (full stack, live RLS)", () => {
     expect(estimates).toHaveLength(1); // the approved tool ran, scoped to org A
   });
 
+  it("gatherJobContext returns the lead's notes/texts/field findings with real counts", async () => {
+    // Seed: notes on the lead, one inbound text, one job with a visit note.
+    await admin`update leads set notes = 'gate code 4411', source = 'Angi' where id = ${leadAId}`;
+    await admin`insert into messages (org_id, lead_id, direction, channel, body, from_number, to_number)
+      values (${orgAId}, ${leadAId}, 'inbound', 'sms', 'water heater leaking from the bottom', '+15550001111', '+15550002222')`;
+    const [job] = await admin<{ id: string }[]>`insert into jobs (org_id, lead_id, num, status, notes)
+      values (${orgAId}, ${leadAId}, 'JOB-9001', 'scheduled', 'tank rusted through — recommend replace') returning id`;
+
+    const llm = new ScriptedLlm([]);
+    const caller = appRouter.createCaller(ctxWith(orgAId, "owner", llm));
+    const ctx = await caller.v1.ai.gatherJobContext({ leadId: leadAId });
+
+    expect(ctx.lead?.name).toBe("Karen Agent");
+    expect(ctx.lead?.source).toBe("Angi");
+    expect(ctx.counts.notes).toBe(1);
+    expect(ctx.counts.texts).toBe(1);
+    expect(ctx.counts.visitNotes).toBe(1);
+    expect(ctx.messages[0]?.body).toContain("water heater leaking");
+    expect(ctx.visitNotes[0]).toContain("tank rusted");
+
+    // Unknown lead → NOT_FOUND; another org's caller can't see this lead either (RLS).
+    await expect(caller.v1.ai.gatherJobContext({ leadId: crypto.randomUUID() })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    if (job) await admin`delete from jobs where id = ${job.id}`;
+  });
+
+  it("draftEstimate carries lead context + pricebook + won quotes into the prompt and returns real stage counts", async () => {
+    // Seed a pricebook service, a labor rate, and an ACCEPTED estimate to act as the exemplar.
+    await admin`insert into pricebook_items (org_id, label, unit_price_cents, active, labor_hours)
+      values (${orgAId}, '40-gal water heater install', 165000, true, 3)`;
+    await admin`insert into labor_rates (org_id, label, rate_cents_per_hour, kind)
+      values (${orgAId}, 'Standard', 14500, 'hourly')`;
+    const [wonEst] = await admin<{ id: string }[]>`insert into estimates (org_id, num, lead_id, status, accepted_at)
+      values (${orgAId}, 'EST-9001', ${leadAId}, 'accepted', now()) returning id`;
+    await admin`insert into estimate_lines (org_id, estimate_id, description, quantity, rate_cents, position)
+      values (${orgAId}, ${wonEst!.id}, '40-gal water heater + haul away', 1, 180000, 1)`;
+
+    const llm = new ScriptedLlm([
+      callTool("d1", "submit_estimate", { lines: [{ description: "Water heater swap", quantity: 1, unitPriceUsd: 1650 }] }),
+    ]);
+    const caller = appRouter.createCaller(ctxWith(orgAId, "owner", llm));
+    const res = await caller.v1.ai.draftEstimate({ description: "replace 40-gal water heater", leadId: leadAId });
+
+    expect(res.lines).toHaveLength(1);
+    expect(res.stages.pricebook.services).toBeGreaterThanOrEqual(1);
+    expect(res.stages.pricebook.laborRates).toBeGreaterThanOrEqual(1);
+    expect(res.stages.wonQuotes.count).toBeGreaterThanOrEqual(1);
+    expect(res.stages.wonQuotes.nums).toContain("EST-9001");
+    expect(res.stages.jobInfo?.texts).toBeGreaterThanOrEqual(1);
+
+    // The prompt the model actually saw carries every context block.
+    const system = llm.requests[0]!.system;
+    expect(system).toContain("This shop's pricebook");
+    expect(system).toContain("40-gal water heater install");
+    expect(system).toContain("This shop's labor rates");
+    expect(system).toContain("Quotes this shop sent and WON");
+    expect(system).toContain("The job — what we already know");
+  });
+
   it("rejects a malformed resume transcript with BAD_REQUEST (not a 500)", async () => {
     const caller = appRouter.createCaller(ctxWith(orgAId, "owner", new ScriptedLlm([])));
     // Well-formed JSON, structurally invalid AgentMessage (no kind/results).

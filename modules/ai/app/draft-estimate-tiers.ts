@@ -4,6 +4,7 @@ import type { LlmClient } from "../domain/llm-client";
 import { draftLineInputSchema } from "./draft-estimate";
 import type { EstimateLineDraft } from "./draft-estimate";
 import { extractJsonFromText } from "./extract-json";
+import { buildContextBlocks, EMPTY_ESTIMATE_CONTEXT, type EstimateContext } from "./estimate-context";
 
 // ---------------------------------------------------------------------------
 // One-shot LLM-powered Good/Better/Best estimate drafter.
@@ -50,7 +51,7 @@ const submitTieredEstimateInputSchema = z.object({
 type SubmitTieredEstimateInput = z.infer<typeof submitTieredEstimateInputSchema>;
 type TierInput = z.infer<typeof tierInputSchema>;
 
-const SYSTEM_PROMPT = [
+const BASE_SYSTEM_PROMPT = [
   "You are an estimator for a US home/field-service business (HVAC, plumbing, electrical, etc.).",
   "Given a short job description, produce THREE options for the same job:",
   "- good — fix it: the straightforward repair that solves today's problem.",
@@ -59,7 +60,7 @@ const SYSTEM_PROMPT = [
   "For each option:",
   "- Separate labor and materials lines (and any other relevant lines).",
   "- Each line should have a clear description, a sensible quantity, and a unit price",
-  "  in whole US dollars based on typical trade pricing.",
+  "  in whole US dollars.",
   "- Do not include tax.",
   "- Return 2–6 lines, plus a one-line note saying what the option covers.",
   "Set `recommended` to the option you would honestly recommend for this job.",
@@ -67,6 +68,17 @@ const SYSTEM_PROMPT = [
   "IMPORTANT: You MUST call the submit_tiered_estimate tool with your answer.",
   "Do not write prose — only call the tool.",
 ].join("\n");
+
+// Same org context as the single drafter (estimate-context.ts) — the tiers used to run on
+// "typical trade pricing" alone while the UI claimed pricebook grounding; both drafters now
+// consume identical knowledge.
+const buildSystemPrompt = (context: EstimateContext): string => {
+  const blocks = buildContextBlocks(context);
+  if (blocks === "") {
+    return [BASE_SYSTEM_PROMPT, "", "This shop has no pricebook yet — price from typical trade pricing."].join("\n");
+  }
+  return [BASE_SYSTEM_PROMPT, "", blocks].join("\n");
+};
 
 // JSON Schema for the submit_tiered_estimate tool (stripped of $schema for Anthropic).
 const submitTieredEstimateJsonSchema = (() => {
@@ -108,13 +120,14 @@ const parseSubmitInput = (raw: unknown): SubmitTieredEstimateInput | null => {
 export const draftEstimateTiers = async (
   llm: LlmClient | null | undefined,
   description: string,
+  context: EstimateContext = EMPTY_ESTIMATE_CONTEXT,
 ): Promise<EstimateTiersDraft> => {
   if (!llm) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: "AI is not configured" });
   }
 
   const turn = await llm.next({
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(context),
     tools: [
       {
         name: "submit_tiered_estimate",
