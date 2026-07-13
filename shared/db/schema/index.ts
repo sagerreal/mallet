@@ -22,6 +22,8 @@ export * from "./job-execution";
 export * from "./org-settings";
 export * from "./pricebook-categories";
 export * from "./pricebook-items";
+export * from "./pricebook-materials";
+export * from "./pricebook-service-materials";
 export * from "./labor-rates";
 export * from "./job-terms";
 export * from "./lead-sources";
