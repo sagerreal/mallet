@@ -139,21 +139,31 @@ export function QuoteCard({
             </span>
           )}
         </h3>
-        <div className="seg" role="group" aria-label="Quote format">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
             type="button"
-            onClick={() => onUpdate(switchToSingle(state))}
-            aria-pressed={!isGbb}
+            className={`btn sm${state.aiOpen ? " primary" : " ghost"}`}
+            onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
+            aria-pressed={state.aiOpen}
           >
-            Single quote
+            ✦ Draft with AI
           </button>
-          <button
-            type="button"
-            onClick={() => onUpdate(switchToGbb(state))}
-            aria-pressed={isGbb}
-          >
-            Good, Better &amp; Best
-          </button>
+          <div className="seg" role="group" aria-label="Quote format">
+            <button
+              type="button"
+              onClick={() => onUpdate(switchToSingle(state))}
+              aria-pressed={!isGbb}
+            >
+              Single quote
+            </button>
+            <button
+              type="button"
+              onClick={() => onUpdate(switchToGbb(state))}
+              aria-pressed={isGbb}
+            >
+              Good, Better &amp; Best
+            </button>
+          </div>
         </div>
       </div>
 
@@ -168,13 +178,6 @@ export function QuoteCard({
           Same quiet .lineedit-tool style as the table footers for uniformity. */}
       {isGbb && (
         <div className="lineedit-bar" style={{ padding: "8px 0 0" }}>
-          <button
-            className="lineedit-tool primary"
-            onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
-            aria-pressed={state.aiOpen}
-          >
-            ✦ Draft with AI
-          </button>
           {!confirmSuggest ? (
             <button
               className="lineedit-tool"
@@ -290,14 +293,6 @@ export function QuoteCard({
             onAddLine={addLine}
             footerTools={
               <>
-                <span className="lineedit-sep" aria-hidden="true" />
-                <button
-                  className="lineedit-tool"
-                  onClick={() => onUpdate({ aiOpen: !state.aiOpen })}
-                  aria-pressed={state.aiOpen}
-                >
-                  ✦ Draft with AI
-                </button>
                 <button
                   className="lineedit-tool"
                   onClick={() => onUpdate({ pbOpen: !state.pbOpen })}
