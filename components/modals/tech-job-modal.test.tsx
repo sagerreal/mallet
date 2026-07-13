@@ -26,6 +26,7 @@ let mockRole: "owner" | "office" | "tech" | undefined = "owner";
 
 const noop = vi.fn();
 const mockOpenModal = vi.fn();
+const mockUpdateJob = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
@@ -38,7 +39,7 @@ vi.mock("@/lib/store/app-store", () => ({
       invoices: mockInvoices,
       toggles: { techSeesPrice: mockSeesPrice },
       setVisitStatus: noop,
-      updateJob: noop,
+      updateJob: mockUpdateJob,
       recordPayment: noop,
       addAddon: noop,
       setAddonStatus: noop,
@@ -51,6 +52,11 @@ vi.mock("@/lib/store/app-store", () => ({
 
 vi.mock("@/features/identity/hooks", () => ({
   useMe: () => ({ data: mockRole ? { role: mockRole } : undefined, isLoading: !mockRole }),
+}));
+
+// Deterministic date stamp for the notes composer ("[Jul 13] …").
+vi.mock("@/lib/clock", () => ({
+  todayISO: () => "2026-07-13",
 }));
 
 // ---------------------------------------------------------------------------
@@ -98,6 +104,8 @@ beforeEach(() => {
   mockSeesPrice = true;
   mockRole = "owner";
   mockOpenModal.mockClear();
+  mockUpdateJob.mockReset();
+  mockUpdateJob.mockResolvedValue({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -285,6 +293,85 @@ describe("TechJobModalContent — phone gating (office)", () => {
     render(<TechJobModalContent />);
     expect((screen.getByText("Call") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByText("add one")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Notes composer (Fix: the Notes section accepts input for the office)
+// ---------------------------------------------------------------------------
+
+describe("NoteFeed — office composer", () => {
+  it("adds a stamped note through updateJob (empty notes → single stamped line)", async () => {
+    render(<TechJobModalContent />);
+    const input = screen.getByPlaceholderText("add a note…");
+    fireEvent.change(input, { target: { value: "Gate code 4411" } });
+    fireEvent.click(screen.getByLabelText("Add note"));
+    await vi.waitFor(() => {
+      expect(mockUpdateJob).toHaveBeenCalledWith("job-1", {
+        notes: "[Jul 13] Gate code 4411",
+      });
+    });
+    // input clears on success (after the awaited persist resolves)
+    await vi.waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("");
+    });
+  });
+
+  it("appends to existing notes on its own stamped line", async () => {
+    mockJobs = [makeJob({ notes: "Bring the tall ladder" })];
+    render(<TechJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("add a note…"), {
+      target: { value: "Left key under mat" },
+    });
+    fireEvent.click(screen.getByLabelText("Add note"));
+    await vi.waitFor(() => {
+      expect(mockUpdateJob).toHaveBeenCalledWith("job-1", {
+        notes: "Bring the tall ladder\n[Jul 13] Left key under mat",
+      });
+    });
+  });
+
+  it("surfaces the save-failure copy when updateJob reports not-ok", async () => {
+    mockUpdateJob.mockResolvedValue({ ok: false });
+    render(<TechJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("add a note…"), {
+      target: { value: "won't stick" },
+    });
+    fireEvent.click(screen.getByLabelText("Add note"));
+    expect(await screen.findByText("Couldn't save the note — try again.")).toBeTruthy();
+  });
+
+  it("hides the composer once the job is done (server refuses edits on a complete job)", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
+    expect(screen.getByText("No notes yet.")).toBeTruthy();
+  });
+});
+
+describe("NoteFeed — tech (read-only)", () => {
+  beforeEach(() => {
+    mockRole = "tech";
+  });
+
+  it("shows 'No notes yet.' and no composer when there are zero entries", () => {
+    render(<TechJobModalContent />);
+    expect(screen.getByText("No notes yet.")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
+    expect(screen.queryByLabelText("Add note")).toBeNull();
+  });
+
+  it("shows existing note entries without a composer", () => {
+    mockJobs = [makeJob({ notes: "Customer prefers mornings" })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Customer prefers mornings")).toBeTruthy();
+    expect(screen.queryByText("No notes yet.")).toBeNull();
+    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
   });
 });
 
