@@ -8,8 +8,8 @@
  * to succeed and silently rolls back (FORBIDDEN). Also guards the redacted-money
  * display: a server-redacted (null) rate must never render as $0.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { TechJobModalContent } from "./tech-job-modal";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Invoice } from "@/lib/store/types";
@@ -185,6 +185,67 @@ describe("TechJobModalContent — tech", () => {
     mockJobs = [makeJob({ addons: [] })];
     render(<TechJobModalContent />);
     expect(screen.queryByText("Found work / add-ons")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FieldTimer (Fix: pause must bank elapsed seconds, not epoch seconds)
+// ---------------------------------------------------------------------------
+
+describe("FieldTimer — pause banks elapsed time, not epoch seconds", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-13T09:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("start → 90s → pause shows 1:30 (not epoch-scale)", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Start timer"));
+
+    act(() => {
+      vi.advanceTimersByTime(90_000);
+    });
+    // Running clock shows the live elapsed.
+    expect(screen.getByText("1:30")).toBeTruthy();
+
+    // Pause = tap the running clock.
+    fireEvent.click(screen.getByText(/on the clock/));
+    expect(screen.getByText("1:30")).toBeTruthy();
+    expect(screen.getByText("Resume timer")).toBeTruthy();
+  });
+
+  it("a second pause in a row (Stop after pause) stays stable", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Start timer"));
+    act(() => {
+      vi.advanceTimersByTime(90_000);
+    });
+    fireEvent.click(screen.getByText(/on the clock/)); // pause #1
+    fireEvent.click(screen.getByText("Stop")); // pause #2 while already paused
+    expect(screen.getByText("1:30")).toBeTruthy(); // no epoch seconds added
+  });
+
+  it("pause → resume → pause accumulates run segments only", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Start timer"));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    fireEvent.click(screen.getByText(/on the clock/)); // pause at 1:00
+
+    act(() => {
+      vi.advanceTimersByTime(600_000); // 10 min paused — must NOT count
+    });
+    fireEvent.click(screen.getByText("Resume timer"));
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    fireEvent.click(screen.getByText(/on the clock/)); // pause at 1:30
+    expect(screen.getByText("1:30")).toBeTruthy();
   });
 });
 

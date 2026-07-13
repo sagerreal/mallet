@@ -238,8 +238,11 @@ function FieldTimer({ visit }: FieldTimerProps) {
     return () => clearInterval(id);
   }, [running]);
 
-  const liveSec =
-    baseSec + (running && startedAtRef.current != null ? (now - startedAtRef.current) / 1000 : 0);
+  // Clamped ≥ 0: a clock skew / stale ref can never render a negative elapsed.
+  const liveSec = Math.max(
+    0,
+    baseSec + (running && startedAtRef.current != null ? (now - startedAtRef.current) / 1000 : 0),
+  );
   const elapsedH = liveSec / 3600;
 
   function start() {
@@ -249,8 +252,13 @@ function FieldTimer({ visit }: FieldTimerProps) {
   }
 
   function pause() {
-    if (running && startedAtRef.current != null) {
-      setBaseSec((s) => s + (Date.now() - startedAtRef.current!) / 1000);
+    // Capture BEFORE queuing state updates: the setBaseSec updater runs after
+    // this function nulls the ref (React batches), so reading the ref lazily
+    // inside the updater added `Date.now() - 0` (epoch seconds) per pause.
+    const startedAt = startedAtRef.current;
+    if (running && startedAt != null) {
+      const segmentSec = Math.max(0, (Date.now() - startedAt) / 1000);
+      setBaseSec((s) => s + segmentSec);
     }
     startedAtRef.current = null;
     setRunning(false);
