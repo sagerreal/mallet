@@ -6,7 +6,7 @@
  * name · editable qty (re-attaches on blur) · unit cost · line cost · remove.
  */
 
-import { fmt$ } from "@/lib/format";
+import { fmt$2 } from "@/lib/format";
 import type { Material } from "@/lib/store/types";
 
 const qtyInputStyle: React.CSSProperties = {
@@ -40,10 +40,10 @@ export function PartRow({ material, quantity, onQuantityChange, onRemove }: Part
         aria-label={`${material.name} quantity`}
       />
       <span className="muted" style={{ minWidth: 78, textAlign: "right" }}>
-        × {fmt$(material.unitCost)}/{material.unitOfMeasure}
+        × {fmt$2(material.unitCost)}/{material.unitOfMeasure}
       </span>
       <span style={{ minWidth: 64, textAlign: "right", fontWeight: 600 }}>
-        {fmt$(material.unitCost * quantity)}
+        {fmt$2(material.unitCost * quantity)}
       </span>
       <button
         className="btn sm ghost"

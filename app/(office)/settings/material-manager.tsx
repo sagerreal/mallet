@@ -23,7 +23,7 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import type { AddMaterialFields } from "@/lib/store/pricebook-mapper";
-import { fmt$ } from "@/lib/format";
+import { fmt$2 } from "@/lib/format";
 import { PartRow } from "./part-row";
 
 export interface MaterialManagerProps {
@@ -195,7 +195,7 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
               role="button"
             >
               <span style={{ flex: 1 }}>{m.name}</span>
-              <span className="muted">{fmt$(m.unitCost)}/{m.unitOfMeasure}</span>
+              <span className="muted">{fmt$2(m.unitCost)}/{m.unitOfMeasure}</span>
             </div>
           ))}
         </div>
@@ -248,7 +248,7 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
 
       <p className="muted" style={{ fontSize: 12, fontWeight: 600, margin: 0 }}>
         {attached.length > 0
-          ? `Parts cost ${fmt$(partsCost)} → price basis`
+          ? `Parts cost ${fmt$2(partsCost)} → price basis`
           : "No parts added — the flat price above stays the source of truth."}
       </p>
     </div>

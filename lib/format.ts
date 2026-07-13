@@ -43,3 +43,9 @@ export const formatDateTime = (iso: string | null): string =>
 // risks SSR hydration mismatches.
 export const fmt$ = (dollars: number): string =>
   "$" + Math.round(dollars).toLocaleString("en-US");
+
+// Cent-precise dollars formatter for money that can be sub-dollar (e.g. pricebook
+// MATERIALS — a wax ring or fastener costs cents, so rounding to whole dollars would
+// show "$0" and under-count a parts-cost rollup). Same en-US pinning as fmt$.
+export const fmt$2 = (dollars: number): string =>
+  dollars.toLocaleString("en-US", { style: "currency", currency: "USD" });
