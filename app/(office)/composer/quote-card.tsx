@@ -183,17 +183,12 @@ export function QuoteCard({
           ✦ Draft with AI
         </button>
         {!isGbb && (
-          <>
-            <button className="btn sm ghost" onClick={addLine}>
-              + Add line
-            </button>
-            <button
-              className="btn sm ghost"
-              onClick={() => onUpdate({ pbOpen: !state.pbOpen })}
-            >
-              From pricebook
-            </button>
-          </>
+          <button
+            className="btn sm ghost"
+            onClick={() => onUpdate({ pbOpen: !state.pbOpen })}
+          >
+            From pricebook
+          </button>
         )}
         {isGbb && !confirmSuggest && (
           <>
@@ -232,7 +227,13 @@ export function QuoteCard({
             </button>
           </>
         )}
-        <button className="btn sm ghost" onClick={() => setShowCost((v) => !v)}>
+        <button
+          type="button"
+          className="linklike"
+          style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-3)" }}
+          title="Owner-only cost column with margin — never shown to the customer"
+          onClick={() => setShowCost((v) => !v)}
+        >
           {showCost ? "Hide your cost" : "Show your cost"}
         </button>
       </div>
@@ -305,6 +306,7 @@ export function QuoteCard({
             onUpdateLine={updateLine}
             onRemoveLine={removeLine}
             onSaveToBook={onSaveToBook}
+            onAddLine={addLine}
           />
           {state.pbOpen && (
             <div className="pbpanel">

@@ -136,21 +136,15 @@ export function GbbTiers({
               onUpdateLine={(i, patch) => updateLine(tier, i, patch)}
               onRemoveLine={(i) => removeLine(tier, i)}
               onSaveToBook={onSaveToBook}
+              onAddLine={() => addLine(tier)}
             />
-            <button
-              className="btn sm ghost"
-              style={{ marginTop: 8 }}
-              onClick={() => addLine(tier)}
-            >
-              + Add line
-            </button>
           </div>
         );
       })}
 
       <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-        For now the customer receives the recommended option only — tier picking
-        for customers is coming.
+        Customers pick one of the options on their quote page — the recommended
+        one is highlighted.
       </p>
     </div>
   );

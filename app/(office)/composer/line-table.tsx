@@ -32,12 +32,15 @@ export function LineTable({
   onUpdateLine,
   onRemoveLine,
   onSaveToBook,
+  onAddLine,
 }: {
   lines: ComposerLine[];
   showCost: boolean;
   onUpdateLine: (i: number, patch: Partial<ComposerLine>) => void;
   onRemoveLine: (i: number) => void;
   onSaveToBook: (line: ComposerLine) => Promise<AddResult>;
+  /** Renders a "+ Add line" row at the foot of the table — where the eye goes for the next line. */
+  onAddLine?: () => void;
 }) {
   // Per-row save-to-book status, keyed by row index (matches the index-keyed
   // rows below — lines have no stable id of their own).
@@ -177,6 +180,20 @@ export function LineTable({
             </tr>
           );
         })}
+        {onAddLine && (
+          <tr>
+            <td colSpan={showCost ? 6 : 5} style={{ padding: "6px 0 0" }}>
+              <button
+                type="button"
+                className="linklike"
+                style={{ fontSize: 12.5, color: "var(--ink-3)" }}
+                onClick={onAddLine}
+              >
+                + Add line
+              </button>
+            </td>
+          </tr>
+        )}
       </tbody>
     </table>
   );
