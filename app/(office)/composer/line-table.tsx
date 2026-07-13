@@ -50,7 +50,9 @@ export function LineTable({
           <col style={{ width: 96 }} />
           {showCost && <col style={{ width: 96 }} />}
           <col style={{ width: 104 }} />
-          <col style={{ width: showCost ? 208 : 196 }} />
+          {/* Actions hold just Optional + ✕ now — sized to fit, so AMOUNT no
+              longer floats beside a wide dead zone. */}
+          <col style={{ width: 122 }} />
         </colgroup>
         <thead>
           <tr>
