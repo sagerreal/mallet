@@ -628,6 +628,10 @@
   .lineedit-tool:hover{background:var(--card);color:var(--ink)}
   .lineedit-tool.primary{color:var(--ink)}
   .lineedit-tool[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+  /* footer-bar tools read as pressable at rest: white chips on the tinted band */
+  .lineedit-bar>.lineedit-tool{background:var(--card);border:1px solid var(--line);color:var(--ink)}
+  .lineedit-bar>.lineedit-tool:hover{border-color:var(--ink-3)}
+  .lineedit-bar{gap:8px;padding:8px 10px}
   .lineedit-sep{width:1px;height:16px;background:var(--line);margin:0 6px;flex-shrink:0}
   .lineedit-spring{margin-left:auto}
 
