@@ -20,6 +20,7 @@ import {
   hasRealLine,
   linesForSend,
   recommendedTier,
+  matchServiceByName,
   switchToGbb,
   switchToSingle,
   tierDisplayName,
@@ -496,29 +497,36 @@ export function QuoteCard({
             </button>
           </div>
 
-          {/* One-tap proposals — visible, explicit, never written silently. */}
-          {proposals.map((p, i) => (
-            <div
-              key={`${p.kind}-${i}`}
-              style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}
-            >
-              <span style={{ fontSize: 12.5 }}>
-                {p.kind === "labor_hours"
+          {/* One-tap proposals — visible, explicit, never written silently. A
+              labor_hours proposal without a pricebook match saves as a shop
+              rule instead; the label says which (same matcher as the handler). */}
+          {proposals.map((p, i) => {
+            const inBook = p.kind === "labor_hours" && matchServiceByName(services, p.serviceName);
+            const label =
+              p.kind === "rule"
+                ? `Add to your shop's rules: “${p.rule}”?`
+                : inBook
                   ? `Update “${p.serviceName}” labor to ${p.hours}h in your pricebook?`
-                  : `Add to your shop's rules: “${p.rule}”?`}
-              </span>
-              <button
-                className="btn sm primary"
-                disabled={isSavingProposal}
-                onClick={() => onAcceptProposal(i)}
+                  : `Remember “${p.serviceName} takes ${p.hours}h of labor” as a shop rule?`;
+            return (
+              <div
+                key={`${p.kind}-${i}`}
+                style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}
               >
-                {p.kind === "labor_hours" ? "Update" : "Save rule"}
-              </button>
-              <button className="btn sm ghost" onClick={() => onDismissProposal(i)}>
-                Just this quote
-              </button>
-            </div>
-          ))}
+                <span style={{ fontSize: 12.5 }}>{label}</span>
+                <button
+                  className="btn sm primary"
+                  disabled={isSavingProposal}
+                  onClick={() => onAcceptProposal(i)}
+                >
+                  {inBook ? "Update" : "Save rule"}
+                </button>
+                <button className="btn sm ghost" onClick={() => onDismissProposal(i)}>
+                  Just this quote
+                </button>
+              </div>
+            );
+          })}
           {proposalError && (
             <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 6 }}>{proposalError}</div>
           )}

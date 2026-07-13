@@ -65,6 +65,19 @@ export type AiProposal =
   | { kind: "labor_hours"; serviceName: string; hours: number }
   | { kind: "rule"; rule: string };
 
+/**
+ * The pricebook service a labor_hours proposal writes to — ONE matcher shared
+ * by the chip label and the accept handler, so what the chip promises is what
+ * the tap does (no match → the fact is saved as a shop rule instead).
+ */
+export function matchServiceByName<T extends { id: string; name: string }>(
+  services: T[],
+  name: string
+): T | undefined {
+  const q = name.trim().toLowerCase();
+  return services.find((s) => s.name.trim().toLowerCase() === q);
+}
+
 export interface ComposerState {
   leadId: string | null;
   custQuery: string;

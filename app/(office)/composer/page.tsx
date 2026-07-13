@@ -46,6 +46,7 @@ import {
   deliveryGateReason,
   hasRealLine,
   linesForSend,
+  matchServiceByName,
   realLines,
   recommendedTier,
   sendGateReason,
@@ -260,9 +261,7 @@ export default function ComposerPage() {
     if (!p) return;
     setProposalError(null);
     if (p.kind === "labor_hours") {
-      const svc = services.find(
-        (s) => s.name.trim().toLowerCase() === p.serviceName.trim().toLowerCase(),
-      );
+      const svc = matchServiceByName(services, p.serviceName);
       if (svc) {
         updateService(svc.id, { laborHours: p.hours });
         dismissProposal(index);
