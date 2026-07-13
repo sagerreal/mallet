@@ -56,13 +56,9 @@ class FakeQuotingRuleRepository implements QuotingRuleRepository {
     const candidates = (await this.listConfirmed()).map((rule) => ({ rule, serviceName: null }));
     return matchRules(jobText, candidates, limit);
   }
-  async listProposedEditDeltasByTag(jobTag: string): Promise<QuotingRule[]> {
+  async listProposedEditDeltas(): Promise<QuotingRule[]> {
     return [...this.store.values()].filter(
-      (r) =>
-        r.props.status === "proposed" &&
-        r.props.source === "edit_delta" &&
-        r.props.jobTag === jobTag &&
-        r.isActive(),
+      (r) => r.props.status === "proposed" && r.props.source === "edit_delta" && r.isActive(),
     );
   }
 }

@@ -29,9 +29,10 @@ export interface QuotingRuleRepository {
   findMatching(jobText: string, limit?: number): Promise<RuleCandidate[]>;
 
   /**
-   * Active proposals equivalent to an edit-delta observation: source
-   * 'edit_delta', status 'proposed', same job tag. The miner bumps
-   * times_confirmed on these instead of stacking duplicates.
+   * ALL active edit-delta proposals (source 'edit_delta', status 'proposed'),
+   * capped. The miner matches an observation against these itself (service-id
+   * anchor or token-set overlap) and bumps times_confirmed on the equivalent
+   * one instead of stacking duplicates.
    */
-  listProposedEditDeltasByTag(jobTag: string): Promise<QuotingRule[]>;
+  listProposedEditDeltas(): Promise<QuotingRule[]>;
 }

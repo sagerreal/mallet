@@ -86,6 +86,12 @@ export function EstimatorMemoryCard() {
 
   return (
     <FoldCard
+      // FoldCard captures defaultOpen ONCE (useState initializer) — evaluated
+      // during the list query's loading render it is always false and the
+      // "proposals waiting → open for review" behavior is dead. Re-keying on
+      // load completion remounts the fold so defaultOpen is computed from the
+      // resolved data.
+      key={list.isLoading ? "loading" : "loaded"}
       title="Estimator memory"
       summary={summaryFor(confirmed.length, proposed.length)}
       defaultOpen={proposed.length > 0}

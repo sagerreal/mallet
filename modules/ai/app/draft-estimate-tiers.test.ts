@@ -95,6 +95,24 @@ describe("draftEstimateTiers — refine loop", () => {
     const result = await draftEstimateTiers(llm, "rebuild the toilet");
     expect(result.proposals).toEqual([]);
   });
+
+  // Proposals are an optional side-channel — a malformed one must never cost
+  // the office the (valid) regenerated tiers it already paid the model for.
+  it("drops malformed proposals but keeps the tiers and the valid proposals", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: [
+          { kind: "labor_hours", serviceName: "Toilet rebuild", hours: 1_200 }, // over the 1,000h cap
+          { kind: "rule", rule: "Toilet rebuilds go out at $250" },
+        ],
+      }),
+    );
+    const result = await draftEstimateTiers(llm, "rebuild the toilet", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.recommended).toBe("better");
+    expect(result.good.lines).toHaveLength(2);
+    expect(result.proposals).toEqual([{ kind: "rule", rule: "Toilet rebuilds go out at $250" }]);
+  });
 });
 
 describe("draftEstimateTiers — org context", () => {

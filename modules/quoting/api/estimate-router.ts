@@ -18,6 +18,7 @@ import { runInSavepoint } from "./savepoint";
 import { createQuotingRulesRouter } from "./quoting-rules-router";
 import { MineEditDeltasUseCase } from "../app/mine-edit-deltas";
 import { DrizzleQuotingRuleRepository } from "../infra/drizzle-quoting-rule-repository";
+import { DrizzleServiceNameReader } from "../infra/drizzle-service-name-reader";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -132,7 +133,12 @@ const draftInput = z
           .array(
             z.object({
               description: z.string().min(1).max(500),
-              quantity: z.number().nonnegative(),
+              // .finite() is explicit belt-and-braces: superjson round-trips
+              // Infinity, and an Infinity quantity in the jsonb snapshot
+              // serializes to null — the miner would then mint junk rules
+              // ("usually takes 5, not null"). Zod 4 already rejects
+              // non-finite numbers; this pins the behavior against upgrades.
+              quantity: z.number().nonnegative().finite(),
               rateCents: z.number().int().nonnegative(),
               tier: tierEnum.optional(),
             }),
@@ -371,6 +377,7 @@ export const createEstimateRouter = () =>
               if (!snapshot) return null; // hand-built estimate — nothing to mine
               const miner = new MineEditDeltasUseCase(
                 new DrizzleQuotingRuleRepository(sp, ctx.principal.orgId),
+                new DrizzleServiceNameReader(sp, ctx.principal.orgId),
                 ctx.deps.clock,
                 ctx.deps.ids,
               );

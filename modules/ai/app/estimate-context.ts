@@ -180,6 +180,15 @@ export const buildJobInfoBlock = (jobInfo: JobInfoContext | null): string => {
 /** Prompt cap — matches the repo's findMatching default; sliced again here defensively. */
 export const RULES_BLOCK_MAX_RULES = 20;
 
+// Rule text is same-org-authored but injected verbatim under a "follow these"
+// instruction — strip what would let it impersonate prompt structure: control
+// chars (incl. newlines — no starting a fresh "## section" line) and backticks,
+// then collapse whitespace runs. Content is preserved; framing power is not.
+const RULE_UNSAFE_CHARS = /[`\u0000-\u001f\u007f]/g;
+
+const sanitizeRuleText = (s: string): string =>
+  s.replace(RULE_UNSAFE_CHARS, " ").replace(/\s+/g, " ").trim();
+
 /**
  * "## This shop's rules" — the confirmed conditionals the shop has taught the
  * estimator (quoting_rules). The caller supplies them matched to THIS job and
@@ -187,7 +196,7 @@ export const RULES_BLOCK_MAX_RULES = 20;
  */
 export const buildRulesBlock = (rules: readonly ShopRuleContext[]): string => {
   if (rules.length === 0) return "";
-  const rows = rules.slice(0, RULES_BLOCK_MAX_RULES).map((r) => `- ${clip(r.rule, 320)}`);
+  const rows = rules.slice(0, RULES_BLOCK_MAX_RULES).map((r) => `- ${clip(sanitizeRuleText(r.rule), 320)}`);
   return [
     "## This shop's rules",
     "The shop has confirmed these corrections/conventions — follow them when they apply to this job.",

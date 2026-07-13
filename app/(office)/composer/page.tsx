@@ -45,6 +45,7 @@ import {
   buildQuoteMessageBody,
   deliveryGateReason,
   hasRealLine,
+  laborRulePayload,
   linesForSend,
   matchServiceByName,
   realLines,
@@ -54,10 +55,11 @@ import {
   tieredLinesForPayload,
   tierNamesForPayload,
   toEstimateLines,
-  type AiProposal,
+  toProposalChips,
   type AiTiersDraft,
   type ComposerLine,
   type ComposerState,
+  type ProposalChip,
   type TierKey,
 } from "./composer-state";
 import { suggestFromGood } from "./gbb-suggest";
@@ -166,7 +168,10 @@ export default function ComposerPage() {
 
   // Durable-fact proposals extracted from a refine correction — rendered as
   // one-tap chips under the quote ("Update 'X' labor to 5h in your pricebook?").
-  const [proposals, setProposals] = useState<AiProposal[]>([]);
+  // Keyed by a stable id assigned when they land: accept/dismiss act on the id
+  // (an array index captured at tap time races a concurrent dismissal and
+  // removes the WRONG chip → a re-tap mints a duplicate confirmed rule).
+  const [proposals, setProposals] = useState<ProposalChip[]>([]);
   const [proposalError, setProposalError] = useState<string | null>(null);
   const createRuleMutation = api.v1.quoting.rules.create.useMutation();
 
@@ -176,7 +181,7 @@ export default function ComposerPage() {
     onSuccess: (data) => {
       setCs((prev) => applyAiDraftLines(prev, toComposerLines(data.lines)));
       setAiDraftError(null);
-      setProposals(data.proposals);
+      setProposals(toProposalChips(data.proposals, () => crypto.randomUUID()));
       setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
@@ -193,7 +198,7 @@ export default function ComposerPage() {
       };
       setCs((prev) => applyAiDraftTiers(prev, draft));
       setAiDraftError(null);
-      setProposals(data.proposals);
+      setProposals(toProposalChips(data.proposals, () => crypto.randomUUID()));
       setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
@@ -248,41 +253,53 @@ export default function ComposerPage() {
     }
   }
 
-  function dismissProposal(index: number) {
-    setProposals((prev) => prev.filter((_, i) => i !== index));
+  function dismissProposal(id: string) {
+    setProposals((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  // Flip one chip's in-flight flag (disables both of its buttons while true).
+  function setProposalSaving(id: string, saving: boolean) {
+    setProposals((prev) => prev.map((p) => (p.id === id ? { ...p, saving } : p)));
   }
 
   // Accept a proposal: labor_hours writes back to the matching pricebook
   // service (store action syncs the server); rules persist via
   // v1.quoting.rules.create (source 'refine' — confirmed for owner/office
   // unless it contradicts an existing rule, which lands it in review).
-  function acceptProposal(index: number) {
-    const p = proposals[index];
-    if (!p) return;
+  // Every path AWAITS its write and dismisses the chip only on success — a
+  // silent rollback here would leave the user believing the pricebook updated
+  // while future AI drafts keep repeating the error they just corrected.
+  async function acceptProposal(id: string) {
+    const p = proposals.find((x) => x.id === id);
+    if (!p || p.saving) return;
     setProposalError(null);
+    setProposalSaving(id, true);
+    const onRuleError = () => {
+      setProposalSaving(id, false);
+      setProposalError("Couldn't save the rule — check your connection and try again.");
+    };
     if (p.kind === "labor_hours") {
       const svc = matchServiceByName(services, p.serviceName);
       if (svc) {
-        updateService(svc.id, { laborHours: p.hours });
-        dismissProposal(index);
+        const result = await updateService(svc.id, { laborHours: p.hours });
+        if (result.ok) {
+          dismissProposal(id);
+        } else {
+          setProposalSaving(id, false);
+          setProposalError("Couldn't update the pricebook — try again.");
+        }
         return;
       }
       // No pricebook match — keep the fact as a shop rule instead of dropping it.
       createRuleMutation.mutate(
-        { rule: `${p.serviceName} takes ${p.hours}h of labor`, jobTag: p.serviceName, source: "refine" },
-        {
-          onSuccess: () => dismissProposal(index),
-          onError: () => setProposalError("Couldn't save the rule — check your connection and try again."),
-        },
+        { ...laborRulePayload(p), source: "refine" },
+        { onSuccess: () => dismissProposal(id), onError: onRuleError },
       );
       return;
     }
     createRuleMutation.mutate(
       { rule: p.rule, source: "refine" },
-      {
-        onSuccess: () => dismissProposal(index),
-        onError: () => setProposalError("Couldn't save the rule — check your connection and try again."),
-      },
+      { onSuccess: () => dismissProposal(id), onError: onRuleError },
     );
   }
 
@@ -624,10 +641,9 @@ export default function ComposerPage() {
         onAiDraft={triggerAiDraft}
         onRefine={triggerRefine}
         proposals={proposals}
-        onAcceptProposal={acceptProposal}
+        onAcceptProposal={(id) => void acceptProposal(id)}
         onDismissProposal={dismissProposal}
         proposalError={proposalError}
-        isSavingProposal={createRuleMutation.isPending}
         onSuggestBetterBest={suggestBetterBest}
         isDrafting={draftEstimateMutation.isPending || draftTiersMutation.isPending}
         aiDraftError={aiDraftError}

@@ -24,9 +24,9 @@ import {
   switchToGbb,
   switchToSingle,
   tierDisplayName,
-  type AiProposal,
   type ComposerLine,
   type ComposerState,
+  type ProposalChip,
 } from "./composer-state";
 import { LineTable } from "./line-table";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
@@ -48,7 +48,6 @@ export function QuoteCard({
   onAcceptProposal,
   onDismissProposal,
   proposalError,
-  isSavingProposal,
   onSuggestBetterBest,
   isDrafting,
   aiDraftError,
@@ -63,12 +62,11 @@ export function QuoteCard({
   onAiDraft: () => void;
   /** Re-run the drafter with the on-screen lines + this correction. */
   onRefine: (feedback: string) => void;
-  /** Refine-extracted durable facts — one-tap chips, never auto-written. */
-  proposals: AiProposal[];
-  onAcceptProposal: (index: number) => void;
-  onDismissProposal: (index: number) => void;
+  /** Refine-extracted durable facts — one-tap chips (id-keyed), never auto-written. */
+  proposals: ProposalChip[];
+  onAcceptProposal: (id: string) => void;
+  onDismissProposal: (id: string) => void;
   proposalError: string | null;
-  isSavingProposal: boolean;
   onSuggestBetterBest: () => void;
   isDrafting: boolean;
   aiDraftError: string | null;
@@ -499,8 +497,11 @@ export function QuoteCard({
 
           {/* One-tap proposals — visible, explicit, never written silently. A
               labor_hours proposal without a pricebook match saves as a shop
-              rule instead; the label says which (same matcher as the handler). */}
-          {proposals.map((p, i) => {
+              rule instead; the label says which (same matcher as the handler).
+              Chips are id-keyed and BOTH buttons disable while that chip's
+              save is in flight — dismissing a sibling mid-save must never
+              retarget the pending chip (duplicate-rule race). */}
+          {proposals.map((p) => {
             const inBook = p.kind === "labor_hours" && matchServiceByName(services, p.serviceName);
             const label =
               p.kind === "rule"
@@ -510,18 +511,22 @@ export function QuoteCard({
                   : `Remember “${p.serviceName} takes ${p.hours}h of labor” as a shop rule?`;
             return (
               <div
-                key={`${p.kind}-${i}`}
+                key={p.id}
                 style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}
               >
                 <span style={{ fontSize: 12.5 }}>{label}</span>
                 <button
                   className="btn sm primary"
-                  disabled={isSavingProposal}
-                  onClick={() => onAcceptProposal(i)}
+                  disabled={p.saving}
+                  onClick={() => onAcceptProposal(p.id)}
                 >
-                  {inBook ? "Update" : "Save rule"}
+                  {p.saving ? "Saving…" : inBook ? "Update" : "Save rule"}
                 </button>
-                <button className="btn sm ghost" onClick={() => onDismissProposal(i)}>
+                <button
+                  className="btn sm ghost"
+                  disabled={p.saving}
+                  onClick={() => onDismissProposal(p.id)}
+                >
                   Just this quote
                 </button>
               </div>

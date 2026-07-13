@@ -303,13 +303,41 @@ describe("draftEstimateLines — refine loop", () => {
     expect(llm.capturedRequest!.system).not.toContain("Refine an earlier draft");
   });
 
-  it("rejects malformed proposals from the model → BAD_GATEWAY (schema is strict)", async () => {
+  // Proposals are an optional side-channel — a malformed one must never cost
+  // the office the (valid) regenerated lines it already paid the model for.
+  it("drops malformed proposals but keeps the lines and the valid proposals", async () => {
     const llm = new FakeLlm(
-      toolUseTurn({ ...SAMPLE_TOOL_INPUT, proposals: [{ kind: "labor_hours", hours: -3 }] }),
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: [
+          { kind: "labor_hours", hours: -3 }, // missing serviceName, negative hours
+          { kind: "rule", rule: "x".repeat(350) }, // over the 300-char cap
+          { kind: "rule", rule: "Water heater swaps take 5h of labor" },
+        ],
+      }),
     );
-    await expect(
-      draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE),
-    ).rejects.toMatchObject({ code: "BAD_GATEWAY" });
+    const result = await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.lines).toHaveLength(3);
+    expect(result.proposals).toEqual([{ kind: "rule", rule: "Water heater swaps take 5h of labor" }]);
+  });
+
+  it("drops a non-array proposals payload without failing the run", async () => {
+    const llm = new FakeLlm(toolUseTurn({ ...SAMPLE_TOOL_INPUT, proposals: "not an array" }));
+    const result = await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.lines).toHaveLength(3);
+    expect(result.proposals).toEqual([]);
+  });
+
+  it("caps proposals at 5 valid entries even when the model returns more", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: Array.from({ length: 8 }, (_, i) => ({ kind: "rule", rule: `Rule ${i}` })),
+      }),
+    );
+    const result = await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.proposals).toHaveLength(5);
+    expect(result.proposals[0]).toEqual({ kind: "rule", rule: "Rule 0" });
   });
 });
 

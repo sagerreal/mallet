@@ -45,7 +45,10 @@ const toDomain = (row: QuotingRuleRow): QuotingRule => {
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set
 // app.current_org_id), so RLS appends org_id = current_org_id() to every
-// statement. orgId is used only to stamp written rows (defense-in-depth).
+// statement. Every query ALSO filters eq(orgId) explicitly (house rule:
+// defense-in-depth against a future non-tenant tx, and it guarantees the
+// org-prefixed indexes are usable) — findMatching feeding another org's rules
+// into a prompt would be a cross-tenant leak straight into AI output.
 export class DrizzleQuotingRuleRepository implements QuotingRuleRepository {
   constructor(
     private readonly tx: TenantTx,
@@ -75,7 +78,10 @@ export class DrizzleQuotingRuleRepository implements QuotingRuleRepository {
   }
 
   async findById(id: QuotingRuleId): Promise<QuotingRule | null> {
-    const rows = await this.tx.select().from(quotingRules).where(eq(quotingRules.id, id));
+    const rows = await this.tx
+      .select()
+      .from(quotingRules)
+      .where(and(eq(quotingRules.orgId, this.orgId), eq(quotingRules.id, id)));
     const row = rows[0];
     return row ? toDomain(row) : null;
   }
@@ -84,7 +90,13 @@ export class DrizzleQuotingRuleRepository implements QuotingRuleRepository {
     const rows = await this.tx
       .select()
       .from(quotingRules)
-      .where(and(eq(quotingRules.status, "confirmed"), isNull(quotingRules.invalidatedAt)))
+      .where(
+        and(
+          eq(quotingRules.orgId, this.orgId),
+          eq(quotingRules.status, "confirmed"),
+          isNull(quotingRules.invalidatedAt),
+        ),
+      )
       .orderBy(desc(quotingRules.timesConfirmed), desc(quotingRules.createdAt))
       .limit(LIST_CAP);
     return rows.map(toDomain);
@@ -96,6 +108,7 @@ export class DrizzleQuotingRuleRepository implements QuotingRuleRepository {
       .from(quotingRules)
       .where(
         and(
+          eq(quotingRules.orgId, this.orgId),
           eq(quotingRules.status, "proposed"),
           isNull(quotingRules.invalidatedAt),
           // Edit-delta proposals earn a human's attention only after ≥2
@@ -121,7 +134,13 @@ export class DrizzleQuotingRuleRepository implements QuotingRuleRepository {
         pricebookItems,
         and(eq(pricebookItems.orgId, quotingRules.orgId), eq(pricebookItems.id, quotingRules.serviceId)),
       )
-      .where(and(eq(quotingRules.status, "confirmed"), isNull(quotingRules.invalidatedAt)))
+      .where(
+        and(
+          eq(quotingRules.orgId, this.orgId),
+          eq(quotingRules.status, "confirmed"),
+          isNull(quotingRules.invalidatedAt),
+        ),
+      )
       .orderBy(desc(quotingRules.timesConfirmed), desc(quotingRules.createdAt))
       .limit(LIST_CAP);
     const candidates: RuleCandidate[] = rows.map((r) => ({
@@ -131,15 +150,15 @@ export class DrizzleQuotingRuleRepository implements QuotingRuleRepository {
     return matchRules(jobText, candidates, limit);
   }
 
-  async listProposedEditDeltasByTag(jobTag: string): Promise<QuotingRule[]> {
+  async listProposedEditDeltas(): Promise<QuotingRule[]> {
     const rows = await this.tx
       .select()
       .from(quotingRules)
       .where(
         and(
+          eq(quotingRules.orgId, this.orgId),
           eq(quotingRules.status, "proposed"),
           eq(quotingRules.source, "edit_delta"),
-          eq(quotingRules.jobTag, jobTag),
           isNull(quotingRules.invalidatedAt),
         ),
       )

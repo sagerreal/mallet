@@ -136,6 +136,21 @@ suite("quoting rules tRPC router (full stack, live RLS)", () => {
     expect(listed.proposed).toHaveLength(0);
   });
 
+  it("org B sees ZERO of org A's rules through findMatching (explicit org filter + RLS)", async () => {
+    // Org A has confirmed rules from the earlier tests; the same job text that
+    // matches them for org A must return nothing when the repo is built for
+    // org B — a leak here would inject A's pricing guidance into B's prompts.
+    const matchedForA = await withTenant(asOrgId(orgAId), (tx) =>
+      new DrizzleQuotingRuleRepository(tx, asOrgId(orgAId)).findMatching("swap the water heater in the attic"),
+    );
+    expect(matchedForA.length).toBeGreaterThan(0);
+
+    const matchedForB = await withTenant(asOrgId(orgBId), (tx) =>
+      new DrizzleQuotingRuleRepository(tx, asOrgId(orgBId)).findMatching("swap the water heater in the attic"),
+    );
+    expect(matchedForB).toHaveLength(0);
+  });
+
   it("a tech is forbidden", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(caller.v1.quoting.rules.list()).rejects.toMatchObject({ code: "FORBIDDEN" });

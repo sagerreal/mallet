@@ -102,6 +102,26 @@ describe("diffAiDraft — description matching", () => {
     expect(removed.rule).toContain("Expansion tank");
   });
 
+  it("does NOT pair unrelated lines sharing one generic token (honest Adds+Drops, no false price rule)", () => {
+    // "Water shutoff valve" ($120) deleted; "Water filtration system" ($2,000) added.
+    // One shared token ("water") that dominates neither description — pairing them
+    // would mint a confidently wrong "Price up: ... $2000.00, not $120.00" rule.
+    const deltas = diffAiDraft(
+      [ai({ description: "Water shutoff valve", rateCents: 12_000 })],
+      [sent({ description: "Water filtration system", rateCents: 200_000 })],
+    );
+    expect(deltas.map((d) => d.kind).sort()).toEqual(["added", "removed"]);
+  });
+
+  it("pairs on a single shared token when it makes up ≥50% of BOTH descriptions", () => {
+    const deltas = diffAiDraft(
+      [ai({ description: "Labor", rateCents: 10_000 })],
+      [sent({ description: "Labor charge", rateCents: 20_000 })],
+    );
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]).toMatchObject({ kind: "price", direction: "up" });
+  });
+
   it("added OPTIONAL lines are ignored (upsell add-ons are not corrections)", () => {
     const deltas = diffAiDraft(
       [ai()],

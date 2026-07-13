@@ -152,7 +152,10 @@ const refineInput = z.object({
     .array(
       z.object({
         description: z.string().min(1).max(500),
-        quantity: z.number().nonnegative(),
+        // Explicit .finite(): superjson round-trips Infinity and a non-finite
+        // quantity would reach the prompt builder. Zod 4 already rejects
+        // non-finite numbers; this pins the behavior against upgrades.
+        quantity: z.number().nonnegative().finite(),
         rateCents: z.number().int().nonnegative(),
       }),
     )

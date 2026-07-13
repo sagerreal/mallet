@@ -36,7 +36,7 @@ export type DraftProposal =
   | { readonly kind: "labor_hours"; readonly serviceName: string; readonly hours: number }
   | { readonly kind: "rule"; readonly rule: string };
 
-const proposalSchema = z.discriminatedUnion("kind", [
+export const proposalSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("labor_hours"),
     serviceName: z.string().min(1).max(200),
@@ -44,6 +44,27 @@ const proposalSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("rule"), rule: z.string().min(1).max(300) }),
 ]);
+
+/** Most proposals a single refine run may carry into the composer. */
+export const MAX_PROPOSALS = 5;
+
+/**
+ * Lenient proposal parse, shared by both drafters. Proposals are an optional
+ * side-channel — a malformed one must never cost the office the (valid)
+ * regenerated lines it already paid the model for. Each item is parsed
+ * individually: invalid items are dropped, valid ones kept (capped at
+ * MAX_PROPOSALS); a non-array payload yields [].
+ */
+export const parseProposals = (raw: unknown): DraftProposal[] => {
+  if (!Array.isArray(raw)) return [];
+  const valid: DraftProposal[] = [];
+  for (const item of raw) {
+    if (valid.length >= MAX_PROPOSALS) break;
+    const parsed = proposalSchema.safeParse(item);
+    if (parsed.success) valid.push(parsed.data);
+  }
+  return valid;
+};
 
 /** Renders the refine block appended to either drafter's prompt. */
 export const buildRefineBlock = (refine: DraftRefineInput): string => {
@@ -93,12 +114,23 @@ export interface CatalogServiceContext {
 // The shape the model is asked to fill in (unit prices in whole USD). `proposals`
 // carries durable facts extracted from a refine correction — always optional in
 // the schema, but only consumed (and only prompted for) on refine runs.
+// NOTE: this full schema exists for the tool's JSON Schema (what the model is
+// shown). Parsing is split: LINES are strict (an unusable draft must fail into
+// the fallback/BAD_GATEWAY path), PROPOSALS are lenient (parseProposals drops
+// invalid items instead of sinking the run).
 const submitEstimateInputSchema = z.object({
   lines: z.array(draftLineInputSchema).min(1).max(10),
-  proposals: z.array(proposalSchema).max(5).optional(),
+  proposals: z.array(proposalSchema).max(MAX_PROPOSALS).optional(),
 });
 
-type SubmitEstimateInput = z.infer<typeof submitEstimateInputSchema>;
+const submitEstimateLinesSchema = z.object({
+  lines: z.array(draftLineInputSchema).min(1).max(10),
+});
+
+interface SubmitEstimateInput {
+  readonly lines: z.infer<typeof draftLineInputSchema>[];
+  readonly proposals: DraftProposal[];
+}
 
 const BASE_SYSTEM_PROMPT = [
   "You are an estimator for a US home/field-service business (HVAC, plumbing, electrical, etc.).",
@@ -144,10 +176,17 @@ const mapLines = (raw: SubmitEstimateInput): EstimateLineDraft[] =>
     rateCents: Math.round(l.unitPriceUsd * 100),
   }));
 
-/** Attempt to parse a SubmitEstimateInput from an arbitrary unknown value. */
+/**
+ * Attempt to parse a SubmitEstimateInput from an arbitrary unknown value.
+ * Lines are strict (null on failure → fallback path); proposals are parsed
+ * per-item and invalid ones dropped — see parseProposals.
+ */
 const parseSubmitInput = (raw: unknown): SubmitEstimateInput | null => {
-  const result = submitEstimateInputSchema.safeParse(raw);
-  return result.success ? result.data : null;
+  const result = submitEstimateLinesSchema.safeParse(raw);
+  if (!result.success) return null;
+  const proposalsRaw =
+    typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>).proposals : undefined;
+  return { lines: result.data.lines, proposals: parseProposals(proposalsRaw) };
 };
 
 /** One draft run's outcome: the lines, plus refine-extracted proposals (empty outside refine). */
@@ -160,7 +199,7 @@ export interface EstimateDraftResult {
 // instructed to extract them, so anything it volunteers is dropped.
 const toResult = (raw: SubmitEstimateInput, refining: boolean): EstimateDraftResult => ({
   lines: mapLines(raw),
-  proposals: refining ? (raw.proposals ?? []) : [],
+  proposals: refining ? raw.proposals : [],
 });
 
 /**

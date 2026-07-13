@@ -68,7 +68,23 @@ const tokens = (s: string): string[] =>
 
 const normalize = (s: string): string => tokens(s).join(" ");
 
-const jobTagFor = (description: string): string => normalize(description).slice(0, JOB_TAG_MAX).trim();
+/** The keyword tag an observation is scoped by — also what service names normalize through. */
+export const jobTagFor = (description: string): string => normalize(description).slice(0, JOB_TAG_MAX).trim();
+
+/**
+ * Token-SET overlap (Jaccard) between two tags/descriptions, 0..1. Order and
+ * duplicates don't matter — "labor water heater swap" and "water heater swap
+ * labor charge" overlap 4/5 = 0.8. The miner uses this for recurrence
+ * equivalence: real AI redrafts phrase the same line differently per estimate.
+ */
+export const tagTokenOverlap = (a: string, b: string): number => {
+  const aTokens = new Set(tokens(a));
+  const bTokens = new Set(tokens(b));
+  if (aTokens.size === 0 || bTokens.size === 0) return 0;
+  let shared = 0;
+  for (const t of bTokens) if (aTokens.has(t)) shared += 1;
+  return shared / (aTokens.size + bTokens.size - shared);
+};
 
 const clipDesc = (s: string): string => (s.length <= DESC_MAX ? s : `${s.slice(0, DESC_MAX - 1)}…`);
 
@@ -85,9 +101,20 @@ interface Pair {
 }
 
 /**
+ * Should two fuzzy descriptions pair at all? One shared generic token ("water",
+ * "labor") is NOT evidence the lines describe the same work — a false pair mints
+ * a confidently wrong price/quantity rule where an honest Adds+Drops was true.
+ * Bar: ≥2 shared tokens, OR exactly one shared token that makes up ≥50% of
+ * BOTH descriptions' token sets (e.g. "Labor" ↔ "Labor charge").
+ */
+const meetsPairingBar = (shared: number, aiTokenCount: number, sentTokenCount: number): boolean =>
+  shared >= 2 || (shared === 1 && aiTokenCount <= 2 && sentTokenCount <= 2);
+
+/**
  * Greedy description matcher within one tier bucket: exact normalized-text
- * matches pair first, then best token-overlap pairs (descending score).
- * Unpaired lines fall through to added/removed.
+ * matches pair first, then best token-overlap pairs (descending score) among
+ * pairs that clear meetsPairingBar. Unpaired lines fall through to
+ * added/removed (the safe degradation).
  */
 const pairLines = (
   aiLines: readonly AiDraftLine[],
@@ -108,14 +135,15 @@ const pairLines = (
     }
   }
 
-  // Pass 2: best token overlap, greedy by score.
+  // Pass 2: best token overlap, greedy by score — only pairs clearing the bar.
   const scored: { score: number; ai: AiDraftLine; sent: SentLineView }[] = [];
   for (const ai of aiLeft) {
     const aiTokens = new Set(tokens(ai.description));
     for (const sent of sentLeft) {
+      const sentTokens = new Set(tokens(sent.description));
       let score = 0;
-      for (const t of tokens(sent.description)) if (aiTokens.has(t)) score += 1;
-      if (score > 0) scored.push({ score, ai, sent });
+      for (const t of sentTokens) if (aiTokens.has(t)) score += 1;
+      if (meetsPairingBar(score, aiTokens.size, sentTokens.size)) scored.push({ score, ai, sent });
     }
   }
   scored.sort((a, b) => b.score - a.score);

@@ -15,6 +15,7 @@
  */
 
 import type { EstimateLine, QuoteTierKey, TierNames } from "@/lib/store/types";
+import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
 
 // ---- composer line + state types --------------------------------------------
 
@@ -64,6 +65,35 @@ export interface AiOriginalLine {
 export type AiProposal =
   | { kind: "labor_hours"; serviceName: string; hours: number }
   | { kind: "rule"; rule: string };
+
+/**
+ * A proposal as the composer renders it: the payload plus a STABLE identity
+ * (chips are accepted/dismissed by id, never by array index — index-keyed
+ * dismissal races a pending save and removes the wrong chip) and a per-chip
+ * `saving` flag that disables both buttons while its write is in flight.
+ */
+export type ProposalChip = AiProposal & { id: string; saving: boolean };
+
+/** Key freshly-landed proposals by identity; a new draft mints new ids. */
+export function toProposalChips(proposals: AiProposal[], newId: () => string): ProposalChip[] {
+  return proposals.map((p) => ({ ...p, id: newId(), saving: false }));
+}
+
+/**
+ * The rule payload for a labor_hours proposal with no pricebook match — kept
+ * as a shop rule instead of dropped. The jobTag is clipped to the server's cap
+ * (the drafter allows serviceName up to 200 chars; v1.quoting.rules.create
+ * caps jobTag at JOB_TAG_MAX_LENGTH — an unclipped tag would fail forever).
+ */
+export function laborRulePayload(p: { serviceName: string; hours: number }): {
+  rule: string;
+  jobTag: string;
+} {
+  return {
+    rule: `${p.serviceName} takes ${p.hours}h of labor`,
+    jobTag: p.serviceName.slice(0, JOB_TAG_MAX_LENGTH),
+  };
+}
 
 /**
  * The pricebook service a labor_hours proposal writes to — ONE matcher shared

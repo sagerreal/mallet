@@ -27,6 +27,9 @@ import {
   tierDisplayName,
   toEstimateLines,
   updateTier,
+  laborRulePayload,
+  toProposalChips,
+  type AiProposal,
   type AiTiersDraft,
   type ComposerLine,
   type ComposerState,
@@ -34,6 +37,7 @@ import {
   type GBBTier,
   type TierKey,
 } from "./composer-state";
+import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
 
 // ---------------------------------------------------------------------------
 // Minimal fixture builders
@@ -705,5 +709,47 @@ describe("buildQuoteMessageBody", () => {
         "Hi Dana — thanks for having us out. Your quote Q-1042 is ready — view and approve here: https://app.test/q/tok123"
       );
     }
+  });
+});
+
+describe("toProposalChips", () => {
+  const proposals: AiProposal[] = [
+    { kind: "labor_hours", serviceName: "Water heater swap", hours: 5 },
+    { kind: "rule", rule: "Include haul-away on swaps" },
+  ];
+
+  it("assigns each proposal a UNIQUE stable id and starts it not-saving", () => {
+    let n = 0;
+    const chips = toProposalChips(proposals, () => `id-${(n += 1)}`);
+    expect(chips.map((c) => c.id)).toEqual(["id-1", "id-2"]);
+    expect(chips.every((c) => !c.saving)).toBe(true);
+    // The proposal payload rides along untouched.
+    expect(chips[0]).toMatchObject(proposals[0]!);
+    expect(chips[1]).toMatchObject(proposals[1]!);
+  });
+
+  it("does not mutate the input proposals", () => {
+    const before = structuredClone(proposals);
+    toProposalChips(proposals, () => "x");
+    expect(proposals).toEqual(before);
+  });
+});
+
+describe("laborRulePayload", () => {
+  it("phrases the fact as a rule and tags it with the service name", () => {
+    expect(laborRulePayload({ serviceName: "Water heater swap", hours: 5 })).toEqual({
+      rule: "Water heater swap takes 5h of labor",
+      jobTag: "Water heater swap",
+    });
+  });
+
+  it("clips the jobTag to the server's cap so the save can't 400 forever", () => {
+    // The drafter allows serviceName up to 200 chars; v1.quoting.rules.create
+    // caps jobTag at JOB_TAG_MAX_LENGTH — an unclipped tag would be a permanent
+    // BAD_REQUEST dressed as a transient connection error.
+    const long = "x".repeat(200);
+    const payload = laborRulePayload({ serviceName: long, hours: 3 });
+    expect(payload.jobTag).toHaveLength(JOB_TAG_MAX_LENGTH);
+    expect(payload.rule).toBe(`${long} takes 3h of labor`);
   });
 });
