@@ -74,6 +74,7 @@ export default function ComposerPage() {
   const addLeadNote = useAppStore((s) => s.addLeadNote);
   // The real pricebook catalog — "From pricebook" reads it; "Save to book" writes to it.
   const services = useAppStore((s) => s.services);
+  const laborRates = useAppStore((s) => s.laborRates);
   const addService = useAppStore((s) => s.addService);
 
   // Seed leadId from ?lead= once (read-only initializer so state edits persist).
@@ -112,6 +113,8 @@ export default function ComposerPage() {
 
   // Shared error copy for both AI drafters (single + tiered) — same failure modes.
   function onAiDraftError(err: { data?: { code?: string } | null }) {
+    setRun(null);
+    setRunResult(null);
     const code = err.data?.code;
     if (code === "PRECONDITION_FAILED") {
       setAiDraftError("AI isn't enabled yet — ask your admin to add the API key.");
@@ -134,12 +137,32 @@ export default function ComposerPage() {
     return id && UUID_RE.test(id) ? id : undefined;
   }
 
+  // The staged run reveal: set when a draft starts; carries the lead id so the
+  // gather query (fired at t=0, concurrent with the model call) shows real
+  // job-info counts while the model works. Lines apply to state the moment the
+  // mutation resolves — the reveal is purely presentational on top.
+  const [run, setRun] = useState<{ leadId: string | undefined } | null>(null);
+  const [runResult, setRunResult] = useState<{ wonQuotes: { count: number; nums: string[] } } | null>(null);
+  const [materialize, setMaterialize] = useState(false);
+  const gatherQuery = api.v1.ai.gatherJobContext.useQuery(
+    { leadId: run?.leadId ?? "" },
+    { enabled: Boolean(run?.leadId), staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
+  );
+
+  function finishRun() {
+    setRun(null);
+    setRunResult(null);
+    setMaterialize(true);
+    setTimeout(() => setMaterialize(false), 1_600);
+  }
+
   // Single-format drafter: one set of lines into the table (or the Good tier
   // when a mid-flight format switch landed the response in GBB).
   const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
     onSuccess: (data) => {
       setCs((prev) => applyAiDraftLines(prev, toComposerLines(data.lines)));
       setAiDraftError(null);
+      setRunResult({ wonQuotes: data.stages.wonQuotes });
     },
     onError: onAiDraftError,
   });
@@ -155,6 +178,7 @@ export default function ComposerPage() {
       };
       setCs((prev) => applyAiDraftTiers(prev, draft));
       setAiDraftError(null);
+      setRunResult({ wonQuotes: data.stages.wonQuotes });
     },
     onError: onAiDraftError,
   });
@@ -167,11 +191,14 @@ export default function ComposerPage() {
   function triggerAiDraft() {
     if (!cs.desc.trim()) return;
     setAiDraftError(null);
+    const leadId = uuidOrUndefined(cs.leadId);
+    setRun({ leadId });
+    setRunResult(null);
     // GBB format drafts all three options; single format keeps the one-shot lines.
     if (cs.format === "gbb" && cs.gbb) {
-      draftTiersMutation.mutate({ description: cs.desc, leadId: uuidOrUndefined(cs.leadId) });
+      draftTiersMutation.mutate({ description: cs.desc, leadId });
     } else {
-      draftEstimateMutation.mutate({ description: cs.desc, leadId: uuidOrUndefined(cs.leadId) });
+      draftEstimateMutation.mutate({ description: cs.desc, leadId });
     }
   }
 
@@ -510,6 +537,18 @@ export default function ComposerPage() {
         aiDraftError={aiDraftError}
         services={services}
         onSaveToBook={saveLineToBook}
+        run={
+          run
+            ? {
+                hasLead: Boolean(run.leadId),
+                gather: gatherQuery.data?.counts ?? null,
+                pricebook: { services: services.length, laborRates: laborRates.length },
+                result: runResult,
+              }
+            : null
+        }
+        onRunDone={finishRun}
+        materialize={materialize}
       />
 
       {/* Pricing — discount, deposit, tax */}
