@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { createJobSummaryInSavepoint, type SavepointRunner } from "./job-creation-savepoint";
+import { runInSavepoint, type SavepointRunner } from "./savepoint";
 
 /** Fake savepoint tx: runs the callback, then optionally throws (RELEASE failure). */
 function fakeTx(opts: { runCallback: boolean; throwAfter?: Error; throwBefore?: Error }): SavepointRunner {
@@ -20,10 +20,10 @@ function fakeTx(opts: { runCallback: boolean; throwAfter?: Error; throwBefore?: 
   };
 }
 
-describe("createJobSummaryInSavepoint", () => {
+describe("runInSavepoint", () => {
   it("returns the summary when the savepoint commits", async () => {
     const onError = vi.fn();
-    const summary = await createJobSummaryInSavepoint(
+    const summary = await runInSavepoint(
       fakeTx({ runCallback: true }),
       async () => ({ id: "job-1" }),
       onError,
@@ -34,7 +34,7 @@ describe("createJobSummaryInSavepoint", () => {
 
   it("returns null when the use-case produced no job (result error)", async () => {
     const onError = vi.fn();
-    const summary = await createJobSummaryInSavepoint(
+    const summary = await runInSavepoint(
       fakeTx({ runCallback: true }),
       async () => null,
       onError,
@@ -46,7 +46,7 @@ describe("createJobSummaryInSavepoint", () => {
   it("returns null when the savepoint fails before the callback runs", async () => {
     const onError = vi.fn();
     const boom = new Error("could not open savepoint");
-    const summary = await createJobSummaryInSavepoint(
+    const summary = await runInSavepoint(
       fakeTx({ runCallback: false, throwBefore: boom }),
       async () => ({ id: "job-never" }),
       onError,
@@ -58,7 +58,7 @@ describe("createJobSummaryInSavepoint", () => {
   it("returns null when the savepoint fails AFTER the summary was assigned (rolled-back insert must not leak)", async () => {
     const onError = vi.fn();
     const releaseFailure = new Error("connection dropped during RELEASE");
-    const summary = await createJobSummaryInSavepoint(
+    const summary = await runInSavepoint(
       fakeTx({ runCallback: true, throwAfter: releaseFailure }),
       async () => ({ id: "job-phantom" }),
       onError,

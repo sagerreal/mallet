@@ -25,6 +25,7 @@ import {
 import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 import { Estimate } from "../domain/estimate";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
+import type { AiDraftSnapshot } from "../domain/edit-delta";
 import { DraftEstimateUseCase, type EstimateLineInput } from "./draft-estimate";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,15 @@ const seqIds = (): IdGenerator => {
 };
 
 class FakeEstimateRepository implements EstimateRepository {
+  // AI-draft snapshot (write-once, mirrors the Drizzle repo's IS NULL guard).
+  private readonly aiDrafts = new Map<string, AiDraftSnapshot>();
+  async setAiDraft(id: EstimateId, snapshot: AiDraftSnapshot): Promise<void> {
+    if (!this.aiDrafts.has(id)) this.aiDrafts.set(id, snapshot);
+  }
+  async getAiDraft(id: EstimateId): Promise<AiDraftSnapshot | null> {
+    return this.aiDrafts.get(id) ?? null;
+  }
+
   private readonly store = new Map<EstimateId, Estimate>();
   private readonly archived = new Set<EstimateId>();
   private seq = 1000;
@@ -258,5 +268,44 @@ describe("DraftEstimateUseCase — EstimateLine.create failure path", () => {
     if (r.ok) return;
     expect(r.error.kind).toBe("validation");
     if (r.error.kind === "validation") expect(r.error.field).toBe("cost");
+  });
+});
+
+describe("DraftEstimateUseCase — ai_draft snapshot persistence", () => {
+  let clock: FixedClock;
+  let repo: FakeEstimateRepository;
+  let draft: DraftEstimateUseCase;
+
+  const cmd = (lines: EstimateLineInput[]) => ({
+    orgId: ORG,
+    leadId: LEAD,
+    title: null,
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    validDays: null,
+    lines,
+  });
+
+  beforeEach(() => {
+    clock = new FixedClock(new Date("2026-06-01T00:00:00Z"));
+    repo = new FakeEstimateRepository();
+    draft = new DraftEstimateUseCase(repo, new InMemoryEventBus(), clock, seqIds());
+  });
+
+  it("persists the snapshot (with the draft timestamp) when aiDraftLines is present", async () => {
+    const aiLines = [{ description: "Water heater swap labor", quantity: 5, rateCents: 15_000 }];
+    const r = await draft.exec({ ...cmd([oneLine()]), aiDraftLines: aiLines });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const snapshot = await repo.getAiDraft(r.value.props.id);
+    expect(snapshot).toEqual({ lines: aiLines, at: clock.now().toISOString() });
+  });
+
+  it("persists NO snapshot for hand-built drafts", async () => {
+    const r = await draft.exec(cmd([oneLine()]));
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(await repo.getAiDraft(r.value.props.id)).toBeNull();
   });
 });

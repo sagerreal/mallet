@@ -1,5 +1,6 @@
 import type { EstimateId, LeadId, CursorPage, Paginated } from "@mallet/shared/types";
 import type { Estimate, EstimateStatus } from "./estimate";
+import type { AiDraftSnapshot } from "./edit-delta";
 
 export interface EstimateFilter {
   readonly status?: EstimateStatus;
@@ -25,4 +26,10 @@ export interface EstimateRepository {
   // Called when a lead is archived. Does NOT cascade on restore — an unarchived customer's
   // quotes stay archived; the office re-sends if needed.
   archiveByLead(leadId: LeadId, now: Date): Promise<number>;
+  // Persist the AI-draft snapshot for an AI-originated estimate. WRITE-ONCE: a snapshot that
+  // is already set is never overwritten (the miner must diff against the ORIGINAL draft).
+  // Deliberately outside save() so no later upsert can clobber it.
+  setAiDraft(id: EstimateId, snapshot: AiDraftSnapshot): Promise<void>;
+  // The snapshot, or null for hand-built estimates / pre-snapshot rows.
+  getAiDraft(id: EstimateId): Promise<AiDraftSnapshot | null>;
 }

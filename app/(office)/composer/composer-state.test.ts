@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   INITIAL_STATE,
+  aiDraftForPayload,
   applyAiDraftLines,
   applyAiDraftTiers,
   applyComposerPatch,
@@ -395,6 +396,19 @@ describe("applyAiDraftLines", () => {
     expect(state.lines[0]!.d).toBe("old");
     expect(state.aiDrafted).toBe(false);
   });
+
+  it("freezes the AI's original lines — user edits never touch the snapshot", () => {
+    const state = makeState();
+    const next = applyAiDraftLines(state, drafted);
+    expect(next.aiOriginal).toEqual([
+      { d: "40-gal gas water heater", q: 1, r: 1650 },
+      { d: "Permit", q: 1, r: 110 },
+    ]);
+
+    // Editing the visible lines leaves the frozen original alone.
+    next.lines[0]!.r = 999;
+    expect(next.aiOriginal![0]!.r).toBe(1650);
+  });
 });
 
 describe("applyAiDraftTiers", () => {
@@ -431,6 +445,16 @@ describe("applyAiDraftTiers", () => {
     expect(applyAiDraftTiers(state, tiersDraft)).toBe(state);
   });
 
+  it("freezes the AI's original lines tier-tagged for the ai_draft snapshot", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb() });
+    const next = applyAiDraftTiers(state, tiersDraft);
+    expect(next.aiOriginal).toEqual([
+      { d: "Snake the drain", q: 1, r: 250, tier: "good" },
+      { d: "Hydro-jet the line", q: 1, r: 450, tier: "better" },
+      { d: "Install exterior cleanout", q: 1, r: 780, tier: "best" },
+    ]);
+  });
+
   // Mid-flight GBB → single switch: the response must not land invisibly.
   it("after a switch to single: leaves the line table alone, fills the panels, and says where the draft went", () => {
     const tableLines = [line("Kept single line", 1, 500)];
@@ -463,6 +487,46 @@ describe("applyAiDraftTiers", () => {
     const next = applyAiDraftTiers(makeState({ format: "gbb", gbb: makeGbb() }), draft);
     next.gbb!.opts[0]!.lines[0]!.d = "MUTATED";
     expect(draft.good.lines[0]!.d).toBe("Snake the drain");
+  });
+});
+
+describe("aiDraftForPayload — the ai_draft snapshot on the quote payload", () => {
+  const original = [
+    { d: "Water heater swap labor", q: 5, r: 150 },
+    { d: "40-gal tank", q: 1, r: 900 },
+  ];
+
+  it("is null before any AI draft", () => {
+    expect(aiDraftForPayload(makeState())).toBeNull();
+  });
+
+  it("converts the frozen original to cents for the server", () => {
+    const state = makeState({ aiDrafted: true, aiOriginal: original });
+    expect(aiDraftForPayload(state)).toEqual({
+      lines: [
+        { description: "Water heater swap labor", quantity: 5, rateCents: 15_000 },
+        { description: "40-gal tank", quantity: 1, rateCents: 90_000 },
+      ],
+    });
+  });
+
+  it("carries tier tags for a GBB draft", () => {
+    const state = makeState({
+      format: "gbb",
+      aiDrafted: true,
+      aiOriginal: [{ d: "Snake the drain", q: 1, r: 250, tier: "good" }],
+    });
+    expect(aiDraftForPayload(state)).toEqual({
+      lines: [{ description: "Snake the drain", quantity: 1, rateCents: 25_000, tier: "good" }],
+    });
+  });
+
+  it("drops the snapshot when the format changed since the draft (diff would be noise)", () => {
+    // Drafted single, sending GBB…
+    expect(aiDraftForPayload(makeState({ format: "gbb", aiDrafted: true, aiOriginal: original }))).toBeNull();
+    // …and drafted tiered, sending single.
+    const tiered = [{ d: "Snake the drain", q: 1, r: 250, tier: "good" as const }];
+    expect(aiDraftForPayload(makeState({ format: "single", aiDrafted: true, aiOriginal: tiered }))).toBeNull();
   });
 });
 

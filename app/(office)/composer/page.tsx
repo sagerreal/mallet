@@ -38,6 +38,7 @@ import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import {
   INITIAL_STATE,
+  aiDraftForPayload,
   applyAiDraftLines,
   applyAiDraftTiers,
   applyComposerPatch,
@@ -314,6 +315,12 @@ export default function ComposerPage() {
         ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
         : {}),
       ...(cs.terms?.text.trim() ? { termsSnapshot: cs.terms.text } : {}),
+      // AI-originated quotes carry the AI's original lines so the server can
+      // diff what the office changed (edit-delta mining → proposed rules).
+      ...(() => {
+        const aiDraft = aiDraftForPayload(cs);
+        return aiDraft ? { aiDraft } : {};
+      })(),
     };
   }
 

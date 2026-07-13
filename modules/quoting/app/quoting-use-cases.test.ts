@@ -17,6 +17,7 @@ import {
 import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 import { Estimate } from "../domain/estimate";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
+import type { AiDraftSnapshot } from "../domain/edit-delta";
 import { DraftEstimateUseCase, type EstimateLineInput } from "./draft-estimate";
 import { SendEstimateUseCase } from "./send-estimate";
 import { AcceptEstimateUseCase } from "./accept-estimate";
@@ -39,6 +40,15 @@ const seqIds = (): IdGenerator => {
 };
 
 class FakeEstimateRepository implements EstimateRepository {
+  // AI-draft snapshot (write-once, mirrors the Drizzle repo's IS NULL guard).
+  private readonly aiDrafts = new Map<string, AiDraftSnapshot>();
+  async setAiDraft(id: EstimateId, snapshot: AiDraftSnapshot): Promise<void> {
+    if (!this.aiDrafts.has(id)) this.aiDrafts.set(id, snapshot);
+  }
+  async getAiDraft(id: EstimateId): Promise<AiDraftSnapshot | null> {
+    return this.aiDrafts.get(id) ?? null;
+  }
+
   private readonly store = new Map<EstimateId, Estimate>();
   // Track soft-deleted ids separately so archive/restore tests can verify state.
   private readonly archived = new Set<EstimateId>();

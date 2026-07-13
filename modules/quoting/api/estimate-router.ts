@@ -14,8 +14,10 @@ import { ListEstimatesUseCase } from "../app/list-estimates";
 import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase, jobSummaryDTO, toJobSummaryDTO } from "@mallet/jobs";
 import { logger } from "@mallet/shared/observability";
-import { createJobSummaryInSavepoint } from "./job-creation-savepoint";
+import { runInSavepoint } from "./savepoint";
 import { createQuotingRulesRouter } from "./quoting-rules-router";
+import { MineEditDeltasUseCase } from "../app/mine-edit-deltas";
+import { DrizzleQuotingRuleRepository } from "../infra/drizzle-quoting-rule-repository";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -121,6 +123,24 @@ const draftInput = z
     recommendedTier: tierEnum.optional(),
     tierNames: tierNamesInput.optional(),
     termsSnapshot: z.string().trim().min(1).max(10_000).optional(),
+    // The AI drafter's ORIGINAL lines — sent only when this draft originated from the AI.
+    // Persisted write-once to estimates.ai_draft; the send path diffs it against the lines
+    // actually sent (edit-delta mining → proposed quoting_rules).
+    aiDraft: z
+      .object({
+        lines: z
+          .array(
+            z.object({
+              description: z.string().min(1).max(500),
+              quantity: z.number().nonnegative(),
+              rateCents: z.number().int().nonnegative(),
+              tier: tierEnum.optional(),
+            }),
+          )
+          .min(1)
+          .max(30),
+      })
+      .optional(),
   })
   // Boundary consistency: a tiered draft tags EVERY line; a single draft tags none and
   // carries no tier names. (The domain re-validates — this just fails fast with a clear path.)
@@ -278,6 +298,13 @@ export const createEstimateRouter = () =>
           recommendedTier: input.recommendedTier ?? null,
           tierNames: input.tierNames ?? null,
           termsSnapshot: input.termsSnapshot ?? null,
+          aiDraftLines:
+            input.aiDraft?.lines.map((line) => ({
+              description: line.description,
+              quantity: line.quantity,
+              rateCents: line.rateCents,
+              tier: line.tier ?? null,
+            })) ?? null,
         });
         return toEstimateDTO(orThrow(result));
       }),
@@ -321,9 +348,62 @@ export const createEstimateRouter = () =>
       .input(idInput)
       .output(estimateDTO)
       .mutation(async ({ ctx, input }) => {
+        const estimateId = asEstimateId(input.estimateId);
         const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        // send() is idempotent — note whether THIS call performs the real draft→sent
+        // transition, so edit-delta mining runs once per estimate (a re-send must not
+        // double-count "recurrences" of the same correction).
+        const before = await repo.findById(estimateId);
+        const wasDraft = before?.props.status === "draft";
         const useCase = new SendEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toEstimateDTO(orThrow(await useCase.exec({ estimateId: asEstimateId(input.estimateId) })));
+        const sent = orThrow(await useCase.exec({ estimateId }));
+
+        // Edit-delta mining (AI-originated estimates only): diff the ai_draft snapshot
+        // against the lines actually sent; material deltas land as PROPOSED quoting_rules.
+        // Wrapped in a savepoint, mirroring the accept-path job creation — a mining
+        // failure logs and rolls back its own writes, and NEVER blocks the send.
+        if (wasDraft) {
+          await runInSavepoint(
+            ctx.tx,
+            async (sp) => {
+              const spEstimates = new DrizzleEstimateRepository(sp, ctx.principal.orgId);
+              const snapshot = await spEstimates.getAiDraft(estimateId);
+              if (!snapshot) return null; // hand-built estimate — nothing to mine
+              const miner = new MineEditDeltasUseCase(
+                new DrizzleQuotingRuleRepository(sp, ctx.principal.orgId),
+                ctx.deps.clock,
+                ctx.deps.ids,
+              );
+              const mined = await miner.exec({
+                orgId: ctx.principal.orgId,
+                estimateId,
+                snapshot,
+                sentLines: sent.props.lines.map((line) => ({
+                  description: line.props.description,
+                  quantity: line.props.quantity,
+                  rateCents: line.props.rate,
+                  isOptional: line.props.isOptional,
+                  tier: line.props.tier,
+                })),
+              });
+              if (!mined.ok) {
+                logger.error(
+                  { err: mined.error, estimateId, orgId: ctx.principal.orgId },
+                  "quoting.send: edit-delta mining returned error (non-fatal)",
+                );
+              }
+              return null;
+            },
+            (err) => {
+              logger.error(
+                { err, estimateId, orgId: ctx.principal.orgId },
+                "quoting.send: edit-delta mining failed (non-fatal)",
+              );
+            },
+          );
+        }
+
+        return toEstimateDTO(sent);
       }),
 
     accept: ownerOrOffice
@@ -353,10 +433,10 @@ export const createEstimateRouter = () =>
         // ON CONFLICT DO NOTHING), so a re-accept is safe. If job creation fails, do NOT fail the
         // accept — log and continue. The manual v1.jobs.createFromEstimate endpoint is the fallback.
         // The created (or existing) job is returned so the client can adopt it into the jobs store
-        // immediately without a network round-trip. createJobSummaryInSavepoint guarantees a
+        // immediately without a network round-trip. runInSavepoint guarantees a
         // savepoint failure yields null even when the use-case had already produced a summary —
         // the insert rolled back, and a non-null return would leak a phantom job to the client.
-        const jobSummary = await createJobSummaryInSavepoint(
+        const jobSummary = await runInSavepoint(
           ctx.tx,
           async (sp) => {
             const jobRepo = new DrizzleJobRepository(sp, ctx.principal.orgId);
