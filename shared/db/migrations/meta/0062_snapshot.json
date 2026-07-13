@@ -1,5 +1,5 @@
 {
-  "id": "67557b9e-3c7d-4a42-a2c1-c312a3042d42",
+  "id": "1f7138e3-c40a-4ccf-a131-bf5e057980d3",
   "prevId": "dfdf3104-e27f-4fea-ab7e-9cad2cc66d63",
   "version": "7",
   "dialect": "postgresql",
@@ -503,12 +503,6 @@
           "notNull": true,
           "default": 0
         },
-        "tier": {
-          "name": "tier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -577,10 +571,6 @@
         "estimate_lines_qty_check": {
           "name": "estimate_lines_qty_check",
           "value": "\"estimate_lines\".\"quantity\" >= 0"
-        },
-        "estimate_lines_tier_check": {
-          "name": "estimate_lines_tier_check",
-          "value": "\"estimate_lines\".\"tier\" in ('good', 'better', 'best')"
         },
         "estimate_lines_rate_check": {
           "name": "estimate_lines_rate_check",
@@ -701,30 +691,6 @@
         },
         "change_request": {
           "name": "change_request",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "recommended_tier": {
-          "name": "recommended_tier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "accepted_tier": {
-          "name": "accepted_tier",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tier_names": {
-          "name": "tier_names",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "terms_snapshot": {
-          "name": "terms_snapshot",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -896,14 +862,6 @@
         "estimates_status_check": {
           "name": "estimates_status_check",
           "value": "\"estimates\".\"status\" in ('draft', 'sent', 'accepted', 'declined')"
-        },
-        "estimates_recommended_tier_check": {
-          "name": "estimates_recommended_tier_check",
-          "value": "\"estimates\".\"recommended_tier\" in ('good', 'better', 'best')"
-        },
-        "estimates_accepted_tier_check": {
-          "name": "estimates_accepted_tier_check",
-          "value": "\"estimates\".\"accepted_tier\" in ('good', 'better', 'best')"
         },
         "estimates_disc_bps_check": {
           "name": "estimates_disc_bps_check",
@@ -4609,6 +4567,131 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.pricebook_categories": {
+      "name": "pricebook_categories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "pricebook_categories_org_deleted_idx": {
+          "name": "pricebook_categories_org_deleted_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "deleted_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pricebook_categories_org_id_orgs_id_fk": {
+          "name": "pricebook_categories_org_id_orgs_id_fk",
+          "tableFrom": "pricebook_categories",
+          "tableTo": "orgs",
+          "columnsFrom": [
+            "org_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pricebook_categories_parent_fk": {
+          "name": "pricebook_categories_parent_fk",
+          "tableFrom": "pricebook_categories",
+          "tableTo": "pricebook_categories",
+          "columnsFrom": [
+            "org_id",
+            "parent_id"
+          ],
+          "columnsTo": [
+            "org_id",
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "pricebook_categories_org_id_uq": {
+          "name": "pricebook_categories_org_id_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.pricebook_items": {
       "name": "pricebook_items",
       "schema": "",
@@ -4626,11 +4709,29 @@
           "primaryKey": false,
           "notNull": true
         },
+        "category_id": {
+          "name": "category_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "label": {
           "name": "label",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "unit_price_cents": {
           "name": "unit_price_cents",
@@ -4645,6 +4746,45 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "labor_hours": {
+          "name": "labor_hours",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "taxable": {
+          "name": "taxable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "warranty_text": {
+          "name": "warranty_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_url": {
+          "name": "image_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_addon": {
+          "name": "is_addon",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "position": {
           "name": "position",
@@ -4695,6 +4835,48 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "pricebook_items_org_category_idx": {
+          "name": "pricebook_items_org_category_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "category_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pricebook_items_org_name_idx": {
+          "name": "pricebook_items_org_name_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -4709,6 +4891,21 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pricebook_items_category_fk": {
+          "name": "pricebook_items_category_fk",
+          "tableFrom": "pricebook_items",
+          "tableTo": "pricebook_categories",
+          "columnsFrom": [
+            "org_id",
+            "category_id"
+          ],
+          "columnsTo": [
+            "org_id",
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

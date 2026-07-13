@@ -349,18 +349,6 @@ export function applyAiDraftTiers(
   return { ...state, aiOpen: false, aiDrafted: true, switchNote: null, gbb };
 }
 
-// ---- Pricebook items (mirrors prototype seed) -------------------------------
-
-export const PRICEBOOK = [
-  { d: "40-gal gas water heater (Rheem Performance)", r: 1650 },
-  { d: "Remove & haul away existing unit", r: 150 },
-  { d: "Expansion tank + seismic straps (code)", r: 385 },
-  { d: "Hydro-jet kitchen drain line", r: 450 },
-  { d: "Camera inspection w/ locate", r: 285 },
-  { d: "Toilet — Toto Drake, supplied & installed", r: 460 },
-  { d: "City permit", r: 110 },
-];
-
 // ---- Pricing summary label --------------------------------------------------
 
 export function pricingSummary(p: { disc: number; dep: number; tax: number }): string {

@@ -1,6 +1,7 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { tasks } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetAfter } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -65,9 +66,10 @@ export class DrizzleTaskRepository implements TaskRepository {
       if (isOk(cursor)) {
         // Keyset: tasks ordered by (dueDate asc nulls last, createdAt asc, id asc).
         // Cursor encodes (createdAt, id) — used as the tiebreaker within the same day.
-        conds.push(
-          sql`(${tasks.createdAt}, ${tasks.id}) > (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        // NOTE: order-by leads with dueDate but the cursor only keys on (createdAt, id) — if
+        // dueDate order disagrees with createdAt order across a page boundary, a row can be
+        // skipped or duplicated. Separate, subtler bug; needs a multi-key cursor. Out of scope here.
+        conds.push(keysetAfter(tasks.createdAt, tasks.id, cursor.value));
       }
     }
 

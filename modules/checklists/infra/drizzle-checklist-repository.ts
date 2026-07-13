@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { checklistTemplates, checklistItems } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetBefore } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -73,9 +74,7 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
       const cursor = decodeCursor(page.cursor);
       if (isOk(cursor)) {
         // Keyset: rows strictly after the cursor in (created_at desc, id desc) order.
-        conds.push(
-          sql`(${checklistTemplates.createdAt}, ${checklistTemplates.id}) < (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        conds.push(keysetBefore(checklistTemplates.createdAt, checklistTemplates.id, cursor.value));
       }
     }
 

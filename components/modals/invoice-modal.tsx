@@ -30,7 +30,7 @@ import { useState } from "react";
 import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
-import type { Invoice, InvoiceLine, Lead } from "@/lib/store/types";
+import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
@@ -72,24 +72,6 @@ function pricingSummary(p: { disc?: number; tax?: number }, depPaid: number): st
   if (p.tax) bits.push(p.tax + "% tax");
   return bits.join(" · ");
 }
-
-// ---- pricebook (prototype state.pricebook; same shape as the composer) ------
-
-interface PricebookItem {
-  d: string;
-  r: number;
-  c?: number;
-}
-
-const PRICEBOOK: ReadonlyArray<PricebookItem> = [
-  { d: "40-gal gas water heater (Rheem Performance)", r: 1650 },
-  { d: "Remove & haul away existing unit", r: 150 },
-  { d: "Expansion tank + seismic straps (code)", r: 385 },
-  { d: "Hydro-jet kitchen drain line", r: 450 },
-  { d: "Camera inspection w/ locate", r: 285 },
-  { d: "Toilet — Toto Drake, supplied & installed", r: 460 },
-  { d: "City permit", r: 110 },
-];
 
 // ---- shared inline styles (kept faithful to the prototype's inline CSS) -----
 
@@ -152,6 +134,7 @@ const ROLLUP_ROW: React.CSSProperties = {
 interface EditBlockProps {
   invoice: Invoice;
   leads: Lead[];
+  services: Service[];
   onPickCust: (name: string) => void;
   onSetField: (patch: Partial<Invoice>) => void;
   onSetTerms: (days: number | null) => void;
@@ -163,6 +146,7 @@ interface EditBlockProps {
 function EditBlock({
   invoice,
   leads,
+  services,
   onPickCust,
   onSetField,
   onSetTerms,
@@ -172,7 +156,13 @@ function EditBlock({
 }: EditBlockProps) {
   // pricebook browse + Pricing-options reveal are local UI (prototype _invPb / _invPx).
   const [pbOpen, setPbOpen] = useState(false);
+  const [pbQuery, setPbQuery] = useState("");
   const [pxOpen, setPxOpen] = useState(false);
+  const pbMatches = pbQuery.trim()
+    ? services.filter((svc) =>
+        svc.name.toLowerCase().includes(pbQuery.trim().toLowerCase())
+      )
+    : services;
 
   // Finance surface — money (cost col + margin) is always shown here.
   const money = true;
@@ -200,8 +190,10 @@ function EditBlock({
     onSetLines(lines.filter((_, i) => i !== ix));
   }
 
-  function addFromPricebook(item: PricebookItem) {
-    onSetLines([...lines, { d: item.d, q: 1, r: item.r, c: item.c ?? 0 }]);
+  // Snapshots the service's current values — later pricebook edits never
+  // retroactively change a line already added to this invoice.
+  function addFromPricebook(svc: Service) {
+    onSetLines([...lines, { d: svc.name, q: 1, r: svc.unitPrice, c: svc.cost }]);
   }
 
   return (
@@ -340,7 +332,7 @@ function EditBlock({
         <button type="button" className="btn sm ghost" onClick={addLine}>
           + Add line
         </button>
-        {PRICEBOOK.length ? (
+        {services.length ? (
           <span className="linklike" style={{ fontSize: 12 }} onClick={() => setPbOpen((v) => !v)}>
             {pbOpen ? "close" : "from pricebook"}
           </span>
@@ -349,17 +341,30 @@ function EditBlock({
 
       {pbOpen ? (
         <div style={{ borderTop: "1px solid var(--line)", marginTop: 8, paddingTop: 8 }}>
-          {PRICEBOOK.map((pp, pi) => (
-            <div
-              key={pi}
-              className="stage-row clickable"
-              style={{ cursor: "pointer", border: "none", padding: "4px 0" }}
-              onClick={() => addFromPricebook(pp)}
-            >
-              <span style={{ flex: 1, fontSize: 13 }}>{pp.d}</span>
-              <b className="fig">{fmt$(pp.r)}</b>
+          <input
+            type="text"
+            value={pbQuery}
+            onChange={(e) => setPbQuery(e.target.value)}
+            placeholder="Search your pricebook…"
+            style={{ ...LINE_INPUT, flex: "none", width: "100%", marginBottom: 6 }}
+          />
+          {pbMatches.length ? (
+            pbMatches.map((svc) => (
+              <div
+                key={svc.id}
+                className="stage-row clickable"
+                style={{ cursor: "pointer", border: "none", padding: "4px 0" }}
+                onClick={() => addFromPricebook(svc)}
+              >
+                <span style={{ flex: 1, fontSize: 13 }}>{svc.name}</span>
+                <b className="fig">{fmt$(svc.unitPrice)}</b>
+              </div>
+            ))
+          ) : (
+            <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>
+              No matches — try a different search.
             </div>
-          ))}
+          )}
         </div>
       ) : null}
 
@@ -697,6 +702,7 @@ export function InvoiceModalContent() {
 
   const invoices = useAppStore((s) => s.invoices);
   const leads = useAppStore((s) => s.leads);
+  const services = useAppStore((s) => s.services);
   const jobs = useAppStore((s) => s.jobs);
   const updateInvoice = useAppStore((s) => s.updateInvoice);
   const archiveInvoice = useAppStore((s) => s.archiveInvoice);
@@ -788,6 +794,7 @@ export function InvoiceModalContent() {
         <EditBlock
           invoice={invoice}
           leads={leads}
+          services={services}
           onPickCust={pickCust}
           onSetField={(patch) => updateInvoice(invoice.id, patch)}
           onSetTerms={(termsDays) => updateInvoice(invoice.id, { termsDays })}

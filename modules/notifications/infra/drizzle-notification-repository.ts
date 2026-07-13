@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { notifications } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetBefore } from "@mallet/shared/db/keyset";
 import {
   buildPage,
   decodeCursor,
@@ -94,9 +95,7 @@ export class DrizzleNotificationRepository implements NotificationRepository {
     if (page.cursor) {
       const cursor = decodeCursor(page.cursor);
       if (isOk(cursor)) {
-        conds.push(
-          sql`(${notifications.createdAt}, ${notifications.id}) < (${cursor.value.createdAt}::timestamptz, ${cursor.value.id}::uuid)`,
-        );
+        conds.push(keysetBefore(notifications.createdAt, notifications.id, cursor.value));
       }
     }
     const rows = await this.tx

@@ -1,8 +1,9 @@
 /**
  * lib/store/slices/settings-slice.ts
- * Editable workspace configuration for the Settings page — pricebook, labor
- * rates, terms library, lead sources, the AI Front Desk booking playbook,
- * parts markup, trade, and permission toggles.
+ * Editable workspace configuration for the Settings page — labor rates, terms
+ * library, lead sources, the AI Front Desk booking playbook, parts markup,
+ * trade, and permission toggles. The pricebook catalog itself (services +
+ * categories) lives in pricebook-slice.ts (its own module, hydrator, and DTOs).
  *
  * All collections carry stable server-assigned string UUIDs.
  * All mutating actions follow the pattern:
@@ -21,13 +22,6 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { isDefaultSourceLabel } from "@/lib/store/default-sources";
 
 // ---- shapes ----------------------------------------------------------------
-
-export interface PbItem {
-  id: string;
-  label: string;
-  unitPrice: number; // dollars in the store; convert to cents for the API
-  cost: number;      // dollars in the store
-}
 
 export interface LaborRate {
   id: string;
@@ -90,7 +84,6 @@ export interface SettingsToggles {
 // SettingsHydrator (Task 8) calls setSettings() and overwrites these.
 // Collections start empty; a fresh org gets server defaults on first v1.settings.get.
 
-const EMPTY_PRICEBOOK: PbItem[] = [];
 const EMPTY_LABOR_RATES: LaborRate[] = [];
 const EMPTY_TERMS: TermItem[] = [];
 const EMPTY_SOURCES: SourceItem[] = [];
@@ -184,7 +177,6 @@ function persistBooking(get: GetFn, set: SetFn, snapshot: BookingCfg): void {
 // ---- slice interface -------------------------------------------------------
 
 export interface SettingsSlice {
-  pricebook: PbItem[];
   laborRates: LaborRate[];
   terms: TermItem[];
   sources: SourceItem[];
@@ -195,7 +187,6 @@ export interface SettingsSlice {
 
   /** Replace the whole slice — called by SettingsHydrator (Task 8). */
   setSettings: (snapshot: {
-    pricebook: PbItem[];
     laborRates: LaborRate[];
     terms: TermItem[];
     sources: SourceItem[];
@@ -204,11 +195,6 @@ export interface SettingsSlice {
     trade: string;
     toggles: SettingsToggles;
   }) => void;
-
-  // pricebook
-  addPricebookItem: (label: string, unitPrice: number, cost: number) => void;
-  updatePricebookItem: (id: string, field: "label" | "unitPrice" | "cost", value: string) => void;
-  removePricebookItem: (id: string) => void;
 
   // labor rates
   addLaborRate: (name: string, rate: number) => void;
@@ -245,7 +231,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   set,
   get,
 ) => ({
-  pricebook: EMPTY_PRICEBOOK,
   laborRates: EMPTY_LABOR_RATES,
   terms: EMPTY_TERMS,
   sources: EMPTY_SOURCES,
@@ -257,65 +242,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   // ---- hydration ------------------------------------------------------------
 
   setSettings: (snapshot) => set({ ...snapshot }),
-
-  // ---- pricebook ------------------------------------------------------------
-
-  addPricebookItem: (label, unitPrice, cost) => {
-    const desc = label.trim();
-    if (!desc) return;
-    const c = Math.max(0, Math.round(Number.isFinite(cost) ? cost : 0));
-    let r = Math.max(0, Math.round(Number.isFinite(unitPrice) ? unitPrice : 0));
-    // Dedupe by label (case-insensitive), matching prototype behaviour.
-    if (get().pricebook.some((p) => p.label.trim().toLowerCase() === desc.toLowerCase())) return;
-    // No price typed → derive from cost + current markup.
-    if (!r && c) r = Math.round(c * (1 + (get().markup || 0) / 100));
-    const id = crypto.randomUUID();
-    const item: PbItem = { id, label: desc, unitPrice: r, cost: c };
-    set((s) => ({ pricebook: [...s.pricebook, item] }));
-    void trpcVanilla.v1.settings.pricebook.create
-      .mutate({ id, label: desc, unitPriceCents: r * 100, costCents: c * 100 })
-      .then((dto) => {
-        // Reconcile: adopt the server id (and any normalised values).
-        set((s) => ({
-          pricebook: s.pricebook.map((p) =>
-            p.id === id
-              ? {
-                  ...p,
-                  id: dto.id,
-                  label: dto.label,
-                  unitPrice: Math.round(dto.unitPriceCents / 100),
-                  cost: Math.round(dto.costCents / 100),
-                }
-              : p,
-          ),
-        }));
-      })
-      .catch(() => {
-        set((s) => ({ pricebook: s.pricebook.filter((p) => p.id !== id) }));
-      });
-  },
-
-  updatePricebookItem: (id, field, value) => {
-    const snapshot = get().pricebook;
-    set((s) => ({
-      pricebook: s.pricebook.map((p) => {
-        if (p.id !== id) return p;
-        if (field === "label") return { ...p, label: value };
-        return { ...p, [field]: Math.max(0, Math.round(Number(value) || 0)) };
-      }),
-    }));
-    const next = get().pricebook.find((p) => p.id === id);
-    if (!next) return;
-    void trpcVanilla.v1.settings.pricebook.update
-      .mutate({ id, label: next.label, unitPriceCents: next.unitPrice * 100, costCents: next.cost * 100 })
-      .catch(() => set({ pricebook: snapshot }));
-  },
-
-  removePricebookItem: (id) => {
-    const snapshot = get().pricebook;
-    set((s) => ({ pricebook: s.pricebook.filter((p) => p.id !== id) }));
-    void trpcVanilla.v1.settings.pricebook.remove.mutate({ id }).catch(() => set({ pricebook: snapshot }));
-  },
 
   // ---- labor rates ----------------------------------------------------------
 

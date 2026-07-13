@@ -21,6 +21,7 @@ import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
+import { PricebookCard } from "./pricebook-card";
 import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
@@ -42,11 +43,6 @@ function timeLabel(h: number): string {
   const period = h < 12 ? "a" : "p";
   const dh = h > 12 ? h - 12 : h;
   return `${dh}${period}`;
-}
-
-function pbMarginPct(p: { unitPrice: number; cost: number }): number {
-  if (!p.unitPrice) return 0;
-  return Math.round(((p.unitPrice - p.cost) / p.unitPrice) * 100);
 }
 
 // ============================================================================
@@ -578,16 +574,10 @@ function SecSources() {
 // ============================================================================
 
 function SecPricing() {
-  const trade = useAppStore((s) => s.trade);
-  const setTrade = useAppStore((s) => s.setTrade);
   const laborRates = useAppStore((s) => s.laborRates);
   const addLaborRate = useAppStore((s) => s.addLaborRate);
   const updateLaborRate = useAppStore((s) => s.updateLaborRate);
   const removeLaborRate = useAppStore((s) => s.removeLaborRate);
-  const pricebook = useAppStore((s) => s.pricebook);
-  const addPricebookItem = useAppStore((s) => s.addPricebookItem);
-  const updatePricebookItem = useAppStore((s) => s.updatePricebookItem);
-  const removePricebookItem = useAppStore((s) => s.removePricebookItem);
   const markup = useAppStore((s) => s.markup);
   const setMarkup = useAppStore((s) => s.setMarkup);
   const terms = useAppStore((s) => s.terms);
@@ -596,9 +586,6 @@ function SecPricing() {
 
   const [lrName, setLrName] = useState("");
   const [lrRate, setLrRate] = useState("");
-  const [pbName, setPbName] = useState("");
-  const [pbRate, setPbRate] = useState("");
-  const [pbCost, setPbCost] = useState("");
   const [tlName, setTlName] = useState("");
   const [tlBody, setTlBody] = useState("");
 
@@ -606,13 +593,6 @@ function SecPricing() {
     addLaborRate(lrName, Number(lrRate));
     setLrName("");
     setLrRate("");
-  }
-
-  function handleAddPb() {
-    addPricebookItem(pbName, Number(pbRate), Number(pbCost));
-    setPbName("");
-    setPbRate("");
-    setPbCost("");
   }
 
   function handleAddTerm() {
@@ -623,22 +603,6 @@ function SecPricing() {
 
   return (
     <>
-      <FoldCard title="Your trade" summary={cap(trade)}>
-        <select
-          id="setTrade"
-          value={trade}
-          onChange={(e) => setTrade(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 8, padding: "9px 10px", fontFamily: "inherit", fontSize: 13 }}
-        >
-          {[["plumbing","Plumbing"],["hvac","HVAC"],["electrical","Electrical"],["remodel","Remodeling"],["fence","Fencing"],["other","Other / general"]].map(([v,l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </select>
-        <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
-          Switching reloads that trade&apos;s starter pricebook &amp; labor rates.
-        </p>
-      </FoldCard>
-
       <FoldCard title="Labor rates" defaultOpen summary={`${laborRates.length} rate${laborRates.length === 1 ? "" : "s"}`}>
         <div>
           {laborRates.map((lr) => (
@@ -660,7 +624,7 @@ function SecPricing() {
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="lrName" placeholder="e.g. Apprentice, Weekend" value={lrName} onChange={(e) => setLrName(e.target.value)}
+          <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
             style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
           <input type="number" id="lrRate" placeholder="$/hr" value={lrRate} onChange={(e) => setLrRate(e.target.value)}
             style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
@@ -668,49 +632,7 @@ function SecPricing() {
         </div>
       </FoldCard>
 
-      <FoldCard title="Pricebook" summary={`${pricebook.length} lines`}>
-        <div>
-          {pricebook.map((p) => (
-            <div key={p.id} className="stage-row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <input type="text" defaultValue={p.label}
-                onChange={(e) => updatePricebookItem(p.id, "label", e.target.value)}
-                style={{ flex: 1, minWidth: 150, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                <span className="muted">$</span>
-                <input type="number" defaultValue={p.unitPrice}
-                  onChange={(e) => updatePricebookItem(p.id, "unitPrice", e.target.value)}
-                  style={{ width: 78, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-              </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                <span className="muted" style={{ fontSize: 11 }}>cost</span>
-                <input type="number" defaultValue={p.cost}
-                  onChange={(e) => updatePricebookItem(p.id, "cost", e.target.value)}
-                  style={{ width: 64, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-              </span>
-              <span className="muted" style={{ fontSize: "11.5px", minWidth: 62, textAlign: "right" }}>
-                {p.cost ? `${pbMarginPct(p)}% margin` : ""}
-              </span>
-              <button className="btn sm ghost" onClick={() => removePricebookItem(p.id)}>✕</button>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="pbName" placeholder="e.g. Sewer camera inspection" value={pbName} onChange={(e) => setPbName(e.target.value)}
-            style={{ flex: 2, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <input type="number" id="pbRate" placeholder="price $" value={pbRate} onChange={(e) => setPbRate(e.target.value)}
-            style={{ flex: "0 0 92px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <input type="number" id="pbCost" placeholder="cost $" value={pbCost} onChange={(e) => setPbCost(e.target.value)}
-            style={{ flex: "0 0 92px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <button className="btn" onClick={handleAddPb}>+ Add</button>
-        </div>
-        <div style={{ marginTop: 10 }}>
-          {/* deferred: pricebook import */}
-          <button className="btn ghost sm" onClick={() => {}}>Upload price book</button>
-        </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
-          Enter a cost and the price pre-fills at your default markup. Techs never see cost or margin.
-        </p>
-      </FoldCard>
+      <PricebookCard />
 
       <FoldCard title="Default parts markup" summary={`${markup}%`}>
         <div className="field" style={{ maxWidth: 200, margin: 0 }}>
@@ -718,7 +640,7 @@ function SecPricing() {
           <input type="number" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
         </div>
         <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
-          Only pre-fills the suggested price — each pricebook line keeps its own margin.
+          Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
         </p>
       </FoldCard>
 
