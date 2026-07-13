@@ -22,8 +22,6 @@
  * recommended tier at call time) drives gating + the totals display only.
  *
  * The quote card reads the real pricebook (s.services) for "From pricebook"
- * and writes to it via saveLineToBook (s.addService) for each line's "Save
- * to book" chip — both directions wired to the store, no sample data.
  *
  * Deferred (intentional no-op — see inline comment in quote-card.tsx):
  *   - descMic() / 🎤     — no speech API in the app yet
@@ -33,7 +31,6 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLeads, useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
-import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import { fmt$ } from "@/lib/format";
@@ -81,7 +78,6 @@ export default function ComposerPage() {
   // The real pricebook catalog — "From pricebook" reads it; "Save to book" writes to it.
   const services = useAppStore((s) => s.services);
   const laborRates = useAppStore((s) => s.laborRates);
-  const addService = useAppStore((s) => s.addService);
   // One-tap "Update labor to Nh" chips write back through the store's service update.
   const updateService = useAppStore((s) => s.updateService);
 
@@ -319,13 +315,6 @@ export default function ComposerPage() {
       { rule: p.rule, source: "refine" },
       { onSuccess: () => dismissProposal(id), onError: onRuleError },
     );
-  }
-
-  // "Save to book" (line-table.tsx) — snapshots the line's current values into
-  // a new pricebook service. Editing the line afterward never rewrites the
-  // saved service (and vice versa) — they're independent from this point on.
-  function saveLineToBook(line: ComposerLine): Promise<AddResult> {
-    return addService({ name: line.d, unitPrice: line.r, cost: line.c ?? 0 });
   }
 
   const selectedLead: Lead | null =
@@ -666,7 +655,6 @@ export default function ComposerPage() {
         isDrafting={draftEstimateMutation.isPending || draftTiersMutation.isPending}
         aiDraftError={aiDraftError}
         services={services}
-        onSaveToBook={saveLineToBook}
         run={
           run
             ? {

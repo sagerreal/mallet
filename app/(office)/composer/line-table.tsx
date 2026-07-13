@@ -11,32 +11,19 @@
  * caller passes (Draft with AI / From pricebook / Show your cost) so the
  * card above stays bare: title + format toggle, nothing else.
  *
- * "Save to book" persists the line into the real pricebook via onSaveToBook —
- * per-row status (saved / duplicate / failed) renders inline, no silent no-op.
+ * Row actions are deliberately minimal: Optional (customer-facing choice) and
+ * remove. Save-to-book died when the estimator's learning loop took over
+ * feeding the pricebook; the Photo chip returns when it attaches real photos.
  */
 
-import { useState } from "react";
 import { fmt$ } from "@/lib/format";
-import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 import type { ComposerLine } from "./composer-state";
-
-type SaveStatus = "saving" | AddResult;
-
-/** Inline copy for a line's save-to-book status — null while there's nothing to show. */
-function saveStatusLabel(status: SaveStatus | undefined): string | null {
-  if (!status || status === "saving") return null;
-  if (status.ok) return "Saved to pricebook";
-  if (status.reason === "duplicate") return "Already in your pricebook";
-  if (status.reason === "empty") return "Add a description first";
-  return "Couldn't save — check your connection and try again";
-}
 
 export function LineTable({
   lines,
   showCost,
   onUpdateLine,
   onRemoveLine,
-  onSaveToBook,
   onAddLine,
   footerTools,
   materialize,
@@ -45,7 +32,6 @@ export function LineTable({
   showCost: boolean;
   onUpdateLine: (i: number, patch: Partial<ComposerLine>) => void;
   onRemoveLine: (i: number) => void;
-  onSaveToBook: (line: ComposerLine) => Promise<AddResult>;
   /** Renders "+ Add line" first in the footer toolbar. */
   onAddLine?: () => void;
   /** Extra tools for the footer toolbar (uniform .lineedit-tool styling). */
@@ -53,16 +39,6 @@ export function LineTable({
   /** Brief post-draft window: rows animate in (CSS only, reduced-motion safe). */
   materialize?: boolean;
 }) {
-  // Per-row save-to-book status, keyed by row index (matches the index-keyed
-  // rows below — lines have no stable id of their own).
-  const [saveStatus, setSaveStatus] = useState<Record<number, SaveStatus>>({});
-
-  async function handleSaveToBook(i: number, line: ComposerLine) {
-    setSaveStatus((s) => ({ ...s, [i]: "saving" }));
-    const result = await onSaveToBook(line);
-    setSaveStatus((s) => ({ ...s, [i]: result }));
-  }
-
   const cols = showCost ? 6 : 5;
 
   return (
@@ -93,8 +69,6 @@ export function LineTable({
               x.c && x.c > 0 && x.r > 0
                 ? Math.round((100 * (x.r - x.c)) / x.r)
                 : null;
-            const status = saveStatus[i];
-            const statusLabel = saveStatusLabel(status);
             const hasContent = Boolean(x.d && x.d.trim());
             return (
               <tr key={i}>
@@ -156,21 +130,6 @@ export function LineTable({
                       >
                         {x.opt ? "✓ Optional" : "Optional"}
                       </button>{" "}
-                      <button
-                        className={`lineedit-tool ${x.photo ? "on" : ""}`}
-                        title="Attach a photo the customer sees beside this line"
-                        onClick={() => onUpdateLine(i, { photo: !x.photo })}
-                      >
-                        {x.photo ? "✓ Photo" : "Photo"}
-                      </button>{" "}
-                      <button
-                        className="lineedit-tool"
-                        title="Save this line to your pricebook so you can reuse it"
-                        disabled={status === "saving"}
-                        onClick={() => void handleSaveToBook(i, x)}
-                      >
-                        {status === "saving" ? "Saving…" : "Book"}
-                      </button>{" "}
                     </>
                   )}
                   {(hasContent || lines.length > 1) && (
@@ -182,12 +141,6 @@ export function LineTable({
                     >
                       ✕
                     </button>
-                  )}
-                  {statusLabel && (
-                    <span className="muted on" style={{ fontSize: 11 }}>
-                      {" "}
-                      {statusLabel}
-                    </span>
                   )}
                 </td>
               </tr>

@@ -16,7 +16,6 @@ import { useState, useEffect } from "react";
 import { calcQuote } from "@/lib/prototype-sample";
 import { fmt$ } from "@/lib/format";
 import type { Service } from "@/lib/store/types";
-import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 import {
   hasRealLine,
   linesForSend,
@@ -30,6 +29,7 @@ import {
   type ProposalChip,
 } from "./composer-state";
 import { LineTable } from "./line-table";
+import { FirstRunCard, useFirstRunIntro } from "./first-run-card";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
 
 interface DraftRunProps2 {
@@ -53,7 +53,6 @@ export function QuoteCard({
   isDrafting,
   aiDraftError,
   services,
-  onSaveToBook,
   run,
   onRunDone,
   materialize,
@@ -73,8 +72,6 @@ export function QuoteCard({
   aiDraftError: string | null;
   /** The real pricebook catalog — read direction for "From pricebook". */
   services: Service[];
-  /** Write direction for each line's "Save to book" chip. */
-  onSaveToBook: (line: ComposerLine) => Promise<AddResult>;
   /** The staged run reveal — non-null while a draft is in flight/revealing. */
   run: DraftRunProps2 | null;
   onRunDone: () => void;
@@ -105,6 +102,9 @@ export function QuoteCard({
   const quoteIsEmpty = isGbb
     ? !(state.gbb?.opts.some((o) => hasRealLine(o.lines)) ?? false)
     : !hasRealLine(state.lines);
+  // First-run intro under the bar — until dismissed or the first draft lands.
+  const intro = useFirstRunIntro(state.aiDrafted);
+
   // The bar's mode follows the quote's state.
   const barMode: "build" | "refine" | "rebuild" = quoteIsEmpty
     ? "build"
@@ -304,7 +304,6 @@ export function QuoteCard({
           state={state}
           onUpdate={onUpdate}
           showCost={showCost}
-          onSaveToBook={onSaveToBook}
           materialize={materialize}
         />
       ) : (
@@ -314,8 +313,7 @@ export function QuoteCard({
             showCost={showCost}
             onUpdateLine={updateLine}
             onRemoveLine={removeLine}
-            onSaveToBook={onSaveToBook}
-            onAddLine={addLine}
+              onAddLine={addLine}
             materialize={materialize}
             footerTools={
               <>
@@ -417,7 +415,7 @@ export function QuoteCard({
               {isDrafting ? "Working…" : barMode === "refine" ? "Update it" : "Build it"}
             </button>
           </div>
-          {confirmRebuild ? (
+          {confirmRebuild && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
               <span style={{ fontSize: 12.5, fontWeight: 600 }}>
                 Replaces the lines you typed — sure?
@@ -429,13 +427,15 @@ export function QuoteCard({
                 Keep mine
               </button>
             </div>
-          ) : (
+          )}
+          {/* First run only: SHOW what the machine reads (three columns + the
+              learns line), then never again — the bar's placeholder carries it. */}
+          {!confirmRebuild && intro.show && barMode !== "refine" && (
+            <FirstRunCard onDismiss={intro.dismiss} />
+          )}
+          {!confirmRebuild && barMode === "refine" && (
             <p className="aibar-hint">
-              {barMode === "refine"
-                ? "Corrections it should keep come back as one-tap saves below."
-                : isGbb
-                  ? "Reads the job, prices all three options from your book, and compares to quotes you've won."
-                  : "Reads the job, prices from your book & rates, and compares to quotes you've won."}
+              Corrections it should keep come back as one-tap saves below.
             </p>
           )}
           {aiDraftError && (
