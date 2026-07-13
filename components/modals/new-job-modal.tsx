@@ -5,8 +5,9 @@
  *
  * Field order (exact): What's the job? · Type chips (Estimate | Job) · Customer
  * (datalist over live leads) + Phone · Service address · Price (optional, Job only) ·
- * Visits (unplaced hours rows + "Add a visit") · Before-you-leave / Visit checklist
- * picker (collapsed summary that expands in-flow) · ▸ More reveal (Notes) · footer.
+ * Visits (unplaced hours rows + "Add a visit") · Before-you-leave checklist picker
+ * (Job type only; collapsed summary that expands in-flow) · ▸ More reveal (Notes) ·
+ * footer.
  *
  * Type model (per product memory): two user-facing types — Estimate and Job — mapped
  * to njType 'estimate' / 'service'. NJ_HOURS defaults the visit length per type.
@@ -15,14 +16,12 @@
  *
  * Create behavior:
  *  - Estimate → a LEAD + unplaced evisit(s) (a scoping visit), NOT a job.
- *  - Job (service) → addJob(...) + addVisit(...) per visit row.
+ *  - Job (service) → addJob(...) + addVisit(...) per visit row + the picked
+ *    checklist attached via updateJob AFTER jobPersisted resolves (origin 'db').
  *
  * Deferred (surfaces / data not in the store yet):
  *  - "Build the price →" opens the tech quote builder in the prototype; here it just
  *    creates the job then closes. See handleBuildPrice.
- *  - Checklist templates: the picker markup is faithful, but there is no checklist
- *    template data in the store, so the chosen template is not persisted onto the
- *    job/lead. See CHECKLIST comment below.
  */
 
 "use client";
@@ -30,7 +29,10 @@
 import { useState, type FormEvent } from "react";
 import { useCloseModal, useOpenModal, useLeads, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Job, Lead, Visit } from "@/lib/store/types";
+import type { ChecklistItem, Job, Lead, Visit } from "@/lib/store/types";
+
+// A custom-checklist line mentioning a photo becomes a photo step (shared heuristic).
+const CHK_PHOTO_RE = /photo|picture/i;
 
 // ---- constants (mirror prototype NJ_HOURS + SVC_META dot colors) ------------
 
@@ -72,6 +74,11 @@ export function NewJobModalContent() {
   const addVisit = useAppStore((s) => s.addVisit);
   const addLead = useAppStore((s) => s.addLead);
   const updateLead = useAppStore((s) => s.updateLead);
+  const updateJob = useAppStore((s) => s.updateJob);
+  const checklists = useAppStore((s) => s.checklists);
+
+  // Saved before-you-leave checklists feed the picker (hydrated from the DB).
+  const jobChecklists = checklists.filter((c) => c.stage === "job");
 
   // Only live (non-archived) leads feed the customer picker (prototype liveLeads()).
   const liveLeads = leads.filter((l) => !l.archived);
@@ -175,6 +182,27 @@ export function NewJobModalContent() {
     setChkItems((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  /** The picked checklist as a job snapshot — null when none picked. */
+  function checklistSnapshot(): { name: string; items: ChecklistItem[] } | null {
+    if (chkTpl === "blank") {
+      // A typed-but-not-added item row must not be silently dropped — fold it in.
+      const texts = chkDraft.trim() ? [...chkItems, chkDraft.trim()] : chkItems;
+      if (texts.length === 0) return null;
+      return {
+        name: "Checklist",
+        items: texts.map((text, i) => ({
+          id: crypto.randomUUID(),
+          text,
+          type: CHK_PHOTO_RE.test(text) ? ("photo" as const) : ("check" as const),
+          required: true,
+          position: i,
+        })),
+      };
+    }
+    const saved = jobChecklists.find((c) => c.id === chkTpl);
+    return saved ? { name: saved.name, items: saved.items } : null;
+  }
+
   // ---- create (mirror saveNewJob) -------------------------------------------
 
   /** The list of visits to create — always at least one, clamped to quarters. */
@@ -233,8 +261,8 @@ export function NewJobModalContent() {
     if (notes.trim()) patch.notes = notes.trim();
 
     updateLead(lead.id, patch);
-    // CHECKLIST: chosen scope template would attach to lead.scope here — deferred
-    // (no checklist template data in the store yet).
+    // No checklist on estimates — leads carry no checklist; the section only
+    // renders for the Job type.
     return true;
   }
 
@@ -312,8 +340,12 @@ export function NewJobModalContent() {
 
     // Each visit is created UNPLACED (hours only) — dragged onto the Schedule later.
     rows.forEach((v) => addVisit(created.id, v.h));
-    // CHECKLIST: chosen before-you-leave template would attach to the job here —
-    // deferred (no checklist template data in the store yet).
+
+    // Attach the picked before-you-leave checklist. Must run AFTER jobPersisted
+    // (above) — updateJob only persists once the job is DB-origin. Fire-and-
+    // forget like the visits: a failure rolls back in the store with a dev log.
+    const checklist = checklistSnapshot();
+    if (checklist) void updateJob(created.id, { checklist });
     return { ok: true, createdJob: created };
   }
 
@@ -349,11 +381,14 @@ export function NewJobModalContent() {
 
   // ---- checklist summary label ----------------------------------------------
 
-  const chkLabel: string =
-    njType === "estimate" ? "Visit checklist" : "Before-you-leave checklist";
   const chkIsBlank = chkTpl === "blank";
   const chkExpanded = chkOpen || chkIsBlank;
-  const chkCurName = !chkTpl ? "No checklist" : chkIsBlank ? "Custom checklist" : "Checklist";
+  const chkPicked = jobChecklists.find((c) => c.id === chkTpl);
+  const chkCurName = !chkTpl
+    ? "No checklist"
+    : chkIsBlank
+      ? "Custom checklist"
+      : (chkPicked?.name ?? "No checklist");
 
   // ---- render ---------------------------------------------------------------
 
@@ -536,10 +571,12 @@ export function NewJobModalContent() {
           </div>
         </div>
 
-        {/* Checklist picker — collapsed in-flow summary that expands */}
+        {/* Checklist picker — collapsed in-flow summary that expands. Jobs only:
+            estimates attach to the lead, which carries no checklist. */}
+        {njType === "service" && (
         <div className="field" style={{ marginTop: 14, marginBottom: 0 }}>
           <label>
-            {chkLabel}{" "}
+            Before-you-leave checklist{" "}
             <span
               className="muted"
               style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
@@ -569,7 +606,18 @@ export function NewJobModalContent() {
                     <span className="njchk-dot">✓</span>
                     <span style={{ flex: 1 }}>No checklist</span>
                   </button>
-                  {/* deferred: checklist templates — no template data in the store yet */}
+                  {jobChecklists.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={`njchk-row${chkTpl === c.id ? " sel" : ""}`}
+                      onClick={() => pickChecklist(c.id)}
+                    >
+                      <span className="njchk-dot">✓</span>
+                      <span style={{ flex: 1 }}>{c.name}</span>
+                      <span className="muted" style={{ fontSize: 12 }}>{c.items.length} items</span>
+                    </button>
+                  ))}
                 </div>
 
                 <button
@@ -620,6 +668,7 @@ export function NewJobModalContent() {
             )}
           </div>
         </div>
+        )}
 
         {/* ▸ More reveal — Notes */}
         <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginTop: 14 }}>

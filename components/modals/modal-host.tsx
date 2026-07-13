@@ -20,7 +20,6 @@ import { NewJobModalContent } from "./new-job-modal";
 import { EvisitModalContent } from "./evisit-modal";
 import { PriceBuilderModalContent } from "./price-builder-modal";
 import { TechQuoteModalContent } from "./tech-quote-modal";
-import { StandardsModalContent } from "./standards-modal";
 import { InvoiceModalContent } from "./invoice-modal";
 import { TechJobModalContent } from "./tech-job-modal";
 import { CustQuoteModalContent } from "./cust-quote-modal";
@@ -119,10 +118,6 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.TECH_QUOTE} onClose={backToJob(MODAL.TECH_JOB)} maxWidth={560}>
         <TechQuoteModalContent />
-      </Modal>
-
-      <Modal open={id === MODAL.STANDARDS} onClose={close} wide>
-        <StandardsModalContent />
       </Modal>
 
       <Modal open={id === MODAL.INVOICE} onClose={close} wide>

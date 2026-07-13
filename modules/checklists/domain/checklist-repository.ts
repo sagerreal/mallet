@@ -4,6 +4,9 @@ import type { Checklist, ChecklistStage, ChecklistItemType } from "./checklist";
 // The org is NEVER a parameter — it is implicit in the org-scoped transaction the repository
 // is constructed with, so a caller physically cannot address another tenant's checklists.
 export interface ChecklistRepository {
+  // Create the template header and (optionally) its initial items ATOMICALLY.
+  // Batched create+addItem calls raced each other server-side (addItem's tx could
+  // not see the template's uncommitted insert) — initial items belong in the create.
   create(input: {
     id: ChecklistId;
     orgId: OrgId;
@@ -11,6 +14,13 @@ export interface ChecklistRepository {
     trade: string;
     stage: ChecklistStage;
     match: readonly string[];
+    items?: readonly {
+      id: ChecklistItemId;
+      text: string;
+      type: ChecklistItemType;
+      required: boolean;
+      position: number;
+    }[];
   }): Promise<Checklist>;
 
   findById(id: ChecklistId): Promise<Checklist | null>;

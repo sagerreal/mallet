@@ -72,6 +72,27 @@ suite("checklists tRPC router (full stack, live RLS)", () => {
     expect(found?.items).toHaveLength(2);
   });
 
+  it("create with items[] persists template + ordered items in ONE call (the pasted-list path)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const chk = await caller.v1.checklists.create({
+      name: "Drain call close-out",
+      stage: "job",
+      items: [
+        { text: "Photo of the cleared line", type: "photo", required: true },
+        { text: "Flow tested after clearing", type: "check", required: true },
+        { text: "Work area wiped down", type: "check", required: true },
+      ],
+    });
+    expect(chk.items).toHaveLength(3);
+    expect(chk.items.map((i) => i.position)).toEqual([0, 1, 2]);
+    expect(chk.items[0]).toMatchObject({ text: "Photo of the cleared line", type: "photo", required: true });
+
+    // Round-trips through list — the items were committed, not just echoed.
+    const listed = await caller.v1.checklists.list({ limit: 100 });
+    const found = listed.items.find((c) => c.id === chk.id);
+    expect(found?.items).toHaveLength(3);
+  });
+
   it("removeItem soft-deletes one item; remove archives the whole template", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const chk = await caller.v1.checklists.create({ name: "Repipe", stage: "scope" });

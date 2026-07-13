@@ -2,26 +2,25 @@
 /**
  * components/modals/job-checklist-block.test.tsx
  *
- * Guards the checklist attach flow:
- *   - entry point → picker; zero-template orgs land straight on the create form
- *   - create-form validation ("Name the checklist.")
- *   - Create & attach authors the template (addChecklist/addChecklistItem with the
- *     photo heuristic) and attaches via updateJob(job.id, { checklist })
- *   - template row attach calls updateJob with the template's name + items
- *   - "Manage templates" opens MODAL.STANDARDS
- *   - attached view renders items; Remove detaches via checklist: undefined
- *   - persist failures surface inline (attach / create-and-attach / remove) —
- *     no silent revert; a retry after a failed attach doesn't duplicate the template
- *   - a template over the job item cap (50) is refused with functional copy
+ * Guards the ONE-panel checklist flow:
+ *   - entry point → panel (saved rows + textarea + "Add to job")
+ *   - "Add to job" turns textarea lines into items (photo heuristic, required,
+ *     empties dropped), saves them in ONE addChecklist call, attaches via
+ *     updateJob(job.id, { checklist })
+ *   - saved row tap attaches; row ✕ deletes via deleteChecklist
+ *   - empty state offers the one-tap plumbing starter checklists
+ *   - persist failures surface inline (create / attach / remove) — no silent
+ *     revert; a retry after a failed attach doesn't duplicate the checklist
+ *   - the item cap (50) is enforced with functional copy
+ *   - no "template" concept anywhere in the copy
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { MODAL } from "@/lib/store/modal-ids";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { Checklist, Job } from "@/lib/store/types";
 
 // ---------------------------------------------------------------------------
-// Store mock — the block reads checklists + actions via useAppStore, and reads
-// the authored items back through useAppStore.getState().
+// Store mock — the block reads checklists + actions via useAppStore, and the
+// retry path re-reads through useAppStore.getState().
 // ---------------------------------------------------------------------------
 
 const h = vi.hoisted(() => {
@@ -29,16 +28,15 @@ const h = vi.hoisted(() => {
     checklists: Checklist[];
     updateJob: ReturnType<typeof vi.fn>;
     addChecklist: ReturnType<typeof vi.fn>;
-    addChecklistItem: ReturnType<typeof vi.fn>;
+    deleteChecklist: ReturnType<typeof vi.fn>;
   }
   const state: MockState = {
     checklists: [],
     updateJob: vi.fn(),
     addChecklist: vi.fn(),
-    addChecklistItem: vi.fn(),
+    deleteChecklist: vi.fn(),
   };
-  const openModal = vi.fn();
-  return { state, openModal };
+  return { state };
 });
 
 vi.mock("@/lib/store/app-store", () => ({
@@ -46,7 +44,6 @@ vi.mock("@/lib/store/app-store", () => ({
     (selector: (s: typeof h.state) => unknown) => selector(h.state),
     { getState: () => h.state },
   ),
-  useOpenModal: () => h.openModal,
 }));
 
 import { JobChecklistBlock } from "./job-checklist-block";
@@ -76,272 +73,224 @@ function makeJob(overrides: Partial<Job> = {}): Job {
   };
 }
 
-function makeTemplate(overrides: Partial<Checklist> = {}): Checklist {
+function makeSaved(overrides: Partial<Checklist> = {}): Checklist {
   return {
-    id: "tpl-1",
-    name: "Water heater swap",
+    id: "chk-1",
+    name: "Water heater close-out",
     trade: "Custom",
     stage: "job",
     match: [],
     items: [
       { id: "i1", text: "Photo of the T&P valve", type: "photo", required: true, position: 0 },
-      { id: "i2", text: "Test hot water at a tap", type: "check", required: false, position: 1 },
+      { id: "i2", text: "Test hot water at a tap", type: "check", required: true, position: 1 },
     ],
     ...overrides,
   };
 }
 
+type NewItem = { text: string; type: "check" | "photo"; required?: boolean };
+
 beforeEach(() => {
   h.state.checklists = [];
   // Mirrors the slice: updateJob resolves { ok } and never rejects.
   h.state.updateJob = vi.fn(() => Promise.resolve({ ok: true }));
-  h.state.addChecklistItem = vi.fn();
-  h.openModal.mockReset();
-  // Default addChecklist mimics the slice: appends the new template to the store
-  // (so getState() finds it) and returns { checklist, persisted }.
-  h.state.addChecklist = vi.fn((name: string, stage: Checklist["stage"]) => {
-    const checklist: Checklist = { id: "chk-new", name, trade: "Custom", stage, match: [], items: [] };
-    h.state.checklists = [...h.state.checklists, checklist];
-    return { checklist, persisted: Promise.resolve() };
-  });
-  // Default addChecklistItem mimics the slice: appends the item immutably.
-  h.state.addChecklistItem = vi.fn((checklistId: string, text: string, type: "check" | "photo" = "check") => {
-    h.state.checklists = h.state.checklists.map((c) =>
-      c.id === checklistId
-        ? {
-            ...c,
-            items: [
-              ...c.items,
-              { id: `item-${c.items.length}`, text, type, required: false, position: c.items.length },
-            ],
-          }
-        : c,
-    );
-  });
+  h.state.deleteChecklist = vi.fn();
+  // Default addChecklist mimics the slice: appends the new checklist (items
+  // included, client ids minted) and resolves `persisted` with it.
+  h.state.addChecklist = vi.fn(
+    (name: string, stage: Checklist["stage"], items: readonly NewItem[] = []) => {
+      const checklist: Checklist = {
+        id: `chk-new-${h.state.addChecklist.mock.calls.length}`,
+        name,
+        trade: "Custom",
+        stage,
+        match: [],
+        items: items.map((it, i) => ({
+          id: `item-${i}`,
+          text: it.text,
+          type: it.type,
+          required: it.required ?? false,
+          position: i,
+        })),
+      };
+      h.state.checklists = [...h.state.checklists, checklist];
+      return { checklist, persisted: Promise.resolve(checklist) };
+    },
+  );
 });
 
+function openPanel(job = makeJob()) {
+  render(<JobChecklistBlock job={job} />);
+  fireEvent.click(screen.getByText("+ Add a checklist"));
+}
+
+function paste(lines: string) {
+  fireEvent.change(screen.getByPlaceholderText("One item per line"), {
+    target: { value: lines },
+  });
+}
+
 // ---------------------------------------------------------------------------
-// Entry point → picker
+// Quick create — paste lines, Add to job
 // ---------------------------------------------------------------------------
 
-describe("JobChecklistBlock — entry + picker", () => {
-  it("renders the entry point and opens the picker on click", () => {
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    expect(screen.getByText("Attach a checklist")).toBeTruthy();
+describe("JobChecklistBlock — Add to job", () => {
+  it("turns lines into items (photo heuristic, required, empties dropped) in ONE create, then attaches", async () => {
+    openPanel();
+    paste("Photo of the install\n\n  Test T&P valve  \nHaul away old unit\n");
+    fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
+
+    await waitFor(() => expect(h.state.updateJob).toHaveBeenCalledOnce());
+    expect(h.state.addChecklist).toHaveBeenCalledOnce();
+    const [name, stage, items] = h.state.addChecklist.mock.calls[0] as [string, string, NewItem[]];
+    expect(name).toBe("Checklist"); // default when the name input is empty
+    expect(stage).toBe("job");
+    expect(items).toEqual([
+      { text: "Photo of the install", type: "photo", required: true },
+      { text: "Test T&P valve", type: "check", required: true },
+      { text: "Haul away old unit", type: "check", required: true },
+    ]);
+    // The attach carries the persisted checklist snapshot.
+    const [jobId, patch] = h.state.updateJob.mock.calls[0] as [
+      string,
+      { checklist: { name: string; items: unknown[] } },
+    ];
+    expect(jobId).toBe("job-111");
+    expect(patch.checklist.name).toBe("Checklist");
+    expect(patch.checklist.items).toHaveLength(3);
   });
 
-  it("with zero templates, shows the create form immediately (no dead end)", () => {
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    expect(screen.getByText("No templates yet — create one below.")).toBeTruthy();
-    expect(screen.getByPlaceholderText(/Name — e.g./)).toBeTruthy();
-    expect(screen.getByText("Create & attach")).toBeTruthy();
-  });
-
-  it("'Manage templates' opens the standards modal", () => {
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    fireEvent.click(screen.getByText("Manage templates"));
-    expect(h.openModal).toHaveBeenCalledWith(MODAL.STANDARDS);
-  });
-
-  it("attaches an existing template through updateJob", async () => {
-    const tpl = makeTemplate();
-    h.state.checklists = [tpl];
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    fireEvent.click(screen.getByText("Water heater swap"));
-    expect(h.state.updateJob).toHaveBeenCalledWith("job-111", {
-      checklist: { name: tpl.name, items: tpl.items },
+  it("uses the typed name when given", async () => {
+    openPanel();
+    paste("One thing");
+    fireEvent.change(screen.getByPlaceholderText("Checklist"), {
+      target: { value: "Repipe close-out" },
     });
-    await act(async () => {}); // flush the awaited { ok: true } continuation
+    fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
+    await waitFor(() => expect(h.state.addChecklist).toHaveBeenCalledOnce());
+    expect(h.state.addChecklist.mock.calls[0]![0]).toBe("Repipe close-out");
   });
 
-  it("ignores scope-stage templates (job stage only)", () => {
-    h.state.checklists = [makeTemplate({ stage: "scope", name: "Scope walk" })];
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    expect(screen.queryByText("Scope walk")).toBeNull();
-    expect(screen.getByText("No templates yet — create one below.")).toBeTruthy();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Create form
-// ---------------------------------------------------------------------------
-
-describe("JobChecklistBlock — create form", () => {
-  function openForm() {
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-  }
-
-  it("rejects an empty name with 'Name the checklist.' and creates nothing", () => {
-    openForm();
-    fireEvent.click(screen.getByText("Create & attach"));
-    expect(screen.getByText("Name the checklist.")).toBeTruthy();
+  it("empty textarea → functional error, nothing created", () => {
+    openPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
+    expect(screen.getByText("Add at least one item — one per line.")).toBeTruthy();
     expect(h.state.addChecklist).not.toHaveBeenCalled();
     expect(h.state.updateJob).not.toHaveBeenCalled();
   });
 
-  it("creates the template, types items via the photo heuristic, and attaches", async () => {
-    openForm();
-    fireEvent.change(screen.getByPlaceholderText(/Name — e.g./), {
-      target: { value: "Repipe close-out" },
-    });
-    const itemInput = screen.getByPlaceholderText(/Add an item/);
-    fireEvent.change(itemInput, { target: { value: "Photo of the manifold" } });
-    fireEvent.keyDown(itemInput, { key: "Enter" });
-    fireEvent.change(itemInput, { target: { value: "Test water pressure" } });
-    fireEvent.click(screen.getByText("Add"));
-    fireEvent.click(screen.getByText("Create & attach"));
-
-    expect(h.state.addChecklist).toHaveBeenCalledWith("Repipe close-out", "job");
-    expect(h.state.addChecklistItem).toHaveBeenNthCalledWith(1, "chk-new", "Photo of the manifold", "photo");
-    expect(h.state.addChecklistItem).toHaveBeenNthCalledWith(2, "chk-new", "Test water pressure", "check");
-    expect(h.state.updateJob).toHaveBeenCalledWith("job-111", {
-      checklist: {
-        name: "Repipe close-out",
-        items: [
-          { id: "item-0", text: "Photo of the manifold", type: "photo", required: false, position: 0 },
-          { id: "item-1", text: "Test water pressure", type: "check", required: false, position: 1 },
-        ],
-      },
-    });
-    await act(async () => {}); // flush the awaited { ok: true } continuation
+  it("caps at 50 items with functional copy", () => {
+    openPanel();
+    paste(Array.from({ length: 52 }, (_, i) => `Item ${i + 1}`).join("\n"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
+    expect(screen.getByText(/at most 50 items — remove 2/)).toBeTruthy();
+    expect(h.state.addChecklist).not.toHaveBeenCalled();
   });
 
-  it("folds a typed-but-not-added item row into the attach", async () => {
-    openForm();
-    fireEvent.change(screen.getByPlaceholderText(/Name — e.g./), {
-      target: { value: "Quick check" },
-    });
-    fireEvent.change(screen.getByPlaceholderText(/Add an item/), {
-      target: { value: "Sweep the work area" },
-    });
-    fireEvent.click(screen.getByText("Create & attach"));
-    expect(h.state.addChecklistItem).toHaveBeenCalledWith("chk-new", "Sweep the work area", "check");
-    await act(async () => {}); // flush the awaited { ok: true } continuation
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Persist failure surfacing — no silent revert on any of the three writes
-// ---------------------------------------------------------------------------
-
-const SAVE_FAILED = "Couldn't save the checklist — try again.";
-
-describe("JobChecklistBlock — persist failure surfacing", () => {
-  it("template attach failure keeps the picker open with inline copy", async () => {
-    h.state.updateJob = vi.fn(() => Promise.resolve({ ok: false }));
-    h.state.checklists = [makeTemplate()];
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    fireEvent.click(screen.getByText("Water heater swap"));
-    expect(await screen.findByText(SAVE_FAILED)).toBeTruthy();
-    // Still on the picker — the office can retry.
-    expect(screen.getByText("Attach a checklist")).toBeTruthy();
+  it("create failure surfaces inline; updateJob is not called", async () => {
+    h.state.addChecklist = vi.fn(() => ({
+      checklist: makeSaved(),
+      persisted: Promise.reject(new Error("network")),
+    }));
+    openPanel();
+    paste("One thing");
+    fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't save the checklist — try again.")).toBeTruthy(),
+    );
+    expect(h.state.updateJob).not.toHaveBeenCalled();
   });
 
-  it("create-and-attach failure keeps the form and its authored items with inline copy", async () => {
-    h.state.updateJob = vi.fn(() => Promise.resolve({ ok: false }));
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    fireEvent.change(screen.getByPlaceholderText(/Name — e.g./), {
-      target: { value: "Close-out" },
-    });
-    const itemInput = screen.getByPlaceholderText(/Add an item/);
-    fireEvent.change(itemInput, { target: { value: "Sweep up" } });
-    fireEvent.keyDown(itemInput, { key: "Enter" });
-    fireEvent.click(screen.getByText("Create & attach"));
-    expect(await screen.findByText(SAVE_FAILED)).toBeTruthy();
-    // The typed content is NOT lost — the form stays open for a retry.
-    expect(screen.getByText("Sweep up")).toBeTruthy();
-    expect((screen.getByPlaceholderText(/Name — e.g./) as HTMLInputElement).value).toBe("Close-out");
-  });
-
-  it("a retry after a failed attach does not mint a duplicate template", async () => {
-    const updateJob = vi
+  it("a retry after a failed ATTACH reuses the created checklist (no duplicate)", async () => {
+    h.state.updateJob = vi
       .fn()
-      .mockResolvedValueOnce({ ok: false }) // first attach fails
-      .mockResolvedValue({ ok: true }); // retry succeeds
-    h.state.updateJob = updateJob;
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    fireEvent.change(screen.getByPlaceholderText(/Name — e.g./), {
-      target: { value: "Close-out" },
-    });
-    const itemInput = screen.getByPlaceholderText(/Add an item/);
-    fireEvent.change(itemInput, { target: { value: "Sweep up" } });
-    fireEvent.keyDown(itemInput, { key: "Enter" });
-    fireEvent.click(screen.getByText("Create & attach"));
-    await screen.findByText(SAVE_FAILED);
-
-    fireEvent.click(screen.getByText("Create & attach"));
-    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(2));
-    // The template (and its items) were authored exactly once.
-    expect(h.state.addChecklist).toHaveBeenCalledTimes(1);
-    await act(async () => {});
-  });
-
-  it("remove failure keeps the attached view and shows inline copy", async () => {
-    h.state.updateJob = vi.fn(() => Promise.resolve({ ok: false }));
-    const attached = {
-      name: "Water heater swap",
-      items: [
-        { id: "i1", text: "Photo of the T&P valve", type: "photo" as const, required: true, position: 0 },
-      ],
-    };
-    render(<JobChecklistBlock job={makeJob({ checklist: attached })} />);
-    fireEvent.click(screen.getByText("Remove"));
-    expect(await screen.findByText(SAVE_FAILED)).toBeTruthy();
-    expect(screen.getByText("Before you leave")).toBeTruthy();
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: true });
+    openPanel();
+    paste("One thing");
+    fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't save the checklist — try again.")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
+    await waitFor(() => expect(h.state.updateJob).toHaveBeenCalledTimes(2));
+    expect(h.state.addChecklist).toHaveBeenCalledOnce();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Job bounds guard — a template the job cannot hold is refused up front
+// Saved rows
 // ---------------------------------------------------------------------------
 
-describe("JobChecklistBlock — job bounds guard", () => {
-  it("refuses a template with more than 50 items instead of calling updateJob", () => {
-    const big = makeTemplate({
-      id: "tpl-big",
-      name: "Mega list",
+describe("JobChecklistBlock — saved checklists", () => {
+  it("renders rows as name + item count and attaches on tap (no create)", async () => {
+    h.state.checklists = [makeSaved()];
+    openPanel();
+    expect(screen.getByText("2 items")).toBeTruthy();
+    fireEvent.click(screen.getByText("Water heater close-out"));
+    await waitFor(() => expect(h.state.updateJob).toHaveBeenCalledOnce());
+    const [, patch] = h.state.updateJob.mock.calls[0] as [
+      string,
+      { checklist: { name: string; items: unknown[] } },
+    ];
+    expect(patch.checklist.name).toBe("Water heater close-out");
+    expect(patch.checklist.items).toHaveLength(2);
+    expect(h.state.addChecklist).not.toHaveBeenCalled();
+  });
+
+  it("✕ deletes the saved checklist", () => {
+    h.state.checklists = [makeSaved()];
+    openPanel();
+    fireEvent.click(screen.getByTitle("Delete this checklist"));
+    expect(h.state.deleteChecklist).toHaveBeenCalledWith("chk-1");
+    expect(h.state.updateJob).not.toHaveBeenCalled();
+  });
+
+  it("a saved list over the job cap is refused with functional copy", () => {
+    const big = makeSaved({
       items: Array.from({ length: 51 }, (_, i) => ({
         id: `i${i}`,
-        text: `Step ${i + 1}`,
+        text: `Item ${i}`,
         type: "check" as const,
         required: false,
         position: i,
       })),
     });
     h.state.checklists = [big];
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    fireEvent.click(screen.getByText("Mega list"));
-    expect(
-      screen.getByText(/51 items — a job checklist holds at most 50/),
-    ).toBeTruthy();
+    openPanel();
+    fireEvent.click(screen.getByText("Water heater close-out"));
+    expect(screen.getByText(/has 51 items — a job holds at most 50/)).toBeTruthy();
     expect(h.state.updateJob).not.toHaveBeenCalled();
   });
 
-  it("rejects a 51st item in the create form instead of calling updateJob", async () => {
-    render(<JobChecklistBlock job={makeJob()} />);
-    fireEvent.click(screen.getByText("+ Add a checklist"));
-    fireEvent.change(screen.getByPlaceholderText(/Name — e.g./), {
-      target: { value: "Mega list" },
-    });
-    const itemInput = screen.getByPlaceholderText(/Add an item/);
-    for (let i = 0; i < 51; i++) {
-      fireEvent.change(itemInput, { target: { value: `Step ${i + 1}` } });
-      fireEvent.keyDown(itemInput, { key: "Enter" });
+  it("attach failure keeps the panel open with inline copy", async () => {
+    h.state.checklists = [makeSaved()];
+    h.state.updateJob = vi.fn(() => Promise.resolve({ ok: false }));
+    openPanel();
+    fireEvent.click(screen.getByText("Water heater close-out"));
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't save the checklist — try again.")).toBeTruthy(),
+    );
+  });
+
+  it("empty state offers the plumbing starters; one tap creates them all (saved, required items)", async () => {
+    openPanel();
+    fireEvent.click(screen.getByText("Start with plumbing basics"));
+    await waitFor(() => expect(h.state.addChecklist).toHaveBeenCalledTimes(3));
+    for (const call of h.state.addChecklist.mock.calls as [string, string, NewItem[]][]) {
+      expect(call[1]).toBe("job");
+      expect(call[2].length).toBeGreaterThan(0);
+      expect(call[2].every((it) => it.required)).toBe(true);
     }
-    fireEvent.click(screen.getByText("Create & attach"));
-    expect(await screen.findByText(/at most 50 items/)).toBeTruthy();
-    expect(h.state.addChecklist).not.toHaveBeenCalled();
+    // Not attached to the job — they land as reusable rows.
     expect(h.state.updateJob).not.toHaveBeenCalled();
+  });
+
+  it("the panel never says 'template'", () => {
+    h.state.checklists = [makeSaved()];
+    const { container } = render(<JobChecklistBlock job={makeJob()} />);
+    fireEvent.click(screen.getByText("+ Add a checklist"));
+    expect(container.textContent).not.toMatch(/template/i);
   });
 });
 
@@ -350,25 +299,30 @@ describe("JobChecklistBlock — job bounds guard", () => {
 // ---------------------------------------------------------------------------
 
 describe("JobChecklistBlock — attached view", () => {
-  const attached = {
-    name: "Water heater swap",
-    items: [
-      { id: "i1", text: "Photo of the T&P valve", type: "photo" as const, required: true, position: 0 },
-      { id: "i2", text: "Test hot water at a tap", type: "check" as const, required: false, position: 1 },
-    ],
-  };
-
-  it("renders the checklist name and items with the required tag", () => {
-    render(<JobChecklistBlock job={makeJob({ checklist: attached })} />);
-    expect(screen.getByText("Before you leave")).toBeTruthy();
-    expect(screen.getByText("Water heater swap")).toBeTruthy();
-    expect(screen.getByText("Photo of the T&P valve")).toBeTruthy();
-    expect(screen.getByText("required")).toBeTruthy();
+  const attachedJob = makeJob({
+    checklist: {
+      name: "Water heater close-out",
+      items: [
+        { id: "i1", text: "Photo of the T&P valve", type: "photo", required: true, position: 0 },
+      ],
+    },
   });
 
-  it("Remove detaches via updateJob(job.id, { checklist: undefined })", () => {
-    render(<JobChecklistBlock job={makeJob({ checklist: attached })} />);
+  it("renders the attached checklist and detaches via checklist: undefined", async () => {
+    render(<JobChecklistBlock job={attachedJob} />);
+    expect(screen.getByText("Before you leave")).toBeTruthy();
+    expect(screen.getByText("Photo of the T&P valve")).toBeTruthy();
     fireEvent.click(screen.getByText("Remove"));
+    await waitFor(() => expect(h.state.updateJob).toHaveBeenCalledOnce());
     expect(h.state.updateJob).toHaveBeenCalledWith("job-111", { checklist: undefined });
+  });
+
+  it("a failed remove surfaces inline instead of silently reverting", async () => {
+    h.state.updateJob = vi.fn(() => Promise.resolve({ ok: false }));
+    render(<JobChecklistBlock job={attachedJob} />);
+    fireEvent.click(screen.getByText("Remove"));
+    await waitFor(() =>
+      expect(screen.getByText("Couldn't save the checklist — try again.")).toBeTruthy(),
+    );
   });
 });

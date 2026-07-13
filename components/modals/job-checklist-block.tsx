@@ -1,31 +1,32 @@
 /**
  * components/modals/job-checklist-block.tsx
- * The job modal's "Before you leave" checklist block (prototype jobChecklistBlock,
- * line 4859). Extracted from job-modal.tsx (file-size cap).
+ * The job modal's "Before you leave" checklist block.
  *
- * Three states:
- *   attached — show the list (+ Remove)
- *   picking  — template rows + an IN-FLOW create form (no floating UI) +
- *              "Manage templates" → MODAL.STANDARDS (the single-modal host
- *              replaces the job modal — accepted trade-off)
- *   entry    — "+ Add a checklist"
+ * ONE panel: saved checklists as tap-to-attach rows (✕ deletes), then a
+ * multiline textarea ("One item per line") + optional name + "Add to job".
+ * A quick-created checklist is ALSO saved for reuse — saved lists ARE the
+ * templates; there is no separate template manager.
  *
- * Attach PERSISTS: updateJob(job.id, { checklist }) rides v1.jobs.update into the
- * jobs.checklist jsonb column, so the crew's device sees the list after a refresh.
- * Every write AWAITS the mutation outcome — a persist failure keeps the form/picker
- * open with inline copy instead of silently reverting (house rule: no silent
- * failures on interactive paths). Crew ANSWERS (verify.ans) remain store-local —
- * the Phase-5 known gap.
+ * Attach PERSISTS: updateJob(job.id, { checklist }) rides v1.jobs.update into
+ * the jobs.checklist jsonb column. The template itself persists in ONE
+ * v1.checklists.create call (items included — the old per-item mutations raced
+ * the create inside a tRPC batch and saved empty templates). Every write
+ * AWAITS its outcome — a failure keeps the panel open with inline copy (house
+ * rule: no silent failures on interactive paths).
+ *
+ * Quick-created items are required:true so the tech close-out gap nudge fires
+ * for them (it nudges only — never blocks the bill).
  */
 
 "use client";
 
 import { useRef, useState } from "react";
-import { useAppStore, useOpenModal } from "@/lib/store/app-store";
-import { MODAL } from "@/lib/store/modal-ids";
-import type { Job } from "@/lib/store/types";
+import { useAppStore } from "@/lib/store/app-store";
+import type { Checklist, Job } from "@/lib/store/types";
+import type { NewChecklistItem } from "@/lib/store/slices/checklists-slice";
+import { PLUMBING_STARTER_CHECKLISTS } from "@/features/checklists/checklist-seed";
 
-// Item-type heuristic shared with the standards modal: "Photo of…" → photo step.
+// Item-type heuristic: a line mentioning a photo becomes a photo step (silent).
 const PHOTO_ITEM_RE = /photo|picture/i;
 
 // Mirrors JOB_CHECKLIST_MAX_ITEMS (modules/jobs/domain/job.ts) — the client-side
@@ -33,156 +34,212 @@ const PHOTO_ITEM_RE = /photo|picture/i;
 // from client code under test (it pulls the router → server config validator).
 const JOB_CHECKLIST_MAX_ITEMS = 50;
 
-// Shown when any of the three persist paths (attach / create-and-attach / remove)
-// fails — the state is kept so the office can retry.
+// Shown when a persist path (create / attach / remove) fails — state is kept so
+// the office can retry.
 const SAVE_FAILED_COPY = "Couldn't save the checklist — try again.";
 
-// ---- in-flow create form ----------------------------------------------------
-
-interface CreateChecklistFormProps {
-  job: Job;
-  onDone: () => void;
+/** Textarea → items: one per line, trimmed, empties dropped, required for the crew. */
+function linesToItems(raw: string): NewChecklistItem[] {
+  return raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .map((text) => ({
+      text,
+      type: PHOTO_ITEM_RE.test(text) ? ("photo" as const) : ("check" as const),
+      required: true,
+    }));
 }
 
-/**
- * Name + item rows + "Create & attach". On submit the template is created in
- * the checklists slice (persisted via v1.checklists with client UUIDs), the
- * authored items are read back from the store, and the checklist is attached
- * to the job through updateJob — which persists via v1.jobs.update. The attach
- * outcome is awaited: on failure the form stays open with inline copy, and a
- * retry re-attaches WITHOUT minting a duplicate template.
- */
-function CreateChecklistForm({ job, onDone }: CreateChecklistFormProps) {
+// ---- the add panel ------------------------------------------------------------
+
+interface AddChecklistPanelProps {
+  job: Job;
+  onDone: () => void;
+  onCancel: () => void;
+}
+
+function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
+  const checklists = useAppStore((s) => s.checklists);
   const addChecklist = useAppStore((s) => s.addChecklist);
-  const addChecklistItem = useAppStore((s) => s.addChecklistItem);
+  const deleteChecklist = useAppStore((s) => s.deleteChecklist);
   const updateJob = useAppStore((s) => s.updateJob);
   const [name, setName] = useState("");
-  const [items, setItems] = useState<string[]>([]);
-  const [draft, setDraft] = useState("");
+  const [linesRaw, setLinesRaw] = useState("");
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-  // The template authored by a previous (failed-attach) submit, keyed to the
-  // form content it was built from — a retry with unchanged content reuses it.
+  const [busy, setBusy] = useState(false);
+  // The checklist created by a previous (failed-attach) submit, keyed to the
+  // content it was built from — a retry with unchanged content reuses it
+  // instead of minting a duplicate.
   const createdRef = useRef<{ id: string; fingerprint: string } | null>(null);
+  const saved = checklists.filter((c) => c.stage === "job");
 
-  function addItem() {
-    const t = draft.trim();
-    if (!t) return;
-    setItems((prev) => [...prev, t]);
-    setDraft("");
+  /** Attach a snapshot to the job; outcome awaited. Returns true on success. */
+  async function attach(chkName: string, items: Checklist["items"]): Promise<boolean> {
+    const { ok } = await updateJob(job.id, { checklist: { name: chkName, items } });
+    if (!ok) setError(SAVE_FAILED_COPY);
+    return ok;
   }
 
-  function removeItem(idx: number) {
-    setItems((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  async function createAndAttach() {
-    if (saving) return;
-    const n = name.trim();
-    if (!n) {
-      setError("Name the checklist.");
-      return;
-    }
-    // A typed-but-not-added item row must not be silently dropped — fold it in.
-    const rows = draft.trim() ? [...items, draft.trim()] : items;
-    if (rows.length > JOB_CHECKLIST_MAX_ITEMS) {
+  /** Tap a saved row — attach it to this job. */
+  async function attachSaved(c: Checklist) {
+    if (busy) return;
+    if (c.items.length > JOB_CHECKLIST_MAX_ITEMS) {
       setError(
-        `A checklist holds at most ${JOB_CHECKLIST_MAX_ITEMS} items — remove ${rows.length - JOB_CHECKLIST_MAX_ITEMS}.`,
+        `This checklist has ${c.items.length} items — a job holds at most ${JOB_CHECKLIST_MAX_ITEMS}.`,
       );
       return;
     }
     setError("");
-    setSaving(true);
+    setBusy(true);
     try {
-      const fingerprint = JSON.stringify([n, rows]);
-      let templateId =
-        createdRef.current?.fingerprint === fingerprint ? createdRef.current.id : null;
-      if (!templateId) {
-        const { checklist } = addChecklist(n, "job");
-        for (const text of rows) {
-          addChecklistItem(checklist.id, text, PHOTO_ITEM_RE.test(text) ? "photo" : "check");
-        }
-        createdRef.current = { id: checklist.id, fingerprint };
-        templateId = checklist.id;
-      }
-      // Read the authored items back (addChecklistItem minted their ids/positions).
-      const created = useAppStore
-        .getState()
-        .checklists.find((c) => c.id === templateId);
-      const { ok } = await updateJob(job.id, {
-        checklist: { name: created?.name ?? n, items: created?.items ?? [] },
-      });
-      if (!ok) {
-        // The template survives in the checklists slice; the JOB attach failed.
-        setError(SAVE_FAILED_COPY);
-        return;
-      }
-      onDone();
+      if (await attach(c.name, c.items)) onDone();
     } finally {
-      setSaving(false);
+      setBusy(false);
+    }
+  }
+
+  /** "Add to job" — save the pasted lines as a checklist, then attach it. */
+  async function addToJob() {
+    if (busy) return;
+    const items = linesToItems(linesRaw);
+    if (items.length === 0) {
+      setError("Add at least one item — one per line.");
+      return;
+    }
+    if (items.length > JOB_CHECKLIST_MAX_ITEMS) {
+      setError(
+        `A checklist holds at most ${JOB_CHECKLIST_MAX_ITEMS} items — remove ${items.length - JOB_CHECKLIST_MAX_ITEMS}.`,
+      );
+      return;
+    }
+    const chkName = name.trim() || "Checklist";
+    setError("");
+    setBusy(true);
+    try {
+      const fingerprint = JSON.stringify([chkName, items.map((i) => i.text)]);
+      let template: Checklist | undefined =
+        createdRef.current?.fingerprint === fingerprint
+          ? useAppStore.getState().checklists.find((c) => c.id === createdRef.current?.id)
+          : undefined;
+      if (!template) {
+        const { persisted } = addChecklist(chkName, "job", items);
+        try {
+          template = await persisted;
+        } catch {
+          // Slice rolled back and dev-logged; tell the office why nothing saved.
+          setError(SAVE_FAILED_COPY);
+          return;
+        }
+        createdRef.current = { id: template.id, fingerprint };
+      }
+      if (await attach(template.name, template.items)) onDone();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Empty state: one tap creates the plumbing starter checklists (saved, not attached). */
+  async function seedStarters() {
+    if (busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      await Promise.all(
+        PLUMBING_STARTER_CHECKLISTS.map(
+          (s) =>
+            addChecklist(
+              s.name,
+              "job",
+              s.items.map((text) => ({
+                text,
+                type: PHOTO_ITEM_RE.test(text) ? ("photo" as const) : ("check" as const),
+                required: true,
+              })),
+            ).persisted,
+        ),
+      );
+    } catch {
+      setError(SAVE_FAILED_COPY);
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <div style={{ borderTop: "1px solid var(--line)", marginTop: 8, paddingTop: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>New checklist</div>
-      <input
-        type="text"
-        placeholder="Name — e.g. Repipe close-out"
-        maxLength={200}
-        value={name}
-        onChange={(e) => {
-          setName(e.target.value);
-          if (error) setError("");
-        }}
-        style={{ width: "100%" }}
-      />
-      {items.map((text, i) => (
-        <div key={`${i}-${text}`} className="stage-row" style={{ gap: 8, padding: "4px 0" }}>
-          <span style={{ color: "var(--ink-3)" }}>
-            {PHOTO_ITEM_RE.test(text) ? "📷" : "○"}
+    <div className="card" style={{ marginTop: 16 }}>
+      <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>Add a checklist</h3>
+
+      {saved.map((c) => (
+        <div key={c.id} className="stage-row clickable" style={{ gap: 8 }}>
+          <span
+            style={{ flex: 1, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            onClick={() => void attachSaved(c)}
+          >
+            {c.name}
           </span>
-          <span style={{ flex: 1, fontSize: 13 }}>{text}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{c.items.length} items</span>
           <span
             className="linklike"
             style={{ color: "var(--ink-3)", fontSize: 12 }}
-            onClick={() => removeItem(i)}
+            title="Delete this checklist"
+            onClick={() => deleteChecklist(c.id)}
           >
             ✕
           </span>
         </div>
       ))}
-      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <input
-          type="text"
-          placeholder="Add an item — “Photo of…” makes it a photo step"
-          maxLength={500}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addItem();
-            }
-          }}
-          style={{ flex: 1 }}
-        />
-        <button type="button" className="btn sm" onClick={addItem}>
-          Add
-        </button>
-      </div>
+      {saved.length === 0 && (
+        <div className="stage-row" style={{ gap: 8 }}>
+          <span
+            className="linklike"
+            style={{ fontSize: 12.5, fontWeight: 700 }}
+            onClick={() => void seedStarters()}
+          >
+            Start with plumbing basics
+          </span>
+          <span className="muted" style={{ fontSize: 12 }}>
+            {PLUMBING_STARTER_CHECKLISTS.length} checklists
+          </span>
+        </div>
+      )}
+
+      <textarea
+        placeholder="One item per line"
+        rows={4}
+        maxLength={10_000}
+        value={linesRaw}
+        onChange={(e) => {
+          setLinesRaw(e.target.value);
+          if (error) setError("");
+        }}
+        style={{ width: "100%", marginTop: 10, resize: "vertical" }}
+      />
+      <input
+        type="text"
+        placeholder="Checklist"
+        aria-label="Checklist name"
+        maxLength={200}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        style={{ width: "100%", marginTop: 8 }}
+      />
       {error && (
         <div style={{ color: "var(--red)", fontSize: 12, marginTop: 6 }}>{error}</div>
       )}
-      <button
-        type="button"
-        className="btn sm primary"
-        style={{ marginTop: 8 }}
-        disabled={saving}
-        onClick={() => void createAndAttach()}
-      >
-        {saving ? "Saving…" : "Create & attach"}
-      </button>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 8 }}>
+        <button
+          type="button"
+          className="btn sm primary"
+          disabled={busy}
+          onClick={() => void addToJob()}
+        >
+          {busy ? "Saving…" : "Add to job"}
+        </button>
+        <span className="linklike" style={{ fontSize: 12 }} onClick={onCancel}>
+          Cancel
+        </span>
+      </div>
     </div>
   );
 }
@@ -190,42 +247,10 @@ function CreateChecklistForm({ job, onDone }: CreateChecklistFormProps) {
 // ---- the block ---------------------------------------------------------------
 
 export function JobChecklistBlock({ job }: { job: Job }) {
-  const checklists = useAppStore((s) => s.checklists);
   const updateJob = useAppStore((s) => s.updateJob);
-  const openModal = useOpenModal();
-  const [picking, setPicking] = useState(false);
-  const [creating, setCreating] = useState(false);
-  // Inline persist/bounds errors for the picker (attach) and the attached view (remove).
-  const [attachError, setAttachError] = useState("");
+  const [open, setOpen] = useState(false);
   const [removeError, setRemoveError] = useState("");
   const [busy, setBusy] = useState(false);
-  const templates = checklists.filter((c) => c.stage === "job");
-
-  /** Attach a template — guarded against the job item cap, outcome awaited. */
-  async function attachTemplate(tpl: (typeof templates)[number]) {
-    if (busy) return;
-    if (tpl.items.length > JOB_CHECKLIST_MAX_ITEMS) {
-      setAttachError(
-        `This template has ${tpl.items.length} items — a job checklist holds at most ${JOB_CHECKLIST_MAX_ITEMS}. Trim it in Manage templates.`,
-      );
-      return;
-    }
-    setAttachError("");
-    setBusy(true);
-    try {
-      const { ok } = await updateJob(job.id, {
-        checklist: { name: tpl.name, items: tpl.items },
-      });
-      if (!ok) {
-        // Store rolled back — the picker is still (or back) on screen; say why.
-        setAttachError(SAVE_FAILED_COPY);
-        return;
-      }
-      setPicking(false);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   /** Detach — outcome awaited so a failed remove doesn't silently reappear. */
   async function removeChecklist() {
@@ -271,73 +296,8 @@ export function JobChecklistBlock({ job }: { job: Job }) {
     );
   }
 
-  // Picking a template (or creating one in-flow).
-  if (picking) {
-    const formOpen = creating || templates.length === 0;
-    return (
-      <div className="card" style={{ marginTop: 16 }}>
-        <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>Attach a checklist</h3>
-        {templates.length ? (
-          templates.map((c) => (
-            <div
-              key={c.id}
-              className="stage-row clickable"
-              style={{ cursor: "pointer" }}
-              onClick={() => void attachTemplate(c)}
-            >
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{c.name}</span>
-              <span className="muted" style={{ fontSize: 12 }}>{c.items.length} items</span>
-            </div>
-          ))
-        ) : (
-          <div className="muted" style={{ fontSize: 12 }}>
-            No templates yet — create one below.
-          </div>
-        )}
-        {attachError && (
-          <div style={{ color: "var(--red)", fontSize: 12, marginTop: 6 }}>{attachError}</div>
-        )}
-        {formOpen ? (
-          <CreateChecklistForm
-            job={job}
-            onDone={() => {
-              setCreating(false);
-              setPicking(false);
-            }}
-          />
-        ) : (
-          <div style={{ marginTop: 8 }}>
-            <span
-              className="linklike"
-              style={{ fontSize: 12, fontWeight: 700 }}
-              onClick={() => setCreating(true)}
-            >
-              + New checklist
-            </span>
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
-          <span
-            className="linklike"
-            style={{ fontSize: 12 }}
-            onClick={() => openModal(MODAL.STANDARDS)}
-          >
-            Manage templates
-          </span>
-          <span
-            className="linklike"
-            style={{ fontSize: 12 }}
-            onClick={() => {
-              setPicking(false);
-              setCreating(false);
-              setAttachError("");
-            }}
-          >
-            Cancel
-          </span>
-        </div>
-      </div>
-    );
+  if (open) {
+    return <AddChecklistPanel job={job} onDone={() => setOpen(false)} onCancel={() => setOpen(false)} />;
   }
 
   // Entry point.
@@ -346,7 +306,7 @@ export function JobChecklistBlock({ job }: { job: Job }) {
       <span
         className="linklike"
         style={{ fontSize: 13, fontWeight: 700 }}
-        onClick={() => setPicking(true)}
+        onClick={() => setOpen(true)}
       >
         + Add a checklist
       </span>{" "}

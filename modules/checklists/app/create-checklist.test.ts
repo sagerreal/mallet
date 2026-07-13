@@ -42,6 +42,12 @@ export class FakeChecklistRepository implements ChecklistRepository {
 
   async create(input: Parameters<ChecklistRepository["create"]>[0]): Promise<Checklist> {
     this.lastCreatedInput = input;
+    // Build initial items for real so the atomic create-with-items path is observable.
+    const items = (input.items ?? []).map((it) => {
+      const r = ChecklistItem.create(it);
+      if (!isOk(r)) throw new Error(`fake create produced an invalid item: ${r.error.message}`);
+      return r.value;
+    });
     const r = Checklist.create(baseProps({
       id: asChecklistId(input.id),
       orgId: asOrgId(input.orgId),
@@ -49,6 +55,7 @@ export class FakeChecklistRepository implements ChecklistRepository {
       trade: input.trade,
       stage: input.stage,
       match: input.match,
+      items,
     }));
     if (!isOk(r)) throw new Error(`fake create failed: ${r.error.message}`);
     this.store.set(r.value.props.id, r.value);
@@ -149,5 +156,63 @@ describe("CreateChecklistUseCase", () => {
     };
     await useCase.exec(cmd, ORG);
     expect(repo.lastCreatedInput?.id).toBe("11111111-1111-1111-1111-111111111111");
+  });
+
+  it("creates initial items atomically: trimmed, positioned, required flag kept", async () => {
+    const cmd: CreateChecklistCommand = {
+      name: "Water heater close-out",
+      trade: "Custom",
+      stage: "job",
+      match: [],
+      items: [
+        { text: "  Photo of the install  ", type: "photo", required: true },
+        { text: "T&P valve tested", type: "check" },
+      ],
+    };
+    const r = await useCase.exec(cmd, ORG);
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.items).toHaveLength(2);
+    expect(r.value.props.items[0]!.props).toMatchObject({
+      text: "Photo of the install",
+      type: "photo",
+      required: true,
+      position: 0,
+    });
+    expect(r.value.props.items[1]!.props).toMatchObject({
+      text: "T&P valve tested",
+      type: "check",
+      required: false,
+      position: 1,
+    });
+    // One repo call carried everything — nothing to race.
+    expect(repo.lastAddedInput).toBeUndefined();
+  });
+
+  it("rejects a create whose items exceed the 50-item cap", async () => {
+    const cmd: CreateChecklistCommand = {
+      name: "Too big",
+      trade: "Custom",
+      stage: "job",
+      match: [],
+      items: Array.from({ length: 51 }, (_, i) => ({ text: `Item ${i}`, type: "check" as const })),
+    };
+    const r = await useCase.exec(cmd, ORG);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("validation");
+    expect(repo.lastCreatedInput).toBeUndefined();
+  });
+
+  it("rejects an empty item text without calling the repo", async () => {
+    const cmd: CreateChecklistCommand = {
+      name: "x",
+      trade: "Custom",
+      stage: "job",
+      match: [],
+      items: [{ text: "   ", type: "check" }],
+    };
+    const r = await useCase.exec(cmd, ORG);
+    expect(r.ok).toBe(false);
+    expect(repo.lastCreatedInput).toBeUndefined();
   });
 });

@@ -8,6 +8,9 @@ const addLead = vi.fn();
 const updateLead = vi.fn();
 const addJob = vi.fn();
 const addVisit = vi.fn();
+const updateJob = vi.fn();
+// Saved checklists feeding the picker — set per test, reset in beforeEach.
+let storeChecklists: unknown[] = [];
 
 // close mock at module scope — reassigned in beforeEach so each test gets a fresh spy.
 // Declared before vi.mock so the factory closure captures the binding (not the value).
@@ -18,7 +21,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useOpenModal: () => vi.fn(),
   useLeads: () => [],
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ addLead, updateLead, addJob, addVisit }),
+    selector({ addLead, updateLead, addJob, addVisit, updateJob, checklists: storeChecklists }),
 }));
 
 describe("NewJobModalContent — createEstimate", () => {
@@ -185,5 +188,112 @@ describe("NewJobModalContent — createJob (Job type)", () => {
     expect(closeMock).not.toHaveBeenCalled();
     // Visits must NOT be created when the job failed to persist.
     expect(addVisit).not.toHaveBeenCalled();
+  });
+});
+
+describe("NewJobModalContent — checklist wiring (Job type)", () => {
+  beforeEach(() => {
+    addLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
+    updateJob.mockReset();
+    storeChecklists = [];
+    closeMock = vi.fn();
+  });
+
+  it("attaches a picked saved checklist via updateJob AFTER jobPersisted resolves", async () => {
+    storeChecklists = [
+      {
+        id: "chk-1",
+        name: "Water heater close-out",
+        trade: "Custom",
+        stage: "job",
+        match: [],
+        items: [
+          { id: "i1", text: "Photo of the install", type: "photo", required: true, position: 0 },
+        ],
+      },
+    ];
+    const persistedLead = { id: "lead-40", name: "Chk Customer", evisits: [] };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    let resolveJobPersisted!: (j: unknown) => void;
+    addJob.mockReturnValue({
+      job: { id: "job-40", origin: "manual", visits: [] },
+      persisted: new Promise((res) => { resolveJobPersisted = res; }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "swap water heater" },
+    });
+    // Expand the picker and pick the saved checklist row.
+    fireEvent.click(screen.getByText("No checklist"));
+    fireEvent.click(screen.getByText("Water heater close-out"));
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    // Not yet — the snapshot only persists once the job is DB-origin.
+    expect(updateJob).not.toHaveBeenCalled();
+    resolveJobPersisted({ id: "job-40", origin: "db", visits: [] });
+    await waitFor(() => expect(updateJob).toHaveBeenCalledOnce());
+    const [jobId, patch] = updateJob.mock.calls[0] as [
+      string,
+      { checklist: { name: string; items: { required: boolean }[] } },
+    ];
+    expect(jobId).toBe("job-40");
+    expect(patch.checklist.name).toBe("Water heater close-out");
+    expect(patch.checklist.items).toHaveLength(1);
+  });
+
+  it("builds a custom checklist from scratch with required photo/check items", async () => {
+    const persistedLead = { id: "lead-41", name: "Custom Customer", evisits: [] };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-41", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-41", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "fix leak" },
+    });
+    fireEvent.click(screen.getByText("No checklist"));
+    fireEvent.click(screen.getByText("Build from scratch"));
+    fireEvent.change(screen.getByPlaceholderText("e.g. Photo: dry under the sink"), {
+      target: { value: "Photo of the repair" },
+    });
+    fireEvent.click(screen.getByText("Add item"));
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => expect(updateJob).toHaveBeenCalledOnce());
+    const [, patch] = updateJob.mock.calls[0] as [
+      string,
+      { checklist: { name: string; items: { text: string; type: string; required: boolean }[] } },
+    ];
+    expect(patch.checklist.items).toEqual([
+      expect.objectContaining({ text: "Photo of the repair", type: "photo", required: true }),
+    ]);
+  });
+
+  it("no checklist section for the Estimate type; none attached without a pick", async () => {
+    const persistedLead = { id: "lead-42", name: "Plain Customer", evisits: [] };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-42", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-42", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    // Estimate type hides the checklist picker entirely.
+    fireEvent.click(screen.getByText("Estimate"));
+    expect(screen.queryByText("No checklist")).toBeNull();
+    // Back to Job: create without picking → no checklist attach.
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "plain job" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+    await waitFor(() => expect(addVisit).toHaveBeenCalled());
+    expect(updateJob).not.toHaveBeenCalled();
   });
 });

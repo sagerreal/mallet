@@ -27,6 +27,19 @@ const createInput = z.object({
   trade: z.string().max(80).optional(),
   stage: z.enum(["job", "scope"]),
   match: z.array(z.string().max(120)).max(50).optional(),
+  // Initial items, created atomically with the template — a pasted list is ONE
+  // mutation (batched create + addItem calls raced server-side).
+  items: z
+    .array(
+      z.object({
+        id: z.string().uuid().optional(),
+        text: z.string().min(1).max(500),
+        type: z.enum(["check", "photo"]),
+        required: z.boolean().optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
 });
 
 const removeInput = z.object({ checklistId: z.string().uuid() });
@@ -70,7 +83,14 @@ export const createChecklistRouter = () =>
         const repo = new DrizzleChecklistRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new CreateChecklistUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
-          { id: input.id, name: input.name, trade: input.trade ?? "Custom", stage: input.stage, match: input.match ?? [] },
+          {
+            id: input.id,
+            name: input.name,
+            trade: input.trade ?? "Custom",
+            stage: input.stage,
+            match: input.match ?? [],
+            items: input.items ?? [],
+          },
           ctx.principal.orgId,
         );
         return toChecklistDTO(orThrow(result));

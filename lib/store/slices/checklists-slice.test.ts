@@ -5,9 +5,6 @@ import { createChecklistsSlice, type ChecklistsSlice } from "./checklists-slice"
 const mutate = {
   create: vi.fn(),
   remove: vi.fn(),
-  addItem: vi.fn(),
-  removeItem: vi.fn(),
-  setItemRequired: vi.fn(),
 };
 
 vi.mock("@/lib/trpc/vanilla", () => ({
@@ -16,9 +13,6 @@ vi.mock("@/lib/trpc/vanilla", () => ({
       checklists: {
         create: { mutate: (...a: unknown[]) => mutate.create(...a) },
         remove: { mutate: (...a: unknown[]) => mutate.remove(...a) },
-        addItem: { mutate: (...a: unknown[]) => mutate.addItem(...a) },
-        removeItem: { mutate: (...a: unknown[]) => mutate.removeItem(...a) },
-        setItemRequired: { mutate: (...a: unknown[]) => mutate.setItemRequired(...a) },
       },
     },
   },
@@ -47,18 +41,52 @@ describe("checklistsSlice", () => {
     expect(store.getState().checklists).toHaveLength(1);
   });
 
-  it("addChecklist optimistically appends and calls v1.checklists.create with the client id", () => {
-    mutate.create.mockResolvedValue({ id: "will-be-ignored", name: "Repipe", trade: "Custom", stage: "job", match: [], items: [], createdAt: "" });
-    const { checklist } = store.getState().addChecklist("Repipe", "job");
+  it("addChecklist sends template AND items in ONE create call (client ids preserved)", () => {
+    mutate.create.mockResolvedValue({
+      id: "ignored", name: "Repipe", trade: "Custom", stage: "job", match: [], items: [], createdAt: "",
+    });
+    const { checklist } = store.getState().addChecklist("Repipe", "job", [
+      { text: "Photo of the manifold", type: "photo", required: true },
+      { text: "Pressure test", type: "check", required: true },
+    ]);
+    // Optimistic: template + both items appear immediately.
     expect(store.getState().checklists).toHaveLength(1);
+    expect(store.getState().checklists[0]!.items).toHaveLength(2);
+    expect(store.getState().checklists[0]!.items.map((i) => i.position)).toEqual([0, 1]);
+    // ONE mutation carries everything — no separate addItem calls to race the create.
+    expect(mutate.create).toHaveBeenCalledOnce();
     expect(mutate.create).toHaveBeenCalledWith(
-      expect.objectContaining({ id: checklist.id, name: "Repipe", stage: "job" }),
+      expect.objectContaining({
+        id: checklist.id,
+        name: "Repipe",
+        stage: "job",
+        items: [
+          expect.objectContaining({ text: "Photo of the manifold", type: "photo", required: true }),
+          expect.objectContaining({ text: "Pressure test", type: "check", required: true }),
+        ],
+      }),
     );
   });
 
-  it("addChecklist rolls back on persist failure", async () => {
+  it("addChecklist persisted resolves with the reconciled (server) checklist", async () => {
+    mutate.create.mockImplementation(async (input: { id: string }) => ({
+      id: input.id, name: "Server Name", trade: "Custom", stage: "job", match: [],
+      items: [{ id: "srv-i1", text: "X", type: "check", required: true, position: 0 }],
+      createdAt: "",
+    }));
+    const { persisted } = store
+      .getState()
+      .addChecklist("Local", "job", [{ text: "X", type: "check", required: true }]);
+    const reconciled = await persisted;
+    expect(reconciled.name).toBe("Server Name");
+    expect(reconciled.items[0]!.id).toBe("srv-i1");
+    expect(store.getState().checklists[0]!.name).toBe("Server Name");
+  });
+
+  it("addChecklist rolls back AND rejects on persist failure (caller must surface it)", async () => {
     mutate.create.mockRejectedValue(new Error("boom"));
-    const { checklist } = store.getState().addChecklist("Repipe", "job");
+    const { checklist, persisted } = store.getState().addChecklist("Repipe", "job");
+    await expect(persisted).rejects.toThrow("boom");
     await flush();
     expect(store.getState().checklists.some((c) => c.id === checklist.id)).toBe(false);
   });
@@ -70,28 +98,5 @@ describe("checklistsSlice", () => {
     expect(store.getState().checklists).toHaveLength(0);
     await flush();
     expect(store.getState().checklists.some((c) => c.id === "c1")).toBe(true);
-  });
-
-  it("addChecklistItem appends optimistically, reconciles server ids from the returned DTO", async () => {
-    store.getState().setChecklists([{ id: "c1", name: "A", trade: "Custom", stage: "job", match: [], items: [] }]);
-    mutate.addItem.mockResolvedValue({
-      id: "c1", name: "A", trade: "Custom", stage: "job", match: [], createdAt: "",
-      items: [{ id: "server-item-1", text: "Photo", type: "photo", required: false, position: 0 }],
-    });
-    store.getState().addChecklistItem("c1", "Photo of X", "photo");
-    expect(store.getState().checklists[0]!.items).toHaveLength(1);
-    await flush();
-    expect(store.getState().checklists[0]!.items[0]!.id).toBe("server-item-1");
-  });
-
-  it("toggleItemRequired flips optimistically and calls setItemRequired with the new value", () => {
-    store.getState().setChecklists([{
-      id: "c1", name: "A", trade: "Custom", stage: "job", match: [],
-      items: [{ id: "i1", text: "x", type: "check", required: false, position: 0 }],
-    }]);
-    mutate.setItemRequired.mockResolvedValue({ id: "c1", name: "A", trade: "Custom", stage: "job", match: [], createdAt: "", items: [{ id: "i1", text: "x", type: "check", required: true, position: 0 }] });
-    store.getState().toggleItemRequired("c1", "i1");
-    expect(store.getState().checklists[0]!.items[0]!.required).toBe(true);
-    expect(mutate.setItemRequired).toHaveBeenCalledWith({ checklistId: "c1", itemId: "i1", required: true });
   });
 });

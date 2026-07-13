@@ -32,6 +32,13 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
     trade: string;
     stage: ChecklistStage;
     match: readonly string[];
+    items?: readonly {
+      id: ChecklistItemId;
+      text: string;
+      type: ChecklistItemType;
+      required: boolean;
+      position: number;
+    }[];
   }): Promise<Checklist> {
     const rows = await this.tx
       .insert(checklistTemplates)
@@ -46,7 +53,26 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
       .returning();
     const row = rows[0];
     if (!row) throw new Error("checklist insert returned no row");
-    return toDomain(row, []);
+
+    // Initial items ride the same tx — ONE bulk insert, atomic with the header.
+    let itemRows: ChecklistItemRow[] = [];
+    if (input.items && input.items.length > 0) {
+      itemRows = await this.tx
+        .insert(checklistItems)
+        .values(
+          input.items.map((it) => ({
+            id: it.id,
+            orgId: this.orgId,
+            templateId: input.id,
+            text: it.text,
+            type: it.type,
+            required: it.required,
+            position: it.position,
+          })),
+        )
+        .returning();
+    }
+    return toDomain(row, itemRows);
   }
 
   async findById(id: ChecklistId): Promise<Checklist | null> {
