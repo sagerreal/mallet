@@ -27,8 +27,10 @@ export interface AcceptEstimateCommand {
   readonly chosenTier?: QuoteTier;
 }
 
-// Customer accepts the quote. Emits estimate.accepted carrying the totals so the jobs slice can
-// create the job and move the lead to "won" (done via the event, not in this transaction).
+// Customer accepts the quote. Emits estimate.accepted for the audit outbox — note the event has
+// NO registered handler (trpc/outbox-registry.ts drains it as a no-op): job creation and the
+// lead's move to "won" happen INLINE in the composing callers (acceptPublicQuote and the office
+// accept route), not via the event.
 // If the command carries lines (customer-tuned optional add-ons), those are committed before the
 // status transition so the accepted total matches what the customer approved.
 export class AcceptEstimateUseCase {
