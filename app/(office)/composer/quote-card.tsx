@@ -237,76 +237,6 @@ export function QuoteCard({
         </p>
       )}
 
-      {/* The command bar — the ONE AI surface (the bar IS the AI). Manual entry
-          stays the default: the table below is untouched and nothing autofocuses.
-          Mode follows the quote: empty → build; AI-drafted → refine; hand-typed
-          lines → rebuild behind an in-flow confirm (never silently replaced). */}
-      {!run && (
-        <div style={{ marginBottom: 2 }}>
-          <div className="aibar">
-            <input
-              type="text"
-              value={barText}
-              aria-label={
-                barMode === "refine"
-                  ? "Tell it what to change"
-                  : "Describe the job"
-              }
-              placeholder={
-                barMode === "refine"
-                  ? "Tell it what to change — “that's 5h of labor, not 10”…"
-                  : barMode === "rebuild"
-                    ? "Describe the job — rebuilds this quote from your pricebook…"
-                    : "Type the job — the quote builds itself from your pricebook…"
-              }
-              disabled={isDrafting}
-              onChange={(e) => {
-                setBarText(e.target.value);
-                setConfirmRebuild(false);
-                if (barMode !== "refine") onUpdate({ desc: e.target.value });
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && barText.trim() && !isDrafting) submitBar();
-              }}
-            />
-            <button
-              type="button"
-              className="aibar-go"
-              disabled={isDrafting || !barText.trim()}
-              onClick={submitBar}
-            >
-              {isDrafting ? "Working…" : barMode === "refine" ? "Update it" : "Build it"}
-            </button>
-          </div>
-          {confirmRebuild ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 600 }}>
-                Replaces the lines you typed — sure?
-              </span>
-              <button className="btn sm primary" onClick={runBar}>
-                Build it
-              </button>
-              <button className="btn sm ghost" onClick={() => setConfirmRebuild(false)}>
-                Keep mine
-              </button>
-            </div>
-          ) : (
-            <p className="aibar-hint">
-              {barMode === "refine"
-                ? "Corrections it should keep come back as one-tap saves below."
-                : isGbb
-                  ? "Reads the job, prices all three options from your book, and compares to quotes you've won."
-                  : "Reads the job, prices from your book & rates, and compares to quotes you've won."}
-            </p>
-          )}
-          {aiDraftError && (
-            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 6 }}>
-              {aiDraftError}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* GBB-only toolbar — Suggest lives at card level (it spans all tiers).
           Same quiet .lineedit-tool style as the table footers for uniformity. */}
       {isGbb && (
@@ -445,6 +375,76 @@ export function QuoteCard({
           )}
         </>
       ))}
+
+      {/* The command bar — the ONE AI surface, BELOW the quote so manual entry
+          reads as the default (the table above is untouched, nothing autofocuses).
+          Mode follows the quote: empty → build; AI-drafted → refine; hand-typed
+          lines → rebuild behind an in-flow confirm (never silently replaced). */}
+      {!run && (
+        <div style={{ marginBottom: 2 }}>
+          <div className="aibar">
+            <input
+              type="text"
+              value={barText}
+              aria-label={
+                barMode === "refine"
+                  ? "Tell it what to change"
+                  : "Describe the job"
+              }
+              placeholder={
+                barMode === "refine"
+                  ? "Tell it what to change — “that's 5h of labor, not 10”…"
+                  : barMode === "rebuild"
+                    ? "Describe the job — rebuilds this quote from your pricebook…"
+                    : "Type the job — the quote builds itself from your pricebook…"
+              }
+              disabled={isDrafting}
+              onChange={(e) => {
+                setBarText(e.target.value);
+                setConfirmRebuild(false);
+                if (barMode !== "refine") onUpdate({ desc: e.target.value });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && barText.trim() && !isDrafting) submitBar();
+              }}
+            />
+            <button
+              type="button"
+              className="aibar-go"
+              disabled={isDrafting || !barText.trim()}
+              onClick={submitBar}
+            >
+              {isDrafting ? "Working…" : barMode === "refine" ? "Update it" : "Build it"}
+            </button>
+          </div>
+          {confirmRebuild ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                Replaces the lines you typed — sure?
+              </span>
+              <button className="btn sm primary" onClick={runBar}>
+                Build it
+              </button>
+              <button className="btn sm ghost" onClick={() => setConfirmRebuild(false)}>
+                Keep mine
+              </button>
+            </div>
+          ) : (
+            <p className="aibar-hint">
+              {barMode === "refine"
+                ? "Corrections it should keep come back as one-tap saves below."
+                : isGbb
+                  ? "Reads the job, prices all three options from your book, and compares to quotes you've won."
+                  : "Reads the job, prices from your book & rates, and compares to quotes you've won."}
+            </p>
+          )}
+          {aiDraftError && (
+            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 6 }}>
+              {aiDraftError}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* One-tap proposals — under the quote they refine (the bar above is the
           input; these are its answers). */}
