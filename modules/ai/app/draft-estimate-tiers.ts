@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import type { LlmClient } from "../domain/llm-client";
-import { draftLineInputSchema } from "./draft-estimate";
-import type { EstimateLineDraft } from "./draft-estimate";
+import {
+  draftLineInputSchema,
+  buildRefineBlock,
+  parseProposals,
+  proposalSchema,
+  MAX_PROPOSALS,
+} from "./draft-estimate";
+import type { EstimateLineDraft, DraftRefineInput, DraftProposal } from "./draft-estimate";
 import { extractJsonFromText } from "./extract-json";
 import { buildContextBlocks, EMPTY_ESTIMATE_CONTEXT, type EstimateContext } from "./estimate-context";
 
@@ -31,6 +37,8 @@ export interface EstimateTiersDraft {
   readonly good: EstimateTierDraft;
   readonly better: EstimateTierDraft;
   readonly best: EstimateTierDraft;
+  /** Refine-extracted durable facts — always [] outside a refine run. */
+  readonly proposals: DraftProposal[];
 }
 
 // The shape the model is asked to fill in (unit prices in whole USD). Line
@@ -41,15 +49,30 @@ const tierInputSchema = z.object({
   lines: z.array(draftLineInputSchema).min(2).max(6),
 });
 
+// `proposals` mirrors the single drafter: always optional in the schema, only
+// prompted for (and only consumed) on refine runs. This full schema exists for
+// the tool's JSON Schema (what the model is shown); parsing splits strict
+// tiers from lenient proposals — see parseSubmitInput below.
 const submitTieredEstimateInputSchema = z.object({
+  recommended: z.enum(["good", "better", "best"]),
+  good: tierInputSchema,
+  better: tierInputSchema,
+  best: tierInputSchema,
+  proposals: z.array(proposalSchema).max(MAX_PROPOSALS).optional(),
+});
+
+const submitTieredEstimateTiersSchema = z.object({
   recommended: z.enum(["good", "better", "best"]),
   good: tierInputSchema,
   better: tierInputSchema,
   best: tierInputSchema,
 });
 
-type SubmitTieredEstimateInput = z.infer<typeof submitTieredEstimateInputSchema>;
 type TierInput = z.infer<typeof tierInputSchema>;
+
+interface SubmitTieredEstimateInput extends z.infer<typeof submitTieredEstimateTiersSchema> {
+  readonly proposals: DraftProposal[];
+}
 
 const BASE_SYSTEM_PROMPT = [
   "You are an estimator for a US home/field-service business (HVAC, plumbing, electrical, etc.).",
@@ -71,13 +94,18 @@ const BASE_SYSTEM_PROMPT = [
 
 // Same org context as the single drafter (estimate-context.ts) — the tiers used to run on
 // "typical trade pricing" alone while the UI claimed pricebook grounding; both drafters now
-// consume identical knowledge.
-const buildSystemPrompt = (context: EstimateContext): string => {
+// consume identical knowledge. The refine block (shared builder) appends the office's
+// correction when they're fixing an earlier draft.
+const buildSystemPrompt = (context: EstimateContext, refine?: DraftRefineInput): string => {
   const blocks = buildContextBlocks(context);
+  const parts = [BASE_SYSTEM_PROMPT];
   if (blocks === "") {
-    return [BASE_SYSTEM_PROMPT, "", "This shop has no pricebook yet — price from typical trade pricing."].join("\n");
+    parts.push("", "This shop has no pricebook yet — price from typical trade pricing.");
+  } else {
+    parts.push("", blocks);
   }
-  return [BASE_SYSTEM_PROMPT, "", blocks].join("\n");
+  if (refine) parts.push("", buildRefineBlock(refine));
+  return parts.join("\n");
 };
 
 // JSON Schema for the submit_tiered_estimate tool (stripped of $schema for Anthropic).
@@ -96,17 +124,26 @@ const mapTier = (raw: TierInput): EstimateTierDraft => ({
   })),
 });
 
-const mapTiers = (raw: SubmitTieredEstimateInput): EstimateTiersDraft => ({
+const mapTiers = (raw: SubmitTieredEstimateInput, refining: boolean): EstimateTiersDraft => ({
   recommended: raw.recommended,
   good: mapTier(raw.good),
   better: mapTier(raw.better),
   best: mapTier(raw.best),
+  // Proposals are a refine-loop feature — dropped when the model volunteers them unprompted.
+  proposals: refining ? raw.proposals : [],
 });
 
-/** Attempt to parse a SubmitTieredEstimateInput from an arbitrary unknown value. */
+/**
+ * Attempt to parse a SubmitTieredEstimateInput from an arbitrary unknown value.
+ * Tiers are strict (null on failure → fallback path); proposals are parsed
+ * per-item and invalid ones dropped — shared parseProposals (draft-estimate.ts).
+ */
 const parseSubmitInput = (raw: unknown): SubmitTieredEstimateInput | null => {
-  const result = submitTieredEstimateInputSchema.safeParse(raw);
-  return result.success ? result.data : null;
+  const result = submitTieredEstimateTiersSchema.safeParse(raw);
+  if (!result.success) return null;
+  const proposalsRaw =
+    typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>).proposals : undefined;
+  return { ...result.data, proposals: parseProposals(proposalsRaw) };
 };
 
 /**
@@ -121,13 +158,14 @@ export const draftEstimateTiers = async (
   llm: LlmClient | null | undefined,
   description: string,
   context: EstimateContext = EMPTY_ESTIMATE_CONTEXT,
+  refine?: DraftRefineInput,
 ): Promise<EstimateTiersDraft> => {
   if (!llm) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: "AI is not configured" });
   }
 
   const turn = await llm.next({
-    system: buildSystemPrompt(context),
+    system: buildSystemPrompt(context, refine),
     tools: [
       {
         name: "submit_tiered_estimate",
@@ -144,7 +182,7 @@ export const draftEstimateTiers = async (
   for (const block of turn.blocks) {
     if (block.type === "tool_use" && block.name === "submit_tiered_estimate") {
       const parsed = parseSubmitInput(block.input);
-      if (parsed) return mapTiers(parsed);
+      if (parsed) return mapTiers(parsed, refine !== undefined);
     }
   }
 
@@ -153,7 +191,7 @@ export const draftEstimateTiers = async (
   for (const block of turn.blocks) {
     if (block.type === "text") {
       const parsed = extractJsonFromText(block.text, parseSubmitInput);
-      if (parsed) return mapTiers(parsed);
+      if (parsed) return mapTiers(parsed, refine !== undefined);
     }
   }
 

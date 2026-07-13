@@ -56,7 +56,7 @@ describe("draftEstimateLines", () => {
   it("returns mapped lines (dollars → cents) when the model calls submit_estimate", async () => {
     const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
 
-    const lines = await draftEstimateLines(llm, "replace 40-gal water heater, haul away, bring to code");
+    const { lines } = await draftEstimateLines(llm, "replace 40-gal water heater, haul away, bring to code");
 
     expect(lines).toHaveLength(3);
     expect(lines[0]).toEqual({ description: "Labor — replace 40-gal water heater", quantity: 3, rateCents: 17000 });
@@ -100,7 +100,7 @@ describe("draftEstimateLines", () => {
         lines: [{ description: "Labor", quantity: 1, unitPriceUsd: 99.999 }],
       }),
     );
-    const lines = await draftEstimateLines(llm, "any job");
+    const { lines } = await draftEstimateLines(llm, "any job");
     expect(lines[0]!.rateCents).toBe(10000); // Math.round(99.999 * 100)
   });
 
@@ -113,7 +113,7 @@ describe("draftEstimateLines", () => {
     });
     const llm = new FakeLlm(textTurn(`Here is the estimate:\n${embeddedJson}\nPlease review.`));
 
-    const lines = await draftEstimateLines(llm, "clogged kitchen drain");
+    const { lines } = await draftEstimateLines(llm, "clogged kitchen drain");
 
     expect(lines).toHaveLength(2);
     expect(lines[0]).toEqual({ description: "Cable snake the drain", quantity: 1, rateCents: 29500 });
@@ -174,7 +174,7 @@ describe("draftEstimateLines", () => {
     const llm = new FakeLlm(
       toolUseTurn(withLine({ description: "y".repeat(500), quantity: 2.25, unitPriceUsd: 1_000_000 })),
     );
-    const lines = await draftEstimateLines(llm, "big job");
+    const { lines } = await draftEstimateLines(llm, "big job");
     expect(lines[0]).toEqual({
       description: "y".repeat(500),
       quantity: 2.25,
@@ -246,6 +246,98 @@ describe("draftEstimateLines — catalog context", () => {
     expect(req.tools[0]!.name).toBe("submit_estimate");
     expect(req.messages).toEqual([{ role: "user", kind: "text", text: description }]);
     expect(req.effort).toBe("low");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Refine loop: the office corrects an earlier draft. The prompt must carry the
+// prior lines + the correction; durable-fact proposals come back ONLY on
+// refine runs (volunteered proposals outside refine are dropped).
+// ---------------------------------------------------------------------------
+
+describe("draftEstimateLines — refine loop", () => {
+  const REFINE = {
+    previousLines: [
+      { description: "Labor — replace 40-gal water heater", quantity: 10, rateCents: 17_000 },
+    ],
+    feedback: "that's 5h of labor, not 10",
+  };
+
+  it("carries the previous draft and the correction into the system prompt", async () => {
+    const llm = new FakeLlm(toolUseTurn(SAMPLE_TOOL_INPUT));
+    await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+
+    const system = llm.capturedRequest!.system;
+    expect(system).toContain("Refine an earlier draft");
+    expect(system).toContain("Labor — replace 40-gal water heater ×10 @ $170.00");
+    expect(system).toContain('Correction from the office: "that\'s 5h of labor, not 10"');
+    expect(system).toContain("proposals");
+  });
+
+  it("returns the model's proposals on a refine run", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: [
+          { kind: "labor_hours", serviceName: "40-gal gas water heater install", hours: 5 },
+          { kind: "rule", rule: "Water heater swaps take 5h of labor" },
+        ],
+      }),
+    );
+    const result = await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.proposals).toEqual([
+      { kind: "labor_hours", serviceName: "40-gal gas water heater install", hours: 5 },
+      { kind: "rule", rule: "Water heater swaps take 5h of labor" },
+    ]);
+  });
+
+  it("drops volunteered proposals outside a refine run (never prompted for them)", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: [{ kind: "rule", rule: "unsolicited" }],
+      }),
+    );
+    const result = await draftEstimateLines(llm, "replace water heater");
+    expect(result.proposals).toEqual([]);
+    expect(llm.capturedRequest!.system).not.toContain("Refine an earlier draft");
+  });
+
+  // Proposals are an optional side-channel — a malformed one must never cost
+  // the office the (valid) regenerated lines it already paid the model for.
+  it("drops malformed proposals but keeps the lines and the valid proposals", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: [
+          { kind: "labor_hours", hours: -3 }, // missing serviceName, negative hours
+          { kind: "rule", rule: "x".repeat(350) }, // over the 300-char cap
+          { kind: "rule", rule: "Water heater swaps take 5h of labor" },
+        ],
+      }),
+    );
+    const result = await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.lines).toHaveLength(3);
+    expect(result.proposals).toEqual([{ kind: "rule", rule: "Water heater swaps take 5h of labor" }]);
+  });
+
+  it("drops a non-array proposals payload without failing the run", async () => {
+    const llm = new FakeLlm(toolUseTurn({ ...SAMPLE_TOOL_INPUT, proposals: "not an array" }));
+    const result = await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.lines).toHaveLength(3);
+    expect(result.proposals).toEqual([]);
+  });
+
+  it("caps proposals at 5 valid entries even when the model returns more", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn({
+        ...SAMPLE_TOOL_INPUT,
+        proposals: Array.from({ length: 8 }, (_, i) => ({ kind: "rule", rule: `Rule ${i}` })),
+      }),
+    );
+    const result = await draftEstimateLines(llm, "replace water heater", EMPTY_ESTIMATE_CONTEXT, REFINE);
+    expect(result.proposals).toHaveLength(5);
+    expect(result.proposals[0]).toEqual({ kind: "rule", rule: "Rule 0" });
   });
 });
 

@@ -14,6 +14,7 @@ import {
 } from "@mallet/shared/types";
 import type { Estimate, EstimateLine } from "../domain/estimate";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
+import type { AiDraftSnapshot } from "../domain/edit-delta";
 import { toDomain, type EstimateLineRow } from "./estimate-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
@@ -134,6 +135,34 @@ export class DrizzleEstimateRepository implements EstimateRepository {
       .insert(estimateLines)
       .values({ id: lp.id, orgId, estimateId, ...columns })
       .onConflictDoUpdate({ target: estimateLines.id, set: columns });
+  }
+
+  // Write-once snapshot: the WHERE ai_draft IS NULL guard makes overwrites impossible at the
+  // data layer (snapshot semantics — the miner must always diff the ORIGINAL AI draft).
+  // ai_draft is deliberately absent from save()'s insert values AND conflict set above.
+  async setAiDraft(id: EstimateId, snapshot: AiDraftSnapshot): Promise<void> {
+    // Fresh mutable structure for the jsonb column (domain type is readonly).
+    const value = {
+      lines: snapshot.lines.map((l) => ({
+        description: l.description,
+        quantity: l.quantity,
+        rateCents: l.rateCents,
+        tier: l.tier ?? null,
+      })),
+      at: snapshot.at,
+    };
+    await this.tx
+      .update(estimates)
+      .set({ aiDraft: value })
+      .where(and(eq(estimates.id, id), isNull(estimates.aiDraft)));
+  }
+
+  async getAiDraft(id: EstimateId): Promise<AiDraftSnapshot | null> {
+    const rows = await this.tx
+      .select({ aiDraft: estimates.aiDraft })
+      .from(estimates)
+      .where(eq(estimates.id, id));
+    return rows[0]?.aiDraft ?? null;
   }
 
   async findById(id: EstimateId): Promise<Estimate | null> {

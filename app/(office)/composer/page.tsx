@@ -38,13 +38,16 @@ import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import {
   INITIAL_STATE,
+  aiDraftForPayload,
   applyAiDraftLines,
   applyAiDraftTiers,
   applyComposerPatch,
   buildQuoteMessageBody,
   deliveryGateReason,
   hasRealLine,
+  laborRulePayload,
   linesForSend,
+  matchServiceByName,
   realLines,
   recommendedTier,
   sendGateReason,
@@ -52,9 +55,11 @@ import {
   tieredLinesForPayload,
   tierNamesForPayload,
   toEstimateLines,
+  toProposalChips,
   type AiTiersDraft,
   type ComposerLine,
   type ComposerState,
+  type ProposalChip,
   type TierKey,
 } from "./composer-state";
 import { suggestFromGood } from "./gbb-suggest";
@@ -76,6 +81,8 @@ export default function ComposerPage() {
   const services = useAppStore((s) => s.services);
   const laborRates = useAppStore((s) => s.laborRates);
   const addService = useAppStore((s) => s.addService);
+  // One-tap "Update labor to Nh" chips write back through the store's service update.
+  const updateService = useAppStore((s) => s.updateService);
 
   // Seed leadId from ?lead= once (read-only initializer so state edits persist).
   const [cs, setCs] = useState<ComposerState>(() => {
@@ -142,7 +149,10 @@ export default function ComposerPage() {
   // job-info counts while the model works. Lines apply to state the moment the
   // mutation resolves — the reveal is purely presentational on top.
   const [run, setRun] = useState<{ leadId: string | undefined } | null>(null);
-  const [runResult, setRunResult] = useState<{ wonQuotes: { count: number; nums: string[] } } | null>(null);
+  const [runResult, setRunResult] = useState<{
+    wonQuotes: { count: number; nums: string[] };
+    rules: { count: number } | null;
+  } | null>(null);
   const [materialize, setMaterialize] = useState(false);
   const gatherQuery = api.v1.ai.gatherJobContext.useQuery(
     { leadId: run?.leadId ?? "" },
@@ -156,13 +166,23 @@ export default function ComposerPage() {
     setTimeout(() => setMaterialize(false), 1_600);
   }
 
+  // Durable-fact proposals extracted from a refine correction — rendered as
+  // one-tap chips under the quote ("Update 'X' labor to 5h in your pricebook?").
+  // Keyed by a stable id assigned when they land: accept/dismiss act on the id
+  // (an array index captured at tap time races a concurrent dismissal and
+  // removes the WRONG chip → a re-tap mints a duplicate confirmed rule).
+  const [proposals, setProposals] = useState<ProposalChip[]>([]);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const createRuleMutation = api.v1.quoting.rules.create.useMutation();
+
   // Single-format drafter: one set of lines into the table (or the Good tier
   // when a mid-flight format switch landed the response in GBB).
   const draftEstimateMutation = api.v1.ai.draftEstimate.useMutation({
     onSuccess: (data) => {
       setCs((prev) => applyAiDraftLines(prev, toComposerLines(data.lines)));
       setAiDraftError(null);
-      setRunResult({ wonQuotes: data.stages.wonQuotes });
+      setProposals(toProposalChips(data.proposals, () => crypto.randomUUID()));
+      setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
   });
@@ -178,7 +198,8 @@ export default function ComposerPage() {
       };
       setCs((prev) => applyAiDraftTiers(prev, draft));
       setAiDraftError(null);
-      setRunResult({ wonQuotes: data.stages.wonQuotes });
+      setProposals(toProposalChips(data.proposals, () => crypto.randomUUID()));
+      setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
   });
@@ -191,6 +212,8 @@ export default function ComposerPage() {
   function triggerAiDraft() {
     if (!cs.desc.trim()) return;
     setAiDraftError(null);
+    setProposals([]);
+    setProposalError(null);
     const leadId = uuidOrUndefined(cs.leadId);
     setRun({ leadId });
     setRunResult(null);
@@ -200,6 +223,84 @@ export default function ComposerPage() {
     } else {
       draftEstimateMutation.mutate({ description: cs.desc, leadId });
     }
+  }
+
+  // Refine: re-run the drafter with the lines currently on screen + the
+  // office's correction. The model regenerates and may return durable-fact
+  // proposals (labor hours / rules) — never written without a tap.
+  function triggerRefine(feedback: string) {
+    const text = feedback.trim();
+    if (!text) return;
+    const shown = cs.format === "gbb" && cs.gbb ? tieredLinesForPayload(cs.gbb) : realLines(cs.lines);
+    const previousLines = shown.slice(0, 30).map((l) => ({
+      description: l.d,
+      quantity: l.q ?? 1,
+      rateCents: Math.round((l.r ?? 0) * 100),
+    }));
+    if (previousLines.length === 0) return;
+    setAiDraftError(null);
+    setProposals([]);
+    setProposalError(null);
+    const leadId = uuidOrUndefined(cs.leadId);
+    setRun({ leadId });
+    setRunResult(null);
+    const description = cs.desc.trim() || previousLines.map((l) => l.description).join(", ").slice(0, 2000);
+    const refine = { feedback: text.slice(0, 1000), previousLines };
+    if (cs.format === "gbb" && cs.gbb) {
+      draftTiersMutation.mutate({ description, leadId, refine });
+    } else {
+      draftEstimateMutation.mutate({ description, leadId, refine });
+    }
+  }
+
+  function dismissProposal(id: string) {
+    setProposals((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  // Flip one chip's in-flight flag (disables both of its buttons while true).
+  function setProposalSaving(id: string, saving: boolean) {
+    setProposals((prev) => prev.map((p) => (p.id === id ? { ...p, saving } : p)));
+  }
+
+  // Accept a proposal: labor_hours writes back to the matching pricebook
+  // service (store action syncs the server); rules persist via
+  // v1.quoting.rules.create (source 'refine' — confirmed for owner/office
+  // unless it contradicts an existing rule, which lands it in review).
+  // Every path AWAITS its write and dismisses the chip only on success — a
+  // silent rollback here would leave the user believing the pricebook updated
+  // while future AI drafts keep repeating the error they just corrected.
+  async function acceptProposal(id: string) {
+    const p = proposals.find((x) => x.id === id);
+    if (!p || p.saving) return;
+    setProposalError(null);
+    setProposalSaving(id, true);
+    const onRuleError = () => {
+      setProposalSaving(id, false);
+      setProposalError("Couldn't save the rule — check your connection and try again.");
+    };
+    if (p.kind === "labor_hours") {
+      const svc = matchServiceByName(services, p.serviceName);
+      if (svc) {
+        const result = await updateService(svc.id, { laborHours: p.hours });
+        if (result.ok) {
+          dismissProposal(id);
+        } else {
+          setProposalSaving(id, false);
+          setProposalError("Couldn't update the pricebook — try again.");
+        }
+        return;
+      }
+      // No pricebook match — keep the fact as a shop rule instead of dropping it.
+      createRuleMutation.mutate(
+        { ...laborRulePayload(p), source: "refine" },
+        { onSuccess: () => dismissProposal(id), onError: onRuleError },
+      );
+      return;
+    }
+    createRuleMutation.mutate(
+      { rule: p.rule, source: "refine" },
+      { onSuccess: () => dismissProposal(id), onError: onRuleError },
+    );
   }
 
   // "Save to book" (line-table.tsx) — snapshots the line's current values into
@@ -314,6 +415,12 @@ export default function ComposerPage() {
         ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
         : {}),
       ...(cs.terms?.text.trim() ? { termsSnapshot: cs.terms.text } : {}),
+      // AI-originated quotes carry the AI's original lines so the server can
+      // diff what the office changed (edit-delta mining → proposed rules).
+      ...(() => {
+        const aiDraft = aiDraftForPayload(cs);
+        return aiDraft ? { aiDraft } : {};
+      })(),
     };
   }
 
@@ -532,6 +639,11 @@ export default function ComposerPage() {
         state={cs}
         onUpdate={update}
         onAiDraft={triggerAiDraft}
+        onRefine={triggerRefine}
+        proposals={proposals}
+        onAcceptProposal={(id) => void acceptProposal(id)}
+        onDismissProposal={dismissProposal}
+        proposalError={proposalError}
         onSuggestBetterBest={suggestBetterBest}
         isDrafting={draftEstimateMutation.isPending || draftTiersMutation.isPending}
         aiDraftError={aiDraftError}

@@ -15,6 +15,7 @@
  */
 
 import type { EstimateLine, QuoteTierKey, TierNames } from "@/lib/store/types";
+import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
 
 // ---- composer line + state types --------------------------------------------
 
@@ -48,6 +49,65 @@ export interface GBBDraft {
   opts: GBBTier[];
 }
 
+/** One line of the AI's original draft, frozen at apply time (rates in dollars). */
+export interface AiOriginalLine {
+  d: string;
+  q: number;
+  r: number;
+  tier?: TierKey;
+}
+
+/**
+ * A durable fact the refine loop extracted from the office's correction.
+ * Rendered as a one-tap chip — labor_hours writes back to the pricebook
+ * service, rule persists to the shop's quoting rules. Never auto-written.
+ */
+export type AiProposal =
+  | { kind: "labor_hours"; serviceName: string; hours: number }
+  | { kind: "rule"; rule: string };
+
+/**
+ * A proposal as the composer renders it: the payload plus a STABLE identity
+ * (chips are accepted/dismissed by id, never by array index — index-keyed
+ * dismissal races a pending save and removes the wrong chip) and a per-chip
+ * `saving` flag that disables both buttons while its write is in flight.
+ */
+export type ProposalChip = AiProposal & { id: string; saving: boolean };
+
+/** Key freshly-landed proposals by identity; a new draft mints new ids. */
+export function toProposalChips(proposals: AiProposal[], newId: () => string): ProposalChip[] {
+  return proposals.map((p) => ({ ...p, id: newId(), saving: false }));
+}
+
+/**
+ * The rule payload for a labor_hours proposal with no pricebook match — kept
+ * as a shop rule instead of dropped. The jobTag is clipped to the server's cap
+ * (the drafter allows serviceName up to 200 chars; v1.quoting.rules.create
+ * caps jobTag at JOB_TAG_MAX_LENGTH — an unclipped tag would fail forever).
+ */
+export function laborRulePayload(p: { serviceName: string; hours: number }): {
+  rule: string;
+  jobTag: string;
+} {
+  return {
+    rule: `${p.serviceName} takes ${p.hours}h of labor`,
+    jobTag: p.serviceName.slice(0, JOB_TAG_MAX_LENGTH),
+  };
+}
+
+/**
+ * The pricebook service a labor_hours proposal writes to — ONE matcher shared
+ * by the chip label and the accept handler, so what the chip promises is what
+ * the tap does (no match → the fact is saved as a shop rule instead).
+ */
+export function matchServiceByName<T extends { id: string; name: string }>(
+  services: T[],
+  name: string
+): T | undefined {
+  const q = name.trim().toLowerCase();
+  return services.find((s) => s.name.trim().toLowerCase() === q);
+}
+
 export interface ComposerState {
   leadId: string | null;
   custQuery: string;
@@ -62,6 +122,13 @@ export interface ComposerState {
   desc: string;
   aiOpen: boolean;
   aiDrafted: boolean;
+  /**
+   * The AI's ORIGINAL lines, captured when a draft applies and never edited —
+   * user edits touch `lines`/`gbb` only. Sent as the ai_draft snapshot with
+   * the quote payload so the server can diff what the office changed
+   * (edit-delta mining). null until an AI draft lands.
+   */
+  aiOriginal: AiOriginalLine[] | null;
   pbOpen: boolean;
   priceOpen: boolean;
   msgOpen: boolean;
@@ -96,6 +163,7 @@ export const INITIAL_STATE: ComposerState = {
   desc: "",
   aiOpen: false,
   aiDrafted: false,
+  aiOriginal: null,
   pbOpen: false,
   priceOpen: false,
   msgOpen: false,
@@ -283,7 +351,9 @@ export function applyAiDraftLines(
   state: ComposerState,
   lines: ComposerLine[]
 ): ComposerState {
-  const drafted = { aiOpen: false, aiDrafted: true, switchNote: null };
+  // Freeze the AI's original lines for the ai_draft snapshot (edit-delta mining).
+  const aiOriginal: AiOriginalLine[] = lines.map((l) => ({ d: l.d, q: l.q, r: l.r }));
+  const drafted = { aiOpen: false, aiDrafted: true, aiOriginal, switchNote: null };
   if (state.format === "gbb" && state.gbb) {
     return {
       ...state,
@@ -336,17 +406,44 @@ export function applyAiDraftTiers(
       lines: cloneLines(draft[o.k].lines),
     })),
   };
+  // Freeze the AI's original tier-tagged lines for the ai_draft snapshot.
+  const aiOriginal: AiOriginalLine[] = (["good", "better", "best"] as const).flatMap((k) =>
+    draft[k].lines.map((l) => ({ d: l.d, q: l.q, r: l.r, tier: k }))
+  );
   if (state.format !== "gbb") {
     return {
       ...state,
       aiOpen: false,
       aiDrafted: true,
+      aiOriginal,
       gbb,
       switchNote:
         "AI drafted three options after you switched formats — switch to Good, Better & Best to see them.",
     };
   }
-  return { ...state, aiOpen: false, aiDrafted: true, switchNote: null, gbb };
+  return { ...state, aiOpen: false, aiDrafted: true, aiOriginal, switchNote: null, gbb };
+}
+
+/**
+ * The ai_draft snapshot for the v1.quoting.draft payload — or null when the
+ * quote shouldn't carry one: no AI draft landed, or the format changed since
+ * the draft (an untiered snapshot diffed against tiered sent lines would read
+ * as all-added/all-removed noise, so the snapshot is dropped instead).
+ */
+export function aiDraftForPayload(
+  state: Pick<ComposerState, "aiDrafted" | "aiOriginal" | "format">
+): { lines: { description: string; quantity: number; rateCents: number; tier?: TierKey }[] } | null {
+  if (!state.aiDrafted || !state.aiOriginal || state.aiOriginal.length === 0) return null;
+  const draftedTiered = state.aiOriginal.some((l) => l.tier != null);
+  if (draftedTiered !== (state.format === "gbb")) return null;
+  return {
+    lines: state.aiOriginal.map((l) => ({
+      description: l.d,
+      quantity: l.q ?? 1,
+      rateCents: Math.round((l.r ?? 0) * 100),
+      ...(l.tier ? { tier: l.tier } : {}),
+    })),
+  };
 }
 
 // ---- Pricing summary label --------------------------------------------------

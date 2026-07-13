@@ -5,6 +5,7 @@ import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
 import type { QuoteTier, TierNames } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
+import type { AiDraftLine } from "../domain/edit-delta";
 
 // Generate an unguessable, URL-safe token for the public quote page.
 // 32 random bytes = 256 bits of entropy, hex-encoded = 64 characters.
@@ -36,6 +37,12 @@ export interface DraftEstimateCommand {
   readonly tierNames?: TierNames | null;
   /** Snapshot of the selected job terms TEXT (no live reference). */
   readonly termsSnapshot?: string | null;
+  /**
+   * The AI drafter's ORIGINAL lines, sent by the composer only when this
+   * draft originated from the AI. Persisted write-once to estimates.ai_draft;
+   * the send path diffs it against the sent lines (edit-delta mining).
+   */
+  readonly aiDraftLines?: readonly AiDraftLine[] | null;
 }
 
 // Create a new draft estimate for a customer: validate + build the line value objects, allocate
@@ -108,6 +115,14 @@ export class DraftEstimateUseCase {
     if (!isOk(estimate)) return estimate;
 
     await this.repo.save(estimate.value);
+    // Snapshot semantics: written once here (setAiDraft ignores rows that already carry one);
+    // save() never touches ai_draft, so later edits/sends can't rewrite what the AI drafted.
+    if (cmd.aiDraftLines && cmd.aiDraftLines.length > 0) {
+      await this.repo.setAiDraft(estimate.value.props.id, {
+        lines: cmd.aiDraftLines,
+        at: now.toISOString(),
+      });
+    }
     await this.bus.emit({
       name: "estimate.drafted",
       orgId: cmd.orgId,

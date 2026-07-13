@@ -240,10 +240,12 @@ describe("pricebookSlice", () => {
       baseServiceDto({ id: "s1", unitPriceCents: 30000, name: "Camera inspection" }),
     );
 
-    store.getState().updateService("s1", { unitPrice: 300 });
+    const pending = store.getState().updateService("s1", { unitPrice: 300 });
     expect(store.getState().services[0]!.unitPrice).toBe(300);
 
-    await flush();
+    // Interactive callers (composer proposal chips) await the outcome — success
+    // resolves {ok:true} so the chip may dismiss only when the write stuck.
+    await expect(pending).resolves.toEqual({ ok: true });
 
     expect(mutate.updateService).toHaveBeenCalledWith(
       expect.objectContaining({ serviceId: "s1", unitPriceCents: 30000 }),
@@ -274,10 +276,13 @@ describe("pricebookSlice", () => {
     });
     mutate.updateService.mockRejectedValueOnce(new Error("fail"));
 
-    store.getState().updateService("s1", { unitPrice: 300 });
+    const pending = store.getState().updateService("s1", { unitPrice: 300 });
     expect(store.getState().services[0]!.unitPrice).toBe(300);
 
-    await flush();
+    // Never rejects — failures resolve {ok:false} (mirrors jobs-slice updateJob)
+    // so a caller that forgets to catch can't crash, and one that awaits can
+    // surface the rollback instead of letting it happen silently.
+    await expect(pending).resolves.toEqual({ ok: false });
 
     expect(store.getState().services[0]!.unitPrice).toBe(285);
   });

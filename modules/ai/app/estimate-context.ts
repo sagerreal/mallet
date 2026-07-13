@@ -40,11 +40,18 @@ export interface WonQuoteExemplar {
   readonly totalCents: number;
 }
 
+/** One confirmed shop rule that matched this job (quoting_rules, L2 memory). */
+export interface ShopRuleContext {
+  readonly rule: string;
+  readonly timesConfirmed: number;
+}
+
 export interface EstimateContext {
   readonly catalog: readonly CatalogServiceContext[];
   readonly laborRates: readonly LaborRateContext[];
   readonly jobInfo: JobInfoContext | null;
   readonly wonQuotes: readonly WonQuoteExemplar[];
+  readonly rules: readonly ShopRuleContext[];
 }
 
 export const EMPTY_ESTIMATE_CONTEXT: EstimateContext = {
@@ -52,6 +59,7 @@ export const EMPTY_ESTIMATE_CONTEXT: EstimateContext = {
   laborRates: [],
   jobInfo: null,
   wonQuotes: [],
+  rules: [],
 };
 
 /**
@@ -63,6 +71,7 @@ export const EMPTY_ESTIMATE_CONTEXT: EstimateContext = {
 export interface DraftStages {
   readonly jobInfo: { notes: number; texts: number; visitNotes: number } | null;
   readonly pricebook: { services: number; laborRates: number };
+  readonly rules: { count: number };
   readonly wonQuotes: { count: number; nums: string[] };
 }
 
@@ -75,6 +84,7 @@ export const stagesFor = (ctx: EstimateContext): DraftStages => ({
       }
     : null,
   pricebook: { services: ctx.catalog.length, laborRates: ctx.laborRates.length },
+  rules: { count: ctx.rules.length },
   wonQuotes: { count: ctx.wonQuotes.length, nums: ctx.wonQuotes.map((q) => q.num) },
 });
 
@@ -167,6 +177,33 @@ export const buildJobInfoBlock = (jobInfo: JobInfoContext | null): string => {
   );
 };
 
+/** Prompt cap — matches the repo's findMatching default; sliced again here defensively. */
+export const RULES_BLOCK_MAX_RULES = 20;
+
+// Rule text is same-org-authored but injected verbatim under a "follow these"
+// instruction — strip what would let it impersonate prompt structure: control
+// chars (incl. newlines — no starting a fresh "## section" line) and backticks,
+// then collapse whitespace runs. Content is preserved; framing power is not.
+const RULE_UNSAFE_CHARS = /[`\u0000-\u001f\u007f]/g;
+
+const sanitizeRuleText = (s: string): string =>
+  s.replace(RULE_UNSAFE_CHARS, " ").replace(/\s+/g, " ").trim();
+
+/**
+ * "## This shop's rules" — the confirmed conditionals the shop has taught the
+ * estimator (quoting_rules). The caller supplies them matched to THIS job and
+ * ordered by times_confirmed desc (most-corroborated first).
+ */
+export const buildRulesBlock = (rules: readonly ShopRuleContext[]): string => {
+  if (rules.length === 0) return "";
+  const rows = rules.slice(0, RULES_BLOCK_MAX_RULES).map((r) => `- ${clip(sanitizeRuleText(r.rule), 320)}`);
+  return [
+    "## This shop's rules",
+    "The shop has confirmed these corrections/conventions — follow them when they apply to this job.",
+    ...rows,
+  ].join("\n");
+};
+
 /** "## Quotes this shop sent and WON" — episodic exemplars, capped. */
 export const buildWonQuotesBlock = (wonQuotes: readonly WonQuoteExemplar[]): string => {
   if (wonQuotes.length === 0) return "";
@@ -196,6 +233,7 @@ export const buildContextBlocks = (ctx: EstimateContext): string =>
     buildJobInfoBlock(ctx.jobInfo),
     buildPricebookBlock(ctx.catalog),
     buildLaborRatesBlock(ctx.laborRates),
+    buildRulesBlock(ctx.rules),
     buildWonQuotesBlock(ctx.wonQuotes),
   ]
     .filter((b) => b !== "")

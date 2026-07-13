@@ -27,6 +27,9 @@ export interface DraftRunGather {
 
 export interface DraftRunResult {
   readonly wonQuotes: { count: number; nums: string[] };
+  /** Matched confirmed shop rules — null when the payload predates the stage
+   *  (deploy skew): the stage is then omitted, never faked. */
+  readonly rules: { count: number } | null;
 }
 
 export interface DraftRunProps {
@@ -46,7 +49,7 @@ const STAGE_MS = 1_000; // minimum hold per stage — readable, per NN/g
 const FAST_MS = 400; // fast-forward spacing once the model has returned
 const DONE_MS = 350;
 
-interface StageView {
+export interface StageView {
   readonly key: string;
   readonly label: string;
   /** Real-artifact detail, or null while its data is still loading. */
@@ -57,7 +60,8 @@ interface StageView {
 
 const plural = (n: number, s: string) => `${n} ${s}${n === 1 ? "" : "s"}`;
 
-function stageViews(p: DraftRunProps): StageView[] {
+/** Pure stage builder — exported for tests (the honesty rules live here). */
+export function stageViews(p: DraftRunProps): StageView[] {
   const stages: StageView[] = [];
   if (p.hasLead) {
     stages.push({
@@ -84,6 +88,21 @@ function stageViews(p: DraftRunProps): StageView[] {
         : "no pricebook yet — typical trade pricing",
     ready: true,
   });
+  // The shop's learned rules — rendered ONLY once the draft response confirms
+  // rules actually matched (count > 0), i.e. the stage appears on completion.
+  // Rendering it while the count was still unknown meant every no-rules shop
+  // (the common case) watched the row tick as active, then pop out mid-reveal
+  // when the result landed with 0 — the least-flicker honest option is to add
+  // it late, never remove it. Zero matches or an old payload without the
+  // field → no stage (never a fake stage).
+  if ((p.result?.rules?.count ?? 0) > 0) {
+    stages.push({
+      key: "rules",
+      label: "Your shop's rules",
+      detail: plural(p.result!.rules!.count, "rule"),
+      ready: true,
+    });
+  }
   stages.push({
     key: "won",
     label: "Comparing against quotes you've won",

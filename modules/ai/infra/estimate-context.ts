@@ -4,12 +4,14 @@ import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { ListThreadUseCase, DrizzleMessageRepository } from "@mallet/messaging";
 import { DrizzleJobRepository } from "@mallet/jobs";
-import { DrizzleEstimateRepository } from "@mallet/quoting";
+import { DrizzleEstimateRepository, DrizzleQuotingRuleRepository } from "@mallet/quoting";
 import {
   matchWonQuotes,
+  RULES_BLOCK_MAX_RULES,
   type EstimateContext,
   type JobInfoContext,
   type LaborRateContext,
+  type ShopRuleContext,
   type WonQuoteExemplar,
 } from "../app/estimate-context";
 import { fetchCatalogContext } from "./catalog-context";
@@ -102,9 +104,26 @@ const fetchWonQuotes = async (
   return matchWonQuotes(description, candidates);
 };
 
+/** Confirmed shop rules that apply to this job (quoting_rules via @mallet/quoting's seam). */
+const fetchShopRules = async (
+  tx: TenantTx,
+  orgId: OrgId,
+  description: string,
+): Promise<ShopRuleContext[]> => {
+  const matched = await new DrizzleQuotingRuleRepository(tx, orgId).findMatching(
+    description,
+    RULES_BLOCK_MAX_RULES,
+  );
+  return matched.map((m) => ({
+    rule: m.rule.props.rule,
+    timesConfirmed: m.rule.props.timesConfirmed,
+  }));
+};
+
 /**
  * The full context for one draft run: pricebook + labor rates always; job info
- * when a lead is given; won-quote exemplars matched to the description.
+ * when a lead is given; won-quote exemplars and confirmed shop rules matched
+ * to the description.
  */
 export const fetchEstimateContext = async (
   tx: TenantTx,
@@ -112,11 +131,12 @@ export const fetchEstimateContext = async (
   description: string,
   leadId?: string,
 ): Promise<EstimateContext> => {
-  const [catalog, laborRates, wonQuotes, jobInfo] = await Promise.all([
+  const [catalog, laborRates, wonQuotes, rules, jobInfo] = await Promise.all([
     fetchCatalogContext(tx, orgId),
     fetchLaborRates(tx, orgId),
     fetchWonQuotes(tx, orgId, description),
+    fetchShopRules(tx, orgId, description),
     leadId ? fetchJobInfoContext(tx, orgId, asLeadId(leadId)) : Promise.resolve(null),
   ]);
-  return { catalog, laborRates, jobInfo, wonQuotes };
+  return { catalog, laborRates, jobInfo, wonQuotes, rules };
 };

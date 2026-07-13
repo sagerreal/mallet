@@ -103,7 +103,10 @@ export interface PricebookSlice {
   setPricebook: (snapshot: { services: Service[]; categories: Category[] }) => void;
 
   addService: (cmd: AddServiceFields) => Promise<AddResult>;
-  updateService: (id: string, fields: ServiceUpdateFields) => void;
+  /** Optimistic update; resolves {ok:false} (never rejects) after rolling back on a
+   * failed persist — mirrors jobs-slice updateJob so interactive callers (the composer's
+   * one-tap labor-hours chip) can surface the failure instead of losing it. */
+  updateService: (id: string, fields: ServiceUpdateFields) => Promise<{ ok: boolean }>;
   archiveService: (id: string) => void;
 
   addCategory: (name: string, parentId?: string | null) => Promise<AddResult>;
@@ -199,14 +202,18 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     set((s) => ({
       services: s.services.map((svc) => (svc.id === id ? { ...svc, ...fields } : svc)),
     }));
-    void trpcVanilla.v1.pricebook.service.update
+    // Returns the outcome ({ ok }) — never rejects — so interactive callers can
+    // dismiss their UI only when the write actually stuck (no silent rollback).
+    return trpcVanilla.v1.pricebook.service.update
       .mutate(serviceUpdatePayload(id, fields))
       .then((dto) => {
         set((s) => ({ services: reconcileService(s.services, id, dto) }));
+        return { ok: true };
       })
       .catch((e: unknown) => {
         if (process.env.NODE_ENV !== "production") console.warn("[updateService] update failed", e);
         set({ services: snapshot });
+        return { ok: false };
       });
   },
 
