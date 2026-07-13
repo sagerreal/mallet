@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { firstName, type OkItem } from "./derive";
 import { draftFor, softDraftFor, type DraftContext } from "./drafts";
 import { clockNow, commitOkSend } from "./send";
@@ -38,6 +39,7 @@ function OkCard({
   onSend,
   onSkip,
   onCall,
+  onAddPhone,
 }: {
   item: OkItem;
   leaving: boolean;
@@ -45,9 +47,12 @@ function OkCard({
   onSend: (item: OkItem, text: string) => void;
   onSkip: (item: OkItem) => void;
   onCall: (item: OkItem) => void;
+  onAddPhone: (item: OkItem) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(() => draftFor(item, ctx));
+  // Send is an SMS and Call dials — both need a phone on file.
+  const phoneOk = hasPhone(item.lead);
 
   function soften() {
     setText(softDraftFor(item, ctx));
@@ -103,6 +108,8 @@ function OkCard({
             <button
               className="btn sm approve"
               aria-label={`Send to ${firstName(item.lead.name)}`}
+              disabled={!phoneOk}
+              title={!phoneOk ? ADD_PHONE_TITLE : undefined}
               onClick={() => onSend(item, text)}
             >
               Send
@@ -117,11 +124,24 @@ function OkCard({
               </button>
             )}
             {item.kind !== "invoice-overdue" && (
-              <button className="btn sm ghost" onClick={() => onCall(item)}>
+              <button
+                className="btn sm ghost"
+                disabled={!phoneOk}
+                title={!phoneOk ? ADD_PHONE_TITLE : undefined}
+                onClick={() => onCall(item)}
+              >
                 Call {firstName(item.lead.name)}
               </button>
             )}
           </div>
+          {!phoneOk && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              No phone on file —{" "}
+              <span className="linklike" onClick={() => onAddPhone(item)}>
+                add one
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -203,6 +223,7 @@ export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftConte
           onSend={handleSend}
           onSkip={(it) => dismissAttention(it.key)}
           onCall={(it) => openModal(MODAL.CALL, { leadId: it.lead.id })}
+          onAddPhone={(it) => openModal(MODAL.LEAD, { leadId: it.lead.id })}
         />
       ))}
 

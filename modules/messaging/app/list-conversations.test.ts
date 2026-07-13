@@ -30,6 +30,7 @@ function makeConversation(overrides: Partial<ConversationRow> = {}): Conversatio
   return {
     leadId: LEAD_ID_A,
     leadName: "Alice",
+    phone: "555-0101",
     lastBody: "Hello!",
     lastDirection: "inbound",
     lastAt: new Date("2026-07-01T10:00:00Z"),

@@ -9,7 +9,7 @@
  * display: a server-redacted (null) rate must never render as $0.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { TechJobModalContent } from "./tech-job-modal";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Invoice } from "@/lib/store/types";
@@ -25,10 +25,11 @@ let mockSeesPrice = true;
 let mockRole: "owner" | "office" | "tech" | undefined = "owner";
 
 const noop = vi.fn();
+const mockOpenModal = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
-  useOpenModal: () => noop,
+  useOpenModal: () => mockOpenModal,
   useCloseModal: () => noop,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
@@ -96,6 +97,7 @@ beforeEach(() => {
   mockInvoices = [];
   mockSeesPrice = true;
   mockRole = "owner";
+  mockOpenModal.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -183,6 +185,45 @@ describe("TechJobModalContent — tech", () => {
     mockJobs = [makeJob({ addons: [] })];
     render(<TechJobModalContent />);
     expect(screen.queryByText("Found work / add-ons")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phone gating (Fix: phone-dependent controls disabled with no phone)
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — phone gating (office)", () => {
+  it("enables Call/Text when the lead has a phone; no hint line", () => {
+    render(<TechJobModalContent />);
+    expect((screen.getByText("Call") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByText("Text") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/No phone on file/)).toBeNull();
+  });
+
+  it("disables Call/Text with the add-a-phone title when the phone is the — placeholder", () => {
+    mockLeads = [{ ...lead, phone: "—" }];
+    render(<TechJobModalContent />);
+    const call = screen.getByText("Call") as HTMLButtonElement;
+    const text = screen.getByText("Text") as HTMLButtonElement;
+    expect(call.disabled).toBe(true);
+    expect(text.disabled).toBe(true);
+    expect(call.title).toBe("Add a phone number first");
+    expect(text.title).toBe("Add a phone number first");
+  });
+
+  it("shows the in-flow hint whose 'add one' opens the lead modal", () => {
+    mockLeads = [{ ...lead, phone: "" }];
+    render(<TechJobModalContent />);
+    expect(screen.getByText(/No phone on file/)).toBeTruthy();
+    fireEvent.click(screen.getByText("add one"));
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.LEAD, { leadId: "lead-1" });
+  });
+
+  it("keeps Call/Text disabled (no hint link) when the job has no linked lead", () => {
+    mockLeads = [];
+    render(<TechJobModalContent />);
+    expect((screen.getByText("Call") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("add one")).toBeNull();
   });
 });
 

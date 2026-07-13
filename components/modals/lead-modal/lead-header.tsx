@@ -13,6 +13,7 @@ import type { Lead } from "@/lib/store/types";
 import { STAGE_PILL_CLS, leadInitials } from "@/lib/prototype-sample";
 import { useAppStore, useOpenModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { AddressInput } from "@/components/ui/address-input";
 
 interface LeadHeaderProps {
@@ -178,15 +179,21 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           (Book site visit / New quote — the workflow) on the right. One clear
           stage-aware primary: Call for a brand-new lead, else New quote. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {/* Contact cluster */}
+        {/* Contact cluster — Call/Text dial the phone; without one on file they'd
+            open a blank call sheet / a thread that errors on send, so they disable
+            (the phone input to add one is in the header above). */}
         <button
           className={`btn sm${callIsPrimary ? " primary" : " ghost"}`}
+          disabled={!hasPhone(lead)}
+          title={!hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
           onClick={() => openModal(MODAL.CALL, { leadId: lead.id, returnTo: MODAL.LEAD })}
         >
           <PhoneIcon /> Call
         </button>
         <button
           className="btn sm ghost"
+          disabled={!hasPhone(lead)}
+          title={!hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
           onClick={() => openModal(MODAL.THREAD, { leadId: lead.id, returnTo: MODAL.LEAD })}
         >
           <ChatIcon /> Text
@@ -215,6 +222,11 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           New quote
         </button>
       </div>
+      {!hasPhone(lead) && (
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          No phone on file — add one in the header above.
+        </div>
+      )}
     </div>
   );
 }

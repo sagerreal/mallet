@@ -8,6 +8,7 @@
 
 import { todayISO } from "@/lib/clock";
 import { estTotal, invDue } from "@/lib/estimates";
+import { hasPhone } from "@/lib/phone";
 import type { Lead, Estimate, Invoice, Job, Visit } from "@/lib/store/types";
 
 // ---- small shared helpers ----------------------------------------------------
@@ -188,7 +189,7 @@ export function deriveOkQueue(
   // unread — a proactively-added customer defaults to unread with nothing to reply to) and a phone
   // to text back to.
   for (const l of leads) {
-    if (l.archived || !l.unread || !l.phone) continue;
+    if (l.archived || !l.unread || !hasPhone(l)) continue;
     const theirs = (l.acts ?? []).filter((a) => a.type === "text" && a.from === "them");
     if (theirs.length === 0) continue;
     const last = theirs[theirs.length - 1];
@@ -205,7 +206,7 @@ export function deriveOkQueue(
   // Brand-new leads nobody has touched — the Front Desk drafts the first text. Needs a phone to
   // text (a customer added without a number can't be texted, so no draft).
   for (const l of leads) {
-    if (l.archived || l.stage !== "New customer" || l.book || !l.phone) continue;
+    if (l.archived || l.stage !== "New customer" || l.book || !hasPhone(l)) continue;
     const anyOutbound = (l.acts ?? []).some((a) => a.from === "us" || a.from === "auto");
     if (anyOutbound || l.unread) continue; // replies are their own card
     out.push({

@@ -34,6 +34,7 @@ import {
 import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
 import { fmt$ } from "@/lib/format";
+import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { todayISO } from "@/lib/clock";
 import type {
   Job,
@@ -1225,25 +1226,43 @@ export function TechJobModalContent() {
 
       {/* 2. Call / Text — office only. Leads never hydrate under the field shell and
           the myDay summary carries no customer phone, so for a tech these would be
-          dead buttons (no dead buttons rule). */}
+          dead buttons (no dead buttons rule). Without a phone on file the call sheet
+          shows a blank number and the thread errors on send — disable until one exists. */}
       {isOffice && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
-          <button
-            className="btn"
-            onClick={() => {
-              if (lead) openModal(MODAL.CALL, { leadId: lead.id });
-            }}
-          >
-            Call
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
-            }}
-          >
-            Text
-          </button>
+        <div style={{ marginBottom: 0 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              className="btn"
+              disabled={!lead || !hasPhone(lead)}
+              title={!lead || !hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+              onClick={() => {
+                if (lead) openModal(MODAL.CALL, { leadId: lead.id });
+              }}
+            >
+              Call
+            </button>
+            <button
+              className="btn"
+              disabled={!lead || !hasPhone(lead)}
+              title={!lead || !hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+              onClick={() => {
+                if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
+              }}
+            >
+              Text
+            </button>
+          </div>
+          {lead && !hasPhone(lead) && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              No phone on file —{" "}
+              <span
+                className="linklike"
+                onClick={() => openModal(MODAL.LEAD, { leadId: lead.id })}
+              >
+                add one
+              </span>
+            </div>
+          )}
         </div>
       )}
 

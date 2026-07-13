@@ -23,11 +23,14 @@ export interface RecordInboundInput {
   readonly providerSid: string | null;
 }
 
-// One row per lead: the lead's name/unread flag plus the most-recent non-deleted message.
-// Returned by listConversations(); sorted by lastAt DESC (newest thread first).
+// One row per lead: the lead's name/phone/unread flag plus the most-recent non-deleted
+// message. Returned by listConversations(); sorted by lastAt DESC (newest thread first).
+// phone rides along so the inbox can disable phone-dependent controls when a lead's
+// number was removed after the thread started (null = none on file).
 export interface ConversationRow {
   readonly leadId: LeadId;
   readonly leadName: string;
+  readonly phone: string | null;
   readonly lastBody: string;
   readonly lastDirection: MessageDirection;
   readonly lastAt: Date;
