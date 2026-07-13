@@ -88,6 +88,7 @@ describe("draftEstimateTiers — org context", () => {
           totalCents: 165000,
         },
       ],
+      rules: [{ rule: "Include haul-away on water heater swaps", timesConfirmed: 2 }],
     });
 
     const system = llm.capturedRequest!.system;
@@ -95,6 +96,8 @@ describe("draftEstimateTiers — org context", () => {
     expect(system).toContain("WH install [Water heaters]: $1650.00 — 3h labor");
     expect(system).toContain("This shop's labor rates");
     expect(system).toContain("Customer: heater leaking");
+    expect(system).toContain("This shop's rules");
+    expect(system).toContain("Include haul-away on water heater swaps");
     expect(system).toContain("Quotes this shop sent and WON");
     expect(system).not.toContain("no pricebook yet");
   });

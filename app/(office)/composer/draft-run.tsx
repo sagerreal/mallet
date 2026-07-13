@@ -27,6 +27,9 @@ export interface DraftRunGather {
 
 export interface DraftRunResult {
   readonly wonQuotes: { count: number; nums: string[] };
+  /** Matched confirmed shop rules — null when the payload predates the stage
+   *  (deploy skew): the stage is then omitted, never faked. */
+  readonly rules: { count: number } | null;
 }
 
 export interface DraftRunProps {
@@ -84,6 +87,17 @@ function stageViews(p: DraftRunProps): StageView[] {
         : "no pricebook yet — typical trade pricing",
     ready: true,
   });
+  // The shop's learned rules — shown while the count is still unknown (result
+  // pending) and kept only when rules actually matched. Zero matches or an
+  // old payload without the field → the stage drops out (never a fake stage).
+  if (p.result === null || (p.result.rules?.count ?? 0) > 0) {
+    stages.push({
+      key: "rules",
+      label: "Your shop's rules",
+      detail: p.result ? plural(p.result.rules?.count ?? 0, "rule") : null,
+      ready: p.result !== null,
+    });
+  }
   stages.push({
     key: "won",
     label: "Comparing against quotes you've won",

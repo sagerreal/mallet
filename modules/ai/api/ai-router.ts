@@ -14,7 +14,7 @@ import { describeProposal } from "../domain/proposal-summary";
 import type { JsonValue } from "@mallet/shared/ports";
 import { draftEstimateLines, type EstimateLineDraft } from "../app/draft-estimate";
 import { draftEstimateTiers, type EstimateTiersDraft } from "../app/draft-estimate-tiers";
-import { stagesFor } from "../app/estimate-context";
+import { stagesFor, EMPTY_ESTIMATE_CONTEXT } from "../app/estimate-context";
 import { asLeadId } from "@mallet/shared/types";
 
 // Structural validation of an untrusted resume transcript (round-tripped through the client). Mirrors
@@ -151,6 +151,9 @@ const draftStagesDTO = z.object({
     .object({ notes: z.number().int(), texts: z.number().int(), visitNotes: z.number().int() })
     .nullable(),
   pricebook: z.object({ services: z.number().int(), laborRates: z.number().int() }),
+  // Optional so clients degrade gracefully across deploy skew (a stages payload
+  // minted before the rules stage existed simply omits it — never a fake stage).
+  rules: z.object({ count: z.number().int() }).optional(),
   wonQuotes: z.object({ count: z.number().int(), nums: z.array(z.string()) }),
 });
 
@@ -214,7 +217,7 @@ export const createAiRouter = () =>
               )
             : undefined;
           const tiers = await draftEstimateTiers(ctx.deps.llmClient, input.description, context);
-          return { ...tiers, stages: stagesFor(context ?? { catalog: [], laborRates: [], jobInfo: null, wonQuotes: [] }) };
+          return { ...tiers, stages: stagesFor(context ?? EMPTY_ESTIMATE_CONTEXT) };
         } catch (error) {
           if (error instanceof LlmError) {
             throw new TRPCError({

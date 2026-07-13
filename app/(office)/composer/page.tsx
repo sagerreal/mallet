@@ -143,7 +143,10 @@ export default function ComposerPage() {
   // job-info counts while the model works. Lines apply to state the moment the
   // mutation resolves — the reveal is purely presentational on top.
   const [run, setRun] = useState<{ leadId: string | undefined } | null>(null);
-  const [runResult, setRunResult] = useState<{ wonQuotes: { count: number; nums: string[] } } | null>(null);
+  const [runResult, setRunResult] = useState<{
+    wonQuotes: { count: number; nums: string[] };
+    rules: { count: number } | null;
+  } | null>(null);
   const [materialize, setMaterialize] = useState(false);
   const gatherQuery = api.v1.ai.gatherJobContext.useQuery(
     { leadId: run?.leadId ?? "" },
@@ -163,7 +166,7 @@ export default function ComposerPage() {
     onSuccess: (data) => {
       setCs((prev) => applyAiDraftLines(prev, toComposerLines(data.lines)));
       setAiDraftError(null);
-      setRunResult({ wonQuotes: data.stages.wonQuotes });
+      setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
   });
@@ -179,7 +182,7 @@ export default function ComposerPage() {
       };
       setCs((prev) => applyAiDraftTiers(prev, draft));
       setAiDraftError(null);
-      setRunResult({ wonQuotes: data.stages.wonQuotes });
+      setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
     },
     onError: onAiDraftError,
   });

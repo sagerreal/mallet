@@ -4,6 +4,7 @@ import {
   buildJobInfoBlock,
   buildLaborRatesBlock,
   buildPricebookBlock,
+  buildRulesBlock,
   buildWonQuotesBlock,
   clip,
   matchWonQuotes,
@@ -104,6 +105,30 @@ describe("prompt blocks", () => {
     expect(block.length).toBeLessThanOrEqual(WON_QUOTES_BLOCK_MAX);
   });
 
+  it("rules block lists confirmed shop rules and caps at 20", () => {
+    const block = buildRulesBlock([
+      { rule: "Include haul-away on water heater swaps", timesConfirmed: 3 },
+      { rule: "Pull a permit on gas line work", timesConfirmed: 1 },
+    ]);
+    expect(block).toContain("## This shop's rules");
+    expect(block).toContain("- Include haul-away on water heater swaps");
+    expect(block).toContain("- Pull a permit on gas line work");
+
+    const many = Array.from({ length: 30 }, (_, i) => ({ rule: `rule ${i}`, timesConfirmed: 1 }));
+    const capped = buildRulesBlock(many);
+    expect(capped).toContain("- rule 19");
+    expect(capped).not.toContain("- rule 20");
+  });
+
+  it("rules block vanishes with zero rules — and buildContextBlocks includes it when present", () => {
+    expect(buildRulesBlock([])).toBe("");
+    const withRules = buildContextBlocks({
+      ...EMPTY_ESTIMATE_CONTEXT,
+      rules: [{ rule: "Quote a pan when the unit is in the attic", timesConfirmed: 2 }],
+    });
+    expect(withRules).toContain("## This shop's rules");
+  });
+
   it("empty context builds an empty string — no headers over nothing", () => {
     expect(buildContextBlocks(EMPTY_ESTIMATE_CONTEXT)).toBe("");
   });
@@ -116,10 +141,12 @@ describe("stagesFor", () => {
       laborRates: [{ label: "Std", rateCentsPerHour: 1, kind: "hourly" }],
       jobInfo: null,
       wonQuotes: [WON[0]!],
+      rules: [{ rule: "Include haul-away", timesConfirmed: 2 }],
     };
     expect(stagesFor(ctx)).toEqual({
       jobInfo: null,
       pricebook: { services: 1, laborRates: 1 },
+      rules: { count: 1 },
       wonQuotes: { count: 1, nums: ["EST-1042"] },
     });
   });

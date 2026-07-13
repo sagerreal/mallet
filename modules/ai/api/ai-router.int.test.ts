@@ -147,6 +147,9 @@ suite("ai agent tRPC entry (full stack, live RLS)", () => {
       values (${orgAId}, 'EST-9001', ${leadAId}, 'accepted', now()) returning id`;
     await admin`insert into estimate_lines (org_id, estimate_id, description, quantity, rate_cents, position)
       values (${orgAId}, ${wonEst!.id}, '40-gal water heater + haul away', 1, 180000, 1)`;
+    // A confirmed shop rule scoped to this job's keywords — must reach the prompt + stage counts.
+    await admin`insert into quoting_rules (org_id, rule, job_tag, status, source)
+      values (${orgAId}, 'Include haul-away on every water heater swap', 'water heater', 'confirmed', 'manual')`;
 
     const llm = new ScriptedLlm([
       callTool("d1", "submit_estimate", { lines: [{ description: "Water heater swap", quantity: 1, unitPriceUsd: 1650 }] }),
@@ -160,12 +163,15 @@ suite("ai agent tRPC entry (full stack, live RLS)", () => {
     expect(res.stages.wonQuotes.count).toBeGreaterThanOrEqual(1);
     expect(res.stages.wonQuotes.nums).toContain("EST-9001");
     expect(res.stages.jobInfo?.texts).toBeGreaterThanOrEqual(1);
+    expect(res.stages.rules?.count).toBeGreaterThanOrEqual(1);
 
     // The prompt the model actually saw carries every context block.
     const system = llm.requests[0]!.system;
     expect(system).toContain("This shop's pricebook");
     expect(system).toContain("40-gal water heater install");
     expect(system).toContain("This shop's labor rates");
+    expect(system).toContain("This shop's rules");
+    expect(system).toContain("Include haul-away on every water heater swap");
     expect(system).toContain("Quotes this shop sent and WON");
     expect(system).toContain("The job — what we already know");
   });
