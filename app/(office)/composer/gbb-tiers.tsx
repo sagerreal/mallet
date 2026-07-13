@@ -114,6 +114,7 @@ export function GbbTiers({
                   type="radio"
                   name="gbb-recommended"
                   checked={isRec}
+                  style={{ accentColor: "var(--ink)" }}
                   onChange={() => onUpdate({ gbb: { ...g, rec: tier.k } })}
                 />
                 ★ Recommended
