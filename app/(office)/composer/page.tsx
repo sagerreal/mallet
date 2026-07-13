@@ -36,6 +36,7 @@ import type { Lead } from "@/lib/store/types";
 import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
+import { fmt$ } from "@/lib/format";
 import {
   INITIAL_STATE,
   aiDraftForPayload,
@@ -152,7 +153,15 @@ export default function ComposerPage() {
   const [runResult, setRunResult] = useState<{
     wonQuotes: { count: number; nums: string[] };
     rules: { count: number } | null;
+    summary: { lineCount: number; total: string } | null;
   } | null>(null);
+
+  // The final stage's landed number ("3 lines · $2,475") — sum in dollars from
+  // the drafted rateCents, matching what the table will show.
+  function draftSummary(lines: { quantity: number; rateCents: number }[]) {
+    const total = lines.reduce((s, l) => s + l.quantity * (l.rateCents / 100), 0);
+    return { lineCount: lines.length, total: fmt$(total) };
+  }
   const [materialize, setMaterialize] = useState(false);
   const gatherQuery = api.v1.ai.gatherJobContext.useQuery(
     { leadId: run?.leadId ?? "" },
@@ -182,7 +191,11 @@ export default function ComposerPage() {
       setCs((prev) => applyAiDraftLines(prev, toComposerLines(data.lines)));
       setAiDraftError(null);
       setProposals(toProposalChips(data.proposals, () => crypto.randomUUID()));
-      setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
+      setRunResult({
+        wonQuotes: data.stages.wonQuotes,
+        rules: data.stages.rules ?? null,
+        summary: draftSummary(data.lines),
+      });
     },
     onError: onAiDraftError,
   });
@@ -199,7 +212,12 @@ export default function ComposerPage() {
       setCs((prev) => applyAiDraftTiers(prev, draft));
       setAiDraftError(null);
       setProposals(toProposalChips(data.proposals, () => crypto.randomUUID()));
-      setRunResult({ wonQuotes: data.stages.wonQuotes, rules: data.stages.rules ?? null });
+      setRunResult({
+        wonQuotes: data.stages.wonQuotes,
+        rules: data.stages.rules ?? null,
+        // GBB: the recommended tier is what the stepper's number should land on.
+        summary: draftSummary(data[data.recommended].lines),
+      });
     },
     onError: onAiDraftError,
   });
@@ -653,7 +671,9 @@ export default function ComposerPage() {
           run
             ? {
                 hasLead: Boolean(run.leadId),
-                gather: gatherQuery.data?.counts ?? null,
+                gather: gatherQuery.data
+                  ? { ...gatherQuery.data.counts, source: gatherQuery.data.lead?.source ?? null }
+                  : null,
                 pricebook: { services: services.length, laborRates: laborRates.length },
                 result: runResult,
               }

@@ -24,6 +24,8 @@ export interface DraftRunGather {
   readonly notes: number;
   readonly texts: number;
   readonly visitNotes: number;
+  /** Where the lead came in from ("Angi", "Website form", …) — null when unknown. */
+  readonly source: string | null;
 }
 
 export interface DraftRunResult {
@@ -31,6 +33,9 @@ export interface DraftRunResult {
   /** Matched confirmed shop rules — null when the payload predates the stage
    *  (deploy skew): the stage is then omitted, never faked. */
   readonly rules: { count: number } | null;
+  /** What landed: line count + total (recommended tier in GBB) — the number
+   *  materializes in the stepper before the table reveals. */
+  readonly summary: { lineCount: number; total: string } | null;
 }
 
 export interface DraftRunProps {
@@ -67,20 +72,27 @@ export function stageViews(p: DraftRunProps): StageView[] {
   // The job stage always runs: with a customer attached it reads their
   // history (real counts); without one, the typed description IS the job
   // info — both are true statements, so neither renders a fake stage.
+  // Named sources, not a blob: the estimator pulls the customer's texts, the
+  // intake source (call/RFP/Angi), office notes, and the tech's scope-visit
+  // notes — the detail line says exactly which of those exist on THIS job.
+  const jobSources = p.gather
+    ? [
+        p.gather.texts > 0 ? `${plural(p.gather.texts, "customer text")}` : null,
+        p.gather.source ? `the ${p.gather.source} request` : null,
+        p.gather.notes > 0 ? "office notes" : null,
+        p.gather.visitNotes > 0 ? "the tech's scope notes" : null,
+      ].filter(Boolean)
+    : [];
   stages.push({
     key: "job",
     label: "Reading the job",
     detail: p.hasLead
       ? p.gather
-        ? [
-            p.gather.notes > 0 ? plural(p.gather.notes, "note") : null,
-            p.gather.texts > 0 ? plural(p.gather.texts, "text") : null,
-            p.gather.visitNotes > 0 ? "visit findings" : null,
-          ]
-            .filter(Boolean)
-            .join(" · ") || "your description"
+        ? jobSources.length > 0
+          ? `${jobSources.join(" · ")} · your description`
+          : "no history on file — your description"
         : null
-      : "your description",
+      : "your description (no customer attached)",
     ready: !p.hasLead || p.gather !== null,
   });
   stages.push({
@@ -120,7 +132,11 @@ export function stageViews(p: DraftRunProps): StageView[] {
   stages.push({
     key: "build",
     label: "Writing the quote",
-    detail: p.result ? "every line editable" : null,
+    detail: p.result
+      ? p.result.summary
+        ? `${plural(p.result.summary.lineCount, "line")} · ${p.result.summary.total} — every line editable`
+        : "every line editable"
+      : null,
     ready: p.result !== null,
   });
   return stages;
