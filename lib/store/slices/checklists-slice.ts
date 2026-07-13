@@ -1,9 +1,16 @@
 /**
  * lib/store/slices/checklists-slice.ts
- * Checklist templates (job "before you leave" + scope "visit" checklist).
+ * Saved checklists (job "before you leave" + scope "visit" checklist).
  * DB-backed: ChecklistsHydrator seeds the slice from v1.checklists.list; every
  * mutating action is optimistic → persist via trpcVanilla → reconcile/rollback,
  * mirroring addCompany (data-slice) and updateLead (leads-slice). Immutable updates only.
+ *
+ * addChecklist creates the template AND its items in ONE v1.checklists.create
+ * mutation — the old create + addItem-per-item pattern batched into a single
+ * tRPC request whose procedures ran concurrently server-side, so addItem raced
+ * the template insert and 404'd ("checklist not found"), leaving templates
+ * saved EMPTY. Item-level editing actions were removed with the standards
+ * modal: a saved checklist is deleted/recreated whole, never patched.
  */
 
 import type { StateCreator } from "zustand";
@@ -11,39 +18,28 @@ import type { Checklist, ChecklistItem } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { checklistDtoToStore } from "@/lib/store/checklists-mapper";
 
-// DTO shape returned by v1.checklists.* mutations — mirrors ChecklistDTO from the router.
-interface ChecklistDTO {
-  id: string;
-  name: string;
-  trade: string;
-  stage: "job" | "scope";
-  match: string[];
-  items: { id: string; text: string; type: "check" | "photo"; required: boolean; position: number }[];
-  createdAt: string;
-}
-
-/** Replace a checklist by id in a list; returns a new array (immutable). */
-function reconcileChecklist(list: Checklist[], dto: ChecklistDTO): Checklist[] {
-  const updated = checklistDtoToStore(dto);
-  return list.map((c) => (c.id === dto.id ? updated : c));
+/** An item authored at create time — ids/positions are minted by the slice. */
+export interface NewChecklistItem {
+  text: string;
+  type: ChecklistItem["type"];
+  required?: boolean;
 }
 
 export interface ChecklistsSlice {
   checklists: Checklist[];
   /** Replace the slice — called by ChecklistsHydrator on hydration. */
   setChecklists: (checklists: Checklist[]) => void;
+  /**
+   * Create a checklist with its items in ONE mutation. `persisted` resolves
+   * with the reconciled (server-canonical) checklist, and REJECTS on failure
+   * after rolling back — callers must surface the error (no silent failures).
+   */
   addChecklist: (
     name: string,
     stage: Checklist["stage"],
-  ) => { checklist: Checklist; persisted: Promise<void> };
+    items?: readonly NewChecklistItem[],
+  ) => { checklist: Checklist; persisted: Promise<Checklist> };
   deleteChecklist: (id: string) => void;
-  addChecklistItem: (
-    checklistId: string,
-    text: string,
-    type?: ChecklistItem["type"],
-  ) => void;
-  deleteChecklistItem: (checklistId: string, itemId: string) => void;
-  toggleItemRequired: (checklistId: string, itemId: string) => void;
 }
 
 export const createChecklistsSlice: StateCreator<
@@ -57,35 +53,59 @@ export const createChecklistsSlice: StateCreator<
 
   setChecklists: (checklists) => set({ checklists }),
 
-  addChecklist: (name, stage) => {
-    // Mint a client-authored UUID — the server preserves it as the row id.
+  addChecklist: (name, stage, items = []) => {
+    // Mint client-authored UUIDs — the server preserves them as row ids.
     const id = crypto.randomUUID();
+    const authored: ChecklistItem[] = items.map((it, i) => ({
+      id: crypto.randomUUID(),
+      text: it.text,
+      type: it.type,
+      required: it.required ?? false,
+      position: i,
+    }));
     const checklist: Checklist = {
       id,
-      name: name.trim() || "New checklist",
+      name: name.trim() || "Checklist",
       trade: "Custom",
       stage,
       match: [],
-      items: [],
+      items: authored,
     };
 
     // Optimistic append — UI reflects the new checklist immediately.
     set((s) => ({ checklists: [...s.checklists, checklist] }));
 
-    // Persist and expose the promise so callers that need the FK committed can await it.
-    const persisted = trpcVanilla.v1.checklists.create
-      .mutate({ id, name: checklist.name, trade: checklist.trade, stage, match: [] })
+    // Persist template + items atomically; expose the reconciled result.
+    const persisted: Promise<Checklist> = trpcVanilla.v1.checklists.create
+      .mutate({
+        id,
+        name: checklist.name,
+        trade: checklist.trade,
+        stage,
+        match: [],
+        items: authored.map((it) => ({
+          id: it.id,
+          text: it.text,
+          type: it.type,
+          required: it.required,
+        })),
+      })
       .then((dto) => {
-        // Reconcile: adopt the server's canonical name/trade.
-        set((s) => ({ checklists: reconcileChecklist(s.checklists, dto) }));
+        // Reconcile: adopt the server's canonical name/items.
+        const updated = checklistDtoToStore(dto);
+        set((s) => ({
+          checklists: s.checklists.map((c) => (c.id === dto.id ? updated : c)),
+        }));
+        return updated;
       })
       .catch((err: unknown) => {
         if (process.env.NODE_ENV !== "production") {
           console.error("[checklists] addChecklist rollback", err);
         }
-        // Rollback on network failure.
+        // Rollback on failure, then rethrow so the caller can tell the user.
         set((s) => ({ checklists: s.checklists.filter((c) => c.id !== id) }));
-      }) as Promise<void>;
+        throw err instanceof Error ? err : new Error("addChecklist failed");
+      });
 
     return { checklist, persisted };
   },
@@ -101,102 +121,6 @@ export const createChecklistsSlice: StateCreator<
       .catch((err: unknown) => {
         if (process.env.NODE_ENV !== "production") {
           console.error("[checklists] deleteChecklist rollback", err);
-        }
-        set({ checklists: snapshot });
-      });
-  },
-
-  addChecklistItem: (checklistId, text, type = "check") => {
-    // Snapshot before mutation for rollback.
-    const snapshot = get().checklists;
-    const target = snapshot.find((c) => c.id === checklistId);
-    const position = target ? target.items.length : 0;
-    // Optimistic item — reconcile from the server DTO (the whole items array is replaced; the server may reassign the item id).
-    const optimisticId = crypto.randomUUID();
-    const optimistic: ChecklistItem = {
-      id: optimisticId,
-      text,
-      type,
-      required: false,
-      position,
-    };
-
-    set((s) => ({
-      checklists: s.checklists.map((c) =>
-        c.id === checklistId
-          ? { ...c, items: [...c.items, optimistic] }
-          : c,
-      ),
-    }));
-
-    void trpcVanilla.v1.checklists.addItem
-      .mutate({ checklistId, id: optimisticId, text, type })
-      .then((dto) => {
-        // Reconcile the whole item collection from the server (adopts server ids/positions).
-        set((s) => ({ checklists: reconcileChecklist(s.checklists, dto) }));
-      })
-      .catch((err: unknown) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[checklists] addChecklistItem rollback", err);
-        }
-        set({ checklists: snapshot });
-      });
-  },
-
-  deleteChecklistItem: (checklistId, itemId) => {
-    const snapshot = get().checklists;
-
-    set((s) => ({
-      checklists: s.checklists.map((c) =>
-        c.id === checklistId
-          ? { ...c, items: c.items.filter((i) => i.id !== itemId) }
-          : c,
-      ),
-    }));
-
-    void trpcVanilla.v1.checklists.removeItem
-      .mutate({ checklistId, itemId })
-      .then((dto) => {
-        // Reconcile from server (positions may reorder after removal).
-        set((s) => ({ checklists: reconcileChecklist(s.checklists, dto) }));
-      })
-      .catch((err: unknown) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[checklists] deleteChecklistItem rollback", err);
-        }
-        set({ checklists: snapshot });
-      });
-  },
-
-  toggleItemRequired: (checklistId, itemId) => {
-    const snapshot = get().checklists;
-    const current = snapshot
-      .find((c) => c.id === checklistId)
-      ?.items.find((i) => i.id === itemId);
-    const nextRequired = !(current?.required ?? false);
-
-    set((s) => ({
-      checklists: s.checklists.map((c) =>
-        c.id === checklistId
-          ? {
-              ...c,
-              items: c.items.map((i) =>
-                i.id === itemId ? { ...i, required: nextRequired } : i,
-              ),
-            }
-          : c,
-      ),
-    }));
-
-    void trpcVanilla.v1.checklists.setItemRequired
-      .mutate({ checklistId, itemId, required: nextRequired })
-      .then((dto) => {
-        // Reconcile from server (confirms the required flip and any other changes).
-        set((s) => ({ checklists: reconcileChecklist(s.checklists, dto) }));
-      })
-      .catch((err: unknown) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[checklists] toggleItemRequired rollback", err);
         }
         set({ checklists: snapshot });
       });

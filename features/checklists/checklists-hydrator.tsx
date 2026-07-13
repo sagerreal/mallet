@@ -3,11 +3,11 @@
 /**
  * features/checklists/checklists-hydrator.tsx
  * Mounts in the office layout. Subscribes to trpc.v1.checklists.list and writes
- * the result into the Zustand store so StandardsModalContent, the settings
- * Pipeline section, and the job-modal attach picker all read real DB templates.
+ * the result into the Zustand store so the job-modal checklist panel and the
+ * new-job picker read real DB checklists.
  *
  * refetchOnWindowFocus: false — checklists have optimistic mutations
- * (addChecklist / addChecklistItem / etc.) that a focus-triggered refetch could
+ * (addChecklist / deleteChecklist) that a focus-triggered refetch could
  * overwrite mid-flight. Matches CompaniesHydrator / LeadsHydrator.
  */
 

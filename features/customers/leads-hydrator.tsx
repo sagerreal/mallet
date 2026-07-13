@@ -26,7 +26,10 @@ function daysAgo(isoDate: string): number {
   return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86_400_000);
 }
 
-function toStoreLead(dto: LeadDTO): Lead {
+// Exported for the new-customer modal, which inserts a just-created lead into
+// the store (the create mutation bypasses addLead, so the hydrator hasn't
+// caught up yet when an estimate visit needs a store row to attach to).
+export function toStoreLead(dto: LeadDTO): Lead {
   return {
     id: dto.id,
     name: dto.name,

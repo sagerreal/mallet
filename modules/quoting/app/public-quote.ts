@@ -1,5 +1,5 @@
-import { withTenant } from "@mallet/shared/db/tx";
-import { asEstimateId, asLeadId, systemClock } from "@mallet/shared/types";
+import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
+import { asEstimateId, asLeadId, systemClock, type OrgId } from "@mallet/shared/types";
 import { uuidGenerator } from "@mallet/shared/ports";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
@@ -15,7 +15,47 @@ import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 import type { Estimate, QuoteTier } from "../domain/estimate";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
 import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
+import { DrizzleLeadRepository } from "@mallet/customers";
 import { logger } from "@mallet/shared/observability";
+
+/**
+ * Move an estimate's lead to a terminal pipeline stage INLINE with the accept/
+ * decline transaction. The estimate.accepted / estimate.declined outbox events
+ * have no registered handlers (trpc/outbox-registry.ts drains everything except
+ * invoice.paid as a no-op, and the relay cron runs daily) — without this inline
+ * move a customer-side accept leaves the office pill on "Quote Sent" forever.
+ *
+ * Runs in the SAME tx, not a savepoint: Lead.moveStage cannot fail validation
+ * (it returns a Lead directly, no Result), so a failure here is a real DB error
+ * and should roll the whole action back rather than record a silent estimate/
+ * lead stage mismatch. Idempotent: a lead already at the target stage (e.g. a
+ * re-accepted quote whose lead is already won) is left untouched.
+ *
+ * Won is stickier than lost: a lead can hold several open quotes, and declining
+ * one via its public token must not flip a lead that already ACCEPTED another
+ * (stage "won", job created) back to lost. →won stays unconditional — an accept
+ * always wins the lead, even after a prior decline moved it to lost.
+ */
+async function moveLeadToStage(
+  tx: TenantTx,
+  orgId: OrgId,
+  leadId: string,
+  target: "won" | "lost",
+): Promise<void> {
+  const repo = new DrizzleLeadRepository(tx, orgId);
+  const lead = await repo.findById(asLeadId(leadId));
+  if (!lead) {
+    // Shouldn't happen (estimates carry a lead FK) — log loudly, don't fail the accept.
+    logger.error({ leadId, orgId, target }, "public-quote: lead not found for stage move");
+    return;
+  }
+  if (lead.props.stage === target) return;
+  if (target === "lost" && lead.props.stage === "won") {
+    logger.info({ leadId, orgId }, "public-quote: skipped lost move — lead already won");
+    return;
+  }
+  await repo.save(lead.moveStage(target, systemClock.now()));
+}
 
 // Result type for requestChangePublicQuote — disambiguates cooldown rejection from the
 // idempotent "not sent" path so the route can return the correct HTTP status.
@@ -149,6 +189,10 @@ export async function acceptPublicQuote(
       return { kind: "not_found" };
     }
 
+    // The accept succeeded — advance the lead to "won" in the same tx so the office
+    // pipeline/customer pill reflects the acceptance immediately (see moveLeadToStage).
+    await moveLeadToStage(tx, orgId, result.value.props.leadId, "won");
+
     // After the estimate is accepted, create its job in a savepoint so a failure does NOT
     // roll back the accepted estimate. CreateJobFromEstimateUseCase is idempotent (partial
     // unique index on source_estimate_id + ON CONFLICT DO NOTHING), so re-accepts are safe.
@@ -272,6 +316,10 @@ export async function declinePublicQuote(
       }
       return null;
     }
+
+    // The decline succeeded — move the lead to "lost" in the same tx, mirroring
+    // the office path (cust-quote-modal moves the lead to Lost client-side).
+    await moveLeadToStage(tx, orgId, result.value.props.leadId, "lost");
 
     return result.value;
   });

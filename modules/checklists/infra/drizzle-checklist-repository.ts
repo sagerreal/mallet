@@ -32,6 +32,13 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
     trade: string;
     stage: ChecklistStage;
     match: readonly string[];
+    items?: readonly {
+      id: ChecklistItemId;
+      text: string;
+      type: ChecklistItemType;
+      required: boolean;
+      position: number;
+    }[];
   }): Promise<Checklist> {
     const rows = await this.tx
       .insert(checklistTemplates)
@@ -46,7 +53,26 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
       .returning();
     const row = rows[0];
     if (!row) throw new Error("checklist insert returned no row");
-    return toDomain(row, []);
+
+    // Initial items ride the same tx — ONE bulk insert, atomic with the header.
+    let itemRows: ChecklistItemRow[] = [];
+    if (input.items && input.items.length > 0) {
+      itemRows = await this.tx
+        .insert(checklistItems)
+        .values(
+          input.items.map((it) => ({
+            id: it.id,
+            orgId: this.orgId,
+            templateId: input.id,
+            text: it.text,
+            type: it.type,
+            required: it.required,
+            position: it.position,
+          })),
+        )
+        .returning();
+    }
+    return toDomain(row, itemRows);
   }
 
   async findById(id: ChecklistId): Promise<Checklist | null> {
@@ -127,63 +153,6 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
         ),
       );
     return rows.length;
-  }
-
-  async addItem(input: {
-    id: ChecklistItemId;
-    templateId: ChecklistId;
-    text: string;
-    type: ChecklistItemType;
-    required: boolean;
-    position: number;
-  }): Promise<Checklist> {
-    await this.tx.insert(checklistItems).values({
-      id: input.id,
-      orgId: this.orgId,
-      templateId: input.templateId,
-      text: input.text,
-      type: input.type,
-      required: input.required,
-      position: input.position,
-    });
-    const reloaded = await this.findById(input.templateId);
-    if (!reloaded) throw new Error("checklist disappeared after addItem");
-    return reloaded;
-  }
-
-  async removeItem(templateId: ChecklistId, itemId: ChecklistItemId, now: Date): Promise<Checklist | null> {
-    await this.tx
-      .update(checklistItems)
-      .set({ deletedAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(checklistItems.id, itemId),
-          eq(checklistItems.templateId, templateId),
-          eq(checklistItems.orgId, this.orgId),
-          isNull(checklistItems.deletedAt),
-        ),
-      );
-    return this.findById(templateId);
-  }
-
-  async setItemRequired(
-    templateId: ChecklistId,
-    itemId: ChecklistItemId,
-    required: boolean,
-    now: Date,
-  ): Promise<Checklist | null> {
-    await this.tx
-      .update(checklistItems)
-      .set({ required, updatedAt: now })
-      .where(
-        and(
-          eq(checklistItems.id, itemId),
-          eq(checklistItems.templateId, templateId),
-          eq(checklistItems.orgId, this.orgId),
-          isNull(checklistItems.deletedAt),
-        ),
-      );
-    return this.findById(templateId);
   }
 
   // Batch-load non-deleted items for the given template ids. One DB round-trip regardless

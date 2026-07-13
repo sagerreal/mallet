@@ -1,10 +1,17 @@
 import type { Result, AppError, Clock } from "@mallet/shared/types";
-import { validation, ok, err, asChecklistId, asOrgId } from "@mallet/shared/types";
+import { validation, ok, err, asChecklistId, asChecklistItemId, asOrgId } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import type { Checklist } from "../domain/checklist";
-import { isChecklistStage } from "../domain/checklist";
+import type { Checklist, ChecklistItemType } from "../domain/checklist";
+import { CHECKLIST_MAX_ITEMS, isChecklistItemType, isChecklistStage } from "../domain/checklist";
 import type { ChecklistRepository } from "../domain/checklist-repository";
+
+export interface CreateChecklistItemInput {
+  readonly id?: string;
+  readonly text: string;
+  readonly type: string;
+  readonly required?: boolean;
+}
 
 export interface CreateChecklistCommand {
   readonly id?: string;
@@ -12,6 +19,10 @@ export interface CreateChecklistCommand {
   readonly trade: string;
   readonly stage: string;
   readonly match: readonly string[];
+  /** Optional initial items, created atomically with the template. A pasted list
+   *  is ONE mutation — the old create + addItem batch raced server-side (the
+   *  addItem tx could not see the template insert → "checklist not found"). */
+  readonly items?: readonly CreateChecklistItemInput[];
 }
 
 export class CreateChecklistUseCase {
@@ -26,6 +37,38 @@ export class CreateChecklistUseCase {
     if (name.length === 0) return err(validation("checklist name is required", "name"));
     if (!isChecklistStage(cmd.stage)) return err(validation(`unknown checklist stage: ${cmd.stage}`, "stage"));
 
+    const rawItems = cmd.items ?? [];
+    if (rawItems.length > CHECKLIST_MAX_ITEMS) {
+      return err(validation(`a checklist holds at most ${CHECKLIST_MAX_ITEMS} items`, "items"));
+    }
+    const items: {
+      id: ReturnType<typeof asChecklistItemId>;
+      text: string;
+      type: ChecklistItemType;
+      required: boolean;
+      position: number;
+    }[] = [];
+    // Client-supplied item ids must be unique within the payload — a duplicate
+    // would only surface later as a Postgres PK violation (an opaque 500).
+    // Minted ids are exempt: the generator guarantees uniqueness.
+    const seenClientIds = new Set<string>();
+    for (const [i, it] of rawItems.entries()) {
+      const text = it.text.trim();
+      if (text.length === 0) return err(validation("item text is required", "items"));
+      if (!isChecklistItemType(it.type)) return err(validation(`unknown item type: ${it.type}`, "items"));
+      if (it.id !== undefined) {
+        if (seenClientIds.has(it.id)) return err(validation("duplicate item id in payload", "items"));
+        seenClientIds.add(it.id);
+      }
+      items.push({
+        id: asChecklistItemId(it.id ?? this.ids.newId()),
+        text,
+        type: it.type,
+        required: it.required ?? false,
+        position: i,
+      });
+    }
+
     const checklist = await this.checklists.create({
       id: asChecklistId(cmd.id ?? this.ids.newId()),
       orgId: asOrgId(orgId),
@@ -33,9 +76,13 @@ export class CreateChecklistUseCase {
       trade: cmd.trade,
       stage: cmd.stage,
       match: cmd.match,
+      ...(items.length > 0 ? { items } : {}),
     });
 
-    logger.info({ checklistId: checklist.props.id, orgId }, "checklist.created");
+    logger.info(
+      { checklistId: checklist.props.id, orgId, itemCount: items.length },
+      "checklist.created",
+    );
     return ok(checklist);
   }
 }

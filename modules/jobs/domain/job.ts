@@ -42,7 +42,7 @@ const SVC_MAX_LENGTH = 60;
 // Before-you-leave checklist bounds (shared with the router's zod input).
 // Name/text match the checklist TEMPLATE bounds (checklists router: name ≤ 200,
 // item text ≤ 500) so any valid template can always be attached to a job; the
-// item cap is mirrored back onto templates in AddItemUseCase (CHECKLIST_MAX_ITEMS).
+// item cap is mirrored on templates in CreateChecklistUseCase (CHECKLIST_MAX_ITEMS).
 export const JOB_CHECKLIST_MAX_ITEMS = 50;
 export const JOB_CHECKLIST_NAME_MAX = 200;
 export const JOB_CHECKLIST_ITEM_TEXT_MAX = 500;

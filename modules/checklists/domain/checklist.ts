@@ -13,8 +13,8 @@ export const isChecklistStage = (v: string): v is ChecklistStage =>
   (CHECKLIST_STAGES as readonly string[]).includes(v);
 
 // Per-template item cap — mirrors JOB_CHECKLIST_MAX_ITEMS (modules/jobs/domain/job.ts)
-// so every template stays attachable to a job. Enforced on ADD going forward
-// (AddItemUseCase); pre-existing larger templates are not rewritten.
+// so every template stays attachable to a job. Enforced at create
+// (CreateChecklistUseCase); pre-existing larger templates are not rewritten.
 export const CHECKLIST_MAX_ITEMS = 50;
 
 export const CHECKLIST_ITEM_TYPES = ["check", "photo"] as const;
