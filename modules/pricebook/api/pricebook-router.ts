@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { asServiceId, asCategoryId, asMaterialId, toPage } from "@mallet/shared/types";
+import { asServiceId, asMaterialId, toPage } from "@mallet/shared/types";
 import {
   PLUMBING_SEED_CATEGORIES,
   PLUMBING_SEED_SERVICES,
