@@ -23,12 +23,12 @@ const keys = (p: DraftRunProps): string[] => stageViews(p).map((s) => s.key);
 
 describe("stageViews — the rules stage renders only when rules actually matched", () => {
   it("omits the rules stage while the model is still working (result unknown)", () => {
-    expect(keys(props({ result: null }))).toEqual(["book", "won", "build"]);
+    expect(keys(props({ result: null }))).toEqual(["job", "book", "won", "build"]);
   });
 
   it("adds the rules stage on completion when rules matched", () => {
     const p = props({ result: { wonQuotes: { count: 0, nums: [] }, rules: { count: 2 } } });
-    expect(keys(p)).toEqual(["book", "rules", "won", "build"]);
+    expect(keys(p)).toEqual(["job", "book", "rules", "won", "build"]);
     const rules = stageViews(p).find((s) => s.key === "rules")!;
     expect(rules.detail).toBe("2 rules");
     expect(rules.ready).toBe(true);
@@ -36,12 +36,12 @@ describe("stageViews — the rules stage renders only when rules actually matche
 
   it("omits the rules stage when zero rules matched", () => {
     const p = props({ result: { wonQuotes: { count: 0, nums: [] }, rules: { count: 0 } } });
-    expect(keys(p)).toEqual(["book", "won", "build"]);
+    expect(keys(p)).toEqual(["job", "book", "won", "build"]);
   });
 
   it("omits the rules stage for old payloads without the field (deploy skew)", () => {
     const p = props({ result: { wonQuotes: { count: 1, nums: ["Q-1037"] }, rules: null } });
-    expect(keys(p)).toEqual(["book", "won", "build"]);
+    expect(keys(p)).toEqual(["job", "book", "won", "build"]);
   });
 
   it("keeps the job-info stage first when a lead is attached", () => {

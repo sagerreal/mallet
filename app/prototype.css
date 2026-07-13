@@ -635,6 +635,35 @@
   .lineedit-sep{width:1px;height:16px;background:var(--line);margin:0 6px;flex-shrink:0}
   .lineedit-spring{margin-left:auto}
 
+  /* ---------- the quote command bar (the bar IS the AI) ---------- */
+  .aibar{display:flex;align-items:center;gap:10px;background:var(--ink);border-radius:12px;padding:4px 6px 4px 16px;margin-top:14px}
+  .aibar input[type=text],.aibar input{flex:1;border:0 !important;box-shadow:none !important;background:transparent;color:var(--card);font-family:var(--font-mono, ui-monospace, monospace);font-size:13px;padding:9px 0;outline:none;min-width:0}
+  .aibar input:focus{border:0;box-shadow:none;outline:none;background:transparent}
+  .aibar input::placeholder{color:color-mix(in srgb,var(--card) 55%,transparent)}
+  .aibar .aibar-go{border:0;border-radius:9px;background:color-mix(in srgb,var(--card) 16%,transparent);color:var(--card);font-family:inherit;font-size:12.5px;font-weight:700;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:background .12s}
+  .aibar .aibar-go:hover:not(:disabled){background:color-mix(in srgb,var(--card) 28%,transparent)}
+  .aibar .aibar-go:disabled{opacity:.4;cursor:default}
+  .aibar-hint{font-size:11px;color:var(--ink-3);margin:6px 2px 0}
+
+  /* ---------- the draft run: contained stepper panel ---------- */
+  .runpanel{border:1px solid var(--line);border-radius:12px;background:var(--card);margin-top:14px;padding:16px 18px 14px;overflow:hidden}
+  .runpanel-head{font-size:12.5px;font-weight:700;color:var(--ink-2);margin:0 0 12px;letter-spacing:.01em}
+  .runstep{display:flex;gap:12px;position:relative}
+  .runstep .runrail{display:flex;flex-direction:column;align-items:center;width:18px;flex-shrink:0}
+  .runstep .runnode{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;box-sizing:border-box}
+  .runstep.done .runnode{background:var(--ink);color:var(--card)}
+  .runstep.active .runnode{border:2px solid var(--ink);background:var(--card);animation:runring 1.1s ease-in-out infinite}
+  .runstep.pending .runnode{border:2px solid var(--line);background:var(--card)}
+  .runstep .runrail::after{content:'';width:2px;flex:1;background:var(--line-2);margin:2px 0}
+  .runstep:last-child .runrail::after{display:none}
+  .runstep.done .runrail::after{background:var(--ink)}
+  .runstep .body{padding:0 0 14px;min-width:0}
+  .runstep:last-child .body{padding-bottom:2px}
+  .runstep .label{font-size:13px;font-weight:700;color:var(--ink);line-height:18px}
+  .runstep.pending .label{color:var(--ink-3);font-weight:600}
+  .runstep .detail{font-size:12px;color:var(--ink-2);margin-top:1px}
+  @keyframes runring{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ink) 22%,transparent)}50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 8%,transparent)}}
+
   /* draft-run reveal: active-stage pulse + row materialization */
   .run-pulse{display:inline-block;animation:runpulse 1s ease-in-out infinite;color:var(--green-600)}
   @keyframes runpulse{0%,100%{opacity:.3}50%{opacity:1}}
@@ -648,6 +677,7 @@
   @keyframes settle{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion: reduce){
     .run-pulse{animation:none}
+    .runstep.active .runnode{animation:none}
     .materialize tbody tr{animation:none}
   }
 
