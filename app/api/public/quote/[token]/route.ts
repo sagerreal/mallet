@@ -58,13 +58,15 @@ const DEFAULT_TIER_LABELS: Record<QuoteTier, string> = {
   best: "Best",
 };
 
-// The three-option picker structure — only while the quote is tiered AND unresolved.
+// The tier picker structure — only while the quote is tiered AND unresolved.
 // Post-accept the lines array already carries the resolved single quote. Per-tier totals
 // come from the domain's shared rounding chain (totalsForTier), never recomputed here.
+// Tiers with NO fixed lines are omitted (the page's tier-view.ts twin does the same):
+// accept refuses them (empty_tier), so they are not real options. All-empty → null.
 const tiersToJson = (estimate: Estimate) => {
   const p = estimate.props;
   if (p.recommendedTier === null || p.acceptedTier !== null) return null;
-  return QUOTE_TIERS.map((tier) => {
+  const tiers = QUOTE_TIERS.map((tier) => {
     const lines = estimate.linesForTier(tier);
     return {
       tier,
@@ -73,7 +75,8 @@ const tiersToJson = (estimate: Estimate) => {
       optionalLines: lines.filter((l) => l.props.isOptional).map(lineToJson),
       total: moneyJson(estimate.totalsForTier(tier).total),
     };
-  });
+  }).filter((t) => t.fixedLines.length > 0);
+  return tiers.length > 0 ? tiers : null;
 };
 
 const estimateToJson = (estimate: Estimate) => {

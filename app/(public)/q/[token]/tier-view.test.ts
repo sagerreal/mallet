@@ -156,4 +156,43 @@ describe("tierViewsFor", () => {
     expect(views.tiers[0]!.totalCents).toBe(estimate.totalsForTier("good").total);
     expect(views.tiers[2]!.totalCents).toBe(estimate.totalsForTier("best").total);
   });
+
+  // ---- empty tiers are not options: never show what accept would refuse ----
+
+  it("omits a tier with no lines at all — no selectable $0.00 card", () => {
+    const twoTiers = GBB_LINES.filter((l) => l.tier !== "best");
+    const views = tierViewsFor(makeEstimate(twoTiers, { recommendedTier: "better" }))!;
+    expect(views.tiers.map((t) => t.tier)).toEqual(["good", "better"]);
+  });
+
+  it("omits a tier with only OPTIONAL lines (accept refuses it: no fixed line)", () => {
+    const lines: readonly LineSpec[] = [
+      ...GBB_LINES.filter((l) => l.tier !== "best"),
+      { id: "00000000-0000-0000-0000-000000000005", description: "Optional extra", quantity: 1, rateCents: 10_000, isOptional: true, tier: "best" },
+    ];
+    const views = tierViewsFor(makeEstimate(lines, { recommendedTier: "better" }))!;
+    expect(views.tiers.map((t) => t.tier)).toEqual(["good", "better"]);
+  });
+
+  it("keeps a single surviving tier (the island renders it without a picker)", () => {
+    const goodOnly = GBB_LINES.filter((l) => l.tier === "good");
+    const views = tierViewsFor(makeEstimate(goodOnly, { recommendedTier: "good" }))!;
+    expect(views.tiers.map((t) => t.tier)).toEqual(["good"]);
+    expect(views.recommendedTier).toBe("good");
+  });
+
+  it("re-points the recommended tier to a real one when the recommended tier is empty (draft preview)", () => {
+    // Sent quotes can't hit this (send gates on the recommended tier's subtotal),
+    // but a previewed draft can — the page must not default to a refusable option.
+    const goodOnly = GBB_LINES.filter((l) => l.tier === "good");
+    const views = tierViewsFor(makeEstimate(goodOnly, { recommendedTier: "better" }))!;
+    expect(views.recommendedTier).toBe("good");
+  });
+
+  it("returns null when NO tier has a fixed line — the page falls back to the single layout", () => {
+    const optionalOnly: readonly LineSpec[] = [
+      { id: "00000000-0000-0000-0000-000000000006", description: "Optional only", quantity: 1, rateCents: 5_000, isOptional: true, tier: "good" },
+    ];
+    expect(tierViewsFor(makeEstimate(optionalOnly, { recommendedTier: "good" }))).toBeNull();
+  });
 });

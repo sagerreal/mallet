@@ -322,6 +322,28 @@ describe("Estimate tier invariants", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("a TWO-tier GBB payload passes consistency validation and survives send → accept", () => {
+    // The composer drops empty tiers from the payload — nothing requires all
+    // three tiers to be non-empty. recommendedTier set + every line tagged is
+    // a valid tiered estimate with only good + better populated.
+    const now = new Date("2026-06-10T00:00:00Z");
+    const twoTier = estimate({
+      recommendedTier: "good",
+      lines: [
+        line({ tier: "good", rate: money(50_000) }),
+        line({ tier: "better", rate: money(80_000) }),
+      ],
+    });
+    const sent = twoTier.send(now);
+    expect(isOk(sent)).toBe(true);
+    if (!isOk(sent)) return;
+    const accepted = sent.value.accept(now, "better");
+    expect(isOk(accepted)).toBe(true);
+    if (!isOk(accepted)) return;
+    expect(accepted.value.props.acceptedTier).toBe("better");
+    expect(accepted.value.subtotal()).toBe(80_000);
+  });
+
   it("a single-format estimate rejects tiered lines", () => {
     const r = Estimate.create({
       ...estimate().props,

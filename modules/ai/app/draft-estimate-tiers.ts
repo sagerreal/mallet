@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import type { LlmClient } from "../domain/llm-client";
+import { draftLineInputSchema } from "./draft-estimate";
 import type { EstimateLineDraft } from "./draft-estimate";
 import { extractJsonFromText } from "./extract-json";
 
@@ -31,19 +32,12 @@ export interface EstimateTiersDraft {
   readonly best: EstimateTierDraft;
 }
 
-// The shape the model is asked to fill in (unit prices in whole USD).
+// The shape the model is asked to fill in (unit prices in whole USD). Line
+// bounds come from draftLineInputSchema — the same caps as the single-line
+// drafter, mirroring what the draft boundary + domain accept.
 const tierInputSchema = z.object({
   note: z.string().min(1).max(200).optional(),
-  lines: z
-    .array(
-      z.object({
-        description: z.string().min(1),
-        quantity: z.number().positive(),
-        unitPriceUsd: z.number().nonnegative(),
-      }),
-    )
-    .min(2)
-    .max(6),
+  lines: z.array(draftLineInputSchema).min(2).max(6),
 });
 
 const submitTieredEstimateInputSchema = z.object({

@@ -239,6 +239,36 @@ describe("QuoteLines — Good/Better/Best picker", () => {
     for (const card of tierCards()) expect(card.disabled).toBe(true);
   });
 
+  it("with ONE real tier: hides the picker and renders that tier as a single quote — accept still carries its tier", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    render(
+      <QuoteLines
+        tiers={[TIERS[1]!]}
+        recommendedTier="better"
+        discBps={0}
+        taxBps={0}
+        depBps={0}
+        token={TOKEN}
+        changeAlreadyRequested={false}
+      />,
+    );
+
+    // No picker, no "Choose an option" heading — nothing to choose.
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    expect(screen.queryByText("Choose an option")).toBeNull();
+    // The surviving tier's lines + total render like a single quote.
+    expect(screen.getByText("Repair section")).toBeTruthy();
+    expect(screen.getByText(/Total \$350/)).toBeTruthy();
+
+    // Accept still names the tier — the server requires a tier choice to
+    // resolve a tiered estimate.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Approve — \$350/ }));
+    });
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body).toEqual({ action: "accept", chosenTier: "better" });
+  });
+
   it("surfaces the server's tier-error copy inline and unlocks for a retry", async () => {
     fetchMock.mockResolvedValue({
       ok: false,

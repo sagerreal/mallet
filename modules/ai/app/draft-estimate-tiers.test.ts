@@ -194,6 +194,39 @@ describe("draftEstimateTiers", () => {
     });
   });
 
+  // ---- output caps: reject what the draft boundary / domain would reject ----
+
+  const withGoodLine = (line: Record<string, unknown>) => ({
+    ...SAMPLE_TOOL_INPUT,
+    good: {
+      lines: [line, { description: "Materials", quantity: 1, unitPriceUsd: 10 }],
+    },
+  });
+
+  it.each([
+    ["quantity with more than 2 decimals", { description: "Labor", quantity: 0.333, unitPriceUsd: 100 }],
+    ["quantity above 10,000", { description: "Labor", quantity: 10_001, unitPriceUsd: 100 }],
+    ["unit price above $1,000,000", { description: "Labor", quantity: 1, unitPriceUsd: 1_000_001 }],
+    ["description longer than 500 chars", { description: "x".repeat(501), quantity: 1, unitPriceUsd: 100 }],
+  ])("rejects out-of-bounds model output (%s) → BAD_GATEWAY", async (_name, line) => {
+    const llm = new FakeLlm(toolUseTurn(withGoodLine(line)));
+    await expect(draftEstimateTiers(llm, "any job")).rejects.toMatchObject({
+      code: "BAD_GATEWAY",
+    });
+  });
+
+  it("accepts in-bounds output at the caps (2-decimal quantity, $1,000,000 rate, 500-char description)", async () => {
+    const llm = new FakeLlm(
+      toolUseTurn(withGoodLine({ description: "y".repeat(500), quantity: 2.25, unitPriceUsd: 1_000_000 })),
+    );
+    const draft = await draftEstimateTiers(llm, "big job");
+    expect(draft.good.lines[0]).toEqual({
+      description: "y".repeat(500),
+      quantity: 2.25,
+      rateCents: 100_000_000,
+    });
+  });
+
   it("throws TRPCError PRECONDITION_FAILED when no LLM client is configured", async () => {
     await expect(draftEstimateTiers(null, "any job")).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",

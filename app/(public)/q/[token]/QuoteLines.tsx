@@ -273,8 +273,10 @@ export function QuoteLines(props: QuoteLinesProps) {
 
   return (
     <>
-      {/* Good/Better/Best picker + the selected tier's fixed lines */}
-      {tiered && selectedTier && (
+      {/* Good/Better/Best picker + the selected tier's fixed lines. With one
+          real tier there is nothing to choose — the picker hides and the tier
+          renders as a single quote (accept still carries its tier key). */}
+      {tiered && selectedTier && tiered.tiers.length > 1 && (
         <TierPicker
           options={tiered.tiers}
           selectedTier={selectedTier}

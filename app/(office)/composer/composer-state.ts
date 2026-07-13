@@ -164,6 +164,18 @@ export function gbbTierTotal(tier: GBBTier): number {
   return tier.lines.reduce((s, x) => s + (x.q ?? 1) * (x.r ?? 0), 0);
 }
 
+/**
+ * How many tiers hold at least one real line — what the GBB payload will carry
+ * (empty tiers emit no lines, so the customer never sees them). Drives the
+ * send button's option count. 0 outside GBB format.
+ */
+export function realTierCount(
+  state: Pick<ComposerState, "format" | "gbb">
+): number {
+  if (state.format !== "gbb" || !state.gbb) return 0;
+  return state.gbb.opts.filter((o) => hasRealLine(o.lines)).length;
+}
+
 // ---- GBB payload derivation ----------------------------------------------------
 // A GBB quote persists the FULL three-tier structure: every real line tagged with
 // its tier, plus recommendedTier + tierNames. The server rejects a tiered payload
@@ -304,26 +316,37 @@ export interface AiTiersDraft {
  * the display-only note) and moves the star to the AI's recommended key. Tier
  * names/titles the user typed are kept. No-op when no GBB draft exists (the
  * tiers endpoint is only called from GBB format, which seeds one).
+ *
+ * Mid-flight format switch (GBB → single before the response lands): the tier
+ * panels are hidden, so filling them silently would look like "Draft with AI"
+ * did nothing. The draft still lands in the panels (they survive switches) and
+ * the in-flow card note says where it went — no silent invisible state. The
+ * single-format line table is never touched.
  */
 export function applyAiDraftTiers(
   state: ComposerState,
   draft: AiTiersDraft
 ): ComposerState {
   if (!state.gbb) return state;
-  return {
-    ...state,
-    aiOpen: false,
-    aiDrafted: true,
-    switchNote: null,
-    gbb: {
-      rec: draft.recommended,
-      opts: state.gbb.opts.map((o) => ({
-        ...o,
-        note: draft[o.k].note,
-        lines: cloneLines(draft[o.k].lines),
-      })),
-    },
+  const gbb: GBBDraft = {
+    rec: draft.recommended,
+    opts: state.gbb.opts.map((o) => ({
+      ...o,
+      note: draft[o.k].note,
+      lines: cloneLines(draft[o.k].lines),
+    })),
   };
+  if (state.format !== "gbb") {
+    return {
+      ...state,
+      aiOpen: false,
+      aiDrafted: true,
+      gbb,
+      switchNote:
+        "AI drafted three options after you switched formats — switch to Good, Better & Best to see them.",
+    };
+  }
+  return { ...state, aiOpen: false, aiDrafted: true, switchNote: null, gbb };
 }
 
 // ---- Pricebook items (mirrors prototype seed) -------------------------------

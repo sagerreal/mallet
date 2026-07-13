@@ -34,21 +34,33 @@ const toLineView = (line: EstimateLine): QuoteLineView => ({
   rateCents: line.props.rate,
 });
 
-/** The three-option picker structure — only while the quote is tiered and unresolved. */
+/**
+ * The tier picker structure — only while the quote is tiered and unresolved.
+ * Tiers with NO fixed lines are filtered out: the server refuses them at accept
+ * (validateTierChoice → empty_tier), so showing them would present a selectable
+ * $0.00 non-option. When only one real tier remains, the island hides the
+ * picker and renders that tier as a single quote (accept still carries its
+ * tier key — the domain requires a tier choice to resolve a tiered estimate).
+ */
 export function tierViewsFor(estimate: Estimate): PublicTierViews | null {
   const { recommendedTier, acceptedTier, tierNames } = estimate.props;
   if (recommendedTier === null || acceptedTier !== null) return null;
-  return {
-    recommendedTier,
-    tiers: QUOTE_TIERS.map((tier) => {
-      const lines = estimate.linesForTier(tier);
-      return {
-        tier,
-        name: tierNames?.[tier] ?? DEFAULT_TIER_LABELS[tier],
-        fixedLines: lines.filter((l) => !l.props.isOptional).map(toLineView),
-        optionalLines: lines.filter((l) => l.props.isOptional).map(toLineView),
-        totalCents: estimate.totalsForTier(tier).total,
-      };
-    }),
-  };
+  const tiers = QUOTE_TIERS.map((tier) => {
+    const lines = estimate.linesForTier(tier);
+    return {
+      tier,
+      name: tierNames?.[tier] ?? DEFAULT_TIER_LABELS[tier],
+      fixedLines: lines.filter((l) => !l.props.isOptional).map(toLineView),
+      optionalLines: lines.filter((l) => l.props.isOptional).map(toLineView),
+      totalCents: estimate.totalsForTier(tier).total,
+    };
+  }).filter((t) => t.fixedLines.length > 0);
+  if (tiers.length === 0) return null;
+  // A sent quote's recommended tier always has fixed lines (the send gate requires
+  // a positive subtotal); a previewed draft may not — fall back to the first real
+  // tier so the page never defaults to an option the server would refuse.
+  const recommended = tiers.some((t) => t.tier === recommendedTier)
+    ? recommendedTier
+    : tiers[0]!.tier;
+  return { recommendedTier: recommended, tiers };
 }

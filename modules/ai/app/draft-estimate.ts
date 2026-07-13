@@ -18,18 +18,22 @@ export interface EstimateLineDraft {
   readonly rateCents: number; // integer cents
 }
 
+// One line of model output, capped to what the draft boundary + domain accept:
+// description ≤ 500 chars, quantity ≤ 10,000 at 2-decimal precision (the domain's
+// numeric(12,2) guard — EstimateLine.create rejects finer), unit price ≤ $1,000,000.
+// Out-of-bounds model output fails the parse here, so it takes the existing
+// fallback/BAD_GATEWAY path instead of dying later at the tRPC draft boundary
+// (which would silently roll back the optimistic estimate after the redirect).
+// Shared with the tiered drafter (draft-estimate-tiers.ts) — one set of caps.
+export const draftLineInputSchema = z.object({
+  description: z.string().min(1).max(500),
+  quantity: z.number().positive().max(10_000).multipleOf(0.01),
+  unitPriceUsd: z.number().nonnegative().max(1_000_000),
+});
+
 // The shape the model is asked to fill in (unit prices in whole USD).
 const submitEstimateInputSchema = z.object({
-  lines: z
-    .array(
-      z.object({
-        description: z.string().min(1),
-        quantity: z.number().positive(),
-        unitPriceUsd: z.number().nonnegative(),
-      }),
-    )
-    .min(1)
-    .max(10),
+  lines: z.array(draftLineInputSchema).min(1).max(10),
 });
 
 type SubmitEstimateInput = z.infer<typeof submitEstimateInputSchema>;
