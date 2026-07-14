@@ -57,6 +57,10 @@ export interface JobRepository {
   addLine(line: JobLine, now: Date): Promise<void>;
   updateLine(line: JobLine, now: Date): Promise<number>; // rows affected; 0 = not found
   removeLine(jobId: JobId, lineId: string, now: Date): Promise<number>;
+  // Bulk-replace: soft-delete the job's current lines and insert the given set (both in the
+  // tenant tx, so a failure rolls back the whole swap). Powers on-site pricing which builds a
+  // complete line set in one shot rather than diffing add/update/remove.
+  replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date): Promise<void>;
   addAddon(addon: JobAddon, now: Date): Promise<void>;
   setAddonStatus(jobId: JobId, addonId: string, status: AddonStatus, now: Date): Promise<number>;
   setAddonInvoiceSkip(jobId: JobId, addonId: string, invoiceSkip: boolean, now: Date): Promise<number>;

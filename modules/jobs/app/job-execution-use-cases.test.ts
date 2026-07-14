@@ -7,6 +7,7 @@ import {
   AddJobLineUseCase,
   UpdateJobLineUseCase,
   RemoveJobLineUseCase,
+  SetJobLinesUseCase,
   AddJobAddonUseCase,
   SetAddonStatusUseCase,
   SetAddonInvoiceSkipUseCase,
@@ -62,6 +63,11 @@ class FakeRepo implements Partial<JobRepository> {
     const before = this.lines.length;
     this.lines = this.lines.filter((l) => l.props.id !== lineId);
     return before - this.lines.length;
+  }
+  async replaceLines(_j: JobId, lines: readonly JobLine[]): Promise<void> {
+    // Bulk swap: drop the current set, install the new one (mirrors the Drizzle
+    // soft-delete-all + insert-all).
+    this.lines = [...lines];
   }
   async addAddon(addon: JobAddon): Promise<void> {
     this.addons.push(addon);
@@ -137,6 +143,63 @@ describe("job execution use-cases", () => {
     const r = await new RemoveJobLineUseCase(repo as unknown as JobRepository, clock).exec({ jobId: JOB, lineId: "line-1" }, ORG);
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.execution.lines).toHaveLength(0);
+  });
+
+  it("SetJobLines replaces the whole line set (on-site pricing persist)", async () => {
+    // Seed one existing line, then replace with two — the swap must leave only the new set.
+    await new AddJobLineUseCase(repo as unknown as JobRepository, clock, ids("old-1")).exec(
+      { jobId: JOB, description: "old", quantity: 1, rateCents: 100, costCents: 0 },
+      ORG,
+    );
+    const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+    const r = await uc.exec(
+      {
+        jobId: JOB,
+        lines: [
+          { description: "Diagnostic", quantity: 1, rateCents: 12000, costCents: 0 },
+          { description: "Parts", quantity: 2, rateCents: 4000, costCents: 1500 },
+        ],
+      },
+      ORG,
+    );
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.execution.lines).toHaveLength(2);
+      // position is the array index so order is preserved.
+      expect(r.value.execution.lines[0]?.props.position).toBe(0);
+      expect(r.value.execution.lines[1]?.props.position).toBe(1);
+      expect(r.value.execution.lines.some((l) => l.props.description === "old")).toBe(false);
+    }
+  });
+
+  it("SetJobLines to an empty set clears all lines", async () => {
+    await new AddJobLineUseCase(repo as unknown as JobRepository, clock, ids("old-1")).exec(
+      { jobId: JOB, description: "old", quantity: 1, rateCents: 100, costCents: 0 },
+      ORG,
+    );
+    const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+    const r = await uc.exec({ jobId: JOB, lines: [] }, ORG);
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.execution.lines).toHaveLength(0);
+  });
+
+  it("SetJobLines on a missing job returns not_found (no write)", async () => {
+    const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+    const r = await uc.exec({ jobId: MISSING, lines: [{ description: "x", quantity: 1, rateCents: 100, costCents: 0 }] }, ORG);
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("not_found");
+  });
+
+  it("SetJobLines rejects an empty description (validation, whole batch fails)", async () => {
+    const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+    const r = await uc.exec(
+      { jobId: JOB, lines: [{ description: "  ", quantity: 1, rateCents: 100, costCents: 0 }] },
+      ORG,
+    );
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    // Nothing was written — the validation failed before replaceLines ran.
+    expect(repo.lines).toHaveLength(0);
   });
 
   it("AddJobAddon inserts a proposed addon", async () => {

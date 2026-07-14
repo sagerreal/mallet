@@ -131,6 +131,38 @@ describe("TechJobModalContent — owner/office", () => {
     render(<TechJobModalContent />);
     expect(screen.getByText(/Take payment/)).toBeTruthy();
   });
+
+  // Fix 3 (money): once on-site lines persist, a refetched done job carries them, so
+  // jobTotal(job) > 0 auto-selects the priced/"Take payment" branch even with no invoice.
+  it("DoneBlock shows the persisted on-site price (Take payment), not 'No price set'", () => {
+    mockInvoices = [];
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }],
+        // The price the tech set on site, as it comes back from the myDay refetch.
+        lines: [{ d: "Diagnostic + repair", q: 1, r: 285 }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText(/Take payment/)).toBeTruthy();
+    expect(screen.getByText("$285")).toBeTruthy();
+    expect(screen.queryByText(/No price set/)).toBeNull();
+  });
+
+  it("DoneBlock shows 'No price set' only when the job genuinely has no price", () => {
+    mockInvoices = [];
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }],
+        lines: [],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText(/No price set/)).toBeTruthy();
+    expect(screen.queryByText(/Take payment/)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -258,40 +290,44 @@ describe("FieldTimer — pause banks elapsed time, not epoch seconds", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phone gating (Fix: phone-dependent controls disabled with no phone)
+// Phone gating (Fix 2: Call/Text stay TAPPABLE — the modal prompts to add a
+// number in-flow; no standing "No phone on file" hint line; disabled only with
+// no linked customer).
 // ---------------------------------------------------------------------------
 
-describe("TechJobModalContent — phone gating (office)", () => {
-  it("enables Call/Text when the lead has a phone; no hint line", () => {
-    render(<TechJobModalContent />);
-    expect((screen.getByText("Call") as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByText("Text") as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.queryByText(/No phone on file/)).toBeNull();
-  });
-
-  it("disables Call/Text with the add-a-phone title when the phone is the — placeholder", () => {
-    mockLeads = [{ ...lead, phone: "—" }];
+describe("TechJobModalContent — phone controls (office)", () => {
+  it("Call/Text are tappable with a phone and open the call/thread modal; no hint line", () => {
     render(<TechJobModalContent />);
     const call = screen.getByText("Call") as HTMLButtonElement;
     const text = screen.getByText("Text") as HTMLButtonElement;
-    expect(call.disabled).toBe(true);
-    expect(text.disabled).toBe(true);
-    expect(call.title).toBe("Add a phone number first");
-    expect(text.title).toBe("Add a phone number first");
+    expect(call.disabled).toBe(false);
+    expect(text.disabled).toBe(false);
+    expect(screen.queryByText(/No phone on file/)).toBeNull();
+    fireEvent.click(call);
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CALL, { leadId: "lead-1" });
+    fireEvent.click(text);
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.THREAD, { leadId: "lead-1" });
   });
 
-  it("shows the in-flow hint whose 'add one' opens the lead modal", () => {
+  it("Call/Text STAY tappable with no phone on file — the modal handles adding one", () => {
     mockLeads = [{ ...lead, phone: "" }];
     render(<TechJobModalContent />);
-    expect(screen.getByText(/No phone on file/)).toBeTruthy();
-    fireEvent.click(screen.getByText("add one"));
-    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.LEAD, { leadId: "lead-1" });
+    const call = screen.getByText("Call") as HTMLButtonElement;
+    const text = screen.getByText("Text") as HTMLButtonElement;
+    // Not dead, not disabled — no standing hint (the add-phone row lives in the modal).
+    expect(call.disabled).toBe(false);
+    expect(text.disabled).toBe(false);
+    expect(screen.queryByText(/No phone on file/)).toBeNull();
+    fireEvent.click(call);
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CALL, { leadId: "lead-1" });
   });
 
-  it("keeps Call/Text disabled (no hint link) when the job has no linked lead", () => {
+  it("disables Call/Text only when the job has no linked customer", () => {
     mockLeads = [];
     render(<TechJobModalContent />);
-    expect((screen.getByText("Call") as HTMLButtonElement).disabled).toBe(true);
+    const call = screen.getByText("Call") as HTMLButtonElement;
+    expect(call.disabled).toBe(true);
+    expect(call.title).toBe("No linked customer");
     expect(screen.queryByText("add one")).toBeNull();
   });
 });

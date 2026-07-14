@@ -22,6 +22,7 @@ function repoWith(archiveResult: number): JobRepository {
     addLine: async () => {},
     updateLine: async () => 0,
     removeLine: async () => 0,
+    replaceLines: async () => {},
     addAddon: async () => {},
     setAddonStatus: async () => 0,
     setAddonInvoiceSkip: async () => 0,

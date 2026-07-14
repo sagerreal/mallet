@@ -81,7 +81,6 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const [bookOpen, setBookOpen] = useState(false);
   const [jobDesc, setJobDesc] = useState("");
   const [visitPurpose, setVisitPurpose] = useState<VisitPurpose>(null);
-  const [serviceAddr, setServiceAddr] = useState("");
 
   // More details reveal
   const [moreOpen, setMoreOpen] = useState(false);
@@ -109,7 +108,6 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setBookOpen(false);
     setJobDesc("");
     setVisitPurpose(null);
-    setServiceAddr("");
     setMoreOpen(false);
     setEmail("");
     setNotes("");
@@ -187,7 +185,9 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         svc: "service",
         origin: "manual",
         title: jobDesc.trim() || data.name,
-        addr: serviceAddr.trim() || "",
+        // The single top-level Service address IS the job site (one-off ICP:
+        // customer address == job site). Mirrors new-job-modal's addr fallback.
+        addr: address.trim() || "",
         phone: data.phone ?? "",
         status: "unscheduled",
         archived: false,
@@ -530,42 +530,30 @@ export function NewCustomerModal({ open }: { open: boolean }) {
               </button>
             </div>
 
-            {/* Conditional book panel */}
-            {visitPurpose !== null && (
-              <div>
-                {visitPurpose === "job" && (
-                  <div className="field">
-                    <label>
-                      Price{" "}
-                      <span
-                        className="muted"
-                        style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
-                      >
-                        (optional)
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      className="btn"
-                      style={{ width: "100%", justifyContent: "center" }}
-                      onClick={handleBuildPrice}
-                      disabled={createMutation.isPending || Boolean(dedupLeadId)}
-                    >
-                      ✦ Build the price →
-                    </button>
-                    <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
-                      Same builder your crew uses — or price later.
-                    </div>
-                  </div>
-                )}
-                <div className="field">
-                  <label>Service address</label>
-                  <input
-                    type="text"
-                    placeholder="leave blank and we'll text for it"
-                    value={serviceAddr}
-                    onChange={(e) => setServiceAddr(e.target.value)}
-                  />
+            {/* Conditional book panel — the job uses the single top-level
+                Service address, so there is no second address field here. */}
+            {visitPurpose === "job" && (
+              <div className="field">
+                <label>
+                  Price{" "}
+                  <span
+                    className="muted"
+                    style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
+                  >
+                    (optional)
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ width: "100%", justifyContent: "center" }}
+                  onClick={handleBuildPrice}
+                  disabled={createMutation.isPending || Boolean(dedupLeadId)}
+                >
+                  ✦ Build the price →
+                </button>
+                <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+                  Same builder your crew uses — or price later.
                 </div>
               </div>
             )}

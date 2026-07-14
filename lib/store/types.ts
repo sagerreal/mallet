@@ -306,8 +306,10 @@ export interface Job {
   completion?: string;
   invRequested?: boolean;
   expected?: number;
-  // Set when the customer approved & signed a quote on the tech's tablet (tqSign).
-  approvedOnSite?: boolean;
+  // "Approved on site" (the customer signed a quote on the tech's tablet) is DERIVED
+  // from the job carrying priced lines (lines.length > 0), not stored: the lines ARE
+  // the approval, and a separate flag would need a single-writer DB migration. No
+  // surface reads a stored flag today — jobTotal(job) > 0 already gates the priced UI.
 }
 
 // ---- Invoice ---------------------------------------------------------------

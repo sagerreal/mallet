@@ -26,6 +26,7 @@ import {
   AddJobLineUseCase,
   UpdateJobLineUseCase,
   RemoveJobLineUseCase,
+  SetJobLinesUseCase,
   AddJobAddonUseCase,
   SetAddonStatusUseCase,
   SetAddonInvoiceSkipUseCase,
@@ -119,6 +120,10 @@ const lineFields = {
 const addLineInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), ...lineFields, position: z.number().int().min(0).optional() });
 const updateLineInput = z.object({ jobId: z.string().uuid(), lineId: z.string().uuid(), ...lineFields, position: z.number().int().min(0) });
 const removeLineInput = z.object({ jobId: z.string().uuid(), lineId: z.string().uuid() });
+const setLinesInput = z.object({
+  jobId: z.string().uuid(),
+  lines: z.array(z.object({ id: z.string().uuid().optional(), ...lineFields })).max(200),
+});
 const addAddonInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), description: z.string().min(1).max(2000), quantity: z.number().min(0).default(1), rateCents: z.number().int().min(0), costCents: z.number().int().min(0).default(0), isOptional: z.boolean().optional() });
 const setAddonStatusInput = z.object({ jobId: z.string().uuid(), addonId: z.string().uuid(), status: z.enum(["proposed", "approved", "declined"]) });
 const setAddonInvSkipInput = z.object({ jobId: z.string().uuid(), addonId: z.string().uuid(), invoiceSkip: z.boolean() });
@@ -332,6 +337,19 @@ export const createJobRouter = () =>
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new RemoveJobLineUseCase(repo, ctx.deps.clock);
         const r = orThrow(await useCase.exec({ jobId: asJobId(input.jobId), lineId: input.lineId }, ctx.principal.orgId));
+        return toJobDTO(r.job, r.execution);
+      }),
+
+    // Bulk-replace the job's lines in one atomic swap. On-site pricing (tech quote sign /
+    // office price builder) builds a full line set at once, so it persists via one round-trip
+    // that returns the reconciled full jobDTO rather than diffing add/update/remove.
+    setLines: ownerOrOffice
+      .input(setLinesInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new SetJobLinesUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(await useCase.exec({ jobId: asJobId(input.jobId), lines: input.lines }, ctx.principal.orgId));
         return toJobDTO(r.job, r.execution);
       }),
 

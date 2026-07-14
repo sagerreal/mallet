@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockArchive = vi.fn();
+const mockSetLines = vi.fn();
 const mockCreateVisit = vi.fn();
 const mockUpdateVisitDuration = vi.fn();
 const mockSetVisitStatus = vi.fn();
@@ -19,6 +20,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         create: { mutate: (...a: unknown[]) => mockCreate(...a) },
         update: { mutate: (...a: unknown[]) => mockUpdate(...a) },
         archive: { mutate: (...a: unknown[]) => mockArchive(...a) },
+        setLines: { mutate: (...a: unknown[]) => mockSetLines(...a) },
       },
       visits: {
         createVisit: { mutate: (...a: unknown[]) => mockCreateVisit(...a) },
@@ -1002,5 +1004,151 @@ describe("archiveJob / deleteJob persist", () => {
     get().setJobs([{ ...draft, id: "j-local", origin: "manual" }]);
     get().archiveJob("j-local");
     expect(mockArchive).not.toHaveBeenCalled();
+  });
+});
+
+// The MONEY-persistence path: on-site prices must reach the DB via v1.jobs.setLines
+// (updateJob's payload builder drops `lines`), and must survive the post-"Mark done"
+// jobs.list refetch that races the setLines commit.
+describe("setJobLines persist + refetch survival", () => {
+  beforeEach(() => { mockSetLines.mockReset(); });
+
+  const priced = [
+    { d: "Diagnostic", q: 1, r: 120 },
+    { d: "Parts", q: 2, r: 40, c: 15 },
+  ];
+
+  it("optimistically sets lines and persists via v1.jobs.setLines with cents", async () => {
+    // Echo the two lines back so the reconcile keeps them.
+    mockSetLines.mockResolvedValue(makeJobDTO("j-price", {
+      lines: [
+        { id: "srv-l1", description: "Diagnostic", quantity: 1, rate: { cents: 12000, currency: "USD" }, cost: null },
+        { id: "srv-l2", description: "Parts", quantity: 2, rate: { cents: 4000, currency: "USD" }, cost: { cents: 1500, currency: "USD" } },
+      ],
+    }));
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-price", origin: "db", lines: [] }]);
+
+    const res = await get().setJobLines("j-price", priced);
+    expect(res.ok).toBe(true);
+    // Store lines are in DOLLARS; wire payload is in integer CENTS.
+    expect(mockSetLines).toHaveBeenCalledWith({
+      jobId: "j-price",
+      lines: [
+        { description: "Diagnostic", quantity: 1, rateCents: 12000, costCents: 0 },
+        { description: "Parts", quantity: 2, rateCents: 4000, costCents: 1500 },
+      ],
+    });
+    const job = get().jobs.find((j) => j.id === "j-price")!;
+    expect(job.lines).toHaveLength(2);
+    expect(job.lines[0]).toMatchObject({ d: "Diagnostic", r: 120 });
+    expect(job.lines[1]).toMatchObject({ d: "Parts", r: 40, c: 15 });
+  });
+
+  it("does NOT persist for a local-only (non-db) job, keeping lines store-only", async () => {
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-local-price", origin: "manual", lines: [] }]);
+    const res = await get().setJobLines("j-local-price", priced);
+    expect(res.ok).toBe(true);
+    expect(mockSetLines).not.toHaveBeenCalled();
+    expect(get().jobs.find((j) => j.id === "j-local-price")!.lines).toHaveLength(2);
+  });
+
+  it("survives a stale setJobs refetch during the write window (recent-line guard)", async () => {
+    // The server echoes the priced lines.
+    mockSetLines.mockResolvedValue(makeJobDTO("j-guard", {
+      lines: [
+        { id: "srv-l1", description: "Diagnostic", quantity: 1, rate: { cents: 12000, currency: "USD" }, cost: null },
+        { id: "srv-l2", description: "Parts", quantity: 2, rate: { cents: 4000, currency: "USD" }, cost: { cents: 1500, currency: "USD" } },
+      ],
+    }));
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-guard", origin: "db", lines: [] }]);
+    await get().setJobLines("j-guard", priced);
+
+    // A hydrator snapshot read BEFORE the setLines commit lands (empty lines) must
+    // NOT erase the just-written price — the _recentLineWrites guard protects it.
+    get().setJobs([{ ...draft, id: "j-guard", origin: "db", lines: [] }]);
+    const job = get().jobs.find((j) => j.id === "j-guard")!;
+    expect(job.lines).toHaveLength(2);
+  });
+
+  it("rolls back to the prior lines and reports { ok:false } when the persist fails", async () => {
+    mockSetLines.mockRejectedValue(new Error("db down"));
+    const { get } = makeStore();
+    const original = [{ d: "Old", q: 1, r: 50 }];
+    get().setJobs([{ ...draft, id: "j-fail", origin: "db", lines: original }]);
+
+    const res = await get().setJobLines("j-fail", priced);
+    expect(res.ok).toBe(false);
+    // No silent loss: the prior lines are restored, not left as the failed optimistic set.
+    const job = get().jobs.find((j) => j.id === "j-fail")!;
+    expect(job.lines).toEqual(original);
+  });
+
+  // Fix 1 (batch 6): the close-out "enter a bill" path (commitBill) persists the
+  // MERGED FULL SET (existing job.lines + the newly-entered bill) through
+  // setJobLines — setLines is a bulk replace, not an append. The persisted
+  // price must survive the post-"Log & send" refetch (recent-line guard),
+  // exactly like the tech-quote / price-builder surfaces.
+  it("persists the merged full set (existing + new bill) and survives a refetch", async () => {
+    const existing = [{ d: "Diagnostic", q: 1, r: 89 }];
+    const merged = [...existing, { d: "Work performed", q: 1, r: 450 }];
+    // Server echoes the merged set back.
+    mockSetLines.mockResolvedValue(makeJobDTO("j-closeout", {
+      lines: [
+        { id: "srv-l1", description: "Diagnostic", quantity: 1, rate: { cents: 8900, currency: "USD" }, cost: null },
+        { id: "srv-l2", description: "Work performed", quantity: 1, rate: { cents: 45000, currency: "USD" }, cost: null },
+      ],
+    }));
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-closeout", origin: "db", lines: existing }]);
+
+    // commitBill passes the complete intended set — not an append delta.
+    const res = await get().setJobLines("j-closeout", merged);
+    expect(res.ok).toBe(true);
+    expect(mockSetLines).toHaveBeenCalledWith({
+      jobId: "j-closeout",
+      lines: [
+        { description: "Diagnostic", quantity: 1, rateCents: 8900, costCents: 0 },
+        { description: "Work performed", quantity: 1, rateCents: 45000, costCents: 0 },
+      ],
+    });
+    // A stale post-"Log & send" refetch (empty lines) must NOT erase the bill.
+    get().setJobs([{ ...draft, id: "j-closeout", origin: "db", lines: [] }]);
+    const job = get().jobs.find((j) => j.id === "j-closeout")!;
+    expect(job.lines).toHaveLength(2);
+    expect(job.lines[1]).toMatchObject({ d: "Work performed", r: 450 });
+  });
+
+  // Fix 2 (batch 6): the optimistic set applies the SAME predicate as the wire
+  // payload (drop r == null / blank description), so a line the wire drops
+  // never lingers in the store behind the _recentLineWrites guard.
+  it("optimistic set drops the same non-persistable lines the wire payload drops", async () => {
+    mockSetLines.mockResolvedValue(makeJobDTO("j-filter", {
+      lines: [
+        { id: "srv-l1", description: "Real line", quantity: 1, rate: { cents: 10000, currency: "USD" }, cost: null },
+      ],
+    }));
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-filter", origin: "db", lines: [] }]);
+
+    // A redacted-rate line (r: null) and a blank-description line must NOT reach
+    // the store optimistically — they never reach the wire either.
+    const mixed = [
+      { d: "Real line", q: 1, r: 100 },
+      { d: "Redacted", q: 1, r: null as unknown as number },
+      { d: "   ", q: 1, r: 200 },
+    ];
+    // Read the store synchronously right after the optimistic set (before await).
+    const p = get().setJobLines("j-filter", mixed);
+    const optimistic = get().jobs.find((j) => j.id === "j-filter")!;
+    expect(optimistic.lines).toHaveLength(1);
+    expect(optimistic.lines[0]).toMatchObject({ d: "Real line", r: 100 });
+    await p;
+    expect(mockSetLines).toHaveBeenCalledWith({
+      jobId: "j-filter",
+      lines: [{ description: "Real line", quantity: 1, rateCents: 10000, costCents: 0 }],
+    });
   });
 });

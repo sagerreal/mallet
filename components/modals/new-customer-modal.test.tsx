@@ -133,6 +133,30 @@ describe("NewCustomerModal — submit with the Job purpose", () => {
     expect(invalidate).toHaveBeenCalled();
   });
 
+  it("passes the single top-level Service address to the booked job's addr", async () => {
+    resolveCreateWith(createdDto());
+    addJob.mockReturnValue({ job: { id: "job-1" }, persisted: Promise.resolve() });
+
+    render(<NewCustomerModal open />);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Gary Waters" } });
+    // Fill the one Service address field (the top autocomplete input).
+    fireEvent.change(screen.getByLabelText("Service address"), {
+      target: { value: "742 Evergreen Terrace, Springfield" },
+    });
+    fireEvent.click(screen.getByText("Book a visit"));
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create job" }));
+
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    expect(addJob).toHaveBeenCalledWith(
+      expect.objectContaining({ addr: "742 Evergreen Terrace, Springfield" }),
+    );
+    // The customer create also carries that address (single source of truth).
+    expect(mutateAsyncMock).toHaveBeenCalledWith(
+      expect.objectContaining({ address: "742 Evergreen Terrace, Springfield" }),
+    );
+  });
+
   it("keeps the modal open with an error when the job persist fails (customer already created)", async () => {
     resolveCreateWith(createdDto());
     addJob.mockReturnValue({
