@@ -21,8 +21,9 @@ const normalizeAmount = (raw: string): string => {
   const digits = raw.replace(/[$,\s]/g, "");
   const value = Number(digits);
   if (!Number.isFinite(value)) return digits;
-  // Integer → no decimals; fractional → up to two decimals, trailing zeros trimmed.
-  return Number.isInteger(value) ? String(value) : String(value);
+  // String(value) already normalizes formatting: 89 → "89", 89.50 → "89.5", so an integer-dollar
+  // allowed value matches an integer-dollar spoken token no matter how it was written.
+  return String(value);
 };
 
 /**
