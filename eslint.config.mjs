@@ -25,7 +25,7 @@ export default [
   },
   {
     files: [
-      "lib/**/*.ts",
+      "lib/**/*.{ts,tsx}",
       "modules/**/*.ts",
       "shared/**/*.ts",
       "trpc/**/*.ts",
@@ -52,7 +52,7 @@ export default [
   },
   {
     // Tests legitimately reach into module internals and run long; relax the gates there.
-    files: ["**/*.test.ts", "**/*.int.test.ts"],
+    files: ["**/*.test.{ts,tsx}", "**/*.int.test.ts"],
     rules: {
       "no-restricted-imports": "off",
       "no-console": "off",

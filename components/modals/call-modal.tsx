@@ -10,12 +10,14 @@
 import { useState } from "react";
 import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { CALL_OUTCOMES } from "@/lib/store/call-constants";
+import { hasPhone, PhoneAddInput } from "@/lib/phone";
 
 export function CallModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
   const leads = useAppStore((s) => s.leads);
   const startCall = useAppStore((s) => s.startCall);
+  const updateLead = useAppStore((s) => s.updateLead);
   const addLeadNote = useAppStore((s) => s.addLeadNote);
   const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
@@ -29,9 +31,19 @@ export function CallModalContent() {
 
   if (!lead) return null;
 
+  const phoneOnFile = hasPhone(lead);
+
   function callFromMallet() {
-    startCall(lead!.id);
-    close();
+    // startCall re-reads the store; the optimistic updateLead below runs first
+    // and synchronously, so the fresh number is already in place. startCall
+    // returns false only if the lead is somehow still phoneless — don't close then.
+    if (startCall(lead!.id)) close();
+  }
+
+  // Add-a-phone → persist optimistically (synchronous store write) → start the call.
+  function savePhoneAndCall(phone: string) {
+    updateLead(lead!.id, { phone });
+    if (startCall(lead!.id)) close();
   }
 
   function saveLogged() {
@@ -50,26 +62,38 @@ export function CallModalContent() {
   return (
     <div>
       <h2>{lead.name}</h2>
-      <p className="muted" style={{ marginBottom: 2 }}>
-        {lead.phone}
-      </p>
+      {phoneOnFile ? (
+        <p className="muted" style={{ marginBottom: 2 }}>
+          {lead.phone}
+        </p>
+      ) : (
+        // No number on file — prompt to add one in-flow instead of a blank call
+        // bar. Saving persists + starts the call with the fresh number.
+        <PhoneAddInput
+          label="Add a phone number to call them"
+          onSave={savePhoneAndCall}
+          onCancel={close}
+        />
+      )}
 
-      <div className="pathpick2">
-        <div className="path" onClick={callFromMallet} role="button">
-          <b>Call from Mallet</b>
-          <p>
-            They see your <b>business number</b>, not your cell. The call logs
-            itself — type notes while you talk.
-          </p>
+      {phoneOnFile && (
+        <div className="pathpick2">
+          <div className="path" onClick={callFromMallet} role="button">
+            <b>Call from Mallet</b>
+            <p>
+              They see your <b>business number</b>, not your cell. The call logs
+              itself — type notes while you talk.
+            </p>
+          </div>
+          <div className="path" onClick={() => setLogging(true)} role="button">
+            <b>Log a call</b>
+            <p>
+              Already called from your own phone? Take ten seconds to record what
+              happened.
+            </p>
+          </div>
         </div>
-        <div className="path" onClick={() => setLogging(true)} role="button">
-          <b>Log a call</b>
-          <p>
-            Already called from your own phone? Take ten seconds to record what
-            happened.
-          </p>
-        </div>
-      </div>
+      )}
 
       {logging && (
         <div style={{ borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 12 }}>

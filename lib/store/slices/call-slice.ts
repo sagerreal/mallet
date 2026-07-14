@@ -6,22 +6,42 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { ActiveCall } from "../types";
+import type { ActiveCall, Lead } from "../types";
+import { hasPhone } from "@/lib/phone";
 
 export interface CallSlice {
   activeCall: ActiveCall | null;
-  startCall: (leadId: string) => void;
+  /**
+   * Opens the live call bar for a lead. Returns true if the call started, false
+   * if the lead has no phone on file (a phoneless call would render a blank call
+   * bar). This is the LAST-LINE guard — callers should gate the entry first
+   * (PhoneGate) — but startCall never opens a blank bar regardless of the opener.
+   */
+  startCall: (leadId: string) => boolean;
   tickCall: () => void;
   setCallNotes: (notes: string) => void;
   markCallEnded: () => void;
   clearCall: () => void;
 }
 
-export const createCallSlice: StateCreator<CallSlice, [], [], CallSlice> = (set) => ({
+// The call slice lives in the combined store, so it can read the leads slice via
+// the shared get(). Typed as a minimal surface to avoid a store-wide type dep.
+interface StoreWithLeads {
+  leads: Lead[];
+}
+
+export const createCallSlice: StateCreator<CallSlice, [], [], CallSlice> = (set, get) => ({
   activeCall: null,
 
-  startCall: (leadId) =>
-    set({ activeCall: { leadId, sec: 0, notes: "", phase: "live" } }),
+  startCall: (leadId) => {
+    const leads = (get() as unknown as StoreWithLeads).leads ?? [];
+    const lead = leads.find((l) => l.id === leadId);
+    // Refuse to open a blank call bar for a phoneless lead — the bar renders the
+    // number, so a missing one dead-ends the UI (no silent no-op: caller gets false).
+    if (!hasPhone(lead)) return false;
+    set({ activeCall: { leadId, sec: 0, notes: "", phase: "live" } });
+    return true;
+  },
 
   tickCall: () =>
     set((s) =>

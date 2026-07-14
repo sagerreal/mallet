@@ -35,7 +35,6 @@ import {
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
-import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { JobChecklistBlock } from "./job-checklist-block";
@@ -753,14 +752,16 @@ export function JobModalContent() {
         </div>
       </div>
 
-      {/* 2. Call / Text + phone — the call sheet / thread dial the LEAD's number;
-          without a lead phone they'd open blank / error on send, so they disable. */}
+      {/* 2. Call / Text + phone — Call/Text stay TAPPABLE when a customer is
+          linked; the call sheet / thread each prompt to add a number in-flow
+          when none is on file. They disable only with NO linked customer (there
+          is nobody to call). */}
       <div style={{ margin: "12px 0" }}>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             className="btn"
-            disabled={!lead || !hasPhone(lead)}
-            title={!lead ? "No linked customer" : !hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+            disabled={!lead}
+            title={!lead ? "No linked customer" : undefined}
             onClick={() => {
               if (lead) openModal(MODAL.CALL, { leadId: lead.id });
             }}
@@ -769,8 +770,8 @@ export function JobModalContent() {
           </button>
           <button
             className="btn"
-            disabled={!lead || !hasPhone(lead)}
-            title={!lead ? "No linked customer" : !hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+            disabled={!lead}
+            title={!lead ? "No linked customer" : undefined}
             onClick={() => {
               if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
             }}
@@ -783,20 +784,6 @@ export function JobModalContent() {
             </span>
           )}
         </div>
-        {lead && !hasPhone(lead) && (
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            No phone on file —{" "}
-            <span
-              className="linklike"
-              onClick={() => {
-                close();
-                openModal(MODAL.LEAD, { leadId: lead.id });
-              }}
-            >
-              add one
-            </span>
-          </div>
-        )}
       </div>
 
       {/* 3. Customer phone (only when there's no linked lead) */}

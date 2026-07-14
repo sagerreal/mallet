@@ -15,6 +15,7 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type { Lead, LeadNote } from "@/lib/store/types";
 import type { MessageDTO } from "@mallet/messaging";
 import { shortWhen } from "@/lib/format";
+import { hasPhone, PhoneAddInput } from "@/lib/phone";
 
 function firstName(name: string): string {
   return name.split(" ")[0] ?? name;
@@ -187,6 +188,12 @@ export function ThreadModalContent() {
 
   async function send() {
     if (!lead) return;
+    // No number on file — the add-phone row above is the way in; don't optimistically
+    // append a bubble that will fail server-side.
+    if (!hasPhone(lead)) {
+      setSendError("Add a phone number above to text them.");
+      return;
+    }
     const v = draft.trim();
     if (!v) return;
     setSendError(null);
@@ -212,10 +219,21 @@ export function ThreadModalContent() {
   return (
     <div>
       <h2 style={{ marginBottom: 2 }}>{lead.name}</h2>
-      <div className="muted" style={{ fontSize: 12 }}>
-        {lead.phone} · texting from your <b>business number</b> — quote links and
-        reminders land in this same thread, marked ✦
-      </div>
+      {hasPhone(lead) ? (
+        <div className="muted" style={{ fontSize: 12 }}>
+          {lead.phone} · texting from your <b>business number</b> — quote links and
+          reminders land in this same thread, marked ✦
+        </div>
+      ) : (
+        // No number on file — prompt to add one in-flow rather than open a dead
+        // thread whose Send always fails. updateLead is synchronous, so the
+        // composer below enables as soon as a valid number is saved.
+        <PhoneAddInput
+          label="Add a phone number to text them"
+          onSave={(phone) => updateLead(lead!.id, { phone })}
+          onCancel={() => setSendError(null)}
+        />
+      )}
 
       <div className="thread" ref={scrollRef}>
         {isLoading ? (
@@ -241,13 +259,14 @@ export function ThreadModalContent() {
       <div className="composer">
         <input
           value={draft}
-          placeholder={`Text ${firstName(lead.name)}…`}
+          placeholder={hasPhone(lead) ? `Text ${firstName(lead.name)}…` : "Add a number above to text"}
+          disabled={!hasPhone(lead)}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") void send();
           }}
         />
-        <button className="btn primary" onClick={() => void send()}>
+        <button className="btn primary" onClick={() => void send()} disabled={!hasPhone(lead)}>
           Send
         </button>
       </div>
