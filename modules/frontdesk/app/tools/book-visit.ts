@@ -14,6 +14,7 @@ import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result
 export const BOOK_LANES = ["repair", "estimate", "flat"] as const;
 export type BookLane = (typeof BOOK_LANES)[number];
 export const BOOK_URGENCIES = ["normal", "emergency"] as const;
+export type BookLaneUrgency = (typeof BOOK_URGENCIES)[number];
 export const BOOK_WINDOWS = ["morning", "afternoon"] as const;
 
 // The source stamped on every lead the voice front desk creates (matches take_message + the plan).
@@ -47,6 +48,12 @@ const CREDITED_SUFFIX = ", credited toward the repair if you go ahead";
 
 // ── Input schema (validated at the boundary by the runner before handle runs) ────
 
+// The default urgency: an emergency is the exception, so a normal call must NOT dead-end just because
+// the model didn't classify urgency. `urgency` is OPTIONAL here (defaults to this) and is therefore
+// NOT in the JSON-schema required[]. `problem` stays REQUIRED and IS listed in required[] so the zod
+// input and the model-facing JSON schema agree (a mismatch would silently reject valid LLM calls).
+const DEFAULT_URGENCY: BookLaneUrgency = "normal";
+
 export const bookVisitInput = z.object({
   caller_name: z.string().min(1),
   phone: z.string(),
@@ -56,7 +63,7 @@ export const bookVisitInput = z.object({
   problem: z.string(),
   slot_date: z.string(),
   slot_window: z.enum(BOOK_WINDOWS),
-  urgency: z.enum(BOOK_URGENCIES),
+  urgency: z.enum(BOOK_URGENCIES).default(DEFAULT_URGENCY),
 });
 export type BookVisitInput = z.infer<typeof bookVisitInput>;
 
@@ -87,7 +94,18 @@ const bookVisitParameters: Record<string, unknown> = {
       description: "normal, or emergency for a true emergency booked ASAP.",
     },
   },
-  required: ["caller_name", "phone", "address", "service_name", "lane", "slot_date", "slot_window"],
+  // Agrees with the zod input: everything the handler needs is required EXCEPT urgency (optional,
+  // defaults to "normal"). problem IS required here so the schema the model sees matches zod.
+  required: [
+    "caller_name",
+    "phone",
+    "address",
+    "service_name",
+    "lane",
+    "problem",
+    "slot_date",
+    "slot_window",
+  ],
   additionalProperties: false,
 };
 
@@ -203,11 +221,13 @@ const emergencyTaskText = (input: BookVisitInput): string =>
   `EMERGENCY — ${input.service_name} at ${input.address}, booked ${input.slot_date} ${input.slot_window}`;
 
 const fallbackTaskText = (input: BookVisitInput): string =>
-  `AI call — booking failed, needs office follow-up: ${input.service_name} at ${input.address}`;
+  `Booking attempt failed — call back ${input.caller_name}${input.problem ? " re: " + input.problem : ""}`;
 
-// The expected-failure path: file a message task so the office locks in the time, then speak the
-// fallback. Its own errors are logged (no silent swallow) but never mask the spoken reply the caller
-// is waiting on. leadId is passed when a customer was already ensured so the task links to it.
+// The expected-failure path: file an office follow-up task so the caller isn't dropped, then speak
+// the fallback. Its own errors are logged (no silent swallow) but never mask the spoken reply the
+// caller is waiting on. leadId is passed when a customer was already ensured so the task links to it
+// (null when EnsureCustomer itself failed). CRITICAL: the returned result carries NO `data.kind` —
+// a failed booking must NOT disposition as booked_job (disposition.ts requires an explicit "work").
 const bookingFallback = async (
   input: BookVisitInput,
   ctx: VoiceToolContext,
@@ -299,7 +319,9 @@ const bookConfirmed = async (
   const jobId = job.value.props.id;
   await sendBookingConfirmation(jobId, phone, settings.props.brandName, slot, ctx);
 
-  const emergency = input.urgency === "emergency";
+  // urgency defaults to "normal" (zod fills it; a direct call with it absent is treated as normal
+  // too) — only an explicit "emergency" escalates.
+  const emergency = (input.urgency ?? DEFAULT_URGENCY) === "emergency";
   if (emergency) await fileEmergencyTask(input, leadId, ctx);
 
   logger.info(

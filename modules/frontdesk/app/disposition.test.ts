@@ -50,9 +50,22 @@ describe("deriveDisposition", () => {
       expected: "quote_request",
     },
     {
-      name: "book_visit with no kind data defaults to booked_job",
+      // A FAILED book_visit returns the fallback result `{ speak }` with NO data.kind. It must be
+      // neither booked_job nor booked_estimate — only an explicit kind === "work" counts as a job.
+      name: "book_visit with no kind data (failed booking fallback) → no_action",
       rows: [row("book_visit")],
-      expected: "booked_job",
+      expected: "no_action",
+    },
+    {
+      name: "book_visit with an empty data object (no kind) → no_action",
+      rows: [row("book_visit", {})],
+      expected: "no_action",
+    },
+    {
+      // A failed booking alongside a real message: the message wins, NOT a phantom booked_job.
+      name: "failed book_visit (no kind) + take_message → message, not booked_job",
+      rows: [row("take_message"), row("book_visit")],
+      expected: "message",
     },
     {
       name: "an unknown tool alone → no_action",
@@ -69,6 +82,21 @@ describe("deriveDisposition", () => {
 
   it("tolerates a malformed result payload (non-object) without throwing", () => {
     expect(deriveDisposition([{ tool: "take_message", result: "junk" }])).toBe("message");
-    expect(deriveDisposition([{ tool: "book_visit", result: null }])).toBe("booked_job");
+    // A book_visit row with a null/absent payload has no explicit kind → NOT booked_job.
+    expect(deriveDisposition([{ tool: "book_visit", result: null }])).toBe("no_action");
+  });
+
+  it("classifies the SUCCESS shapes exactly (work → booked_job, estimate → booked_estimate)", () => {
+    expect(deriveDisposition([row("book_visit", { kind: "work", emergency: false })])).toBe(
+      "booked_job",
+    );
+    expect(deriveDisposition([row("book_visit", { kind: "estimate", emergency: false })])).toBe(
+      "booked_estimate",
+    );
+  });
+
+  it("a non-'work'/'estimate' kind (unexpected) is neither booked_job nor booked_estimate", () => {
+    // Defensive: only the two sanctioned kinds classify — anything else falls through, never a job.
+    expect(deriveDisposition([row("book_visit", { kind: "install" })])).toBe("no_action");
   });
 });
