@@ -1,9 +1,10 @@
 // PURE availability math for the voice front desk — NO I/O, NO Date.now(). The caller passes `now`
 // (from a Clock) so this whole file is deterministic and exhaustively unit-testable. It finds the
-// org's AVAILABLE 2-hour arrival windows (from opening hours + already-booked visits + crew size),
-// then OFFERS the caller up to MAX_SLOTS DISCRETE START TIMES spread across those windows — "we can
-// come at 8, noon, or 4" — rather than a cluster of consecutive morning ranges (owner live-test
-// feedback: discrete start times, spread across the day, book better than back-to-back ranges).
+// org's AVAILABLE 2-hour arrival windows (from opening hours + already-booked visits + field-crew
+// schedules), then OFFERS the caller up to MAX_SLOTS DISCRETE START TIMES spread across those
+// windows — "we can come at 8, noon, or 4" — rather than a cluster of consecutive morning ranges
+// (owner live-test feedback: discrete start times, spread across the day, book better than
+// back-to-back ranges).
 // Date arithmetic is done on CALENDAR dates (rolling a YYYY-MM-DD string forward one day at a time),
 // never on millisecond offsets, so a DST transition can never drop or duplicate a day.
 
@@ -53,17 +54,33 @@ export interface BookedVisit {
   readonly durationMinutes: number;
 }
 
+// One field crew member's weekday hour-overrides for the slot math. An EMPTY overrides array means
+// the crew works the org DEFAULT hours every day. A weekday present overrides the org default for
+// that day only; a weekday absent falls back to org default for that day.
+export interface CrewWeekdayHours {
+  readonly weekday: number; // JS getDay(): 0 = Sunday .. 6 = Saturday
+  readonly openHour: number;
+  readonly closeHour: number;
+}
+
+// One field crew member's schedule shape for the slot math. Carries only what the pure math needs:
+// per-weekday hour overrides. An empty overrides array means "use the org's default hours every day".
+// No userId — capacity is aggregate (Task 2.3 handles assignee identity separately).
+export interface CrewSchedule {
+  readonly overrides: readonly CrewWeekdayHours[];
+}
+
 export interface ComputeSlotsInput {
   readonly now: Date;
-  readonly hours: OrgHours;
+  readonly hours: OrgHours;                 // the org DEFAULT hours (fallback for crews w/o override)
+  readonly crews: readonly CrewSchedule[];  // field crew; EMPTY ⇒ treat as ONE crew on org hours (MIN_CREW)
   readonly visits: readonly BookedVisit[];
-  readonly crewCount: number;
   readonly lookaheadDays: number;
   readonly emergency: boolean;
 }
 
-// A day's resolved open/close hours (already mapped from OrgHours by weekday). A closed day has
-// open === close === 0.
+// A day's resolved open/close hours (already mapped from OrgHours or a crew override). A closed day
+// has open === close === 0.
 interface DayHours {
   readonly open: number;
   readonly close: number;
@@ -95,28 +112,101 @@ export function computeSlots(input: ComputeSlotsInput): SlotWindow[] {
 // Every capacity-having window in [today, today+lookahead], earliest-first. This is the full
 // candidate set spreadOffer then samples — kept separate so the "which windows are open" math and
 // the "which of them do we offer" policy stay independent (single responsibility, easy to test).
+//
+// Capacity model (Task 2.2a): each crew works their own per-weekday hours (crew override ?? org
+// default). A window is offerable when `occupyingVisits < workingCrewCount` where
+// workingCrewCount = crews whose resolved hours produce that window (aggregate capacity reading).
 function collectAvailableWindows(input: ComputeSlotsInput): SlotWindow[] {
+  // Clamp empty roster to one org-hours crew (MIN_CREW solo-owner-op guarantee).
+  const crews: readonly CrewSchedule[] =
+    input.crews.length > 0 ? input.crews : [{ overrides: [] }];
+
   const byDate = groupVisitsByDate(input.visits);
   const available: SlotWindow[] = [];
 
   for (let dayOffset = 0; dayOffset <= input.lookaheadDays; dayOffset += 1) {
     const date = addDays(toDateString(input.now), dayOffset);
-    const hours = dayHoursFor(date, input.hours);
-    const openWindows = windowsForDay({
-      hours,
-      isToday: dayOffset === 0,
-      nowHour: input.now.getHours(),
-      emergency: input.emergency,
+    const weekday = weekdayOf(date);
+    const isToday = dayOffset === 0;
+    const nowHour = input.now.getHours();
+    const dayVisits = byDate.get(date) ?? [];
+
+    // For each crew, resolve their day hours and compute their windows (with today/past/emergency
+    // filter applied per crew). Collect all distinct windows and count working crews per window.
+    const crewWindowSets = crews.map((crew) => {
+      const hours = crewDayHours(crew, weekday, input.hours);
+      return windowsForDay({ hours, isToday, nowHour, emergency: input.emergency });
     });
 
-    for (const window of openWindows) {
-      if (hasCapacity(window, byDate.get(date) ?? [], input.crewCount, hours.open)) {
+    // Build a map: window key → number of crews working that window. "Working" means the crew's
+    // resolved hours for this date actually produce that window (after today/past/emergency filter).
+    const workingCrewCount = new Map<string, number>();
+    for (const windows of crewWindowSets) {
+      for (const w of windows) {
+        const key = windowKey(w);
+        workingCrewCount.set(key, (workingCrewCount.get(key) ?? 0) + 1);
+      }
+    }
+
+    // Compute the earliest window start hour across ALL crews working today (for null-start visits).
+    // Falls back to Infinity when no crew works that day (no windows produced → no visits placed).
+    const earliestOpen = earliestWorkingOpen(crewWindowSets);
+
+    // Collect all distinct windows (stable order: sort by openHour so earliest-first is preserved).
+    const distinctWindows = collectDistinctWindows(crewWindowSets);
+    for (const window of distinctWindows) {
+      const working = workingCrewCount.get(windowKey(window)) ?? 0;
+      const occupying = dayVisits.filter((v) => visitOccupiesWindow(v, window, earliestOpen)).length;
+      if (occupying < working) {
         available.push(toSlotWindow(date, window, input.now));
       }
     }
   }
   return available;
 }
+
+// Resolve a crew's open/close hours for a given weekday. A crew's override row for that weekday
+// takes precedence; if absent (no override for this weekday), fall back to the org default.
+function crewDayHours(crew: CrewSchedule, weekday: number, orgHours: OrgHours): DayHours {
+  const override = crew.overrides.find((o) => o.weekday === weekday);
+  if (override !== undefined) {
+    return { open: override.openHour, close: override.closeHour };
+  }
+  return dayHoursFor(weekday, orgHours);
+}
+
+// The earliest open hour produced by any crew working today (used as the null-start visit anchor).
+// Returns Infinity when no crew works that day (all windows empty — no windows produced).
+function earliestWorkingOpen(crewWindowSets: readonly (readonly Window[])[]): number {
+  let earliest = Infinity;
+  for (const windows of crewWindowSets) {
+    for (const w of windows) {
+      if (w.openHour < earliest) earliest = w.openHour;
+    }
+  }
+  return earliest;
+}
+
+// Collect every distinct (openHour, closeHour) window produced by any crew, ordered by openHour
+// (earliest-first). Deduplication ensures a window shared by multiple crews appears only once.
+function collectDistinctWindows(crewWindowSets: readonly (readonly Window[])[]): Window[] {
+  const seen = new Set<string>();
+  const distinct: Window[] = [];
+  for (const windows of crewWindowSets) {
+    for (const w of windows) {
+      const key = windowKey(w);
+      if (!seen.has(key)) {
+        seen.add(key);
+        distinct.push(w);
+      }
+    }
+  }
+  // Sort by openHour to ensure earliest-first order across crews with different hour sets.
+  return distinct.slice().sort((a, b) => a.openHour - b.openHour);
+}
+
+// Stable string key for a window, used for deduplication and counting.
+const windowKey = (w: Window): string => `${w.openHour}-${w.closeHour}`;
 
 // Pick up to `max` windows SPREAD evenly across the available set, preserving order (earliest-first).
 // ≤ max available → offer them all. More than max → sample evenly so the caller gets genuinely
@@ -153,6 +243,9 @@ interface Window {
 // past window and dropped (can't offer a slot that has already started). On an EMERGENCY we surface
 // today's windows regardless, so the soonest possible window is always offered even if the day is
 // nearly over or already closed.
+//
+// An inverted or zero-width day (open >= close) yields no windows and does not throw — bad data is
+// treated as "closed" for that crew on that day (graceful degradation, no crash).
 function windowsForDay(args: {
   hours: DayHours;
   isToday: boolean;
@@ -168,7 +261,7 @@ function windowsForDay(args: {
 
 // The 2-hour windows a set of day hours defines, stepping by SLOT_WINDOW_HOURS from open. A window
 // is only produced when a WHOLE SLOT_WINDOW_HOURS block fits before close, so an odd tail (e.g.
-// 8–13) never yields a truncated < 2h window.
+// 8–13) never yields a truncated < 2h window. Inverted ranges (open >= close) yield none silently.
 function dayWindows(hours: DayHours): Window[] {
   const windows: Window[] = [];
   for (let start = hours.open; start + SLOT_WINDOW_HOURS <= hours.close; start += SLOT_WINDOW_HOURS) {
@@ -177,25 +270,14 @@ function dayWindows(hours: DayHours): Window[] {
   return windows;
 }
 
-// A window has capacity while the count of visits inside it is below the crew size — each crew
-// member can run one visit per window, so `occupying < crewCount` means at least one crew is free.
-// `dayOpen` is the day's open hour, used to place a null-start visit into the first window.
-function hasCapacity(
-  window: Window,
-  dayVisits: readonly BookedVisit[],
-  crewCount: number,
-  dayOpen: number,
-): boolean {
-  const occupying = dayVisits.filter((v) => visitOccupiesWindow(v, window, dayOpen)).length;
-  return occupying < crewCount;
-}
-
 // Whether a visit falls inside a window. A null-start visit has a date but no time yet, so by rule
 // it occupies the FIRST window of its day (the conservative default): its start hour is treated as
-// the day's OPEN hour, which by construction lands in the first window dayWindows produces. A timed
-// visit occupies the window whose [openHour, closeHour) contains its start hour.
-function visitOccupiesWindow(visit: BookedVisit, window: Window, dayOpen: number): boolean {
-  const hour = visit.startHHMM === null ? dayOpen : hourOf(visit.startHHMM);
+// the earliest open hour produced by any working crew that day, which by construction lands in the
+// first window. A timed visit occupies the window whose [openHour, closeHour) contains its start.
+// `earliestOpen` = the min open hour across all working crews (Infinity when no crew works → visit
+// cannot occupy any window, which is fine — it was booked on a day now with no schedule).
+function visitOccupiesWindow(visit: BookedVisit, window: Window, earliestOpen: number): boolean {
+  const hour = visit.startHHMM === null ? earliestOpen : hourOf(visit.startHHMM);
   return hour >= window.openHour && hour < window.closeHour;
 }
 
@@ -270,15 +352,19 @@ function groupVisitsByDate(visits: readonly BookedVisit[]): Map<string, BookedVi
   return byDate;
 }
 
-// The open/close hours for a date's weekday. Mon–Fri → wd, Sat → sat, Sun → sun.
-function dayHoursFor(date: string, hours: OrgHours): DayHours {
-  const dow = weekdayOf(date);
-  if (dow === 0) return { open: hours.sunOpen, close: hours.sunClose };
-  if (dow === 6) return { open: hours.satOpen, close: hours.satClose };
+// The open/close hours for a weekday number from org hours. Mon–Fri → wd, Sat → sat, Sun → sun.
+// Accepts a weekday integer (0=Sun … 6=Sat) instead of a date string so it can be reused by
+// crewDayHours without re-deriving the weekday.
+function dayHoursFor(weekday: number, hours: OrgHours): DayHours {
+  if (weekday === 0) return { open: hours.sunOpen, close: hours.sunClose };
+  if (weekday === 6) return { open: hours.satOpen, close: hours.satClose };
   return { open: hours.wdOpen, close: hours.wdClose };
 }
 
-const isClosed = (hours: DayHours): boolean => hours.open === 0 && hours.close === 0;
+// A DayHours is closed when open and close are both 0 (the schema convention) OR when the range is
+// inverted/zero-width (open >= close), which is bad data — treat as closed, no crash.
+const isClosed = (hours: DayHours): boolean =>
+  (hours.open === 0 && hours.close === 0) || hours.open >= hours.close;
 
 // The [year, month(1-12), day] of a "YYYY-MM-DD" string, as a fixed-length tuple so downstream
 // arithmetic never sees `undefined` (noUncheckedIndexedAccess).
