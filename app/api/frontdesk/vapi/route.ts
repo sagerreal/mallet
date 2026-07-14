@@ -11,6 +11,13 @@ import {
 } from "@mallet/messaging";
 import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { CreateTaskUseCase, DrizzleTaskRepository } from "@mallet/tasks";
+import { CreateManualJobUseCase, CreateVisitUseCase, DrizzleJobRepository } from "@mallet/jobs";
+import {
+  LoggingNotificationSender,
+  SendNotificationUseCase,
+  DrizzleNotificationRepository,
+  type NotificationSender,
+} from "@mallet/notifications";
 import { getAppDeps } from "@/trpc/di";
 import {
   parseServerMessage,
@@ -21,7 +28,11 @@ import {
   DrizzleToolInvocationLedger,
   DrizzleSettingsReader,
   DrizzleLeadSummaryReader,
+  DrizzleAvailabilityReader,
   takeMessageTool,
+  checkAvailabilityTool,
+  bookVisitTool,
+  requestQuoteTool,
   toVoiceToolSpec,
   voicePrincipal,
   verifyVapiSecret,
@@ -44,9 +55,14 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// The voice tool whitelist for PR A. The whitelist IS the guardrail (a live call cannot pause for
-// approval) — only these tools can ever run. PR B extends this array.
-const VOICE_TOOLS: readonly VoiceTool[] = [takeMessageTool];
+// The voice tool whitelist. The whitelist IS the guardrail (a live call cannot pause for approval)
+// — only these tools can ever run. PR B adds check_availability + book_visit; the rest follow.
+const VOICE_TOOLS: readonly VoiceTool[] = [
+  takeMessageTool,
+  checkAvailabilityTool,
+  bookVisitTool,
+  requestQuoteTool,
+];
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -189,8 +205,9 @@ const handleToolCalls = async (
   tx: TenantTx,
 ): Promise<Response> => {
   const ledger = new DrizzleToolInvocationLedger(tx, orgId);
+  const notificationSender = resolveNotificationSender();
   const runner = new RunToolCallsUseCase(VOICE_TOOLS, ledger, (base) =>
-    buildVoiceToolDeps(base.tx, base.orgId),
+    buildVoiceToolDeps(base.tx, base.orgId, notificationSender),
   );
   const out = await runner.exec({
     vapiCallId: message.callId ?? "",
@@ -242,17 +259,47 @@ const handleEndOfCall = async (
 // ── Composition helpers ─────────────────────────────────────────────────────────
 
 // Build the voice tools' dependencies from THIS call's tenant tx (mirrors ai-router drive()):
-// an outbox-bound bus so a tool's emits are atomic with its writes, plus the two write use-cases.
-const buildVoiceToolDeps = (tx: TenantTx, orgId: OrgId): VoiceToolDeps => {
+// an outbox-bound bus so a tool's emits are atomic with its writes, the write use-cases, and the
+// query-only readers. The comms send goes through a tenant-tx-scoped SendNotificationUseCase (so
+// the booking confirmation writes an observable notifications row); its repo + bus are tx-scoped,
+// while the underlying channel sender is request-independent (degrades to the logging stub while
+// A2P is blocked) and passed in. Every DB port is tenant-tx-scoped so nothing reaches drizzle
+// outside withTenant.
+const buildVoiceToolDeps = (
+  tx: TenantTx,
+  orgId: OrgId,
+  notificationSender: NotificationSender,
+): VoiceToolDeps => {
   const bus = new OutboxEventBus(tx, orgId);
+  // One tenant-scoped job repository shared by the two write use-cases book_visit drives: create the
+  // manual job, then seed its first visit (the server-side caller does this itself — no client flow
+  // follows a voice booking, per CreateManualJobUseCase's comment).
+  const jobs = new DrizzleJobRepository(tx, orgId);
   return {
     ensureCustomer: new EnsureCustomerUseCase(new DrizzleLeadRepository(tx, orgId), bus, systemClock),
+    createManualJob: new CreateManualJobUseCase(jobs, bus, systemClock, uuidGenerator),
+    createVisit: new CreateVisitUseCase(jobs, systemClock, uuidGenerator),
     createTask: buildCreateTask(tx, orgId),
+    settings: new DrizzleSettingsReader(tx, orgId),
+    availability: new DrizzleAvailabilityReader(tx, orgId),
+    sendNotification: new SendNotificationUseCase(
+      new DrizzleNotificationRepository(tx, orgId),
+      notificationSender,
+      bus,
+      systemClock,
+      uuidGenerator,
+    ),
     bus,
     clock: systemClock,
     ids: uuidGenerator,
   };
 };
+
+// The comms sender from the composition root. Optional in AppDeps (tests omit it) so we fall back to
+// the logging stub — unconfigured comms degrade to a logged no-op, never an error (book_visit's SMS
+// is a best-effort background send).
+const resolveNotificationSender = (): NotificationSender =>
+  getAppDeps().notificationSender ?? new LoggingNotificationSender(systemClock);
 
 const buildCreateTask = (tx: TenantTx, orgId: OrgId): CreateTaskUseCase =>
   new CreateTaskUseCase(new DrizzleTaskRepository(tx, orgId), systemClock, uuidGenerator);

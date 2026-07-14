@@ -41,9 +41,11 @@ export const deriveDisposition = (rows: readonly LedgerRow[]): CallDisposition =
   );
   if (bookedEstimate) return "booked_estimate";
 
-  // A book_visit row with any non-estimate (or absent) kind is a work booking.
+  // Only an EXPLICIT kind === "work" counts as a work booking. A book_visit row whose result
+  // carries no kind (the FAILURE fallback returns `{ speak }` with no data.kind) is therefore
+  // neither booked_job nor booked_estimate — a failed booking must not masquerade as a booked job.
   const bookedJob = rows.some(
-    (r) => r.tool === BOOK_VISIT && dataOf(r.result).kind !== "estimate",
+    (r) => r.tool === BOOK_VISIT && dataOf(r.result).kind === "work",
   );
   if (bookedJob) return "booked_job";
 

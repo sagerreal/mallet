@@ -87,8 +87,9 @@ export class RunToolCallsUseCase {
     call: VapiToolCall,
     ctx: VoiceToolContext,
   ): Promise<VoiceToolResult> {
-    // (a) Idempotency: a replayed toolCallId returns the stored result, no re-execution.
-    const prior = await this.ledger.find(vapiCallId, call.id);
+    // (a) Idempotency: a replayed toolCallId returns the stored result, no re-execution. Keyed by
+    //     toolCallId alone (the PK is (org_id, tool_call_id); org comes from the tx).
+    const prior = await this.ledger.find(call.id);
     if (prior) {
       logger.info(
         { vapiCallId, tool: call.name, toolCallId: call.id },

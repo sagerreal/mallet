@@ -5,7 +5,10 @@ import type { Principal } from "@mallet/identity";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { EnsureCustomerUseCase } from "@mallet/customers";
 import type { CreateTaskUseCase } from "@mallet/tasks";
-import type { VoiceToolSpec } from "../../domain/assistant";
+import type { CreateManualJobUseCase, CreateVisitUseCase } from "@mallet/jobs";
+import type { SendNotificationUseCase } from "@mallet/notifications";
+import type { VoiceToolSpec, SettingsReader } from "../../domain/assistant";
+import type { AvailabilityReader } from "../../domain/availability";
 
 // The outcome of one voice tool, serialized into Vapi's `results[].result`. `speak` is the spoken
 // confirmation the agent reads back to the caller (never an opaque code — the caller hears it).
@@ -19,10 +22,23 @@ export interface VoiceToolResult {
 // The use-cases and ports a voice tool handler may need, all built from THIS call's tenant tx (the
 // runner constructs them per tool call — see run-tool-calls.ts). `bus` is bound to the tx so a
 // tool's emits are durable + atomic with its writes, exactly like a tRPC request. Deliberately a
-// small, fixed surface: a voice tool only ever ensures a customer, files an office task, and emits.
+// small, fixed surface: a voice tool ensures a customer, files an office task, reads the org
+// playbook (settings) + open schedule (availability), and emits. Readers are query-only ports so
+// check_availability never touches drizzle directly (DI + repository pattern).
 export interface VoiceToolDeps {
   readonly ensureCustomer: EnsureCustomerUseCase;
+  // book_visit seeds the job and its first visit itself (no client flow follows a voice booking —
+  // see CreateManualJobUseCase's comment): create the manual job, then create the visit on it.
+  readonly createManualJob: CreateManualJobUseCase;
+  readonly createVisit: CreateVisitUseCase;
   readonly createTask: CreateTaskUseCase;
+  readonly settings: SettingsReader;
+  readonly availability: AvailabilityReader;
+  // Comms egress (SMS/email) routed through the notification USE-CASE (not the raw sender) so every
+  // send writes an observable notifications row (records stub:logged while A2P is blocked — the B3
+  // requirement). book_visit fires a one-time transactional booking confirmation through it; a send
+  // failure NEVER fails a booking (background-path semantics) — see book-visit.ts.
+  readonly sendNotification: SendNotificationUseCase;
   readonly bus: EventBus;
   readonly clock: Clock;
   readonly ids: IdGenerator;

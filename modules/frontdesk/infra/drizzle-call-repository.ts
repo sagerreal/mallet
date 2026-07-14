@@ -77,6 +77,22 @@ export class DrizzleFrontdeskCallRepository implements FrontdeskCallRepository {
       });
   }
 
+  // Whether the stored row for this call was ALREADY price-flagged (non-empty priceAudit.flagged).
+  // Read BEFORE the end-of-call upsert overwrites priceAudit, so the use-case can file the price-
+  // review task ONCE (a Vapi end-of-call retry finds the row already flagged and skips the duplicate
+  // CreateTask). No row yet, or an empty/absent audit → false.
+  async wasPriceFlagged(vapiCallId: string): Promise<boolean> {
+    const rows = await this.tx
+      .select({ priceAudit: frontdeskCalls.priceAudit })
+      .from(frontdeskCalls)
+      .where(and(eq(frontdeskCalls.orgId, this.orgId), eq(frontdeskCalls.vapiCallId, vapiCallId)))
+      .limit(1);
+    const audit = rows[0]?.priceAudit;
+    if (!audit || typeof audit !== "object") return false;
+    const flagged = (audit as { flagged?: unknown }).flagged;
+    return Array.isArray(flagged) && flagged.length > 0;
+  }
+
   // Office surface (PR C). Newest-first non-deleted calls for one lead within the current org.
   async listByLead(leadId: LeadId): Promise<CallSummary[]> {
     const rows = await this.tx

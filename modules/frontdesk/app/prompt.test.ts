@@ -4,6 +4,7 @@ import {
   buildFirstMessage,
   redactPriceTokens,
   PRICE_REDACTION_MARKER,
+  TOOL_NAMES,
 } from "./prompt";
 import type { PromptFacts } from "./prompt";
 import type { CallerContext } from "../domain/assistant";
@@ -124,6 +125,32 @@ describe("buildSystemPrompt — services table & lane scripts", () => {
   it("frames the estimate lane as a free estimate visit", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     expect(p).toMatch(/free estimate/i);
+  });
+});
+
+describe("buildSystemPrompt — tools & flow", () => {
+  it("names every booking tool by its exact tool name so the model actually calls them", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    // Each tool must appear by its EXACT name — a prompt that describes the flow without naming
+    // the tools leaves the booking phase inert (the model can only trigger a tool by name).
+    expect(p).toContain(TOOL_NAMES.checkAvailability);
+    expect(p).toContain(TOOL_NAMES.bookVisit);
+    expect(p).toContain(TOOL_NAMES.requestQuote);
+    expect(p).toContain(TOOL_NAMES.takeMessage);
+  });
+
+  it("teaches the offer-then-book flow: check_availability returns windows, book_visit books one", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    // check_availability offers windows; book_visit takes slot_date + slot_window.
+    expect(p).toMatch(/check_availability[\s\S]*two[\s\S]*windows?/i);
+    expect(p).toMatch(/book_visit[\s\S]*slot_date[\s\S]*slot_window/i);
+  });
+
+  it("keeps the tools section free of any dollar amount (guardrail intact)", () => {
+    const facts = baseFacts();
+    const p = buildSystemPrompt({ facts, caller: knownCaller });
+    const toolsSection = p.split("## ").find((s) => s.startsWith("TOOLS & FLOW")) ?? "";
+    expect(toolsSection).not.toMatch(/\$\d/);
   });
 });
 

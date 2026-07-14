@@ -23,6 +23,7 @@ export type {
   LeadSummaryReader,
   CallerContext,
 } from "./domain/assistant";
+export type { AvailabilityReader, AvailabilitySnapshot } from "./domain/availability";
 
 // ── Application use-cases ───────────────────────────────────────────────────────
 export { BuildAssistantUseCase } from "./app/build-assistant";
@@ -40,6 +41,9 @@ export { auditPrices } from "./app/price-audit";
 
 // ── Tools ───────────────────────────────────────────────────────────────────────
 export { takeMessageTool } from "./app/tools/take-message";
+export { checkAvailabilityTool } from "./app/tools/check-availability";
+export { bookVisitTool } from "./app/tools/book-visit";
+export { requestQuoteTool } from "./app/tools/request-quote";
 export { toVoiceToolSpec } from "./app/tools/tool-result";
 export type {
   VoiceTool,
@@ -53,6 +57,7 @@ export { DrizzleFrontdeskCallRepository } from "./infra/drizzle-call-repository"
 export { DrizzleToolInvocationLedger } from "./infra/drizzle-tool-ledger";
 export { DrizzleSettingsReader } from "./infra/drizzle-settings-reader";
 export { DrizzleLeadSummaryReader } from "./infra/drizzle-lead-summary-reader";
+export { DrizzleAvailabilityReader } from "./infra/drizzle-availability-reader";
 
 // ── Composition helpers the route uses ──────────────────────────────────────────
 export { voicePrincipal, VOICE_PRINCIPAL_USER_ID } from "./app/voice-principal";

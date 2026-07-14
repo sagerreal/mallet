@@ -67,6 +67,9 @@ export class RecordCallUseCase {
     const leadId = await this.resolveLead(cmd.fromNumber);
     const disposition = deriveDisposition(await this.loadLedger(cmd.vapiCallId));
     const priceAudit = await this.runPriceAudit(cmd);
+    // Read BEFORE the upsert overwrites priceAudit: a Vapi end-of-call RETRY finds the row already
+    // flagged, so we skip the (non-idempotent) CreateTask and avoid a duplicate price-review task.
+    const alreadyFlagged = await this.wasAlreadyPriceFlagged(cmd.vapiCallId);
 
     const input: RecordCallInput = {
       orgId: cmd.orgId,
@@ -92,8 +95,23 @@ export class RecordCallUseCase {
     );
 
     if (leadId !== null) await this.markUnread(leadId, cmd.vapiCallId);
-    if (priceAudit && priceAudit.flagged.length > 0) {
+    if (priceAudit && priceAudit.flagged.length > 0 && !alreadyFlagged) {
       await this.fileReviewTask(cmd, leadId, priceAudit.flagged);
+    }
+  }
+
+  // Whether the stored row was already price-flagged before this write. A lookup error is logged
+  // and treated as "not flagged" (recording the call + surfacing a NEW violation matters more than
+  // suppressing a rare duplicate on a DB hiccup).
+  private async wasAlreadyPriceFlagged(vapiCallId: string): Promise<boolean> {
+    try {
+      return await this.deps.calls.wasPriceFlagged(vapiCallId);
+    } catch (error: unknown) {
+      logger.warn(
+        { vapiCallId, error: messageOf(error) },
+        "frontdesk.call.price_flag_check_failed",
+      );
+      return false;
     }
   }
 
@@ -184,11 +202,21 @@ const allowedDollars = (settings: OrgSettings): number[] => {
   return [booking.serviceFee, ...flatPrices];
 };
 
-// Only the assistant's own turns are audited — a caller quoting a competitor's price is not a
-// violation. A turn with no text contributes nothing.
+// The roles Vapi uses for the AI's own turns. Vapi's end-of-call artifact.messages labels the
+// agent as "bot" (NOT "assistant"), while the assistant-request / streaming APIs use "assistant" —
+// the audit must recognize BOTH or it no-ops on real end-of-call traffic (the price-safety layer).
+// Compared case-insensitively so a "Bot"/"Assistant" variant still counts.
+const AI_ROLES: ReadonlySet<string> = new Set(["assistant", "bot"]);
+
+// Normalize a raw message role to the canonical AI-vs-not check. Kept a single helper so every
+// future reader classifies roles the same way (no drift between the audit and other consumers).
+const isAiRole = (role: string): boolean => AI_ROLES.has(role.trim().toLowerCase());
+
+// Only the AI's own turns are audited — a caller quoting a competitor's price is not a violation.
+// A turn with no text contributes nothing.
 const assistantLines = (messages: readonly CallMessage[] | null): string[] =>
   (messages ?? [])
-    .filter((m) => m.role === "assistant" && typeof m.message === "string")
+    .filter((m) => isAiRole(m.role) && typeof m.message === "string")
     .map((m) => m.message as string);
 
 const messageOf = (error: unknown): string =>
