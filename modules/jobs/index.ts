@@ -3,7 +3,7 @@ export { createJobRouter } from "./api/job-router";
 export { jobSummaryDTO, toJobSummaryDTO } from "./api/job-dto";
 export { createFieldRouter } from "./api/field-router";
 export { createVisitRouter } from "./api/visit-router";
-export type { Job, JobStatus, JobProps } from "./domain/job";
+export type { Job, JobStatus, JobKind, JobProps } from "./domain/job";
 export type { JobRepository, JobFilter } from "./domain/job-repository";
 export type {
   JobLine,

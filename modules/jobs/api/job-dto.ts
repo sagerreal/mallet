@@ -2,9 +2,11 @@ import { z } from "zod";
 import {
   JOB_STATUSES,
   JOB_VISIT_STATUSES,
+  JOB_KINDS,
   type Job,
   type JobStatus,
   type VisitStatus,
+  type JobKind,
   type JobChecklistProps,
 } from "../domain/job";
 import type {
@@ -19,6 +21,7 @@ import type {
 
 export const statusEnum = z.enum(JOB_STATUSES as unknown as [JobStatus, ...JobStatus[]]);
 export const visitStatusEnum = z.enum(JOB_VISIT_STATUSES as unknown as [VisitStatus, ...VisitStatus[]]);
+export const kindEnum = z.enum(JOB_KINDS as unknown as [JobKind, ...JobKind[]]);
 export const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
 
 export const visitDTO = z.object({
@@ -110,6 +113,7 @@ export const jobDTO = z.object({
   assigneeUserId: z.string().uuid().nullable(),
   title: z.string().nullable(),
   svc: z.string().nullable(),
+  kind: kindEnum,
   status: statusEnum,
   scheduledStart: z.string().nullable(),
   scheduledEnd: z.string().nullable(),
@@ -135,6 +139,7 @@ export const jobSummaryDTO = z.object({
   sourceEstimateId: z.string().uuid().nullable(),
   title: z.string().nullable(),
   svc: z.string().nullable(),
+  kind: kindEnum,
   status: statusEnum,
   assigneeUserId: z.string().uuid().nullable(),
   scheduledStart: z.string().nullable(),
@@ -238,6 +243,7 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
     assigneeUserId: p.assigneeUserId,
     title: p.title,
     svc: p.svc,
+    kind: p.kind,
     status: p.status,
     scheduledStart: iso(p.scheduledStart),
     scheduledEnd: iso(p.scheduledEnd),
@@ -263,6 +269,7 @@ export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution)
     sourceEstimateId: p.sourceEstimateId,
     title: p.title,
     svc: p.svc,
+    kind: p.kind,
     status: p.status,
     assigneeUserId: p.assigneeUserId,
     scheduledStart: iso(p.scheduledStart),

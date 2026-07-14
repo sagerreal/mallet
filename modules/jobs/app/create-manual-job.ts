@@ -2,13 +2,16 @@ import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/type
 import { asJobId, zeroMoney, ok, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import { Job } from "../domain/job";
+import { Job, type JobKind } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
 
 export interface CreateManualJobCommand {
   readonly id?: string; // client-authored id for optimistic UI; minted when absent
   readonly orgId: OrgId;
   readonly leadId: LeadId;
+  // 'work' | 'estimate'; omitted by the office modals (defaults to 'work') — the voice
+  // front desk passes 'estimate' when booking a pre-quote scope visit.
+  readonly kind?: JobKind;
   readonly title: string | null;
   readonly svc: string | null;
   // addr/phone accepted for modal parity but NOT persisted (no job columns) — dropped here.
@@ -49,6 +52,7 @@ export class CreateManualJobUseCase {
       assigneeUserId: null,
       title: cmd.title,
       svc: cmd.svc,
+      kind: cmd.kind ?? "work",
       status: "scheduled",
       scheduledStart: null,
       scheduledEnd: null,

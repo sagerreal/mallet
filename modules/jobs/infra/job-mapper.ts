@@ -1,6 +1,6 @@
 import { asJobId, asOrgId, asLeadId, asEstimateId, asUserId, asVisitId, money } from "@mallet/shared/types";
 import { jobs, jobVisits } from "@mallet/shared/db/schema";
-import { Job, JobVisit, isJobStatus, isVisitStatus } from "../domain/job";
+import { Job, JobVisit, isJobKind, isJobStatus, isVisitStatus } from "../domain/job";
 
 export type JobRow = typeof jobs.$inferSelect;
 export type JobVisitRow = typeof jobVisits.$inferSelect;
@@ -37,6 +37,9 @@ export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): J
   if (!isJobStatus(row.status)) {
     throw new Error(`corrupt job ${row.id}: unknown status "${row.status}"`);
   }
+  if (!isJobKind(row.kind)) {
+    throw new Error(`corrupt job ${row.id}: unknown kind "${row.kind}"`);
+  }
   const visits = [...visitRows].sort((a, b) => a.position - b.position).map(toVisit);
 
   const result = Job.create({
@@ -48,6 +51,7 @@ export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): J
     assigneeUserId: row.assigneeUserId ? asUserId(row.assigneeUserId) : null,
     title: row.title,
     svc: row.svc ?? null,
+    kind: row.kind,
     status: row.status,
     scheduledStart: row.scheduledStart,
     scheduledEnd: row.scheduledEnd,

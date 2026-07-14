@@ -71,4 +71,16 @@ describe("CreateManualJobUseCase", () => {
     const r = await useCase.exec({ orgId: ORG, leadId: LEAD, title: null, svc: null, addr: null, phone: null, notes: null });
     if (isOk(r)) expect(r.value.props.id).toBe(MINTED);
   });
+
+  it('defaults kind to "work" when the command omits it', async () => {
+    const r = await useCase.exec({ orgId: ORG, leadId: LEAD, title: null, svc: null, addr: null, phone: null, notes: null });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.kind).toBe("work");
+  });
+
+  it("passes an explicit kind through to the job", async () => {
+    const r = await useCase.exec({ orgId: ORG, leadId: LEAD, kind: "estimate", title: null, svc: null, addr: null, phone: null, notes: null });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.kind).toBe("estimate");
+  });
 });

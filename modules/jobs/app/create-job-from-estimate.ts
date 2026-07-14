@@ -72,6 +72,7 @@ export class CreateJobFromEstimateUseCase {
       assigneeUserId: null,
       title: estimate.title,
       svc: null,
+      kind: "work", // estimate-SOURCED jobs are sold work; 'estimate' kind = pre-quote scope visit
       status: "scheduled",
       scheduledStart: null,
       scheduledEnd: null,

@@ -19,6 +19,7 @@ const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   assigneeUserId: null,
   title: "Deck rebuild",
   svc: null,
+  kind: "work",
   status: "scheduled",
   scheduledStart: null,
   scheduledEnd: null,
@@ -57,6 +58,30 @@ describe("Job.create", () => {
       ).ok,
     ).toBe(false);
     expect(Job.create(props({ status: "canceled", cancelReason: null })).ok).toBe(false);
+  });
+});
+
+describe("Job kind", () => {
+  it('defaults kind to "work" when omitted', () => {
+    const { kind: _omitted, ...rest } = props();
+    const r = Job.create(rest);
+    expect(isOk(r) && r.value.props.kind).toBe("work");
+  });
+
+  it("accepts an explicit kind and rejects an unknown one", () => {
+    expect(make({ kind: "estimate" }).props.kind).toBe("estimate");
+    expect(make({ kind: "work" }).props.kind).toBe("work");
+    expect(Job.create(props({ kind: "bogus" as never })).ok).toBe(false);
+  });
+
+  it("preserves kind through state transitions and field patches", () => {
+    const job = make({ kind: "estimate" });
+    const started = job.start(now);
+    expect(isOk(started) && started.value.props.kind).toBe("estimate");
+    const patched = job.patchFields({ title: "New title" }, now);
+    expect(isOk(patched) && patched.value.props.kind).toBe("estimate");
+    const assigned = job.assignTo(asUserId("99999999-9999-9999-9999-999999999999"), now);
+    expect(isOk(assigned) && assigned.value.props.kind).toBe("estimate");
   });
 });
 

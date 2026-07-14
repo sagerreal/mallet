@@ -145,6 +145,7 @@ const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
   assigneeUserId: null,
   title: "Roof install",
   svc: null,
+  kind: "work",
   status: "scheduled",
   scheduledStart: null,
   scheduledEnd: null,
