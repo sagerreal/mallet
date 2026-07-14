@@ -21,7 +21,9 @@ import {
   DrizzleToolInvocationLedger,
   DrizzleSettingsReader,
   DrizzleLeadSummaryReader,
+  DrizzleAvailabilityReader,
   takeMessageTool,
+  checkAvailabilityTool,
   toVoiceToolSpec,
   voicePrincipal,
   verifyVapiSecret,
@@ -44,9 +46,10 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// The voice tool whitelist for PR A. The whitelist IS the guardrail (a live call cannot pause for
-// approval) — only these tools can ever run. PR B extends this array.
-const VOICE_TOOLS: readonly VoiceTool[] = [takeMessageTool];
+// The voice tool whitelist. The whitelist IS the guardrail (a live call cannot pause for approval)
+// — only these tools can ever run. PR B (this task) adds check_availability; book_visit + the rest
+// follow.
+const VOICE_TOOLS: readonly VoiceTool[] = [takeMessageTool, checkAvailabilityTool];
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -242,12 +245,16 @@ const handleEndOfCall = async (
 // ── Composition helpers ─────────────────────────────────────────────────────────
 
 // Build the voice tools' dependencies from THIS call's tenant tx (mirrors ai-router drive()):
-// an outbox-bound bus so a tool's emits are atomic with its writes, plus the two write use-cases.
+// an outbox-bound bus so a tool's emits are atomic with its writes, the two write use-cases, and
+// the two query-only readers check_availability needs (org hours + open schedule). Every port is
+// tenant-tx-scoped so nothing reaches drizzle outside withTenant.
 const buildVoiceToolDeps = (tx: TenantTx, orgId: OrgId): VoiceToolDeps => {
   const bus = new OutboxEventBus(tx, orgId);
   return {
     ensureCustomer: new EnsureCustomerUseCase(new DrizzleLeadRepository(tx, orgId), bus, systemClock),
     createTask: buildCreateTask(tx, orgId),
+    settings: new DrizzleSettingsReader(tx, orgId),
+    availability: new DrizzleAvailabilityReader(tx, orgId),
     bus,
     clock: systemClock,
     ids: uuidGenerator,

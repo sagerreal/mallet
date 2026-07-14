@@ -164,6 +164,9 @@ const buildHarness = (overrides?: {
   const deps: VoiceToolDeps = {
     ensureCustomer: new EnsureCustomerUseCase(overrides?.leads ?? leads, bus, clock),
     createTask: overrides?.createTask ?? new CreateTaskUseCase(overrides?.tasks ?? tasks, clock, ids),
+    // take_message never reads settings/availability — provide inert stubs to satisfy the deps shape.
+    settings: { async getByOrg() { return null; } },
+    availability: { async read() { return { crewCount: 0, visits: [] }; } },
     bus,
     clock,
     ids,

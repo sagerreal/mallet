@@ -80,6 +80,9 @@ const fakeDeps: VoiceToolDeps = {
       return { ok: true, value: {} as never } as never;
     },
   } as never,
+  // The runner never touches the read ports directly — inert stubs keep the deps shape valid.
+  settings: { async getByOrg() { return null; } },
+  availability: { async read() { return { crewCount: 0, visits: [] }; } },
   bus: { async emit() {} },
   clock: { now: () => new Date("2026-07-14T00:00:00Z") },
   ids: { newId: () => "id-1" },
