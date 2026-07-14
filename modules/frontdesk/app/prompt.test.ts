@@ -145,11 +145,19 @@ describe("buildSystemPrompt — tools & flow", () => {
     expect(p).toContain(TOOL_NAMES.takeMessage);
   });
 
-  it("teaches the offer-then-book flow: check_availability returns windows, book_visit books one", () => {
+  it("teaches the offer-then-book flow: check_availability returns 2-hour windows, book_visit takes slot_start", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
-    // check_availability offers windows; book_visit takes slot_date + slot_window.
-    expect(p).toMatch(/check_availability[\s\S]*two[\s\S]*windows?/i);
-    expect(p).toMatch(/book_visit[\s\S]*slot_date[\s\S]*slot_window/i);
+    // check_availability offers up to three 2-hour windows; book_visit takes slot_date + slot_start.
+    expect(p).toMatch(/check_availability[\s\S]*three[\s\S]*windows?/i);
+    expect(p).toMatch(/book_visit[\s\S]*slot_date[\s\S]*slot_start/i);
+    // slot_window is gone from the flow.
+    expect(p).not.toMatch(/slot_window/);
+  });
+
+  it("tells the model to honour a specific requested time by offering the containing window", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    expect(p).toMatch(/specific time/i);
+    expect(p).toMatch(/window that\s+contains|contains that time/i);
   });
 
   it("keeps the tools section free of any dollar amount (guardrail intact)", () => {
@@ -157,6 +165,37 @@ describe("buildSystemPrompt — tools & flow", () => {
     const p = buildSystemPrompt({ facts, caller: knownCaller });
     const toolsSection = p.split("## ").find((s) => s.startsWith("TOOLS & FLOW")) ?? "";
     expect(toolsSection).not.toMatch(/\$\d/);
+  });
+});
+
+describe("buildSystemPrompt — confirm before booking", () => {
+  it("requires reading the phone back as grouped digits and spelling the street letter-by-letter", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    expect(p).toMatch(/grouped digits|read the phone back/i);
+    expect(p).toMatch(/spell the street|letter-by-letter/i);
+  });
+
+  it('reads the details back and asks "Is that right?"', () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    expect(p).toMatch(/read back the name/i);
+    expect(p).toMatch(/is that right\?/i);
+  });
+
+  it("corrects only the wrong field and re-confirms, and never books unconfirmed details", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    expect(p).toMatch(/fix ONLY that field|correct/i);
+    expect(p).toMatch(/never call book_visit with an unconfirmed/i);
+  });
+
+  it("prefers the caller-ID number for a returning caller", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    expect(p).toMatch(/returning caller.*caller-ID|caller-ID context/i);
+  });
+
+  it("keeps the confirm section free of any dollar amount (guardrail intact)", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: knownCaller });
+    const confirmSection = p.split("## ").find((s) => s.startsWith("CONFIRM BEFORE BOOKING")) ?? "";
+    expect(confirmSection).not.toMatch(/\$\d/);
   });
 });
 

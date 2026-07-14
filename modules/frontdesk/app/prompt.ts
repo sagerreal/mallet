@@ -34,6 +34,7 @@ const SECTIONS = {
   facts: "BUSINESS FACTS",
   services: "SERVICES",
   tools: "TOOLS & FLOW",
+  confirm: "CONFIRM BEFORE BOOKING",
   cases: "CASE RULES",
   guardrails: "IRON GUARDRAILS",
   caller: "CALLER CONTEXT",
@@ -53,13 +54,16 @@ export const TOOL_NAMES = {
 
 // The tools-and-flow rules, named by exact tool name so the model actually CALLS them. Each line is
 // a concrete "when X, CALL tool Y" instruction — no dollar amounts (the price guardrails below are
-// untouched). Ordered as the booking flow runs: offer times → book → alternatives.
+// untouched). Ordered as the booking flow runs: offer times → confirm → book → alternatives.
 const TOOL_FLOW: readonly string[] = [
-  `To offer appointment times, CALL ${TOOL_NAMES.checkAvailability} — it returns up to two open ` +
-    "windows. Read the two windows back to the caller and ask which one works.",
-  `Once the caller picks a window, CALL ${TOOL_NAMES.bookVisit} with the chosen slot_date and ` +
-    "slot_window (plus their name, phone, address, the service, and the lane). It confirms the " +
-    "booking and speaks the sanctioned price — do not state a price yourself.",
+  `To offer appointment times, CALL ${TOOL_NAMES.checkAvailability} — it returns up to three ` +
+    "tight 2-hour arrival windows. Read the 2 or 3 options back and let the caller pick one.",
+  "If the caller names a SPECIFIC time (e.g. \"today at 2\"), offer the returned window that " +
+    "CONTAINS that time — do not ignore their request or push a different window.",
+  `Once the caller picks a window, and ONLY after you have confirmed the details (see CONFIRM ` +
+    `below), CALL ${TOOL_NAMES.bookVisit} with the chosen slot_date and slot_start (the picked ` +
+    "window's start time, e.g. \"14:00\"), plus their name, phone, address, the service, and the " +
+    "lane. It confirms the booking and speaks the sanctioned price — do not state a price yourself.",
   `If the caller only wants a written quote (a big or custom job you should not price), CALL ` +
     `${TOOL_NAMES.requestQuote} and tell them the office will text a written quote.`,
   `For a reschedule, cancellation, a billing question, or "where is my tech", CALL ` +
@@ -68,14 +72,27 @@ const TOOL_FLOW: readonly string[] = [
     "confirmation.",
 ] as const;
 
+// The confirm-before-book rules. A wrong phone or a speech-to-text address slip ("Rheem"→"Green")
+// must be caught BEFORE booking, so the caller hears the details read back and can correct them.
+const CONFIRM_RULES: readonly string[] = [
+  "Before you call book_visit you MUST confirm the details and let the caller correct them.",
+  "Read the PHONE back as grouped digits (e.g. \"seven-eight-one… three-five-oh…\").",
+  "SPELL the street name back letter-by-letter so a mis-heard word is caught.",
+  "Read back the name, the service, the chosen day and arrival window, and the full address, " +
+    'then ask "Is that right?".',
+  "If the caller corrects anything, fix ONLY that field and re-confirm just that field.",
+  "NEVER call book_visit with an unconfirmed phone or address.",
+  "For a returning caller, prefer the number from the caller-ID context over asking again.",
+] as const;
+
 const REPAIR_SCRIPT =
   "The tech diagnoses the problem and gives you an exact price on-site. Frame it that way — " +
-  "never quote a repair price yourself. Then two-slot close: offer two concrete time windows " +
-  '(e.g. "today 2–4 or tomorrow 8–10") and book one.';
+  "never quote a repair price yourself. Then offer a few concrete 2-hour arrival windows " +
+  '(e.g. "today 2 to 4pm or tomorrow 8 to 10am") and book the one the caller picks.';
 
 const ESTIMATE_SCRIPT =
   "Book a free estimate visit (about 1–2 hours). Never say a job price — the estimate visit is " +
-  "how we price it. Offer two windows and book one.";
+  "how we price it. Offer a few 2-hour arrival windows and book the one they pick.";
 
 const FLAT_PREFIX = "You may state exactly the listed price for this service, then book.";
 
@@ -208,6 +225,9 @@ const buildToolsSection = (): string =>
     ...TOOL_FLOW.map((r) => `- ${r}`),
   ].join("\n");
 
+const buildConfirmSection = (): string =>
+  [`## ${SECTIONS.confirm}`, ...CONFIRM_RULES.map((r) => `- ${r}`)].join("\n");
+
 const buildCaseRules = (): string =>
   [`## ${SECTIONS.cases}`, ...CASE_RULES.map((r) => `- ${r}`)].join("\n");
 
@@ -247,6 +267,7 @@ export const buildSystemPrompt = ({ facts, caller }: BuildSystemPromptInput): st
     buildFactsSection(facts),
     buildServicesSection(facts.services),
     buildToolsSection(),
+    buildConfirmSection(),
     buildCaseRules(),
     buildGuardrails(),
   ];
