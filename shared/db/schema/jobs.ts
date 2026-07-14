@@ -95,6 +95,7 @@ export const jobs = pgTable(
       .on(t.orgId, t.sourceEstimateId)
       .where(sql`${t.sourceEstimateId} is not null and ${t.deletedAt} is null`),
     check("jobs_status_check", sql`${t.status} in ('scheduled', 'in_progress', 'complete', 'canceled')`),
+    check("jobs_kind_check", sql`${t.kind} in ('work', 'estimate')`),
     check("jobs_total_check", sql`${t.totalCents} >= 0`),
     check(
       "jobs_window_check",

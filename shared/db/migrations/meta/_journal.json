@@ -505,6 +505,13 @@
       "when": 1784004780199,
       "tag": "0071_frontdesk_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784004780200,
+      "tag": "0072_jobs_kind_check",
+      "breakpoints": true
     }
   ]
 }
