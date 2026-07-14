@@ -249,7 +249,7 @@ export const REPAIR_INPUT = {
   lane: "repair" as const,
   problem: "kitchen faucet dripping",
   slot_date: "2026-07-16", // a Thursday (weekday)
-  slot_window: "morning" as const,
+  slot_start: "08:00" as const, // an in-hours window start (weekday open in the fixture)
   urgency: "normal" as const,
 };
 

@@ -14,7 +14,7 @@ const VALID = {
   lane: "repair" as const,
   problem: "kitchen faucet dripping",
   slot_date: "2026-07-16",
-  slot_window: "morning" as const,
+  slot_start: "08:00" as const,
   urgency: "normal" as const,
 };
 
@@ -31,10 +31,11 @@ describe("bookVisitInput ↔ JSON schema parity (M1)", () => {
         "problem",
         "service_name",
         "slot_date",
-        "slot_window",
+        "slot_start",
       ].sort(),
     );
     expect(schemaRequired).not.toContain("urgency");
+    expect(schemaRequired).not.toContain("slot_window");
     expect(schemaRequired).toContain("problem");
   });
 

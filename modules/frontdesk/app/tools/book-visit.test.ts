@@ -6,6 +6,7 @@ import { RunToolCallsUseCase } from "../run-tool-calls";
 import {
   bookVisitTool,
   BOOK_VISIT_INVALID_PHONE_SPEAK,
+  BOOK_VISIT_ERROR_SPEAK,
 } from "./book-visit";
 import { BOOKING_CONFIRMATION_KIND, confirmationSms } from "./booking-confirmation";
 import {
@@ -43,10 +44,11 @@ describe("bookVisitTool", () => {
         "problem",
         "service_name",
         "slot_date",
-        "slot_window",
+        "slot_start",
       ].sort(),
     );
     expect(params.required).not.toContain("urgency");
+    expect(params.required).not.toContain("slot_window");
     expect(Object.keys(params.properties).sort()).toEqual(
       [
         "address",
@@ -56,7 +58,7 @@ describe("bookVisitTool", () => {
         "problem",
         "service_name",
         "slot_date",
-        "slot_window",
+        "slot_start",
         "urgency",
       ].sort(),
     );
@@ -77,7 +79,7 @@ describe("bookVisitTool", () => {
     expect(job.props.svc).toBe("Leaky faucet");
     expect(job.props.leadId).toBe(asLeadId(LEAD_UUID));
 
-    // a visit seeded on the job: correct date, morning-window start = weekday open (08:00),
+    // a visit seeded on the job: correct date, scheduledStart = the chosen slot_start (08:00),
     // duration from visitRepairMinutes (90m = 1.5h)
     const visit = job.props.visits[0]!;
     expect(visit).toBeDefined();
@@ -88,6 +90,8 @@ describe("bookVisitTool", () => {
     // price provenance: the service fee, credited phrasing on
     expect(result.speak).toContain("$89");
     expect(result.speak).toContain("credited toward the repair");
+    // confirmation quotes the 2-hour arrival window
+    expect(result.speak).toContain("between 8 and 10am");
     expect(result.data).toMatchObject({ kind: "work", emergency: false });
   });
 
@@ -180,18 +184,54 @@ describe("bookVisitTool", () => {
     expect(result.data).toMatchObject({ kind: "work" });
   });
 
-  it("afternoon window derives the 13:00 boundary start, never a model time", async () => {
-    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_window: "afternoon" }, h.ctx);
-    expect(onlyJob(h).props.visits[0]!.props.scheduledStart).toBe("13:00");
+  it("books at the EXACT chosen slot_start (an afternoon window), never a window default", async () => {
+    // "14:00" is in-hours (wd 8–17) → scheduledStart is exactly 14:00, and the confirmation quotes
+    // the 2–4pm arrival window.
+    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_start: "14:00" }, h.ctx);
+    expect(onlyJob(h).props.visits[0]!.props.scheduledStart).toBe("14:00");
+    expect(result.speak).toContain("between 2 and 4pm");
     expect(result.speak).toContain("$89");
   });
 
-  it("morning window on Saturday derives Saturday's open hour", async () => {
+  it("honours a specific requested time inside hours (books that exact start)", async () => {
+    // The caller said "today at 2" → the model passes the offered window's start 14:00. We book it.
+    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_start: "14:00" }, h.ctx);
+    expect(onlyJob(h).props.visits[0]!.props.scheduledStart).toBe("14:00");
+    void result;
+  });
+
+  it("books at a Saturday slot_start when Saturday hours admit it", async () => {
     const satHours = settingsFrom({ hoursSatOpen: 9, hoursSatClose: 15 });
     const h2 = buildHarness({ settings: satHours });
-    // 2026-07-18 is a Saturday
-    await bookVisitTool.handle({ ...REPAIR_INPUT, slot_date: "2026-07-18", slot_window: "morning" }, h2.ctx);
+    // 2026-07-18 is a Saturday; 09:00 is Saturday's open hour and in [9,15).
+    await bookVisitTool.handle(
+      { ...REPAIR_INPUT, slot_date: "2026-07-18", slot_start: "09:00" },
+      h2.ctx,
+    );
     expect(onlyJob(h2).props.visits[0]!.props.scheduledStart).toBe("09:00");
+  });
+
+  it("out-of-hours slot_start (before open): falls back, never books a garbage time", async () => {
+    // 06:00 is before the weekday 8:00 open → a hallucinated time. Degrade to the fallback + task.
+    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_start: "06:00" }, h.ctx);
+    expect(result.speak).toBe(BOOK_VISIT_ERROR_SPEAK);
+    expect(h.jobs.jobs.size).toBe(0);
+    expect(h.leads.ensured).toHaveLength(0);
+    expect(h.tasks.created.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("out-of-hours slot_start (at/after close): falls back, never books", async () => {
+    // 17:00 == weekday close (8–17) → [open, close) excludes it. Fallback, no booking.
+    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_start: "17:00" }, h.ctx);
+    expect(result.speak).toBe(BOOK_VISIT_ERROR_SPEAK);
+    expect(h.jobs.jobs.size).toBe(0);
+  });
+
+  it("malformed slot_start ('later'): falls back, never books", async () => {
+    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_start: "later" }, h.ctx);
+    expect(result.speak).toBe(BOOK_VISIT_ERROR_SPEAK);
+    expect(h.jobs.jobs.size).toBe(0);
+    expect(h.sms.sent).toHaveLength(0);
   });
 
   it("invalid phone: does NOT book and re-asks for the number", async () => {
@@ -229,10 +269,10 @@ describe("bookVisitTool", () => {
     // brand name from settings (fixture default) + STOP opt-out language
     expect(cmd.body).toContain("My Business");
     expect(cmd.body).toContain("STOP");
-    // the same slot phrase book_visit speaks ("Thursday morning")
-    expect(cmd.body).toContain("Thursday morning");
+    // the same slot phrase book_visit speaks: day + 2-hour arrival window ("Thursday between 8 and 10am")
+    expect(cmd.body).toContain("Thursday between 8 and 10am");
     // the body matches the pure builder exactly (no drift between helper + send)
-    expect(cmd.body).toBe(confirmationSms("My Business", "Thursday morning"));
+    expect(cmd.body).toBe(confirmationSms("My Business", "Thursday between 8 and 10am"));
   });
 
   it("routes the confirmation through SendNotificationUseCase → writes an observable notifications row", async () => {
