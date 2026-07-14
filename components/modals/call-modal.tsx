@@ -67,10 +67,12 @@ export function CallModalContent() {
           {lead.phone}
         </p>
       ) : (
-        // No number on file — prompt to add one in-flow instead of a blank call
-        // bar. Saving persists + starts the call with the fresh number.
+        // No number on file — the modal becomes the add-a-phone prompt (big,
+        // legible). Saving persists + starts the call with the fresh number.
         <PhoneAddInput
-          label="Add a phone number to call them"
+          label="No phone number yet"
+          sub={`Add ${lead.name.split(" ")[0]}'s mobile and the call starts right away.`}
+          cta="Save & call"
           onSave={savePhoneAndCall}
           onCancel={close}
         />

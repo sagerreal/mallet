@@ -20,7 +20,7 @@ function renderGate(props: Partial<React.ComponentProps<typeof PhoneGate>> = {})
   render(
     <PhoneGate
       bearer={props.bearer ?? { phone: "" }}
-      addLabel="Add a phone number to call them"
+      addLabel="No phone number yet"
       onAction={onAction}
       onSavePhone={onSavePhone}
       {...props}
@@ -39,7 +39,7 @@ describe("PhoneGate", () => {
     fireEvent.click(screen.getByText("Call"));
     expect(onAction).toHaveBeenCalledWith("555-0101");
     expect(onSavePhone).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("Add a phone number to call them")).toBeNull();
+    expect(screen.queryByLabelText("No phone number yet")).toBeNull();
   });
 
   it("stays tappable with no phone and expands the in-flow add-number row", () => {
@@ -47,29 +47,29 @@ describe("PhoneGate", () => {
     const btn = screen.getByText("Call") as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
     fireEvent.click(btn);
-    expect(screen.getByLabelText("Add a phone number to call them")).toBeTruthy();
+    expect(screen.getByLabelText("No phone number yet")).toBeTruthy();
   });
 
   it("saves the fresh number and auto-proceeds with it (no store race)", () => {
     const { onAction, onSavePhone } = renderGate({ bearer: { phone: "" } });
     fireEvent.click(screen.getByText("Call"));
-    const input = screen.getByLabelText("Add a phone number to call them");
+    const input = screen.getByLabelText("No phone number yet");
     fireEvent.change(input, { target: { value: "(925) 555-0100" } });
-    fireEvent.click(screen.getByText("Save"));
+    fireEvent.click(screen.getByText(/^Save/));
     // Persisted AND proceeded with the FRESH number the user just typed.
     expect(onSavePhone).toHaveBeenCalledWith("(925) 555-0100");
     expect(onAction).toHaveBeenCalledWith("(925) 555-0100");
     // The row collapses after a successful save.
-    expect(screen.queryByLabelText("Add a phone number to call them")).toBeNull();
+    expect(screen.queryByLabelText("No phone number yet")).toBeNull();
   });
 
   it("rejects an invalid number inline without saving or proceeding", () => {
     const { onAction, onSavePhone } = renderGate({ bearer: { phone: "" } });
     fireEvent.click(screen.getByText("Call"));
-    fireEvent.change(screen.getByLabelText("Add a phone number to call them"), {
+    fireEvent.change(screen.getByLabelText("No phone number yet"), {
       target: { value: "123" },
     });
-    fireEvent.click(screen.getByText("Save"));
+    fireEvent.click(screen.getByText(/^Save/));
     expect(screen.getByText(/doesn't look right/i)).toBeTruthy();
     expect(onSavePhone).not.toHaveBeenCalled();
     expect(onAction).not.toHaveBeenCalled();
@@ -79,7 +79,7 @@ describe("PhoneGate", () => {
     const { onAction, onSavePhone } = renderGate({ bearer: { phone: "" }, canAddPhone: false });
     fireEvent.click(screen.getByText("Call"));
     expect(screen.getByText(/No number on file — ask the office/i)).toBeTruthy();
-    expect(screen.queryByLabelText("Add a phone number to call them")).toBeNull();
+    expect(screen.queryByLabelText("No phone number yet")).toBeNull();
     expect(onSavePhone).not.toHaveBeenCalled();
     expect(onAction).not.toHaveBeenCalled();
   });

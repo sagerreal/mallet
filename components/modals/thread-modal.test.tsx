@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "thread", params: { leadId: "lead-1" } }),
+  useCloseModal: () => () => {},
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ leads: h.leads, updateLead: h.updateLead }),
 }));
@@ -44,7 +45,7 @@ beforeEach(() => {
 describe("ThreadModalContent — phoneless reachability", () => {
   it("with NO phone: shows the add-number prompt and disables the composer send", () => {
     render(<ThreadModalContent />);
-    expect(screen.getByLabelText(/Add a phone number to text them/i)).toBeTruthy();
+    expect(screen.getByLabelText(/No phone number yet/i)).toBeTruthy();
     const sendBtn = screen.getByText("Send") as HTMLButtonElement;
     expect(sendBtn.disabled).toBe(true);
     // Sending is refused — no message goes to the wire.
@@ -55,16 +56,16 @@ describe("ThreadModalContent — phoneless reachability", () => {
   it("with a phone: no add prompt and the composer send is enabled", () => {
     h.leads = [{ id: "lead-1", name: "Dana Alvarez", phone: "555-0101", acts: [] }];
     render(<ThreadModalContent />);
-    expect(screen.queryByLabelText(/Add a phone number to text them/i)).toBeNull();
+    expect(screen.queryByLabelText(/No phone number yet/i)).toBeNull();
     expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("saving a number persists it (composer then enables on the store update)", () => {
     render(<ThreadModalContent />);
-    fireEvent.change(screen.getByLabelText(/Add a phone number to text them/i), {
+    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
       target: { value: "(925) 555-0100" },
     });
-    fireEvent.click(screen.getByText("Save"));
+    fireEvent.click(screen.getByText(/^Save/));
     expect(updateLead).toHaveBeenCalledWith("lead-1", { phone: "(925) 555-0100" });
   });
 });

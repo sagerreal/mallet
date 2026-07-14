@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { TRPCClientError } from "@trpc/client";
-import { useAppStore, useActiveModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type { Lead, LeadNote } from "@/lib/store/types";
@@ -131,6 +131,7 @@ function friendlyError(err: unknown): string {
 
 export function ThreadModalContent() {
   const activeModal = useActiveModal();
+  const close = useCloseModal();
   const leadId = activeModal?.params?.leadId as string | undefined;
   const leads = useAppStore((s) => s.leads);
   const updateLead = useAppStore((s) => s.updateLead);
@@ -225,13 +226,15 @@ export function ThreadModalContent() {
           reminders land in this same thread, marked ✦
         </div>
       ) : (
-        // No number on file — prompt to add one in-flow rather than open a dead
-        // thread whose Send always fails. updateLead is synchronous, so the
-        // composer below enables as soon as a valid number is saved.
+        // No number on file — the modal becomes the add-a-phone prompt (big,
+        // legible). updateLead is synchronous, so the composer below enables
+        // as soon as a valid number is saved.
         <PhoneAddInput
-          label="Add a phone number to text them"
+          label="No phone number yet"
+          sub={`Add ${firstName(lead.name)}'s mobile and your text goes out from your business number.`}
+          cta="Save & text"
           onSave={(phone) => updateLead(lead!.id, { phone })}
-          onCancel={() => setSendError(null)}
+          onCancel={close}
         />
       )}
 

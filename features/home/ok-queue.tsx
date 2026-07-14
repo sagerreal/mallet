@@ -108,7 +108,9 @@ function OkCard({
           <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
             <PhoneGate
               bearer={item.lead}
-              addLabel="Add a phone number to text them"
+              addLabel="No phone number yet"
+              addSub={`Add ${firstName(item.lead.name)}'s mobile and this text goes out.`}
+              addCta="Save & send"
               onSavePhone={(p) => onSavePhone(item, p)}
               onAction={() => onSend(item, text)}
             >
@@ -134,7 +136,9 @@ function OkCard({
             {item.kind !== "invoice-overdue" && (
               <PhoneGate
                 bearer={item.lead}
-                addLabel="Add a phone number to call them"
+                addLabel="No phone number yet"
+                addSub={`Add ${firstName(item.lead.name)}'s mobile to call them.`}
+                addCta="Save & call"
                 onSavePhone={(p) => onSavePhone(item, p)}
                 onAction={() => onCall(item)}
               >

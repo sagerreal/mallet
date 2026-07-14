@@ -45,21 +45,25 @@ export function hasPhone(bearer: PhoneBearer | null | undefined): boolean {
 }
 
 interface PhoneAddInputProps {
-  /** Label above the input, e.g. "Add a phone number to call them". */
+  /** Big heading, e.g. "No phone number for Dana yet". */
   label: string;
+  /** One plain sentence under the heading, e.g. "Add their mobile to call them." */
+  sub?: string;
+  /** Button copy — says what happens next: "Save & call" / "Save & text". */
+  cta?: string;
   /** Called with the validated raw number when the user saves. */
   onSave: (phone: string) => void;
-  /** Called to dismiss the row without saving. */
+  /** Called to dismiss without saving. */
   onCancel: () => void;
 }
 
 /**
- * Shared in-flow add-a-phone row: a bold 11.5px label, a bordered tel input
- * (maxWidth 280), a primary Save, and inline red validation errors. Mirrors the
- * estimate-modal send panel's destination input so every phone-add surface reads
- * the same.
+ * The add-a-phone prompt — deliberately BIG. The ICP is a 55-year-old plumber
+ * in sunlight: 19px heading, 17px tel input, one full-width primary button that
+ * names the next action. Renders inside the call/thread modals (the "popup"
+ * Owen asked for) and in-flow on the OK-queue cards.
  */
-export function PhoneAddInput({ label, onSave, onCancel }: PhoneAddInputProps) {
+export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel }: PhoneAddInputProps) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -83,56 +87,63 @@ export function PhoneAddInput({ label, onSave, onCancel }: PhoneAddInputProps) {
   }
 
   return (
-    <div style={{ marginTop: 8 }}>
-      <label
+    <div style={{ marginTop: 12, maxWidth: 440 }}>
+      <div style={{ fontSize: 19, fontWeight: 800, color: "var(--ink)", lineHeight: 1.25 }}>
+        {label}
+      </div>
+      {sub && (
+        <div style={{ fontSize: 14.5, color: "var(--ink-2)", marginTop: 4 }}>{sub}</div>
+      )}
+      <input
+        type="tel"
+        value={value}
+        autoFocus
+        placeholder="(925) 555-0123"
+        aria-label={label}
+        onChange={(e) => {
+          setValue(e.target.value);
+          if (error) setError(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          }
+          if (e.key === "Escape") onCancel();
+        }}
         style={{
           display: "block",
-          fontSize: 11.5,
-          fontWeight: 700,
-          color: "var(--ink-2)",
-          marginBottom: 3,
+          width: "100%",
+          boxSizing: "border-box",
+          marginTop: 12,
+          border: `2px solid ${error ? "var(--red)" : "var(--line)"}`,
+          borderRadius: 11,
+          padding: "13px 15px",
+          fontFamily: "inherit",
+          fontSize: 17,
+          background: "var(--card)",
+          color: "var(--ink)",
         }}
-      >
-        {label}
-      </label>
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <input
-          type="tel"
-          value={value}
-          autoFocus
-          placeholder="(925) 555-0123"
-          aria-label={label}
-          onChange={(e) => {
-            setValue(e.target.value);
-            if (error) setError(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              save();
-            }
-            if (e.key === "Escape") onCancel();
-          }}
-          style={{
-            flex: "1 1 auto",
-            width: "100%",
-            maxWidth: 280,
-            border: `1.5px solid ${error ? "var(--red)" : "var(--line)"}`,
-            borderRadius: "var(--radius-sm, 9px)",
-            padding: "8px 11px",
-            fontFamily: "inherit",
-            fontSize: 13.5,
-            background: "var(--card)",
-            color: "var(--ink)",
-          }}
-        />
-        <button type="button" className="btn primary sm" onClick={save}>
-          Save
-        </button>
-      </div>
+      />
       {error && (
-        <div style={{ marginTop: 4, fontSize: 12, color: "var(--red)" }}>{error}</div>
+        <div style={{ marginTop: 6, fontSize: 14, color: "var(--red)" }}>{error}</div>
       )}
+      <button
+        type="button"
+        className="btn primary"
+        style={{ width: "100%", marginTop: 10, padding: "13px 16px", fontSize: 15.5 }}
+        onClick={save}
+      >
+        {cta}
+      </button>
+      <button
+        type="button"
+        className="linklike"
+        style={{ display: "block", margin: "10px auto 0", fontSize: 14, color: "var(--ink-2)" }}
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
     </div>
   );
 }
@@ -152,8 +163,12 @@ interface PhoneGateProps {
    * `(p) => updateLead(lead.id, { phone: p })`). Only called on the add path.
    */
   onSavePhone?: (phone: string) => void;
-  /** The add-phone row label, e.g. "Add a phone number to call them". */
+  /** The prompt heading, e.g. "No phone number yet". */
   addLabel: string;
+  /** One-sentence sub under the heading. */
+  addSub?: string;
+  /** Button copy naming the next action, e.g. "Save & send". */
+  addCta?: string;
   /**
    * false on field surfaces that have no lead in the store to write to: the gate
    * renders a read-only "no number" note instead of an add row (see below).
@@ -172,6 +187,8 @@ export function PhoneGate({
   onAction,
   onSavePhone,
   addLabel,
+  addSub,
+  addCta,
   canAddPhone = true,
   children,
 }: PhoneGateProps) {
@@ -205,7 +222,13 @@ export function PhoneGate({
     <>
       {children({ onClick: handleTrigger })}
       {adding && !has && canAddPhone && onSavePhone && (
-        <PhoneAddInput label={addLabel} onSave={handleSave} onCancel={() => setAdding(false)} />
+        <PhoneAddInput
+          label={addLabel}
+          sub={addSub}
+          cta={addCta}
+          onSave={handleSave}
+          onCancel={() => setAdding(false)}
+        />
       )}
       {adding && !has && !canAddPhone && (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>

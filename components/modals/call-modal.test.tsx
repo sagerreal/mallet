@@ -43,17 +43,17 @@ describe("CallModalContent — phoneless reachability", () => {
   it("with NO phone: hides the call path, shows the add-number prompt, does not start a blank call", () => {
     render(<CallModalContent />);
     expect(screen.queryByText("Call from Mallet")).toBeNull();
-    expect(screen.getByLabelText(/Add a phone number to call them/i)).toBeTruthy();
+    expect(screen.getByLabelText(/No phone number yet/i)).toBeTruthy();
     // No blank call bar opened.
     expect(startCall).not.toHaveBeenCalled();
   });
 
   it("saving a number persists it and starts the call with the fresh value", () => {
     render(<CallModalContent />);
-    fireEvent.change(screen.getByLabelText(/Add a phone number to call them/i), {
+    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
       target: { value: "(925) 555-0100" },
     });
-    fireEvent.click(screen.getByText("Save"));
+    fireEvent.click(screen.getByText(/^Save/));
     expect(updateLead).toHaveBeenCalledWith("lead-1", { phone: "(925) 555-0100" });
     expect(startCall).toHaveBeenCalledWith("lead-1");
     expect(close).toHaveBeenCalled();
