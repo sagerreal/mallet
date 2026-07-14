@@ -2,7 +2,7 @@ import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
 import type { OrgSettings } from "@mallet/settings";
 import { SLOT_LOOKAHEAD_DAYS } from "../../infra/vapi-defaults";
-import { computeSlots, toDateString, addDays, type OrgHours, type SlotWindow } from "../slots";
+import { computeSlots, toDateString, addDays, MIN_CREW, type OrgHours, type SlotWindow } from "../slots";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // The three booking lanes (mirrors the playbook). check_availability doesn't behave differently per
@@ -11,13 +11,8 @@ import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result
 export const AVAILABILITY_LANES = ["repair", "estimate", "flat"] as const;
 export const AVAILABILITY_URGENCIES = ["normal", "emergency"] as const;
 
-// A shop with no member flagged is_field_crew is still one working technician (the solo owner-op),
-// so capacity is at least this many crew. Prevents a mis-configured roster from making the agent
-// claim it has no openings at all.
-const MIN_CREW = 1;
-
 // Spoken lines. Functional, not chatty (house rule): each promises exactly what happens next and
-// never invents a time the office can't honour. Two slots → the two-slot close; one → offer it + the
+// never invents a time the office can't honour. 3/2 slots → a pick-one menu; 1 → offer it + the
 // office backstop; zero → hand to take_message framing so no request is dropped.
 const NO_SLOTS_SPEAK =
   "I don't have an opening in the next few days — let me take a message so the office can find you a time.";
@@ -63,25 +58,34 @@ const toOrgHours = (s: OrgSettings): OrgHours => {
   };
 };
 
-// Compose the spoken reply from the offered slots. Two → either/or close; one → offer + office
-// backstop; zero → take_message framing.
+// Compose the spoken reply from the offered slots, in ONE turn. 3 → a three-way pick; 2 → an
+// either/or; 1 → offer it + the office backstop; 0 → take_message framing. The caller then names a
+// window (or a specific time inside one) and book_visit is called with that window's start.
 const speakForSlots = (slots: readonly SlotWindow[]): string => {
-  if (slots.length >= 2) return `I've got ${slots[0]!.speakable} or ${slots[1]!.speakable} — which works?`;
+  if (slots.length >= 3) {
+    return `I can do ${slots[0]!.speakable}, ${slots[1]!.speakable}, or ${slots[2]!.speakable} — which works?`;
+  }
+  if (slots.length === 2) {
+    return `I can do ${slots[0]!.speakable} or ${slots[1]!.speakable} — which works?`;
+  }
   if (slots.length === 1) {
-    return `I've got ${slots[0]!.speakable} — or the office can call you with more times.`;
+    return `I can do ${slots[0]!.speakable} — or the office can call you with more times.`;
   }
   return NO_SLOTS_SPEAK;
 };
 
-// check_availability: read the org's hours + open schedule and offer up to two windows. It never
-// writes — the booking happens in book_visit (B2), which references the `data.slots` this returns.
-// An emergency urgency asks the slot math to surface today even when the day is nearly closed.
+// check_availability: read the org's hours + open schedule and offer up to MAX_SLOTS tight 2-hour
+// windows. It never writes — the booking happens in book_visit (B2), which references the
+// `data.slots` this returns (the caller picks a window; its startHHMM becomes book_visit's
+// slot_start). An emergency urgency asks the slot math to surface today's soonest window even when
+// the day is nearly closed.
 export const checkAvailabilityTool: VoiceTool = {
   name: "check_availability",
   description:
-    "Check the next open appointment windows and offer them to the caller. Use once you know " +
-    "the caller wants to book (repair, estimate, or flat service). Emergencies see the soonest " +
-    "possible time. Does not book — call book_visit after the caller picks a window.",
+    "Check the next open appointment windows and offer them to the caller. Returns up to three " +
+    "tight 2-hour arrival windows. Use once you know the caller wants to book (repair, estimate, " +
+    "or flat service). Emergencies see the soonest possible time. Does not book — call book_visit " +
+    "after the caller picks a window (pass that window's start as slot_start).",
   parameters: checkAvailabilityParameters,
   input: checkAvailabilityInput,
 
@@ -126,10 +130,12 @@ const rangeFor = (now: Date, lookaheadDays: number): { fromDate: string; toDate:
   return { fromDate: from, toDate: addDays(from, lookaheadDays) };
 };
 
-// Structured slot echoed in `data` (plain object — the ledger stores it as JSON).
+// Structured slot echoed in `data` (plain object — the ledger stores it as JSON). Carries the exact
+// window bounds so book_visit gets the EXACT chosen start (slot_start = the picked window's
+// startHHMM) — no re-derivation, no morning/afternoon guessing.
 const toSlotData = (s: SlotWindow): Record<string, unknown> => ({
   date: s.date,
-  window: s.window,
   startHHMM: s.startHHMM,
+  endHHMM: s.endHHMM,
   speakable: s.speakable,
 });

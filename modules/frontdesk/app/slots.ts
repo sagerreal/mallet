@@ -1,29 +1,31 @@
 // PURE availability math for the voice front desk — NO I/O, NO Date.now(). The caller passes `now`
 // (from a Clock) so this whole file is deterministic and exhaustively unit-testable. It turns the
-// org's opening hours + already-booked visits + crew size into at most two speakable slot windows
-// (the "two-slot close" the playbook scripts). Date arithmetic is done on CALENDAR dates (rolling a
-// YYYY-MM-DD string forward one day at a time), never on millisecond offsets, so a DST transition
-// can never drop or duplicate a day.
+// org's opening hours + already-booked visits + crew size into a few DISCRETE 2-HOUR ARRIVAL
+// WINDOWS the caller picks from (the home-services norm — a tight "2 to 4pm" beats a 5-hour
+// "afternoon"). Date arithmetic is done on CALENDAR dates (rolling a YYYY-MM-DD string forward one
+// day at a time), never on millisecond offsets, so a DST transition can never drop or duplicate a
+// day.
 
-// The window boundary between the morning and afternoon slots (13:00 local). Named, not magic: the
-// playbook says "morning = open→13:00, afternoon = 13:00→close" and this is that 13.
-export const WINDOW_BOUNDARY_HOUR = 13;
+// The length of every arrival window, in hours. Named, not magic: the playbook offers 2-hour
+// arrival windows (e.g. 8-10, 10-12, …), so a caller hears a tight commitment, not a half-day block.
+export const SLOT_WINDOW_HOURS = 2;
 
-// The two-slot close: we offer AT MOST this many windows so the caller has a simple either/or, not a
-// calendar to read. Earliest two, in time order.
-export const MAX_SLOTS = 2;
+// We offer AT MOST this many windows so the caller has a short menu to pick from, not a calendar to
+// read. Earliest-first, across days.
+export const MAX_SLOTS = 3;
 
-// The two windows within an open day. `morning` runs from the day's open hour to WINDOW_BOUNDARY_HOUR;
-// `afternoon` from WINDOW_BOUNDARY_HOUR to the day's close hour.
-export type SlotWindowKind = "morning" | "afternoon";
+// A shop with no member flagged is_field_crew is still one working technician (the solo owner-op),
+// so capacity is at least this many crew. Prevents a mis-configured roster from making the agent
+// claim it has no openings at all. Applied here AND clamped again by the tool (defense-in-depth).
+export const MIN_CREW = 1;
 
-// One offerable slot. `date` is a calendar date "YYYY-MM-DD"; `startHHMM` is the window's open time
-// "HH:MM" (feeds book_visit's scheduledStart in B2); `speakable` is the natural phrase the agent
-// reads back ("today 8 to 12", "tomorrow afternoon, 1 to 5", "Thursday morning, 8 to 12").
+// One offerable arrival window. `date` is a calendar date "YYYY-MM-DD"; `startHHMM`/`endHHMM` are
+// the window bounds as 24h "HH:MM" (startHHMM feeds book_visit's slot_start / scheduledStart);
+// `speakable` is the natural phrase the agent reads back ("today, 2 to 4pm", "tomorrow, 8 to 10am").
 export interface SlotWindow {
   readonly date: string;
-  readonly window: SlotWindowKind;
   readonly startHHMM: string;
+  readonly endHHMM: string;
   readonly speakable: string;
 }
 
@@ -39,8 +41,8 @@ export interface OrgHours {
 }
 
 // A visit already on the books, as the availability reader returns it. `startHHMM` is null for an
-// unplaced-time visit (a date but no time yet); by rule it occupies the MORNING window of its date
-// (documented below in windowsOfVisit) so it still reduces availability conservatively.
+// unplaced-time visit (a date but no time yet); by rule it occupies the FIRST window of its date
+// (documented below in visitOccupiesWindow) so it still reduces availability conservatively.
 export interface BookedVisit {
   readonly date: string;
   readonly startHHMM: string | null;
@@ -63,11 +65,21 @@ interface DayHours {
   readonly close: number;
 }
 
-// Compute the offered slot windows. Walks calendar dates from `now` forward up to `lookaheadDays`,
-// yields each open window that still has crew capacity, and returns the earliest MAX_SLOTS.
+// The shared definition of a window's end: start + SLOT_WINDOW_HOURS, on the same "HH:MM" clock.
+// Exported so book_visit + the booking confirmation reuse ONE definition of "the 2-hour window"
+// rather than re-deriving it (a single source of truth for window length). Input is trusted to be a
+// valid "HH:MM" (book_visit bounds-checks it first); the end is clamped to 24 for a late start.
+export const windowEndHHMM = (startHHMM: string): string => {
+  const endHour = Math.min(hourOf(startHHMM) + SLOT_WINDOW_HOURS, HOURS_IN_DAY);
+  return toHHMM(endHour);
+};
+
+// Compute the offered arrival windows. Walks calendar dates from `now` forward up to `lookaheadDays`,
+// yields each 2-hour window that still has crew capacity, and returns the earliest MAX_SLOTS.
 //
-// emergency === true: today's window is offered even when today is nearly closed (the soonest
-// possible time still gets surfaced) — see todayWindows. Still capped at MAX_SLOTS.
+// emergency === true: today's soonest window is offered even when the day is nearly closed / it's
+// the current window (the soonest possible time still gets surfaced) — see windowsForDay. Still
+// capped at MAX_SLOTS.
 export function computeSlots(input: ComputeSlotsInput): SlotWindow[] {
   const byDate = groupVisitsByDate(input.visits);
   const slots: SlotWindow[] = [];
@@ -76,7 +88,6 @@ export function computeSlots(input: ComputeSlotsInput): SlotWindow[] {
     const date = addDays(toDateString(input.now), dayOffset);
     const hours = dayHoursFor(date, input.hours);
     const openWindows = windowsForDay({
-      date,
       hours,
       isToday: dayOffset === 0,
       nowHour: input.now.getHours(),
@@ -84,7 +95,7 @@ export function computeSlots(input: ComputeSlotsInput): SlotWindow[] {
     });
 
     for (const window of openWindows) {
-      if (hasCapacity(window, byDate.get(date) ?? [], input.crewCount)) {
+      if (hasCapacity(window, byDate.get(date) ?? [], input.crewCount, hours.open)) {
         slots.push(toSlotWindow(date, window, input.now));
         if (slots.length === MAX_SLOTS) return slots;
       }
@@ -93,20 +104,19 @@ export function computeSlots(input: ComputeSlotsInput): SlotWindow[] {
   return slots;
 }
 
-// The concrete window computed for a day: which kind and its integer open/close hours.
+// A concrete 2-hour window computed for a day: its integer open/close hours (close = open + 2).
 interface Window {
-  readonly kind: SlotWindowKind;
   readonly openHour: number;
   readonly closeHour: number;
 }
 
-// The windows a single day offers, in time order. A closed day yields none. Otherwise morning is
-// present when open < boundary and afternoon when close > boundary. TODAY, a window is kept only if
-// it hasn't fully CLOSED yet (a window still in progress is bookable — a 3pm call can still take the
-// 1–5 afternoon). On an emergency we surface today's windows regardless, so the soonest possible
-// time is always offered even if the day is nearly over.
+// The windows a single day offers, in time order. A closed day yields none. Otherwise we step by
+// SLOT_WINDOW_HOURS from the day's open while a whole window still fits before close (8-18 →
+// 8-10, 10-12, 12-14, 14-16, 16-18). TODAY, a window whose start hour is at/behind `nowHour` is a
+// past window and dropped (can't offer a slot that has already started). On an EMERGENCY we surface
+// today's windows regardless, so the soonest possible window is always offered even if the day is
+// nearly over or already closed.
 function windowsForDay(args: {
-  date: string;
   hours: DayHours;
   isToday: boolean;
   nowHour: number;
@@ -115,44 +125,49 @@ function windowsForDay(args: {
   if (isClosed(args.hours)) return [];
 
   const all = dayWindows(args.hours);
-  if (!args.isToday) return all;
-  return all.filter((w) => args.emergency || w.closeHour > args.nowHour);
+  if (!args.isToday || args.emergency) return all;
+  return all.filter((w) => w.openHour > args.nowHour);
 }
 
-// The (up to two) windows a set of day hours defines, skipping a window the hours don't span.
+// The 2-hour windows a set of day hours defines, stepping by SLOT_WINDOW_HOURS from open. A window
+// is only produced when a WHOLE SLOT_WINDOW_HOURS block fits before close, so an odd tail (e.g.
+// 8–13) never yields a truncated < 2h window.
 function dayWindows(hours: DayHours): Window[] {
   const windows: Window[] = [];
-  if (hours.open < WINDOW_BOUNDARY_HOUR) {
-    windows.push({ kind: "morning", openHour: hours.open, closeHour: Math.min(hours.close, WINDOW_BOUNDARY_HOUR) });
-  }
-  if (hours.close > WINDOW_BOUNDARY_HOUR) {
-    windows.push({ kind: "afternoon", openHour: Math.max(hours.open, WINDOW_BOUNDARY_HOUR), closeHour: hours.close });
+  for (let start = hours.open; start + SLOT_WINDOW_HOURS <= hours.close; start += SLOT_WINDOW_HOURS) {
+    windows.push({ openHour: start, closeHour: start + SLOT_WINDOW_HOURS });
   }
   return windows;
 }
 
-// A window has capacity while the count of visits overlapping it is below the crew size — each crew
-// member can run one visit per window, so `overlapping < crewCount` means at least one crew is free.
-function hasCapacity(window: Window, dayVisits: readonly BookedVisit[], crewCount: number): boolean {
-  const overlapping = dayVisits.filter((v) => visitOverlapsWindow(v, window)).length;
-  return overlapping < crewCount;
+// A window has capacity while the count of visits inside it is below the crew size — each crew
+// member can run one visit per window, so `occupying < crewCount` means at least one crew is free.
+// `dayOpen` is the day's open hour, used to place a null-start visit into the first window.
+function hasCapacity(
+  window: Window,
+  dayVisits: readonly BookedVisit[],
+  crewCount: number,
+  dayOpen: number,
+): boolean {
+  const occupying = dayVisits.filter((v) => visitOccupiesWindow(v, window, dayOpen)).length;
+  return occupying < crewCount;
 }
 
-// Which windows a visit occupies. A null-start visit has a date but no time yet, so by rule it
-// occupies the MORNING window (the conservative default — it reduces the day's morning capacity and
-// leaves the afternoon open). A timed visit occupies the window its start hour falls in.
-function visitOverlapsWindow(visit: BookedVisit, window: Window): boolean {
-  const startHour = visit.startHHMM === null ? 0 : hourOf(visit.startHHMM);
-  const kind: SlotWindowKind = startHour < WINDOW_BOUNDARY_HOUR ? "morning" : "afternoon";
-  return kind === window.kind;
+// Whether a visit falls inside a window. A null-start visit has a date but no time yet, so by rule
+// it occupies the FIRST window of its day (the conservative default): its start hour is treated as
+// the day's OPEN hour, which by construction lands in the first window dayWindows produces. A timed
+// visit occupies the window whose [openHour, closeHour) contains its start hour.
+function visitOccupiesWindow(visit: BookedVisit, window: Window, dayOpen: number): boolean {
+  const hour = visit.startHHMM === null ? dayOpen : hourOf(visit.startHHMM);
+  return hour >= window.openHour && hour < window.closeHour;
 }
 
 // Project a resolved window onto the spoken SlotWindow DTO.
 function toSlotWindow(date: string, window: Window, now: Date): SlotWindow {
   return {
     date,
-    window: window.kind,
     startHHMM: toHHMM(window.openHour),
+    endHHMM: toHHMM(window.closeHour),
     speakable: speakableFor(date, window, now),
   };
 }
@@ -160,26 +175,34 @@ function toSlotWindow(date: string, window: Window, now: Date): SlotWindow {
 // ── speech ────────────────────────────────────────────────────────────────────
 
 const HOURS_IN_HALF_DAY = 12;
+const HOURS_IN_DAY = 24;
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
-// The natural phrase the agent reads. "today"/"tomorrow" for offsets 0/1, else the weekday name.
-// A relative-day MORNING omits the window word to stay terse ("today 8 to 12"); every other case
-// includes it ("tomorrow afternoon, 1 to 5", "Thursday morning, 8 to 12") so the slot is unambiguous.
+// The natural phrase the agent reads. "today"/"tomorrow" for offsets 0/1, else the weekday name,
+// then the 2-hour range with a single am/pm suffix ("today, 2 to 4pm", "tomorrow, 8 to 10am",
+// "Thursday, 12 to 2pm"). The suffix is the END hour's meridiem so a window crossing noon
+// ("10 to 12pm") reads naturally.
 function speakableFor(date: string, window: Window, now: Date): string {
   const dayPhrase = dayPhraseFor(date, now);
-  const range = `${clockPhrase(window.openHour)} to ${clockPhrase(spokenCloseHour(window))}`;
-  const isRelative = dayPhrase === "today" || dayPhrase === "tomorrow";
-
-  if (window.kind === "morning" && isRelative) return `${dayPhrase} ${range}`;
-  return `${dayPhrase} ${window.kind}, ${range}`;
+  return `${dayPhrase}, ${clockRange(window.openHour, window.closeHour)}`;
 }
 
-// The hour SPOKEN as a window's end. A morning window that runs to the 13:00 boundary is spoken as
-// ending at noon ("8 to 12"), not "8 to 1" — the boundary is a scheduling seam, not the words a
-// customer expects. Every other close is spoken as-is.
-function spokenCloseHour(window: Window): number {
-  if (window.kind === "morning" && window.closeHour === WINDOW_BOUNDARY_HOUR) return HOURS_IN_HALF_DAY;
-  return window.closeHour;
+// A 2-hour range spoken with one meridiem on the end: "2 to 4pm", "8 to 10am", "12 to 2pm". The
+// meridiem is taken from the end hour so a midday window reads the way a person says it.
+function clockRange(openHour: number, closeHour: number): string {
+  return `${clockNumber(openHour)} to ${clockNumber(closeHour)}${meridiem(closeHour)}`;
+}
+
+// The bare 12-hour number for an integer hour: 0/24 → 12, 13 → 1, else the hour mod 12 (noon → 12).
+function clockNumber(hour24: number): string {
+  const h = hour24 % HOURS_IN_HALF_DAY;
+  return String(h === 0 ? HOURS_IN_HALF_DAY : h);
+}
+
+// "am"/"pm" for an integer hour [0,24]. Midnight/noon handled: 0 → am, 12 → pm, 24 → am.
+function meridiem(hour24: number): string {
+  const h = hour24 % HOURS_IN_DAY;
+  return h < HOURS_IN_HALF_DAY ? "am" : "pm";
 }
 
 // "today" | "tomorrow" | a weekday name, derived purely from the calendar-date offset off `now`.
@@ -188,13 +211,6 @@ function dayPhraseFor(date: string, now: Date): string {
   if (date === todayStr) return "today";
   if (date === addDays(todayStr, 1)) return "tomorrow";
   return WEEKDAY_NAMES[weekdayOf(date)] ?? "that day";
-}
-
-// A bare-clock phrase for speech: "8", "12", "1", "5" (12-hour, no am/pm — the window word carries
-// morning/afternoon). Midnight/noon map to 12.
-function clockPhrase(hour24: number): string {
-  const h = hour24 % HOURS_IN_HALF_DAY;
-  return String(h === 0 ? HOURS_IN_HALF_DAY : h);
 }
 
 // ── calendar-date helpers (DST-safe: string math, never ms offsets) ─────────────
