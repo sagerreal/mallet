@@ -6,6 +6,7 @@ import { Phone, isOk, toPage, asLeadId, asCompanyId, money } from "@mallet/share
 import { logger } from "@mallet/shared/observability";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
 import { DrizzleEstimateRepository } from "@mallet/quoting";
+import { DrizzleJobRepository } from "@mallet/jobs";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
 import { ListLeadsUseCase } from "../app/list-leads";
 import { Lead, LEAD_STAGES, type LeadStage } from "../domain/lead";
@@ -192,11 +193,20 @@ export const createLeadRouter = () =>
         // archived; the office re-sends if needed.
         const estimateRepo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
         const archivedCount = await estimateRepo.archiveByLead(asLeadId(leadId), now);
-        // Log after the cascade completes so the entry only fires on clean exit — if archiveByLead
+        // Cascade jobs too (same tx, same clock): an archived customer's ACTIVE jobs + their visits
+        // are soft-deleted so they don't linger as orphans in the Jobs count and on the board.
+        // Terminal (complete/canceled) jobs are preserved as history — mirrors the estimate cascade
+        // preserving accepted quotes. Also not reversed on restore (same policy as estimates).
+        const jobRepo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const archivedJobs = await jobRepo.archiveByLead(asLeadId(leadId), now);
+        // Log after the cascade completes so the entry only fires on clean exit — if a cascade
         // throws, the tx rolls back and no misleading audit entry is left behind.
         logger.info({ leadId, orgId: ctx.principal.orgId }, "lead.archived");
         if (archivedCount > 0) {
           logger.info({ leadId, orgId: ctx.principal.orgId, archivedCount }, "lead.archived: estimates cascaded");
+        }
+        if (archivedJobs > 0) {
+          logger.info({ leadId, orgId: ctx.principal.orgId, archivedJobs }, "lead.archived: jobs cascaded");
         }
         return { ok: true };
       }),

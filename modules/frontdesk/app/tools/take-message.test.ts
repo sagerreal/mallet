@@ -94,6 +94,7 @@ class FakeLeadRepository implements LeadRepository {
     return { items: [], nextCursor: null };
   }
   async save(_lead: Lead): Promise<void> {}
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(_id: LeadId, _now: Date): Promise<number> {
     return 0;
   }
@@ -169,7 +170,7 @@ const buildHarness = (overrides?: {
     createManualJob: {} as never,
     createVisit: {} as never,
     settings: { async getByOrg() { return null; } },
-    availability: { async read() { return { crewCount: 0, visits: [] }; } },
+    availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; } },
     sendNotification: inertSendNotification(),
     bus,
     clock,

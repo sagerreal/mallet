@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { asLeadId, asPhone, type OrgId } from "@mallet/shared/types";
+import { asLeadId, asPhone, asUserId, type OrgId } from "@mallet/shared/types";
 import type { JobKind } from "../../../jobs/domain/job";
 import type { ToolInvocationLedger } from "../../domain/call-record";
 import { RunToolCallsUseCase } from "../run-tool-calls";
@@ -16,6 +16,8 @@ import {
   REPAIR_INPUT,
   ORG,
   LEAD_UUID,
+  FIRST_CREW_UUID,
+  SECOND_CREW_UUID,
   type Harness,
 } from "./book-visit.harness";
 
@@ -90,8 +92,9 @@ describe("bookVisitTool", () => {
     // price provenance: the service fee, credited phrasing on
     expect(result.speak).toContain("$89");
     expect(result.speak).toContain("credited toward the repair");
-    // confirmation quotes the 2-hour arrival window
-    expect(result.speak).toContain("between 8 and 10am");
+    // confirmation quotes the DISCRETE start time booked (day + start), not a range
+    expect(result.speak).toContain("Someone will arrive Thursday at 8am.");
+    expect(result.speak).not.toContain("between"); // no range phrasing in the spoken line
     expect(result.data).toMatchObject({ kind: "work", emergency: false });
   });
 
@@ -189,7 +192,7 @@ describe("bookVisitTool", () => {
     // the 2–4pm arrival window.
     const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_start: "14:00" }, h.ctx);
     expect(onlyJob(h).props.visits[0]!.props.scheduledStart).toBe("14:00");
-    expect(result.speak).toContain("between 2 and 4pm");
+    expect(result.speak).toContain("Someone will arrive Thursday at 2pm.");
     expect(result.speak).toContain("$89");
   });
 
@@ -198,6 +201,33 @@ describe("bookVisitTool", () => {
     const result = await bookVisitTool.handle({ ...REPAIR_INPUT, slot_start: "14:00" }, h.ctx);
     expect(onlyJob(h).props.visits[0]!.props.scheduledStart).toBe("14:00");
     void result;
+  });
+
+  // ── auto-place on the board: assign the booking to the first field crew ──
+  it("assigns the visit to the FIRST field crew so it lands on the board", async () => {
+    const h2 = buildHarness({
+      fieldCrewIds: [asUserId(FIRST_CREW_UUID), asUserId(SECOND_CREW_UUID)],
+    });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    // assigned to the first crew in the reader's stable order — so it renders on the crew grid.
+    const visit = onlyJob(h2).props.visits[0]!;
+    expect(visit.props.assigneeUserId).toBe(asUserId(FIRST_CREW_UUID));
+    expect(result.data).toMatchObject({ kind: "work" });
+  });
+
+  it("leaves the visit UNASSIGNED (null) when the org has zero field crew", async () => {
+    // default harness → no field crew; the booking stays in "To schedule" for the office to place.
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+    expect(onlyJob(h).props.visits[0]!.props.assigneeUserId).toBeNull();
+    expect(result.data).toMatchObject({ kind: "work" });
+  });
+
+  it("degrades to UNASSIGNED (never fails the booking) when the crew read throws", async () => {
+    const h2 = buildHarness({ fieldCrewThrows: true });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    // the booking STILL succeeds; the visit is just unassigned (office places it).
+    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBeNull();
   });
 
   it("books at a Saturday slot_start when Saturday hours admit it", async () => {
@@ -269,10 +299,10 @@ describe("bookVisitTool", () => {
     // brand name from settings (fixture default) + STOP opt-out language
     expect(cmd.body).toContain("My Business");
     expect(cmd.body).toContain("STOP");
-    // the same slot phrase book_visit speaks: day + 2-hour arrival window ("Thursday between 8 and 10am")
-    expect(cmd.body).toContain("Thursday between 8 and 10am");
+    // the same slot phrase book_visit speaks: day + the discrete start time ("Thursday at 8am")
+    expect(cmd.body).toContain("Thursday at 8am");
     // the body matches the pure builder exactly (no drift between helper + send)
-    expect(cmd.body).toBe(confirmationSms("My Business", "Thursday between 8 and 10am"));
+    expect(cmd.body).toBe(confirmationSms("My Business", "Thursday at 8am"));
   });
 
   it("routes the confirmation through SendNotificationUseCase → writes an observable notifications row", async () => {

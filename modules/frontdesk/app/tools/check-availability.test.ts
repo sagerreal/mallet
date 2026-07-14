@@ -36,6 +36,9 @@ const fakeAvailability = (snapshot: AvailabilitySnapshot): AvailabilityReader =>
   async read() {
     return snapshot;
   },
+  async readFieldCrewIds() {
+    return [];
+  },
 });
 
 const buildCtx = (args: {
@@ -71,43 +74,61 @@ describe("checkAvailabilityTool", () => {
     expect(Object.keys(params.properties).sort()).toEqual(["lane", "urgency"]);
   });
 
-  it("offers three 2-hour windows as a pick-one close, with bounds in data.slots", async () => {
-    const ctx = buildCtx({ settings: settingsFrom(), snapshot: { crewCount: 1, visits: [] } });
+  it("offers three DISCRETE start times as a pick-one close, with bounds in data.slots", async () => {
+    // A single open day with exactly three windows (Sat 8–14 → 8, 10, 12) so the spread offers all
+    // three, earliest-first, and the speak reads them as discrete start times.
+    const satOnly = settingsFrom({
+      hoursWdOpen: 0,
+      hoursWdClose: 0,
+      hoursSatOpen: 8,
+      hoursSatClose: 14,
+      hoursSunOpen: 0,
+      hoursSunClose: 0,
+    });
+    const sat0700 = new Date(2026, 6, 18, 7, 0, 0); // Saturday
+    const ctx = buildCtx({ settings: satOnly, snapshot: { crewCount: 1, visits: [] }, now: sat0700 });
     const result = await checkAvailabilityTool.handle({ lane: "repair", urgency: "normal" }, ctx);
 
-    // default hours wd 8–17 → 8-10, 10-12, 12-14 are the earliest three at Tue 07:00.
+    // discrete start times, noon worded — not consecutive ranges.
     expect(result.speak).toBe(
-      "I can do today, 8 to 10am, today, 10 to 12pm, or today, 12 to 2pm — which works?",
+      "I can come today at 8am, today at 10am, or today at noon — which works?",
     );
-    const slots = result.data?.slots as Array<{ date: string; startHHMM: string; endHHMM: string }>;
+    const slots = result.data?.slots as Array<{
+      date: string;
+      startHHMM: string;
+      endHHMM: string;
+      speakable: string;
+    }>;
     expect(slots).toHaveLength(3);
-    expect(slots[0]).toMatchObject({ date: "2026-07-14", startHHMM: "08:00", endHHMM: "10:00" });
+    // startHHMM + endHHMM (start + 2h) are still carried for book_visit / the arrival span.
+    expect(slots[0]).toMatchObject({ date: "2026-07-18", startHHMM: "08:00", endHHMM: "10:00" });
     expect(slots[1]).toMatchObject({ startHHMM: "10:00", endHHMM: "12:00" });
     expect(slots[2]).toMatchObject({ startHHMM: "12:00", endHHMM: "14:00" });
+    // speakable is a discrete start time, not a range.
+    expect(slots[0]!.speakable).toBe("today at 8am");
+    expect(slots[2]!.speakable).toBe("today at noon");
     // no morning/afternoon field survives
     expect(slots[0]).not.toHaveProperty("window");
   });
 
-  it("offers exactly two windows as an either/or when only two remain", async () => {
-    // Book the first two of today's windows so only 12-14 and 14-16 remain (wd 8–17 → 4 windows).
-    const visits: BookedVisit[] = [bookedAt("2026-07-14", "08:00"), bookedAt("2026-07-14", "10:00")];
-    const ctx = buildCtx({
-      settings: settingsFrom({ hoursSatOpen: 0, hoursSatClose: 0 }),
-      snapshot: { crewCount: 1, visits },
-    });
-    // Force lookahead exhaustion beyond today by fully-booking the rest — simplest: lookahead is 5
-    // but we just check today yields two and they are the ones asserted (later days append if room,
-    // so restrict by booking Wed–Fri). Instead assert the FIRST two are today's remaining windows.
+  it("SPREADS three start times across many available windows (first / middle / last)", async () => {
+    // Default hours wd 8–17 (→ 8,10,12,14 per weekday), Tue 07:00, lookahead 5 → 16 windows across
+    // Tue–Fri. The spread samples index 0, 8, 15 → Tue 08:00, Thu 08:00, Fri 14:00 — genuinely
+    // different times, not the first three consecutive morning windows.
+    const ctx = buildCtx({ settings: settingsFrom(), snapshot: { crewCount: 1, visits: [] } });
     const result = await checkAvailabilityTool.handle({ lane: "repair", urgency: "normal" }, ctx);
-    const slots = result.data?.slots as Array<{ startHHMM: string }>;
-    // The two remaining today windows come first.
-    expect(slots[0]).toMatchObject({ date: "2026-07-14", startHHMM: "12:00" });
-    expect(slots[1]).toMatchObject({ date: "2026-07-14", startHHMM: "14:00" });
+    const slots = result.data?.slots as Array<{ date: string; startHHMM: string }>;
+    expect(slots).toHaveLength(3);
+    expect(slots[0]).toMatchObject({ date: "2026-07-14", startHHMM: "08:00" }); // soonest first
+    expect(slots[1]).toMatchObject({ date: "2026-07-16", startHHMM: "08:00" }); // middle
+    expect(slots[2]).toMatchObject({ date: "2026-07-17", startHHMM: "14:00" }); // last
+    // the offered start times are genuinely distinct
+    const keys = slots.map((s) => `${s.date} ${s.startHHMM}`);
+    expect(new Set(keys).size).toBe(3);
   });
 
-  it("speaks a two-window either/or when exactly two are available in the lookahead", async () => {
-    // Saturday-only shop, lookahead 0 effect via closed weekdays around it. Use a Saturday now with
-    // Sat hours 8–12 (two windows) and no bookings → exactly two.
+  it("speaks a two-start either/or when exactly two are available in the lookahead", async () => {
+    // Saturday-only shop with Sat hours 8–12 (two windows) and no bookings → exactly two.
     const satOnly = settingsFrom({
       hoursWdOpen: 0,
       hoursWdClose: 0,
@@ -119,11 +140,11 @@ describe("checkAvailabilityTool", () => {
     const sat0700 = new Date(2026, 6, 18, 7, 0, 0); // Saturday
     const ctx = buildCtx({ settings: satOnly, snapshot: { crewCount: 1, visits: [] }, now: sat0700 });
     const result = await checkAvailabilityTool.handle({ lane: "repair", urgency: "normal" }, ctx);
-    expect(result.speak).toBe("I can do today, 8 to 10am or today, 10 to 12pm — which works?");
+    expect(result.speak).toBe("I can come today at 8am or today at 10am — which works?");
     expect(result.data?.slots).toHaveLength(2);
   });
 
-  it("offers exactly one slot + backstop when the lookahead yields a single window", async () => {
+  it("offers exactly one start time + backstop when the lookahead yields a single window", async () => {
     // Saturday-only shop, first Saturday window booked → only 10-12 remains inside lookahead.
     const satOnly = settingsFrom({
       hoursWdOpen: 0,
@@ -141,7 +162,7 @@ describe("checkAvailabilityTool", () => {
     });
     const result = await checkAvailabilityTool.handle({ lane: "repair", urgency: "normal" }, ctx);
     expect(result.speak).toBe(
-      "I can do today, 10 to 12pm — or the office can call you with more times.",
+      "I can come today at 10am — or the office can call you with more times.",
     );
     expect(result.data?.slots).toHaveLength(1);
   });

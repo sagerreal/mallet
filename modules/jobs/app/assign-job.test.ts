@@ -59,6 +59,7 @@ class FakeJobRepository implements JobRepository {
     this.store.set(job.props.id, job);
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(id: JobId, _now: Date): Promise<number> {
     return this.store.delete(id) ? 1 : 0;
   }

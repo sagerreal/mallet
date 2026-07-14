@@ -50,6 +50,7 @@ class FakeCompanyRepository implements CompanyRepository {
     this.store.set(company.props.id, company);
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(id: CompanyId, now: Date): Promise<number> {
     this.archiveCallCount += 1;
     this.archiveLastArgs = { id, now };

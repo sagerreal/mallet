@@ -38,6 +38,10 @@ export interface JobRepository {
   insertManual(job: Job): Promise<void>;
   // Soft-delete a job. Returns the number of rows affected (0 = not found / already archived).
   archive(id: JobId, now: Date): Promise<number>;
+  // Cascade: soft-delete a lead's ACTIVE jobs (status scheduled/in_progress) and their visits when
+  // the customer is archived. Terminal jobs (complete/canceled) are preserved as history — mirrors
+  // the estimate cascade preserving accepted quotes. Returns the number of jobs archived.
+  archiveByLead(leadId: LeadId, now: Date): Promise<number>;
   // Idempotent create keyed on the source estimate. Returns true if inserted, false if an active
   // job for that estimate already exists (ON CONFLICT DO NOTHING — safe inside the request's tx).
   insertForEstimate(job: Job): Promise<boolean>;

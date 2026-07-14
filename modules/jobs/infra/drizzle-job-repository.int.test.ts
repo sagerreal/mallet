@@ -335,4 +335,50 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(result.count).toBe(1);
     expect(result.found).toBeNull();
   });
+
+  it("archiveByLead sweeps a lead's ACTIVE jobs + their visits, preserves terminal, isolates other leads", async () => {
+    const orgA = asOrgId(orgAId);
+    // Two FRESH leads in org A so the counts are isolated from jobs other tests left on leadA:
+    // `sweep` owns the active + terminal jobs; `keep` owns the untouched isolation job.
+    const [sweep] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgAId}, 'Sweep Lead') returning id`;
+    const [keep] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgAId}, 'Keep Lead') returning id`;
+    // A scheduled job WITH a visit on `sweep` (should be swept), and a job on `keep` (untouched).
+    const seed = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const active = draftJob(orgA, asLeadId(sweep!.id), {
+        num: await repo.nextNumber(),
+        visits: [makeVisit()],
+      });
+      await repo.save(active);
+      const other = draftJob(orgA, asLeadId(keep!.id), { num: await repo.nextNumber() });
+      await repo.save(other);
+      return { activeId: active.props.id, visitId: active.props.visits[0]!.props.id, otherId: other.props.id };
+    });
+    // A COMPLETE (terminal) job on `sweep`, inserted raw so it must survive the cascade as history.
+    const [done] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, status)
+      values (${orgAId}, 'JOB-DONE-SWEEP', ${sweep!.id}, 'Done', 'complete') returning id`;
+
+    const out = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const swept = await repo.archiveByLead(asLeadId(sweep!.id), new Date());
+      return {
+        swept,
+        activeFound: await repo.findById(asJobId(seed.activeId)),
+        otherFound: await repo.findById(asJobId(seed.otherId)),
+        doneFound: await repo.findById(asJobId(done!.id)),
+      };
+    });
+    // The visit's deleted_at is checked directly — findById on the archived job returns null.
+    const [visitRow] = await admin<{ deleted_at: string | null }[]>`
+      select deleted_at from job_visits where id = ${seed.visitId}`;
+
+    expect(out.swept).toBe(1); // only the scheduled job, not the complete one
+    expect(out.activeFound).toBeNull(); // active job swept
+    expect(visitRow!.deleted_at).not.toBeNull(); // its visit swept too — no orphan on the board
+    expect(out.doneFound).not.toBeNull(); // terminal job preserved as history
+    expect(out.otherFound).not.toBeNull(); // lead B's job untouched
+  });
 });

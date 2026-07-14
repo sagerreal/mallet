@@ -134,6 +134,40 @@ export class DrizzleJobRepository implements JobRepository {
     return rows.length;
   }
 
+  // Cascade soft-delete of a lead's ACTIVE jobs + their visits when the customer is archived.
+  // Only scheduled/in_progress jobs are swept — terminal complete/canceled jobs are preserved as
+  // history, exactly as the estimate cascade preserves accepted quotes. Explicit orgId filter is
+  // defense-in-depth on top of RLS. Visits of the swept jobs are cleared too, so no orphan visit
+  // lingers on the board pointing at an archived job. Returns the number of jobs archived.
+  async archiveByLead(leadId: LeadId, now: Date): Promise<number> {
+    const archived = await this.tx
+      .update(jobs)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(jobs.orgId, this.orgId),
+          eq(jobs.leadId, leadId),
+          isNull(jobs.deletedAt),
+          inArray(jobs.status, ["scheduled", "in_progress"]),
+        ),
+      )
+      .returning({ id: jobs.id });
+    const jobIds = archived.map((r) => r.id);
+    if (jobIds.length > 0) {
+      await this.tx
+        .update(jobVisits)
+        .set({ deletedAt: now })
+        .where(
+          and(
+            eq(jobVisits.orgId, this.orgId),
+            inArray(jobVisits.jobId, jobIds),
+            isNull(jobVisits.deletedAt),
+          ),
+        );
+    }
+    return jobIds.length;
+  }
+
   // Idempotent create keyed on the source estimate: ON CONFLICT DO NOTHING (does NOT abort the
   // surrounding transaction the way a raised unique-violation would), returning whether a row was
   // inserted. A false result means an active job already exists for this estimate — the caller

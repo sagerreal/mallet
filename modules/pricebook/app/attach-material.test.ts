@@ -102,6 +102,7 @@ class FakeServiceRepository implements ServiceRepository {
     throw new Error("save not used in attach tests");
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(): Promise<number> {
     throw new Error("archive not used in attach tests");
   }

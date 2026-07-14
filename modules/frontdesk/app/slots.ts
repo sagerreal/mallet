@@ -1,17 +1,19 @@
 // PURE availability math for the voice front desk — NO I/O, NO Date.now(). The caller passes `now`
-// (from a Clock) so this whole file is deterministic and exhaustively unit-testable. It turns the
-// org's opening hours + already-booked visits + crew size into a few DISCRETE 2-HOUR ARRIVAL
-// WINDOWS the caller picks from (the home-services norm — a tight "2 to 4pm" beats a 5-hour
-// "afternoon"). Date arithmetic is done on CALENDAR dates (rolling a YYYY-MM-DD string forward one
-// day at a time), never on millisecond offsets, so a DST transition can never drop or duplicate a
-// day.
+// (from a Clock) so this whole file is deterministic and exhaustively unit-testable. It finds the
+// org's AVAILABLE 2-hour arrival windows (from opening hours + already-booked visits + crew size),
+// then OFFERS the caller up to MAX_SLOTS DISCRETE START TIMES spread across those windows — "we can
+// come at 8, noon, or 4" — rather than a cluster of consecutive morning ranges (owner live-test
+// feedback: discrete start times, spread across the day, book better than back-to-back ranges).
+// Date arithmetic is done on CALENDAR dates (rolling a YYYY-MM-DD string forward one day at a time),
+// never on millisecond offsets, so a DST transition can never drop or duplicate a day.
 
 // The length of every arrival window, in hours. Named, not magic: the playbook offers 2-hour
 // arrival windows (e.g. 8-10, 10-12, …), so a caller hears a tight commitment, not a half-day block.
 export const SLOT_WINDOW_HOURS = 2;
 
-// We offer AT MOST this many windows so the caller has a short menu to pick from, not a calendar to
-// read. Earliest-first, across days.
+// We offer AT MOST this many start times so the caller has a short menu to pick from, not a calendar
+// to read. When more windows are available, we spread the offer across them (see spreadOffer) so the
+// caller hears genuinely different times, earliest-first.
 export const MAX_SLOTS = 3;
 
 // A shop with no member flagged is_field_crew is still one working technician (the solo owner-op),
@@ -20,8 +22,10 @@ export const MAX_SLOTS = 3;
 export const MIN_CREW = 1;
 
 // One offerable arrival window. `date` is a calendar date "YYYY-MM-DD"; `startHHMM`/`endHHMM` are
-// the window bounds as 24h "HH:MM" (startHHMM feeds book_visit's slot_start / scheduledStart);
-// `speakable` is the natural phrase the agent reads back ("today, 2 to 4pm", "tomorrow, 8 to 10am").
+// the window bounds as 24h "HH:MM" (startHHMM feeds book_visit's slot_start / scheduledStart;
+// endHHMM = start + SLOT_WINDOW_HOURS, kept for the internal arrival-window length + any range
+// mention). `speakable` is now a discrete START-TIME phrase the agent reads back ("today at 8am",
+// "tomorrow at noon", "Thursday at 4pm") — not a range.
 export interface SlotWindow {
   readonly date: string;
   readonly startHHMM: string;
@@ -74,15 +78,26 @@ export const windowEndHHMM = (startHHMM: string): string => {
   return toHHMM(endHour);
 };
 
-// Compute the offered arrival windows. Walks calendar dates from `now` forward up to `lookaheadDays`,
-// yields each 2-hour window that still has crew capacity, and returns the earliest MAX_SLOTS.
+// Compute the offered start times. Walks calendar dates from `now` forward up to `lookaheadDays`,
+// collecting EVERY 2-hour window that still has crew capacity (earliest-first), then OFFERS up to
+// MAX_SLOTS of them spread across the availability (see spreadOffer) so the caller hears genuinely
+// different times rather than the first three consecutive morning windows.
 //
 // emergency === true: today's soonest window is offered even when the day is nearly closed / it's
-// the current window (the soonest possible time still gets surfaced) — see windowsForDay. Still
-// capped at MAX_SLOTS.
+// the current window (the soonest possible time still gets surfaced) — see windowsForDay. The spread
+// still applies, and because the collection is earliest-first the soonest window is always the first
+// offered (spreadOffer always keeps the first element).
 export function computeSlots(input: ComputeSlotsInput): SlotWindow[] {
+  const available = collectAvailableWindows(input);
+  return spreadOffer(available, MAX_SLOTS);
+}
+
+// Every capacity-having window in [today, today+lookahead], earliest-first. This is the full
+// candidate set spreadOffer then samples — kept separate so the "which windows are open" math and
+// the "which of them do we offer" policy stay independent (single responsibility, easy to test).
+function collectAvailableWindows(input: ComputeSlotsInput): SlotWindow[] {
   const byDate = groupVisitsByDate(input.visits);
-  const slots: SlotWindow[] = [];
+  const available: SlotWindow[] = [];
 
   for (let dayOffset = 0; dayOffset <= input.lookaheadDays; dayOffset += 1) {
     const date = addDays(toDateString(input.now), dayOffset);
@@ -96,12 +111,34 @@ export function computeSlots(input: ComputeSlotsInput): SlotWindow[] {
 
     for (const window of openWindows) {
       if (hasCapacity(window, byDate.get(date) ?? [], input.crewCount, hours.open)) {
-        slots.push(toSlotWindow(date, window, input.now));
-        if (slots.length === MAX_SLOTS) return slots;
+        available.push(toSlotWindow(date, window, input.now));
       }
     }
   }
-  return slots;
+  return available;
+}
+
+// Pick up to `max` windows SPREAD evenly across the available set, preserving order (earliest-first).
+// ≤ max available → offer them all. More than max → sample evenly so the caller gets genuinely
+// different times: the FIRST (soonest — preserves the emergency "soonest first" guarantee), the
+// LAST, and evenly-spaced picks between them (e.g. 5 windows, max 3 → indices 0, 2, 4 → first,
+// middle, last). Even spacing uses index round((i * (n-1)) / (max-1)), which always yields the first
+// and last endpoints and de-dupes defensively (rounding can't collide once n > max, but the guard
+// keeps the contract explicit).
+function spreadOffer(available: readonly SlotWindow[], max: number): SlotWindow[] {
+  if (available.length <= max) return [...available];
+
+  const lastAvailableIndex = available.length - 1;
+  const lastPickIndex = max - 1;
+  const picked: SlotWindow[] = [];
+  let previousIndex = -1;
+  for (let i = 0; i < max; i += 1) {
+    const index = Math.round((i * lastAvailableIndex) / lastPickIndex);
+    if (index === previousIndex) continue; // de-dupe (defensive — cannot happen when n > max)
+    picked.push(available[index]!);
+    previousIndex = index;
+  }
+  return picked;
 }
 
 // A concrete 2-hour window computed for a day: its integer open/close hours (close = open + 2).
@@ -176,21 +213,28 @@ function toSlotWindow(date: string, window: Window, now: Date): SlotWindow {
 
 const HOURS_IN_HALF_DAY = 12;
 const HOURS_IN_DAY = 24;
+// Midnight/noon read as words, not "12am"/"12pm", which are ambiguous to a listener. Mirrors
+// window-phrasing.startTimePhrase (kept local here to avoid a slots ↔ window-phrasing import cycle).
+const NOON_HOUR = 12;
+const MIDNIGHT_HOUR = 0;
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
-// The natural phrase the agent reads. "today"/"tomorrow" for offsets 0/1, else the weekday name,
-// then the 2-hour range with a single am/pm suffix ("today, 2 to 4pm", "tomorrow, 8 to 10am",
-// "Thursday, 12 to 2pm"). The suffix is the END hour's meridiem so a window crossing noon
-// ("10 to 12pm") reads naturally.
+// The natural phrase the agent reads: a DISCRETE START TIME, not a range. "today"/"tomorrow" for
+// offsets 0/1, else the weekday name, then the window's start time worded naturally ("today at 8am",
+// "tomorrow at noon", "Thursday at 4pm"). The 2-hour arrival span still lives in endHHMM for the
+// office / any range mention — the caller just hears the start.
 function speakableFor(date: string, window: Window, now: Date): string {
   const dayPhrase = dayPhraseFor(date, now);
-  return `${dayPhrase}, ${clockRange(window.openHour, window.closeHour)}`;
+  return `${dayPhrase} at ${startPhrase(window.openHour)}`;
 }
 
-// A 2-hour range spoken with one meridiem on the end: "2 to 4pm", "8 to 10am", "12 to 2pm". The
-// meridiem is taken from the end hour so a midday window reads the way a person says it.
-function clockRange(openHour: number, closeHour: number): string {
-  return `${clockNumber(openHour)} to ${clockNumber(closeHour)}${meridiem(closeHour)}`;
+// A discrete start time spoken naturally: "8am", "noon", "4pm", "midnight". Midnight/noon are worded;
+// every other on-the-hour start is "<n><am|pm>". (Windows always start on the hour.)
+function startPhrase(hour24: number): string {
+  const h = hour24 % HOURS_IN_DAY;
+  if (h === NOON_HOUR) return "noon";
+  if (h === MIDNIGHT_HOUR) return "midnight";
+  return `${clockNumber(hour24)}${meridiem(hour24)}`;
 }
 
 // The bare 12-hour number for an integer hour: 0/24 → 12, 13 → 1, else the hour mod 12 (noon → 12).

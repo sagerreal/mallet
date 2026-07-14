@@ -59,6 +59,7 @@ class FakeServiceRepository implements ServiceRepository {
     this.store.set(service.props.id, service);
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(id: ServiceId, now: Date): Promise<number> {
     this.archiveCallCount += 1;
     this.archiveLastArgs = { id, now };

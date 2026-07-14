@@ -52,6 +52,7 @@ class FakeCategoryRepository implements CategoryRepository {
     throw new Error("save not used in list tests");
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(): Promise<number> {
     throw new Error("archive not used in list tests");
   }

@@ -85,7 +85,7 @@ const fakeDeps: VoiceToolDeps = {
   } as never,
   // The runner never touches the read ports directly — inert stubs keep the deps shape valid.
   settings: { async getByOrg() { return null; } },
-  availability: { async read() { return { crewCount: 0, visits: [] }; } },
+  availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; } },
   sendNotification: inertSendNotification(),
   bus: { async emit() {} },
   clock: { now: () => new Date("2026-07-14T00:00:00Z") },

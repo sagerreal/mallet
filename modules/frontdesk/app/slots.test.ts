@@ -50,37 +50,56 @@ describe("windowEndHHMM", () => {
   });
 });
 
-describe("computeSlots — 2-hour window shape", () => {
-  it("steps 8–18 into 2-hour windows, earliest MAX_SLOTS first", () => {
+describe("computeSlots — 2-hour window shape (endHHMM kept internally)", () => {
+  it("keeps startHHMM + endHHMM = start + SLOT_WINDOW_HOURS on every offered slot", () => {
     const slots = computeSlots(base());
-    expect(slots).toHaveLength(MAX_SLOTS);
-    expect(slots[0]).toMatchObject({ date: "2026-07-14", startHHMM: "08:00", endHHMM: "10:00" });
-    expect(slots[1]).toMatchObject({ date: "2026-07-14", startHHMM: "10:00", endHHMM: "12:00" });
-    expect(slots[2]).toMatchObject({ date: "2026-07-14", startHHMM: "12:00", endHHMM: "14:00" });
+    expect(slots.length).toBeGreaterThan(0);
+    for (const s of slots) {
+      expect(windowEndHHMM(s.startHHMM)).toBe(s.endHHMM);
+    }
   });
 
-  it("speaks natural 12-hour ranges with a single am/pm on the end", () => {
-    const slots = computeSlots(base());
-    expect(slots[0]!.speakable).toBe("today, 8 to 10am");
-    expect(slots[1]!.speakable).toBe("today, 10 to 12pm");
-    expect(slots[2]!.speakable).toBe("today, 12 to 2pm");
+  it("offers exactly the day's windows when only one day is in range (no spread needed)", () => {
+    // lookahead 0 = today only; Sat morning-only shop → 8-10, 10-12 (2 windows, ≤ MAX_SLOTS → all).
+    const sat0700 = new Date(2026, 6, 18, 7, 0, 0);
+    const slots = computeSlots(base({ now: sat0700, lookaheadDays: 0 }));
+    expect(slots).toHaveLength(2);
+    expect(slots[0]).toMatchObject({ date: "2026-07-18", startHHMM: "08:00", endHHMM: "10:00" });
+    expect(slots[1]).toMatchObject({ date: "2026-07-18", startHHMM: "10:00", endHHMM: "12:00" });
+  });
+});
+
+describe("computeSlots — discrete start-time speakable", () => {
+  it("speaks a discrete START TIME (not a range), day-prefixed", () => {
+    // Single day, exactly 3 windows so the spread offers all three, earliest-first.
+    const oddHours: OrgHours = { ...HOURS, wdOpen: 8, wdClose: 14 }; // 8-10, 10-12, 12-14
+    const slots = computeSlots(base({ hours: oddHours, lookaheadDays: 0 }));
+    expect(slots).toHaveLength(3);
+    expect(slots[0]!.speakable).toBe("today at 8am");
+    expect(slots[1]!.speakable).toBe("today at 10am");
+    // noon is worded, not "12pm"
+    expect(slots[2]!.speakable).toBe("today at noon");
   });
 
-  it("speaks an afternoon window with a pm range", () => {
-    // Fill today's earlier windows so the first offer is 14–16 → "today, 2 to 4pm".
+  it("words an afternoon start with pm", () => {
+    // Fill today's earlier windows so the first offer is 14:00 → "today at 2pm". Single day.
+    const oddHours: OrgHours = { ...HOURS, wdOpen: 8, wdClose: 16 }; // 8,10,12,14
     const visits: BookedVisit[] = [
       bookedAt("2026-07-14", "08:00"),
       bookedAt("2026-07-14", "10:00"),
       bookedAt("2026-07-14", "12:00"),
     ];
-    const slots = computeSlots(base({ visits }));
-    expect(slots[0]!.speakable).toBe("today, 2 to 4pm");
+    const slots = computeSlots(base({ hours: oddHours, lookaheadDays: 0, visits }));
+    expect(slots).toHaveLength(1);
+    expect(slots[0]!.speakable).toBe("today at 2pm");
   });
 
   it("speaks 'tomorrow' and named weekdays by name", () => {
-    // now = Monday 2026-07-13 07:00 → today Monday, tomorrow Tuesday, then Wednesday by name.
+    // now = Monday 2026-07-13 07:00. Book Monday full + Tuesday's first four so Tue's only open
+    // window is 16:00, then Wednesday opens fresh. Restrict lookahead to 2 so the candidate set is
+    // small and the spread offers all of them (Tue 4pm, Wed 8am, Wed 10am → but ≤3 across days).
     const mon0700 = new Date(2026, 6, 13, 7, 0, 0);
-    // Fully book Monday + Tuesday's first windows enough to roll examples across days.
+    const oddHours: OrgHours = { ...HOURS, wdClose: 18 };
     const visits: BookedVisit[] = [
       // Monday 07-13: fill all five windows
       bookedAt("2026-07-13", "08:00"),
@@ -88,35 +107,84 @@ describe("computeSlots — 2-hour window shape", () => {
       bookedAt("2026-07-13", "12:00"),
       bookedAt("2026-07-13", "14:00"),
       bookedAt("2026-07-13", "16:00"),
-      // Tuesday 07-14: fill four so only 16–18 remains → "tomorrow, 4 to 6pm"
+      // Tuesday 07-14: fill four so only 16–18 remains → "tomorrow at 4pm"
       bookedAt("2026-07-14", "08:00"),
       bookedAt("2026-07-14", "10:00"),
       bookedAt("2026-07-14", "12:00"),
       bookedAt("2026-07-14", "14:00"),
+      // Wednesday 07-15: fill all but the first so Wed contributes exactly 08:00
+      bookedAt("2026-07-15", "10:00"),
+      bookedAt("2026-07-15", "12:00"),
+      bookedAt("2026-07-15", "14:00"),
+      bookedAt("2026-07-15", "16:00"),
     ];
-    const slots = computeSlots(base({ now: mon0700, visits }));
-    expect(slots[0]).toMatchObject({ date: "2026-07-14" });
-    expect(slots[0]!.speakable).toBe("tomorrow, 4 to 6pm");
-    // next windows roll to Wednesday 07-15, named by weekday
-    expect(slots[1]).toMatchObject({ date: "2026-07-15" });
-    expect(slots[1]!.speakable).toBe("Wednesday, 8 to 10am");
+    const slots = computeSlots(base({ now: mon0700, hours: oddHours, lookaheadDays: 2, visits }));
+    // Two available windows: Tue 16:00, Wed 08:00 → ≤ MAX_SLOTS so both offered, earliest-first.
+    expect(slots).toHaveLength(2);
+    expect(slots[0]).toMatchObject({ date: "2026-07-14", startHHMM: "16:00" });
+    expect(slots[0]!.speakable).toBe("tomorrow at 4pm");
+    expect(slots[1]).toMatchObject({ date: "2026-07-15", startHHMM: "08:00" });
+    expect(slots[1]!.speakable).toBe("Wednesday at 8am");
+  });
+});
+
+describe("computeSlots — spread selection (discrete times across the day)", () => {
+  it("offers first / middle / last when more than MAX_SLOTS windows are available", () => {
+    // Single day, 8–18 → five windows: 8,10,12,14,16. Spread of 3 → indices 0,2,4 → 8, noon, 4pm.
+    const slots = computeSlots(base({ lookaheadDays: 0 }));
+    expect(slots).toHaveLength(MAX_SLOTS);
+    expect(slots.map((s) => s.startHHMM)).toEqual(["08:00", "12:00", "16:00"]);
+    expect(slots.map((s) => s.speakable)).toEqual([
+      "today at 8am",
+      "today at noon",
+      "today at 4pm",
+    ]);
+  });
+
+  it("offers ALL windows (no sampling) when exactly MAX_SLOTS are available", () => {
+    // 8–14 → exactly three windows: 8,10,12 → all offered, earliest-first (no dropping).
+    const oddHours: OrgHours = { ...HOURS, wdClose: 14 };
+    const slots = computeSlots(base({ hours: oddHours, lookaheadDays: 0 }));
+    expect(slots.map((s) => s.startHHMM)).toEqual(["08:00", "10:00", "12:00"]);
+  });
+
+  it("offers all when fewer than MAX_SLOTS are available", () => {
+    // 8–12 → two windows → both offered.
+    const oddHours: OrgHours = { ...HOURS, wdClose: 12 };
+    const slots = computeSlots(base({ hours: oddHours, lookaheadDays: 0 }));
+    expect(slots.map((s) => s.startHHMM)).toEqual(["08:00", "10:00"]);
+  });
+
+  it("spreads first / middle / last across an even count of windows (endpoints kept)", () => {
+    // 8–16 → four windows: 8,10,12,14. Spread of 3 over indices 0..3 → round(0), round(1.5)=2,
+    // round(3) → 0,2,3 → 8, 12, 14 (first, a middle-ish, last — always keeps first + last).
+    const oddHours: OrgHours = { ...HOURS, wdClose: 16 };
+    const slots = computeSlots(base({ hours: oddHours, lookaheadDays: 0 }));
+    expect(slots.map((s) => s.startHHMM)).toEqual(["08:00", "12:00", "14:00"]);
+  });
+
+  it("always keeps the earliest available window first (soonest-first preserved)", () => {
+    const slots = computeSlots(base({ lookaheadDays: 5 }));
+    // With a 5-day lookahead there are many windows; the very first offer is always the soonest.
+    expect(slots[0]).toMatchObject({ date: "2026-07-14", startHHMM: "08:00" });
   });
 });
 
 describe("computeSlots — today's past windows", () => {
   it("skips windows whose start hour is at/behind the current hour", () => {
-    // now = Tuesday 11:00 → 08–10 and 10–12 are past (start 8,10 <= 11); first offer is 12–14.
+    // now = Tuesday 11:00, lookahead 0 → 08–10 and 10–12 are past (start 8,10 <= 11); remaining
+    // today windows are 12,14,16 → all three offered (exactly MAX_SLOTS).
     const tue1100 = new Date(2026, 6, 14, 11, 0, 0);
-    const slots = computeSlots(base({ now: tue1100 }));
+    const slots = computeSlots(base({ now: tue1100, lookaheadDays: 0 }));
     expect(slots[0]).toMatchObject({ startHHMM: "12:00", endHHMM: "14:00" });
-    expect(slots.every((s) => s.startHHMM >= "12:00" || s.date !== "2026-07-14")).toBe(true);
+    expect(slots.every((s) => s.startHHMM >= "12:00")).toBe(true);
   });
 });
 
 describe("computeSlots — closed days", () => {
   it("skips a closed Sunday entirely", () => {
     // now = Saturday 2026-07-18 13:00. Saturday is 8–12 (both windows past by 13:00); Sunday closed;
-    // Monday reopens.
+    // Monday reopens → the earliest offer is Monday 08:00.
     const satAfternoon = new Date(2026, 6, 18, 13, 0, 0);
     const slots = computeSlots(base({ now: satAfternoon }));
     expect(slots.every((s) => s.date !== "2026-07-19")).toBe(true); // no Sunday slot
@@ -129,80 +197,76 @@ describe("computeSlots — closed days", () => {
     expect(slots).toEqual([]);
   });
 
-  it("offers only Saturday's two windows (8–12), never a truncated tail", () => {
-    // now = Saturday 07:00; Sat hours 8–12 → exactly 8-10, 10-12.
-    const sat0700 = new Date(2026, 6, 18, 7, 0, 0);
-    const slots = computeSlots(base({ now: sat0700, lookaheadDays: 0 }));
-    expect(slots).toHaveLength(2);
-    expect(slots[0]).toMatchObject({ date: "2026-07-18", startHHMM: "08:00", endHHMM: "10:00" });
-    expect(slots[1]).toMatchObject({ date: "2026-07-18", startHHMM: "10:00", endHHMM: "12:00" });
-  });
-
   it("does not emit a truncated window when hours don't divide evenly (8–13 → 8-10, 10-12)", () => {
     const oddHours: OrgHours = { ...HOURS, wdOpen: 8, wdClose: 13 };
     const slots = computeSlots(base({ hours: oddHours, lookaheadDays: 0 }));
     // 8-10, 10-12 fit; 12-14 would run past 13 close → dropped. No 12–13 stub.
-    expect(slots.map((s) => s.startHHMM)).toEqual(["08:00", "10:00", "12:00"].slice(0, 2));
+    expect(slots.map((s) => s.startHHMM)).toEqual(["08:00", "10:00"]);
     expect(slots.every((s) => s.endHHMM <= "13:00")).toBe(true);
   });
 });
 
 describe("computeSlots — capacity vs crew", () => {
   it("drops a fully-booked window and offers the next", () => {
-    // crewCount 1, one visit at 08:00 → 8–10 full; first offer is 10–12.
-    const slots = computeSlots(base({ visits: [bookedAt("2026-07-14", "08:00")], crewCount: 1 }));
+    // crewCount 1, one visit at 08:00, lookahead 0 → 8–10 full; remaining today 10,12,14,16 → spread.
+    const slots = computeSlots(
+      base({ visits: [bookedAt("2026-07-14", "08:00")], crewCount: 1, lookaheadDays: 0 }),
+    );
     expect(slots[0]).toMatchObject({ startHHMM: "10:00" });
+    expect(slots.every((s) => s.startHHMM !== "08:00")).toBe(true);
   });
 
   it("keeps a window open while overlapping visits are below crew size", () => {
-    // crewCount 2, one 08:00 visit → 8–10 still has capacity (1 < 2).
-    const slots = computeSlots(base({ visits: [bookedAt("2026-07-14", "08:00")], crewCount: 2 }));
+    // crewCount 2, one 08:00 visit → 8–10 still has capacity (1 < 2), so it's the earliest.
+    const slots = computeSlots(
+      base({ visits: [bookedAt("2026-07-14", "08:00")], crewCount: 2, lookaheadDays: 0 }),
+    );
     expect(slots[0]).toMatchObject({ startHHMM: "08:00" });
   });
 
   it("closes a window once overlapping visits reach crew size", () => {
-    // crewCount 2, two visits inside 8–10 → full; first offer is 10–12.
+    // crewCount 2, two visits inside 8–10 → full; earliest offer is 10–12.
     const visits = [bookedAt("2026-07-14", "08:00"), bookedAt("2026-07-14", "09:00")];
-    const slots = computeSlots(base({ visits, crewCount: 2 }));
+    const slots = computeSlots(base({ visits, crewCount: 2, lookaheadDays: 0 }));
     expect(slots[0]).toMatchObject({ startHHMM: "10:00" });
   });
 
   it("treats a null-start visit as occupying the day's first window", () => {
     const nullVisit: BookedVisit = { date: "2026-07-14", startHHMM: null, durationMinutes: 60 };
-    const slots = computeSlots(base({ visits: [nullVisit], crewCount: 1 }));
-    // First window (8–10) consumed by the null-start visit → first offer is 10–12.
+    const slots = computeSlots(base({ visits: [nullVisit], crewCount: 1, lookaheadDays: 0 }));
+    // First window (8–10) consumed by the null-start visit → earliest offer is 10–12.
     expect(slots[0]).toMatchObject({ startHHMM: "10:00" });
   });
 });
 
 describe("computeSlots — emergency", () => {
   it("surfaces today's soonest window on an emergency even when it's the current window", () => {
-    // now = Tuesday 09:00 — inside the 8–10 window. Normal drops 8–10 (start 8 <= 9); emergency
-    // still surfaces it (the office triages the soonest possible time).
+    // now = Tuesday 09:00 — inside the 8–10 window, lookahead 0. Normal drops 8–10 (start 8 <= 9);
+    // emergency still surfaces it (the office triages the soonest possible time), and because the
+    // collection is earliest-first the soonest is always the FIRST offer.
     const tue0900 = new Date(2026, 6, 14, 9, 0, 0);
-    const normal = computeSlots(base({ now: tue0900, emergency: false }));
+    const normal = computeSlots(base({ now: tue0900, emergency: false, lookaheadDays: 0 }));
     expect(normal[0]).toMatchObject({ startHHMM: "10:00" }); // 8–10 skipped as past
 
-    const emergency = computeSlots(base({ now: tue0900, emergency: true }));
-    expect(emergency[0]).toMatchObject({ startHHMM: "08:00" }); // soonest window surfaced
-    expect(emergency).toHaveLength(MAX_SLOTS);
+    const emergency = computeSlots(base({ now: tue0900, emergency: true, lookaheadDays: 0 }));
+    expect(emergency[0]).toMatchObject({ startHHMM: "08:00" }); // soonest window surfaced first
   });
 
   it("surfaces today's window on an emergency even when the day has fully closed", () => {
     // now = Tuesday 19:00 — past the 18:00 close. Normal rolls to tomorrow; emergency still offers
-    // today's soonest window.
+    // today's soonest window as the first offer.
     const tue1900 = new Date(2026, 6, 14, 19, 0, 0);
     const normal = computeSlots(base({ now: tue1900, emergency: false }));
     expect(normal[0]!.date).toBe("2026-07-15"); // rolled to tomorrow
 
     const emergency = computeSlots(base({ now: tue1900, emergency: true }));
-    expect(emergency[0]!.date).toBe("2026-07-14"); // today still offered
+    expect(emergency[0]!.date).toBe("2026-07-14"); // today still offered first
     expect(emergency[0]).toMatchObject({ startHHMM: "08:00" });
   });
 });
 
 describe("computeSlots — lookahead exhaustion", () => {
-  it("returns fewer than MAX_SLOTS when the lookahead runs out", () => {
+  it("returns nothing when the lookahead runs out", () => {
     // lookahead 0 = today only; Sat morning-only (2 windows) + book both → zero.
     const sat0700 = new Date(2026, 6, 18, 7, 0, 0);
     const slots = computeSlots(
@@ -238,5 +302,11 @@ describe("computeSlots — invariants", () => {
     for (const s of slots) {
       expect(windowEndHHMM(s.startHHMM)).toBe(s.endHHMM);
     }
+  });
+
+  it("offered start times are distinct (spread never repeats a window)", () => {
+    const slots = computeSlots(base({ lookaheadDays: 5 }));
+    const keys = slots.map((s) => `${s.date} ${s.startHHMM}`);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import type { OrgId } from "@mallet/shared/types";
+import { asUserId, type OrgId, type UserId } from "@mallet/shared/types";
 import type { AvailabilityReader, AvailabilitySnapshot } from "../domain/availability";
 import type { BookedVisit } from "../app/slots";
 
@@ -76,6 +76,20 @@ export class DrizzleAvailabilityReader implements AvailabilityReader {
         AND u.is_field_crew = true
     `);
     return Number(rows[0]?.count ?? 0);
+  }
+
+  // Field-crew user ids in a STABLE order (created_at, then id as a tiebreaker), org-scoped. Used by
+  // book_visit to assign a voice booking to the first field crew so it lands on the board. One
+  // org-scoped query (no N+1); empty when the org has no field crew.
+  async readFieldCrewIds(): Promise<UserId[]> {
+    const rows = await this.tx.execute<{ id: string }>(sql`
+      SELECT u.id AS "id"
+      FROM users u
+      WHERE u.org_id = ${this.orgId}
+        AND u.is_field_crew = true
+      ORDER BY u.created_at ASC, u.id ASC
+    `);
+    return rows.map((r) => asUserId(r.id));
   }
 }
 

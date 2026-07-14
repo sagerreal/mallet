@@ -12,8 +12,10 @@ export const AVAILABILITY_LANES = ["repair", "estimate", "flat"] as const;
 export const AVAILABILITY_URGENCIES = ["normal", "emergency"] as const;
 
 // Spoken lines. Functional, not chatty (house rule): each promises exactly what happens next and
-// never invents a time the office can't honour. 3/2 slots → a pick-one menu; 1 → offer it + the
-// office backstop; zero → hand to take_message framing so no request is dropped.
+// never invents a time the office can't honour. The slots the math returns are already DISCRETE
+// START TIMES spread across the day (see slots.spreadOffer), so the speak is a pick-one menu of
+// distinct times. 3/2 slots → a pick-one menu; 1 → offer it + the office backstop; zero → hand to
+// take_message framing so no request is dropped.
 const NO_SLOTS_SPEAK =
   "I don't have an opening in the next few days — let me take a message so the office can find you a time.";
 
@@ -58,34 +60,37 @@ const toOrgHours = (s: OrgSettings): OrgHours => {
   };
 };
 
-// Compose the spoken reply from the offered slots, in ONE turn. 3 → a three-way pick; 2 → an
-// either/or; 1 → offer it + the office backstop; 0 → take_message framing. The caller then names a
-// window (or a specific time inside one) and book_visit is called with that window's start.
+// Compose the spoken reply from the offered start times, in ONE turn. Each `speakable` is a discrete
+// day+start phrase ("today at 8am", "Thursday at noon"), already spread across the availability, so
+// the caller hears genuinely different times. 3 → a three-way pick; 2 → an either/or; 1 → offer it +
+// the office backstop; 0 → take_message framing. The caller then names one (or a specific time near
+// it) and book_visit is called with that window's start.
 const speakForSlots = (slots: readonly SlotWindow[]): string => {
   if (slots.length >= 3) {
-    return `I can do ${slots[0]!.speakable}, ${slots[1]!.speakable}, or ${slots[2]!.speakable} — which works?`;
+    return `I can come ${slots[0]!.speakable}, ${slots[1]!.speakable}, or ${slots[2]!.speakable} — which works?`;
   }
   if (slots.length === 2) {
-    return `I can do ${slots[0]!.speakable} or ${slots[1]!.speakable} — which works?`;
+    return `I can come ${slots[0]!.speakable} or ${slots[1]!.speakable} — which works?`;
   }
   if (slots.length === 1) {
-    return `I can do ${slots[0]!.speakable} — or the office can call you with more times.`;
+    return `I can come ${slots[0]!.speakable} — or the office can call you with more times.`;
   }
   return NO_SLOTS_SPEAK;
 };
 
-// check_availability: read the org's hours + open schedule and offer up to MAX_SLOTS tight 2-hour
-// windows. It never writes — the booking happens in book_visit (B2), which references the
-// `data.slots` this returns (the caller picks a window; its startHHMM becomes book_visit's
-// slot_start). An emergency urgency asks the slot math to surface today's soonest window even when
-// the day is nearly closed.
+// check_availability: read the org's hours + open schedule and offer up to MAX_SLOTS DISCRETE START
+// TIMES spread across the day (e.g. "8, noon, or 4") — not consecutive ranges. It never writes — the
+// booking happens in book_visit (B2), which references the `data.slots` this returns (the caller
+// picks a time; its startHHMM becomes book_visit's slot_start). An emergency urgency asks the slot
+// math to surface today's soonest time even when the day is nearly closed.
 export const checkAvailabilityTool: VoiceTool = {
   name: "check_availability",
   description:
-    "Check the next open appointment windows and offer them to the caller. Returns up to three " +
-    "tight 2-hour arrival windows. Use once you know the caller wants to book (repair, estimate, " +
-    "or flat service). Emergencies see the soonest possible time. Does not book — call book_visit " +
-    "after the caller picks a window (pass that window's start as slot_start).",
+    "Check the next open appointments and offer them to the caller. Returns up to three discrete " +
+    "start times spread across the day (e.g. 8, noon, or 4), each a 2-hour arrival window. Use " +
+    "once you know the caller wants to book (repair, estimate, or flat service). Emergencies see " +
+    "the soonest possible time. Does not book — call book_visit after the caller picks a time " +
+    "(pass that time as slot_start).",
   parameters: checkAvailabilityParameters,
   input: checkAvailabilityInput,
 

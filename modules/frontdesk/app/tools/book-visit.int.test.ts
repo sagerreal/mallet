@@ -70,12 +70,23 @@ const buildDeps = (tx: TenantTx, org: OrgId): VoiceToolDeps => {
 suite("book_visit against live Supabase RLS", () => {
   let admin: Sql;
   let orgId = "";
+  let firstCrewId = "";
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
     const [o] = await admin<{ id: string }[]>`
       insert into orgs (name) values ('BookVisit ' || gen_random_uuid()) returning id`;
     orgId = o!.id;
+    // Two field-crew members so book_visit auto-assigns the booking to the FIRST (oldest) crew and
+    // it lands on the board. The office member must NOT be picked (not field crew).
+    const [crew1] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role, is_field_crew)
+      values (${orgId}, gen_random_uuid(), 'crew1@bookvisit.ex', 'tech', true) returning id`;
+    firstCrewId = crew1!.id;
+    await admin`insert into users (org_id, auth_user_id, email, role, is_field_crew)
+      values (${orgId}, gen_random_uuid(), 'crew2@bookvisit.ex', 'tech', true)`;
+    await admin`insert into users (org_id, auth_user_id, email, role, is_field_crew)
+      values (${orgId}, gen_random_uuid(), 'office@bookvisit.ex', 'office', false)`;
   });
 
   afterAll(async () => {
@@ -87,6 +98,7 @@ suite("book_visit against live Supabase RLS", () => {
       await admin`delete from jobs where org_id = ${orgId}`;
       await admin`delete from tasks where org_id = ${orgId}`;
       await admin`delete from leads where org_id = ${orgId}`;
+      await admin`delete from users where org_id = ${orgId}`;
       await admin`delete from org_settings where org_id = ${orgId}`;
       await admin`delete from orgs where id = ${orgId}`;
     }
@@ -124,13 +136,20 @@ suite("book_visit against live Supabase RLS", () => {
 
     // Cast date/time to text so the driver returns the raw stored strings (a bare `date` column
     // comes back as a local-tz Date object otherwise, which misrenders the calendar day).
-    const visits = await admin<{ d: string; s: string; duration_minutes: number }[]>`
-      select scheduled_date::text as d, scheduled_start::text as s, duration_minutes
+    const visits = await admin<{
+      d: string;
+      s: string;
+      duration_minutes: number;
+      assignee_user_id: string | null;
+    }[]>`
+      select scheduled_date::text as d, scheduled_start::text as s, duration_minutes, assignee_user_id
       from job_visits where org_id = ${orgId}`;
     expect(visits).toHaveLength(1);
     expect(visits[0]!.d).toBe("2026-08-13"); // the slot_date, unshifted
     expect(visits[0]!.s.slice(0, 5)).toBe("08:00"); // scheduledStart == the chosen in-hours slot_start
     expect(visits[0]!.duration_minutes).toBe(90); // default visitRepairMinutes
+    // AUTO-PLACED ON THE BOARD: assigned to the first field crew (not unassigned, not the office).
+    expect(visits[0]!.assignee_user_id).toBe(firstCrewId);
   });
 
   it("replaying the SAME toolCallId through the runner does not double-book", async () => {
