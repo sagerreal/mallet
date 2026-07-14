@@ -124,7 +124,9 @@ const GUARDRAILS: readonly string[] = [
   "Keep every reply under about 25 words.",
   "Confirm the caller's phone number digit-by-digit before booking.",
   "Read the service address back to the caller before booking.",
-  "Never promise an exact arrival time — only the arrival window.",
+  // The offered start time is the front of a ~2-hour arrival window — commit to that, but don't
+  // over-promise a to-the-minute arrival (this must NOT contradict offering a start time like "8am").
+  "Offer and commit to a start time, but never promise a to-the-minute arrival — it's a 2-hour arrival window.",
 ];
 
 // --- Price guardrail -----------------------------------------------------

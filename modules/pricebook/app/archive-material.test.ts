@@ -57,6 +57,7 @@ class FakeMaterialRepository implements MaterialRepository {
     this.store.set(material.props.id, material);
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(id: MaterialId, now: Date): Promise<number> {
     this.archiveCallCount += 1;
     this.archiveLastArgs = { id, now };

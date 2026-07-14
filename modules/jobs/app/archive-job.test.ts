@@ -10,6 +10,7 @@ function repoWith(archiveResult: number): JobRepository {
     nextNumber: async () => "JOB-1",
     save: async () => {},
     insertManual: async () => {},
+    archiveByLead: () => Promise.resolve(0),
     archive: async () => archiveResult,
     insertForEstimate: async () => true,
     findById: async () => null,

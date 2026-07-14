@@ -105,6 +105,7 @@ class FakeLeadRepository implements LeadRepository {
   }
 
   // Returns 1 if the lead was active and is now archived; 0 if not found or already archived.
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(id: LeadId, _now: Date): Promise<number> {
     if (!this.store.has(id) || this.deletedIds.has(id)) return 0;
     this.deletedIds.add(id);

@@ -274,7 +274,9 @@ describe("buildSystemPrompt — iron guardrails", () => {
     expect(p).toMatch(/25 words|under.*25/i);
     expect(p).toMatch(/digit-by-digit/i);
     expect(p).toMatch(/read.*address back/i);
-    expect(p).toMatch(/never promise an exact arrival|only the (arrival )?window/i);
+    // Commit to a start time but not a to-the-minute arrival — must NOT forbid offering a start time.
+    expect(p).toMatch(/to-the-minute arrival/i);
+    expect(p).toMatch(/arrival window/i);
   });
 });
 

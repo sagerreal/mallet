@@ -15,6 +15,7 @@ class FakeRepo implements JobRepository {
   async nextNumber() { this.numCalls++; return "JOB-1000"; }
   async save(j: Job) { this.saved = j; }
   async insertManual(j: Job) { this.saved = j; }
+  async archiveByLead(): Promise<number> { return 0; }
   async archive() { return 1; }
   async insertForEstimate() { return true; }
   async findById() { return null; }

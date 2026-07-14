@@ -67,6 +67,7 @@ export class FakeChecklistRepository implements ChecklistRepository {
     return { items: [...this.store.values()], nextCursor: null };
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(id: ChecklistId): Promise<number> {
     return this.store.delete(id) ? 1 : 0;
   }

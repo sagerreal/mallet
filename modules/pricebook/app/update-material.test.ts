@@ -76,6 +76,7 @@ class FakeMaterialRepository implements MaterialRepository {
     throw new Error("list not used in update tests");
   }
 
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(): Promise<number> {
     throw new Error("archive not used in update tests");
   }

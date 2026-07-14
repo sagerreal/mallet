@@ -103,6 +103,7 @@ class FakeLeadRepository implements LeadRepository {
     return { items: [], nextCursor: null };
   }
   async save(_lead: Lead): Promise<void> {}
+  async archiveByLead(): Promise<number> { return 0; }
   async archive(_id: LeadId, _now: Date): Promise<number> {
     return 0;
   }
