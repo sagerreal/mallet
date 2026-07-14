@@ -54,21 +54,27 @@ const allowedTokens = (facts: PromptFacts): Set<string> =>
   ]);
 
 describe("buildFirstMessage", () => {
-  it("is the exact compliance greeting with the brand interpolated", () => {
+  it("is a neutral business greeting with the recording disclosure and brand interpolated", () => {
     expect(buildFirstMessage("Bayline Plumbing")).toBe(
-      "Thanks for calling Bayline Plumbing. You're speaking with Bayline Plumbing's AI assistant — this call is recorded. How can I help?",
+      "Thanks for calling Bayline Plumbing! This call may be recorded. How can I help you today?",
     );
+  });
+
+  it("does NOT proactively announce it is an AI (disclosure is on-request only)", () => {
+    expect(buildFirstMessage("Bayline Plumbing")).not.toMatch(/\bAI\b|assistant|automated|bot/i);
   });
 });
 
 describe("buildSystemPrompt — identity & compliance", () => {
-  it("states it is the brand's AI assistant, recorded, and truthful about being an AI", () => {
+  it("keeps the recording disclosure and names the brand, without impersonating a human", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
-    expect(p).toMatch(/AI assistant/i);
     expect(p).toMatch(/recorded/i);
     expect(p).toMatch(/Bayline Plumbing/);
-    // truthful-if-asked-human rule
-    expect(p).toMatch(/if asked.*human|whether you are human|you are an AI/i);
+    // never claim to be human / a named person
+    expect(p).toMatch(/never say you are human|never claim to be a specific person/i);
+    // disclose truthfully ON REQUEST (not proactively)
+    expect(p).toMatch(/if the caller asks.*(real person|machine|AI)/i);
+    expect(p).toMatch(/automated assistant/i);
   });
 });
 

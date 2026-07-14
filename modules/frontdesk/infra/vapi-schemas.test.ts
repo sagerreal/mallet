@@ -241,6 +241,42 @@ describe("parseServerMessage — tool-calls", () => {
       throw new Error("expected tool-calls");
     }
   });
+
+  // Regression: the REAL Vapi shape (OpenAI tool-call) nests name+arguments under `function`,
+  // with arguments as a JSON string. The old flat schema 400'd every tool call
+  // ("invalid tool-calls payload: toolCallList.0.name, toolCallList.0.arguments"), breaking
+  // scheduling and take_message on live calls.
+  it("reads name+arguments NESTED under function (Vapi/OpenAI shape) with string arguments", () => {
+    const body = {
+      message: {
+        type: "tool-calls",
+        call: { id: "call_fn", phoneNumber: null, customer: null },
+        toolCallList: [
+          {
+            id: "tc_fn",
+            type: "function",
+            function: {
+              name: "book_visit",
+              arguments: '{"service_name":"Recurring office cleaning","slot_window":"morning"}',
+            },
+          },
+        ],
+      },
+    };
+    const r = parseServerMessage(body);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.type === "tool-calls") {
+      expect(r.value.callId).toBe("call_fn");
+      expect(r.value.toolCalls[0]?.id).toBe("tc_fn");
+      expect(r.value.toolCalls[0]?.name).toBe("book_visit");
+      expect(r.value.toolCalls[0]?.arguments).toEqual({
+        service_name: "Recurring office cleaning",
+        slot_window: "morning",
+      });
+    } else {
+      throw new Error("expected tool-calls");
+    }
+  });
 });
 
 // ── end-of-call-report ──────────────────────────────────────────────────────
