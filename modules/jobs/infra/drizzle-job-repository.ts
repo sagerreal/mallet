@@ -354,6 +354,35 @@ export class DrizzleJobRepository implements JobRepository {
     return rows.length;
   }
 
+  // Bulk-replace the job's lines. Soft-deletes every current (non-deleted) line for the job,
+  // then inserts the new set. Both statements run in the same tenant tx; the ownerOrOffice
+  // orgTx re-throw guard rolls the whole swap back on any failure. org-scoped by both the
+  // implicit RLS tx and the explicit eq(orgId) filter (defense-in-depth + index use).
+  async replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date): Promise<void> {
+    await this.tx
+      .update(jobLines)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(jobLines.jobId, jobId), eq(jobLines.orgId, this.orgId), isNull(jobLines.deletedAt)));
+    if (lines.length === 0) return;
+    await this.tx.insert(jobLines).values(
+      lines.map((line) => {
+        const p = line.props;
+        return {
+          id: p.id,
+          orgId: this.orgId,
+          jobId: p.jobId,
+          description: p.description,
+          quantity: p.quantity,
+          rateCents: p.rate,
+          costCents: p.cost,
+          position: p.position,
+          createdAt: now,
+          updatedAt: now,
+        };
+      }),
+    );
+  }
+
   async addAddon(addon: JobAddon, now: Date): Promise<void> {
     const p = addon.props;
     await this.tx.insert(jobAddons).values({

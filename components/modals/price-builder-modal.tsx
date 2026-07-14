@@ -58,7 +58,7 @@ export function PriceBuilderModalContent() {
   const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
-  const updateJob = useAppStore((s) => s.updateJob);
+  const setJobLines = useAppStore((s) => s.setJobLines);
   // Reference data straight from the store (raw arrays — never derived in the
   // selector). Adapted below to the shared PricebookItem / LaborRate shape.
   const servicesRaw = useAppStore((s) => s.services);
@@ -86,6 +86,10 @@ export function PriceBuilderModalContent() {
   // which sublist (pb / labor) is showing.
   const [picking, setPicking] = useState<boolean>(() => !job || seedLines(job).length === 0);
   const [add, setAdd] = useState<AddSub>(null);
+  // Surfaced when the price fails to persist — the builder stays open for a
+  // retry rather than closing on a lost price (no silent failure).
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!job) return null;
 
@@ -142,12 +146,22 @@ export function PriceBuilderModalContent() {
     else close();
   }
 
-  function savePrice() {
-    if (!job) return;
+  // Persist the built lines to the job (v1.jobs.setLines) BEFORE closing so the
+  // office-set price survives the next jobs.list refetch. Await the write and
+  // only return on success — surface a retryable error otherwise.
+  async function savePrice() {
+    if (!job || saving) return;
     const jobLines: JobLine[] = lines
       .map((l) => ({ d: l.d || "Line item", q: 1, r: lineAmt(l), c: l.c ?? 0 }))
-      .filter((l) => l.r > 0);
-    updateJob(job.id, { lines: jobLines });
+      .filter((l) => (l.r ?? 0) > 0);
+    setSaving(true);
+    setSaveError(null);
+    const { ok } = await setJobLines(job.id, jobLines);
+    setSaving(false);
+    if (!ok) {
+      setSaveError("Couldn't save the price — check your connection and try again.");
+      return;
+    }
     returnToJob();
   }
 
@@ -227,6 +241,10 @@ export function PriceBuilderModalContent() {
         </div>
       )}
 
+      {saveError ? (
+        <p style={{ color: "var(--red)", fontSize: 12.5, margin: "12px 0 0" }}>{saveError}</p>
+      ) : null}
+
       {/* Footer — Back to the job + office single-tier save (prototype tqSavePrice) */}
       <div
         style={{
@@ -236,16 +254,16 @@ export function PriceBuilderModalContent() {
           marginTop: 18,
         }}
       >
-        <button className="btn ghost" onClick={returnToJob}>
+        <button className="btn ghost" onClick={returnToJob} disabled={saving}>
           ← Back
         </button>
         <button
           className="btn primary"
           onClick={savePrice}
-          disabled={!anyPriced}
-          style={anyPriced ? undefined : { opacity: 0.45 }}
+          disabled={!anyPriced || saving}
+          style={anyPriced && !saving ? undefined : { opacity: 0.45 }}
         >
-          Save price →
+          {saving ? "Saving…" : "Save price →"}
         </button>
       </div>
     </div>

@@ -82,6 +82,41 @@ suite("v1.jobs execution data (full stack, live RLS)", () => {
     expect(removed.lines.some((l) => l.id === lineId)).toBe(false);
   });
 
+  it("setLines replaces the whole line set atomically (on-site price persist)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, ownerA, "owner"));
+    // Seed a line, then replace the entire set — the old line must be gone.
+    const seeded = await caller.v1.jobs.addLine({ jobId, description: "Stale seed", quantity: 1, rateCents: 100, costCents: 0 });
+    const seededId = seeded.lines.find((l) => l.description === "Stale seed")!.id;
+    const replaced = await caller.v1.jobs.setLines({
+      jobId,
+      lines: [
+        { description: "Diagnostic", quantity: 1, rateCents: 12000, costCents: 0 },
+        { description: "Parts", quantity: 2, rateCents: 4000, costCents: 1500 },
+      ],
+    });
+    expect(replaced.lines).toHaveLength(2);
+    expect(replaced.lines.some((l) => l.id === seededId)).toBe(false);
+    expect(replaced.lines.map((l) => l.description).sort()).toEqual(["Diagnostic", "Parts"]);
+    // The price is really in the DB (not just the mutation echo): exactly two
+    // live rows, and the seeded line is soft-deleted (deleted_at set).
+    const live = await admin`select id from job_lines where job_id = ${jobId} and deleted_at is null`;
+    expect(live).toHaveLength(2);
+    const stale = await admin`select deleted_at from job_lines where id = ${seededId}`;
+    expect(stale[0]?.deleted_at).not.toBeNull();
+  });
+
+  it("org B cannot setLines on org A's job (NOT_FOUND via RLS), leaving A's lines intact", async () => {
+    const before = await admin`select id from job_lines where job_id = ${jobId} and deleted_at is null`;
+    expect(before.length).toBeGreaterThan(0);
+    const callerB = appRouter.createCaller(ctxFor(orgBId, randomUUID(), "owner"));
+    await expect(
+      callerB.v1.jobs.setLines({ jobId, lines: [{ description: "sneaky", quantity: 1, rateCents: 1, costCents: 0 }] }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    // The rejected cross-org write must not have wiped org A's lines (tx rolled back).
+    const after = await admin`select id from job_lines where job_id = ${jobId} and deleted_at is null`;
+    expect(after.length).toBe(before.length);
+  });
+
   it("adds an addon, approves it, and toggles invoice skip", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, ownerA, "owner"));
     const added = await caller.v1.jobs.addAddon({ jobId, description: "Extra outlet", rateCents: 9000, costCents: 0 });

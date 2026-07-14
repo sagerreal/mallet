@@ -131,6 +131,38 @@ describe("TechJobModalContent — owner/office", () => {
     render(<TechJobModalContent />);
     expect(screen.getByText(/Take payment/)).toBeTruthy();
   });
+
+  // Fix 3 (money): once on-site lines persist, a refetched done job carries them, so
+  // jobTotal(job) > 0 auto-selects the priced/"Take payment" branch even with no invoice.
+  it("DoneBlock shows the persisted on-site price (Take payment), not 'No price set'", () => {
+    mockInvoices = [];
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }],
+        // The price the tech set on site, as it comes back from the myDay refetch.
+        lines: [{ d: "Diagnostic + repair", q: 1, r: 285 }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText(/Take payment/)).toBeTruthy();
+    expect(screen.getByText("$285")).toBeTruthy();
+    expect(screen.queryByText(/No price set/)).toBeNull();
+  });
+
+  it("DoneBlock shows 'No price set' only when the job genuinely has no price", () => {
+    mockInvoices = [];
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }],
+        lines: [],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText(/No price set/)).toBeTruthy();
+    expect(screen.queryByText(/Take payment/)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

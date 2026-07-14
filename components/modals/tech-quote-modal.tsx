@@ -223,7 +223,7 @@ export function TechQuoteModalContent() {
   const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
-  const updateJob = useAppStore((s) => s.updateJob);
+  const setJobLines = useAppStore((s) => s.setJobLines);
   const servicesRaw = useAppStore((s) => s.services);
   const laborRatesRaw = useAppStore((s) => s.laborRates);
 
@@ -259,6 +259,10 @@ export function TechQuoteModalContent() {
   const [chosen, setChosen] = useState<Tier | null>(null);
   const [picking, setPicking] = useState<boolean>(() => seed.length === 0);
   const [add, setAdd] = useState<AddSub>(null);
+  // Surfaced when the on-site price fails to persist — the sign view stays open
+  // so the tech can retry rather than closing on a lost price (no silent fail).
+  const [signError, setSignError] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
 
   // clear() handle from the signature pad — wired to the "Clear" link.
   const sigClearRef = useRef<() => void>(() => {});
@@ -369,12 +373,23 @@ export function TechQuoteModalContent() {
     else close();
   }
 
-  function sign() {
-    if (!job) return;
+  // Persist the chosen tier's lines to the job (v1.jobs.setLines) BEFORE closing.
+  // The lines are the on-site price; they must survive the post-"Mark done"
+  // refetch, so we await the write and only return to the job on success —
+  // "approved on site" is derived from the job carrying lines (no DB flag).
+  async function sign() {
+    if (!job || signing) return;
     const jobLines: JobLine[] = tiers[chosenTier]
       .map((l) => ({ d: l.d || "Repair", q: 1, r: lineAmt(l) }))
-      .filter((l) => l.r > 0);
-    updateJob(job.id, { lines: jobLines, approvedOnSite: true });
+      .filter((l) => (l.r ?? 0) > 0);
+    setSigning(true);
+    setSignError(null);
+    const { ok } = await setJobLines(job.id, jobLines);
+    setSigning(false);
+    if (!ok) {
+      setSignError("Couldn't save the price — check your connection and try again.");
+      return;
+    }
     returnToJob();
   }
 
@@ -436,12 +451,16 @@ export function TechQuoteModalContent() {
           <b className="fig">{fmt$(total)}</b> on this visit. A copy is texted to you on the spot.
         </div>
 
+        {signError ? (
+          <p style={{ color: "var(--red)", fontSize: 12.5, margin: "10px 0 0" }}>{signError}</p>
+        ) : null}
+
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 14, gap: 8 }}>
-          <button className="btn" onClick={() => setMode(offered.length > 1 ? "present" : "edit")}>
+          <button className="btn" onClick={() => setMode(offered.length > 1 ? "present" : "edit")} disabled={signing}>
             ← Back
           </button>
-          <button className="btn primary" onClick={sign}>
-            Accept &amp; sign — {fmt$(total)}
+          <button className="btn primary" onClick={sign} disabled={signing}>
+            {signing ? "Saving…" : `Accept & sign — ${fmt$(total)}`}
           </button>
         </div>
       </div>

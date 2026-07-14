@@ -70,7 +70,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { Job, Visit, Addon, VerifyAns } from "../types";
+import type { Job, Visit, Addon, VerifyAns, JobLine } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
@@ -126,6 +126,16 @@ const _recentAdoptions = new Map<string, number>();
 // reconcile (the authoritative answer for that write) bypasses the guard.
 // Mirrors _recentAdoptions. Cleared on write failure or entry expiry.
 const _recentChecklistWrites = new Map<string, number>();
+
+// Jobs whose lines were just written through setJobLines, keyed to the write
+// time. On-site pricing persists lines and then "Mark done" triggers a myDay
+// refetch whose jobs.list read may PREDATE the setLines commit — without this
+// guard the stale (empty-lines) snapshot overwrites the just-priced job and the
+// wrap-up bills $0. While an entry is younger than the hydrator stale window,
+// snapshot merges keep the STORE job's lines; setJobLines' own reconcile (the
+// authoritative answer for that write) bypasses the guard. Mirrors
+// _recentChecklistWrites. Cleared on write failure or entry expiry.
+const _recentLineWrites = new Map<string, number>();
 
 function chain(visitId: string, fn: () => Promise<unknown>): void {
   const prev = _visitOpChain.get(visitId) ?? Promise.resolve();
@@ -259,6 +269,15 @@ export interface JobsSlice {
    * interactive callers can await and surface the failure.
    */
   updateJob: (id: string, patch: Partial<Job>) => Promise<{ ok: boolean }>;
+  /**
+   * Bulk-replace a job's priced lines and PERSIST them (on-site pricing). Unlike
+   * updateJob — whose payload builder drops `lines` (they have no jobs.update
+   * column) — this persists via v1.jobs.setLines so the price survives the
+   * post-complete refetch. Optimistic set + persist + reconcile from the
+   * returned full jobDTO; rolls back on failure. Resolves { ok } — never
+   * rejects — so interactive callers can surface a failure.
+   */
+  setJobLines: (jobId: string, lines: JobLine[]) => Promise<{ ok: boolean }>;
   setJobSvc: (id: string, svc: string | null) => void;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
@@ -334,9 +353,27 @@ function withRecentChecklist(prior: Job, incoming: Job): Job {
   return { ...incoming, checklist: prior.checklist };
 }
 
-/** Compose every snapshot-merge guard (pending visits + recent checklist write). */
+/**
+ * Line merge guard (mirror of withRecentChecklist): while a setJobLines write on
+ * this job is younger than the hydrator stale window, snapshot/reconcile merges
+ * keep the STORE job's lines — the incoming server read may predate the setLines
+ * commit (the post-"Mark done" refetch races it). Expired entries are dropped
+ * here (same lazy cleanup as the checklist/adoption guards).
+ */
+function withRecentLines(prior: Job, incoming: Job): Job {
+  const writtenAt = _recentLineWrites.get(incoming.id);
+  if (writtenAt === undefined) return incoming;
+  if (Date.now() - writtenAt > HYDRATOR_STALE_MS) {
+    _recentLineWrites.delete(incoming.id);
+    return incoming;
+  }
+  if (incoming.lines === prior.lines) return incoming;
+  return { ...incoming, lines: prior.lines };
+}
+
+/** Compose every snapshot-merge guard (pending visits + recent checklist + recent lines). */
 function mergeIncomingJob(prior: Job, incoming: Job): Job {
-  return withRecentChecklist(prior, withPendingCreateVisits(prior, incoming));
+  return withRecentLines(prior, withRecentChecklist(prior, withPendingCreateVisits(prior, incoming)));
 }
 
 /** Replace one job with the server-reconciled version (merge-guarded). */
@@ -527,6 +564,65 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         if (process.env.NODE_ENV !== "production") {
           // eslint-disable-next-line no-console
           console.error("[jobs-slice] updateJob failed — rolled back", { id, patch, err });
+        }
+        return { ok: false };
+      });
+  },
+
+  // ---------------------------------------------------------------------------
+  // setJobLines — the MONEY-persistence path for on-site pricing. updateJob's
+  // payload builder silently drops `lines` (no jobs.update column), so a price
+  // set through it lived only in the volatile store and was erased by the next
+  // jobs.list refetch (fired right after "Mark done"). This persists the lines
+  // to job_lines via v1.jobs.setLines (one atomic org-tx replace) and reconciles
+  // from the returned full jobDTO so the store carries server-assigned line ids.
+  //
+  // The _recentLineWrites guard (mirroring _recentChecklistWrites) protects the
+  // just-written lines during the hydrator stale window so the post-complete
+  // refetch cannot erase them before the write's own reconcile lands.
+  //
+  // Never rejects — returns { ok } — so interactive callers surface the failure.
+  // ---------------------------------------------------------------------------
+  setJobLines: (jobId, lines) => {
+    const prior = snapshot(get().jobs, jobId);
+    // 1. Optimistic set.
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines } : j)) }));
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    // A pure local draft (never persisted — no lead FK) has no DB row to write
+    // lines to; keep them store-only, matching updateJob's local-only short-circuit.
+    if (!job || job.origin !== JOB_ORIGIN.DB) return Promise.resolve({ ok: true });
+
+    // Map store lines (dollars) → wire lines (integer cents). A server-redacted
+    // rate (r === null) cannot be persisted and never originates from a pricing
+    // surface — drop such lines defensively rather than send a bogus $0 rate.
+    const wireLines = lines
+      .filter((l) => l.r != null && l.d.trim().length > 0)
+      .map((l) => ({
+        description: l.d,
+        quantity: l.q ?? 1,
+        rateCents: Math.round((l.r ?? 0) * 100),
+        costCents: l.c != null ? Math.round(l.c * 100) : 0,
+      }));
+
+    // Guard the optimistic lines against a stale hydrator snapshot from now on.
+    _recentLineWrites.set(jobId, Date.now());
+
+    return trpcVanilla.v1.jobs.setLines
+      .mutate({ jobId, lines: wireLines })
+      .then((dto) => {
+        // Re-stamp so the window is measured from the reconcile, then reconcile
+        // the full job (server line ids replace optimistic; merge-guarded).
+        _recentLineWrites.set(jobId, Date.now());
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        _recentLineWrites.delete(jobId);
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[jobs-slice] setJobLines failed — rolled back", { jobId, err });
         }
         return { ok: false };
       });

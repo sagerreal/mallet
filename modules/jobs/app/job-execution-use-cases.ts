@@ -107,6 +107,54 @@ export class UpdateJobLineUseCase {
   }
 }
 
+export interface SetJobLinesLine {
+  readonly id?: string;
+  readonly description: string;
+  readonly quantity: number;
+  readonly rateCents: number;
+  readonly costCents: number;
+}
+
+export interface SetJobLinesCommand {
+  readonly jobId: JobId;
+  readonly lines: readonly SetJobLinesLine[];
+}
+
+// Bulk-replace a job's lines in one atomic swap (soft-delete current + insert new). Used by
+// the on-site pricing paths (tech quote sign / office price builder) which build a complete
+// line set in one shot; every line is validated through JobLine.create before the write, and
+// position is the array index so line order is preserved.
+export class SetJobLinesUseCase {
+  constructor(
+    private readonly repo: JobRepository,
+    private readonly clock: Clock,
+    private readonly ids: IdGenerator,
+  ) {}
+
+  async exec(cmd: SetJobLinesCommand, orgId: string): Promise<Result<JobWithExecution, AppError>> {
+    const job = await this.repo.findById(cmd.jobId);
+    if (!job) return err(notFound("job not found"));
+    const built: JobLine[] = [];
+    for (let i = 0; i < cmd.lines.length; i++) {
+      const input = cmd.lines[i]!;
+      const line = JobLine.create({
+        id: input.id ?? this.ids.newId(),
+        jobId: cmd.jobId,
+        description: input.description,
+        quantity: input.quantity,
+        rateCents: input.rateCents,
+        costCents: input.costCents,
+        position: i,
+      });
+      if (!line.ok) return line;
+      built.push(line.value);
+    }
+    await this.repo.replaceLines(cmd.jobId, built, this.clock.now());
+    logger.info({ jobId: cmd.jobId, count: built.length, orgId }, "job_lines.replaced");
+    return loadOrThrow(this.repo, cmd.jobId);
+  }
+}
+
 export interface RemoveJobLineCommand {
   readonly jobId: JobId;
   readonly lineId: string;
