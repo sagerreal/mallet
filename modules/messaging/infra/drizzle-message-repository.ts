@@ -110,6 +110,7 @@ export class DrizzleMessageRepository implements MessageRepository {
     type ConversationRaw = {
       leadId: string;
       leadName: string;
+      phone: string | null;
       lastBody: string;
       lastDirection: string;
       lastAt: Date;
@@ -120,6 +121,7 @@ export class DrizzleMessageRepository implements MessageRepository {
       SELECT
         latest.lead_id    AS "leadId",
         l.name            AS "leadName",
+        l.phone_e164      AS "phone",
         latest.body       AS "lastBody",
         latest.direction  AS "lastDirection",
         latest.created_at AS "lastAt",
@@ -144,6 +146,7 @@ export class DrizzleMessageRepository implements MessageRepository {
     return rows.map((r) => ({
       leadId: asLeadId(r.leadId),
       leadName: r.leadName,
+      phone: r.phone,
       lastBody: r.lastBody,
       lastDirection: r.lastDirection as MessageDirection,
       lastAt: r.lastAt instanceof Date ? r.lastAt : new Date(r.lastAt),

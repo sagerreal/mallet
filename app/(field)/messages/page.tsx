@@ -15,6 +15,7 @@ import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { shortWhen } from "@/lib/format";
+import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { useMe } from "@/features/identity/hooks";
 
 function leadInitials(name: string): string {
@@ -186,6 +187,8 @@ function AiPhone({ onBack }: AiPhoneProps) {
 interface ConversationRowProps {
   leadId: string;
   leadName: string;
+  /** null = no number on file — the thread can't send, so the row disables. */
+  phone: string | null;
   lastBody: string;
   lastDirection: "inbound" | "outbound";
   lastAt: string;
@@ -195,16 +198,22 @@ interface ConversationRowProps {
 
 function ConversationRow({
   leadName,
+  phone,
   lastBody,
   lastDirection,
   lastAt,
   unread,
   onClick,
 }: ConversationRowProps) {
+  // Field surface: disabled + title only (the lead modal is not reachable here).
+  const disabled = !hasPhone({ phone });
   return (
     <div
       className={`msg-row${unread ? " unread" : ""}`}
-      onClick={onClick}
+      aria-disabled={disabled || undefined}
+      title={disabled ? ADD_PHONE_TITLE : undefined}
+      style={disabled ? { opacity: 0.55, cursor: "default" } : undefined}
+      onClick={disabled ? undefined : onClick}
     >
       <span
         className="javatar"
@@ -267,6 +276,7 @@ function CustomerInbox() {
           key={c.leadId}
           leadId={c.leadId}
           leadName={c.leadName}
+          phone={c.phone}
           lastBody={c.lastBody}
           lastDirection={c.lastDirection}
           lastAt={c.lastAt}

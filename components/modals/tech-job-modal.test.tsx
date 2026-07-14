@@ -8,8 +8,8 @@
  * to succeed and silently rolls back (FORBIDDEN). Also guards the redacted-money
  * display: a server-redacted (null) rate must never render as $0.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { TechJobModalContent } from "./tech-job-modal";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Invoice } from "@/lib/store/types";
@@ -25,10 +25,12 @@ let mockSeesPrice = true;
 let mockRole: "owner" | "office" | "tech" | undefined = "owner";
 
 const noop = vi.fn();
+const mockOpenModal = vi.fn();
+const mockUpdateJob = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
-  useOpenModal: () => noop,
+  useOpenModal: () => mockOpenModal,
   useCloseModal: () => noop,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
@@ -37,7 +39,7 @@ vi.mock("@/lib/store/app-store", () => ({
       invoices: mockInvoices,
       toggles: { techSeesPrice: mockSeesPrice },
       setVisitStatus: noop,
-      updateJob: noop,
+      updateJob: mockUpdateJob,
       recordPayment: noop,
       addAddon: noop,
       setAddonStatus: noop,
@@ -50,6 +52,11 @@ vi.mock("@/lib/store/app-store", () => ({
 
 vi.mock("@/features/identity/hooks", () => ({
   useMe: () => ({ data: mockRole ? { role: mockRole } : undefined, isLoading: !mockRole }),
+}));
+
+// Deterministic date stamp for the notes composer ("[Jul 13] …").
+vi.mock("@/lib/clock", () => ({
+  todayISO: () => "2026-07-13",
 }));
 
 // ---------------------------------------------------------------------------
@@ -96,6 +103,9 @@ beforeEach(() => {
   mockInvoices = [];
   mockSeesPrice = true;
   mockRole = "owner";
+  mockOpenModal.mockClear();
+  mockUpdateJob.mockReset();
+  mockUpdateJob.mockResolvedValue({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -183,6 +193,185 @@ describe("TechJobModalContent — tech", () => {
     mockJobs = [makeJob({ addons: [] })];
     render(<TechJobModalContent />);
     expect(screen.queryByText("Found work / add-ons")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FieldTimer (Fix: pause must bank elapsed seconds, not epoch seconds)
+// ---------------------------------------------------------------------------
+
+describe("FieldTimer — pause banks elapsed time, not epoch seconds", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-13T09:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("start → 90s → pause shows 1:30 (not epoch-scale)", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Start timer"));
+
+    act(() => {
+      vi.advanceTimersByTime(90_000);
+    });
+    // Running clock shows the live elapsed.
+    expect(screen.getByText("1:30")).toBeTruthy();
+
+    // Pause = tap the running clock.
+    fireEvent.click(screen.getByText(/on the clock/));
+    expect(screen.getByText("1:30")).toBeTruthy();
+    expect(screen.getByText("Resume timer")).toBeTruthy();
+  });
+
+  it("a second pause in a row (Stop after pause) stays stable", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Start timer"));
+    act(() => {
+      vi.advanceTimersByTime(90_000);
+    });
+    fireEvent.click(screen.getByText(/on the clock/)); // pause #1
+    fireEvent.click(screen.getByText("Stop")); // pause #2 while already paused
+    expect(screen.getByText("1:30")).toBeTruthy(); // no epoch seconds added
+  });
+
+  it("pause → resume → pause accumulates run segments only", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Start timer"));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    fireEvent.click(screen.getByText(/on the clock/)); // pause at 1:00
+
+    act(() => {
+      vi.advanceTimersByTime(600_000); // 10 min paused — must NOT count
+    });
+    fireEvent.click(screen.getByText("Resume timer"));
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    fireEvent.click(screen.getByText(/on the clock/)); // pause at 1:30
+    expect(screen.getByText("1:30")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phone gating (Fix: phone-dependent controls disabled with no phone)
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — phone gating (office)", () => {
+  it("enables Call/Text when the lead has a phone; no hint line", () => {
+    render(<TechJobModalContent />);
+    expect((screen.getByText("Call") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByText("Text") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(/No phone on file/)).toBeNull();
+  });
+
+  it("disables Call/Text with the add-a-phone title when the phone is the — placeholder", () => {
+    mockLeads = [{ ...lead, phone: "—" }];
+    render(<TechJobModalContent />);
+    const call = screen.getByText("Call") as HTMLButtonElement;
+    const text = screen.getByText("Text") as HTMLButtonElement;
+    expect(call.disabled).toBe(true);
+    expect(text.disabled).toBe(true);
+    expect(call.title).toBe("Add a phone number first");
+    expect(text.title).toBe("Add a phone number first");
+  });
+
+  it("shows the in-flow hint whose 'add one' opens the lead modal", () => {
+    mockLeads = [{ ...lead, phone: "" }];
+    render(<TechJobModalContent />);
+    expect(screen.getByText(/No phone on file/)).toBeTruthy();
+    fireEvent.click(screen.getByText("add one"));
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.LEAD, { leadId: "lead-1" });
+  });
+
+  it("keeps Call/Text disabled (no hint link) when the job has no linked lead", () => {
+    mockLeads = [];
+    render(<TechJobModalContent />);
+    expect((screen.getByText("Call") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("add one")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Notes composer (Fix: the Notes section accepts input for the office)
+// ---------------------------------------------------------------------------
+
+describe("NoteFeed — office composer", () => {
+  it("adds a stamped note through updateJob (empty notes → single stamped line)", async () => {
+    render(<TechJobModalContent />);
+    const input = screen.getByPlaceholderText("add a note…");
+    fireEvent.change(input, { target: { value: "Gate code 4411" } });
+    fireEvent.click(screen.getByLabelText("Add note"));
+    await vi.waitFor(() => {
+      expect(mockUpdateJob).toHaveBeenCalledWith("job-1", {
+        notes: "[Jul 13] Gate code 4411",
+      });
+    });
+    // input clears on success (after the awaited persist resolves)
+    await vi.waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("");
+    });
+  });
+
+  it("appends to existing notes on its own stamped line", async () => {
+    mockJobs = [makeJob({ notes: "Bring the tall ladder" })];
+    render(<TechJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("add a note…"), {
+      target: { value: "Left key under mat" },
+    });
+    fireEvent.click(screen.getByLabelText("Add note"));
+    await vi.waitFor(() => {
+      expect(mockUpdateJob).toHaveBeenCalledWith("job-1", {
+        notes: "Bring the tall ladder\n[Jul 13] Left key under mat",
+      });
+    });
+  });
+
+  it("surfaces the save-failure copy when updateJob reports not-ok", async () => {
+    mockUpdateJob.mockResolvedValue({ ok: false });
+    render(<TechJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("add a note…"), {
+      target: { value: "won't stick" },
+    });
+    fireEvent.click(screen.getByLabelText("Add note"));
+    expect(await screen.findByText("Couldn't save the note — try again.")).toBeTruthy();
+  });
+
+  it("hides the composer once the job is done (server refuses edits on a complete job)", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
+    expect(screen.getByText("No notes yet.")).toBeTruthy();
+  });
+});
+
+describe("NoteFeed — tech (read-only)", () => {
+  beforeEach(() => {
+    mockRole = "tech";
+  });
+
+  it("shows 'No notes yet.' and no composer when there are zero entries", () => {
+    render(<TechJobModalContent />);
+    expect(screen.getByText("No notes yet.")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
+    expect(screen.queryByLabelText("Add note")).toBeNull();
+  });
+
+  it("shows existing note entries without a composer", () => {
+    mockJobs = [makeJob({ notes: "Customer prefers mornings" })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Customer prefers mornings")).toBeTruthy();
+    expect(screen.queryByText("No notes yet.")).toBeNull();
+    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
   });
 });
 

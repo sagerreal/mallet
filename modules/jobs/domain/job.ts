@@ -283,6 +283,18 @@ export class Job {
     return ok(new Job({ ...this.p, status: "complete", completedAt: now, updatedAt: now }));
   }
 
+  // complete → in_progress. "Complete" is terminal for office edits, but field work
+  // can resume: reopening a visit on a completed job pulls the job back into progress
+  // (SetVisitStatusUseCase). The completion stamp is cleared; the office complete
+  // endpoint (CompleteJobUseCase → complete()) works again on the reopened job.
+  // canceled stays fully terminal — no reopen.
+  reopen(now: Date): Result<Job, ValidationError> {
+    if (this.p.status !== "complete") {
+      return err(validation("only a completed job can be reopened", "status"));
+    }
+    return ok(new Job({ ...this.p, status: "in_progress", completedAt: null, updatedAt: now }));
+  }
+
   // scheduled|in_progress → canceled, capturing the reason.
   cancel(reason: string, now: Date): Result<Job, ValidationError> {
     const trimmed = reason.trim();

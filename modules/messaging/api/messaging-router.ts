@@ -16,6 +16,8 @@ import type { ConversationRow } from "../domain/message-repository";
 const conversationDTO = z.object({
   leadId: z.string().uuid(),
   leadName: z.string(),
+  // null = no number on file (the inbox disables Text-dependent controls on it).
+  phone: z.string().nullable(),
   lastBody: z.string(),
   lastDirection: z.enum(["inbound", "outbound"]),
   lastAt: z.string(), // ISO 8601
@@ -27,6 +29,7 @@ export type ConversationDTO = z.infer<typeof conversationDTO>;
 const toConversationDTO = (row: ConversationRow): ConversationDTO => ({
   leadId: row.leadId,
   leadName: row.leadName,
+  phone: row.phone,
   lastBody: row.lastBody,
   lastDirection: row.lastDirection,
   lastAt: row.lastAt.toISOString(),

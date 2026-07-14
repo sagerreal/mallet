@@ -26,6 +26,7 @@ import {
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Lead, Visit, Tech, Job } from "@/lib/store/types";
+import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { todayISO } from "@/lib/clock";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
@@ -332,18 +333,40 @@ export function EvisitModalContent() {
         </div>
       </div>
 
-      {/* 2. Call / Text + phone */}
-      <div style={{ display: "flex", gap: 8, margin: "12px 0" }}>
-        <button className="btn" onClick={() => openModal(MODAL.CALL, { leadId: lead.id })}>
-          Call
-        </button>
-        <button className="btn" onClick={() => openModal(MODAL.THREAD, { leadId: lead.id })}>
-          Text
-        </button>
-        {lead.phone && (
-          <span className="muted" style={{ fontSize: 11.5, alignSelf: "center" }}>
-            {lead.phone}
-          </span>
+      {/* 2. Call / Text + phone — disabled until the lead has a phone on file
+          (a blank call sheet / a thread that errors on send is worse than a
+          disabled button). */}
+      <div style={{ margin: "12px 0" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn"
+            disabled={!hasPhone(lead)}
+            title={!hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+            onClick={() => openModal(MODAL.CALL, { leadId: lead.id })}
+          >
+            Call
+          </button>
+          <button
+            className="btn"
+            disabled={!hasPhone(lead)}
+            title={!hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+            onClick={() => openModal(MODAL.THREAD, { leadId: lead.id })}
+          >
+            Text
+          </button>
+          {hasPhone(lead) && (
+            <span className="muted" style={{ fontSize: 11.5, alignSelf: "center" }}>
+              {lead.phone}
+            </span>
+          )}
+        </div>
+        {!hasPhone(lead) && (
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            No phone on file —{" "}
+            <span className="linklike" onClick={seeCustomer}>
+              add one
+            </span>
+          </div>
         )}
       </div>
 

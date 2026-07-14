@@ -20,7 +20,7 @@ import { InMemoryEventBus } from "@mallet/shared/ports";
 import { Job, JobVisit, type JobProps, type JobVisitProps } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
 import { ScheduleJobUseCase } from "./schedule-job";
-import { SetVisitStatusUseCase, type SetVisitStatusCommand } from "./set-visit-status";
+import { SetVisitStatusUseCase } from "./set-visit-status";
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ const LEAD: LeadId = asLeadId("33333333-3333-3333-3333-333333333333");
 const MISSING_JOB: JobId = asJobId("99999999-9999-9999-9999-999999999999");
 const MISSING_VISIT: VisitId = asVisitId("99999999-9999-9999-9999-999999999999");
 const VISIT_A: VisitId = asVisitId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+const VISIT_B: VisitId = asVisitId("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
 // ── FakeJobRepository ────────────────────────────────────────────────────────
 
@@ -164,11 +165,38 @@ describe("SetVisitStatusUseCase", () => {
     return { jobId: job.props.id, visitId: VISIT_A };
   };
 
+  /** Like seedJobWithVisit but seeds TWO visits (VISIT_A, VISIT_B) with the given statuses. */
+  const seedJobWithTwoVisits = async (
+    statusA: JobVisitProps["status"],
+    statusB: JobVisitProps["status"],
+  ): Promise<{ jobId: JobId }> => {
+    const schedResult = await new ScheduleJobUseCase(repo, bus, clock, seqIds()).exec({
+      orgId: ORG,
+      leadId: LEAD,
+      title: "Test job",
+      scheduledStart: null,
+      scheduledEnd: null,
+      assigneeUserId: null,
+    });
+    if (!isOk(schedResult)) throw new Error("schedule failed");
+    const job = schedResult.value;
+
+    const visits = [
+      makeVisit({ id: VISIT_A, status: statusA, position: 1 }),
+      makeVisit({ id: VISIT_B, status: statusB, position: 2 }),
+    ];
+    const updatedResult = job.withVisits(visits, clock.now());
+    if (!isOk(updatedResult)) throw new Error(`withVisits failed: ${updatedResult.error.message}`);
+    await repo.save(updatedResult.value);
+
+    return { jobId: job.props.id };
+  };
+
   beforeEach(() => {
     clock = new FixedClock(new Date("2026-07-01T10:00:00Z"));
     repo = new FakeJobRepository();
     bus = new InMemoryEventBus();
-    useCase = new SetVisitStatusUseCase(repo, clock);
+    useCase = new SetVisitStatusUseCase(repo, bus, clock);
   });
 
   // ── not-found paths ──────────────────────────────────────────────────────
@@ -214,18 +242,7 @@ describe("SetVisitStatusUseCase", () => {
 
   // ── invalid transitions ──────────────────────────────────────────────────
 
-  it("returns validation error for pending → complete (skipping in_progress)", async () => {
-    const { jobId, visitId } = await seedJobWithVisit("pending");
-    const result = await useCase.exec({ jobId, visitId, status: "complete" });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.kind).toBe("validation");
-      expect(result.error.message).toContain("pending");
-      expect(result.error.message).toContain("complete");
-    }
-  });
-
-  it("returns validation error when attempting to leave a terminal complete status", async () => {
+  it("returns validation error for complete → in_progress (reopen goes to pending only)", async () => {
     const { jobId, visitId } = await seedJobWithVisit("complete");
     const result = await useCase.exec({ jobId, visitId, status: "in_progress" });
     expect(result.ok).toBe(false);
@@ -349,6 +366,80 @@ describe("SetVisitStatusUseCase", () => {
       // completedAt must be stamped with clock.now()
       expect(visit?.props.completedAt).toEqual(clock.now());
     }
+  });
+
+  // ── job-status derivation (client/server agreement — no flash-then-revert) ─
+
+  it("pending → complete: ungated Mark done completes the visit (startedAt stays null) AND the job", async () => {
+    const { jobId, visitId } = await seedJobWithVisit("pending");
+    const result = await useCase.exec({ jobId, visitId, status: "complete" });
+    expect(result.ok).toBe(true);
+    if (isOk(result)) {
+      const visit = result.value.props.visits.find((v) => v.props.id === visitId);
+      expect(visit?.props.status).toBe("complete");
+      expect(visit?.props.startedAt).toBeNull(); // never tapped On my way / Arrived
+      expect(visit?.props.completedAt).toEqual(clock.now());
+      // every active visit is complete → the job is complete, stamped
+      expect(result.value.props.status).toBe("complete");
+      expect(result.value.props.completedAt).toEqual(clock.now());
+    }
+  });
+
+  it("emits job.completed when the last visit completes the job", async () => {
+    const { jobId, visitId } = await seedJobWithVisit("in_progress");
+    const result = await useCase.exec({ jobId, visitId, status: "complete" });
+    expect(result.ok).toBe(true);
+    const completedEvents = bus.recorded.filter((e) => e.name === "job.completed");
+    expect(completedEvents).toHaveLength(1);
+    expect(completedEvents[0]?.payload).toMatchObject({ jobId });
+  });
+
+  it("complete → pending (reopen): clears the visit completedAt and returns the complete job to in_progress", async () => {
+    const { jobId, visitId } = await seedJobWithVisit("pending");
+    const done = await useCase.exec({ jobId, visitId, status: "complete" });
+    expect(done.ok).toBe(true); // job is now complete
+
+    const result = await useCase.exec({ jobId, visitId, status: "pending" });
+    expect(result.ok).toBe(true);
+    if (isOk(result)) {
+      const visit = result.value.props.visits.find((v) => v.props.id === visitId);
+      expect(visit?.props.status).toBe("pending");
+      expect(visit?.props.completedAt).toBeNull(); // reopen clears the stamp
+      expect(result.value.props.status).toBe("in_progress");
+      expect(result.value.props.completedAt).toBeNull();
+    }
+  });
+
+  it("does not complete the job while another active visit is still open", async () => {
+    const { jobId } = await seedJobWithTwoVisits("pending", "pending");
+    const result = await useCase.exec({ jobId, visitId: VISIT_A, status: "complete" });
+    expect(result.ok).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.status).toBe("scheduled"); // B is still pending
+      expect(bus.recorded.filter((e) => e.name === "job.completed")).toHaveLength(0);
+    }
+  });
+
+  it("ignores canceled visits when deriving job completion", async () => {
+    const { jobId } = await seedJobWithTwoVisits("pending", "canceled");
+    const result = await useCase.exec({ jobId, visitId: VISIT_A, status: "complete" });
+    expect(result.ok).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.status).toBe("complete"); // the canceled visit doesn't block
+    }
+  });
+
+  it("keeps visits on a CANCELED job untouchable (terminal for field writes)", async () => {
+    const { jobId, visitId } = await seedJobWithVisit("pending");
+    const saved = await repo.findById(jobId);
+    if (!saved) throw new Error("job not found");
+    const canceled = saved.cancel("customer bailed", clock.now());
+    if (!isOk(canceled)) throw new Error("cancel failed");
+    await repo.save(canceled.value);
+
+    const result = await useCase.exec({ jobId, visitId, status: "complete" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe("validation");
   });
 
   // ── persistence ──────────────────────────────────────────────────────────

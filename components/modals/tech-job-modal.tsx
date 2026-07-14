@@ -34,6 +34,7 @@ import {
 import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
 import { fmt$ } from "@/lib/format";
+import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { todayISO } from "@/lib/clock";
 import type {
   Job,
@@ -237,8 +238,11 @@ function FieldTimer({ visit }: FieldTimerProps) {
     return () => clearInterval(id);
   }, [running]);
 
-  const liveSec =
-    baseSec + (running && startedAtRef.current != null ? (now - startedAtRef.current) / 1000 : 0);
+  // Clamped ≥ 0: a clock skew / stale ref can never render a negative elapsed.
+  const liveSec = Math.max(
+    0,
+    baseSec + (running && startedAtRef.current != null ? (now - startedAtRef.current) / 1000 : 0),
+  );
   const elapsedH = liveSec / 3600;
 
   function start() {
@@ -248,8 +252,13 @@ function FieldTimer({ visit }: FieldTimerProps) {
   }
 
   function pause() {
-    if (running && startedAtRef.current != null) {
-      setBaseSec((s) => s + (Date.now() - startedAtRef.current!) / 1000);
+    // Capture BEFORE queuing state updates: the setBaseSec updater runs after
+    // this function nulls the ref (React batches), so reading the ref lazily
+    // inside the updater added `Date.now() - 0` (epoch seconds) per pause.
+    const startedAt = startedAtRef.current;
+    if (running && startedAt != null) {
+      const segmentSec = Math.max(0, (Date.now() - startedAt) / 1000);
+      setBaseSec((s) => s + segmentSec);
     }
     startedAtRef.current = null;
     setRunning(false);
@@ -964,15 +973,55 @@ function jobNoteEntries(job: Job): NoteEntry[] {
   return E;
 }
 
-function NoteFeed({ job }: { job: Job }) {
+const NOTE_SAVE_FAILED_COPY = "Couldn't save the note — try again.";
+
+interface NoteFeedProps {
+  job: Job;
+  /**
+   * Office-only + not-done gate for the composer: notes persist via
+   * v1.jobs.update (ownerOrOffice — a tech write would FORBIDDEN + roll back)
+   * and the server refuses edits on a complete job. Tech-writable notes
+   * (v1.field.addNote + a real activity feed for job.acts) is a Phase-2
+   * follow-up.
+   */
+  canCompose: boolean;
+  updateJob: (id: string, patch: Partial<Job>) => Promise<{ ok: boolean }>;
+}
+
+function NoteFeed({ job, canCompose, updateJob }: NoteFeedProps) {
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const entries = jobNoteEntries(job);
+
+  async function addNote() {
+    const t = text.trim();
+    if (!t || saving) return;
+    // Append one stamped line ("[Jul 13] …") to the job's notes blob; the
+    // feed's .ntext renders white-space:pre-line so each line reads separately.
+    const stamp = new Date(todayISO() + "T12:00:00").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    const existing = (job.notes ?? "").trim();
+    const next = existing ? `${existing}\n[${stamp}] ${t}` : `[${stamp}] ${t}`;
+    setSaving(true);
+    setError("");
+    const { ok } = await updateJob(job.id, { notes: next });
+    setSaving(false);
+    if (!ok) {
+      setError(NOTE_SAVE_FAILED_COPY);
+      return;
+    }
+    setText("");
+  }
 
   return (
     <div className="fsec">
       <div className="fsec-h">
         <span>Notes</span>
       </div>
-      {entries.length === 0 ? null : (
+      {entries.length > 0 ? (
         <div className="nfeed">
           {entries.map((n) => (
             <div className="nrow" key={n.key}>
@@ -987,6 +1036,38 @@ function NoteFeed({ job }: { job: Job }) {
             </div>
           ))}
         </div>
+      ) : !canCompose ? (
+        // Zero entries and no composer — never a bare labeled header.
+        <div className="muted" style={{ fontSize: 12.5 }}>
+          No notes yet.
+        </div>
+      ) : null}
+      {canCompose && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginTop: entries.length > 0 ? 8 : 0 }}>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void addNote();
+              }}
+              placeholder="add a note…"
+              aria-label="Add a note"
+              style={{ flex: 1, minWidth: 140, ...AO_INPUT }}
+            />
+            <button
+              className="btn sm primary"
+              aria-label="Add note"
+              disabled={saving}
+              onClick={() => void addNote()}
+            >
+              Add
+            </button>
+          </div>
+          {error && (
+            <div style={{ color: "var(--red)", fontSize: 12, marginTop: 6 }}>{error}</div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1225,25 +1306,43 @@ export function TechJobModalContent() {
 
       {/* 2. Call / Text — office only. Leads never hydrate under the field shell and
           the myDay summary carries no customer phone, so for a tech these would be
-          dead buttons (no dead buttons rule). */}
+          dead buttons (no dead buttons rule). Without a phone on file the call sheet
+          shows a blank number and the thread errors on send — disable until one exists. */}
       {isOffice && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 0, flexWrap: "wrap" }}>
-          <button
-            className="btn"
-            onClick={() => {
-              if (lead) openModal(MODAL.CALL, { leadId: lead.id });
-            }}
-          >
-            Call
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
-            }}
-          >
-            Text
-          </button>
+        <div style={{ marginBottom: 0 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              className="btn"
+              disabled={!lead || !hasPhone(lead)}
+              title={!lead || !hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+              onClick={() => {
+                if (lead) openModal(MODAL.CALL, { leadId: lead.id });
+              }}
+            >
+              Call
+            </button>
+            <button
+              className="btn"
+              disabled={!lead || !hasPhone(lead)}
+              title={!lead || !hasPhone(lead) ? ADD_PHONE_TITLE : undefined}
+              onClick={() => {
+                if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
+              }}
+            >
+              Text
+            </button>
+          </div>
+          {lead && !hasPhone(lead) && (
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              No phone on file —{" "}
+              <span
+                className="linklike"
+                onClick={() => openModal(MODAL.LEAD, { leadId: lead.id })}
+              >
+                add one
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1372,8 +1471,9 @@ export function TechJobModalContent() {
         addPhoto={addJobPhoto}
       />
 
-      {/* 8. Notes feed. */}
-      <NoteFeed job={job} />
+      {/* 8. Notes feed — office composes while the job is open (same gate as
+          Call/Text; the server refuses note edits once the job is complete). */}
+      <NoteFeed job={job} canCompose={isOffice && !done} updateJob={updateJob} />
     </div>
   );
 }

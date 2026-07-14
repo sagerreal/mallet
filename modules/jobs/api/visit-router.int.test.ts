@@ -324,6 +324,51 @@ suite("visits tRPC router (full stack, live RLS)", () => {
     ).rejects.toBeDefined();
   });
 
+  it("setVisitStatus derives the JOB status: only visit done → job complete; reopen → in_progress", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+
+    const created = await caller.v1.visits.createVisit({ jobId, durationHours: 2 });
+    const visitId = created.visits[0]!.id;
+    expect(created.status).toBe("scheduled");
+
+    // Mark the only visit done (pending → complete is legal — the field "Mark done"
+    // is ungated). The returned jobDTO must agree with the client's optimistic
+    // "done" so the close-out hero doesn't flash-then-vanish.
+    const done = await caller.v1.visits.setVisitStatus({ jobId, visitId, status: "complete" });
+    expect(done.visits[0]!.status).toBe("complete");
+    expect(done.status).toBe("complete");
+    expect(done.completedAt).not.toBeNull();
+
+    // Survives a fresh read.
+    const refetched = await caller.v1.jobs.get({ jobId });
+    expect(refetched.status).toBe("complete");
+
+    // Reopen (complete → pending): the visit stamp clears, the job returns to
+    // in_progress so office complete-endpoint semantics keep working.
+    const reopened = await caller.v1.visits.setVisitStatus({ jobId, visitId, status: "pending" });
+    expect(reopened.visits[0]!.status).toBe("pending");
+    expect(reopened.visits[0]!.completedAt).toBeNull();
+    expect(reopened.status).toBe("in_progress");
+    expect(reopened.completedAt).toBeNull();
+  });
+
+  it("setVisitStatus does not complete the job while a second active visit is open", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+
+    const first = await caller.v1.visits.createVisit({ jobId, durationHours: 1 });
+    const visitAId = first.visits[0]!.id;
+    await caller.v1.visits.createVisit({ jobId, durationHours: 1 });
+
+    const afterOne = await caller.v1.visits.setVisitStatus({
+      jobId,
+      visitId: visitAId,
+      status: "complete",
+    });
+    expect(afterOne.status).toBe("scheduled"); // the other visit is still pending
+  });
+
   it("setVisitStatus is idempotent: same-status call returns current job without error", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const jobId = await createJob(caller);
