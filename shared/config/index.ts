@@ -35,6 +35,12 @@ const ConfigSchema = z.object({
   // req.url is correct there and this can be left unset.
   TWILIO_WEBHOOK_URL: z.url().optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  // Vapi (AI voice front desk) — all OPTIONAL. Without VAPI_WEBHOOK_SECRET the /api/frontdesk/vapi
+  // route fail-closes (503, feature dark), so calls are never answered unverified. The secret is the
+  // shared string sent as the x-vapi-secret header (min 16 for real entropy). VAPI_API_KEY is the
+  // dashboard key for future programmatic assistant/number setup — unused by the webhook path.
+  VAPI_WEBHOOK_SECRET: z.string().min(16).optional(),
+  VAPI_API_KEY: z.string().min(1).optional(),
   // Shared secret guarding the outbox relay cron route. Optional — the route 503s (fail-closed)
   // when unset, so the relay never runs unauthenticated. Vercel Cron sends it as a Bearer token.
   // preprocess "" -> undefined so a blank env var (a common Vercel misconfig) degrades to the
