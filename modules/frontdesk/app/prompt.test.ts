@@ -260,10 +260,10 @@ describe("buildSystemPrompt — case rules", () => {
     expect(p).toMatch(/landlord/i);
   });
 
-  it("covers quote-only → request_quote + office text promise", () => {
+  it("covers quote-only → request_quote + office CALLBACK promise (texting off until A2P live)", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     expect(p).toMatch(/request_quote/);
-    expect(p).toMatch(/office will text|text (you )?a (written )?quote/i);
+    expect(p).toMatch(/office will call them back with a written quote/i);
   });
 });
 

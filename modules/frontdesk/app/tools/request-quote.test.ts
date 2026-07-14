@@ -261,9 +261,10 @@ describe("requestQuoteTool", () => {
     expect(h.tasks.created[0]!.text).toContain(NO_PHONE_NOTE);
     expect(h.tasks.created[0]!.text).toBe(buildQuoteTaskText(QUOTE_INPUT.scope_details, false));
     expect(h.tasks.created[0]!.leadId).toBe(LEAD_UUID);
-    // (3) the SPEAK is the office-will-text-a-written-quote line
+    // (3) the SPEAK promises a CALLBACK (texting is off until A2P is live), not a text
     expect(result.speak).toBe(REQUEST_QUOTE_SPEAK);
-    expect(result.speak).toMatch(/office will text you a written quote/i);
+    expect(result.speak).toMatch(/office will call you back with a written quote/i);
+    expect(result.speak).not.toMatch(/text/i);
   });
 
   it("EnsureCustomer err → spoken fallback, no throw, no task", async () => {

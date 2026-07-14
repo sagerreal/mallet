@@ -3,11 +3,12 @@ import { Phone, isOk } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
-// The spoken confirmation on success — functional, not chatty (house rule). Promises only what the
-// office actually does: text back a written quote. No dollar amounts (the AI never prices a quote —
-// the estimator drafts it from the lead), no arrival-time promise.
+// The spoken confirmation on success — functional, not chatty (house rule). Promises only a channel
+// we actually have: a CALLBACK. (Outbound SMS is carrier-blocked/off, so promising a text would be
+// a broken promise; switch back to "text you a written quote" once A2P texting is live.) No dollar
+// amounts (the AI never prices a quote — the estimator drafts it), no arrival-time promise.
 export const REQUEST_QUOTE_SPEAK =
-  "I've got the details — the office will text you a written quote shortly.";
+  "I've got the details — the office will call you back with a written quote shortly.";
 
 // The source stamped on every lead the voice front desk creates (matches take_message + book_visit).
 const VOICE_SOURCE = "AI Front Desk";
@@ -33,7 +34,7 @@ const requestQuoteParameters: Record<string, unknown> = {
   type: "object",
   properties: {
     caller_name: { type: "string", description: "The caller's full name." },
-    phone: { type: "string", description: "The caller's number for the written quote." },
+    phone: { type: "string", description: "The caller's callback number for the written quote." },
     address: { type: "string", description: "The service address, if the caller gives one." },
     scope_details: {
       type: "string",
@@ -60,7 +61,7 @@ export const requestQuoteTool: VoiceTool = {
   description:
     "Capture a written-quote request for a job the AI should not price on the call (big or " +
     "custom work). Use once you have the caller's name, number, and what they want quoted; the " +
-    "office texts back a written quote.",
+    "office calls back with a written quote.",
   parameters: requestQuoteParameters,
   input: requestQuoteInput,
 
