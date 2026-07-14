@@ -39,6 +39,8 @@ export { RecordCallUseCase } from "./app/record-call";
 export type { RecordCallCmd, RecordCallDeps } from "./app/record-call";
 export { deriveDisposition } from "./app/disposition";
 export { auditPrices } from "./app/price-audit";
+export { haversineMiles, isInServiceArea, EARTH_RADIUS_MI } from "./app/service-area";
+export type { AreaCheck, ServiceAreaResult } from "./app/service-area";
 
 // ── Tools ───────────────────────────────────────────────────────────────────────
 export { takeMessageTool } from "./app/tools/take-message";

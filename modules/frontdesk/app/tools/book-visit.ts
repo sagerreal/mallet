@@ -12,7 +12,15 @@ import {
   type BookLane,
   type BookVisitInput,
 } from "./book-visit-input";
-import { confirmationSpeak, emergencyTaskText, fallbackTaskText, slotPhrase } from "./book-visit-speak";
+import {
+  confirmationSpeak,
+  emergencyTaskText,
+  fallbackTaskText,
+  outOfAreaTaskText,
+  slotPhrase,
+} from "./book-visit-speak";
+import { isInServiceArea } from "../service-area";
+import type { GeoPoint } from "../../domain/geocoder";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // Re-export the boundary contract so existing importers (tests, the route, the barrel) keep pulling
@@ -58,6 +66,11 @@ export const BOOK_VISIT_INVALID_PHONE_SPEAK =
 // so no booking request is silently dropped (we also file a message task alongside it).
 export const BOOK_VISIT_ERROR_SPEAK =
   "I hit a snag booking that — let me take a message so the office locks in your time.";
+
+// Spoken when the geocoded address is CONFIDENTLY beyond the org's service radius. We don't book;
+// we file an office callback task (below) so the lead still reaches someone — never a silent drop.
+export const BOOK_VISIT_OUT_OF_AREA_SPEAK =
+  "That address looks outside the area we cover — let me take a message so the office can point you to someone.";
 
 // The job/disposition kind for a lane: estimate lane → "estimate" (booked_estimate), everything
 // else → "work" (booked_job). Used for BOTH the job's kind column and result.data.kind (see
@@ -145,6 +158,36 @@ const bookingFallback = async (
     );
   }
   return { speak: BOOK_VISIT_ERROR_SPEAK };
+};
+
+// The org's geocoded service origin as a GeoPoint, or null when either coordinate is unset (the
+// shop never set an origin, or its geocode missed on save). Null → the service-area check degrades
+// to "unknown" (book normally), never a false out-of-area decline.
+const originOf = (settings: OrgSettings): GeoPoint | null => {
+  const { originLat, originLng } = settings.props;
+  return originLat !== null && originLng !== null ? { lat: originLat, lng: originLng } : null;
+};
+
+// The CONFIDENT out-of-area path: do NOT book, but file an office callback task so the lead still
+// reaches someone (no silent drop), then speak the decline. leadId is null — we short-circuit before
+// ensuring a customer, so the task carries the address/problem the office needs to follow up. A task
+// failure is logged, never masks the spoken decline the caller is waiting on.
+const outOfAreaDecline = async (
+  input: BookVisitInput,
+  ctx: VoiceToolContext,
+): Promise<VoiceToolResult> => {
+  try {
+    await ctx.deps.createTask.exec(
+      { leadId: null, text: outOfAreaTaskText(input), dueDate: null },
+      ctx.orgId,
+    );
+  } catch (error: unknown) {
+    logger.error(
+      { orgId: ctx.orgId, tool: "book_visit", error: error instanceof Error ? error.message : "unknown" },
+      "frontdesk.book_visit.out_of_area_task_failed",
+    );
+  }
+  return { speak: BOOK_VISIT_OUT_OF_AREA_SPEAK };
 };
 
 // The core booking sequence, run once the phone is valid and settings are loaded: ensure the
@@ -325,7 +368,24 @@ export const bookVisitTool: VoiceTool = {
       return bookingFallback(input, ctx, null);
     }
 
-    // (3–8) Ensure customer → job → visit → emergency task → sanctioned confirmation.
+    // (3) Authoritative service-area check — book_visit has the FULL address (unlike
+    //     check_availability's early bail). A CONFIDENT out-of-area caller (geocoded point beyond the
+    //     configured radius) is declined + gets an office callback task, never booked. "in" and
+    //     "unknown" (no origin / non-positive radius / geocode miss) both proceed — the check NEVER
+    //     blocks a booking on missing or flaky geocoding (graceful-degrade house rule).
+    const area = await isInServiceArea(
+      input.address,
+      originOf(settings),
+      settings.props.areaRadiusMi,
+      ctx.deps.geocoder,
+    );
+    logger.info(
+      { orgId: ctx.orgId, tool: "book_visit", areaCheck: area.check },
+      "frontdesk.book_visit.service_area_checked",
+    );
+    if (area.check === "out") return outOfAreaDecline(input, ctx);
+
+    // (4–9) Ensure customer → job → visit → emergency task → sanctioned confirmation.
     return bookConfirmed(input, settings, parsed.value, ctx);
   },
 };

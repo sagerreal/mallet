@@ -15,6 +15,7 @@ import {
   DrizzleNotificationRepository,
 } from "@mallet/notifications";
 import { bookVisitTool } from "./book-visit";
+import { inertGeocoder } from "./test-support";
 import { DrizzleSettingsReader } from "../../infra/drizzle-settings-reader";
 import { DrizzleAvailabilityReader } from "../../infra/drizzle-availability-reader";
 import { DrizzleToolInvocationLedger } from "../../infra/drizzle-tool-ledger";
@@ -52,6 +53,9 @@ const buildDeps = (tx: TenantTx, org: OrgId): VoiceToolDeps => {
     createTask: new CreateTaskUseCase(new DrizzleTaskRepository(tx, org), systemClock, uuidGenerator),
     settings: new DrizzleSettingsReader(tx, org),
     availability: new DrizzleAvailabilityReader(tx, org),
+    // Inert geocoder keeps the RLS test hermetic (no live Census HTTP): the lazily-created default
+    // settings row has a NULL origin, so the service-area check is "unknown" → books normally anyway.
+    geocoder: inertGeocoder(),
     // The confirmation SMS is routed through the real SendNotificationUseCase (writes an observable
     // notifications row) with the logging stub as the channel (A2P-blocked) — never fails the booking.
     sendNotification: new SendNotificationUseCase(

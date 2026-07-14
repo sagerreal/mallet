@@ -29,6 +29,7 @@ import {
   DrizzleSettingsReader,
   DrizzleLeadSummaryReader,
   DrizzleAvailabilityReader,
+  CensusGeocoder,
   takeMessageTool,
   checkAvailabilityTool,
   bookVisitTool,
@@ -66,6 +67,11 @@ const VOICE_TOOLS: readonly VoiceTool[] = [
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+// One shared geocoder for the whole process: it's request-independent (no tenant state) and owns its
+// own in-process cache, so repeated service-area lookups across calls reuse resolved points. Kept at
+// module scope (not per-request) so the cache actually persists between tool calls.
+const geocoder = new CensusGeocoder();
 
 export async function POST(req: Request): Promise<Response> {
   const config = loadConfig();
@@ -282,6 +288,7 @@ const buildVoiceToolDeps = (
     createTask: buildCreateTask(tx, orgId),
     settings: new DrizzleSettingsReader(tx, orgId),
     availability: new DrizzleAvailabilityReader(tx, orgId),
+    geocoder,
     sendNotification: new SendNotificationUseCase(
       new DrizzleNotificationRepository(tx, orgId),
       notificationSender,

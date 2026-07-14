@@ -100,3 +100,8 @@ export const emergencyTaskText = (input: BookVisitInput): string =>
 
 export const fallbackTaskText = (input: BookVisitInput): string =>
   `Booking attempt failed — call back ${input.caller_name}${input.problem ? " re: " + input.problem : ""}`;
+
+// The office task filed for a CONFIDENT out-of-area caller: we don't book, but the lead is NOT
+// dropped — the office sees the address + problem so it can refer the caller or extend coverage.
+export const outOfAreaTaskText = (input: BookVisitInput): string =>
+  `Out of service area — ${input.caller_name} at ${input.address}${input.problem ? " re: " + input.problem : ""}. Point them to another provider or confirm coverage.`;

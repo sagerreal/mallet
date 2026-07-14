@@ -37,7 +37,7 @@ import {
   buildQuoteTaskText,
   NO_PHONE_NOTE,
 } from "./request-quote";
-import { inertSendNotification } from "./test-support";
+import { inertSendNotification, inertGeocoder } from "./test-support";
 import { toVoiceToolSpec, type VoiceToolContext, type VoiceToolDeps } from "./tool-result";
 
 // ---------------------------------------------------------------------------
@@ -172,6 +172,7 @@ const buildHarness = (overrides?: {
     createVisit: {} as never,
     settings: { async getByOrg() { return null; } },
     availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; } },
+    geocoder: inertGeocoder(),
     sendNotification: inertSendNotification(),
     bus,
     clock,

@@ -3,6 +3,8 @@ import { logger } from "@mallet/shared/observability";
 import type { OrgSettings } from "@mallet/settings";
 import { SLOT_LOOKAHEAD_DAYS } from "../../infra/vapi-defaults";
 import { computeSlots, toDateString, addDays, MIN_CREW, type OrgHours, type SlotWindow } from "../slots";
+import { isInServiceArea } from "../service-area";
+import type { GeoPoint } from "../../domain/geocoder";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // The three booking lanes (mirrors the playbook). check_availability doesn't behave differently per
@@ -19,9 +21,19 @@ export const AVAILABILITY_URGENCIES = ["normal", "emergency"] as const;
 const NO_SLOTS_SPEAK =
   "I don't have an opening in the next few days — let me take a message so the office can find you a time.";
 
+// Spoken on a CONFIDENT out-of-area early bail (the caller gave a city/address the geocoder places
+// beyond the org's radius) — we don't offer slots. Mirrors book_visit's decline so the caller hears
+// the same message whether they're caught here or at the authoritative book_visit check.
+export const CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK =
+  "That address looks outside the area we cover — let me take a message so the office can point you to someone.";
+
 export const checkAvailabilityInput = z.object({
   lane: z.enum(AVAILABILITY_LANES),
   urgency: z.enum(AVAILABILITY_URGENCIES),
+  // OPTIONAL city/address for an EARLY out-of-area bail. The agent may not have the caller's location
+  // yet at availability time, so this is non-breaking: omitted → no early check, slots as before. A
+  // partial value ("Fresno", "123 Main St, Fresno") is enough for the Census geocoder to place it.
+  service_city: z.string().optional(),
 });
 export type CheckAvailabilityInput = z.infer<typeof checkAvailabilityInput>;
 
@@ -42,9 +54,22 @@ const checkAvailabilityParameters: Record<string, unknown> = {
       enum: [...AVAILABILITY_URGENCIES],
       description: "normal, or emergency for a true emergency that should be seen today.",
     },
+    service_city: {
+      type: "string",
+      description:
+        "The caller's city or address, if you already know it — used to check they're in the " +
+        "service area before offering times. Omit if you don't have it yet.",
+    },
   },
   required: ["lane", "urgency"],
   additionalProperties: false,
+};
+
+// The org's geocoded service origin as a GeoPoint, or null when either coordinate is unset — mirrors
+// book_visit's originOf. Null → the service-area check degrades to "unknown" (offer slots normally).
+const originOf = (s: OrgSettings): GeoPoint | null => {
+  const { originLat, originLng } = s.props;
+  return originLat !== null && originLng !== null ? { lat: originLat, lng: originLng } : null;
 };
 
 // Map the org's integer opening hours onto the pure OrgHours shape the slot math consumes.
@@ -104,6 +129,26 @@ export const checkAvailabilityTool: VoiceTool = {
       // rather than invent a slot. Logged (no silent swallow).
       logger.warn({ orgId: ctx.orgId, tool: "check_availability" }, "frontdesk.check_availability.no_settings");
       return { speak: NO_SLOTS_SPEAK, data: { slots: [] } };
+    }
+
+    // EARLY out-of-area bail (optional): if the agent already knows the caller's city/address and the
+    // geocoded point is CONFIDENTLY beyond the org's radius, decline before offering slots. "in" and
+    // "unknown" (no city given / no origin / geocode miss) both fall through to the normal offer — the
+    // check never blocks a caller on missing data. The authoritative check still runs in book_visit.
+    if (input.service_city && input.service_city.trim().length > 0) {
+      const area = await isInServiceArea(
+        input.service_city,
+        originOf(settings),
+        settings.props.areaRadiusMi,
+        ctx.deps.geocoder,
+      );
+      if (area.check === "out") {
+        logger.info(
+          { orgId: ctx.orgId, tool: "check_availability", areaCheck: "out" },
+          "frontdesk.check_availability.out_of_area",
+        );
+        return { speak: CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK, data: { slots: [] } };
+      }
     }
 
     const now = ctx.deps.clock.now();

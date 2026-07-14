@@ -6,8 +6,9 @@ import { baseSettingsProps } from "../../../settings/domain/org-settings.fixture
 import type { SettingsReader } from "../../domain/assistant";
 import type { AvailabilityReader, AvailabilitySnapshot } from "../../domain/availability";
 import type { BookedVisit } from "../slots";
-import { checkAvailabilityTool } from "./check-availability";
-import { inertSendNotification } from "./test-support";
+import { checkAvailabilityTool, CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK } from "./check-availability";
+import { inertSendNotification, inertGeocoder, fixedGeocoder } from "./test-support";
+import type { Geocoder } from "../../domain/geocoder";
 import type { VoiceToolContext, VoiceToolDeps } from "./tool-result";
 
 const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
@@ -45,6 +46,7 @@ const buildCtx = (args: {
   settings: OrgSettings | null;
   snapshot: AvailabilitySnapshot;
   now?: Date;
+  geocoder?: Geocoder;
 }): VoiceToolContext => {
   const deps: VoiceToolDeps = {
     ensureCustomer: {} as never,
@@ -53,6 +55,7 @@ const buildCtx = (args: {
     createTask: {} as never,
     settings: fakeSettings(args.settings),
     availability: fakeAvailability(args.snapshot),
+    geocoder: args.geocoder ?? inertGeocoder(),
     sendNotification: inertSendNotification(),
     bus: { async emit() {} },
     clock: new FixedClock(args.now ?? TUE_0700),
@@ -64,14 +67,17 @@ const buildCtx = (args: {
 const bookedAt = (date: string, startHHMM: string): BookedVisit => ({ date, startHHMM, durationMinutes: 60 });
 
 describe("checkAvailabilityTool", () => {
-  it("exposes a JSON schema with lane + urgency required", () => {
+  it("exposes a JSON schema with lane + urgency required, service_city optional", () => {
     const params = checkAvailabilityTool.parameters as {
       required: string[];
       properties: Record<string, unknown>;
     };
+    // Only lane + urgency are required — service_city is optional (the agent may not have the
+    // caller's location yet at availability time, so requiring it would break the non-location flow).
     expect(params.required).toEqual(["lane", "urgency"]);
-    // preferred_day was dropped (parsed but never used — dead model-trust surface).
-    expect(Object.keys(params.properties).sort()).toEqual(["lane", "urgency"]);
+    // preferred_day was dropped (parsed but never used — dead model-trust surface); service_city is
+    // the optional early out-of-area field.
+    expect(Object.keys(params.properties).sort()).toEqual(["lane", "service_city", "urgency"]);
   });
 
   it("offers three DISCRETE start times as a pick-one close, with bounds in data.slots", async () => {
@@ -211,5 +217,67 @@ describe("checkAvailabilityTool", () => {
     const result = await checkAvailabilityTool.handle({ lane: "repair", urgency: "normal" }, ctx);
     expect(result.speak).toContain("take a message");
     expect(result.data?.slots).toEqual([]);
+  });
+
+  // ── service-area early bail (optional service_city) ──
+  // Origin ≈ Pleasanton (37.66, -121.87), radius 25 mi in the fixture. A geocoder pinned to Fresno
+  // (36.74, -119.77 — ~120 mi east) is confidently OUT → decline before offering any slot.
+  const OUT_OF_AREA_POINT = { lat: 36.74, lng: -119.77 };
+  const nearOrigin = { originLat: 37.66, originLng: -121.87, serviceOriginAddress: "Pleasanton" };
+
+  it("service_city out-of-area: declines with the out-of-area line and offers NO slots", async () => {
+    const ctx = buildCtx({
+      settings: settingsFrom(nearOrigin),
+      snapshot: { crewCount: 1, visits: [] },
+      geocoder: fixedGeocoder(OUT_OF_AREA_POINT),
+    });
+    const result = await checkAvailabilityTool.handle(
+      { lane: "repair", urgency: "normal", service_city: "Fresno" },
+      ctx,
+    );
+    expect(result.speak).toBe(CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK);
+    expect(result.data?.slots).toEqual([]);
+  });
+
+  it("WITHOUT service_city: offers slots as today even with a far-away geocoder (no early check)", async () => {
+    // The far geocoder would place ANY address out of area — but with no service_city the early check
+    // never runs, so the normal slot offer proceeds unchanged.
+    const ctx = buildCtx({
+      settings: settingsFrom(nearOrigin),
+      snapshot: { crewCount: 1, visits: [] },
+      geocoder: fixedGeocoder(OUT_OF_AREA_POINT),
+    });
+    const result = await checkAvailabilityTool.handle({ lane: "repair", urgency: "normal" }, ctx);
+    expect(result.speak).not.toBe(CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK);
+    expect((result.data?.slots as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("service_city IN area: offers slots normally (in-radius geocode falls through)", async () => {
+    const ctx = buildCtx({
+      settings: settingsFrom(nearOrigin),
+      snapshot: { crewCount: 1, visits: [] },
+      geocoder: fixedGeocoder({ lat: 37.68, lng: -121.9 }), // ~2 mi from origin → "in"
+    });
+    const result = await checkAvailabilityTool.handle(
+      { lane: "repair", urgency: "normal", service_city: "Pleasanton" },
+      ctx,
+    );
+    expect(result.speak).not.toBe(CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK);
+    expect((result.data?.slots as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("service_city with no origin configured: degrades to a normal offer (unknown → book)", async () => {
+    // Default fixture has null origin → the check is "unknown" regardless of the geocoder → slots.
+    const ctx = buildCtx({
+      settings: settingsFrom(),
+      snapshot: { crewCount: 1, visits: [] },
+      geocoder: fixedGeocoder(OUT_OF_AREA_POINT),
+    });
+    const result = await checkAvailabilityTool.handle(
+      { lane: "repair", urgency: "normal", service_city: "Fresno" },
+      ctx,
+    );
+    expect(result.speak).not.toBe(CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK);
+    expect((result.data?.slots as unknown[]).length).toBeGreaterThan(0);
   });
 });
