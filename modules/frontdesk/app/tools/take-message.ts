@@ -64,7 +64,9 @@ export const takeMessageTool: VoiceTool = {
   input: takeMessageInput,
 
   async handle(rawInput: unknown, ctx: VoiceToolContext): Promise<VoiceToolResult> {
-    const input = takeMessageInput.parse(rawInput);
+    // The runner already validated args against `input` (this tool's zod schema) and passes the
+    // parsed value, so we narrow the already-validated object rather than re-parsing.
+    const input = rawInput as TakeMessageInput;
     const phone = parsePhone(input.phone);
 
     const ensured = await ctx.deps.ensureCustomer.exec({

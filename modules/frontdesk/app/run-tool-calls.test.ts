@@ -60,6 +60,13 @@ class FakeLedger implements ToolInvocationLedger {
       result: input.result,
     });
   }
+  async listByCall(vapiCallId: string): Promise<{ tool: string; result: unknown }[]> {
+    const out: { tool: string; result: unknown }[] = [];
+    for (const [k, v] of this.rows) {
+      if (k.startsWith(`${vapiCallId}:`)) out.push({ tool: v.tool, result: v.result });
+    }
+    return out;
+  }
 }
 
 // Records every createTask call so we can assert the auto follow-up on an execution throw.
@@ -214,6 +221,9 @@ describe("RunToolCallsUseCase", () => {
       },
       async save() {
         throw new Error("ledger offline");
+      },
+      async listByCall() {
+        return [];
       },
     };
     const runner = new RunToolCallsUseCase([tool], brokenLedger, depsFactory);

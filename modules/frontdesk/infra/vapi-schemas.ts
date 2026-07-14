@@ -45,10 +45,13 @@ export const extractCallerNumber = (message: CallerNumberSource): string | null 
 
 // ── Per-type message schemas (validate only what we read) ─────────────────────
 
+// `call` is OPTIONAL here: Vapi can POST assistant-request BEFORE the call object is fully
+// populated (A2-review carry). We still answer — the org is resolved from the top-level
+// phoneNumber echo, and callId falls back to null (no skeleton row is written without an id).
 const assistantRequestSchema = z
   .object({
     type: z.literal("assistant-request"),
-    call: callSchema,
+    call: callSchema.optional(),
     phoneNumber: phoneNumberSchema.optional(),
   })
   .passthrough();
@@ -67,6 +70,9 @@ const toolCallsSchema = z
   .object({
     type: z.literal("tool-calls"),
     call: callSchema,
+    // The org's provisioned number can also echo at the top level on tool-calls (same as
+    // assistant-request); we read it for tenant routing, falling back to the per-call copy.
+    phoneNumber: phoneNumberSchema.optional(),
     toolCallList: z.array(toolCallSchema),
   })
   .passthrough();
@@ -129,7 +135,9 @@ export interface ParsedTranscriptMessage {
 
 export interface ParsedAssistantRequest {
   readonly type: "assistant-request";
-  readonly callId: string;
+  // Null when Vapi sends assistant-request before the call object is populated. The org is still
+  // resolvable from orgNumber; the route simply skips the skeleton-row write when callId is null.
+  readonly callId: string | null;
   readonly callerNumber: string | null;
   readonly orgNumber: string | null;
 }
@@ -137,12 +145,19 @@ export interface ParsedAssistantRequest {
 export interface ParsedToolCalls {
   readonly type: "tool-calls";
   readonly callId: string;
+  // The To (org) number off the message, for tenant routing (same lookup as assistant-request).
+  readonly orgNumber: string | null;
   readonly toolCalls: readonly ParsedToolCall[];
 }
 
 export interface ParsedEndOfCallReport {
   readonly type: "end-of-call-report";
   readonly callId: string;
+  // The From (caller) and To (org) numbers off the report's call object. orgNumber routes the
+  // report to the right tenant (same To-number lookup as assistant-request); callerNumber lets the
+  // recorder re-resolve the lead. Both nullable — Vapi may omit them on some reports.
+  readonly callerNumber: string | null;
+  readonly orgNumber: string | null;
   readonly endedReason?: string;
   readonly startedAt?: string;
   readonly endedAt?: string;
@@ -192,6 +207,59 @@ const recordingUrlFrom = (
 
 // ── Public parser ─────────────────────────────────────────────────────────────
 
+// One parser per message type — each validates its own fields and normalizes to the parsed shape.
+// Split out of parseServerMessage so the dispatcher stays a flat, low-complexity switch.
+
+const parseAssistantRequest = (message: unknown): ParseServerMessageResult => {
+  const parsed = assistantRequestSchema.safeParse(message);
+  if (!parsed.success) return err(fieldError("assistant-request", parsed.error));
+  return ok({
+    type: "assistant-request",
+    callId: parsed.data.call?.id ?? null,
+    callerNumber: extractCallerNumber(parsed.data),
+    orgNumber: extractOrgNumber(parsed.data),
+  });
+};
+
+const parseToolCalls = (message: unknown): ParseServerMessageResult => {
+  const parsed = toolCallsSchema.safeParse(message);
+  if (!parsed.success) return err(fieldError("tool-calls", parsed.error));
+  return ok({
+    type: "tool-calls",
+    callId: parsed.data.call.id,
+    orgNumber: extractOrgNumber(parsed.data),
+    toolCalls: parsed.data.toolCallList.map((tc) => ({
+      id: tc.id,
+      name: tc.name,
+      arguments: normalizeToolArguments(tc.arguments),
+    })),
+  });
+};
+
+const parseEndOfCallReport = (message: unknown): ParseServerMessageResult => {
+  const parsed = endOfCallReportSchema.safeParse(message);
+  if (!parsed.success) return err(fieldError("end-of-call-report", parsed.error));
+  const messages = parsed.data.artifact?.messages?.map((m) => ({ role: m.role, message: m.message }));
+  return ok({
+    type: "end-of-call-report",
+    callId: parsed.data.call.id,
+    callerNumber: extractCallerNumber(parsed.data),
+    orgNumber: extractOrgNumber(parsed.data),
+    endedReason: parsed.data.endedReason,
+    startedAt: parsed.data.startedAt,
+    endedAt: parsed.data.endedAt,
+    transcript: parsed.data.artifact?.transcript,
+    messages,
+    recordingUrl: recordingUrlFrom(parsed.data.artifact),
+  });
+};
+
+const parseStatusUpdate = (message: unknown): ParseServerMessageResult => {
+  const parsed = statusUpdateSchema.safeParse(message);
+  if (!parsed.success) return err(fieldError("status-update", parsed.error));
+  return ok({ type: "status-update", status: parsed.data.status, callId: parsed.data.call.id });
+};
+
 // Parse + normalize a raw webhook body into a ParsedServerMessage. Never throws. Junk/missing
 // envelope → typed failure; a recognized type that fails its own field validation → typed failure;
 // an unrecognized type → a successful `{ type: "unknown" }`.
@@ -202,58 +270,15 @@ export const parseServerMessage = (body: unknown): ParseServerMessageResult => {
   }
 
   const message = envelope.data.message;
-
   switch (message.type) {
-    case "assistant-request": {
-      const parsed = assistantRequestSchema.safeParse(message);
-      if (!parsed.success) return err(fieldError("assistant-request", parsed.error));
-      return ok({
-        type: "assistant-request",
-        callId: parsed.data.call.id,
-        callerNumber: extractCallerNumber(parsed.data),
-        orgNumber: extractOrgNumber(parsed.data),
-      });
-    }
-    case "tool-calls": {
-      const parsed = toolCallsSchema.safeParse(message);
-      if (!parsed.success) return err(fieldError("tool-calls", parsed.error));
-      return ok({
-        type: "tool-calls",
-        callId: parsed.data.call.id,
-        toolCalls: parsed.data.toolCallList.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: normalizeToolArguments(tc.arguments),
-        })),
-      });
-    }
-    case "end-of-call-report": {
-      const parsed = endOfCallReportSchema.safeParse(message);
-      if (!parsed.success) return err(fieldError("end-of-call-report", parsed.error));
-      const messages = parsed.data.artifact?.messages?.map((m) => ({
-        role: m.role,
-        message: m.message,
-      }));
-      return ok({
-        type: "end-of-call-report",
-        callId: parsed.data.call.id,
-        endedReason: parsed.data.endedReason,
-        startedAt: parsed.data.startedAt,
-        endedAt: parsed.data.endedAt,
-        transcript: parsed.data.artifact?.transcript,
-        messages,
-        recordingUrl: recordingUrlFrom(parsed.data.artifact),
-      });
-    }
-    case "status-update": {
-      const parsed = statusUpdateSchema.safeParse(message);
-      if (!parsed.success) return err(fieldError("status-update", parsed.error));
-      return ok({
-        type: "status-update",
-        status: parsed.data.status,
-        callId: parsed.data.call.id,
-      });
-    }
+    case "assistant-request":
+      return parseAssistantRequest(message);
+    case "tool-calls":
+      return parseToolCalls(message);
+    case "end-of-call-report":
+      return parseEndOfCallReport(message);
+    case "status-update":
+      return parseStatusUpdate(message);
     default:
       return ok({ type: "unknown", rawType: message.type });
   }

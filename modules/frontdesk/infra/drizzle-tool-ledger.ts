@@ -51,4 +51,22 @@ export class DrizzleToolInvocationLedger implements ToolInvocationLedger {
         target: [frontdeskToolInvocations.orgId, frontdeskToolInvocations.toolCallId],
       });
   }
+
+  // Every tool row for one call within the current org. Used by RecordCallUseCase to derive the
+  // call disposition. Explicit eq(orgId) on top of RLS (defense-in-depth + index use).
+  async listByCall(vapiCallId: string): Promise<{ tool: string; result: unknown }[]> {
+    const rows = await this.tx
+      .select({
+        tool: frontdeskToolInvocations.tool,
+        result: frontdeskToolInvocations.result,
+      })
+      .from(frontdeskToolInvocations)
+      .where(
+        and(
+          eq(frontdeskToolInvocations.orgId, this.orgId),
+          eq(frontdeskToolInvocations.vapiCallId, vapiCallId),
+        ),
+      );
+    return rows.map((r) => ({ tool: r.tool, result: r.result }));
+  }
 }

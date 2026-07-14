@@ -97,4 +97,8 @@ export interface ToolInvocationLedger {
     tool: string;
     result: unknown;
   }): Promise<void>;
+  // All tool rows for one call, org-scoped. RecordCallUseCase reads these to derive the call's
+  // disposition (which tools actually ran + their result data, e.g. an emergency flag). Order is
+  // not significant — disposition is computed by precedence, not sequence.
+  listByCall(vapiCallId: string): Promise<{ tool: string; result: unknown }[]>;
 }

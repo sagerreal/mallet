@@ -135,6 +135,25 @@ describe("parseServerMessage — assistant-request", () => {
       throw new Error("expected assistant-request");
     }
   });
+
+  it("tolerates an ABSENT call object — org still resolved, callId null (A2-review carry)", () => {
+    // Vapi can POST assistant-request before the call object is populated. We must still answer.
+    const body = {
+      message: {
+        type: "assistant-request",
+        phoneNumber: { number: "+16693413343" },
+      },
+    };
+    const r = parseServerMessage(body);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.type === "assistant-request") {
+      expect(r.value.callId).toBeNull();
+      expect(r.value.callerNumber).toBeNull();
+      expect(r.value.orgNumber).toBe("+16693413343");
+    } else {
+      throw new Error("expected assistant-request");
+    }
+  });
 });
 
 // ── tool-calls ────────────────────────────────────────────────────────────────
