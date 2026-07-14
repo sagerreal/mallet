@@ -223,6 +223,9 @@ const fakeAvailability = (fieldCrewIds: readonly UserId[], throws: boolean) => (
     if (throws) throw new Error("field crew read failed");
     return [...fieldCrewIds];
   },
+  async readCrewSchedules() {
+    return [];
+  },
 });
 
 interface HarnessOverrides {

@@ -40,6 +40,9 @@ const fakeAvailability = (snapshot: AvailabilitySnapshot): AvailabilityReader =>
   async readFieldCrewIds() {
     return [];
   },
+  async readCrewSchedules() {
+    return [];
+  },
 });
 
 const buildCtx = (args: {
