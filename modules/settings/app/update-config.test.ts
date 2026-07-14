@@ -111,6 +111,31 @@ describe("UpdateConfigUseCase", () => {
       expect(geocoder.calls).toEqual([]);
     });
 
+    it("saves the address when the geocoder throws (never fails the save)", async () => {
+      // Defensive: the port contract says geocode never throws, but a provider bug must not
+      // fail the save. The address is still persisted with null lat/lng.
+      const throwing: Geocoder = {
+        async geocode() {
+          throw new Error("provider exploded");
+        },
+      };
+      const uc = new UpdateConfigUseCase(repo, clock, throwing);
+      const result = await uc.exec({ serviceOriginAddress: ADDRESS }, ORG);
+
+      expect(isOk(result)).toBe(true);
+      expect(repo.config?.props.serviceOriginAddress).toBe(ADDRESS);
+      expect(repo.config?.props.originLat).toBeNull();
+      expect(repo.config?.props.originLng).toBeNull();
+    });
+
+    it("saves the address with null point when no geocoder is injected", async () => {
+      const uc = new UpdateConfigUseCase(repo, clock); // no geocoder
+      const result = await uc.exec({ serviceOriginAddress: ADDRESS }, ORG);
+      expect(isOk(result)).toBe(true);
+      expect(repo.config?.props.serviceOriginAddress).toBe(ADDRESS);
+      expect(repo.config?.props.originLat).toBeNull();
+    });
+
     it("clears the point when the address is set to null", async () => {
       // Seed an existing origin.
       await new UpdateConfigUseCase(repo, clock, new FakeGeocoder(POINT)).exec(
