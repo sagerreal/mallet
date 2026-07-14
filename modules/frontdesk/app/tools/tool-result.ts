@@ -5,6 +5,7 @@ import type { Principal } from "@mallet/identity";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { EnsureCustomerUseCase } from "@mallet/customers";
 import type { CreateTaskUseCase } from "@mallet/tasks";
+import type { CreateManualJobUseCase, CreateVisitUseCase } from "@mallet/jobs";
 import type { VoiceToolSpec, SettingsReader } from "../../domain/assistant";
 import type { AvailabilityReader } from "../../domain/availability";
 
@@ -25,6 +26,10 @@ export interface VoiceToolResult {
 // check_availability never touches drizzle directly (DI + repository pattern).
 export interface VoiceToolDeps {
   readonly ensureCustomer: EnsureCustomerUseCase;
+  // book_visit seeds the job and its first visit itself (no client flow follows a voice booking —
+  // see CreateManualJobUseCase's comment): create the manual job, then create the visit on it.
+  readonly createManualJob: CreateManualJobUseCase;
+  readonly createVisit: CreateVisitUseCase;
   readonly createTask: CreateTaskUseCase;
   readonly settings: SettingsReader;
   readonly availability: AvailabilityReader;

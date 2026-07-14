@@ -74,6 +74,8 @@ const createdTasks: { text: string; orgId: string }[] = [];
 
 const fakeDeps: VoiceToolDeps = {
   ensureCustomer: {} as never,
+  createManualJob: {} as never,
+  createVisit: {} as never,
   createTask: {
     async exec(cmd: { text: string }, orgId: string) {
       createdTasks.push({ text: cmd.text, orgId });

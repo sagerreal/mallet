@@ -11,6 +11,7 @@ import {
 } from "@mallet/messaging";
 import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { CreateTaskUseCase, DrizzleTaskRepository } from "@mallet/tasks";
+import { CreateManualJobUseCase, CreateVisitUseCase, DrizzleJobRepository } from "@mallet/jobs";
 import { getAppDeps } from "@/trpc/di";
 import {
   parseServerMessage,
@@ -24,6 +25,7 @@ import {
   DrizzleAvailabilityReader,
   takeMessageTool,
   checkAvailabilityTool,
+  bookVisitTool,
   toVoiceToolSpec,
   voicePrincipal,
   verifyVapiSecret,
@@ -47,9 +49,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // The voice tool whitelist. The whitelist IS the guardrail (a live call cannot pause for approval)
-// — only these tools can ever run. PR B (this task) adds check_availability; book_visit + the rest
-// follow.
-const VOICE_TOOLS: readonly VoiceTool[] = [takeMessageTool, checkAvailabilityTool];
+// — only these tools can ever run. PR B adds check_availability + book_visit; the rest follow.
+const VOICE_TOOLS: readonly VoiceTool[] = [takeMessageTool, checkAvailabilityTool, bookVisitTool];
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -250,8 +251,14 @@ const handleEndOfCall = async (
 // tenant-tx-scoped so nothing reaches drizzle outside withTenant.
 const buildVoiceToolDeps = (tx: TenantTx, orgId: OrgId): VoiceToolDeps => {
   const bus = new OutboxEventBus(tx, orgId);
+  // One tenant-scoped job repository shared by the two write use-cases book_visit drives: create the
+  // manual job, then seed its first visit (the server-side caller does this itself — no client flow
+  // follows a voice booking, per CreateManualJobUseCase's comment).
+  const jobs = new DrizzleJobRepository(tx, orgId);
   return {
     ensureCustomer: new EnsureCustomerUseCase(new DrizzleLeadRepository(tx, orgId), bus, systemClock),
+    createManualJob: new CreateManualJobUseCase(jobs, bus, systemClock, uuidGenerator),
+    createVisit: new CreateVisitUseCase(jobs, systemClock, uuidGenerator),
     createTask: buildCreateTask(tx, orgId),
     settings: new DrizzleSettingsReader(tx, orgId),
     availability: new DrizzleAvailabilityReader(tx, orgId),

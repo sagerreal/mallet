@@ -44,6 +44,8 @@ const buildCtx = (args: {
 }): VoiceToolContext => {
   const deps: VoiceToolDeps = {
     ensureCustomer: {} as never,
+    createManualJob: {} as never,
+    createVisit: {} as never,
     createTask: {} as never,
     settings: fakeSettings(args.settings),
     availability: fakeAvailability(args.snapshot),

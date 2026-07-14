@@ -42,6 +42,7 @@ export { auditPrices } from "./app/price-audit";
 // ── Tools ───────────────────────────────────────────────────────────────────────
 export { takeMessageTool } from "./app/tools/take-message";
 export { checkAvailabilityTool } from "./app/tools/check-availability";
+export { bookVisitTool } from "./app/tools/book-visit";
 export { toVoiceToolSpec } from "./app/tools/tool-result";
 export type {
   VoiceTool,
