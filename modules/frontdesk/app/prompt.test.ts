@@ -122,10 +122,12 @@ describe("buildSystemPrompt — services table & lane scripts", () => {
     expect(faucetLine).not.toMatch(/\$\d/);
   });
 
-  it("includes the repair fee-credit framing and two-slot close", () => {
+  it("includes the repair fee-credit framing and a discrete start-time close", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     expect(p).toMatch(/exact price on-site|diagnoses/i);
-    expect(p).toMatch(/two.*slot|today.*tomorrow|two time/i);
+    // the close now offers a few discrete START TIMES spread across the day, not consecutive ranges
+    expect(p).toMatch(/start times/i);
+    expect(p).toMatch(/8, noon, or 4/);
   });
 
   it("frames the estimate lane as a free estimate visit", () => {
@@ -145,19 +147,23 @@ describe("buildSystemPrompt — tools & flow", () => {
     expect(p).toContain(TOOL_NAMES.takeMessage);
   });
 
-  it("teaches the offer-then-book flow: check_availability returns 2-hour windows, book_visit takes slot_start", () => {
+  it("teaches the offer-then-book flow: check_availability returns a few start times, book_visit takes slot_start", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
-    // check_availability offers up to three 2-hour windows; book_visit takes slot_date + slot_start.
-    expect(p).toMatch(/check_availability[\s\S]*three[\s\S]*windows?/i);
+    // check_availability offers a few discrete start times spread across the day; book_visit takes
+    // slot_date + slot_start (the picked start time).
+    expect(p).toMatch(/check_availability[\s\S]*start times/i);
+    expect(p).toMatch(/8, noon, or 4/);
     expect(p).toMatch(/book_visit[\s\S]*slot_date[\s\S]*slot_start/i);
     // slot_window is gone from the flow.
     expect(p).not.toMatch(/slot_window/);
+    // the offer is discrete start times, not consecutive 2-hour ranges
+    expect(p).not.toMatch(/2-hour arrival windows/);
   });
 
-  it("tells the model to honour a specific requested time by offering the containing window", () => {
+  it("tells the model to honour a specific requested time by offering the containing/nearest start", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     expect(p).toMatch(/specific time/i);
-    expect(p).toMatch(/window that\s+contains|contains that time/i);
+    expect(p).toMatch(/contains or is nearest|contains that time|nearest that time/i);
   });
 
   it("keeps the tools section free of any dollar amount (guardrail intact)", () => {
@@ -175,10 +181,21 @@ describe("buildSystemPrompt — confirm before booking", () => {
     expect(p).toMatch(/spell the street|letter-by-letter/i);
   });
 
-  it('reads the details back and asks "Is that right?"', () => {
+  it('reads the details back in ONE short read-back and asks "Is that right?"', () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
-    expect(p).toMatch(/read back the name/i);
+    // tightened: a single, concise read-back (not several turns) so the call can't drift mid-confirm
+    expect(p).toMatch(/one short read-back|ONE short read-back/i);
     expect(p).toMatch(/is that right\?/i);
+    // the read-back still covers name + service + chosen start time
+    expect(p).toMatch(/the name, the service/i);
+    expect(p).toMatch(/chosen start time/i);
+  });
+
+  it("books IMMEDIATELY on yes — no filler, no stall — so the call can't drop mid-confirm", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    expect(p).toMatch(/the moment the caller says yes/i);
+    expect(p).toMatch(/CALL book_visit right away/i);
+    expect(p).toMatch(/do not add filler|do not say .*hold on|do not.*stall/i);
   });
 
   it("corrects only the wrong field and re-confirms, and never books unconfirmed details", () => {
@@ -205,6 +222,18 @@ describe("buildSystemPrompt — case rules", () => {
     expect(p).toMatch(/gas (leak|smell)/i);
     expect(p).toMatch(/911/);
     expect(p).toMatch(/gas utility/i);
+  });
+
+  it("covers an out-of-area address → soft decline via take_message, never books", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    // the service area is rendered in BUSINESS FACTS; the rule tells the agent to soft-decline a
+    // clearly out-of-area address and use take_message instead of booking.
+    expect(p).toMatch(/out of service area|outside that area|outside the area you cover/i);
+    expect(p).toMatch(/take_message/);
+    expect(p).toMatch(/do NOT book an out-of-area job|do not book an out-of-area/i);
+    // the service area (cities + radius) is present in the prompt for the agent to reason against
+    expect(p).toMatch(/Pleasanton, Dublin/);
+    expect(p).toMatch(/25 miles|within 25/);
   });
 
   it("covers emergency (flooding/sewage/no water) → book soonest + note EMERGENCY", () => {

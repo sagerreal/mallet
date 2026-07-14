@@ -169,7 +169,7 @@ const buildHarness = (overrides?: {
     createManualJob: {} as never,
     createVisit: {} as never,
     settings: { async getByOrg() { return null; } },
-    availability: { async read() { return { crewCount: 0, visits: [] }; } },
+    availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; } },
     sendNotification: inertSendNotification(),
     bus,
     clock,

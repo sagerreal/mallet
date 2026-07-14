@@ -56,13 +56,14 @@ export const TOOL_NAMES = {
 // a concrete "when X, CALL tool Y" instruction — no dollar amounts (the price guardrails below are
 // untouched). Ordered as the booking flow runs: offer times → confirm → book → alternatives.
 const TOOL_FLOW: readonly string[] = [
-  `To offer appointment times, CALL ${TOOL_NAMES.checkAvailability} — it returns up to three ` +
-    "tight 2-hour arrival windows. Read the 2 or 3 options back and let the caller pick one.",
-  "If the caller names a SPECIFIC time (e.g. \"today at 2\"), offer the returned window that " +
-    "CONTAINS that time — do not ignore their request or push a different window.",
-  `Once the caller picks a window, and ONLY after you have confirmed the details (see CONFIRM ` +
+  `To offer appointment times, CALL ${TOOL_NAMES.checkAvailability} — it returns a few start ` +
+    "times spread across the day (e.g. 8, noon, or 4). Read the options back as those start times " +
+    "and let the caller pick one.",
+  "If the caller names a SPECIFIC time (e.g. \"today at 2\"), offer the returned start time that " +
+    "contains or is nearest that time — do not ignore their request or push a different time.",
+  `Once the caller picks a start time, and ONLY after you have confirmed the details (see CONFIRM ` +
     `below), CALL ${TOOL_NAMES.bookVisit} with the chosen slot_date and slot_start (the picked ` +
-    "window's start time, e.g. \"14:00\"), plus their name, phone, address, the service, and the " +
+    "start time, e.g. \"14:00\"), plus their name, phone, address, the service, and the " +
     "lane. It confirms the booking and speaks the sanctioned price — do not state a price yourself.",
   `If the caller only wants a written quote (a big or custom job you should not price), CALL ` +
     `${TOOL_NAMES.requestQuote} and tell them the office will text a written quote.`,
@@ -74,31 +75,40 @@ const TOOL_FLOW: readonly string[] = [
 
 // The confirm-before-book rules. A wrong phone or a speech-to-text address slip ("Rheem"→"Green")
 // must be caught BEFORE booking, so the caller hears the details read back and can correct them.
+// TIGHT + SINGLE-TURN by design: one call dropped mid-confirm and booked nothing, so keep the
+// confirmation to ONE short read-back and book the instant the caller says yes — the fewer/shorter
+// the turns, the less the call can drift and drop before the booking is written.
 const CONFIRM_RULES: readonly string[] = [
-  "Before you call book_visit you MUST confirm the details and let the caller correct them.",
-  "Read the PHONE back as grouped digits (e.g. \"seven-eight-one… three-five-oh…\").",
-  "SPELL the street name back letter-by-letter so a mis-heard word is caught.",
-  "Read back the name, the service, the chosen day and arrival window, and the full address, " +
-    'then ask "Is that right?".',
-  "If the caller corrects anything, fix ONLY that field and re-confirm just that field.",
+  "Confirm the details in ONE short read-back before you call book_visit — do not drag it across " +
+    "several turns.",
+  "In that ONE read-back: read the PHONE back as grouped digits (e.g. \"seven-eight-one… " +
+    "three-five-oh…\") AND spell the street name letter-by-letter, together with the name, the " +
+    'service, and the chosen start time — then ask "Is that right?".',
+  "The moment the caller says yes, CALL book_visit right away — do not add filler, do not say " +
+    "\"hold on\", do not re-read anything.",
+  "If the caller corrects something, fix ONLY that field, re-confirm just that field, then book.",
   "NEVER call book_visit with an unconfirmed phone or address.",
   "For a returning caller, prefer the number from the caller-ID context over asking again.",
 ] as const;
 
 const REPAIR_SCRIPT =
   "The tech diagnoses the problem and gives you an exact price on-site. Frame it that way — " +
-  "never quote a repair price yourself. Then offer a few concrete 2-hour arrival windows " +
-  '(e.g. "today 2 to 4pm or tomorrow 8 to 10am") and book the one the caller picks.';
+  "never quote a repair price yourself. Then offer a few start times spread across the day " +
+  '(e.g. "8, noon, or 4") and book the one the caller picks.';
 
 const ESTIMATE_SCRIPT =
   "Book a free estimate visit (about 1–2 hours). Never say a job price — the estimate visit is " +
-  "how we price it. Offer a few 2-hour arrival windows and book the one they pick.";
+  "how we price it. Offer a few start times (e.g. 8, noon, or 4) and book the one they pick.";
 
 const FLAT_PREFIX = "You may state exactly the listed price for this service, then book.";
 
 const CASE_RULES: readonly string[] = [
   "Gas leak or gas smell: tell the caller to leave the building, call 911 and their gas " +
     "utility now. Do NOT book anything.",
+  "Out of service area: the service area is listed in BUSINESS FACTS above (the named cities " +
+    "within the stated radius). If the caller's address or city is clearly OUTSIDE that area, " +
+    "politely tell them it's outside the area you cover and use take_message (offer a referral if " +
+    "you can) — do NOT book an out-of-area job. When it's unclear, book normally.",
   "Emergency (flooding, sewage in the living space, no water, burst pipe): book the soonest " +
     "slot and note EMERGENCY on the booking. Coach the caller to the main shut-off valve.",
   "Existing customer wants to reschedule, cancel, ask where their tech is, or asks about " +
