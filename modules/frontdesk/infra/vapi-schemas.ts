@@ -75,13 +75,21 @@ const assistantRequestSchema = z
   })
   .passthrough();
 
-// A single tool invocation. `arguments` arrives as an object OR a JSON string depending on the
-// model/provider; we keep it `unknown` here and normalize below so the tool runner sees an object.
+// A single tool invocation. Vapi uses the OpenAI tool-call shape — `name` and `arguments` are
+// NESTED under a `function` object: { id, type: "function", function: { name, arguments } }. Some
+// events/providers put them flat at the top level instead. We accept BOTH: everything past `id` is
+// optional here, and the mapper reads `function.*` first, then the flat copy. `arguments` arrives
+// as an object OR a JSON string; we normalize it below so the tool runner always sees an object.
+const toolCallFunctionSchema = z
+  .object({ name: z.string().optional(), arguments: z.unknown().optional() })
+  .passthrough();
+
 const toolCallSchema = z
   .object({
     id: z.string(),
-    name: z.string(),
-    arguments: z.unknown(),
+    name: z.string().optional(),
+    arguments: z.unknown().optional(),
+    function: toolCallFunctionSchema.optional(),
   })
   .passthrough();
 
@@ -247,10 +255,12 @@ const parseToolCalls = (message: unknown): ParseServerMessageResult => {
     type: "tool-calls",
     callId: parsed.data.call.id,
     orgNumber: extractOrgNumber(parsed.data),
+    // Vapi nests name/arguments under `function` (OpenAI shape); read that first, fall back to a
+    // flat copy. Empty name → the runner returns a clean spoken fallback (unknown tool).
     toolCalls: parsed.data.toolCallList.map((tc) => ({
       id: tc.id,
-      name: tc.name,
-      arguments: normalizeToolArguments(tc.arguments),
+      name: tc.function?.name ?? tc.name ?? "",
+      arguments: normalizeToolArguments(tc.function?.arguments ?? tc.arguments),
     })),
   });
 };

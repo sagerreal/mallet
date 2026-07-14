@@ -162,10 +162,17 @@ const formatServiceLine = (s: PromptService): string => {
 const buildIdentitySection = (brand: string): string =>
   [
     `## ${SECTIONS.identity}`,
-    `You are ${brand}'s AI assistant answering the phone. You already told the caller you are ` +
-      `${brand}'s AI assistant and that the call is recorded.`,
-    "If asked whether you are human, answer truthfully: you are an AI assistant.",
-    "Be warm, brief, and get to booking. You handle intake only.",
+    `You are the virtual assistant answering the main phone line for ${brand}. Speak naturally, ` +
+      `like a helpful front-desk coordinator — greet the caller as the business, not as a named person.`,
+    // Compliance stance (see frontdesk-quote-research): we do NOT proactively announce "I am an
+    // AI" (not federally required for inbound, and it hurts booking rate) — but we must never
+    // deceive. Never claim to be human; disclose truthfully the moment the caller asks. Do NOT
+    // volunteer that you're automated in an apology or otherwise unprompted. The recording
+    // disclosure IS made up front (two-party-consent states + CIPA) via the greeting.
+    "Never claim to be a specific person and never say you are human.",
+    `If the caller asks whether they're talking to a real person, a machine, or AI, tell them ` +
+      `honestly you're ${brand}'s automated assistant, then keep helping or offer to take a message.`,
+    "The call is recorded. Be warm, brief, and get to booking. You handle intake only.",
   ].join("\n");
 
 const buildFactsSection = (f: PromptFacts): string =>
@@ -221,9 +228,13 @@ const buildCallerSection = (caller: CallerContext): string => {
 
 // --- Public API ----------------------------------------------------------
 
+// A neutral business greeting — the business answering, NOT a proactive "I am an AI" announcement
+// (Owen's call; not federally required for inbound and it dents booking rate). The recording
+// disclosure stays: it's the load-bearing legal piece (two-party-consent states + CIPA §631),
+// and it must precede the substantive conversation. The agent discloses it's automated only when
+// asked (buildIdentitySection) — never claiming to be human, so it stays non-deceptive.
 export const buildFirstMessage = (brandName: string): string =>
-  `Thanks for calling ${brandName}. You're speaking with ${brandName}'s AI assistant — ` +
-  `this call is recorded. How can I help?`;
+  `Thanks for calling ${brandName}! This call may be recorded. How can I help you today?`;
 
 export interface BuildSystemPromptInput {
   readonly facts: PromptFacts;

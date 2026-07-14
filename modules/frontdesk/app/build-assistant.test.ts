@@ -204,7 +204,7 @@ describe("BuildAssistantUseCase — assembly", () => {
     expect(dto.maxDurationSeconds).toBe(MAX_CALL_MINUTES * 60);
     expect(dto.model.tools).toEqual([tool]);
     expect(dto.firstMessage).toBe(
-      "Thanks for calling Bayline Plumbing. You're speaking with Bayline Plumbing's AI assistant — this call is recorded. How can I help?",
+      "Thanks for calling Bayline Plumbing! This call may be recorded. How can I help you today?",
     );
   });
 });
