@@ -70,6 +70,8 @@ export interface BookingHours {
 export interface BookingArea {
   cities: string;
   radiusMi: number;
+  /** Address the service-area proximity is measured from. "" = unset. Geocoded server-side on save. */
+  originAddress: string;
 }
 
 export interface BookingCfg {
@@ -100,7 +102,7 @@ const EMPTY_BOOKING: BookingCfg = {
   serviceFee: 89,
   feeCredited: true,
   hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
-  area: { cities: "", radiusMi: 25 },
+  area: { cities: "", radiusMi: 25, originAddress: "" },
 };
 
 const EMPTY_MARKUP = 35;
@@ -143,6 +145,8 @@ export interface BookingPayload {
   hoursSunClose: number;
   areaCities: string;
   areaRadiusMi: number;
+  /** Address the origin is geocoded from; null clears it server-side. Empty input → null. */
+  serviceOriginAddress: string | null;
 }
 
 /**
@@ -166,6 +170,8 @@ export function buildBookingPayload(b: BookingCfg): BookingPayload {
     hoursSunClose: b.hours.sunClose,
     areaCities: b.area.cities,
     areaRadiusMi: b.area.radiusMi,
+    // Trim; an empty address becomes null so the server clears the origin (rather than storing "").
+    serviceOriginAddress: b.area.originAddress.trim() || null,
   };
 }
 

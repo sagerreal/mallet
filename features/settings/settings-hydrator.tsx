@@ -73,6 +73,7 @@ export function SettingsHydrator() {
         area: {
           cities: dto.config.areaCities,
           radiusMi: dto.config.areaRadiusMi,
+          originAddress: dto.config.serviceOriginAddress ?? "",
         },
       },
       markup: Math.round(dto.config.markupBps / 100),
