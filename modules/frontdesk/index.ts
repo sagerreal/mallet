@@ -1,2 +1,69 @@
-// Public surface for the frontdesk module — the only import seam (architecture rule). Populated in later tasks.
-export {};
+// Public surface for the frontdesk module — the composition seam the webhook route imports from.
+// Only the pieces the route (or later PRs' composition) needs are re-exported here; internals
+// (pure prompt helpers, mappers) stay private. The route may also import concrete infra classes
+// directly, exactly like the Twilio webhook does — this barrel just keeps the common surface in
+// one place. NOTE: never import this barrel from a unit test (it transitively pulls infra +
+// config; house gotcha) — unit tests import the specific file under test.
+
+// ── Domain ports + types ──────────────────────────────────────────────────────
+export type {
+  FrontdeskCallRepository,
+  ToolInvocationLedger,
+  RecordCallInput,
+  StartCallInput,
+  CallSummary,
+  CallDisposition,
+  CallMessage,
+  PriceAudit,
+} from "./domain/call-record";
+export type {
+  VapiAssistantDTO,
+  VoiceToolSpec,
+  SettingsReader,
+  LeadSummaryReader,
+  CallerContext,
+} from "./domain/assistant";
+
+// ── Application use-cases ───────────────────────────────────────────────────────
+export { BuildAssistantUseCase } from "./app/build-assistant";
+export type { BuildAssistantCmd, BuildAssistantDeps } from "./app/build-assistant";
+export { RunToolCallsUseCase } from "./app/run-tool-calls";
+export type {
+  RunToolCallsInput,
+  RunToolCallsBaseContext,
+  VoiceToolDepsFactory,
+} from "./app/run-tool-calls";
+export { RecordCallUseCase } from "./app/record-call";
+export type { RecordCallCmd, RecordCallDeps } from "./app/record-call";
+export { deriveDisposition } from "./app/disposition";
+export { auditPrices } from "./app/price-audit";
+
+// ── Tools ───────────────────────────────────────────────────────────────────────
+export { takeMessageTool } from "./app/tools/take-message";
+export { toVoiceToolSpec } from "./app/tools/tool-result";
+export type {
+  VoiceTool,
+  VoiceToolContext,
+  VoiceToolDeps,
+  VoiceToolResult,
+} from "./app/tools/tool-result";
+
+// ── Infra (concrete adapters the route composes) ────────────────────────────────
+export { DrizzleFrontdeskCallRepository } from "./infra/drizzle-call-repository";
+export { DrizzleToolInvocationLedger } from "./infra/drizzle-tool-ledger";
+export { DrizzleSettingsReader } from "./infra/drizzle-settings-reader";
+export { DrizzleLeadSummaryReader } from "./infra/drizzle-lead-summary-reader";
+
+// ── Composition helpers the route uses ──────────────────────────────────────────
+export { voicePrincipal, VOICE_PRINCIPAL_USER_ID } from "./app/voice-principal";
+export { verifyVapiSecret } from "./infra/verify-secret";
+
+// ── Boundary parsing (Vapi server messages) ─────────────────────────────────────
+export { parseServerMessage } from "./infra/vapi-schemas";
+export type {
+  ParsedServerMessage,
+  ParsedAssistantRequest,
+  ParsedToolCalls,
+  ParsedEndOfCallReport,
+  ParsedStatusUpdate,
+} from "./infra/vapi-schemas";

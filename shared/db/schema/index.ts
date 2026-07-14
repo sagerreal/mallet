@@ -29,3 +29,4 @@ export * from "./job-terms";
 export * from "./lead-sources";
 export * from "./inbound-endpoints";
 export * from "./quoting-rules";
+export * from "./frontdesk";

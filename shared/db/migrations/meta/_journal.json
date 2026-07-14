@@ -491,6 +491,34 @@
       "when": 1783924959129,
       "tag": "0069_quoting_rules_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1784004780198,
+      "tag": "0070_rich_black_tom",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1784004780199,
+      "tag": "0071_frontdesk_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784004780200,
+      "tag": "0072_jobs_kind_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1784004780201,
+      "tag": "0073_frontdesk_disposition_check",
+      "breakpoints": true
     }
   ]
 }

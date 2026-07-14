@@ -54,6 +54,9 @@ export const jobs = pgTable(
     // Service type ("service" | "estimate" | free-text trade label). Mirrors the store
     // Job.svc field; nullable because estimate-sourced jobs may not set one at creation.
     svc: text("svc"),
+    // 'work' (sold/repair work) | 'estimate' (pre-quote scope visit booked as a job so it
+    // rides the board/My-Day unchanged). Default keeps every existing row a work job.
+    kind: text("kind").notNull().default("work"),
     // Optional before-you-leave checklist attached by the office (see JobChecklistColumn).
     // Nullable: most jobs have none.
     checklist: jsonb("checklist").$type<JobChecklistColumn>(),
@@ -92,6 +95,7 @@ export const jobs = pgTable(
       .on(t.orgId, t.sourceEstimateId)
       .where(sql`${t.sourceEstimateId} is not null and ${t.deletedAt} is null`),
     check("jobs_status_check", sql`${t.status} in ('scheduled', 'in_progress', 'complete', 'canceled')`),
+    check("jobs_kind_check", sql`${t.kind} in ('work', 'estimate')`),
     check("jobs_total_check", sql`${t.totalCents} >= 0`),
     check(
       "jobs_window_check",

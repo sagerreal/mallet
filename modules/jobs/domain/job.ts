@@ -23,6 +23,15 @@ export const JOB_STATUSES: readonly JobStatus[] = [
 export const isJobStatus = (value: string): value is JobStatus =>
   (JOB_STATUSES as readonly string[]).includes(value);
 
+// 'work' (sold/repair work) | 'estimate' (pre-quote scope visit booked as a job so it
+// rides the board/My-Day unchanged).
+export type JobKind = "work" | "estimate";
+
+export const JOB_KINDS: readonly JobKind[] = ["work", "estimate"];
+
+export const isJobKind = (value: string): value is JobKind =>
+  (JOB_KINDS as readonly string[]).includes(value);
+
 export type VisitStatus = "pending" | "in_progress" | "complete" | "canceled";
 
 export const JOB_VISIT_STATUSES: readonly VisitStatus[] = [
@@ -186,6 +195,7 @@ export interface JobProps {
   readonly assigneeUserId: UserId | null;
   readonly title: string | null;
   readonly svc: string | null; // service type; nullable
+  readonly kind: JobKind; // 'work' | 'estimate'; defaults to 'work' at create
   readonly status: JobStatus;
   readonly scheduledStart: Date | null;
   readonly scheduledEnd: Date | null;
@@ -201,17 +211,26 @@ export interface JobProps {
   readonly updatedAt: Date;
 }
 
+// Input to Job.create: kind may be omitted (defaults to "work") so pre-kind callers keep
+// working unchanged while new callers (voice front desk) can book estimate visits.
+export type JobCreateProps = Omit<JobProps, "kind"> & { readonly kind?: JobKind };
+
 // Scheduled field work. Aggregate root with a status state machine
 // (scheduled → in_progress → complete; scheduled|in_progress → canceled). complete/canceled are
 // terminal. All mutations return new instances (immutability); illegal transitions return errors.
 export class Job {
   private constructor(private readonly p: JobProps) {}
 
-  static create(props: JobProps): Result<Job, ValidationError> {
+  static create(props: JobCreateProps): Result<Job, ValidationError> {
     const num = props.num.trim();
     if (num.length === 0) return err(validation("job number is required", "num"));
     if (!isJobStatus(props.status)) {
       return err(validation(`unknown job status: ${props.status}`, "status"));
+    }
+    // Runtime re-check (mirrors status): the mapper feeds rows whose kind is plain text.
+    const kind = props.kind ?? "work";
+    if (!isJobKind(kind)) {
+      return err(validation(`unknown job kind: ${String(kind)}`, "kind"));
     }
     if (props.total < 0) return err(validation("job total cannot be negative", "total"));
     if (
@@ -234,7 +253,7 @@ export class Job {
       if (!validated.ok) return validated;
       checklist = validated.value;
     }
-    return ok(new Job({ ...props, num, svc, checklist }));
+    return ok(new Job({ ...props, num, svc, checklist, kind }));
   }
 
   // Replace the visit set — only allowed while the job is not yet terminal.
