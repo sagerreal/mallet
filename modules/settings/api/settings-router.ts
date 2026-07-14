@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CensusGeocoder } from "@mallet/frontdesk";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository";
@@ -56,6 +57,10 @@ const updateConfigInput = z.object({
   hoursSunClose: z.number().int().min(0).max(24).optional(),
   areaCities: z.string().max(1000).optional(),
   areaRadiusMi: z.number().int().min(0).max(500).optional(),
+  // Service origin address only — lat/lng are DERIVED server-side by the geocoder on save and
+  // are NEVER accepted from the client (a client can't be trusted to supply a point). null clears
+  // the origin; an empty string is treated the same by the geocode-on-save flow.
+  serviceOriginAddress: z.string().max(500).nullable().optional(),
   booking: bookingCfgDTO.optional(),
 });
 
@@ -81,10 +86,14 @@ export const createSettingsRouter = () =>
       .output(orgSettingsDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
-        const result = await new UpdateConfigUseCase(repo, ctx.deps.clock).exec(
-          input,
-          ctx.principal.orgId,
-        );
+        // Inject the Census-backed Geocoder (a port; the use-case never sees the HTTP details).
+        // Constructed here at the composition seam — the settings module owns no geocoder infra.
+        // A miss/failure returns null and is logged; the save still succeeds.
+        const result = await new UpdateConfigUseCase(
+          repo,
+          ctx.deps.clock,
+          new CensusGeocoder(),
+        ).exec(input, ctx.principal.orgId);
         return toOrgSettingsDTO(orThrow(result));
       }),
 

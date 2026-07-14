@@ -101,6 +101,11 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         hoursSunClose: p.hoursSunClose,
         areaCities: p.areaCities,
         areaRadiusMi: p.areaRadiusMi,
+        // Service origin (front-desk vertical coverage). Address + its geocoded point;
+        // lat/lng are null when unset or the geocode missed.
+        serviceOriginAddress: p.serviceOriginAddress,
+        originLat: p.originLat,
+        originLng: p.originLng,
         booking: p.booking,
         // Brand identity (Phase 3). brandName lives on orgs.name — setName handles that.
         // This write covers only the org_settings brand columns.

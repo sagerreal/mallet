@@ -39,6 +39,12 @@ export const orgSettingsDTO = z.object({
   hoursSunClose: z.number().int(),
   areaCities: z.string(),
   areaRadiusMi: z.number().int(),
+  // Service origin (front-desk vertical coverage). Address the proximity is measured from,
+  // plus its geocoded point. All nullable — a shop may not have set one, and a geocode miss
+  // leaves lat/lng null while keeping the address.
+  serviceOriginAddress: z.string().nullable(),
+  originLat: z.number().nullable(),
+  originLng: z.number().nullable(),
   booking: bookingCfgDTO,
 });
 
@@ -201,6 +207,9 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
     hoursSunClose: p.hoursSunClose,
     areaCities: p.areaCities,
     areaRadiusMi: p.areaRadiusMi,
+    serviceOriginAddress: p.serviceOriginAddress,
+    originLat: p.originLat,
+    originLng: p.originLng,
     booking: p.booking,
   };
 };
