@@ -155,6 +155,13 @@ const hourOf = (hhmm: string): number => Number(hhmm.slice(0, 2));
 
 // True when slot_start is a well-formed "HH:MM" whose hour falls inside the org's open hours for
 // slot_date's weekday. The single anti-garbage guard before we treat slot_start as scheduledStart.
+//
+// DELIBERATE: we bounds-check to business hours but do NOT force slot_start onto the 2-hour offer
+// grid. That flexibility is what lets the agent honor a caller's specific requested time (the prompt
+// still tells it to pick the containing offered window). An in-hours time the tool didn't literally
+// offer is harmless — the office sees and places the visit regardless, and for a 1-3 crew shop
+// exact-minute collisions aren't enforced anyway. The narrow risk (a garbage/out-of-hours time) is
+// closed here; a non-grid in-hours time is an accepted, useful looseness, not a hole.
 const isValidSlotStart = (input: BookVisitInput, settings: OrgSettings): boolean => {
   if (!HHMM_RE.test(input.slot_start)) return false;
   const hour = hourOf(input.slot_start);
