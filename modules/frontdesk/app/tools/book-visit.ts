@@ -4,9 +4,9 @@ import type { LeadId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { JobKind } from "@mallet/jobs";
 import type { OrgSettings, BookingService } from "@mallet/settings";
-import { WINDOW_BOUNDARY_HOUR } from "../slots";
 import { redactPriceTokens } from "../prompt";
 import { sendBookingConfirmation } from "./booking-confirmation";
+import { windowRange } from "./window-phrasing";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // The three booking lanes + urgencies (mirror check_availability's closed enums so the model can't
@@ -16,7 +16,11 @@ export const BOOK_LANES = ["repair", "estimate", "flat"] as const;
 export type BookLane = (typeof BOOK_LANES)[number];
 export const BOOK_URGENCIES = ["normal", "emergency"] as const;
 export type BookLaneUrgency = (typeof BOOK_URGENCIES)[number];
-export const BOOK_WINDOWS = ["morning", "afternoon"] as const;
+
+// A well-formed 24-hour clock time "HH:MM" (00:00–23:59). The chosen slot_start MUST match this
+// (and fall inside the org's hours) before we trust it as the scheduled start — a hallucinated
+// "25:99" or "later today" is rejected at the boundary, never persisted.
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // The source stamped on every lead the voice front desk creates (matches take_message + the plan).
 const VOICE_SOURCE = "AI Front Desk";
@@ -63,7 +67,7 @@ export const bookVisitInput = z.object({
   lane: z.enum(BOOK_LANES),
   problem: z.string(),
   slot_date: z.string(),
-  slot_window: z.enum(BOOK_WINDOWS),
+  slot_start: z.string(),
   urgency: z.enum(BOOK_URGENCIES).default(DEFAULT_URGENCY),
 });
 export type BookVisitInput = z.infer<typeof bookVisitInput>;
@@ -84,10 +88,9 @@ const bookVisitParameters: Record<string, unknown> = {
     },
     problem: { type: "string", description: "What the caller described in their own words." },
     slot_date: { type: "string", description: 'The chosen slot date, "YYYY-MM-DD".' },
-    slot_window: {
+    slot_start: {
       type: "string",
-      enum: [...BOOK_WINDOWS],
-      description: "The chosen window: morning or afternoon.",
+      description: 'The chosen slot start time HH:MM, from check_availability.',
     },
     urgency: {
       type: "string",
@@ -105,7 +108,7 @@ const bookVisitParameters: Record<string, unknown> = {
     "lane",
     "problem",
     "slot_date",
-    "slot_window",
+    "slot_start",
   ],
   additionalProperties: false,
 };
@@ -115,11 +118,11 @@ const bookVisitParameters: Record<string, unknown> = {
 // disposition.ts). data.emergency escalates above both.
 const kindForLane = (lane: BookLane): JobKind => (lane === "estimate" ? "estimate" : "work");
 
-// ── Window-start derivation (NEVER a model-supplied clock time) ──────────────────
-// The scheduled start comes from slot_window + the org's own hours, derived the SAME way B1's slot
-// math does: a morning window starts at that weekday's OPEN hour; an afternoon window starts at the
-// 13:00 WINDOW_BOUNDARY_HOUR. This is the anti-prompt-injection guard — the model tells us the
-// window, the org's config tells us the clock time.
+// ── slot_start validation (bounds-check a model-supplied clock time) ─────────────
+// slot_start is the START of the window the caller picked (from check_availability's data.slots),
+// never invented. We still bounds-check it: it must be a well-formed "HH:MM" AND fall in the org's
+// own [open, close) hours for that weekday, else it's rejected (→ bookingFallback) so a garbage time
+// is never persisted. Once validated, scheduledStart = slot_start directly.
 
 // The open hour for a date's weekday off the org settings. Mon–Fri → wd, Sat → sat, Sun → sun —
 // the same weekday mapping slots.ts uses (UTC noon avoids any midnight/DST edge).
@@ -130,6 +133,15 @@ const openHourFor = (dateStr: string, s: OrgSettings): number => {
   return s.props.hoursWdOpen;
 };
 
+// The close hour for a date's weekday — mirrors openHourFor. A window start must fall in
+// [openHour, closeHour); a closed day (open === close === 0) admits no start.
+const closeHourFor = (dateStr: string, s: OrgSettings): number => {
+  const dow = weekdayOf(dateStr);
+  if (dow === 0) return s.props.hoursSunClose;
+  if (dow === 6) return s.props.hoursSatClose;
+  return s.props.hoursWdClose;
+};
+
 // Day of week [0=Sun … 6=Sat] for a "YYYY-MM-DD" string (UTC noon anchor — matches slots.ts).
 const weekdayOf = (dateStr: string): number => {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -137,13 +149,19 @@ const weekdayOf = (dateStr: string): number => {
 };
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
-const toHHMM = (hour: number): string => `${pad2(hour)}:00`;
 
-// "HH:MM" start for a window: morning → the weekday's open hour; afternoon → the 13:00 boundary.
-const scheduledStartFor = (input: BookVisitInput, settings: OrgSettings): string =>
-  input.slot_window === "afternoon"
-    ? toHHMM(WINDOW_BOUNDARY_HOUR)
-    : toHHMM(openHourFor(input.slot_date, settings));
+// The integer hour of a validated "HH:MM" string.
+const hourOf = (hhmm: string): number => Number(hhmm.slice(0, 2));
+
+// True when slot_start is a well-formed "HH:MM" whose hour falls inside the org's open hours for
+// slot_date's weekday. The single anti-garbage guard before we treat slot_start as scheduledStart.
+const isValidSlotStart = (input: BookVisitInput, settings: OrgSettings): boolean => {
+  if (!HHMM_RE.test(input.slot_start)) return false;
+  const hour = hourOf(input.slot_start);
+  const open = openHourFor(input.slot_date, settings);
+  const close = closeHourFor(input.slot_date, settings);
+  return hour >= open && hour < close;
+};
 
 // ── Duration (from the org's configured visit minutes, never guessed) ────────────
 // repair/flat → a repair visit; estimate → a scope visit. Both come from settings so the office
@@ -171,10 +189,11 @@ const feeFragment = (settings: OrgSettings): string => {
   return `The visit is $${serviceFee}${feeCredited ? CREDITED_SUFFIX : ""}.`;
 };
 
-// The spoken slot phrase for the confirmation ("Thursday morning", "today afternoon"). Small local
-// helper (slots.ts's speakableFor is private) — kept terse to match the two-slot-close voice.
+// The spoken slot phrase for the confirmation: day + the 2-hour arrival window
+// ("today between 2 and 4pm", "Thursday between 8 and 10am"). windowRange (window-phrasing.ts)
+// reuses windowEndHHMM so the confirmed window length always matches the offered one.
 const slotPhrase = (input: BookVisitInput, now: Date): string =>
-  `${dayPhraseFor(input.slot_date, now)} ${input.slot_window}`;
+  `${dayPhraseFor(input.slot_date, now)} ${windowRange(input.slot_start)}`;
 
 const WEEKDAY_NAMES = [
   "Sunday",
@@ -223,7 +242,7 @@ const confirmationSpeak = (input: BookVisitInput, settings: OrgSettings, slot: s
 };
 
 const emergencyTaskText = (input: BookVisitInput): string =>
-  `EMERGENCY — ${input.service_name} at ${input.address}, booked ${input.slot_date} ${input.slot_window}`;
+  `EMERGENCY — ${input.service_name} at ${input.address}, booked ${input.slot_date} ${windowRange(input.slot_start)}`;
 
 const fallbackTaskText = (input: BookVisitInput): string =>
   `Booking attempt failed — call back ${input.caller_name}${input.problem ? " re: " + input.problem : ""}`;
@@ -302,12 +321,13 @@ const bookConfirmed = async (
   }
 
   // SEED the first visit on the job (the server-side caller does this — no client flow follows).
-  // scheduledStart is derived from the window + org hours, NEVER a model-supplied clock time.
+  // scheduledStart IS the chosen window's start: slot_start was bounds-checked in `handle`
+  // (isValidSlotStart), so it's a trusted in-hours "HH:MM", never an unvalidated model clock time.
   const visit = await ctx.deps.createVisit.exec({
     jobId: job.value.props.id,
     assigneeUserId: UNASSIGNED,
     scheduledDate: input.slot_date,
-    scheduledStart: scheduledStartFor(input, settings),
+    scheduledStart: input.slot_start,
     durationHours: minutesToHours(visitMinutesFor(input.lane, settings)),
     notes: input.problem,
   });
@@ -370,8 +390,9 @@ export const bookVisitTool: VoiceTool = {
   name: "book_visit",
   description:
     "Book the appointment after the caller picks a window. Use for repair, estimate, or flat " +
-    "services once you have name, phone, address, the service, the chosen date + window, and " +
-    "urgency. States the sanctioned price and confirms the booking.",
+    "services once you have name, phone, address, the service, the chosen slot_date + slot_start " +
+    "(the picked window's start time from check_availability), and urgency. States the sanctioned " +
+    "price and confirms the booking.",
   parameters: bookVisitParameters,
   input: bookVisitInput,
 
@@ -386,7 +407,7 @@ export const bookVisitTool: VoiceTool = {
       return { speak: BOOK_VISIT_INVALID_PHONE_SPEAK };
     }
 
-    // Settings drive BOTH the window-start clock time and every sanctioned price — a known org with
+    // Settings drive BOTH the slot_start bounds check and every sanctioned price — a known org with
     // no settings can't be booked safely, so degrade to the spoken fallback + a message task.
     const settings = await ctx.deps.settings.getByOrg(ctx.orgId);
     if (!settings) {
@@ -394,7 +415,17 @@ export const bookVisitTool: VoiceTool = {
       return bookingFallback(input, ctx, null);
     }
 
-    // (2–7) Ensure customer → job → visit → emergency task → sanctioned confirmation.
+    // (2) Bounds-check the chosen slot_start: a malformed or out-of-hours time is a hallucination
+    //     (never a window we offered) — degrade to the fallback, never persist a garbage start.
+    if (!isValidSlotStart(input, settings)) {
+      logger.warn(
+        { orgId: ctx.orgId, tool: "book_visit", slotStart: input.slot_start, slotDate: input.slot_date },
+        "frontdesk.book_visit.invalid_slot_start",
+      );
+      return bookingFallback(input, ctx, null);
+    }
+
+    // (3–8) Ensure customer → job → visit → emergency task → sanctioned confirmation.
     return bookConfirmed(input, settings, parsed.value, ctx);
   },
 };

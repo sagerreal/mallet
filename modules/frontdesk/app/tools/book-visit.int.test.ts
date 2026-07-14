@@ -28,7 +28,7 @@ import type { VoiceToolContext, VoiceToolDeps } from "./tool-result";
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
 
-// A repair booking on a Thursday (weekday) so the default 08:00 open hour applies.
+// A repair booking on a Thursday (weekday); slot_start 08:00 is in the default 8–17 weekday hours.
 const REPAIR_INPUT = {
   caller_name: "Int Booking Caller",
   phone: "(925) 555-0143",
@@ -37,7 +37,7 @@ const REPAIR_INPUT = {
   lane: "repair" as const,
   problem: "kitchen faucet dripping",
   slot_date: "2026-08-13", // Thursday
-  slot_window: "morning" as const,
+  slot_start: "08:00" as const,
   urgency: "normal" as const,
 };
 
@@ -129,7 +129,7 @@ suite("book_visit against live Supabase RLS", () => {
       from job_visits where org_id = ${orgId}`;
     expect(visits).toHaveLength(1);
     expect(visits[0]!.d).toBe("2026-08-13"); // the slot_date, unshifted
-    expect(visits[0]!.s.slice(0, 5)).toBe("08:00"); // morning window = weekday open hour
+    expect(visits[0]!.s.slice(0, 5)).toBe("08:00"); // scheduledStart == the chosen in-hours slot_start
     expect(visits[0]!.duration_minutes).toBe(90); // default visitRepairMinutes
   });
 
