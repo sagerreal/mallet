@@ -70,6 +70,34 @@ const GUARDRAILS: readonly string[] = [
   "Never promise an exact arrival time — only the arrival window.",
 ];
 
+// --- Price guardrail -----------------------------------------------------
+
+// GUARDRAIL: owner-authored FREE-TEXT fields (a service's triggers, the "we don't service"
+// notServices blurb, a lead's open-work label) are interpolated into the prompt VERBATIM. The
+// ONLY dollar amounts the assistant is allowed to speak are the office-sanctioned serviceFee
+// and flat-lane service prices, rendered by dedicated code paths below. If an owner types a
+// price into any free-text field (e.g. a trigger "$50 off", notServices "septic ($500+ jobs)",
+// a job titled "$500 repipe"), that stray "$NN" would smuggle an unsanctioned spoken price into
+// the prompt. redactPriceTokens strips those tokens at the interpolation boundary so a $-amount
+// can NEVER reach the prompt except through the sanctioned serviceFee/flat-price paths.
+//
+// We replace the WHOLE token (not just the "$"): deleting only the sign would leave a bare
+// number that still reads as a price. A lone "$" with no digits is also stripped.
+
+// Neutral stand-in for a redacted price token — surfaced so tests assert it exactly.
+export const PRICE_REDACTION_MARKER = "[price removed]";
+
+// Matches a dollar-amount token: "$" + optional whitespace + digits, with optional
+// thousands-commas and an optional decimal part (e.g. "$50", "$ 50", "$1,250.00").
+const PRICE_TOKEN_RE = /\$\s*\d[\d,]*(?:\.\d+)?/g;
+// Matches a lone "$" not followed by a digit (after price tokens are gone) — e.g. "cash $ only".
+const LONE_DOLLAR_RE = /\$/g;
+
+// Pure. Removes every dollar-amount token from owner free text, leaving non-price numbers
+// (e.g. "24/7", "2 hours") untouched — only "$"-prefixed tokens are affected.
+export const redactPriceTokens = (text: string): string =>
+  text.replace(PRICE_TOKEN_RE, PRICE_REDACTION_MARKER).replace(LONE_DOLLAR_RE, "");
+
 // --- Helpers -------------------------------------------------------------
 
 // A day is "closed" when open and close are both 0 (the schema's closed-day convention).
@@ -93,8 +121,10 @@ const formatFeeLine = (fee: number, credited: boolean): string => {
 };
 
 const formatServiceLine = (s: PromptService): string => {
+  // triggers is owner free text → redact stray prices; the flat-lane priceSuffix is the
+  // sanctioned price and is appended AFTER redaction so it always renders.
   const priceSuffix = s.lane === "flat" && s.price !== undefined ? ` · $${s.price}` : "";
-  return `- ${s.name} · ${s.lane} · ${s.triggers}${priceSuffix}`;
+  return `- ${s.name} · ${s.lane} · ${redactPriceTokens(s.triggers)}${priceSuffix}`;
 };
 
 // --- Section builders (pure) ---------------------------------------------
@@ -116,7 +146,8 @@ const buildFactsSection = (f: PromptFacts): string =>
     formatDayHours("Saturday", f.hoursSatOpen, f.hoursSatClose),
     formatDayHours("Sunday", f.hoursSunOpen, f.hoursSunClose),
     `Service area: ${f.areaCities} (within ${f.areaRadiusMi} miles).`,
-    `We do NOT service: ${f.notServices}. Politely decline these and suggest calling a specialist.`,
+    // notServices is owner free text → redact stray prices before interpolating.
+    `We do NOT service: ${redactPriceTokens(f.notServices)}. Politely decline these and suggest calling a specialist.`,
     formatFeeLine(f.serviceFee, f.feeCredited),
   ].join("\n");
 
@@ -141,7 +172,9 @@ const buildGuardrails = (): string =>
 
 // Only rendered when caller.known — an unknown caller gets no context section at all.
 const buildCallerSection = (caller: CallerContext): string => {
-  const openWork = caller.openWork ?? "no open work on file";
+  // openWork is built from an owner/office-authored job label (title/svc) → redact stray
+  // prices here at the guardrail boundary (e.g. a job titled "$500 repipe").
+  const openWork = caller.openWork ? redactPriceTokens(caller.openWork) : "no open work on file";
   return [
     `## ${SECTIONS.caller}`,
     `This is a returning caller: ${caller.name}. Greet them by name.`,

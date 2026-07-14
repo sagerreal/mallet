@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildSystemPrompt, buildFirstMessage } from "./prompt";
+import {
+  buildSystemPrompt,
+  buildFirstMessage,
+  redactPriceTokens,
+  PRICE_REDACTION_MARKER,
+} from "./prompt";
 import type { PromptFacts } from "./prompt";
 import type { CallerContext } from "../domain/assistant";
 
@@ -36,6 +41,16 @@ const knownCaller: CallerContext = {
 // and every flat-lane price. Any other "$N" is a price-guardrail violation. Thousands separators
 // are matched only between digit groups so a trailing sentence comma is never captured.
 const dollarTokens = (text: string): string[] => text.match(/\$\d+(?:,\d{3})*/g) ?? [];
+
+// The set of dollar tokens the prompt is ALLOWED to contain for a given playbook: the
+// serviceFee plus every flat-lane price. Everything else is a guardrail violation.
+const allowedTokens = (facts: PromptFacts): Set<string> =>
+  new Set<string>([
+    `$${facts.serviceFee}`,
+    ...facts.services
+      .filter((s) => s.lane === "flat" && s.price !== undefined)
+      .map((s) => `$${s.price}`),
+  ]);
 
 describe("buildFirstMessage", () => {
   it("is the exact compliance greeting with the brand interpolated", () => {
@@ -180,12 +195,7 @@ describe("buildSystemPrompt — PRICE GUARDRAIL (the heart)", () => {
   it("contains NO dollar amount other than the configured serviceFee and flat prices", () => {
     const facts = baseFacts();
     const p = buildSystemPrompt({ facts, caller: knownCaller });
-    const allowed = new Set<string>([
-      `$${facts.serviceFee}`,
-      ...facts.services
-        .filter((s) => s.lane === "flat" && s.price !== undefined)
-        .map((s) => `$${s.price}`),
-    ]);
+    const allowed = allowedTokens(facts);
     for (const token of dollarTokens(p)) {
       expect(allowed.has(token)).toBe(true);
     }
@@ -202,5 +212,84 @@ describe("buildSystemPrompt — PRICE GUARDRAIL (the heart)", () => {
     });
     const p = buildSystemPrompt({ facts, caller: unknownCaller });
     expect(dollarTokens(p)).toEqual([`$${facts.serviceFee}`]);
+  });
+});
+
+// Owner free-text fields are interpolated verbatim — an owner who types a price into any of
+// them must NOT be able to smuggle an unsanctioned spoken price into the prompt. Each fixture
+// injects a stray "$" into exactly one free-text field and asserts the rendered prompt's dollar
+// tokens equal EXACTLY the allowed set (serviceFee + flat prices), with the marker present.
+describe("buildSystemPrompt — PRICE GUARDRAIL (owner free-text injection)", () => {
+  it("redacts a stray price hidden in a service's triggers ($50 off)", () => {
+    const facts = baseFacts({
+      services: [
+        { name: "Drain cleaning", lane: "flat", price: 149, triggers: "clog, $50 off promo" },
+        { name: "Faucet repair", lane: "repair", triggers: "leaky faucet" },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    expect(new Set(dollarTokens(p))).toEqual(allowedTokens(facts));
+    expect(p).not.toContain("$50");
+    expect(p).toContain(PRICE_REDACTION_MARKER);
+  });
+
+  it("redacts a stray price hidden in notServices (septic ($500+ jobs))", () => {
+    const facts = baseFacts({ notServices: "septic ($500+ jobs), well pumps" });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    expect(new Set(dollarTokens(p))).toEqual(allowedTokens(facts));
+    expect(p).not.toContain("$500");
+    expect(p).toContain(PRICE_REDACTION_MARKER);
+  });
+
+  it("redacts a stray price hidden in a known caller's openWork ($500 repipe)", () => {
+    const facts = baseFacts();
+    const caller: CallerContext = {
+      known: true,
+      name: "Dana Ruiz",
+      openWork: "job #142 scheduled Jul 16 ($500 repipe)",
+    };
+    const p = buildSystemPrompt({ facts, caller });
+    expect(new Set(dollarTokens(p))).toEqual(allowedTokens(facts));
+    expect(p).not.toContain("$500");
+    expect(p).toContain(PRICE_REDACTION_MARKER);
+    // the non-price parts of the open-work line still render
+    expect(p).toContain("job #142 scheduled Jul 16");
+  });
+});
+
+describe("redactPriceTokens", () => {
+  it("replaces a leading dollar token with the marker, keeping the rest", () => {
+    expect(redactPriceTokens("$50 off")).toBe(`${PRICE_REDACTION_MARKER} off`);
+  });
+
+  it("replaces a comma/decimal dollar amount with the marker", () => {
+    expect(redactPriceTokens("$1,250.00")).toBe(PRICE_REDACTION_MARKER);
+  });
+
+  it("handles whitespace between the sign and digits ($ 500)", () => {
+    expect(redactPriceTokens("septic ($ 500+ jobs)")).toBe(
+      `septic (${PRICE_REDACTION_MARKER}+ jobs)`,
+    );
+  });
+
+  it("leaves text with no dollar amounts unchanged", () => {
+    expect(redactPriceTokens("no dollars here")).toBe("no dollars here");
+  });
+
+  it("strips a lone dollar sign with no digits", () => {
+    expect(redactPriceTokens("cash $ only")).toBe("cash  only");
+    expect(redactPriceTokens("$")).toBe("");
+  });
+
+  it("leaves legit non-price numbers untouched (24/7, 2 hours)", () => {
+    expect(redactPriceTokens("24/7 emergency, about 2 hours")).toBe(
+      "24/7 emergency, about 2 hours",
+    );
+  });
+
+  it("redacts every dollar token when several appear", () => {
+    expect(redactPriceTokens("$50 now or $1,000 later")).toBe(
+      `${PRICE_REDACTION_MARKER} now or ${PRICE_REDACTION_MARKER} later`,
+    );
   });
 });
