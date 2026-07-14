@@ -12,36 +12,55 @@ import { type Result, ok, err } from "@mallet/shared/types";
 
 // The call object. We read the id (correlation key) plus the caller (From) and, on some
 // messages, a per-call phoneNumber echo used as a fallback for the org (To) number.
+//
+// customer/phoneNumber are `unknown`, NOT a strict object: Vapi populates these nested per-call
+// copies with varying shapes — an object, a bare string, or an explicit `null` (which
+// `z.object(...).optional()` REJECTS, since optional means undefined, not null). A single
+// over-strict leaf here 400s EVERY message type, because they all embed callSchema. Per this
+// file's own principle — validate only what we read — we keep them opaque and dig out `.number`
+// safely in `numberOf` below.
 const callSchema = z
   .object({
     id: z.string(),
-    customer: z.object({ number: z.string().optional() }).passthrough().optional(),
-    phoneNumber: z.object({ number: z.string().optional() }).passthrough().optional(),
+    customer: z.unknown().optional(),
+    phoneNumber: z.unknown().optional(),
   })
   .passthrough();
 
 // Top-level phoneNumber echo (the org's provisioned number). Preferred over the nested call copy.
-const phoneNumberSchema = z.object({ number: z.string().optional() }).passthrough();
+// Also `unknown` for the same reason — Vapi may send it as an object or null depending on the event.
+const phoneNumberSchema = z.unknown();
 
 // ── Phone-extraction helpers (pure) ───────────────────────────────────────────
 // Exported so the route/tests can pull numbers without re-parsing the whole envelope.
 
+// Safely read a `.number` string off a Vapi phone-ish field of unknown shape. Returns null for
+// anything that isn't an object carrying a string `number` (a bare string, a null, undefined,
+// an object without `number`) — Vapi sends all of these across events and versions.
+const numberOf = (value: unknown): string | null => {
+  if (value && typeof value === "object" && "number" in value) {
+    const n = (value as { number?: unknown }).number;
+    return typeof n === "string" ? n : null;
+  }
+  return null;
+};
+
 interface OrgNumberSource {
-  readonly phoneNumber?: { readonly number?: string };
-  readonly call?: { readonly phoneNumber?: { readonly number?: string } };
+  readonly phoneNumber?: unknown;
+  readonly call?: { readonly phoneNumber?: unknown };
 }
 
 // The org's provisioned number (the To). Prefer the top-level echo; fall back to the per-call copy.
 export const extractOrgNumber = (message: OrgNumberSource): string | null =>
-  message.phoneNumber?.number ?? message.call?.phoneNumber?.number ?? null;
+  numberOf(message.phoneNumber) ?? numberOf(message.call?.phoneNumber) ?? null;
 
 interface CallerNumberSource {
-  readonly call?: { readonly customer?: { readonly number?: string } };
+  readonly call?: { readonly customer?: unknown };
 }
 
-// The caller's number (the From) — always on the customer object of the call.
+// The caller's number (the From) — on the customer object of the call when present.
 export const extractCallerNumber = (message: CallerNumberSource): string | null =>
-  message.call?.customer?.number ?? null;
+  numberOf(message.call?.customer);
 
 // ── Per-type message schemas (validate only what we read) ─────────────────────
 
