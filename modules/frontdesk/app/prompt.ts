@@ -33,10 +33,40 @@ const SECTIONS = {
   identity: "IDENTITY & COMPLIANCE",
   facts: "BUSINESS FACTS",
   services: "SERVICES",
+  tools: "TOOLS & FLOW",
   cases: "CASE RULES",
   guardrails: "IRON GUARDRAILS",
   caller: "CALLER CONTEXT",
 } as const;
+
+// The exact tool names the runner whitelists (run-tool-calls.ts + the route's VOICE_TOOLS). These
+// MUST match the tool `name` fields verbatim — the model can only trigger a tool by naming it, so a
+// prompt that describes the booking flow without naming the tools would leave the whole booking
+// phase inert on a live call. Keep in sync with take-message.ts / check-availability.ts /
+// book-visit.ts / request-quote.ts.
+export const TOOL_NAMES = {
+  checkAvailability: "check_availability",
+  bookVisit: "book_visit",
+  requestQuote: "request_quote",
+  takeMessage: "take_message",
+} as const;
+
+// The tools-and-flow rules, named by exact tool name so the model actually CALLS them. Each line is
+// a concrete "when X, CALL tool Y" instruction — no dollar amounts (the price guardrails below are
+// untouched). Ordered as the booking flow runs: offer times → book → alternatives.
+const TOOL_FLOW: readonly string[] = [
+  `To offer appointment times, CALL ${TOOL_NAMES.checkAvailability} — it returns up to two open ` +
+    "windows. Read the two windows back to the caller and ask which one works.",
+  `Once the caller picks a window, CALL ${TOOL_NAMES.bookVisit} with the chosen slot_date and ` +
+    "slot_window (plus their name, phone, address, the service, and the lane). It confirms the " +
+    "booking and speaks the sanctioned price — do not state a price yourself.",
+  `If the caller only wants a written quote (a big or custom job you should not price), CALL ` +
+    `${TOOL_NAMES.requestQuote} and tell them the office will text a written quote.`,
+  `For a reschedule, cancellation, a billing question, or "where is my tech", CALL ` +
+    `${TOOL_NAMES.takeMessage} so the office handles it.`,
+  "Never invent a tool result: only confirm a booking after book_visit has actually returned a " +
+    "confirmation.",
+] as const;
 
 const REPAIR_SCRIPT =
   "The tech diagnoses the problem and gives you an exact price on-site. Frame it that way — " +
@@ -164,6 +194,13 @@ const buildServicesSection = (services: readonly PromptService[]): string => {
   ].join("\n");
 };
 
+const buildToolsSection = (): string =>
+  [
+    `## ${SECTIONS.tools}`,
+    "You have these tools. You can only DO something by calling the matching tool by name:",
+    ...TOOL_FLOW.map((r) => `- ${r}`),
+  ].join("\n");
+
 const buildCaseRules = (): string =>
   [`## ${SECTIONS.cases}`, ...CASE_RULES.map((r) => `- ${r}`)].join("\n");
 
@@ -198,6 +235,7 @@ export const buildSystemPrompt = ({ facts, caller }: BuildSystemPromptInput): st
     buildIdentitySection(facts.brandName),
     buildFactsSection(facts),
     buildServicesSection(facts.services),
+    buildToolsSection(),
     buildCaseRules(),
     buildGuardrails(),
   ];

@@ -57,7 +57,7 @@ suite("DrizzleToolInvocationLedger against live Supabase RLS", () => {
         tool: "take_message",
         result: { speak: "Got it — passed to the office." },
       });
-      return ledger.find(vapiCallId, toolCallId);
+      return ledger.find(toolCallId);
     });
 
     expect(found).not.toBeNull();
@@ -68,7 +68,7 @@ suite("DrizzleToolInvocationLedger against live Supabase RLS", () => {
     const orgA = asOrgId(orgAId);
     const found = await withTenant(orgA, async (tx) => {
       const ledger = new DrizzleToolInvocationLedger(tx, orgA);
-      return ledger.find(`vc-${crypto.randomUUID()}`, `tc-${crypto.randomUUID()}`);
+      return ledger.find(`tc-${crypto.randomUUID()}`);
     });
     expect(found).toBeNull();
   });
@@ -95,7 +95,7 @@ suite("DrizzleToolInvocationLedger against live Supabase RLS", () => {
         tool: "book_visit",
         result: { speak: "SECOND — should be ignored.", data: { jobId: "second" } },
       });
-      return ledger.find(vapiCallId, toolCallId);
+      return ledger.find(toolCallId);
     });
 
     expect(found).not.toBeNull();
@@ -116,7 +116,7 @@ suite("DrizzleToolInvocationLedger against live Supabase RLS", () => {
     const orgA = asOrgId(orgAId);
     const found = await withTenant(orgA, async (tx) => {
       const ledger = new DrizzleToolInvocationLedger(tx, orgA);
-      return ledger.find(foreignCallId, foreignToolCallId);
+      return ledger.find(foreignToolCallId);
     });
     expect(found).toBeNull();
   });

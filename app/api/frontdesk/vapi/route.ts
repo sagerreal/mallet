@@ -12,7 +12,12 @@ import {
 import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { CreateTaskUseCase, DrizzleTaskRepository } from "@mallet/tasks";
 import { CreateManualJobUseCase, CreateVisitUseCase, DrizzleJobRepository } from "@mallet/jobs";
-import { LoggingNotificationSender, type NotificationSender } from "@mallet/notifications";
+import {
+  LoggingNotificationSender,
+  SendNotificationUseCase,
+  DrizzleNotificationRepository,
+  type NotificationSender,
+} from "@mallet/notifications";
 import { getAppDeps } from "@/trpc/di";
 import {
   parseServerMessage,
@@ -255,10 +260,11 @@ const handleEndOfCall = async (
 
 // Build the voice tools' dependencies from THIS call's tenant tx (mirrors ai-router drive()):
 // an outbox-bound bus so a tool's emits are atomic with its writes, the write use-cases, and the
-// query-only readers. The comms sender is request-independent (the SMS port needs no tx — it's the
-// composition root's channel router, degrading to the logging stub while A2P is blocked) so it's
-// resolved once and passed in. Every DB port is tenant-tx-scoped so nothing reaches drizzle outside
-// withTenant.
+// query-only readers. The comms send goes through a tenant-tx-scoped SendNotificationUseCase (so
+// the booking confirmation writes an observable notifications row); its repo + bus are tx-scoped,
+// while the underlying channel sender is request-independent (degrades to the logging stub while
+// A2P is blocked) and passed in. Every DB port is tenant-tx-scoped so nothing reaches drizzle
+// outside withTenant.
 const buildVoiceToolDeps = (
   tx: TenantTx,
   orgId: OrgId,
@@ -276,7 +282,13 @@ const buildVoiceToolDeps = (
     createTask: buildCreateTask(tx, orgId),
     settings: new DrizzleSettingsReader(tx, orgId),
     availability: new DrizzleAvailabilityReader(tx, orgId),
-    notificationSender,
+    sendNotification: new SendNotificationUseCase(
+      new DrizzleNotificationRepository(tx, orgId),
+      notificationSender,
+      bus,
+      systemClock,
+      uuidGenerator,
+    ),
     bus,
     clock: systemClock,
     ids: uuidGenerator,

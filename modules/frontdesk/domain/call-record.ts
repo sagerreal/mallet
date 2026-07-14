@@ -80,16 +80,24 @@ export interface FrontdeskCallRepository {
   // Persist the end-of-call-report. Updates the skeleton row matched by (org_id, vapi_call_id)
   // if present, else inserts — idempotent on the unique index.
   recordEndOfCall(input: RecordCallInput): Promise<void>;
+  // Whether the stored call row was ALREADY price-flagged before this end-of-call write. recordEnd
+  // OfCall is an idempotent upsert, but CreateTask is NOT — a Vapi end-of-call retry would otherwise
+  // file a duplicate price-review task. The use-case reads this BEFORE persisting and only files the
+  // review task when the prior row was not already flagged (a fresh violation). Returns false when
+  // no row exists yet (first record) or its priceAudit was empty.
+  wasPriceFlagged(vapiCallId: string): Promise<boolean>;
   // Office surfaces (PR C). Newest-first, non-deleted, scoped to the current org.
   listByLead(leadId: LeadId): Promise<CallSummary[]>;
   listRecent(page: CursorPage): Promise<CallSummary[]>;
 }
 
 // Idempotency ledger for voice tool calls. Vapi retries tool webhooks; a replayed toolCallId
-// must return the stored result and never re-execute (double-booking guard). Keyed by
-// (org_id, tool_call_id) at the table level; find also scopes by vapiCallId for clarity.
+// must return the stored result and never re-execute (double-booking guard). Keyed by the PK
+// (org_id, tool_call_id); find() keys on toolCallId ALONE (org comes from the tx) so it exactly
+// matches what save() writes — a superset filter (adding vapiCallId) could miss a legitimately
+// saved row if the vapiCallId ever differed between save and replay.
 export interface ToolInvocationLedger {
-  find(vapiCallId: string, toolCallId: string): Promise<{ result: unknown } | null>;
+  find(toolCallId: string): Promise<{ result: unknown } | null>;
   save(input: {
     orgId: OrgId;
     vapiCallId: string;

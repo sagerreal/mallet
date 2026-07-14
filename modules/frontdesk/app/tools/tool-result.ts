@@ -6,7 +6,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import type { EnsureCustomerUseCase } from "@mallet/customers";
 import type { CreateTaskUseCase } from "@mallet/tasks";
 import type { CreateManualJobUseCase, CreateVisitUseCase } from "@mallet/jobs";
-import type { NotificationSender } from "@mallet/notifications";
+import type { SendNotificationUseCase } from "@mallet/notifications";
 import type { VoiceToolSpec, SettingsReader } from "../../domain/assistant";
 import type { AvailabilityReader } from "../../domain/availability";
 
@@ -34,10 +34,11 @@ export interface VoiceToolDeps {
   readonly createTask: CreateTaskUseCase;
   readonly settings: SettingsReader;
   readonly availability: AvailabilityReader;
-  // Comms egress (SMS/email). book_visit fires a one-time transactional booking confirmation
-  // through it; while A2P is blocked the composition root's logging stub degrades gracefully. A
-  // send failure NEVER fails a booking (background-path semantics) — see book-visit.ts.
-  readonly notificationSender: NotificationSender;
+  // Comms egress (SMS/email) routed through the notification USE-CASE (not the raw sender) so every
+  // send writes an observable notifications row (records stub:logged while A2P is blocked — the B3
+  // requirement). book_visit fires a one-time transactional booking confirmation through it; a send
+  // failure NEVER fails a booking (background-path semantics) — see book-visit.ts.
+  readonly sendNotification: SendNotificationUseCase;
   readonly bus: EventBus;
   readonly clock: Clock;
   readonly ids: IdGenerator;

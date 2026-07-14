@@ -4,7 +4,7 @@ import { asOrgId, asUserId, type OrgId } from "@mallet/shared/types";
 import type { Principal } from "@mallet/identity";
 import type { ToolInvocationLedger } from "../domain/call-record";
 import type { VoiceTool, VoiceToolContext, VoiceToolDeps, VoiceToolResult } from "./tools/tool-result";
-import { inertNotificationSender } from "./tools/test-support";
+import { inertSendNotification } from "./tools/test-support";
 import {
   RunToolCallsUseCase,
   FALLBACK_UNKNOWN_TOOL,
@@ -31,21 +31,20 @@ const PRINCIPAL: Principal = {
 const BASE: RunToolCallsBaseContext = { tx: {} as never, orgId: ORG, principal: PRINCIPAL };
 
 // In-memory ledger. `find` returns a prior result once seeded; `save` records the row. A spy on
-// each lets tests assert idempotency (replay hit → no re-execute) + persistence.
+// each lets tests assert idempotency (replay hit → no re-execute) + persistence. The PK is
+// (org_id, tool_call_id), so `find` keys on toolCallId alone; the vapiCallId is retained on each
+// row only so listByCall can scope by call.
 class FakeLedger implements ToolInvocationLedger {
-  readonly rows = new Map<string, { tool: string; result: unknown }>();
+  readonly rows = new Map<string, { vapiCallId: string; tool: string; result: unknown }>();
   readonly findSpy = vi.fn();
   readonly saveSpy = vi.fn();
 
-  private key(vapiCallId: string, toolCallId: string): string {
-    return `${vapiCallId}:${toolCallId}`;
-  }
   seed(vapiCallId: string, toolCallId: string, tool: string, result: unknown): void {
-    this.rows.set(this.key(vapiCallId, toolCallId), { tool, result });
+    this.rows.set(toolCallId, { vapiCallId, tool, result });
   }
-  async find(vapiCallId: string, toolCallId: string): Promise<{ result: unknown } | null> {
-    this.findSpy(vapiCallId, toolCallId);
-    const row = this.rows.get(this.key(vapiCallId, toolCallId));
+  async find(toolCallId: string): Promise<{ result: unknown } | null> {
+    this.findSpy(toolCallId);
+    const row = this.rows.get(toolCallId);
     return row ? { result: row.result } : null;
   }
   async save(input: {
@@ -56,15 +55,16 @@ class FakeLedger implements ToolInvocationLedger {
     result: unknown;
   }): Promise<void> {
     this.saveSpy(input);
-    this.rows.set(this.key(input.vapiCallId, input.toolCallId), {
+    this.rows.set(input.toolCallId, {
+      vapiCallId: input.vapiCallId,
       tool: input.tool,
       result: input.result,
     });
   }
   async listByCall(vapiCallId: string): Promise<{ tool: string; result: unknown }[]> {
     const out: { tool: string; result: unknown }[] = [];
-    for (const [k, v] of this.rows) {
-      if (k.startsWith(`${vapiCallId}:`)) out.push({ tool: v.tool, result: v.result });
+    for (const v of this.rows.values()) {
+      if (v.vapiCallId === vapiCallId) out.push({ tool: v.tool, result: v.result });
     }
     return out;
   }
@@ -86,7 +86,7 @@ const fakeDeps: VoiceToolDeps = {
   // The runner never touches the read ports directly — inert stubs keep the deps shape valid.
   settings: { async getByOrg() { return null; } },
   availability: { async read() { return { crewCount: 0, visits: [] }; } },
-  notificationSender: inertNotificationSender(),
+  sendNotification: inertSendNotification(),
   bus: { async emit() {} },
   clock: { now: () => new Date("2026-07-14T00:00:00Z") },
   ids: { newId: () => "id-1" },

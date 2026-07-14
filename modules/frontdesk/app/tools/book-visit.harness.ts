@@ -34,7 +34,7 @@ import { CreateVisitUseCase } from "../../../jobs/app/create-visit";
 import { OrgSettings, type OrgSettingsProps } from "../../../settings/domain/org-settings";
 import { baseSettingsProps } from "../../../settings/domain/org-settings.fixtures";
 import type { SettingsReader } from "../../domain/assistant";
-import { recordingNotificationSender, type RecordingNotificationSender, type SendMode } from "./test-support";
+import { recordingSendNotification, type RecordingSendNotification, type SendMode } from "./test-support";
 import type { VoiceToolContext, VoiceToolDeps } from "./tool-result";
 
 // ---------------------------------------------------------------------------
@@ -202,7 +202,9 @@ export interface Harness {
   leads: FakeLeadRepository;
   jobs: FakeJobStore;
   tasks: FakeTaskRepository;
-  sms: RecordingNotificationSender;
+  // The booking confirmation goes through a real SendNotificationUseCase; `sms` exposes both the
+  // sender's captured commands (`sent`) and the persisted notification rows (`rows`).
+  sms: RecordingSendNotification;
 }
 
 export const buildHarness = (over?: {
@@ -221,7 +223,7 @@ export const buildHarness = (over?: {
   const jobRepo = asJobRepository(jobs);
   const tasks = new FakeTaskRepository();
   const settings = over?.settings === undefined ? settingsFrom() : over.settings;
-  const sms = recordingNotificationSender(over?.smsMode ?? "ok");
+  const sms = recordingSendNotification(over?.smsMode ?? "ok");
 
   const deps: VoiceToolDeps = {
     ensureCustomer: new EnsureCustomerUseCase(over?.leads ?? leads, bus, CLOCK),
@@ -231,7 +233,7 @@ export const buildHarness = (over?: {
     createTask: over?.createTask ?? new CreateTaskUseCase(tasks, CLOCK, ids),
     settings: fakeSettings(settings),
     availability: { async read() { return { crewCount: 0, visits: [] }; } },
-    notificationSender: sms,
+    sendNotification: sms.useCase,
     bus,
     clock: CLOCK,
     ids,

@@ -45,9 +45,15 @@ const settingsWith = (): OrgSettings => {
 
 class FakeCallRepo implements FrontdeskCallRepository {
   readonly recorded: RecordCallInput[] = [];
+  // Simulates the stored row's prior price-flag state for the retry-guard. Default false (a fresh
+  // call); a test flips it to prove a Vapi end-of-call retry does NOT re-file the review task.
+  priorlyFlagged = false;
   async upsertInboundStart(_input: StartCallInput): Promise<void> {}
   async recordEndOfCall(input: RecordCallInput): Promise<void> {
     this.recorded.push(input);
+  }
+  async wasPriceFlagged(_vapiCallId: string): Promise<boolean> {
+    return this.priorlyFlagged;
   }
   async listByLead(_leadId: LeadId): Promise<CallSummary[]> {
     return [];
@@ -92,8 +98,10 @@ const makeHarness = (opts?: {
   settings?: OrgSettings | null;
   leadHit?: { leadId: LeadId } | null;
   createTaskFails?: boolean;
+  priorlyFlagged?: boolean;
 }): Harness => {
   const repo = new FakeCallRepo();
+  repo.priorlyFlagged = opts?.priorlyFlagged ?? false;
   const createdTasks: { text: string; leadId: LeadId | null }[] = [];
   const markUnread = vi.fn().mockResolvedValue(true);
   const deps: RecordCallDeps = {
@@ -172,6 +180,20 @@ describe("RecordCallUseCase", () => {
     expect(h.createdTasks[0]!.leadId).toBe(LEAD);
   });
 
+  it("does NOT re-file the price-review task when the row was already flagged (end-of-call retry)", async () => {
+    // recordEndOfCall is an idempotent upsert, but CreateTask is not. A Vapi end-of-call RETRY finds
+    // the row already price-flagged → the review task must be filed ZERO additional times.
+    const h = makeHarness({ priorlyFlagged: true });
+    await new RecordCallUseCase(h.deps).exec({
+      ...baseInput,
+      messages: [{ role: "assistant", message: "It's $300." }],
+    });
+    // still persists (idempotent upsert) but files no duplicate review task
+    expect(h.repo.recorded).toHaveLength(1);
+    expect(h.repo.recorded[0]!.priceAudit).toEqual({ flagged: ["$300"] });
+    expect(h.createdTasks).toHaveLength(0);
+  });
+
   it("files NO review task when every spoken price is sanctioned", async () => {
     const h = makeHarness();
     await new RecordCallUseCase(h.deps).exec({
@@ -183,6 +205,35 @@ describe("RecordCallUseCase", () => {
     });
     expect(h.repo.recorded[0]!.priceAudit).toEqual({ flagged: [] });
     expect(h.createdTasks).toHaveLength(0);
+  });
+
+  it('audits AI turns emitted with Vapi\'s "bot" role (end-of-call artifact uses "bot", not "assistant")', async () => {
+    // Vapi's end-of-call artifact.messages labels the AI as role "bot". The price audit MUST treat
+    // "bot" as an AI turn or the whole post-call price-safety layer no-ops on real traffic. Here an
+    // unsanctioned "$300" spoken by the bot (allowed { 89, 150 }) must be flagged.
+    const h = makeHarness();
+    await new RecordCallUseCase(h.deps).exec({
+      ...baseInput,
+      messages: [
+        { role: "bot", message: "The visit is $89." },
+        { role: "bot", message: "The full repair runs about $300." },
+      ],
+    });
+    expect(h.repo.recorded[0]!.priceAudit).toEqual({ flagged: ["$300"] });
+    expect(h.createdTasks).toHaveLength(1);
+    expect(h.createdTasks[0]!.text).toContain("$300");
+  });
+
+  it('does not flag a caller ("user" role) even when the AI role is "bot"', async () => {
+    const h = makeHarness();
+    await new RecordCallUseCase(h.deps).exec({
+      ...baseInput,
+      messages: [
+        { role: "user", message: "I was quoted $999 elsewhere." },
+        { role: "bot", message: "The visit is $89." },
+      ],
+    });
+    expect(h.repo.recorded[0]!.priceAudit).toEqual({ flagged: [] });
   });
 
   it("only audits assistant-role lines (a caller saying a price is not a violation)", async () => {

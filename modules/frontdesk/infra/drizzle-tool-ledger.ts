@@ -15,14 +15,17 @@ export class DrizzleToolInvocationLedger implements ToolInvocationLedger {
     private readonly orgId: OrgId,
   ) {}
 
-  async find(vapiCallId: string, toolCallId: string): Promise<{ result: unknown } | null> {
+  // Look up a prior result by the PK columns ONLY: (org_id, tool_call_id). This matches save()'s
+  // onConflict target exactly, so a replay can never miss a legitimately-saved row (a superset
+  // filter that also required vapiCallId could, if the vapiCallId ever differed). The org comes
+  // from the tx (RLS) + the explicit eq below.
+  async find(toolCallId: string): Promise<{ result: unknown } | null> {
     const rows = await this.tx
       .select({ result: frontdeskToolInvocations.result })
       .from(frontdeskToolInvocations)
       .where(
         and(
           eq(frontdeskToolInvocations.orgId, this.orgId),
-          eq(frontdeskToolInvocations.vapiCallId, vapiCallId),
           eq(frontdeskToolInvocations.toolCallId, toolCallId),
         ),
       )

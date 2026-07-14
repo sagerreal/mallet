@@ -37,7 +37,7 @@ import {
   buildQuoteTaskText,
   NO_PHONE_NOTE,
 } from "./request-quote";
-import { inertNotificationSender } from "./test-support";
+import { inertSendNotification } from "./test-support";
 import { toVoiceToolSpec, type VoiceToolContext, type VoiceToolDeps } from "./tool-result";
 
 // ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ const buildHarness = (overrides?: {
     createVisit: {} as never,
     settings: { async getByOrg() { return null; } },
     availability: { async read() { return { crewCount: 0, visits: [] }; } },
-    notificationSender: inertNotificationSender(),
+    sendNotification: inertSendNotification(),
     bus,
     clock,
     ids,
@@ -246,19 +246,23 @@ describe("requestQuoteTool", () => {
     expect(h.leads.ensured[0]!.address).toBeNull();
   });
 
-  it("invalid phone: STILL creates the lead (null phone) + a task that notes no phone", async () => {
+  it("invalid phone: STILL creates the lead (null phone) + a task noting no phone + office-text speak", async () => {
     const result = await requestQuoteTool.handle(
       { ...QUOTE_INPUT, phone: "not-a-phone" },
       h.ctx,
     );
-    expect(result.speak).toBe(REQUEST_QUOTE_SPEAK);
-    // lead captured so the office can still follow up, with a null phone
+    // (1) the lead IS ensured so the office can still follow up, with a null phone
     expect(h.leads.ensured).toHaveLength(1);
     expect(h.leads.ensured[0]!.phone).toBeNull();
-    // the quote task notes the missing number
+    expect(h.leads.ensured[0]!.source).toBe("AI Front Desk");
+    // (2) the quote task text NOTES that no phone was captured
     expect(h.tasks.created).toHaveLength(1);
     expect(h.tasks.created[0]!.text).toContain(NO_PHONE_NOTE);
     expect(h.tasks.created[0]!.text).toBe(buildQuoteTaskText(QUOTE_INPUT.scope_details, false));
+    expect(h.tasks.created[0]!.leadId).toBe(LEAD_UUID);
+    // (3) the SPEAK is the office-will-text-a-written-quote line
+    expect(result.speak).toBe(REQUEST_QUOTE_SPEAK);
+    expect(result.speak).toMatch(/office will text you a written quote/i);
   });
 
   it("EnsureCustomer err → spoken fallback, no throw, no task", async () => {

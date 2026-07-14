@@ -5,6 +5,7 @@ import { logger } from "@mallet/shared/observability";
 import type { JobKind } from "@mallet/jobs";
 import type { OrgSettings, BookingService } from "@mallet/settings";
 import { WINDOW_BOUNDARY_HOUR } from "../slots";
+import { redactPriceTokens } from "../prompt";
 import { sendBookingConfirmation } from "./booking-confirmation";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
@@ -204,12 +205,16 @@ const addOneDay = (dateStr: string): string => {
 };
 
 // Compose the booked-confirmation line per lane. The ONLY prices spoken are serviceFee (repair /
-// flat-fallback) and a matched flat service.price. estimate speaks NO price at all.
+// flat-fallback) and a matched flat service.price. estimate speaks NO price at all. `service_name`
+// is RAW MODEL TEXT, so any "$NN" it smuggles (e.g. "Drain ($20 coupon)") is stripped by
+// redactPriceTokens BEFORE it reaches the spoken line — the sanctioned config $price is appended
+// AFTER redaction so only that one dollar amount can ever be spoken.
 const confirmationSpeak = (input: BookVisitInput, settings: OrgSettings, slot: string): string => {
   if (input.lane === "estimate") return `You're booked ${slot} for a free estimate visit.`;
   if (input.lane === "flat") {
     const price = flatPriceFor(input.service_name, settings);
-    if (price !== null) return `You're booked ${slot}. ${input.service_name} is $${price} flat.`;
+    const safeName = redactPriceTokens(input.service_name);
+    if (price !== null) return `You're booked ${slot}. ${safeName} is $${price} flat.`;
     // No configured flat price for this name → safe fallback: state the service fee, never invent.
     return `You're booked ${slot}. ${feeFragment(settings)}`;
   }

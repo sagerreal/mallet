@@ -25,12 +25,13 @@ const NO_SLOTS_SPEAK =
 export const checkAvailabilityInput = z.object({
   lane: z.enum(AVAILABILITY_LANES),
   urgency: z.enum(AVAILABILITY_URGENCIES),
-  preferred_day: z.string().optional(),
 });
 export type CheckAvailabilityInput = z.infer<typeof checkAvailabilityInput>;
 
 // The JSON schema Vapi forwards to the LLM (VoiceToolSpec.function.parameters). Explicit literal so
-// the model-facing contract is reviewable in one place (matches take_message's house style).
+// the model-facing contract is reviewable in one place (matches take_message's house style). Kept
+// to exactly what the handler uses — a preferred_day field was parsed but never consumed (dead
+// model-trust surface), so it is intentionally absent (YAGNI).
 const checkAvailabilityParameters: Record<string, unknown> = {
   type: "object",
   properties: {
@@ -43,10 +44,6 @@ const checkAvailabilityParameters: Record<string, unknown> = {
       type: "string",
       enum: [...AVAILABILITY_URGENCIES],
       description: "normal, or emergency for a true emergency that should be seen today.",
-    },
-    preferred_day: {
-      type: "string",
-      description: "The caller's preferred day, if they mention one (free text, e.g. 'Thursday').",
     },
   },
   required: ["lane", "urgency"],

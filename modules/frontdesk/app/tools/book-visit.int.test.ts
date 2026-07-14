@@ -9,7 +9,11 @@ import { OutboxEventBus } from "@mallet/shared/outbox";
 import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { CreateTaskUseCase, DrizzleTaskRepository } from "@mallet/tasks";
 import { CreateManualJobUseCase, CreateVisitUseCase, DrizzleJobRepository } from "@mallet/jobs";
-import { LoggingNotificationSender } from "@mallet/notifications";
+import {
+  LoggingNotificationSender,
+  SendNotificationUseCase,
+  DrizzleNotificationRepository,
+} from "@mallet/notifications";
 import { bookVisitTool } from "./book-visit";
 import { DrizzleSettingsReader } from "../../infra/drizzle-settings-reader";
 import { DrizzleAvailabilityReader } from "../../infra/drizzle-availability-reader";
@@ -48,8 +52,15 @@ const buildDeps = (tx: TenantTx, org: OrgId): VoiceToolDeps => {
     createTask: new CreateTaskUseCase(new DrizzleTaskRepository(tx, org), systemClock, uuidGenerator),
     settings: new DrizzleSettingsReader(tx, org),
     availability: new DrizzleAvailabilityReader(tx, org),
-    // The confirmation SMS degrades to the logging stub (A2P-blocked) — never fails the booking.
-    notificationSender: new LoggingNotificationSender(systemClock),
+    // The confirmation SMS is routed through the real SendNotificationUseCase (writes an observable
+    // notifications row) with the logging stub as the channel (A2P-blocked) — never fails the booking.
+    sendNotification: new SendNotificationUseCase(
+      new DrizzleNotificationRepository(tx, org),
+      new LoggingNotificationSender(systemClock),
+      bus,
+      systemClock,
+      uuidGenerator,
+    ),
     bus,
     clock: systemClock,
     ids: uuidGenerator,
@@ -71,6 +82,7 @@ suite("book_visit against live Supabase RLS", () => {
     if (orgId) {
       // FKs have no ON DELETE CASCADE — clear children first, in dependency order.
       await admin`delete from frontdesk_tool_invocations where org_id = ${orgId}`;
+      await admin`delete from notifications where org_id = ${orgId}`;
       await admin`delete from job_visits where org_id = ${orgId}`;
       await admin`delete from jobs where org_id = ${orgId}`;
       await admin`delete from tasks where org_id = ${orgId}`;
