@@ -99,6 +99,19 @@ suite("B1 availability reader against live Supabase RLS", () => {
     });
   });
 
+  it("returns this org's field-crew user ids in a stable order (RLS-scoped)", async () => {
+    const org = asOrgId(orgId);
+    await withTenant(org, async (tx) => {
+      const reader = new DrizzleAvailabilityReader(tx, org);
+      const ids = await reader.readFieldCrewIds();
+      // Exactly the two field-crew members of THIS org (office member + other org's crew excluded).
+      expect(ids).toHaveLength(2);
+      // Stable order across calls (created_at, id) so "the first field crew" is deterministic.
+      const again = await reader.readFieldCrewIds();
+      expect(again).toEqual(ids);
+    });
+  });
+
   it("never sees the other org's in-range visit", async () => {
     const org = asOrgId(orgId);
     await withTenant(org, async (tx) => {

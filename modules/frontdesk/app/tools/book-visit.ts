@@ -1,21 +1,31 @@
-import { z } from "zod";
 import { Phone, isOk } from "@mallet/shared/types";
-import type { LeadId } from "@mallet/shared/types";
+import type { LeadId, UserId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { JobKind } from "@mallet/jobs";
-import type { OrgSettings, BookingService } from "@mallet/settings";
-import { redactPriceTokens } from "../prompt";
+import type { OrgSettings } from "@mallet/settings";
 import { sendBookingConfirmation } from "./booking-confirmation";
-import { windowRange } from "./window-phrasing";
+import {
+  BOOK_LANES,
+  DEFAULT_URGENCY,
+  bookVisitInput,
+  bookVisitParameters,
+  type BookLane,
+  type BookVisitInput,
+} from "./book-visit-input";
+import { confirmationSpeak, emergencyTaskText, fallbackTaskText, slotPhrase } from "./book-visit-speak";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
-// The three booking lanes + urgencies (mirror check_availability's closed enums so the model can't
-// smuggle a garbage lane past the boundary). repair/flat book a work job; estimate books a scope
-// visit as an estimate-kind job so it rides the board unchanged.
-export const BOOK_LANES = ["repair", "estimate", "flat"] as const;
-export type BookLane = (typeof BOOK_LANES)[number];
-export const BOOK_URGENCIES = ["normal", "emergency"] as const;
-export type BookLaneUrgency = (typeof BOOK_URGENCIES)[number];
+// Re-export the boundary contract so existing importers (tests, the route, the barrel) keep pulling
+// it from ./book-visit — the schema physically lives in book-visit-input.ts to break a circular
+// import and keep this file small, but its public home is unchanged.
+export {
+  BOOK_LANES,
+  BOOK_URGENCIES,
+  bookVisitInput,
+  type BookLane,
+  type BookLaneUrgency,
+  type BookVisitInput,
+} from "./book-visit-input";
 
 // A well-formed 24-hour clock time "HH:MM" (00:00–23:59). The chosen slot_start MUST match this
 // (and fall inside the org's hours) before we trust it as the scheduled start — a hallucinated
@@ -25,7 +35,8 @@ const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 // The source stamped on every lead the voice front desk creates (matches take_message + the plan).
 const VOICE_SOURCE = "AI Front Desk";
 
-// The assignee is never chosen on a voice booking — the office/board places the visit onto a crew.
+// When the org has ZERO field crew, a voice booking has no one to assign to — it stays unassigned
+// and sits in the board's "To schedule" column for the office to place.
 const UNASSIGNED = null;
 
 // Minutes → hours, rounded to quarter-hours so CreateVisit's durationHours stays a sensible fraction
@@ -36,9 +47,8 @@ const minutesToHours = (minutes: number): number =>
   Math.round((minutes / MINUTES_PER_HOUR) * QUARTER_HOURS_PER_HOUR) / QUARTER_HOURS_PER_HOUR;
 
 // ── Spoken lines (constants over magic strings) ─────────────────────────────────
-// Functional, not chatty (house rule). The booking-confirmation lines are the ONLY place a booked
-// price is stated — its provenance is the org's configured serviceFee / flat service.price, never a
-// model-supplied or invented number.
+// Functional, not chatty (house rule). The confirmation phrasing (with the ONLY sanctioned prices)
+// lives in book-visit-speak.ts.
 
 // Re-ask when the model passes a phone we can't parse. We do NOT book against a bad number.
 export const BOOK_VISIT_INVALID_PHONE_SPEAK =
@@ -48,70 +58,6 @@ export const BOOK_VISIT_INVALID_PHONE_SPEAK =
 // so no booking request is silently dropped (we also file a message task alongside it).
 export const BOOK_VISIT_ERROR_SPEAK =
   "I hit a snag booking that — let me take a message so the office locks in your time.";
-
-const CREDITED_SUFFIX = ", credited toward the repair if you go ahead";
-
-// ── Input schema (validated at the boundary by the runner before handle runs) ────
-
-// The default urgency: an emergency is the exception, so a normal call must NOT dead-end just because
-// the model didn't classify urgency. `urgency` is OPTIONAL here (defaults to this) and is therefore
-// NOT in the JSON-schema required[]. `problem` stays REQUIRED and IS listed in required[] so the zod
-// input and the model-facing JSON schema agree (a mismatch would silently reject valid LLM calls).
-const DEFAULT_URGENCY: BookLaneUrgency = "normal";
-
-export const bookVisitInput = z.object({
-  caller_name: z.string().min(1),
-  phone: z.string(),
-  address: z.string(),
-  service_name: z.string().min(1),
-  lane: z.enum(BOOK_LANES),
-  problem: z.string(),
-  slot_date: z.string(),
-  slot_start: z.string(),
-  urgency: z.enum(BOOK_URGENCIES).default(DEFAULT_URGENCY),
-});
-export type BookVisitInput = z.infer<typeof bookVisitInput>;
-
-// The JSON schema Vapi forwards to the LLM (VoiceToolSpec.function.parameters). Explicit literal so
-// the model-facing contract is reviewable in one place (matches the house style of the other tools).
-const bookVisitParameters: Record<string, unknown> = {
-  type: "object",
-  properties: {
-    caller_name: { type: "string", description: "The caller's full name." },
-    phone: { type: "string", description: "The caller's callback number, confirmed digit-by-digit." },
-    address: { type: "string", description: "The service address, read back to the caller." },
-    service_name: { type: "string", description: "The service being booked (from the playbook)." },
-    lane: {
-      type: "string",
-      enum: [...BOOK_LANES],
-      description: "repair, estimate, or flat — the playbook lane for this service.",
-    },
-    problem: { type: "string", description: "What the caller described in their own words." },
-    slot_date: { type: "string", description: 'The chosen slot date, "YYYY-MM-DD".' },
-    slot_start: {
-      type: "string",
-      description: 'The chosen slot start time HH:MM, from check_availability.',
-    },
-    urgency: {
-      type: "string",
-      enum: [...BOOK_URGENCIES],
-      description: "normal, or emergency for a true emergency booked ASAP.",
-    },
-  },
-  // Agrees with the zod input: everything the handler needs is required EXCEPT urgency (optional,
-  // defaults to "normal"). problem IS required here so the schema the model sees matches zod.
-  required: [
-    "caller_name",
-    "phone",
-    "address",
-    "service_name",
-    "lane",
-    "problem",
-    "slot_date",
-    "slot_start",
-  ],
-  additionalProperties: false,
-};
 
 // The job/disposition kind for a lane: estimate lane → "estimate" (booked_estimate), everything
 // else → "work" (booked_job). Used for BOTH the job's kind column and result.data.kind (see
@@ -148,8 +94,6 @@ const weekdayOf = (dateStr: string): number => {
   return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1, 12)).getUTCDay();
 };
 
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-
 // The integer hour of a validated "HH:MM" string.
 const hourOf = (hhmm: string): number => Number(hhmm.slice(0, 2));
 
@@ -176,83 +120,8 @@ const isValidSlotStart = (input: BookVisitInput, settings: OrgSettings): boolean
 const visitMinutesFor = (lane: BookLane, settings: OrgSettings): number =>
   lane === "estimate" ? settings.props.visitScopeMinutes : settings.props.visitRepairMinutes;
 
-// ── Price provenance (config ONLY — never a model-invented amount) ───────────────
-
-// The configured flat price for a service_name, or null when no flat service matches (case-
-// insensitive, trimmed). A null result means the model named something with no configured flat
-// price — we then state the service fee, never an invented number.
-const flatPriceFor = (serviceName: string, settings: OrgSettings): number | null => {
-  const wanted = serviceName.trim().toLowerCase();
-  const match = settings.props.booking.services.find(
-    (svc: BookingService) => svc.lane === "flat" && svc.name.trim().toLowerCase() === wanted,
-  );
-  return match?.price ?? null;
-};
-
-// The service-fee fragment ("The visit is $89[, credited …].") — the repair-lane provenance, also
-// the safe fallback for a flat service with no configured price.
-const feeFragment = (settings: OrgSettings): string => {
-  const { serviceFee, feeCredited } = settings.props.booking;
-  return `The visit is $${serviceFee}${feeCredited ? CREDITED_SUFFIX : ""}.`;
-};
-
-// The spoken slot phrase for the confirmation: day + the 2-hour arrival window
-// ("today between 2 and 4pm", "Thursday between 8 and 10am"). windowRange (window-phrasing.ts)
-// reuses windowEndHHMM so the confirmed window length always matches the offered one.
-const slotPhrase = (input: BookVisitInput, now: Date): string =>
-  `${dayPhraseFor(input.slot_date, now)} ${windowRange(input.slot_start)}`;
-
-const WEEKDAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-] as const;
-
-// "today" | "tomorrow" | a weekday name, off the calendar-date offset from `now` (same rule as B1).
-const dayPhraseFor = (dateStr: string, now: Date): string => {
-  const today = toDateString(now);
-  if (dateStr === today) return "today";
-  if (dateStr === addOneDay(today)) return "tomorrow";
-  return WEEKDAY_NAMES[weekdayOf(dateStr)] ?? "that day";
-};
-
-const toDateString = (now: Date): string =>
-  `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-
-const addOneDay = (dateStr: string): string => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const anchored = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1, 12));
-  anchored.setUTCDate(anchored.getUTCDate() + 1);
-  return `${anchored.getUTCFullYear()}-${pad2(anchored.getUTCMonth() + 1)}-${pad2(anchored.getUTCDate())}`;
-};
-
-// Compose the booked-confirmation line per lane. The ONLY prices spoken are serviceFee (repair /
-// flat-fallback) and a matched flat service.price. estimate speaks NO price at all. `service_name`
-// is RAW MODEL TEXT, so any "$NN" it smuggles (e.g. "Drain ($20 coupon)") is stripped by
-// redactPriceTokens BEFORE it reaches the spoken line — the sanctioned config $price is appended
-// AFTER redaction so only that one dollar amount can ever be spoken.
-const confirmationSpeak = (input: BookVisitInput, settings: OrgSettings, slot: string): string => {
-  if (input.lane === "estimate") return `You're booked ${slot} for a free estimate visit.`;
-  if (input.lane === "flat") {
-    const price = flatPriceFor(input.service_name, settings);
-    const safeName = redactPriceTokens(input.service_name);
-    if (price !== null) return `You're booked ${slot}. ${safeName} is $${price} flat.`;
-    // No configured flat price for this name → safe fallback: state the service fee, never invent.
-    return `You're booked ${slot}. ${feeFragment(settings)}`;
-  }
-  // repair
-  return `You're booked ${slot}. ${feeFragment(settings)}`;
-};
-
-const emergencyTaskText = (input: BookVisitInput): string =>
-  `EMERGENCY — ${input.service_name} at ${input.address}, booked ${input.slot_date} ${windowRange(input.slot_start)}`;
-
-const fallbackTaskText = (input: BookVisitInput): string =>
-  `Booking attempt failed — call back ${input.caller_name}${input.problem ? " re: " + input.problem : ""}`;
+// The confirmation phrasing (price provenance, slot phrase, task text) lives in book-visit-speak.ts
+// so this file stays a thin orchestration gate under the file-size limit.
 
 // The expected-failure path: file an office follow-up task so the caller isn't dropped, then speak
 // the fallback. Its own errors are logged (no silent swallow) but never mask the spoken reply the
@@ -327,12 +196,19 @@ const bookConfirmed = async (
     return bookingFallback(input, ctx, leadId);
   }
 
+  // ASSIGN the booking to the first field crew so it lands ON THE BOARD (owner live-test feedback:
+  // an unassigned voice booking sat in "To schedule" and never reached the crew grid). We pick the
+  // FIRST field crew in the reader's stable order; the office reassigns / rebalances from there. This
+  // is deliberately simple for the 1–3 crew ICP — a future task can round-robin by window capacity.
+  // ZERO field crew → UNASSIGNED (null), so it stays in "To schedule" as before.
+  const assigneeUserId = await firstFieldCrew(ctx);
+
   // SEED the first visit on the job (the server-side caller does this — no client flow follows).
   // scheduledStart IS the chosen window's start: slot_start was bounds-checked in `handle`
   // (isValidSlotStart), so it's a trusted in-hours "HH:MM", never an unvalidated model clock time.
   const visit = await ctx.deps.createVisit.exec({
     jobId: job.value.props.id,
-    assigneeUserId: UNASSIGNED,
+    assigneeUserId,
     scheduledDate: input.slot_date,
     scheduledStart: input.slot_start,
     durationHours: minutesToHours(visitMinutesFor(input.lane, settings)),
@@ -366,6 +242,23 @@ const bookConfirmed = async (
   };
 };
 
+// The org's first field-crew user id (stable order), or UNASSIGNED when the org has no field crew.
+// A crew-read failure is NON-FATAL: we log it and fall back to UNASSIGNED so a reader hiccup never
+// blocks a confirmed booking — the office simply places it on the board manually, exactly as the
+// zero-crew case does. Never throws.
+const firstFieldCrew = async (ctx: VoiceToolContext): Promise<UserId | null> => {
+  try {
+    const crewIds = await ctx.deps.availability.readFieldCrewIds();
+    return crewIds[0] ?? UNASSIGNED;
+  } catch (error: unknown) {
+    logger.warn(
+      { orgId: ctx.orgId, tool: "book_visit", error: error instanceof Error ? error.message : "unknown" },
+      "frontdesk.book_visit.field_crew_read_failed",
+    );
+    return UNASSIGNED;
+  }
+};
+
 // File the EMERGENCY office task and flag it so the call dispositions as emergency (highest
 // precedence in disposition.ts). The booking already succeeded — a task failure is logged, never
 // fatal to the confirmed booking.
@@ -396,9 +289,9 @@ const fileEmergencyTask = async (
 export const bookVisitTool: VoiceTool = {
   name: "book_visit",
   description:
-    "Book the appointment after the caller picks a window. Use for repair, estimate, or flat " +
+    "Book the appointment after the caller picks a start time. Use for repair, estimate, or flat " +
     "services once you have name, phone, address, the service, the chosen slot_date + slot_start " +
-    "(the picked window's start time from check_availability), and urgency. States the sanctioned " +
+    "(the picked start time from check_availability), and urgency. States the sanctioned " +
     "price and confirms the booking.",
   parameters: bookVisitParameters,
   input: bookVisitInput,

@@ -11,6 +11,7 @@ import {
   type LeadId,
   type JobId,
   type TaskId,
+  type UserId,
   type CursorPage,
   type Paginated,
 } from "@mallet/shared/types";
@@ -207,7 +208,23 @@ export interface Harness {
   sms: RecordingSendNotification;
 }
 
-export const buildHarness = (over?: {
+// A stable field-crew user id the book_visit auto-assign tests target (the "first field crew").
+export const FIRST_CREW_UUID = "44444444-4444-4444-4444-444444444444";
+export const SECOND_CREW_UUID = "55555555-5555-5555-5555-555555555555";
+
+// A fake AvailabilityReader for the book_visit tests: reports the given field-crew ids (in order)
+// and, unless `throws`, returns them from readFieldCrewIds. Extracted so buildHarness stays simple.
+const fakeAvailability = (fieldCrewIds: readonly UserId[], throws: boolean) => ({
+  async read() {
+    return { crewCount: fieldCrewIds.length, visits: [] as never[] };
+  },
+  async readFieldCrewIds() {
+    if (throws) throw new Error("field crew read failed");
+    return [...fieldCrewIds];
+  },
+});
+
+interface HarnessOverrides {
   settings?: OrgSettings | null;
   leads?: LeadRepository;
   jobs?: FakeJobStore;
@@ -215,29 +232,52 @@ export const buildHarness = (over?: {
   createVisit?: CreateVisitUseCase;
   createTask?: CreateTaskUseCase;
   smsMode?: SendMode;
-}): Harness => {
-  const bus = new InMemoryEventBus();
-  const ids = seqIds();
-  const leads = new FakeLeadRepository();
-  const jobs = over?.jobs ?? new FakeJobStore();
-  const jobRepo = asJobRepository(jobs);
-  const tasks = new FakeTaskRepository();
-  const settings = over?.settings === undefined ? settingsFrom() : over.settings;
-  const sms = recordingSendNotification(over?.smsMode ?? "ok");
+  // Field-crew ids the availability reader returns, in stable order — book_visit assigns the first.
+  // Defaults to none (zero field crew → the visit stays UNASSIGNED, as before).
+  fieldCrewIds?: readonly UserId[];
+  // When set, readFieldCrewIds throws — proves a crew-read failure degrades to UNASSIGNED, not a
+  // failed booking.
+  fieldCrewThrows?: boolean;
+}
 
-  const deps: VoiceToolDeps = {
-    ensureCustomer: new EnsureCustomerUseCase(over?.leads ?? leads, bus, CLOCK),
-    createManualJob:
-      over?.createManualJob ?? new CreateManualJobUseCase(jobRepo, bus, CLOCK, ids),
-    createVisit: over?.createVisit ?? new CreateVisitUseCase(jobRepo, CLOCK, ids),
-    createTask: over?.createTask ?? new CreateTaskUseCase(tasks, CLOCK, ids),
+// Assemble the VoiceToolDeps from the resolved fakes. Split from buildHarness so each function keeps
+// a low branching factor (the `over?.x ?? default` fallbacks all live here, in one place).
+const buildDeps = (args: {
+  over: HarnessOverrides;
+  bus: InMemoryEventBus;
+  ids: IdGenerator;
+  leads: FakeLeadRepository;
+  jobRepo: JobRepository;
+  tasks: FakeTaskRepository;
+  settings: OrgSettings | null;
+  sms: RecordingSendNotification;
+}): VoiceToolDeps => {
+  const { over, bus, ids, leads, jobRepo, tasks, settings, sms } = args;
+  return {
+    ensureCustomer: new EnsureCustomerUseCase(over.leads ?? leads, bus, CLOCK),
+    createManualJob: over.createManualJob ?? new CreateManualJobUseCase(jobRepo, bus, CLOCK, ids),
+    createVisit: over.createVisit ?? new CreateVisitUseCase(jobRepo, CLOCK, ids),
+    createTask: over.createTask ?? new CreateTaskUseCase(tasks, CLOCK, ids),
     settings: fakeSettings(settings),
-    availability: { async read() { return { crewCount: 0, visits: [] }; } },
+    availability: fakeAvailability(over.fieldCrewIds ?? [], over.fieldCrewThrows ?? false),
     sendNotification: sms.useCase,
     bus,
     clock: CLOCK,
     ids,
   };
+};
+
+export const buildHarness = (over: HarnessOverrides = {}): Harness => {
+  const bus = new InMemoryEventBus();
+  const ids = seqIds();
+  const leads = new FakeLeadRepository();
+  const jobs = over.jobs ?? new FakeJobStore();
+  const jobRepo = asJobRepository(jobs);
+  const tasks = new FakeTaskRepository();
+  const settings = over.settings === undefined ? settingsFrom() : over.settings;
+  const sms = recordingSendNotification(over.smsMode ?? "ok");
+
+  const deps = buildDeps({ over, bus, ids, leads, jobRepo, tasks, settings, sms });
   return { ctx: { tx: {} as never, orgId: ORG, principal: PRINCIPAL, deps }, leads, jobs, tasks, sms };
 };
 
