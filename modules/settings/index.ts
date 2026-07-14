@@ -12,5 +12,6 @@ export type {
 } from "./domain/settings-repository";
 export { GetSettingsUseCase } from "./app/get-settings";
 export type { SettingsSnapshot } from "./app/get-settings";
+export { defaultBooking } from "./app/default-booking";
 export { UpdateConfigUseCase } from "./app/update-config";
 export { DrizzleSettingsRepository } from "./infra/drizzle-settings-repository";
