@@ -154,6 +154,50 @@ describe("parseServerMessage — assistant-request", () => {
       throw new Error("expected assistant-request");
     }
   });
+
+  // Regression: the exact production payload that 400'd every message type. Vapi sends the
+  // nested per-call copies (call.phoneNumber, call.customer) as an explicit `null` (or a bare
+  // string) while the real org number lives on the TOP-LEVEL phoneNumber object. The old strict
+  // `z.object({number}).optional()` leaf rejected null → "invalid ... payload: call.phoneNumber".
+  it("tolerates a NULL call.phoneNumber / call.customer and resolves org from the top level", () => {
+    const body = {
+      message: {
+        type: "assistant-request",
+        phoneNumber: { number: "+16693413343", extra: "ok" },
+        call: { id: "call_null", customer: null, phoneNumber: null },
+      },
+    };
+    const r = parseServerMessage(body);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.type === "assistant-request") {
+      expect(r.value.callId).toBe("call_null");
+      expect(r.value.callerNumber).toBeNull();
+      expect(r.value.orgNumber).toBe("+16693413343");
+    } else {
+      throw new Error("expected assistant-request");
+    }
+  });
+
+  it("tolerates a bare-STRING call.phoneNumber (another shape Vapi sends)", () => {
+    const body = {
+      message: {
+        type: "assistant-request",
+        phoneNumber: { number: "+16693413343" },
+        call: { id: "call_str", customer: "+14155550123", phoneNumber: "+16693413343" },
+      },
+    };
+    const r = parseServerMessage(body);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.type === "assistant-request") {
+      expect(r.value.callId).toBe("call_str");
+      // A bare string isn't an object carrying `.number`, so caller falls back to null — but the
+      // call still parses (no 400) and the org resolves from the top-level echo.
+      expect(r.value.callerNumber).toBeNull();
+      expect(r.value.orgNumber).toBe("+16693413343");
+    } else {
+      throw new Error("expected assistant-request");
+    }
+  });
 });
 
 // ── tool-calls ────────────────────────────────────────────────────────────────
