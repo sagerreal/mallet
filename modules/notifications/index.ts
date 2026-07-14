@@ -8,7 +8,11 @@ export type {
 } from "./domain/notification";
 export { NOTIFICATION_CHANNELS, NOTIFICATION_STATUSES } from "./domain/notification";
 export type { NotificationRepository } from "./domain/notification-repository";
-export type { NotificationSender } from "./domain/notification-sender";
+export type {
+  NotificationSender,
+  SendNotificationCmd,
+  NotificationReceipt,
+} from "./domain/notification-sender";
 export { LoggingNotificationSender } from "./infra/logging-notification-sender";
 export { ResendEmailSender } from "./infra/resend-email-sender";
 export { TwilioSmsSender } from "./infra/twilio-sms-sender";

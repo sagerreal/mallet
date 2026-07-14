@@ -5,6 +5,7 @@ import { logger } from "@mallet/shared/observability";
 import type { JobKind } from "@mallet/jobs";
 import type { OrgSettings, BookingService } from "@mallet/settings";
 import { WINDOW_BOUNDARY_HOUR } from "../slots";
+import { sendBookingConfirmation } from "./booking-confirmation";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // The three booking lanes + urgencies (mirror check_availability's closed enums so the model can't
@@ -293,14 +294,18 @@ const bookConfirmed = async (
     return bookingFallback(input, ctx, leadId);
   }
 
+  // The booking has succeeded — the confirmation SMS is a best-effort background step from here on.
+  const slot = slotPhrase(input, ctx.deps.clock.now());
+  const jobId = job.value.props.id;
+  await sendBookingConfirmation(jobId, phone, settings.props.brandName, slot, ctx);
+
   const emergency = input.urgency === "emergency";
   if (emergency) await fileEmergencyTask(input, leadId, ctx);
 
   logger.info(
-    { orgId: ctx.orgId, tool: "book_visit", leadId, jobId: job.value.props.id, lane: input.lane, emergency },
+    { orgId: ctx.orgId, tool: "book_visit", leadId, jobId, lane: input.lane, emergency },
     "frontdesk.book_visit.booked",
   );
-  const slot = slotPhrase(input, ctx.deps.clock.now());
   return {
     speak: confirmationSpeak(input, settings, slot),
     data: { kind: kindForLane(input.lane), emergency },

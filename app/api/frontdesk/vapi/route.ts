@@ -12,6 +12,7 @@ import {
 import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { CreateTaskUseCase, DrizzleTaskRepository } from "@mallet/tasks";
 import { CreateManualJobUseCase, CreateVisitUseCase, DrizzleJobRepository } from "@mallet/jobs";
+import { LoggingNotificationSender, type NotificationSender } from "@mallet/notifications";
 import { getAppDeps } from "@/trpc/di";
 import {
   parseServerMessage,
@@ -26,6 +27,7 @@ import {
   takeMessageTool,
   checkAvailabilityTool,
   bookVisitTool,
+  requestQuoteTool,
   toVoiceToolSpec,
   voicePrincipal,
   verifyVapiSecret,
@@ -50,7 +52,12 @@ export const dynamic = "force-dynamic";
 
 // The voice tool whitelist. The whitelist IS the guardrail (a live call cannot pause for approval)
 // — only these tools can ever run. PR B adds check_availability + book_visit; the rest follow.
-const VOICE_TOOLS: readonly VoiceTool[] = [takeMessageTool, checkAvailabilityTool, bookVisitTool];
+const VOICE_TOOLS: readonly VoiceTool[] = [
+  takeMessageTool,
+  checkAvailabilityTool,
+  bookVisitTool,
+  requestQuoteTool,
+];
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -193,8 +200,9 @@ const handleToolCalls = async (
   tx: TenantTx,
 ): Promise<Response> => {
   const ledger = new DrizzleToolInvocationLedger(tx, orgId);
+  const notificationSender = resolveNotificationSender();
   const runner = new RunToolCallsUseCase(VOICE_TOOLS, ledger, (base) =>
-    buildVoiceToolDeps(base.tx, base.orgId),
+    buildVoiceToolDeps(base.tx, base.orgId, notificationSender),
   );
   const out = await runner.exec({
     vapiCallId: message.callId ?? "",
@@ -246,10 +254,16 @@ const handleEndOfCall = async (
 // ── Composition helpers ─────────────────────────────────────────────────────────
 
 // Build the voice tools' dependencies from THIS call's tenant tx (mirrors ai-router drive()):
-// an outbox-bound bus so a tool's emits are atomic with its writes, the two write use-cases, and
-// the two query-only readers check_availability needs (org hours + open schedule). Every port is
-// tenant-tx-scoped so nothing reaches drizzle outside withTenant.
-const buildVoiceToolDeps = (tx: TenantTx, orgId: OrgId): VoiceToolDeps => {
+// an outbox-bound bus so a tool's emits are atomic with its writes, the write use-cases, and the
+// query-only readers. The comms sender is request-independent (the SMS port needs no tx — it's the
+// composition root's channel router, degrading to the logging stub while A2P is blocked) so it's
+// resolved once and passed in. Every DB port is tenant-tx-scoped so nothing reaches drizzle outside
+// withTenant.
+const buildVoiceToolDeps = (
+  tx: TenantTx,
+  orgId: OrgId,
+  notificationSender: NotificationSender,
+): VoiceToolDeps => {
   const bus = new OutboxEventBus(tx, orgId);
   // One tenant-scoped job repository shared by the two write use-cases book_visit drives: create the
   // manual job, then seed its first visit (the server-side caller does this itself — no client flow
@@ -262,11 +276,18 @@ const buildVoiceToolDeps = (tx: TenantTx, orgId: OrgId): VoiceToolDeps => {
     createTask: buildCreateTask(tx, orgId),
     settings: new DrizzleSettingsReader(tx, orgId),
     availability: new DrizzleAvailabilityReader(tx, orgId),
+    notificationSender,
     bus,
     clock: systemClock,
     ids: uuidGenerator,
   };
 };
+
+// The comms sender from the composition root. Optional in AppDeps (tests omit it) so we fall back to
+// the logging stub — unconfigured comms degrade to a logged no-op, never an error (book_visit's SMS
+// is a best-effort background send).
+const resolveNotificationSender = (): NotificationSender =>
+  getAppDeps().notificationSender ?? new LoggingNotificationSender(systemClock);
 
 const buildCreateTask = (tx: TenantTx, orgId: OrgId): CreateTaskUseCase =>
   new CreateTaskUseCase(new DrizzleTaskRepository(tx, orgId), systemClock, uuidGenerator);

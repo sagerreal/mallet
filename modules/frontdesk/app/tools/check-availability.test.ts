@@ -7,6 +7,7 @@ import type { SettingsReader } from "../../domain/assistant";
 import type { AvailabilityReader, AvailabilitySnapshot } from "../../domain/availability";
 import type { BookedVisit } from "../slots";
 import { checkAvailabilityTool } from "./check-availability";
+import { inertNotificationSender } from "./test-support";
 import type { VoiceToolContext, VoiceToolDeps } from "./tool-result";
 
 const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
@@ -49,6 +50,7 @@ const buildCtx = (args: {
     createTask: {} as never,
     settings: fakeSettings(args.settings),
     availability: fakeAvailability(args.snapshot),
+    notificationSender: inertNotificationSender(),
     bus: { async emit() {} },
     clock: new FixedClock(args.now ?? TUE_0700),
     ids: { newId: () => "id-1" },

@@ -9,6 +9,7 @@ import { OutboxEventBus } from "@mallet/shared/outbox";
 import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { CreateTaskUseCase, DrizzleTaskRepository } from "@mallet/tasks";
 import { CreateManualJobUseCase, CreateVisitUseCase, DrizzleJobRepository } from "@mallet/jobs";
+import { LoggingNotificationSender } from "@mallet/notifications";
 import { bookVisitTool } from "./book-visit";
 import { DrizzleSettingsReader } from "../../infra/drizzle-settings-reader";
 import { DrizzleAvailabilityReader } from "../../infra/drizzle-availability-reader";
@@ -47,6 +48,8 @@ const buildDeps = (tx: TenantTx, org: OrgId): VoiceToolDeps => {
     createTask: new CreateTaskUseCase(new DrizzleTaskRepository(tx, org), systemClock, uuidGenerator),
     settings: new DrizzleSettingsReader(tx, org),
     availability: new DrizzleAvailabilityReader(tx, org),
+    // The confirmation SMS degrades to the logging stub (A2P-blocked) — never fails the booking.
+    notificationSender: new LoggingNotificationSender(systemClock),
     bus,
     clock: systemClock,
     ids: uuidGenerator,

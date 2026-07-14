@@ -44,6 +44,8 @@ import {
   BOOK_VISIT_INVALID_PHONE_SPEAK,
   BOOK_VISIT_ERROR_SPEAK,
 } from "./book-visit";
+import { BOOKING_CONFIRMATION_KIND, confirmationSms } from "./booking-confirmation";
+import { recordingNotificationSender, type RecordingNotificationSender, type SendMode } from "./test-support";
 import type { VoiceToolContext, VoiceToolDeps } from "./tool-result";
 
 // ---------------------------------------------------------------------------
@@ -209,6 +211,7 @@ interface Harness {
   leads: FakeLeadRepository;
   jobs: FakeJobStore;
   tasks: FakeTaskRepository;
+  sms: RecordingNotificationSender;
 }
 
 const buildHarness = (over?: {
@@ -218,6 +221,7 @@ const buildHarness = (over?: {
   createManualJob?: CreateManualJobUseCase;
   createVisit?: CreateVisitUseCase;
   createTask?: CreateTaskUseCase;
+  smsMode?: SendMode;
 }): Harness => {
   const bus = new InMemoryEventBus();
   const ids = seqIds();
@@ -226,6 +230,7 @@ const buildHarness = (over?: {
   const jobRepo = asJobRepository(jobs);
   const tasks = new FakeTaskRepository();
   const settings = over?.settings === undefined ? settingsFrom() : over.settings;
+  const sms = recordingNotificationSender(over?.smsMode ?? "ok");
 
   const deps: VoiceToolDeps = {
     ensureCustomer: new EnsureCustomerUseCase(over?.leads ?? leads, bus, CLOCK),
@@ -235,11 +240,12 @@ const buildHarness = (over?: {
     createTask: over?.createTask ?? new CreateTaskUseCase(tasks, CLOCK, ids),
     settings: fakeSettings(settings),
     availability: { async read() { return { crewCount: 0, visits: [] }; } },
+    notificationSender: sms,
     bus,
     clock: CLOCK,
     ids,
   };
-  return { ctx: { tx: {} as never, orgId: ORG, principal: PRINCIPAL, deps }, leads, jobs, tasks };
+  return { ctx: { tx: {} as never, orgId: ORG, principal: PRINCIPAL, deps }, leads, jobs, tasks, sms };
 };
 
 const REPAIR_INPUT = {
@@ -434,5 +440,73 @@ describe("bookVisitTool", () => {
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     expect(result.speak).toBe(BOOK_VISIT_ERROR_SPEAK);
     expect(h2.jobs.jobs.size).toBe(0);
+  });
+
+  // ── booking-confirmation SMS (fired from inside handle, once, after CreateVisit succeeds) ──
+
+  it("repair: sends ONE confirmation SMS keyed on the job id, to the parsed phone, with brand + STOP", async () => {
+    await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+
+    const jobId = onlyJob(h).props.id;
+    expect(h.sms.sent).toHaveLength(1);
+    const cmd = h.sms.sent[0]!;
+    expect(cmd.orgId).toBe(ORG);
+    expect(cmd.channel).toBe("sms");
+    expect(cmd.to).toBe(asPhone("+19255550182"));
+    expect(cmd.kind).toBe(BOOKING_CONFIRMATION_KIND);
+    expect(cmd.idempotencyKey).toBe(`booking-confirm-${jobId}`);
+    // brand name from settings (fixture default) + STOP opt-out language
+    expect(cmd.body).toContain("My Business");
+    expect(cmd.body).toContain("STOP");
+    // the same slot phrase book_visit speaks ("Thursday morning")
+    expect(cmd.body).toContain("Thursday morning");
+    // the body matches the pure builder exactly (no drift between helper + send)
+    expect(cmd.body).toBe(confirmationSms("My Business", "Thursday morning"));
+  });
+
+  it("estimate + flat bookings also send exactly one confirmation SMS", async () => {
+    const estimate = buildHarness();
+    await bookVisitTool.handle({ ...REPAIR_INPUT, lane: "estimate", service_name: "Repipe estimate" }, estimate.ctx);
+    expect(estimate.sms.sent).toHaveLength(1);
+    expect(estimate.sms.sent[0]!.idempotencyKey).toBe(`booking-confirm-${onlyJob(estimate).props.id}`);
+
+    const flat = buildHarness();
+    await bookVisitTool.handle({ ...REPAIR_INPUT, lane: "flat", service_name: "Drain cleaning" }, flat.ctx);
+    expect(flat.sms.sent).toHaveLength(1);
+  });
+
+  it("SMS send returns err: booking STILL succeeds (background-path — no fail)", async () => {
+    const h2 = buildHarness({ smsMode: "err" });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    // the confirmation speak is unchanged — the booking succeeded
+    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.speak).toContain("$89");
+    expect(h2.jobs.jobs.size).toBe(1);
+    expect(h2.sms.sent).toHaveLength(1); // attempted once
+  });
+
+  it("SMS send THROWS: booking STILL succeeds (never throws from the SMS step)", async () => {
+    const h2 = buildHarness({ smsMode: "throw" });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.speak).toContain("$89");
+    expect(h2.jobs.jobs.size).toBe(1);
+  });
+
+  it("invalid phone: never books and never sends an SMS", async () => {
+    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, phone: "not-a-phone" }, h.ctx);
+    expect(result.speak).toBe(BOOK_VISIT_INVALID_PHONE_SPEAK);
+    expect(h.sms.sent).toHaveLength(0);
+  });
+
+  it("a failed booking (job create err) does NOT send an SMS", async () => {
+    const errManualJob = {
+      async exec(): Promise<Result<never, AppError>> {
+        return err(validation("job failed", "svc"));
+      },
+    } as unknown as CreateManualJobUseCase;
+    const h2 = buildHarness({ createManualJob: errManualJob });
+    await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    expect(h2.sms.sent).toHaveLength(0);
   });
 });
