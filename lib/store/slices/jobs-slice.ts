@@ -221,6 +221,17 @@ function patchJob(jobs: Job[], id: string, fn: (j: Job) => Job): Job[] {
   return jobs.map((j) => (j.id === id ? fn(j) : j));
 }
 
+/**
+ * Persistable-line predicate for setJobLines. A server-redacted rate (r === null)
+ * cannot be persisted and never originates from a pricing surface; a blank
+ * description is likewise dropped. The SAME predicate gates the optimistic set
+ * AND the wire payload so the store and DB never diverge (a line the wire drops
+ * must not linger in the store behind the _recentLineWrites guard).
+ */
+function isPersistableLine(l: JobLine): boolean {
+  return l.r != null && l.d.trim().length > 0;
+}
+
 /** True once a visit has crew + day + start. */
 function isPlaced(v: Visit): boolean {
   return !!(v.date && v.techId != null && v.start != null);
@@ -579,25 +590,29 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   //
   // The _recentLineWrites guard (mirroring _recentChecklistWrites) protects the
   // just-written lines during the hydrator stale window so the post-complete
-  // refetch cannot erase them before the write's own reconcile lands.
+  // refetch cannot erase them before the write's own reconcile lands. Because
+  // that guard keeps the STORE lines, the optimistic set applies the SAME
+  // isPersistableLine filter as the wire payload — otherwise a line the wire
+  // dropped would linger in the store for up to the stale window.
   //
   // Never rejects — returns { ok } — so interactive callers surface the failure.
   // ---------------------------------------------------------------------------
   setJobLines: (jobId, lines) => {
     const prior = snapshot(get().jobs, jobId);
-    // 1. Optimistic set.
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines } : j)) }));
+    // Persistable lines only — the SAME predicate feeds the optimistic set and
+    // the wire payload so a line the wire drops never lingers in the store
+    // behind the _recentLineWrites guard (up to the stale window).
+    const persistable = lines.filter(isPersistableLine);
+    // 1. Optimistic set (filtered — matches what the DB will hold).
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: persistable } : j)) }));
 
     const job = get().jobs.find((j) => j.id === jobId);
     // A pure local draft (never persisted — no lead FK) has no DB row to write
     // lines to; keep them store-only, matching updateJob's local-only short-circuit.
     if (!job || job.origin !== JOB_ORIGIN.DB) return Promise.resolve({ ok: true });
 
-    // Map store lines (dollars) → wire lines (integer cents). A server-redacted
-    // rate (r === null) cannot be persisted and never originates from a pricing
-    // surface — drop such lines defensively rather than send a bogus $0 rate.
-    const wireLines = lines
-      .filter((l) => l.r != null && l.d.trim().length > 0)
+    // Map store lines (dollars) → wire lines (integer cents).
+    const wireLines = persistable
       .map((l) => ({
         description: l.d,
         quantity: l.q ?? 1,

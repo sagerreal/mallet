@@ -1085,4 +1085,70 @@ describe("setJobLines persist + refetch survival", () => {
     const job = get().jobs.find((j) => j.id === "j-fail")!;
     expect(job.lines).toEqual(original);
   });
+
+  // Fix 1 (batch 6): the close-out "enter a bill" path (commitBill) persists the
+  // MERGED FULL SET (existing job.lines + the newly-entered bill) through
+  // setJobLines — setLines is a bulk replace, not an append. The persisted
+  // price must survive the post-"Log & send" refetch (recent-line guard),
+  // exactly like the tech-quote / price-builder surfaces.
+  it("persists the merged full set (existing + new bill) and survives a refetch", async () => {
+    const existing = [{ d: "Diagnostic", q: 1, r: 89 }];
+    const merged = [...existing, { d: "Work performed", q: 1, r: 450 }];
+    // Server echoes the merged set back.
+    mockSetLines.mockResolvedValue(makeJobDTO("j-closeout", {
+      lines: [
+        { id: "srv-l1", description: "Diagnostic", quantity: 1, rate: { cents: 8900, currency: "USD" }, cost: null },
+        { id: "srv-l2", description: "Work performed", quantity: 1, rate: { cents: 45000, currency: "USD" }, cost: null },
+      ],
+    }));
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-closeout", origin: "db", lines: existing }]);
+
+    // commitBill passes the complete intended set — not an append delta.
+    const res = await get().setJobLines("j-closeout", merged);
+    expect(res.ok).toBe(true);
+    expect(mockSetLines).toHaveBeenCalledWith({
+      jobId: "j-closeout",
+      lines: [
+        { description: "Diagnostic", quantity: 1, rateCents: 8900, costCents: 0 },
+        { description: "Work performed", quantity: 1, rateCents: 45000, costCents: 0 },
+      ],
+    });
+    // A stale post-"Log & send" refetch (empty lines) must NOT erase the bill.
+    get().setJobs([{ ...draft, id: "j-closeout", origin: "db", lines: [] }]);
+    const job = get().jobs.find((j) => j.id === "j-closeout")!;
+    expect(job.lines).toHaveLength(2);
+    expect(job.lines[1]).toMatchObject({ d: "Work performed", r: 450 });
+  });
+
+  // Fix 2 (batch 6): the optimistic set applies the SAME predicate as the wire
+  // payload (drop r == null / blank description), so a line the wire drops
+  // never lingers in the store behind the _recentLineWrites guard.
+  it("optimistic set drops the same non-persistable lines the wire payload drops", async () => {
+    mockSetLines.mockResolvedValue(makeJobDTO("j-filter", {
+      lines: [
+        { id: "srv-l1", description: "Real line", quantity: 1, rate: { cents: 10000, currency: "USD" }, cost: null },
+      ],
+    }));
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-filter", origin: "db", lines: [] }]);
+
+    // A redacted-rate line (r: null) and a blank-description line must NOT reach
+    // the store optimistically — they never reach the wire either.
+    const mixed = [
+      { d: "Real line", q: 1, r: 100 },
+      { d: "Redacted", q: 1, r: null as unknown as number },
+      { d: "   ", q: 1, r: 200 },
+    ];
+    // Read the store synchronously right after the optimistic set (before await).
+    const p = get().setJobLines("j-filter", mixed);
+    const optimistic = get().jobs.find((j) => j.id === "j-filter")!;
+    expect(optimistic.lines).toHaveLength(1);
+    expect(optimistic.lines[0]).toMatchObject({ d: "Real line", r: 100 });
+    await p;
+    expect(mockSetLines).toHaveBeenCalledWith({
+      jobId: "j-filter",
+      lines: [{ description: "Real line", quantity: 1, rateCents: 10000, costCents: 0 }],
+    });
+  });
 });
