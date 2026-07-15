@@ -11,6 +11,7 @@ export const bookingServiceDTO = z.object({
   price: z.number().min(0).optional(),
   triggers: z.string(),
   emergencyTriggers: z.string().optional(),
+  ballpark: z.string().optional(),
 });
 
 export const bookingCfgDTO = z.object({

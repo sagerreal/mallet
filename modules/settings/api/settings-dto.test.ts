@@ -41,6 +41,23 @@ describe("bookingServiceDTO", () => {
       expect(result.data.emergencyTriggers).toBe("");
     }
   });
+
+  it("parses a service WITHOUT ballpark (optional field absent)", () => {
+    const result = bookingServiceDTO.safeParse(baseService);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ballpark).toBeUndefined();
+    }
+  });
+
+  it("parses a service WITH ballpark", () => {
+    const input = { ...baseService, ballpark: "$150–$300" };
+    const result = bookingServiceDTO.safeParse(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ballpark).toBe("$150–$300");
+    }
+  });
 });
 
 describe("bookingCfgDTO", () => {

@@ -22,6 +22,8 @@ export interface BookingService {
   readonly triggers: string;
   /** Words that mean this service is an EMERGENCY (see today). */
   readonly emergencyTriggers?: string;
+  /** Owner's rough price range the AI may state ONCE on an estimate call (e.g. '$150–$300'). SANCTIONED price. */
+  readonly ballpark?: string;
 }
 
 /**

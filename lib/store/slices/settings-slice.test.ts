@@ -348,6 +348,36 @@ describe("settings-slice persistence", () => {
     expect(payload.booking.services[0]?.emergencyTriggers).toBe("burst pipe, flooding");
   });
 
+  it("buildBookingPayload carries ballpark through per-service objects", () => {
+    const booking = {
+      services: [
+        { name: "Water heater estimate", lane: "estimate" as const, triggers: "water heater, no hot water", ballpark: "$150–$300" },
+      ],
+      notServices: "",
+      serviceFee: 89,
+      feeCredited: true,
+      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      area: { cities: "", radiusMi: 25, originAddress: "" },
+    };
+    const payload = buildBookingPayload(booking);
+    expect(payload.booking.services[0]?.ballpark).toBe("$150–$300");
+  });
+
+  it("buildBookingPayload carries ballpark as undefined when not set on a service", () => {
+    const booking = {
+      services: [
+        { name: "Drain cleaning", lane: "flat" as const, price: 99, triggers: "clogged" },
+      ],
+      notServices: "",
+      serviceFee: 89,
+      feeCredited: true,
+      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      area: { cities: "", radiusMi: 25, originAddress: "" },
+    };
+    const payload = buildBookingPayload(booking);
+    expect(payload.booking.services[0]?.ballpark).toBeUndefined();
+  });
+
   it("buildBookingPayload carries deferKeywords at the cfg level", () => {
     const booking = {
       services: [],

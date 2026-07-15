@@ -57,6 +57,7 @@ export interface BookingService {
   price?: number;
   triggers: string;
   emergencyTriggers?: string;
+  ballpark?: string;
 }
 
 export interface BookingHours {
