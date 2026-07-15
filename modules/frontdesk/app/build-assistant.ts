@@ -45,7 +45,6 @@ const toPromptFacts = (s: OrgSettings): PromptFacts => {
     hoursSatClose: p.hoursSatClose,
     hoursSunOpen: p.hoursSunOpen,
     hoursSunClose: p.hoursSunClose,
-    areaCities: p.areaCities,
     areaRadiusMi: p.areaRadiusMi,
     notServices: p.booking.notServices,
     serviceFee: p.booking.serviceFee,

@@ -16,7 +16,7 @@
  * (field crew, who never reach this page). This port hard-codes role = 'office'.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { BrandingCard } from "./branding-card";
@@ -901,11 +901,12 @@ function SecBooking() {
           <HrRow lbl="Sunday"   oKey="sunOpen" cKey="sunClose" />
         </div>
         <div style={{fontSize:11, textTransform:"uppercase", letterSpacing:".04em", margin:"14px 0 8px"}} className="muted">Service area</div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, maxWidth: 640 }}>
           <div className="field" style={{ margin: 0 }}>
-            <label>Cities served</label>
-            <input type="text" defaultValue={bk.area.cities}
-              onChange={(e) => setBookingArea("cities", e.target.value)}
+            <label>Office address</label>
+            <input type="text" defaultValue={bk.area.originAddress}
+              onChange={(e) => setBookingArea("originAddress", e.target.value)}
+              placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
               style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
           </div>
           <div className="field" style={{ margin: 0 }}>
@@ -914,13 +915,6 @@ function SecBooking() {
               onChange={(e) => setBookingArea("radiusMi", e.target.value)}
               style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
           </div>
-        </div>
-        <div className="field" style={{ marginTop: 10 }}>
-          <label>Dispatch address</label>
-          <input type="text" defaultValue={bk.area.originAddress}
-            onChange={(e) => setBookingArea("originAddress", e.target.value)}
-            placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
-            style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8, maxWidth: 560 }} />
         </div>
       </FoldCard>
 
@@ -1021,6 +1015,14 @@ interface SectionDef {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SetTab>("workspace");
+  // Deep-link support (/settings?tab=booking) — read once on mount; avoids the
+  // useSearchParams/Suspense requirement and any SSR hydration mismatch.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && ["workspace", "sources", "pricing", "booking", "fields", "archive"].includes(t)) {
+      setActiveTab(t as SetTab);
+    }
+  }, []);
   const { data: me } = api.v1.identity.me.useQuery();
   const role = me?.role ?? "office";
 

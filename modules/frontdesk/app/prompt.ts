@@ -22,7 +22,6 @@ export interface PromptFacts {
   readonly hoursSatClose: number;
   readonly hoursSunOpen: number;
   readonly hoursSunClose: number;
-  readonly areaCities: string;
   readonly areaRadiusMi: number;
   readonly notServices: string;
   readonly serviceFee: number;
@@ -118,12 +117,12 @@ const FLAT_PREFIX = "You may state exactly the listed price for this service, th
 const CASE_RULES: readonly string[] = [
   "Gas leak or gas smell: tell the caller to leave the building, call 911 and their gas " +
     "utility now. Do NOT book anything.",
-  "Confirm the caller's city (or address) EARLY, before offering times — you can pass it to " +
-    "check_availability as service_city so an out-of-area caller is caught before you offer a slot. " +
-    "The service area is listed in BUSINESS FACTS above (the named cities within the stated radius).",
-  "Out of service area: if a tool tells you the address is outside the area, or the city is clearly " +
-    "OUTSIDE the listed area, politely say it's outside the area you cover and take a message (offer " +
-    "a referral if you can) — do NOT book an out-of-area job. When it's unclear, book normally.",
+  "Confirm the caller's city (or address) EARLY, before offering times, and pass it to " +
+    "check_availability as service_city — the tool measures the real distance from the shop and " +
+    "catches an out-of-area caller before you offer a slot.",
+  "Out of service area: if a tool tells you the address is outside the area, politely say it's " +
+    "outside the area you cover and take a message (offer a referral if you can) — do NOT book an " +
+    "out-of-area job. When no tool has said so, book normally.",
   // Two-layer emergency rule (industry pattern: always-on safety net + owner words as EXTENSIONS).
   // The generic rule fires with an EMPTY playbook, so a shop that never configured emergency words
   // still gets emergency routing; per-service words sharpen it per trade, they never gate it.
@@ -254,7 +253,7 @@ const buildFactsSection = (f: PromptFacts): string => {
     formatDayHours("Weekdays", f.hoursWdOpen, f.hoursWdClose),
     formatDayHours("Saturday", f.hoursSatOpen, f.hoursSatClose),
     formatDayHours("Sunday", f.hoursSunOpen, f.hoursSunClose),
-    `Service area: ${f.areaCities} (within ${f.areaRadiusMi} miles).`,
+    `Service area: within ${f.areaRadiusMi} miles of the shop — measured by real distance, not city names.`,
     // notServices is owner free text → redact stray prices before interpolating.
     `We do NOT service: ${redactPriceTokens(f.notServices)}. Politely decline these and suggest calling a specialist.`,
     formatFeeLine(f.serviceFee, f.feeCredited),
