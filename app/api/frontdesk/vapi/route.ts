@@ -34,6 +34,7 @@ import {
   checkAvailabilityTool,
   bookVisitTool,
   requestQuoteTool,
+  escalateCallbackTool,
   toVoiceToolSpec,
   voicePrincipal,
   verifyVapiSecret,
@@ -63,6 +64,7 @@ const VOICE_TOOLS: readonly VoiceTool[] = [
   checkAvailabilityTool,
   bookVisitTool,
   requestQuoteTool,
+  escalateCallbackTool,
 ];
 
 const json = (body: unknown, status = 200): Response =>

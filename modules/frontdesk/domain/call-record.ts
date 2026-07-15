@@ -7,6 +7,7 @@ export type CallDisposition =
   | "booked_job"
   | "booked_estimate"
   | "quote_request"
+  | "callback"
   | "message"
   | "emergency"
   | "screened"

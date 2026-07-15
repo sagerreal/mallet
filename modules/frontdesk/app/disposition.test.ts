@@ -67,6 +67,27 @@ describe("deriveDisposition", () => {
       rows: [row("take_message"), row("book_visit")],
       expected: "message",
     },
+    // escalate_callback disposition cases.
+    {
+      name: "escalate_callback → callback",
+      rows: [row("escalate_callback")],
+      expected: "callback",
+    },
+    {
+      name: "callback beats message (escalate_callback + take_message → callback)",
+      rows: [row("take_message"), row("escalate_callback")],
+      expected: "callback",
+    },
+    {
+      name: "booking beats callback (book_visit work + escalate_callback → booked_job)",
+      rows: [row("book_visit", { kind: "work" }), row("escalate_callback")],
+      expected: "booked_job",
+    },
+    {
+      name: "emergency still wins over callback",
+      rows: [row("escalate_callback"), row("book_visit", { emergency: true })],
+      expected: "emergency",
+    },
     {
       name: "an unknown tool alone → no_action",
       rows: [row("some_future_tool")],
