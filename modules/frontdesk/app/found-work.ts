@@ -47,5 +47,10 @@ export function decorateScope(scopeSignal: string | null | undefined): string | 
   if (scopeSignal == null) return null;
   const trimmed = scopeSignal.trim();
   if (!trimmed) return null;
-  return scopeSuggestsFoundWork(trimmed) ? `${FOUND_WORK_PREFIX}${trimmed}` : trimmed;
+  // Idempotent: strip an existing marker first so re-decorating an already-decorated note never
+  // stacks prefixes (decorateScope(decorateScope(x)) === decorateScope(x)).
+  const bare = trimmed.startsWith(FOUND_WORK_PREFIX)
+    ? trimmed.slice(FOUND_WORK_PREFIX.length)
+    : trimmed;
+  return scopeSuggestsFoundWork(bare) ? `${FOUND_WORK_PREFIX}${bare}` : bare;
 }

@@ -123,14 +123,13 @@ describe("decorateScope", () => {
     expect(result).toBe("[likely found-work] rusty pipes");
   });
 
-  it("does NOT double-prefix (idempotent shape)", () => {
-    // If a decorated note is passed in again, it matches 'found-work' only if it actually contains
-    // a keyword. The prefix itself ("likely found-work") contains no FOUND_WORK_KEYWORDS → no
-    // double-prefix for a plain note that was already prefixed.
+  it("is idempotent — re-decorating an already-marked note does NOT stack prefixes", () => {
     const once = decorateScope("the heater is old");
-    // Pass the already-prefixed string through a second time to check it doesn't double-prefix.
-    // The result already starts with "[likely found-work]" which has no keyword, so it won't trigger
-    // another prefix UNLESS the original text with keyword was embedded.
     expect(once).toBe("[likely found-work] the heater is old");
+    // Feed the decorated result back through: the marker is stripped before the keyword check, so
+    // the single prefix is preserved rather than doubled.
+    const twice = decorateScope(once);
+    expect(twice).toBe(once);
+    expect(twice).not.toContain("[likely found-work] [likely found-work]");
   });
 });
