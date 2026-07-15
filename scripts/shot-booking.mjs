@@ -32,8 +32,8 @@ console.log("Logged in");
 await p.goto(base + "/settings", { waitUntil: "networkidle" });
 await p.waitForTimeout(1000);
 
-// Click the "Booking" nav tab
-await p.getByText("Booking").click();
+// Click the "Booking" nav tab (use exact match on the nav item only)
+await p.locator('.navitem').filter({ hasText: /^Booking$/ }).click();
 await p.waitForTimeout(1000);
 
 // ---- screenshot 1: Services & routing card -----------------------------------
@@ -94,40 +94,54 @@ await p.screenshot({ path: "/tmp/ui-hours.png", fullPage: true });
 console.log("shot saved: /tmp/ui-hours.png");
 
 // ---- screenshot 3: Crew hours ------------------------------------------------
-// Click the Crew hours FoldCard to expand it
-const crewFold = p.getByText("Crew hours");
-await crewFold.click();
-await p.waitForTimeout(800);
+// FoldCard structure: div.foldcard > div.fhead (click to toggle) > span.caret + h3 + span.fsum
+// Find the "Crew hours" FoldCard by its h3 text and click its .fhead
 
-// Try to expand the first crew member row (click the chevron/name)
-const crewRows = p.locator('[style*="cursor: pointer"]');
-const crewRowCount = await crewRows.count();
-console.log(`Found ${crewRowCount} clickable rows`);
+// Scroll to bottom so the crew card is in view
+await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+await p.waitForTimeout(500);
 
-// Look for crew member rows specifically (they have the ▸ chevron)
-const chevrons = p.getByText("▸");
-const chevronCount = await chevrons.count();
-console.log(`Found ${chevronCount} crew member chevrons`);
+// Click the fhead containing "Crew hours" h3
+const crewFhead = p.locator('.fhead').filter({ has: p.locator('h3', { hasText: 'Crew hours' }) });
+await crewFhead.click();
+await p.waitForTimeout(1000);
+console.log("Clicked Crew hours fold card");
 
-if (chevronCount > 0) {
-  await chevrons.first().click();
-  await p.waitForTimeout(500);
+// Now the crew card is open. Inside it, each crew member has a collapsible row with
+// a toggle header div (cursor:pointer) containing the crew name and summary
+// These rows use inline style, not a class — click the crew name span (flex:1, fontWeight:600)
+// The crew member row header has: caret span + name span + summary span
+// Let's find them by looking for "Business hours" summary text (the default state)
+const crewMemberHeaders = p.locator('div').filter({
+  has: p.locator('span.muted', { hasText: /Business hours|Custom/ })
+}).filter({
+  has: p.locator('span', { hasText: /▸/ })
+});
 
-  // Change Monday to "Custom hours"
-  const daySelects = p.locator('select').filter({ hasText: "Business hours" });
-  const selectCount = await daySelects.count();
-  console.log(`Found ${selectCount} day selects`);
+const crewHeaderCount = await crewMemberHeaders.count();
+console.log(`Found ${crewHeaderCount} crew member collapsible headers`);
 
-  if (selectCount > 0) {
-    // Change first day to Custom hours
-    await daySelects.first().selectOption("custom");
+if (crewHeaderCount > 0) {
+  // Click the first crew member header to expand it
+  await crewMemberHeaders.first().click();
+  await p.waitForTimeout(800);
+  console.log("Expanded first crew member");
+
+  // Find day-mode selects: they have options "business", "custom", "off"
+  // These are inside the expanded crew section
+  const dayModeSelects = p.locator('select').filter({ has: p.locator('option[value="business"]') });
+  const daySelectCount = await dayModeSelects.count();
+  console.log(`Found ${daySelectCount} day-mode selects`);
+
+  if (daySelectCount > 0) {
+    await dayModeSelects.first().selectOption("custom");
     await p.waitForTimeout(300);
+    console.log("Set first day to Custom hours");
   }
-
-  if (selectCount > 1) {
-    // Change second day to Day off
-    await daySelects.nth(1).selectOption("off");
+  if (daySelectCount > 1) {
+    await dayModeSelects.nth(1).selectOption("off");
     await p.waitForTimeout(300);
+    console.log("Set second day to Day off");
   }
 }
 
