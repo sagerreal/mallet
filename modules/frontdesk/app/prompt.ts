@@ -61,6 +61,9 @@ const TOOL_FLOW: readonly string[] = [
     "and let the caller pick one.",
   "If the caller names a SPECIFIC time (e.g. \"today at 2\"), offer the returned start time that " +
     "contains or is nearest that time — do not ignore their request or push a different time.",
+  "Before you confirm, ask ONE brief question — 'anything else you've noticed, like the age or " +
+    "condition of what's involved?' — and pass their answer to book_visit as scope_signal " +
+    "(skip if they have nothing to add).",
   `Once the caller picks a start time, and ONLY after you have confirmed the details (see CONFIRM ` +
     `below), CALL ${TOOL_NAMES.bookVisit} with the chosen slot_date and slot_start (the picked ` +
     "start time, e.g. \"14:00\"), plus their name, phone, address, the service, and the " +

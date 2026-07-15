@@ -172,6 +172,16 @@ describe("buildSystemPrompt — tools & flow", () => {
     const toolsSection = p.split("## ").find((s) => s.startsWith("TOOLS & FLOW")) ?? "";
     expect(toolsSection).not.toMatch(/\$\d/);
   });
+
+  it("includes the scope question guidance (anything else you've noticed / scope_signal)", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    const toolsSection = p.split("## ").find((s) => s.startsWith("TOOLS & FLOW")) ?? "";
+    // The agent must be instructed to ask the brief scope question before confirm + booking.
+    expect(toolsSection).toMatch(/anything else you've noticed/i);
+    expect(toolsSection).toMatch(/scope_signal/);
+    // Still no dollar amounts in the tools section (price guardrail unaffected).
+    expect(toolsSection).not.toMatch(/\$\d/);
+  });
 });
 
 describe("buildSystemPrompt — confirm before booking", () => {

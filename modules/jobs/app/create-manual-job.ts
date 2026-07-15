@@ -18,6 +18,9 @@ export interface CreateManualJobCommand {
   readonly addr: string | null;
   readonly phone: string | null;
   readonly notes: string | null;
+  // Free-text "anything else noticed?" note from the booking flow (AI front desk). Optional:
+  // office-created jobs omit it; the domain normalises empty/whitespace to null.
+  readonly scope?: string | null;
 }
 
 // A dispatcher creating a standalone job by hand (no source estimate). total is 0:
@@ -62,6 +65,7 @@ export class CreateManualJobUseCase {
       cancelReason: null,
       total: zeroMoney,
       notes: cmd.notes,
+      scope: cmd.scope ?? null,
       checklist: null,
       visits: [],
       createdAt: now,

@@ -29,6 +29,7 @@ const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   cancelReason: null,
   total: zeroMoney,
   notes: null,
+  scope: null,
   checklist: null,
   visits: [],
   createdAt: new Date("2026-06-01T00:00:00Z"),
@@ -315,5 +316,50 @@ describe("Job.create — checklist validation", () => {
     expect(
       Job.create(props({ checklist: { name: "C", items: "oops" as never } })).ok,
     ).toBe(false);
+  });
+});
+
+describe("Job.create — scope field", () => {
+  it("defaults scope to null when omitted from create props", () => {
+    const { scope: _omitted, ...rest } = props();
+    const r = Job.create(rest);
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.scope).toBeNull();
+  });
+
+  it("preserves a valid scope string (trimmed)", () => {
+    const r = Job.create(props({ scope: "  water heater is ~15 years old, original install  " }));
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.scope).toBe("water heater is ~15 years old, original install");
+  });
+
+  it("normalizes empty or whitespace-only scope to null", () => {
+    expect(isOk(Job.create(props({ scope: "" }))) && Job.create(props({ scope: "" })).ok).toBe(true);
+    const emptyR = Job.create(props({ scope: "" }));
+    if (isOk(emptyR)) expect(emptyR.value.props.scope).toBeNull();
+
+    const wsR = Job.create(props({ scope: "   " }));
+    expect(isOk(wsR)).toBe(true);
+    if (isOk(wsR)) expect(wsR.value.props.scope).toBeNull();
+  });
+
+  it("passes null scope through as null", () => {
+    const r = Job.create(props({ scope: null }));
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.scope).toBeNull();
+  });
+
+  it("rejects a scope that exceeds SCOPE_MAX_LENGTH (4000 chars)", () => {
+    const overMax = "x".repeat(4001);
+    const r = Job.create(props({ scope: overMax }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("scope");
+  });
+
+  it("accepts exactly SCOPE_MAX_LENGTH characters (4000)", () => {
+    const atMax = "x".repeat(4000);
+    const r = Job.create(props({ scope: atMax }));
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.scope).toBe(atMax);
   });
 });

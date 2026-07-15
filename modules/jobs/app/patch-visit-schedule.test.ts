@@ -157,6 +157,7 @@ const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
   cancelReason: null,
   total: zeroMoney,
   notes: null,
+  scope: null,
   checklist: null,
   visits: [],
   createdAt: new Date("2026-07-01T00:00:00Z"),

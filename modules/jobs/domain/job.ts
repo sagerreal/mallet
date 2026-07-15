@@ -47,6 +47,7 @@ export const isVisitStatus = (value: string): value is VisitStatus =>
 const isTerminal = (status: JobStatus): boolean => status === "complete" || status === "canceled";
 
 const SVC_MAX_LENGTH = 60;
+export const SCOPE_MAX_LENGTH = 4000;
 
 // Before-you-leave checklist bounds (shared with the router's zod input).
 // Name/text match the checklist TEMPLATE bounds (checklists router: name ≤ 200,
@@ -226,15 +227,19 @@ export interface JobProps {
   readonly cancelReason: string | null;
   readonly total: Money; // integer cents, snapshot from the source estimate at creation
   readonly notes: string | null;
+  readonly scope: string | null; // free-text "anything else noticed?" note from the booking flow
   readonly checklist: JobChecklistProps | null; // optional before-you-leave checklist
   readonly visits: readonly JobVisit[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
 
-// Input to Job.create: kind may be omitted (defaults to "work") so pre-kind callers keep
-// working unchanged while new callers (voice front desk) can book estimate visits.
-export type JobCreateProps = Omit<JobProps, "kind"> & { readonly kind?: JobKind };
+// Input to Job.create: kind and scope may be omitted so pre-existing callers keep compiling.
+// kind defaults to "work"; scope defaults to null (office-created jobs have no scope note).
+export type JobCreateProps = Omit<JobProps, "kind" | "scope"> & {
+  readonly kind?: JobKind;
+  readonly scope?: string | null;
+};
 
 // Scheduled field work. Aggregate root with a status state machine
 // (scheduled → in_progress → complete; scheduled|in_progress → canceled). complete/canceled are
@@ -268,13 +273,18 @@ export class Job {
     if (svc !== null && (svc.length === 0 || svc.length > SVC_MAX_LENGTH)) {
       return err(validation("service type must be 1–60 characters", "svc"));
     }
+    const rawScope = props.scope ?? null;
+    const scope = rawScope === null ? null : rawScope.trim() || null;
+    if (scope !== null && scope.length > SCOPE_MAX_LENGTH) {
+      return err(validation(`scope note must be at most ${SCOPE_MAX_LENGTH} characters`, "scope"));
+    }
     let checklist: JobChecklistProps | null = null;
     if (props.checklist !== null) {
       const validated = normalizeChecklist(props.checklist);
       if (!validated.ok) return validated;
       checklist = validated.value;
     }
-    return ok(new Job({ ...props, num, svc, checklist, kind }));
+    return ok(new Job({ ...props, num, svc, scope, checklist, kind }));
   }
 
   // Replace the visit set — only allowed while the job is not yet terminal.
