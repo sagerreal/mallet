@@ -184,17 +184,22 @@ Surfaces this phase: candidate callbacks appear as a **confirm prompt** on the j
 - Front-desk callback tagging (Phase 2/3 — the `callback_of` field is added now so it's ready).
 - Service→checklist auto-attach (deferred — attachment stays manual for Phase 1, Owen's call).
 
-## Open questions for review
+## Decisions (resolved, Owen 2026-07-16)
 
-1. **Checklist ↔ service link target:** pricebook services (id-bearing, chosen here) vs. the booking
-   playbook services (name-keyed jsonb). Confirm pricebook is the right anchor, or should Phase 1
-   unify them?
-2. **Callback window default (~45 days)** and the "similar service" match rule (same service only, vs.
-   same pricebook category, vs. same lane) — how loose to cast the net before a human confirms.
-3. **Tab name:** "Checklists" (clear to a trade owner) vs. "Standards" (pillar-y) — ship which now?
-4. **Retroactive scan on signup:** run callback detection over imported history immediately (the
-   day-one "here's your callback pattern" demo) — in Phase 1, or hold until the autopsy (Phase 2) can
-   actually act on it?
+- **Checklist attachment stays MANUAL** for Phase 1 — no service link/auto-attach.
+- **Callback window = 45 days**, matched on **same service** (job `svc`); **customer (`lead_id`) is
+  the "same site" key** (address isn't stored on the job — customer is the site proxy). A human
+  confirms the reason (callback / new issue / found-work follow-up).
+- **Tab name = "Checklists".**
+- **Retroactive scan = moot** (fresh orgs have no history) — detection just runs forward; the same
+  code path works over any existing completed jobs, so no special retro job is needed.
+
+## Backend note (found during planning)
+
+`modules/checklists` currently supports create (with initial items) + archive + list only —
+**item-level editing was intentionally removed** (create batches items atomically). So the editor
+needs a new **atomic "update checklist" use-case** (replace name + items in one call — mirrors the
+crew-schedules replace-all-for-user pattern). This is a Phase-1 backend task, not a UI-only wire-up.
 
 ## Success criteria (Phase 1)
 
