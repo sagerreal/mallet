@@ -261,6 +261,8 @@ describe("buildSystemPrompt — case rules", () => {
     // The safety-net examples: active damage/safety signals, trade-agnostic.
     expect(p).toMatch(/actively flowing or flooding/i);
     expect(p).toMatch(/no heat in freezing weather/i);
+    expect(p).toMatch(/no cooling in extreme heat/i);
+    expect(p).toMatch(/vehicle trapped by a stuck garage door/i);
     expect(p).toMatch(/electrical burning smell/i);
     expect(p).toMatch(/can't be secured/i);
     // Still books soonest + notes EMERGENCY (the behavior the old rule carried).
