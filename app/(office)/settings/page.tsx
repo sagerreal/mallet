@@ -817,10 +817,11 @@ function SecBooking() {
           )}
         </div>
         <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "stretch" }}>
-          <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+          <div className="field" style={{ flex: 1, maxWidth: 420, marginBottom: 0 }}>
             <input type="text" id="bkSvc" placeholder="New service name — e.g. Tankless install" value={bkSvc}
               onChange={(e) => setBkSvc(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddService(); }} />
+              onKeyDown={(e) => { if (e.key === "Enter") handleAddService(); }}
+              style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
           </div>
           <button className="btn primary" onClick={handleAddService}>+ Add service</button>
         </div>
@@ -828,15 +829,15 @@ function SecBooking() {
           <label>We don&apos;t do</label>
           <input type="text" defaultValue={bk.notServices}
             onChange={(e) => setBookingField("notServices", e.target.value)}
-            placeholder="e.g. new construction, septic" />
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>The agent politely declines these.</div>
+            placeholder="e.g. new construction, septic"
+            style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8, maxWidth: 560 }} />
         </div>
         <div className="field" style={{ marginTop: 10 }}>
           <label>Hand off to a person</label>
           <input type="text" defaultValue={bk.deferKeywords ?? ""}
             onChange={(e) => setBookingField("deferKeywords", e.target.value)}
-            placeholder="e.g. insurance, claim, adjuster, warranty — the office calls these back" />
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Callers mentioning these get a human callback — e.g. insurance, claim, warranty.</div>
+            placeholder="e.g. insurance, claim, adjuster, warranty — the office calls these back"
+            style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8, maxWidth: 560 }} />
         </div>
       </FoldCard>
 
@@ -873,20 +874,22 @@ function SecBooking() {
           <div className="field" style={{ margin: 0 }}>
             <label>Cities served</label>
             <input type="text" defaultValue={bk.area.cities}
-              onChange={(e) => setBookingArea("cities", e.target.value)} />
+              onChange={(e) => setBookingArea("cities", e.target.value)}
+              style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Radius (miles)</label>
             <input type="number" min={0} defaultValue={bk.area.radiusMi}
-              onChange={(e) => setBookingArea("radiusMi", e.target.value)} />
+              onChange={(e) => setBookingArea("radiusMi", e.target.value)}
+              style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
           </div>
         </div>
         <div className="field" style={{ marginTop: 10 }}>
           <label>Dispatch address</label>
           <input type="text" defaultValue={bk.area.originAddress}
             onChange={(e) => setBookingArea("originAddress", e.target.value)}
-            placeholder="e.g. 200 Ray St, Pleasanton, CA 94566" />
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Where crews start driving from — used to check a job is in range.</div>
+            placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
+            style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8, maxWidth: 560 }} />
         </div>
       </FoldCard>
 
