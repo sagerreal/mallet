@@ -229,6 +229,9 @@ export interface SettingsSlice {
   // booking
   updateBookingService: (index: number, field: keyof BookingService, value: string) => void;
   addBookingService: (name: string) => void;
+  // Append a starter-playbook batch (deduped case-insensitively by name against existing
+  // services) and persist ONCE. Used by trade onboarding — never replaces owner services.
+  seedBookingServices: (services: BookingService[]) => void;
   removeBookingService: (index: number) => void;
   setServiceFee: (n: number) => void;
   setFeeCredited: (b: boolean) => void;
@@ -398,6 +401,17 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
         ...s.booking,
         services: [...s.booking.services, { name: nm, lane: "repair", triggers: "" }],
       },
+    }));
+    persistBooking(get, set, snapshot);
+  },
+
+  seedBookingServices: (services) => {
+    const existing = new Set(get().booking.services.map((x) => x.name.trim().toLowerCase()));
+    const fresh = services.filter((x) => !existing.has(x.name.trim().toLowerCase()));
+    if (fresh.length === 0) return;
+    const snapshot = get().booking;
+    set((s) => ({
+      booking: { ...s.booking, services: [...s.booking.services, ...fresh] },
     }));
     persistBooking(get, set, snapshot);
   },
