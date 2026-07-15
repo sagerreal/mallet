@@ -3,6 +3,14 @@
 import { useState } from "react";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { Segmented } from "./segmented";
+import {
+  routeOf,
+  laneFor,
+  parseBallpark,
+  formatBallpark,
+  type BookingRoute,
+  type BallparkRange,
+} from "./booking-lanes";
 
 // The service list row + in-place editor for Settings → Booking → Services & routing.
 // Styling rides the app's design system (prototype.css): `.field` for labeled inputs,
@@ -11,24 +19,17 @@ import { Segmented } from "./segmented";
 
 // ---- Lane copy ------------------------------------------------------------------
 
-const LANE_LABEL: Record<BookingService["lane"], string> = {
-  repair: "Repair",
-  estimate: "Estimate",
-  flat: "Flat",
-};
-
-function laneChipLabel(service: BookingService): string {
-  if (service.lane === "flat" && service.price != null) {
-    return `Flat $${service.price}`;
-  }
-  return LANE_LABEL[service.lane];
-}
-
-const LANE_OPTIONS = [
-  { value: "repair" as const, label: "Repair" },
-  { value: "estimate" as const, label: "Estimate" },
-  { value: "flat" as const, label: "Flat price" },
+// The OWNER-facing binary: a service either books a job right away or gets quoted first.
+// Price is an attribute of a bookable service, not a third kind of service (storage still
+// keeps the repair/estimate/flat lanes — see booking-lanes.ts for the mapping).
+const ROUTE_OPTIONS = [
+  { value: "book" as const, label: "Book it" },
+  { value: "quote" as const, label: "Quote first" },
 ] as const;
+
+function routeChipLabel(service: BookingService): string {
+  return routeOf(service.lane) === "quote" ? "Quote first" : "Book it";
+}
 
 // Compact field sizing for this tab — overrides the roomier global .field input so booking
 // fields read as crisp single-line inputs, not paragraph boxes. Width-capped for the same reason.
@@ -113,7 +114,10 @@ function CollapsedRow({
         <span style={CHIP_STYLE}>⚡ emergency</span>
       )}
       {(service.ballpark ?? "").length > 0 && <span style={CHIP_STYLE}>~ ballpark</span>}
-      <span style={CHIP_STYLE}>{laneChipLabel(service)}</span>
+      {service.lane === "flat" && (service.price ?? 0) > 0 && (
+        <span style={CHIP_STYLE}>{`$${service.price}`}</span>
+      )}
+      <span style={CHIP_STYLE}>{routeChipLabel(service)}</span>
     </button>
   );
 }
@@ -127,15 +131,31 @@ function ExpandedEditor({
   onRemove,
   isLast,
 }: Pick<ServiceRowProps, "service" | "index" | "updateBookingService" | "onRemove" | "isLast">) {
-  const [lane, setLane] = useState<BookingService["lane"]>(service.lane);
+  const [route, setRoute] = useState<BookingRoute>(routeOf(service.lane));
+  const [price, setPrice] = useState<string>(
+    service.lane === "flat" && (service.price ?? 0) > 0 ? String(service.price) : "",
+  );
+  const [ballpark, setBallpark] = useState<BallparkRange>(parseBallpark(service.ballpark ?? ""));
   const [showEmergency, setShowEmergency] = useState(
     (service.emergencyTriggers ?? "").length > 0,
   );
   const [showBallpark, setShowBallpark] = useState((service.ballpark ?? "").length > 0);
 
-  function handleLaneChange(next: BookingService["lane"]) {
-    setLane(next);
-    updateBookingService(index, "lane", next);
+  // Route + price DERIVE the stored lane (book+price=flat, book alone=repair, quote=estimate).
+  function handleRouteChange(next: BookingRoute) {
+    setRoute(next);
+    updateBookingService(index, "lane", laneFor(next, price));
+  }
+
+  function handlePriceChange(v: string) {
+    setPrice(v);
+    updateBookingService(index, "price", v);
+    updateBookingService(index, "lane", laneFor(route, v));
+  }
+
+  function handleBallparkChange(next: BallparkRange) {
+    setBallpark(next);
+    updateBookingService(index, "ballpark", formatBallpark(next));
   }
 
   return (
@@ -157,18 +177,19 @@ function ExpandedEditor({
       </div>
 
       <div className="field">
-        <label>How it&apos;s priced</label>
+        <label>Job type</label>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <Segmented value={lane} onChange={handleLaneChange} options={LANE_OPTIONS} />
-          {lane === "flat" && (
+          <Segmented value={route} onChange={handleRouteChange} options={ROUTE_OPTIONS} aria-label="Job type" />
+          {route === "book" && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 14 }}>$</span>
               <input
                 type="number"
                 min={0}
-                defaultValue={service.price ?? 0}
-                onChange={(e) => updateBookingService(index, "price", e.target.value)}
-                style={{ ...COMPACT_INPUT, width: 110 }}
+                value={price}
+                placeholder="priced on site"
+                onChange={(e) => handlePriceChange(e.target.value)}
+                style={{ ...COMPACT_INPUT, width: 140 }}
               />
             </div>
           )}
@@ -186,7 +207,7 @@ function ExpandedEditor({
         />
       </div>
 
-      {showEmergency && (
+      {route === "book" && showEmergency && (
         <div className="field">
           <label>Emergency words</label>
           <input
@@ -199,16 +220,28 @@ function ExpandedEditor({
         </div>
       )}
 
-      {showBallpark && (
+      {route === "quote" && showBallpark && (
         <div className="field">
-          <label>Ballpark range</label>
-          <input
-            type="text"
-            defaultValue={service.ballpark ?? ""}
-            onChange={(e) => updateBookingService(index, "ballpark", e.target.value)}
-            placeholder="e.g. $150–$300, said once — exact price after the visit"
-            style={COMPACT_INPUT}
-          />
+          <label>Ballpark range ($)</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="number"
+              min={0}
+              value={ballpark.low}
+              placeholder="150"
+              onChange={(e) => handleBallparkChange({ ...ballpark, low: e.target.value })}
+              style={{ ...COMPACT_INPUT, width: 120 }}
+            />
+            <span className="muted">to</span>
+            <input
+              type="number"
+              min={0}
+              value={ballpark.high}
+              placeholder="300"
+              onChange={(e) => handleBallparkChange({ ...ballpark, high: e.target.value })}
+              style={{ ...COMPACT_INPUT, width: 120 }}
+            />
+          </div>
         </div>
       )}
 
@@ -226,12 +259,12 @@ function ExpandedEditor({
         }}
       >
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {!showEmergency && (
+          {route === "book" && !showEmergency && (
             <button type="button" className="btn sm ghost" onClick={() => setShowEmergency(true)}>
               + Emergency words
             </button>
           )}
-          {!showBallpark && (
+          {route === "quote" && !showBallpark && (
             <button type="button" className="btn sm ghost" onClick={() => setShowBallpark(true)}>
               + Ballpark range
             </button>

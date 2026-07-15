@@ -9,11 +9,11 @@ import { Modal } from "@/components/modals/modal";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { Segmented } from "./segmented";
 import { COMPACT_INPUT } from "./booking-service-card";
+import { laneFor, type BookingRoute } from "./booking-lanes";
 
-const LANE_OPTIONS = [
-  { value: "repair" as const, label: "Repair" },
-  { value: "estimate" as const, label: "Estimate" },
-  { value: "flat" as const, label: "Flat price" },
+const ROUTE_OPTIONS = [
+  { value: "book" as const, label: "Book it" },
+  { value: "quote" as const, label: "Quote first" },
 ] as const;
 
 export interface NewServiceInput {
@@ -33,20 +33,21 @@ export function AddServiceModal({
   onAdd: (svc: NewServiceInput) => void;
 }) {
   const [name, setName] = useState("");
-  const [lane, setLane] = useState<BookingService["lane"]>("repair");
+  const [route, setRoute] = useState<BookingRoute>("book");
   const [price, setPrice] = useState("");
   const [triggers, setTriggers] = useState("");
 
   function reset() {
     setName("");
-    setLane("repair");
+    setRoute("book");
     setPrice("");
     setTriggers("");
   }
 
   function handleAdd() {
     if (!name.trim()) return;
-    onAdd({ name: name.trim(), lane, price, triggers });
+    // The stored lane derives from the binary route + optional price (booking-lanes.ts).
+    onAdd({ name: name.trim(), lane: laneFor(route, price), price, triggers });
     reset();
     onClose();
   }
@@ -71,18 +72,19 @@ export function AddServiceModal({
       </div>
 
       <div className="field">
-        <label>How it&apos;s priced</label>
+        <label>Job type</label>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <Segmented value={lane} onChange={setLane} options={LANE_OPTIONS} aria-label="How it's priced" />
-          {lane === "flat" && (
+          <Segmented value={route} onChange={setRoute} options={ROUTE_OPTIONS} aria-label="Job type" />
+          {route === "book" && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontWeight: 700, fontSize: 14 }}>$</span>
               <input
                 type="number"
                 min={0}
                 value={price}
+                placeholder="priced on site"
                 onChange={(e) => setPrice(e.target.value)}
-                style={{ ...COMPACT_INPUT, width: 110 }}
+                style={{ ...COMPACT_INPUT, width: 140 }}
               />
             </div>
           )}
