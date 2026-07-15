@@ -30,6 +30,8 @@ import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { ServiceRow } from "./booking-service-card";
 import { AddServiceModal, type NewServiceInput } from "./add-service-modal";
+import { StarterPlaybookModal } from "./starter-playbook-modal";
+import { playbookFor } from "./trade-playbooks";
 import { TagInput } from "./tag-input";
 import { HourSelect } from "./hour-select";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -722,6 +724,16 @@ function SecBooking() {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [starterOpen, setStarterOpen] = useState(false);
+  const seedBookingServices = useAppStore((st) => st.seedBookingServices);
+  const setTrade = useAppStore((st) => st.setTrade);
+
+  function handleSeedTrade(tradeKey: string) {
+    const playbook = playbookFor(tradeKey);
+    if (!playbook) return;
+    seedBookingServices(playbook.services);
+    if (tradeKey !== "other") setTrade(playbook.label);
+  }
 
   // Modal-driven add: create the named service, then fill lane/price/description on the new
   // index (append order is stable — addBookingService pushes to the end).
@@ -808,7 +820,8 @@ function SecBooking() {
       </h3>
 
       <FoldCard title="Services &amp; routing" defaultOpen summary={`${bk.services.length} services`}>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10 }}>
+          <button className="btn ghost" onClick={() => setStarterOpen(true)}>Starter playbook</button>
           <button className="btn primary" onClick={() => setAddOpen(true)}>+ Add service</button>
         </div>
         {/* List-first accordion: compact rows, single expanded editor */}
@@ -826,12 +839,18 @@ function SecBooking() {
             />
           ))}
           {bk.services.length === 0 && (
-            <div className="muted" style={{ fontSize: 13, padding: "12px 14px" }}>
-              No services yet — use + Add service above.
+            <div style={{ padding: "22px 14px", textAlign: "center" }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
+                Pick your trade to load starter services
+              </div>
+              <button className="btn primary" onClick={() => setStarterOpen(true)}>
+                Choose trade
+              </button>
             </div>
           )}
         </div>
         <AddServiceModal open={addOpen} onClose={() => setAddOpen(false)} onAdd={handleAddService} />
+        <StarterPlaybookModal open={starterOpen} onClose={() => setStarterOpen(false)} onSeed={handleSeedTrade} />
       </FoldCard>
 
       <FoldCard title="Call rules" summary={callRulesSummary(bk.notServices, bk.deferKeywords ?? "")}>

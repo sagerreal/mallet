@@ -299,6 +299,38 @@ describe("settings-slice persistence", () => {
     expect(store.get().sources[0]?.id).toBe("src99");
   });
 
+  // --- seedBookingServices (trade starter playbooks) ---------------------------
+
+  it("seedBookingServices appends the batch, persists once, and skips duplicates by name", async () => {
+    const store = makeStore();
+    const before = store.get().booking.services.length;
+    store.get().seedBookingServices([
+      { name: "Leak repair", lane: "repair", triggers: "leak, dripping" },
+      { name: "Repipe / larger job", lane: "estimate", triggers: "repipe" },
+    ]);
+    expect(store.get().booking.services.length).toBe(before + 2);
+    await Promise.resolve();
+    expect(mockUpdateConfig).toHaveBeenCalledTimes(1);
+
+    // Re-seeding the same names (any case) adds nothing and does not persist again.
+    store.get().seedBookingServices([
+      { name: "LEAK REPAIR", lane: "repair", triggers: "x" },
+    ]);
+    expect(store.get().booking.services.length).toBe(before + 2);
+    await Promise.resolve();
+    expect(mockUpdateConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("seedBookingServices rolls back on rejection", async () => {
+    mockUpdateConfig.mockRejectedValueOnce(new Error("fail"));
+    const store = makeStore();
+    const before = store.get().booking.services.length;
+    store.get().seedBookingServices([{ name: "Storm work", lane: "repair", triggers: "tree fell" }]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.get().booking.services.length).toBe(before);
+  });
+
   // --- buildBookingPayload ---------------------------------------------------
 
   it("buildBookingPayload produces the correct flat payload", () => {

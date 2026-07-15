@@ -130,8 +130,9 @@ const CASE_RULES: readonly string[] = [
   // Gas is deliberately EXCLUDED from the bookable path + the shutoff coaching — a gas leak is the
   // 911 rule above (leave the building), never a booking and never a "go touch the valve".
   "Emergency (always on): if the caller describes ACTIVE property damage or a safety risk — water " +
-    "or sewage actively flowing or flooding, no heat in freezing weather, an electrical burning " +
-    "smell or sparking, or a home that can't be secured — treat it as an EMERGENCY even if it " +
+    "or sewage actively flowing or flooding, no heat in freezing weather, no cooling in extreme " +
+    "heat, an electrical burning smell or sparking, a vehicle trapped by a stuck garage door, or " +
+    "a home that can't be secured — treat it as an EMERGENCY even if it " +
     "matches no service's emergency words: book the soonest slot and note EMERGENCY on the " +
     "booking; coach the caller to shut off water or power at the source if something is actively " +
     "leaking or damaging property. Exception: a gas leak is 911 — leave the building, never a booking.",
