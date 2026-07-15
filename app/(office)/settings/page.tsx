@@ -746,7 +746,12 @@ function SecBooking() {
           <>
             <HourSelect
               value={ov}
-              onChange={(h) => setBookingHours(oKey, h)}
+              onChange={(h) => {
+                setBookingHours(oKey, h);
+                // Keep the range valid: close stays after open (an inverted range reads as a
+                // closed day to the slot math, silently killing that day's availability).
+                if (h >= cv) setBookingHours(cKey, Math.min(h + 1, 24));
+              }}
               min={0}
               max={23}
             />
@@ -754,7 +759,7 @@ function SecBooking() {
             <HourSelect
               value={cv}
               onChange={(h) => setBookingHours(cKey, h)}
-              min={1}
+              min={ov + 1}
               max={24}
             />
           </>

@@ -141,7 +141,15 @@ function WeekdayRow({ dayLabel, weekday, draft, onChange }: WeekdayRowProps) {
         <>
           <HourSelect
             value={draft.openHour}
-            onChange={(h) => onChange(weekday, { ...draft, openHour: h })}
+            onChange={(h) =>
+              // Keep the range valid: close stays after open (an inverted custom range reads as
+              // a day off to the slot math, silently killing that crew-day's availability).
+              onChange(weekday, {
+                ...draft,
+                openHour: h,
+                closeHour: h >= draft.closeHour ? Math.min(h + 1, 24) : draft.closeHour,
+              })
+            }
             min={0}
             max={23}
           />
@@ -149,7 +157,7 @@ function WeekdayRow({ dayLabel, weekday, draft, onChange }: WeekdayRowProps) {
           <HourSelect
             value={draft.closeHour}
             onChange={(h) => onChange(weekday, { ...draft, closeHour: h })}
-            min={1}
+            min={draft.openHour + 1}
             max={24}
           />
         </>
@@ -168,9 +176,12 @@ interface CrewRowProps {
 function CrewRow({ member, allEntries }: CrewRowProps) {
   const utils = api.useUtils();
   const [open, setOpen] = useState(false);
-  const initialDraft = buildDraft(allEntries, member.id);
-  const [draft, setDraft] = useState<CrewDraft>(initialDraft);
-  const seededRef = useRef(JSON.stringify(initialDraft));
+  // Lazy init: seed the draft ONCE at mount (buildDraft must not re-run on every parent render —
+  // a sibling's save invalidates the list query and re-renders us; the local draft is the source
+  // of truth for in-progress edits until OUR save succeeds).
+  const [draft, setDraft] = useState<CrewDraft>(() => buildDraft(allEntries, member.id));
+  const seededRef = useRef<string>("");
+  if (seededRef.current === "") seededRef.current = JSON.stringify(draft);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
