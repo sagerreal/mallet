@@ -134,7 +134,7 @@ const CASE_RULES: readonly string[] = [
     "smell or sparking, or a home that can't be secured — treat it as an EMERGENCY even if it " +
     "matches no service's emergency words: book the soonest slot and note EMERGENCY on the " +
     "booking; coach the caller to shut off water or power at the source if something is actively " +
-    "leaking or damaging property. Exception: a gas leak is 911 (see above), never a booking.",
+    "leaking or damaging property. Exception: a gas leak is 911 — leave the building, never a booking.",
   "A service's EMERGENCY words (listed under SERVICES) EXTEND that rule — a problem matching them " +
     "is also an emergency. They are additions, never the only emergencies.",
   `Hand off to a human callback — CALL ${TOOL_NAMES.escalateCallback} — for anything you can't ` +

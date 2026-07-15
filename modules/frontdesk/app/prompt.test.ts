@@ -278,7 +278,7 @@ describe("buildSystemPrompt — case rules", () => {
   it("gas stays 911-only: excluded from the bookable emergency path AND the shutoff coaching", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     // The emergency rule explicitly defers gas to the 911 rule (a gas leak is never a booking).
-    expect(p).toMatch(/gas leak is 911 .*never a booking/i);
+    expect(p).toMatch(/gas leak is 911 — leave the building, never a booking/i);
     // The shutoff coaching names water/power only — never coach a caller to touch a gas valve
     // (the gas rule says LEAVE the building; coaching a gas shutoff would contradict it).
     expect(p).toMatch(/shut off water or power at the source/i);
