@@ -20,6 +20,8 @@ export interface BookingService {
   /** Price in DOLLARS (matches the prototype control — not cents). Optional for "estimate" lanes. */
   readonly price?: number;
   readonly triggers: string;
+  /** Words that mean this service is an EMERGENCY (see today). */
+  readonly emergencyTriggers?: string;
 }
 
 /**
@@ -34,6 +36,8 @@ export interface BookingCfg {
   /** Service/diagnostic fee in DOLLARS (not cents). */
   readonly serviceFee: number;
   readonly feeCredited: boolean;
+  /** Words that mean the AI should hand off to a human callback (insurance/claim/warranty/etc.). */
+  readonly deferKeywords?: string;
 }
 
 // --- Props ---------------------------------------------------------------

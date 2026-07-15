@@ -56,6 +56,7 @@ export interface BookingService {
   lane: "repair" | "flat" | "estimate";
   price?: number;
   triggers: string;
+  emergencyTriggers?: string;
 }
 
 export interface BookingHours {
@@ -79,6 +80,7 @@ export interface BookingCfg {
   notServices: string;
   serviceFee: number; // dollars (not cents) — matches the server bookingCfgDTO
   feeCredited: boolean;
+  deferKeywords?: string;
   hours: BookingHours;
   area: BookingArea;
 }
@@ -136,6 +138,7 @@ export interface BookingPayload {
     notServices: string;
     serviceFee: number;
     feeCredited: boolean;
+    deferKeywords?: string;
   };
   hoursWdOpen: number;
   hoursWdClose: number;
@@ -161,6 +164,7 @@ export function buildBookingPayload(b: BookingCfg): BookingPayload {
       notServices: b.notServices,
       serviceFee: b.serviceFee,
       feeCredited: b.feeCredited,
+      deferKeywords: b.deferKeywords,
     },
     hoursWdOpen: b.hours.wdOpen,
     hoursWdClose: b.hours.wdClose,
@@ -227,7 +231,7 @@ export interface SettingsSlice {
   removeBookingService: (index: number) => void;
   setServiceFee: (n: number) => void;
   setFeeCredited: (b: boolean) => void;
-  setBookingField: (field: "notServices", value: string) => void;
+  setBookingField: (field: "notServices" | "deferKeywords", value: string) => void;
   setBookingHours: (key: keyof BookingHours, value: number) => void;
   setBookingArea: (field: keyof BookingArea, value: string) => void;
 

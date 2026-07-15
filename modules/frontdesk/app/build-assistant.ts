@@ -51,6 +51,7 @@ const toPromptFacts = (s: OrgSettings): PromptFacts => {
     serviceFee: p.booking.serviceFee,
     feeCredited: p.booking.feeCredited,
     services: p.booking.services,
+    deferKeywords: p.booking.deferKeywords,
   };
 };
 

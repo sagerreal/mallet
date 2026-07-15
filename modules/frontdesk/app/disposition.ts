@@ -11,6 +11,7 @@ export interface LedgerRow {
 // Tool names that map to a booking. book_visit's result.data.kind distinguishes work vs estimate.
 const BOOK_VISIT = "book_visit";
 const REQUEST_QUOTE = "request_quote";
+const ESCALATE_CALLBACK = "escalate_callback";
 const TAKE_MESSAGE = "take_message";
 
 // Read result.data as a record, tolerating any malformed/absent payload (never throws).
@@ -27,10 +28,10 @@ const dataOf = (result: unknown): Record<string, unknown> => {
 /**
  * Derive the call disposition from its tool-invocation rows. Deterministic, pure, and total.
  *
- * Precedence (highest wins): emergency > booked_estimate > booked_job > quote_request > message >
- * no_action. Emergency is a cross-cutting flag — ANY tool result carrying `data.emergency === true`
- * makes the whole call an emergency regardless of what else ran (an emergency booking must surface
- * as an emergency, not merely as a booked job).
+ * Precedence (highest wins): emergency > booked_estimate > booked_job > quote_request > callback >
+ * message > no_action. Emergency is a cross-cutting flag — ANY tool result carrying
+ * `data.emergency === true` makes the whole call an emergency regardless of what else ran (an
+ * emergency booking must surface as an emergency, not merely as a booked job).
  */
 export const deriveDisposition = (rows: readonly LedgerRow[]): CallDisposition => {
   const emergency = rows.some((r) => dataOf(r.result).emergency === true);
@@ -50,6 +51,7 @@ export const deriveDisposition = (rows: readonly LedgerRow[]): CallDisposition =
   if (bookedJob) return "booked_job";
 
   if (rows.some((r) => r.tool === REQUEST_QUOTE)) return "quote_request";
+  if (rows.some((r) => r.tool === ESCALATE_CALLBACK)) return "callback";
   if (rows.some((r) => r.tool === TAKE_MESSAGE)) return "message";
 
   return "no_action";

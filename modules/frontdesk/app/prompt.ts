@@ -9,6 +9,7 @@ export interface PromptService {
   readonly lane: ServiceLane;
   readonly price?: number;
   readonly triggers: string;
+  readonly emergencyTriggers?: string;
 }
 
 export interface PromptFacts {
@@ -25,6 +26,7 @@ export interface PromptFacts {
   readonly serviceFee: number;
   readonly feeCredited: boolean;
   readonly services: readonly PromptService[];
+  readonly deferKeywords?: string;
 }
 
 // --- Fixed script fragments (no magic strings scattered) -----------------
@@ -50,6 +52,7 @@ export const TOOL_NAMES = {
   bookVisit: "book_visit",
   requestQuote: "request_quote",
   takeMessage: "take_message",
+  escalateCallback: "escalate_callback",
 } as const;
 
 // The tools-and-flow rules, named by exact tool name so the model actually CALLS them. Each line is
@@ -72,6 +75,9 @@ const TOOL_FLOW: readonly string[] = [
     `${TOOL_NAMES.requestQuote} and tell them the office will call them back with a written quote.`,
   `For a reschedule, cancellation, a billing question, or "where is my tech", CALL ` +
     `${TOOL_NAMES.takeMessage} so the office handles it.`,
+  `When the caller wants something the AI can't handle, or asks to speak to a person, CALL ` +
+    `${TOOL_NAMES.escalateCallback} with their name, number, and a short reason so the office ` +
+    `calls back.`,
   "Never invent a tool result: only confirm a booking after book_visit has actually returned a " +
     "confirmation.",
 ] as const;
@@ -114,8 +120,16 @@ const CASE_RULES: readonly string[] = [
   "Out of service area: if a tool tells you the address is outside the area, or the city is clearly " +
     "OUTSIDE the listed area, politely say it's outside the area you cover and take a message (offer " +
     "a referral if you can) — do NOT book an out-of-area job. When it's unclear, book normally.",
-  "Emergency (flooding, sewage in the living space, no water, burst pipe): book the soonest " +
-    "slot and note EMERGENCY on the booking. Coach the caller to the main shut-off valve.",
+  "Emergency: if the caller's problem matches a service's EMERGENCY words (listed under SERVICES), " +
+    "book the soonest slot and note EMERGENCY on the booking; coach the caller to shut off the " +
+    "water/gas/power at the source if something is actively leaking or damaging property.",
+  `Hand off to a human callback — CALL ${TOOL_NAMES.escalateCallback} — for anything you can't ` +
+    `handle: insurance, claims, adjusters, warranties, a service we don't do, a caller who keeps ` +
+    `getting confused, or a caller who asks to speak to a person (plus any hand-off words in ` +
+    `BUSINESS FACTS). Don't try to book or price these — file the callback with a short reason.`,
+  `Emergency with no same-day opening: if ${TOOL_NAMES.checkAvailability} returns no slot TODAY ` +
+    `for an emergency, do NOT book tomorrow — CALL ${TOOL_NAMES.escalateCallback} (reason: ` +
+    `same-day emergency, no slot) so the office calls back within the hour.`,
   "Existing customer wants to reschedule, cancel, ask where their tech is, or asks about " +
     "billing: use take_message so the office handles it. Never discuss billing amounts.",
   "Vendor, spam, or wrong number: end the call politely.",
@@ -188,7 +202,12 @@ const formatServiceLine = (s: PromptService): string => {
   // triggers is owner free text → redact stray prices; the flat-lane priceSuffix is the
   // sanctioned price and is appended AFTER redaction so it always renders.
   const priceSuffix = s.lane === "flat" && s.price !== undefined ? ` · $${s.price}` : "";
-  return `- ${s.name} · ${s.lane} · ${redactPriceTokens(s.triggers)}${priceSuffix}`;
+  const base = `- ${s.name} · ${s.lane} · ${redactPriceTokens(s.triggers)}${priceSuffix}`;
+  // emergencyTriggers is owner free text → redact stray prices before interpolating.
+  if (s.emergencyTriggers && s.emergencyTriggers.trim().length > 0) {
+    return `${base} · emergency: ${redactPriceTokens(s.emergencyTriggers)}`;
+  }
+  return base;
 };
 
 // --- Section builders (pure) ---------------------------------------------
@@ -209,8 +228,8 @@ const buildIdentitySection = (brand: string): string =>
     "The call is recorded. Be warm, brief, and get to booking. You handle intake only.",
   ].join("\n");
 
-const buildFactsSection = (f: PromptFacts): string =>
-  [
+const buildFactsSection = (f: PromptFacts): string => {
+  const lines: string[] = [
     `## ${SECTIONS.facts}`,
     "Hours:",
     formatDayHours("Weekdays", f.hoursWdOpen, f.hoursWdClose),
@@ -220,7 +239,15 @@ const buildFactsSection = (f: PromptFacts): string =>
     // notServices is owner free text → redact stray prices before interpolating.
     `We do NOT service: ${redactPriceTokens(f.notServices)}. Politely decline these and suggest calling a specialist.`,
     formatFeeLine(f.serviceFee, f.feeCredited),
-  ].join("\n");
+  ];
+  // deferKeywords is owner free text → redact stray prices; only rendered when set.
+  if (f.deferKeywords && f.deferKeywords.trim().length > 0) {
+    lines.push(
+      `Hand off to a person (have the office call back), on top of the standard cases: ${redactPriceTokens(f.deferKeywords)}.`,
+    );
+  }
+  return lines.join("\n");
+};
 
 const buildServicesSection = (services: readonly PromptService[]): string => {
   const lines = services.map(formatServiceLine);

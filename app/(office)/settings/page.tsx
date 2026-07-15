@@ -773,6 +773,10 @@ function SecBooking() {
                 onChange={(e) => updateBookingService(i, "triggers", e.target.value)}
                 placeholder="trigger words — e.g. leaking, no hot water"
                 style={{ flexBasis: "100%", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
+              <input type="text" defaultValue={s.emergencyTriggers ?? ""}
+                onChange={(e) => updateBookingService(i, "emergencyTriggers", e.target.value)}
+                placeholder="emergency words — e.g. burst pipe, no heat, flooding (seen today)"
+                style={{ flexBasis: "100%", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
             </div>
           ))}
         </div>
@@ -786,6 +790,13 @@ function SecBooking() {
           <input type="text" defaultValue={bk.notServices}
             onChange={(e) => setBookingField("notServices", e.target.value)}
             placeholder="e.g. new construction, septic"
+            style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
+        </div>
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>Hand off to a person</label>
+          <input type="text" defaultValue={bk.deferKeywords ?? ""}
+            onChange={(e) => setBookingField("deferKeywords", e.target.value)}
+            placeholder="e.g. insurance, claim, adjuster, warranty — the office calls these back"
             style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
         </div>
       </FoldCard>

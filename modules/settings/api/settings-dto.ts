@@ -10,6 +10,7 @@ export const bookingServiceDTO = z.object({
   lane: z.enum(["repair", "estimate", "flat"]),
   price: z.number().min(0).optional(),
   triggers: z.string(),
+  emergencyTriggers: z.string().optional(),
 });
 
 export const bookingCfgDTO = z.object({
@@ -17,6 +18,7 @@ export const bookingCfgDTO = z.object({
   notServices: z.string(),
   serviceFee: z.number().min(0), // dollars, not cents
   feeCredited: z.boolean(),
+  deferKeywords: z.string().optional(),
 });
 
 // --- Org config DTO --------------------------------------------------------

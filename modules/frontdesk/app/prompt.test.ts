@@ -246,10 +246,13 @@ describe("buildSystemPrompt — case rules", () => {
     expect(p).toMatch(/25 miles|within 25/);
   });
 
-  it("covers emergency (flooding/sewage/no water) → book soonest + note EMERGENCY", () => {
+  it("covers emergency via generalized rule → book soonest + note EMERGENCY (no hardcoded plumbing list)", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
-    expect(p).toMatch(/flooding|sewage|no water|burst/i);
+    // The generalized rule references the per-service EMERGENCY words, not a hardcoded plumbing list.
+    expect(p).toMatch(/matches a service's EMERGENCY words/i);
     expect(p).toMatch(/EMERGENCY/);
+    // The old hardcoded plumbing emergency phrase must be GONE.
+    expect(p).not.toMatch(/flooding, sewage/i);
   });
 
   it("covers reschedule/cancel/where-is-my-tech/billing → take_message, never discuss amounts", () => {
@@ -404,5 +407,153 @@ describe("redactPriceTokens", () => {
     expect(redactPriceTokens("$50 now or $1,000 later")).toBe(
       `${PRICE_REDACTION_MARKER} now or ${PRICE_REDACTION_MARKER} later`,
     );
+  });
+});
+
+describe("buildSystemPrompt — per-service emergencyTriggers", () => {
+  it("renders emergencyTriggers on the service line when set", () => {
+    const facts = baseFacts({
+      services: [
+        {
+          name: "Drain cleaning",
+          lane: "flat",
+          price: 149,
+          triggers: "clogged drain",
+          emergencyTriggers: "backed up sewage, flooding",
+        },
+        { name: "Faucet repair", lane: "repair", triggers: "leaky faucet" },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const drainLine = p.split("\n").find((l) => l.includes("Drain cleaning")) ?? "";
+    expect(drainLine).toContain("emergency:");
+    expect(drainLine).toContain("backed up sewage, flooding");
+  });
+
+  it("does NOT render an 'emergency:' suffix on a service without emergencyTriggers", () => {
+    const facts = baseFacts({
+      services: [{ name: "Faucet repair", lane: "repair", triggers: "leaky faucet" }],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const faucetLine = p.split("\n").find((l) => l.includes("Faucet repair")) ?? "";
+    expect(faucetLine).not.toContain("emergency:");
+  });
+
+  it("redacts a stray price in emergencyTriggers ($99 surcharge)", () => {
+    const facts = baseFacts({
+      services: [
+        {
+          name: "Burst pipe",
+          lane: "repair",
+          triggers: "pipe burst",
+          emergencyTriggers: "no water, burst pipe, $99 after-hours",
+        },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    expect(p).not.toContain("$99");
+    expect(p).toContain(PRICE_REDACTION_MARKER);
+    // Non-price trigger words still render
+    expect(p).toContain("no water");
+  });
+});
+
+describe("buildSystemPrompt — deferKeywords in BUSINESS FACTS", () => {
+  it("renders deferKeywords line in BUSINESS FACTS when set", () => {
+    const facts = baseFacts({ deferKeywords: "HOA, property manager, commercial account" });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const factsSection = p.split("## ").find((s) => s.startsWith("BUSINESS FACTS")) ?? "";
+    expect(factsSection).toContain("HOA, property manager, commercial account");
+    expect(factsSection).toMatch(/Hand off to a person/i);
+  });
+
+  it("omits the deferKeywords line entirely when deferKeywords is undefined", () => {
+    const facts = baseFacts();
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const factsSection = p.split("## ").find((s) => s.startsWith("BUSINESS FACTS")) ?? "";
+    // The line should be absent when deferKeywords is not set
+    expect(factsSection).not.toMatch(/Hand off to a person.*on top of the standard cases/i);
+  });
+
+  it("omits the deferKeywords line when deferKeywords is an empty string", () => {
+    const facts = baseFacts({ deferKeywords: "" });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const factsSection = p.split("## ").find((s) => s.startsWith("BUSINESS FACTS")) ?? "";
+    expect(factsSection).not.toMatch(/Hand off to a person.*on top of the standard cases/i);
+  });
+
+  it("redacts a stray price in deferKeywords ($50 discount calls)", () => {
+    const facts = baseFacts({ deferKeywords: "fleet account, $50 discount calls" });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const factsSection = p.split("## ").find((s) => s.startsWith("BUSINESS FACTS")) ?? "";
+    expect(factsSection).not.toContain("$50");
+    expect(factsSection).toContain(PRICE_REDACTION_MARKER);
+    expect(factsSection).toContain("fleet account");
+  });
+});
+
+describe("buildSystemPrompt — defer/hand-off CASE_RULE", () => {
+  it("names escalate_callback and lists insurance/claim/warranty/'a person'", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    const casesSection = p.split("## ").find((s) => s.startsWith("CASE RULES")) ?? "";
+    expect(casesSection).toContain(TOOL_NAMES.escalateCallback);
+    expect(casesSection).toMatch(/insurance/i);
+    expect(casesSection).toMatch(/claim/i);
+    expect(casesSection).toMatch(/warrant/i);
+    expect(casesSection).toMatch(/speak to a person|a person/i);
+  });
+});
+
+describe("buildSystemPrompt — no-same-day-emergency CASE_RULE", () => {
+  it("names escalate_callback and references check_availability for no-slot emergency", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    const casesSection = p.split("## ").find((s) => s.startsWith("CASE RULES")) ?? "";
+    expect(casesSection).toContain(TOOL_NAMES.escalateCallback);
+    expect(casesSection).toContain(TOOL_NAMES.checkAvailability);
+    expect(casesSection).toMatch(/no slot|no same-day/i);
+  });
+});
+
+describe("buildSystemPrompt — escalate_callback in TOOLS & FLOW", () => {
+  it("names escalate_callback by exact name in the TOOLS & FLOW section", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    const toolsSection = p.split("## ").find((s) => s.startsWith("TOOLS & FLOW")) ?? "";
+    expect(toolsSection).toContain(TOOL_NAMES.escalateCallback);
+    expect(toolsSection).toContain("escalate_callback");
+  });
+});
+
+describe("buildSystemPrompt — PRICE GUARDRAIL (emergencyTriggers + deferKeywords)", () => {
+  it("redacts a price in emergencyTriggers and keeps no $ in the rendered prompt beyond allowed", () => {
+    const facts = baseFacts({
+      services: [
+        {
+          name: "Pipe repair",
+          lane: "repair",
+          triggers: "burst pipe",
+          emergencyTriggers: "flooding, $99 emergency fee",
+        },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    expect(p).not.toContain("$99");
+    expect(p).toContain(PRICE_REDACTION_MARKER);
+    // Only the serviceFee ($89) is allowed
+    const allowed = allowedTokens(facts);
+    for (const token of dollarTokens(p)) {
+      expect(allowed.has(token)).toBe(true);
+    }
+  });
+
+  it("redacts a price in deferKeywords and keeps no $ in the rendered prompt beyond allowed", () => {
+    const facts = baseFacts({ deferKeywords: "HOA billing, $50 senior discount" });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    expect(p).not.toContain("$50");
+    expect(p).toContain(PRICE_REDACTION_MARKER);
+    // Only the serviceFee ($89) + flat price ($149) are allowed
+    const allowed = allowedTokens(facts);
+    for (const token of dollarTokens(p)) {
+      expect(allowed.has(token)).toBe(true);
+    }
   });
 });
