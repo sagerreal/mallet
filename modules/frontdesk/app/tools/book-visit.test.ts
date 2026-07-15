@@ -203,30 +203,96 @@ describe("bookVisitTool", () => {
     void result;
   });
 
-  // ── auto-place on the board: assign the booking to the first field crew ──
-  it("assigns the visit to the FIRST field crew so it lands on the board", async () => {
+  // ── proximity dispatch: least-loaded + proximity crew assignment ──
+
+  it("assigns to the emptier crew (B has 0 jobs, A has 1) regardless of order", async () => {
+    const crewA = asUserId(FIRST_CREW_UUID);
+    const crewB = asUserId(SECOND_CREW_UUID);
     const h2 = buildHarness({
-      fieldCrewIds: [asUserId(FIRST_CREW_UUID), asUserId(SECOND_CREW_UUID)],
+      sameDayCrewLoads: [
+        { userId: crewA, sameDayJobs: [{ point: null }] }, // 1 job
+        { userId: crewB, sameDayJobs: [] },                // 0 jobs → should win
+      ],
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
-    // assigned to the first crew in the reader's stable order — so it renders on the crew grid.
     const visit = onlyJob(h2).props.visits[0]!;
-    expect(visit.props.assigneeUserId).toBe(asUserId(FIRST_CREW_UUID));
+    expect(visit.props.assigneeUserId).toBe(crewB);
     expect(result.data).toMatchObject({ kind: "work" });
   });
 
+  it("proximity tie-break: nearer crew wins (crew A nearer jobPoint)", async () => {
+    const crewA = asUserId(FIRST_CREW_UUID);
+    const crewB = asUserId(SECOND_CREW_UUID);
+    // jobPoint at (37.6, -122.0). Use origin = same as jobPoint + very large radius so the check
+    // is "in" and area.point = the geocoded point. Both crews have 1 job (load tie) → proximity.
+    // crewA's job is 0.01° latitude away (~0.7 mi); crewB's is 1° away (~69 mi).
+    const origin = { lat: 37.6, lng: -122.0 };
+    const jobPt  = { lat: 37.6, lng: -122.0 };
+    const h2 = buildHarness({
+      settings: settingsFrom({ originLat: origin.lat, originLng: origin.lng, areaRadiusMi: 500 }),
+      geocoder: { async geocode() { return jobPt; } },
+      sameDayCrewLoads: [
+        { userId: crewA, sameDayJobs: [{ point: { lat: 37.61, lng: -122.0 } }] }, // ~0.7 mi
+        { userId: crewB, sameDayJobs: [{ point: { lat: 38.6,  lng: -122.0 } }] }, // ~69 mi
+      ],
+    });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewA);
+    expect(result.data).toMatchObject({ kind: "work" });
+  });
+
+  it("proximity tie-break: flip nearer crew → assigns the other (proves distance, not order)", async () => {
+    const crewA = asUserId(FIRST_CREW_UUID);
+    const crewB = asUserId(SECOND_CREW_UUID);
+    const origin = { lat: 37.6, lng: -122.0 };
+    const jobPt  = { lat: 37.6, lng: -122.0 };
+    // crewB is now nearer, crewA is far — same settings, different crew-point positions.
+    const h2 = buildHarness({
+      settings: settingsFrom({ originLat: origin.lat, originLng: origin.lng, areaRadiusMi: 500 }),
+      geocoder: { async geocode() { return jobPt; } },
+      sameDayCrewLoads: [
+        { userId: crewA, sameDayJobs: [{ point: { lat: 38.6,  lng: -122.0 } }] }, // ~69 mi — far
+        { userId: crewB, sameDayJobs: [{ point: { lat: 37.61, lng: -122.0 } }] }, // ~0.7 mi — near
+      ],
+    });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewB);
+    expect(result.data).toMatchObject({ kind: "work" });
+  });
+
+  it("persists the geocoded point on the created visit when area.point is non-null", async () => {
+    // To get a non-null area.point we need origin+radius set AND the geocoder to return a point
+    // that is within the radius. Use originLat/Lng = jobPt and areaRadiusMi = 1 → always "in".
+    const jobPt = { lat: 37.7749, lng: -122.4194 };
+    const h2 = buildHarness({
+      settings: settingsFrom({ originLat: jobPt.lat, originLng: jobPt.lng, areaRadiusMi: 1 }),
+      geocoder: { async geocode() { return jobPt; } },
+      sameDayCrewLoads: [],
+    });
+    await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    const visit = onlyJob(h2).props.visits[0]!;
+    expect(visit.props.lat).toBeCloseTo(37.7749);
+    expect(visit.props.lng).toBeCloseTo(-122.4194);
+  });
+
   it("leaves the visit UNASSIGNED (null) when the org has zero field crew", async () => {
-    // default harness → no field crew; the booking stays in "To schedule" for the office to place.
+    // default harness → no sameDayCrewLoads → chooseCrew([], ...) → null → UNASSIGNED.
     const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
     expect(onlyJob(h).props.visits[0]!.props.assigneeUserId).toBeNull();
     expect(result.data).toMatchObject({ kind: "work" });
   });
 
-  it("degrades to UNASSIGNED (never fails the booking) when the crew read throws", async () => {
-    const h2 = buildHarness({ fieldCrewThrows: true });
+  it("degrades to UNASSIGNED (never fails the booking) when readSameDayCrewLoads throws", async () => {
+    const h2 = buildHarness({ sameDayLoadsThrows: true });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     // the booking STILL succeeds; the visit is just unassigned (office places it).
     expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBeNull();
+  });
+
+  it("empty crew loads → UNASSIGNED (same zero-crew behaviour via chooseCrew)", async () => {
+    const h2 = buildHarness({ sameDayCrewLoads: [] });
+    await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBeNull();
   });
 

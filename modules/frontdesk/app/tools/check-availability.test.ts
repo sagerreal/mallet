@@ -50,6 +50,9 @@ const fakeAvailability = (
   async readCrewSchedules() {
     return [...crewScheduleRows];
   },
+  async readSameDayCrewLoads() {
+    return [];
+  },
 });
 
 const buildCtx = (args: {

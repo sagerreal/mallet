@@ -1,5 +1,6 @@
 import type { UserId } from "@mallet/shared/types";
 import type { BookedVisit } from "../app/slots";
+import type { CrewLoad } from "../app/dispatch";
 
 // What the availability layer needs to know about the org's current schedule to compute open slots.
 // `crewCount` is the number of field-crew members (each can run one visit per window); `visits` are
@@ -35,4 +36,8 @@ export interface AvailabilityReader {
   // (RLS + explicit org_id predicate), one query (no N+1). A crew-day with no row is absent here;
   // the slot math (Task 2.2) fills those from the org's default hours. Empty when no overrides.
   readCrewSchedules(): Promise<CrewDaySchedule[]>;
+  // Every FIELD crew member with the geolocated points of their ACTIVE visits on `date`
+  // (one CrewLoad per field crew, INCLUDING crew with zero same-day jobs → empty sameDayJobs).
+  // Org-scoped, query-only, no N+1. Used by book_visit's chooseCrew to balance + place by proximity.
+  readSameDayCrewLoads(date: string): Promise<CrewLoad[]>;
 }

@@ -7,6 +7,7 @@ import type {
   CrewDaySchedule,
 } from "../domain/availability";
 import type { BookedVisit } from "../app/slots";
+import type { CrewLoad } from "../app/dispatch";
 
 // Only these visit statuses consume capacity — a canceled visit frees its slot again, and a
 // completed visit in the future can't exist, but excluding it is defense-in-depth.
@@ -29,6 +30,15 @@ type CrewScheduleRaw = {
   weekday: number;
   openHour: number;
   closeHour: number;
+};
+
+// Raw shape of one same-day active visit row for proximity dispatch. `type` to satisfy execute<T>'s
+// Record bound. assigneeUserId is the crew member assigned to the visit; lat/lng are null when the
+// visit was created without a geocoded address.
+type SameDayVisitRaw = {
+  assigneeUserId: string;
+  lat: number | null;
+  lng: number | null;
 };
 
 /**
@@ -124,6 +134,42 @@ export class DrizzleAvailabilityReader implements AvailabilityReader {
     `);
     return rows.map(toCrewDaySchedule);
   }
+
+  // All field-crew members with their active same-day visits (and any geocoded points) on `date`.
+  // Two org-scoped queries (no N+1): one for field-crew ids (reusing the is_field_crew predicate),
+  // one for active same-day visits with assignee + point. Every field crew must appear in the result
+  // (idle crew → empty sameDayJobs) so chooseCrew can select them — a crew absent from the list
+  // could never be assigned. Org-scoped via RLS + explicit org_id predicates.
+  async readSameDayCrewLoads(date: string): Promise<CrewLoad[]> {
+    const statusList = sql.join(
+      ACTIVE_VISIT_STATUSES.map((s) => sql`${s}`),
+      sql`, `,
+    );
+
+    const [crewRows, visitRows] = await Promise.all([
+      this.tx.execute<{ id: string }>(sql`
+        SELECT u.id AS "id"
+        FROM users u
+        WHERE u.org_id = ${this.orgId}
+          AND u.is_field_crew = true
+        ORDER BY u.created_at ASC, u.id ASC
+      `),
+      this.tx.execute<SameDayVisitRaw>(sql`
+        SELECT
+          v.assignee_user_id  AS "assigneeUserId",
+          v.lat               AS "lat",
+          v.lng               AS "lng"
+        FROM job_visits v
+        WHERE v.org_id = ${this.orgId}
+          AND v.deleted_at IS NULL
+          AND v.scheduled_date = ${date}
+          AND v.status IN (${statusList})
+          AND v.assignee_user_id IS NOT NULL
+      `),
+    ]);
+
+    return buildCrewLoads(crewRows.map((r) => asUserId(r.id)), visitRows);
+  }
 }
 
 // Map a raw crew_schedules row to the pure CrewDaySchedule DTO. weekday/hours are already integers
@@ -143,3 +189,26 @@ const toBookedVisit = (r: VisitRaw): BookedVisit => ({
   startHHMM: toHHMM(r.scheduledStart),
   durationMinutes: r.durationMinutes ?? 0,
 });
+
+// Build one CrewLoad per field-crew id from the two flat query results. Every field crew id appears
+// exactly once (idle crew → sameDayJobs: []). A visit row is attributed to its assignee only when
+// that assignee is a known field-crew id (defense-in-depth: non-crew assignees are dropped).
+// The point is non-null only when BOTH lat and lng are present — a visit with one null coordinate
+// cannot be used as a proximity anchor and its point is treated as null.
+const buildCrewLoads = (crewIds: readonly UserId[], visits: readonly SameDayVisitRaw[]): CrewLoad[] => {
+  const visitsByUser = new Map<UserId, { readonly point: { lat: number; lng: number } | null }[]>();
+  for (const id of crewIds) {
+    visitsByUser.set(id, []);
+  }
+  for (const v of visits) {
+    const userId = v.assigneeUserId as UserId;
+    const bucket = visitsByUser.get(userId);
+    if (bucket === undefined) continue; // non-field-crew assignee — skip
+    const point = v.lat !== null && v.lng !== null ? { lat: v.lat, lng: v.lng } : null;
+    bucket.push({ point });
+  }
+  return crewIds.map((userId) => ({
+    userId,
+    sameDayJobs: visitsByUser.get(userId) ?? [],
+  }));
+};
