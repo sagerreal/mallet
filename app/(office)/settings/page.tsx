@@ -28,6 +28,8 @@ import { CrewHoursCard } from "./crew-hours-card";
 import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
+import { BookingServiceCard } from "./booking-service-card";
+import { HourSelect } from "./hour-select";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 
@@ -720,19 +722,45 @@ function SecBooking() {
   function HrRow({ lbl, oKey, cKey }: { lbl: string; oKey: HoursKey; cKey: HoursKey }) {
     const ov = bk.hours[oKey];
     const cv = bk.hours[cKey];
+    const isOpen = !(ov === 0 && cv === 0);
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
-        <span style={{ minWidth: 84, fontWeight: 600, fontSize: "12.5px" }}>{lbl}</span>
-        <input type="number" min={0} max={23} defaultValue={ov}
-          onChange={(e) => setBookingHours(oKey, Number(e.target.value))}
-          style={{ width: 58, border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-        <span className="muted">to</span>
-        <input type="number" min={0} max={24} defaultValue={cv}
-          onChange={(e) => setBookingHours(cKey, Number(e.target.value))}
-          style={{ width: 58, border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-        <span className="muted" style={{ fontSize: "11.5px" }}>
-          {ov || cv ? `${timeLabel(ov)}–${timeLabel(cv)}` : "closed"}
-        </span>
+        <span style={{ minWidth: 84, fontWeight: 600, fontSize: 13 }}>{lbl}</span>
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={isOpen}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setBookingHours(oKey, 8);
+                setBookingHours(cKey, 17);
+              } else {
+                setBookingHours(oKey, 0);
+                setBookingHours(cKey, 0);
+              }
+            }}
+          />
+          <i />
+        </label>
+        {isOpen ? (
+          <>
+            <HourSelect
+              value={ov}
+              onChange={(h) => setBookingHours(oKey, h)}
+              min={0}
+              max={23}
+            />
+            <span className="muted">to</span>
+            <HourSelect
+              value={cv}
+              onChange={(h) => setBookingHours(cKey, h)}
+              min={1}
+              max={24}
+            />
+          </>
+        ) : (
+          <span className="muted" style={{ fontSize: "11.5px" }}>Closed</span>
+        )}
       </div>
     );
   }
@@ -749,45 +777,19 @@ function SecBooking() {
       <FoldCard title="Services &amp; routing" defaultOpen summary={`${bk.services.length} services`}>
         <div>
           {bk.services.map((s, i) => (
-            <div key={i} className="stage-row" style={{ gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--line-2)", paddingBottom: 8 }}>
-              <input type="text" defaultValue={s.name}
-                onChange={(e) => updateBookingService(i, "name", e.target.value)}
-                style={{ flex: 1, minWidth: 130, border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-              <select defaultValue={s.lane}
-                onChange={(e) => updateBookingService(i, "lane", e.target.value)}
-                style={{ border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }}>
-                <option value="repair">Job — diagnose &amp; price on site</option>
-                <option value="estimate">Estimate visit — scope it, then quote</option>
-                <option value="flat">Job — flat price on the call</option>
-              </select>
-              {s.lane === "flat" && (
-                <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <span className="muted">$</span>
-                  <input type="number" min={0} defaultValue={s.price ?? 0}
-                    onChange={(e) => updateBookingService(i, "price", e.target.value)}
-                    style={{ width: 64, border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-                </span>
-              )}
-              <button className="btn sm ghost" onClick={() => removeBookingService(i)}>✕</button>
-              <input type="text" defaultValue={s.triggers}
-                onChange={(e) => updateBookingService(i, "triggers", e.target.value)}
-                placeholder="trigger words — e.g. leaking, no hot water"
-                style={{ flexBasis: "100%", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-              <input type="text" defaultValue={s.emergencyTriggers ?? ""}
-                onChange={(e) => updateBookingService(i, "emergencyTriggers", e.target.value)}
-                placeholder="emergency words — e.g. burst pipe, no heat, flooding (seen today)"
-                style={{ flexBasis: "100%", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-              <input type="text" defaultValue={s.ballpark ?? ""}
-                onChange={(e) => updateBookingService(i, "ballpark", e.target.value)}
-                placeholder="ballpark range (estimate lane) — e.g. $150–$300, said once with 'exact price after we see it'"
-                style={{ flexBasis: "100%", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-            </div>
+            <BookingServiceCard
+              key={i}
+              service={s}
+              index={i}
+              updateBookingService={updateBookingService}
+              onRemove={() => removeBookingService(i)}
+            />
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <input type="text" id="bkSvc" placeholder="add a service — e.g. Tankless install" value={bkSvc} onChange={(e) => setBkSvc(e.target.value)}
+          <input type="text" id="bkSvc" placeholder="New service name — e.g. Tankless install" value={bkSvc} onChange={(e) => setBkSvc(e.target.value)}
             style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
-          <button className="btn" onClick={handleAddService}>+ Add</button>
+          <button className="btn" onClick={handleAddService}>+ Add service</button>
         </div>
         <div className="field" style={{ marginTop: 10 }}>
           <label>We don&apos;t do</label>
@@ -795,6 +797,7 @@ function SecBooking() {
             onChange={(e) => setBookingField("notServices", e.target.value)}
             placeholder="e.g. new construction, septic"
             style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
+          <div className="muted" style={{ fontSize: "11.5px", marginTop: 4 }}>The agent politely declines these.</div>
         </div>
         <div className="field" style={{ marginTop: 10 }}>
           <label>Hand off to a person</label>
@@ -802,6 +805,7 @@ function SecBooking() {
             onChange={(e) => setBookingField("deferKeywords", e.target.value)}
             placeholder="e.g. insurance, claim, adjuster, warranty — the office calls these back"
             style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
+          <div className="muted" style={{ fontSize: "11.5px", marginTop: 4 }}>Callers mentioning these get a human callback — e.g. insurance, claim, warranty.</div>
         </div>
       </FoldCard>
 
@@ -827,31 +831,34 @@ function SecBooking() {
       </FoldCard>
 
       <FoldCard title="Hours &amp; service area" summary={wdLabel}>
+        <div style={{fontSize:11, textTransform:"uppercase", letterSpacing:".04em", margin:"2px 0 8px"}} className="muted">Business hours</div>
         <div>
           <HrRow lbl="Weekdays" oKey="wdOpen" cKey="wdClose" />
           <HrRow lbl="Saturday" oKey="satOpen" cKey="satClose" />
           <HrRow lbl="Sunday"   oKey="sunOpen" cKey="sunClose" />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10, marginTop: 10 }}>
+        <div style={{fontSize:11, textTransform:"uppercase", letterSpacing:".04em", margin:"14px 0 8px"}} className="muted">Service area</div>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
           <div className="field" style={{ margin: 0 }}>
-            <label>Cities / area served</label>
+            <label>Cities served</label>
             <input type="text" defaultValue={bk.area.cities}
               onChange={(e) => setBookingArea("cities", e.target.value)}
               style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
           </div>
           <div className="field" style={{ margin: 0 }}>
-            <label>Radius (mi)</label>
+            <label>Radius (miles)</label>
             <input type="number" min={0} defaultValue={bk.area.radiusMi}
               onChange={(e) => setBookingArea("radiusMi", e.target.value)}
               style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
           </div>
         </div>
         <div className="field" style={{ marginTop: 10 }}>
-          <label>Address we drive from (service origin)</label>
+          <label>Dispatch address</label>
           <input type="text" defaultValue={bk.area.originAddress}
             onChange={(e) => setBookingArea("originAddress", e.target.value)}
             placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
             style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
+          <div className="muted" style={{ fontSize: "11.5px", marginTop: 4 }}>Where crews start driving from — used to check a job is in range.</div>
         </div>
       </FoldCard>
 
