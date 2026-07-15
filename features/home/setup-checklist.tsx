@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
+import { useMe } from "@/features/identity/hooks";
 import {
   deriveSetupSteps,
   stepsByTier,
@@ -32,7 +33,7 @@ export function SetupChecklist() {
   const seedBookingServices = useAppStore((s) => s.seedBookingServices);
   const setTrade = useAppStore((s) => s.setTrade);
 
-  const me = api.v1.identity.me.useQuery();
+  const me = useMe();
   const members = api.v1.identity.members.useQuery(undefined, { refetchOnWindowFocus: false });
   const inbound = api.v1.inbound.list.useQuery(undefined, { refetchOnWindowFocus: false });
 

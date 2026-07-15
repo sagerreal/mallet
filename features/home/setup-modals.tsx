@@ -4,7 +4,6 @@
 // (no navigating to Settings). They write through the same store actions the Settings tab uses,
 // so state stays a single source of truth. Reuses the app Modal shell + .field/.seg system.
 
-import { useState } from "react";
 import Link from "next/link";
 import { Modal } from "@/components/modals/modal";
 import { useAppStore } from "@/lib/store/app-store";
