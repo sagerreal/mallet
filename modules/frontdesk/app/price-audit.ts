@@ -27,6 +27,22 @@ const normalizeAmount = (raw: string): string => {
 };
 
 /**
+ * Extract every dollar figure from an owner-authored price string (e.g. a service ballpark).
+ * "$150–$300" → [150, 300], "around $200" → [200], "" / no match → [].
+ * Reuses PRICE_TOKEN_RE + normalizeAmount so extracted numbers match auditPrices' allowed-set keys.
+ *
+ * @param text an owner-authored price string (e.g. a service ballpark field).
+ * @returns numeric dollar amounts extracted from the text, empty array when none found.
+ */
+export const extractDollarFigures = (text: string): number[] => {
+  const matches = text.match(PRICE_TOKEN_RE);
+  if (!matches) return [];
+  return matches
+    .map((token) => Number(normalizeAmount(token)))
+    .filter((n) => Number.isFinite(n));
+};
+
+/**
  * Return every assistant-spoken dollar token that is NOT in the allowed set.
  *
  * @param assistantLines the assistant-role transcript lines (already filtered to the AI's turns).

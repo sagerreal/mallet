@@ -1,5 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { auditPrices } from "./price-audit";
+import { auditPrices, extractDollarFigures } from "./price-audit";
+
+describe("extractDollarFigures", () => {
+  it('extracts both figures from a range like "$150–$300"', () => {
+    expect(extractDollarFigures("$150–$300")).toEqual([150, 300]);
+  });
+
+  it('extracts a single figure from "around $200"', () => {
+    expect(extractDollarFigures("around $200")).toEqual([200]);
+  });
+
+  it("normalizes comma-formatted figures ($1,250.00 → 1250)", () => {
+    expect(extractDollarFigures("$1,250.00")).toEqual([1250]);
+  });
+
+  it("returns [] for an empty string", () => {
+    expect(extractDollarFigures("")).toEqual([]);
+  });
+
+  it("returns [] when no dollar figure is present", () => {
+    expect(extractDollarFigures("no price here")).toEqual([]);
+  });
+});
 
 // The deterministic post-call guardrail: every dollar amount the assistant SPOKE must be one an
 // owner typed into the playbook (serviceFee + flat-lane prices). Anything else is a violation —
@@ -62,5 +84,15 @@ describe("auditPrices", () => {
 
   it("an empty allowed set flags every spoken amount", () => {
     expect(auditPrices(["The fee is $89."], [])).toEqual(["$89"]);
+  });
+
+  it("does NOT flag a ballpark figure when it is in the allowed set", () => {
+    // ballpark "$200" is included in allowedDollars via extractDollarFigures
+    expect(auditPrices(["That's typically around $200."], [89, 200])).toEqual([]);
+  });
+
+  it("still flags an unconfigured price even when a ballpark is allowed", () => {
+    // $999 is not in the allowed set (only 89 and 200 are)
+    expect(auditPrices(["It might be $999."], [89, 200])).toEqual(["$999"]);
   });
 });

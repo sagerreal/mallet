@@ -44,14 +44,20 @@ const knownCaller: CallerContext = {
 const dollarTokens = (text: string): string[] => text.match(/\$\d+(?:,\d{3})*/g) ?? [];
 
 // The set of dollar tokens the prompt is ALLOWED to contain for a given playbook: the
-// serviceFee plus every flat-lane price. Everything else is a guardrail violation.
-const allowedTokens = (facts: PromptFacts): Set<string> =>
-  new Set<string>([
-    `$${facts.serviceFee}`,
-    ...facts.services
-      .filter((s) => s.lane === "flat" && s.price !== undefined)
-      .map((s) => `$${s.price}`),
-  ]);
+// serviceFee plus every flat-lane price plus ballpark figures (which are sanctioned owner-authored
+// prices rendered verbatim). Everything else is a guardrail violation.
+const allowedTokens = (facts: PromptFacts): Set<string> => {
+  const tokens = new Set<string>([`$${facts.serviceFee}`]);
+  for (const s of facts.services) {
+    if (s.lane === "flat" && s.price !== undefined) tokens.add(`$${s.price}`);
+    // ballpark figures are sanctioned owner-authored prices → allowed in the prompt
+    if (s.ballpark) {
+      const ballparkMatches = s.ballpark.match(/\$\d+(?:,\d{3})*/g) ?? [];
+      for (const token of ballparkMatches) tokens.add(token);
+    }
+  }
+  return tokens;
+};
 
 describe("buildFirstMessage", () => {
   it("is a neutral business greeting with the recording disclosure and brand interpolated", () => {
@@ -555,5 +561,115 @@ describe("buildSystemPrompt — PRICE GUARDRAIL (emergencyTriggers + deferKeywor
     for (const token of dollarTokens(p)) {
       expect(allowed.has(token)).toBe(true);
     }
+  });
+});
+
+describe("buildSystemPrompt — ballpark (estimate-lane owner price range)", () => {
+  it("renders a ballpark VERBATIM on the service line — $150 and $300 both present, NOT redacted", () => {
+    const facts = baseFacts({
+      services: [
+        {
+          name: "Water heater replacement",
+          lane: "estimate",
+          triggers: "no hot water",
+          ballpark: "$150–$300",
+        },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const line = p.split("\n").find((l) => l.includes("Water heater replacement")) ?? "";
+    expect(line).toContain("$150");
+    expect(line).toContain("$300");
+    expect(line).not.toContain(PRICE_REDACTION_MARKER);
+    expect(line).toContain("ballpark:");
+  });
+
+  it("CRITICAL: redacts a $ in triggers but keeps the $ in ballpark on the SAME service", () => {
+    // This is the load-bearing redaction-inversion test: triggers go through redactPriceTokens,
+    // ballpark does NOT. Both fields exist on the same service.
+    const facts = baseFacts({
+      services: [
+        {
+          name: "Water heater replacement",
+          lane: "estimate",
+          triggers: "leaking, $50 off",
+          ballpark: "$200",
+        },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const line = p.split("\n").find((l) => l.includes("Water heater replacement")) ?? "";
+    // ballpark kept
+    expect(line).toContain("$200");
+    // trigger price redacted
+    expect(line).not.toContain("$50");
+    expect(line).toContain(PRICE_REDACTION_MARKER);
+  });
+
+  it("does NOT render a 'ballpark:' label on a service without a ballpark field", () => {
+    const facts = baseFacts({
+      services: [{ name: "Faucet repair", lane: "repair", triggers: "leaky faucet" }],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const line = p.split("\n").find((l) => l.includes("Faucet repair")) ?? "";
+    expect(line).not.toContain("ballpark:");
+  });
+
+  it("treats an empty ballpark as absent — no 'ballpark:' rendered", () => {
+    const facts = baseFacts({
+      services: [
+        { name: "Water heater replacement", lane: "estimate", triggers: "no hot water", ballpark: "" },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const line = p.split("\n").find((l) => l.includes("Water heater replacement")) ?? "";
+    expect(line).not.toContain("ballpark:");
+  });
+
+  it("treats a whitespace-only ballpark as absent — no 'ballpark:' rendered", () => {
+    const facts = baseFacts({
+      services: [
+        { name: "Water heater replacement", lane: "estimate", triggers: "no hot water", ballpark: "   " },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const line = p.split("\n").find((l) => l.includes("Water heater replacement")) ?? "";
+    expect(line).not.toContain("ballpark:");
+  });
+
+  it("estimate-lane guidance mentions stating ballpark ONCE + 'exact price after we see it' disclaimer", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    const servicesSection = p.split("## ").find((s) => s.startsWith("SERVICES")) ?? "";
+    expect(servicesSection).toMatch(/ballpark range/i);
+    expect(servicesSection).toMatch(/state it ONCE|may state it ONCE/i);
+    expect(servicesSection).toMatch(/exact price.*after we see it|the exact price is after/i);
+  });
+
+  it("estimate-lane guidance still includes 'never say a job price' for services without ballpark", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    const servicesSection = p.split("## ").find((s) => s.startsWith("SERVICES")) ?? "";
+    expect(servicesSection).toMatch(/never say a job price/i);
+  });
+
+  it("PRICE GUARDRAIL sweep: ballpark $ tokens are allowed — no sweep violation", () => {
+    const facts = baseFacts({
+      services: [
+        { name: "Drain cleaning", lane: "flat", price: 149, triggers: "clogged drain" },
+        {
+          name: "Water heater replacement",
+          lane: "estimate",
+          triggers: "no hot water",
+          ballpark: "$150–$300",
+        },
+      ],
+    });
+    const p = buildSystemPrompt({ facts, caller: unknownCaller });
+    const allowed = allowedTokens(facts);
+    for (const token of dollarTokens(p)) {
+      expect(allowed.has(token)).toBe(true);
+    }
+    // ballpark tokens appear in the prompt
+    expect(p).toContain("$150");
+    expect(p).toContain("$300");
   });
 });
