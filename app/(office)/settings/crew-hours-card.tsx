@@ -128,13 +128,13 @@ function WeekdayRow({ dayLabel, weekday, draft, onChange }: WeekdayRowProps) {
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", flexWrap: "wrap" }}>
-      <span style={{ minWidth: 36, fontWeight: 600, fontSize: "12.5px" }}>{dayLabel}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", flexWrap: "wrap" }}>
+      <span style={{ minWidth: 40, fontWeight: 700, fontSize: 13 }}>{dayLabel}</span>
       <Segmented
         value={draft.mode}
         onChange={handleModeChange}
         options={DAY_MODE_OPTIONS}
-        size="sm"
+        aria-label={`${dayLabel} hours`}
       />
       {draft.mode === "custom" && (
         <>

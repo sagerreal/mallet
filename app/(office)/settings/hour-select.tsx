@@ -1,5 +1,9 @@
 "use client";
 
+// 12-hour time select over INTEGER hours (the storage format, 0–24). Rides the app's `.tsel`
+// styled select (prototype.css) — same chevroned control the team-roles rows use — so the
+// closed state looks native to the app rather than the raw OS box.
+
 export function hourLabel(h: number): string {
   if (h === 0) return "12:00 AM";
   if (h === 12) return "12:00 PM";
@@ -7,26 +11,6 @@ export function hourLabel(h: number): string {
   if (h < 12) return `${h}:00 AM`;
   return `${h - 12}:00 PM`;
 }
-
-// Styled select shared style — appearance:none + inline SVG chevron.
-// Export so other selects in this tab can reuse it.
-export const SELECT_STYLE: React.CSSProperties = {
-  appearance: "none",
-  WebkitAppearance: "none",
-  border: "1.5px solid var(--line)",
-  borderRadius: 7,
-  padding: "6px 8px",
-  paddingRight: 26,
-  fontFamily: "inherit",
-  fontSize: 13,
-  backgroundColor: "var(--card)",
-  color: "var(--ink)",
-  backgroundImage:
-    "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"%23999\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 9l6 6 6-6\"/></svg>')",
-  backgroundRepeat: "no-repeat",
-  backgroundPosition: "right 8px center",
-  cursor: "pointer",
-};
 
 export function HourSelect({ value, onChange, min = 0, max = 23 }: {
   value: number;
@@ -39,11 +23,7 @@ export function HourSelect({ value, onChange, min = 0, max = 23 }: {
     options.push(h);
   }
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      style={SELECT_STYLE}
-    >
+    <select className="tsel" value={value} onChange={(e) => onChange(Number(e.target.value))}>
       {options.map((h) => (
         <option key={h} value={h}>{hourLabel(h)}</option>
       ))}
