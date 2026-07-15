@@ -24,6 +24,7 @@ import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PricebookCard } from "./pricebook-card";
 import { EstimatorMemoryCard } from "./estimator-memory-card";
+import { CrewHoursCard } from "./crew-hours-card";
 import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
@@ -838,6 +839,8 @@ function SecBooking() {
             style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
         </div>
       </FoldCard>
+
+      <CrewHoursCard />
     </>
   );
 }
