@@ -66,7 +66,7 @@ const TOOL_FLOW: readonly string[] = [
     "start time, e.g. \"14:00\"), plus their name, phone, address, the service, and the " +
     "lane. It confirms the booking and speaks the sanctioned price — do not state a price yourself.",
   `If the caller only wants a written quote (a big or custom job you should not price), CALL ` +
-    `${TOOL_NAMES.requestQuote} and tell them the office will text a written quote.`,
+    `${TOOL_NAMES.requestQuote} and tell them the office will call them back with a written quote.`,
   `For a reschedule, cancellation, a billing question, or "where is my tech", CALL ` +
     `${TOOL_NAMES.takeMessage} so the office handles it.`,
   "Never invent a tool result: only confirm a booking after book_visit has actually returned a " +
@@ -117,8 +117,8 @@ const CASE_RULES: readonly string[] = [
     "billing: use take_message so the office handles it. Never discuss billing amounts.",
   "Vendor, spam, or wrong number: end the call politely.",
   "Tenant in a rental: for non-emergency work you need landlord authorization before booking.",
-  "Caller only wants a written quote: use request_quote and promise the office will text a " +
-    "written quote shortly.",
+  "Caller only wants a written quote: use request_quote and promise the office will call them " +
+    "back with a written quote shortly.",
 ];
 
 const GUARDRAILS: readonly string[] = [
