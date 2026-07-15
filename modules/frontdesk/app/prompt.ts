@@ -108,7 +108,7 @@ const REPAIR_SCRIPT =
   '(e.g. "8, noon, or 4") and book the one the caller picks.';
 
 const ESTIMATE_SCRIPT =
-  "Book a free estimate visit. If this service lists a ballpark range (see SERVICES), you MAY " +
+  "Book a free estimate visit (about 1–2 hours). If this service lists a ballpark range (see SERVICES), you MAY " +
   "state it ONCE as a rough range and add 'the exact price is after we see it in person', then " +
   "book the estimate visit. If it has no ballpark, never say a job price — the estimate visit is " +
   "how we price it. Offer a few start times (e.g. 8, noon, or 4) and book the one they pick.";
