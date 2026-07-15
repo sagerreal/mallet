@@ -48,9 +48,9 @@ templates** — none close the outcome→checklist loop. Confirmed whitespace.
 - The agent loop (`modules/ai/run-agent-turn` + MCP + tool-confirmations), the photo-upload
   pipeline (signed URL → Supabase job-photos bucket), and the full Vapi voice stack (front desk).
 
-**Net-new for the pillar:** a service→checklist link (auto-attach), the owner-facing Checklists
-surface, AI-generated starters, the **callback signal** (the one real data gap), the autopsy
-engine, the field copilot, and (later) cross-shop learning.
+**Net-new for the pillar:** the owner-facing Checklists surface, AI-generated starters, the
+**callback signal** (the one real data gap), the autopsy engine, the field copilot, and (later)
+service→checklist auto-attach + cross-shop learning.
 
 ---
 
@@ -58,9 +58,10 @@ engine, the field copilot, and (later) cross-shop learning.
 
 - **Phase 1 (this spec's build target) — Standard in the system + the callback signal.** The
   Checklists tab under Jobs (give the headless backend a home), AI-generated starter checklists per
-  job type, service→checklist auto-attach, and **callback auto-detection** over completed jobs.
-  Ships value alone (consistency day one, "you've had N callbacks" insight from day-one history) AND
-  starts generating the data the autopsy needs.
+  job type, and **callback auto-detection** over completed jobs. Checklists stay **manually attached
+  to jobs** (today's behavior — auto-attach is deferred, see 1b). Ships value alone (an owner-managed
+  standard + "you've had N callbacks" insight from day-one history) AND starts generating the data
+  the autopsy needs.
 - **Phase 2 — The Callback Autopsy loop.** Correlate callbacks → skipped/overridden items / missing
   photos by job type → the one-tap "here's your leak, fix it" card on Home. *The demo money slide.*
 - **Phase 3 — The field copilot.** Photo + push-to-talk voice "what do I do here?" in the tech app
@@ -96,20 +97,16 @@ The surface (the owner's **library of standards**):
 The tab is the plain utility name ("Checklists"); the pillar brand is "AI Foreman" (surfaces on Home
 in Phase 2).
 
-### 1b. Service → checklist auto-attach
+### 1b. Attachment stays manual (auto-attach DEFERRED)
 
-New nullable `service_id` on checklist templates (composite FK `(org_id, service_id) →
-pricebook_services(org_id, id)`), so a checklist is **the standard for a service.** When a job is
-created for that service — by the office OR **by the AI Front Desk booking that service** — the
-job's `checklist` snapshot is seeded from the linked template. This ties the jobs pillar to the
-booking playbook we already built (a "Water heater repair" service and its checklist are one
-standard). A checklist with no service is a manual/global template (today's behavior, preserved).
+**Decision (Owen, 2026-07-16): checklists stay manually attached to jobs for Phase 1** — the office
+picks and attaches a checklist to a job, exactly as the backend does today. Phase 1 does NOT add a
+service→checklist link or auto-attach. This keeps Phase 1 focused on giving the standard a *home* and
+capturing the callback signal, and sidesteps the two-service-catalog question entirely.
 
-Design note: the booking playbook's services (in `org_settings.booking`) and the pricebook services
-are currently distinct catalogs. Phase 1 links checklists to **pricebook services** (the stable,
-id-bearing catalog); mapping a booked front-desk service to a pricebook service for snapshot
-seeding is a small resolver (match by name/lane) — spec'd in the plan, kept behind graceful
-degradation (no match → no auto-attach, never blocks a booking).
+**Deferred (a later phase):** a `service_id` link on templates so a job created for a service
+(office- or front-desk-booked) auto-attaches that service's checklist — the "the standard applies
+without anyone remembering" enforcement. Noted so the architecture leaves room; not built now.
 
 ### 1c. AI-generated starter checklists
 
@@ -163,10 +160,10 @@ Surfaces this phase: candidate callbacks appear as a **confirm prompt** on the j
 
 ## Architecture (follows the house patterns)
 
-- **Checklists module** (`modules/checklists`) gains: the `service_id` link (schema + domain
-  passthrough + repo + DTO), the auto-attach at job-create (a small use-case that reads the linked
-  template and seeds `jobs.checklist`), and starter-seed data (`app/(office)/.../checklist-starters.ts`,
-  a static curated set mirroring `trade-playbooks.ts`).
+- **Checklists module** (`modules/checklists`): no domain change — Phase 1 wires the existing
+  backend (templates/items/router/hydrator) to a new owner UI, plus starter-seed data
+  (`app/(office)/.../checklist-starters.ts`, a static curated set mirroring `trade-playbooks.ts`) and
+  the AI-draft path via the existing agent loop. (The `service_id` auto-attach link is deferred.)
 - **Callback signal** lives in `modules/jobs`: additive `callback_of` + `callback_reason` columns
   (one migration, `jobs` already has RLS), domain passthrough, a pure `detectCallbacks(...)` app
   function (org-scoped query of completed jobs → candidate links), and a confirm mutation. Pure
@@ -186,6 +183,7 @@ Surfaces this phase: candidate callbacks appear as a **confirm prompt** on the j
 - The field copilot / voice (Phase 3).
 - Cross-shop learning / vision QA (Phase 4).
 - Front-desk callback tagging (Phase 2/3 — the `callback_of` field is added now so it's ready).
+- Service→checklist auto-attach (deferred — attachment stays manual for Phase 1, Owen's call).
 
 ## Open questions for review
 
@@ -203,7 +201,6 @@ Surfaces this phase: candidate callbacks appear as a **confirm prompt** on the j
 
 - An owner can manage a library of per-job-type checklists under Jobs → Checklists, seeded from
   starters in one click, never facing a blank page.
-- A checklist auto-attaches to jobs of its linked service (office-created and front-desk-booked).
 - Completed jobs that come back are auto-detected as candidate callbacks and confirmable, producing
   the clean, labeled callback dataset the autopsy (Phase 2) will consume.
 - Full gate green (tsc · lint · unit · int · coverage · build); adversarial review; one PR.
