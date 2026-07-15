@@ -11,7 +11,7 @@ import type {
   PriceAudit,
   RecordCallInput,
 } from "../domain/call-record";
-import { auditPrices } from "./price-audit";
+import { auditPrices, extractDollarFigures } from "./price-audit";
 import { deriveDisposition } from "./disposition";
 
 // Office task text when the audit flags a price the agent should never have spoken. The office
@@ -192,14 +192,16 @@ export class RecordCallUseCase {
   }
 }
 
-// The sanctioned spoken amounts: the service/diagnostic fee + every flat-lane service price. Repair
-// and estimate lanes never carry a speakable price. All in DOLLARS (playbook parity).
+// The sanctioned spoken amounts: the service/diagnostic fee + every flat-lane service price +
+// every ballpark figure from estimate/repair services. All in DOLLARS (playbook parity).
+// A trimmed-empty ballpark yields [] from extractDollarFigures — the coercion at this seam.
 const allowedDollars = (settings: OrgSettings): number[] => {
   const booking = settings.props.booking;
   const flatPrices = booking.services
     .filter((s) => s.lane === "flat" && typeof s.price === "number")
     .map((s) => s.price as number);
-  return [booking.serviceFee, ...flatPrices];
+  const ballparkFigures = booking.services.flatMap((s) => extractDollarFigures(s.ballpark ?? ""));
+  return [booking.serviceFee, ...flatPrices, ...ballparkFigures];
 };
 
 // The roles Vapi uses for the AI's own turns. Vapi's end-of-call artifact.messages labels the

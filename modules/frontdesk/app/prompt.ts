@@ -10,6 +10,8 @@ export interface PromptService {
   readonly price?: number;
   readonly triggers: string;
   readonly emergencyTriggers?: string;
+  /** Owner-authored rough price range the AI may state once on estimate calls (e.g. '$150–$300'). SANCTIONED — NOT redacted. */
+  readonly ballpark?: string;
 }
 
 export interface PromptFacts {
@@ -106,7 +108,9 @@ const REPAIR_SCRIPT =
   '(e.g. "8, noon, or 4") and book the one the caller picks.';
 
 const ESTIMATE_SCRIPT =
-  "Book a free estimate visit (about 1–2 hours). Never say a job price — the estimate visit is " +
+  "Book a free estimate visit (about 1–2 hours). If this service lists a ballpark range (see SERVICES), you MAY " +
+  "state it ONCE as a rough range and add 'the exact price is after we see it in person', then " +
+  "book the estimate visit. If it has no ballpark, never say a job price — the estimate visit is " +
   "how we price it. Offer a few start times (e.g. 8, noon, or 4) and book the one they pick.";
 
 const FLAT_PREFIX = "You may state exactly the listed price for this service, then book.";
@@ -202,7 +206,11 @@ const formatServiceLine = (s: PromptService): string => {
   // triggers is owner free text → redact stray prices; the flat-lane priceSuffix is the
   // sanctioned price and is appended AFTER redaction so it always renders.
   const priceSuffix = s.lane === "flat" && s.price !== undefined ? ` · $${s.price}` : "";
-  const base = `- ${s.name} · ${s.lane} · ${redactPriceTokens(s.triggers)}${priceSuffix}`;
+  // ballpark is the ONLY owner free-text field NOT redacted — it is a sanctioned price the
+  // owner authored for the AI to read verbatim. Empty/whitespace → omit (treat as unset).
+  const ballpark = s.ballpark?.trim();
+  const ballparkSuffix = ballpark ? ` · ballpark: ${ballpark}` : "";
+  const base = `- ${s.name} · ${s.lane} · ${redactPriceTokens(s.triggers)}${priceSuffix}${ballparkSuffix}`;
   // emergencyTriggers is owner free text → redact stray prices before interpolating.
   if (s.emergencyTriggers && s.emergencyTriggers.trim().length > 0) {
     return `${base} · emergency: ${redactPriceTokens(s.emergencyTriggers)}`;

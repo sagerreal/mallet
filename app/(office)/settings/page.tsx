@@ -777,6 +777,10 @@ function SecBooking() {
                 onChange={(e) => updateBookingService(i, "emergencyTriggers", e.target.value)}
                 placeholder="emergency words — e.g. burst pipe, no heat, flooding (seen today)"
                 style={{ flexBasis: "100%", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
+              <input type="text" defaultValue={s.ballpark ?? ""}
+                onChange={(e) => updateBookingService(i, "ballpark", e.target.value)}
+                placeholder="ballpark range (estimate lane) — e.g. $150–$300, said once with 'exact price after we see it'"
+                style={{ flexBasis: "100%", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
             </div>
           ))}
         </div>

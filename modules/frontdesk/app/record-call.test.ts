@@ -43,6 +43,33 @@ const settingsWith = (): OrgSettings => {
   return r.value;
 };
 
+// Settings with a ballpark range on an estimate service → allowed { 89, 150, 300, 500 }.
+const settingsWithBallpark = (): OrgSettings => {
+  const r = OrgSettings.create(
+    baseSettingsProps({
+      orgId: ORG,
+      brandName: "Acme Plumbing",
+      booking: {
+        services: [
+          { name: "Drain clear", lane: "repair", triggers: "clog" },
+          { name: "Faucet swap", lane: "flat", price: 150, triggers: "faucet" },
+          {
+            name: "Water heater install",
+            lane: "estimate",
+            triggers: "no hot water",
+            ballpark: "$300–$500",
+          },
+        ],
+        notServices: "septic",
+        serviceFee: 89,
+        feeCredited: true,
+      },
+    }),
+  );
+  if (r.ok === false) throw new Error("bad fixture");
+  return r.value;
+};
+
 class FakeCallRepo implements FrontdeskCallRepository {
   readonly recorded: RecordCallInput[] = [];
   // Simulates the stored row's prior price-flag state for the retry-guard. Default false (a fresh
@@ -276,5 +303,35 @@ describe("RecordCallUseCase", () => {
     ).resolves.toBeUndefined();
     expect(h.repo.recorded).toHaveLength(1);
     expect(h.repo.recorded[0]!.priceAudit).toEqual({ flagged: ["$300"] });
+  });
+
+  it("does NOT flag a ballpark figure the AI spoke (ballpark is now in allowedDollars)", async () => {
+    // The water heater install has ballpark "$300–$500" → allowed includes 300 and 500.
+    // The AI speaking "$300" (the low end of the ballpark) must NOT be flagged.
+    const h = makeHarness({ settings: settingsWithBallpark() });
+    await new RecordCallUseCase(h.deps).exec({
+      ...baseInput,
+      messages: [
+        { role: "assistant", message: "The visit is $89." },
+        { role: "assistant", message: "Water heaters typically run $300 to $500." },
+      ],
+    });
+    expect(h.repo.recorded[0]!.priceAudit).toEqual({ flagged: [] });
+    expect(h.createdTasks).toHaveLength(0);
+  });
+
+  it("still flags an unconfigured price even when ballpark prices are allowed", async () => {
+    // $999 is not in the allowed set (89 + 150 flat + 300/500 ballpark → not 999).
+    const h = makeHarness({ settings: settingsWithBallpark() });
+    await new RecordCallUseCase(h.deps).exec({
+      ...baseInput,
+      messages: [
+        { role: "assistant", message: "The visit is $89." },
+        { role: "assistant", message: "Actually it could be $999." },
+      ],
+    });
+    expect(h.repo.recorded[0]!.priceAudit).toEqual({ flagged: ["$999"] });
+    expect(h.createdTasks).toHaveLength(1);
+    expect(h.createdTasks[0]!.text).toContain("$999");
   });
 });
