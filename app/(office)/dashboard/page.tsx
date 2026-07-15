@@ -19,6 +19,7 @@ import { deriveHomePipe } from "@/features/home/pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
 import { HomePipe } from "@/features/home/home-pipe";
 import { OkQueue } from "@/features/home/ok-queue";
+import { SetupChecklist } from "@/features/home/setup-checklist";
 import { useMe } from "@/features/identity/hooks";
 
 /** "WED, JUL 8" from the live clock. */
@@ -52,6 +53,8 @@ export default function DashboardPage() {
 
   return (
     <div>
+      <SetupChecklist />
+
       <HandoffNote
         orgName={orgName}
         ownerFirst={ownerFirst}
