@@ -3,31 +3,20 @@
 /**
  * Settings → Booking → "Crew hours" card.
  *
- * Per-crew working-hours override editor. Each field crew member can have
- * per-weekday hours that differ from the org defaults (or be marked off).
- * Data source: v1.frontdesk.crewSchedules (list/save).
- *
- * Row semantics (drives the three per-weekday states):
- *   - No row for (crew, weekday)  → crew works the org default hours that day
- *   - Row open=0, close=0         → crew is OFF/closed that day
- *   - Row open < close            → crew's custom hours that day
- *
- * Design: two-level progressive disclosure via FoldCard:
- *   1. Outer FoldCard (collapsed by default) — summary = "{n} field crew"
- *   2. Per-crew rows; each expands in-flow to show seven weekday editors
- *
- * Local draft state only; no Zustand. Save submits all checked weekdays for
- * that crew; unchecked weekdays are omitted (fall back to org hours).
+ * Per-crew working-hours override editor using three-state day selects:
+ *   - Business hours: no row saved (uses org default)
+ *   - Custom hours: row with open < close
+ *   - Day off: row with open=0, close=0
  */
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
+import { HourSelect } from "./hour-select";
 
 // ---- constants ----------------------------------------------------------------
 
-/** Mon-first display order with correct JS getDay() values (0=Sun..6=Sat). */
-const WEEKDAYS: { label: string; n: number }[] = [
+const WEEKDAYS = [
   { label: "Mon", n: 1 },
   { label: "Tue", n: 2 },
   { label: "Wed", n: 3 },
@@ -35,11 +24,10 @@ const WEEKDAYS: { label: string; n: number }[] = [
   { label: "Fri", n: 5 },
   { label: "Sat", n: 6 },
   { label: "Sun", n: 0 },
-];
+] as const;
 
 // ---- types --------------------------------------------------------------------
 
-/** Mirrors the DTO shape returned by v1.frontdesk.crewSchedules.list. */
 interface ScheduleEntry {
   userId: string;
   weekday: number;
@@ -47,7 +35,6 @@ interface ScheduleEntry {
   closeHour: number;
 }
 
-/** Input shape for a single entry in v1.frontdesk.crewSchedules.save. */
 interface SaveEntry {
   weekday: number;
   openHour: number;
@@ -61,74 +48,56 @@ interface CrewMember {
   isFieldCrew: boolean;
 }
 
-/** Per-weekday draft state for a single crew member. */
-interface DayDraft {
-  /** true = custom row (open=0,close=0 = off; open<close = custom hours) */
-  custom: boolean;
+export interface DayDraft {
+  mode: "business" | "custom" | "off";
   openHour: number;
   closeHour: number;
 }
 
-/** Indexed by weekday number (0–6). */
 type CrewDraft = Record<number, DayDraft>;
+
+// ---- exported pure functions (for unit tests) ---------------------------------
+
+export function seedDayDraft(entry: Pick<ScheduleEntry, "openHour" | "closeHour"> | undefined): DayDraft {
+  if (!entry) return { mode: "business", openHour: 8, closeHour: 17 };
+  if (entry.openHour === 0 && entry.closeHour === 0) return { mode: "off", openHour: 0, closeHour: 0 };
+  return { mode: "custom", openHour: entry.openHour, closeHour: entry.closeHour };
+}
+
+export function draftToSaveEntries(
+  draft: CrewDraft,
+  weekdays: readonly { label: string; n: number }[],
+): SaveEntry[] {
+  const out: SaveEntry[] = [];
+  for (const { n } of weekdays) {
+    const d = draft[n];
+    if (!d || d.mode === "business") continue;
+    if (d.mode === "off") {
+      out.push({ weekday: n, openHour: 0, closeHour: 0 });
+    } else {
+      out.push({ weekday: n, openHour: d.openHour || 8, closeHour: d.closeHour || 17 });
+    }
+  }
+  return out;
+}
 
 // ---- helpers ------------------------------------------------------------------
 
-/** Mirrors the timeLabel helper in page.tsx exactly. */
-function timeLabel(h: number): string {
-  if (!h) return "closed";
-  const period = h < 12 ? "a" : "p";
-  const dh = h > 12 ? h - 12 : h;
-  return `${dh}${period}`;
-}
-
-/** Shared number-input style matching HrRow in page.tsx verbatim. */
-const NUM_INPUT_STYLE: React.CSSProperties = {
-  width: 58,
-  border: "1.5px solid var(--line)",
-  borderRadius: 7,
-  padding: "6px 8px",
-  fontFamily: "inherit",
-  fontSize: 13,
-};
-
-/**
- * Build a draft from the list API entries for a specific crew member.
- * Weekdays with no entry → unchecked (uses org hours).
- */
 function buildDraft(entries: ScheduleEntry[], userId: string): CrewDraft {
   const mine = entries.filter((e) => e.userId === userId);
   const draft: CrewDraft = {};
   for (const { n } of WEEKDAYS) {
     const row = mine.find((e) => e.weekday === n);
-    if (row) {
-      draft[n] = { custom: true, openHour: row.openHour, closeHour: row.closeHour };
-    } else {
-      draft[n] = { custom: false, openHour: 8, closeHour: 17 };
-    }
+    draft[n] = seedDayDraft(row);
   }
   return draft;
 }
 
-/** Derive entries to save: only weekdays marked custom. */
-function draftToEntries(draft: CrewDraft): SaveEntry[] {
-  return WEEKDAYS.filter(({ n }) => draft[n]?.custom).map(({ n }) => ({
-    weekday: n,
-    openHour: draft[n]?.openHour ?? 0,
-    closeHour: draft[n]?.closeHour ?? 0,
-  }));
-}
-
-/** Short one-line summary of a crew's current schedule entries. */
 function crewSummary(entries: ScheduleEntry[], userId: string): string {
   const mine = entries.filter((e) => e.userId === userId);
-  if (mine.length === 0) return "Uses business hours";
-  const customDays = mine.filter((e) => !(e.openHour === 0 && e.closeHour === 0));
-  const offDays = mine.filter((e) => e.openHour === 0 && e.closeHour === 0);
-  const parts: string[] = [];
-  if (customDays.length > 0) parts.push(`${customDays.length} day${customDays.length === 1 ? "" : "s"} custom`);
-  if (offDays.length > 0) parts.push(`${offDays.length} off`);
-  return parts.join(", ");
+  if (mine.length === 0) return "Business hours";
+  const N = mine.length;
+  return `Custom · ${N} day${N === 1 ? "" : "s"}`;
 }
 
 // ---- WeekdayRow ---------------------------------------------------------------
@@ -144,48 +113,54 @@ function WeekdayRow({ dayLabel, weekday, draft, onChange }: WeekdayRowProps) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", flexWrap: "wrap" }}>
       <span style={{ minWidth: 36, fontWeight: 600, fontSize: "12.5px" }}>{dayLabel}</span>
-      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink-3)" }}>
-        <input
-          type="checkbox"
-          checked={draft.custom}
-          onChange={(e) =>
-            onChange(weekday, { ...draft, custom: e.target.checked })
+      <select
+        value={draft.mode}
+        onChange={(e) => {
+          const mode = e.target.value as DayDraft["mode"];
+          if (mode === "business") {
+            onChange(weekday, { mode: "business", openHour: 8, closeHour: 17 });
+          } else if (mode === "off") {
+            onChange(weekday, { mode: "off", openHour: 0, closeHour: 0 });
+          } else {
+            onChange(weekday, { mode: "custom", openHour: draft.openHour || 8, closeHour: draft.closeHour || 17 });
           }
-        />
-        Custom
-      </label>
-      {draft.custom && (
+        }}
+        style={{
+          border: "1.5px solid var(--line)",
+          borderRadius: 7,
+          padding: "6px 8px",
+          fontFamily: "inherit",
+          fontSize: 13,
+        }}
+      >
+        <option value="business">Business hours</option>
+        <option value="custom">Custom hours</option>
+        <option value="off">Day off</option>
+      </select>
+      {draft.mode === "custom" && (
         <>
-          <input
-            type="number"
+          <HourSelect
+            value={draft.openHour}
+            onChange={(h) =>
+              // Keep the range valid: close stays after open (an inverted custom range reads as
+              // a day off to the slot math, silently killing that crew-day's availability).
+              onChange(weekday, {
+                ...draft,
+                openHour: h,
+                closeHour: h >= draft.closeHour ? Math.min(h + 1, 24) : draft.closeHour,
+              })
+            }
             min={0}
             max={23}
-            value={draft.openHour}
-            onChange={(e) =>
-              onChange(weekday, { ...draft, openHour: Number(e.target.value) })
-            }
-            style={NUM_INPUT_STYLE}
           />
           <span className="muted">to</span>
-          <input
-            type="number"
-            min={0}
-            max={24}
+          <HourSelect
             value={draft.closeHour}
-            onChange={(e) =>
-              onChange(weekday, { ...draft, closeHour: Number(e.target.value) })
-            }
-            style={NUM_INPUT_STYLE}
+            onChange={(h) => onChange(weekday, { ...draft, closeHour: h })}
+            min={draft.openHour + 1}
+            max={24}
           />
-          <span className="muted" style={{ fontSize: "11.5px" }}>
-            {draft.openHour || draft.closeHour
-              ? `${timeLabel(draft.openHour)}–${timeLabel(draft.closeHour)}`
-              : "closed"}
-          </span>
         </>
-      )}
-      {!draft.custom && (
-        <span className="muted" style={{ fontSize: "11.5px" }}>org hours</span>
       )}
     </div>
   );
@@ -201,7 +176,12 @@ interface CrewRowProps {
 function CrewRow({ member, allEntries }: CrewRowProps) {
   const utils = api.useUtils();
   const [open, setOpen] = useState(false);
+  // Lazy init: seed the draft ONCE at mount (buildDraft must not re-run on every parent render —
+  // a sibling's save invalidates the list query and re-renders us; the local draft is the source
+  // of truth for in-progress edits until OUR save succeeds).
   const [draft, setDraft] = useState<CrewDraft>(() => buildDraft(allEntries, member.id));
+  const seededRef = useRef<string>("");
+  if (seededRef.current === "") seededRef.current = JSON.stringify(draft);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -209,6 +189,7 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
     onSuccess: () => {
       setSaved(true);
       setSaveError(null);
+      seededRef.current = JSON.stringify(draft);
       utils.v1.frontdesk.crewSchedules.list.invalidate().catch(() => {});
       setTimeout(() => setSaved(false), 2000);
     },
@@ -219,6 +200,7 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
 
   const displayName = member.name ?? member.email;
   const summary = crewSummary(allEntries, member.id);
+  const isDirty = JSON.stringify(draft) !== seededRef.current;
 
   function handleDayChange(weekday: number, next: DayDraft) {
     setDraft((prev) => ({ ...prev, [weekday]: next }));
@@ -227,7 +209,7 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
 
   function handleSave() {
     setSaveError(null);
-    save.mutate({ userId: member.id, entries: draftToEntries(draft) });
+    save.mutate({ userId: member.id, entries: draftToSaveEntries(draft, WEEKDAYS) });
   }
 
   return (
@@ -248,17 +230,17 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
               key={n}
               dayLabel={label}
               weekday={n}
-              draft={draft[n] ?? { custom: false, openHour: 8, closeHour: 17 }}
+              draft={draft[n] ?? { mode: "business", openHour: 8, closeHour: 17 }}
               onChange={handleDayChange}
             />
           ))}
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
             <button
               className="btn primary"
-              disabled={save.isPending}
+              disabled={save.isPending || !isDirty}
               onClick={handleSave}
             >
-              {save.isPending ? "Saving…" : "Save"}
+              {save.isPending ? "Saving…" : "Save hours"}
             </button>
             {saved && (
               <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>
@@ -317,7 +299,7 @@ export function CrewHoursCard() {
       {!isLoading && !isError && fieldCrew.length > 0 && (
         <div>
           <p className="muted" style={{ fontSize: "11.5px", margin: "0 0 10px" }}>
-            Override daily hours for each crew member. Unchecked days use the org business hours.
+            Set custom working hours per crew member. Days without a custom setting follow business hours.
           </p>
           {fieldCrew.map((m) => (
             <CrewRow key={m.id} member={m} allEntries={allEntries} />
