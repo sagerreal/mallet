@@ -830,6 +830,13 @@ function SecBooking() {
               style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
           </div>
         </div>
+        <div className="field" style={{ marginTop: 10 }}>
+          <label>Address we drive from (service origin)</label>
+          <input type="text" defaultValue={bk.area.originAddress}
+            onChange={(e) => setBookingArea("originAddress", e.target.value)}
+            placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
+            style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
+        </div>
       </FoldCard>
     </>
   );

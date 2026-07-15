@@ -105,10 +105,12 @@ const FLAT_PREFIX = "You may state exactly the listed price for this service, th
 const CASE_RULES: readonly string[] = [
   "Gas leak or gas smell: tell the caller to leave the building, call 911 and their gas " +
     "utility now. Do NOT book anything.",
-  "Out of service area: the service area is listed in BUSINESS FACTS above (the named cities " +
-    "within the stated radius). If the caller's address or city is clearly OUTSIDE that area, " +
-    "politely tell them it's outside the area you cover and use take_message (offer a referral if " +
-    "you can) — do NOT book an out-of-area job. When it's unclear, book normally.",
+  "Confirm the caller's city (or address) EARLY, before offering times — you can pass it to " +
+    "check_availability as service_city so an out-of-area caller is caught before you offer a slot. " +
+    "The service area is listed in BUSINESS FACTS above (the named cities within the stated radius).",
+  "Out of service area: if a tool tells you the address is outside the area, or the city is clearly " +
+    "OUTSIDE the listed area, politely say it's outside the area you cover and take a message (offer " +
+    "a referral if you can) — do NOT book an out-of-area job. When it's unclear, book normally.",
   "Emergency (flooding, sewage in the living space, no water, burst pipe): book the soonest " +
     "slot and note EMERGENCY on the booking. Coach the caller to the main shut-off valve.",
   "Existing customer wants to reschedule, cancel, ask where their tech is, or asks about " +

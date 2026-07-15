@@ -1,4 +1,14 @@
-import { pgTable, uuid, text, integer, boolean, jsonb, timestamp, unique } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  boolean,
+  jsonb,
+  timestamp,
+  doublePrecision,
+  unique,
+} from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 
 // One row per org. Scalars are typed columns (money in cents, rates in bps, durations in integer
@@ -29,6 +39,14 @@ export const orgSettings = pgTable(
     hoursSunClose: integer("hours_sun_close").notNull().default(0),
     areaCities: text("area_cities").notNull().default(""),
     areaRadiusMi: integer("area_radius_mi").notNull().default(25),
+    // ── Service origin (front-desk vertical coverage) ─────────────────────────
+    // The single address proximity/drive-distance is measured FROM. Geocoded on save
+    // (US Census, best-effort) to originLat/originLng. All three nullable so the lazily-
+    // created default org_settings row is valid without an origin; a geocode miss leaves
+    // lat/lng null (the address is still stored) and never blocks the save.
+    serviceOriginAddress: text("service_origin_address"),
+    originLat: doublePrecision("origin_lat"),
+    originLng: doublePrecision("origin_lng"),
     // { services: {name,lane,price?,triggers}[], notServices: string, serviceFee: number,
     //   feeCredited: boolean } — the booking playbook. serviceFee is DOLLARS here (matches the
     //   prototype control), unlike money columns; documented so no one reads it as cents.

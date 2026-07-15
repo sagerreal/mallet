@@ -35,7 +35,8 @@ import { CreateVisitUseCase } from "../../../jobs/app/create-visit";
 import { OrgSettings, type OrgSettingsProps } from "../../../settings/domain/org-settings";
 import { baseSettingsProps } from "../../../settings/domain/org-settings.fixtures";
 import type { SettingsReader } from "../../domain/assistant";
-import { recordingSendNotification, type RecordingSendNotification, type SendMode } from "./test-support";
+import { recordingSendNotification, inertGeocoder, type RecordingSendNotification, type SendMode } from "./test-support";
+import type { Geocoder } from "../../domain/geocoder";
 import type { VoiceToolContext, VoiceToolDeps } from "./tool-result";
 
 // ---------------------------------------------------------------------------
@@ -238,6 +239,9 @@ interface HarnessOverrides {
   // When set, readFieldCrewIds throws — proves a crew-read failure degrades to UNASSIGNED, not a
   // failed booking.
   fieldCrewThrows?: boolean;
+  // The geocoder the service-area check uses. Defaults to an inert one (always misses → "unknown" →
+  // book normally), so existing booking tests are unaffected. Service-area tests pass a fixed point.
+  geocoder?: Geocoder;
 }
 
 // Assemble the VoiceToolDeps from the resolved fakes. Split from buildHarness so each function keeps
@@ -260,6 +264,7 @@ const buildDeps = (args: {
     createTask: over.createTask ?? new CreateTaskUseCase(tasks, CLOCK, ids),
     settings: fakeSettings(settings),
     availability: fakeAvailability(over.fieldCrewIds ?? [], over.fieldCrewThrows ?? false),
+    geocoder: over.geocoder ?? inertGeocoder(),
     sendNotification: sms.useCase,
     bus,
     clock: CLOCK,

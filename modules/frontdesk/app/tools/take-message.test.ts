@@ -29,7 +29,7 @@ import type { TaskRepository, TaskFilter } from "../../../tasks/domain/task-repo
 import { CreateTaskUseCase } from "../../../tasks/app/create-task";
 import { validation, err, type AppError, type Result } from "@mallet/shared/types";
 import { takeMessageTool, buildMessageTaskText, TAKE_MESSAGE_SPEAK } from "./take-message";
-import { inertSendNotification } from "./test-support";
+import { inertSendNotification, inertGeocoder } from "./test-support";
 import { toVoiceToolSpec, type VoiceToolContext, type VoiceToolDeps } from "./tool-result";
 
 // ---------------------------------------------------------------------------
@@ -171,6 +171,7 @@ const buildHarness = (overrides?: {
     createVisit: {} as never,
     settings: { async getByOrg() { return null; } },
     availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; } },
+    geocoder: inertGeocoder(),
     sendNotification: inertSendNotification(),
     bus,
     clock,

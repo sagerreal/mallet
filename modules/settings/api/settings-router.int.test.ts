@@ -96,6 +96,27 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     expect(snap.config.booking.notServices).toBe("septic");
   });
 
+  it("updateConfig persists the service-origin address; get returns it", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const address = "1600 Pennsylvania Ave NW, Washington, DC 20500";
+    const cfg = await caller.v1.settings.updateConfig({ serviceOriginAddress: address });
+
+    // The address round-trips through the new columns. lat/lng are geocoded best-effort by the
+    // real CensusGeocoder — assert only the SHAPE (number|null), never fail on a network miss.
+    expect(cfg.serviceOriginAddress).toBe(address);
+    expect(cfg.originLat === null || typeof cfg.originLat === "number").toBe(true);
+    expect(cfg.originLng === null || typeof cfg.originLng === "number").toBe(true);
+
+    const snap = await caller.v1.settings.get();
+    expect(snap.config.serviceOriginAddress).toBe(address);
+
+    // Clearing the address (null) drops the point too.
+    const cleared = await caller.v1.settings.updateConfig({ serviceOriginAddress: null });
+    expect(cleared.serviceOriginAddress).toBeNull();
+    expect(cleared.originLat).toBeNull();
+    expect(cleared.originLng).toBeNull();
+  });
+
   // ── pricebook ──────────────────────────────────────────────────────────────
 
   it("pricebook create/update/remove round-trips", async () => {

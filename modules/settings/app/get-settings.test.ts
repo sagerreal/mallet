@@ -32,6 +32,7 @@ export class FakeSettingsRepository implements SettingsRepository {
       techSeesPrice: true, techTexts: true, frontDesk: true, scopeOn: false,
       hoursWdOpen: 8, hoursWdClose: 17, hoursSatOpen: 0, hoursSatClose: 0,
       hoursSunOpen: 0, hoursSunClose: 0, areaCities: "", areaRadiusMi: 25,
+      serviceOriginAddress: null, originLat: null, originLng: null,
       booking: defaults(),
       brandName: "Test Business",
       brandTagline: null, brandSite: null, brandColor: null,

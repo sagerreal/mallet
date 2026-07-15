@@ -9,6 +9,7 @@ import type { CreateManualJobUseCase, CreateVisitUseCase } from "@mallet/jobs";
 import type { SendNotificationUseCase } from "@mallet/notifications";
 import type { VoiceToolSpec, SettingsReader } from "../../domain/assistant";
 import type { AvailabilityReader } from "../../domain/availability";
+import type { Geocoder } from "../../domain/geocoder";
 
 // The outcome of one voice tool, serialized into Vapi's `results[].result`. `speak` is the spoken
 // confirmation the agent reads back to the caller (never an opaque code — the caller hears it).
@@ -34,6 +35,11 @@ export interface VoiceToolDeps {
   readonly createTask: CreateTaskUseCase;
   readonly settings: SettingsReader;
   readonly availability: AvailabilityReader;
+  // Free-text-address → point resolver, injected (DI) so the service-area check depends on the port,
+  // not a provider. A single shared CensusGeocoder instance is fine (request-independent, own cache).
+  // A geocode miss returns null and NEVER throws, so the service-area check degrades to "book
+  // normally" (see service-area.ts) rather than blocking a booking on flaky geocoding.
+  readonly geocoder: Geocoder;
   // Comms egress (SMS/email) routed through the notification USE-CASE (not the raw sender) so every
   // send writes an observable notifications row (records stub:logged while A2P is blocked — the B3
   // requirement). book_visit fires a one-time transactional booking confirmation through it; a send

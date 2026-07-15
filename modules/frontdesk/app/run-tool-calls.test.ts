@@ -4,7 +4,7 @@ import { asOrgId, asUserId, type OrgId } from "@mallet/shared/types";
 import type { Principal } from "@mallet/identity";
 import type { ToolInvocationLedger } from "../domain/call-record";
 import type { VoiceTool, VoiceToolContext, VoiceToolDeps, VoiceToolResult } from "./tools/tool-result";
-import { inertSendNotification } from "./tools/test-support";
+import { inertSendNotification, inertGeocoder } from "./tools/test-support";
 import {
   RunToolCallsUseCase,
   FALLBACK_UNKNOWN_TOOL,
@@ -86,6 +86,7 @@ const fakeDeps: VoiceToolDeps = {
   // The runner never touches the read ports directly — inert stubs keep the deps shape valid.
   settings: { async getByOrg() { return null; } },
   availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; } },
+  geocoder: inertGeocoder(),
   sendNotification: inertSendNotification(),
   bus: { async emit() {} },
   clock: { now: () => new Date("2026-07-14T00:00:00Z") },

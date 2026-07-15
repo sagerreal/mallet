@@ -73,6 +73,15 @@ export interface OrgSettingsProps {
   readonly areaCities: string;
   /** Service area radius in miles (non-negative). */
   readonly areaRadiusMi: number;
+  /**
+   * Free-text address the service-area proximity is measured FROM. Nullable — a shop
+   * may not have set one. Geocoded on save (best-effort) into originLat/originLng.
+   */
+  readonly serviceOriginAddress: string | null;
+  /** Latitude of the geocoded service origin (WGS84). Null when unset or the geocode missed. */
+  readonly originLat: number | null;
+  /** Longitude of the geocoded service origin (WGS84). Null when unset or the geocode missed. */
+  readonly originLng: number | null;
   readonly booking: BookingCfg;
   // --- Brand identity (all optional/nullable; brandName mirrors orgs.name) ---
   /** Business display name — mirrors orgs.name; NOT NULL. */
@@ -212,6 +221,14 @@ export class OrgSettings {
       areaCities: fields.areaCities !== undefined ? fields.areaCities : this.p.areaCities,
       areaRadiusMi:
         fields.areaRadiusMi !== undefined ? fields.areaRadiusMi : this.p.areaRadiusMi,
+      // Service origin: undefined = keep current; explicit null clears it. lat/lng are patched
+      // together with the address by the geocode-on-save flow (never set independently by clients).
+      serviceOriginAddress:
+        fields.serviceOriginAddress !== undefined
+          ? fields.serviceOriginAddress
+          : this.p.serviceOriginAddress,
+      originLat: fields.originLat !== undefined ? fields.originLat : this.p.originLat,
+      originLng: fields.originLng !== undefined ? fields.originLng : this.p.originLng,
       booking: fields.booking !== undefined ? fields.booking : this.p.booking,
       updatedAt: now,
     });

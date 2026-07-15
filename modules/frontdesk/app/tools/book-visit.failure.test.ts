@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { validation, err, type AppError, type Result } from "@mallet/shared/types";
 import { CreateManualJobUseCase } from "../../../jobs/app/create-manual-job";
 import { CreateVisitUseCase } from "../../../jobs/app/create-visit";
-import { bookVisitTool, BOOK_VISIT_ERROR_SPEAK } from "./book-visit";
+import { bookVisitTool, BOOK_VISIT_ERROR_SPEAK, BOOK_VISIT_OUT_OF_AREA_SPEAK } from "./book-visit";
 import { deriveDisposition } from "../disposition";
+import { fixedGeocoder } from "./test-support";
 import { buildHarness, onlyJob, settingsFrom, REPAIR_INPUT, LEAD_UUID } from "./book-visit.harness";
 
 // The expected-failure + edge paths of book_visit. Every failure returns the SPOKEN FALLBACK with
@@ -112,5 +113,54 @@ describe("bookVisitTool — failure + edge paths", () => {
     expect(onlyJob(h).props.visits).toHaveLength(0);
     expect(h.tasks.created).toHaveLength(1);
     expect(h.tasks.created[0]!.text).toContain("Booking attempt failed");
+  });
+});
+
+// ── service-area check (authoritative — book_visit has the full address) ──
+// Fixture origin ≈ Pleasanton (37.66, -121.87), radius 25 mi. A geocoder pinned far east (Fresno,
+// ~120 mi) is confidently OUT; a near point is in; a null origin (default fixture) is "unknown".
+describe("bookVisitTool — service-area check", () => {
+  const OUT_OF_AREA_POINT = { lat: 36.74, lng: -119.77 };
+  const IN_AREA_POINT = { lat: 37.68, lng: -121.9 }; // ~2 mi from origin
+  const nearOrigin = { originLat: 37.66, originLng: -121.87, serviceOriginAddress: "Pleasanton" };
+
+  it("out-of-area address: does NOT book, speaks the decline, files a callback task", async () => {
+    const h = buildHarness({
+      settings: settingsFrom(nearOrigin),
+      geocoder: fixedGeocoder(OUT_OF_AREA_POINT),
+    });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+
+    expect(result.speak).toBe(BOOK_VISIT_OUT_OF_AREA_SPEAK);
+    // never booked: no lead ensured, no job, no SMS, and NO data.kind (won't disposition as booked)
+    expect(h.leads.ensured).toHaveLength(0);
+    expect(h.jobs.jobs.size).toBe(0);
+    expect(h.sms.sent).toHaveLength(0);
+    expect(result.data).toBeUndefined();
+    // but the lead is NOT dropped — an office callback task is filed with the address
+    expect(h.tasks.created).toHaveLength(1);
+    expect(h.tasks.created[0]!.text).toContain("Out of service area");
+    expect(h.tasks.created[0]!.text).toContain("12 Elm St, Pleasanton");
+    expect(h.tasks.created[0]!.leadId).toBeNull();
+  });
+
+  it("in-area address: books normally", async () => {
+    const h = buildHarness({
+      settings: settingsFrom(nearOrigin),
+      geocoder: fixedGeocoder(IN_AREA_POINT),
+    });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(h.jobs.jobs.size).toBe(1);
+    expect(result.speak).not.toBe(BOOK_VISIT_OUT_OF_AREA_SPEAK);
+  });
+
+  it("no-origin settings: books (unknown → graceful fallback), even with a far geocoder", async () => {
+    // Default fixture has null origin → the check is "unknown" regardless of the geocoded point.
+    const h = buildHarness({ geocoder: fixedGeocoder(OUT_OF_AREA_POINT) });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+    expect(result.data).toMatchObject({ kind: "work" });
+    expect(h.jobs.jobs.size).toBe(1);
+    expect(result.speak).not.toBe(BOOK_VISIT_OUT_OF_AREA_SPEAK);
   });
 });

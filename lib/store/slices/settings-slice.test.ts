@@ -308,7 +308,7 @@ describe("settings-slice persistence", () => {
       serviceFee: 89,
       feeCredited: true,
       hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
-      area: { cities: "Oakland", radiusMi: 25 },
+      area: { cities: "Oakland", radiusMi: 25, originAddress: "200 Ray St, Pleasanton, CA" },
     };
     const payload = buildBookingPayload(booking);
     expect(payload.booking.services[0]?.name).toBe("Drain cleaning");
@@ -318,6 +318,19 @@ describe("settings-slice persistence", () => {
     expect(payload.hoursWdClose).toBe(17);
     expect(payload.areaCities).toBe("Oakland");
     expect(payload.areaRadiusMi).toBe(25);
+    expect(payload.serviceOriginAddress).toBe("200 Ray St, Pleasanton, CA");
+  });
+
+  it("buildBookingPayload maps a blank/whitespace origin address to null", () => {
+    const booking = {
+      services: [],
+      notServices: "",
+      serviceFee: 89,
+      feeCredited: true,
+      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      area: { cities: "", radiusMi: 25, originAddress: "   " },
+    };
+    expect(buildBookingPayload(booking).serviceOriginAddress).toBeNull();
   });
 
   // --- misc config -----------------------------------------------------------

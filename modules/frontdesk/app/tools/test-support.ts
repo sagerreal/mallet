@@ -5,6 +5,7 @@ import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 // router, which transitively pulls the config validator (throws without DB env) — the house
 // unit-test gotcha. These deep imports keep this test-support module loadable without DB env.
 import { SendNotificationUseCase } from "../../../notifications/app/send-notification";
+import type { Geocoder, GeoPoint } from "../../domain/geocoder";
 import type {
   NotificationSender,
   SendNotificationCmd,
@@ -116,3 +117,19 @@ export const recordingSendNotification = (mode: SendMode = "ok"): RecordingSendN
 // check_availability): satisfies the deps shape with a no-recording success path.
 export const inertSendNotification = (): SendNotificationUseCase =>
   recordingSendNotification("ok").useCase;
+
+// An inert Geocoder for tools/tests that don't exercise the service-area path: always misses (→ the
+// service-area check degrades to "unknown" → book normally), never throws. Satisfies the deps shape.
+export const inertGeocoder = (): Geocoder => ({
+  async geocode() {
+    return null;
+  },
+});
+
+// A fixed-point Geocoder for service-area tests: returns `point` for ANY address (never throws), so a
+// test can pin the caller to a far/near coordinate deterministically without hitting the network.
+export const fixedGeocoder = (point: GeoPoint): Geocoder => ({
+  async geocode() {
+    return point;
+  },
+});

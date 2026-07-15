@@ -519,6 +519,13 @@
       "when": 1784004780201,
       "tag": "0073_frontdesk_disposition_check",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1784064331094,
+      "tag": "0074_bumpy_kylun",
+      "breakpoints": true
     }
   ]
 }

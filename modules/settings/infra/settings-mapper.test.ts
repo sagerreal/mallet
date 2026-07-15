@@ -34,6 +34,9 @@ const baseRow = (): OrgSettingsRow => ({
   hoursSunClose: 0,
   areaCities: "Pleasanton",
   areaRadiusMi: 25,
+  serviceOriginAddress: null,
+  originLat: null,
+  originLng: null,
   booking: defaultBooking,
   brandTagline: null,
   brandSite: null,
@@ -109,6 +112,24 @@ describe("toOrgSettings (settings mapper)", () => {
     expect(p.brandInitials).toBe("AP");
     expect(p.brandSite).toBeNull();
     expect(p.brandLogoUrl).toBeNull();
+  });
+
+  it("round-trips the service-origin fields when present", () => {
+    const row = baseRow();
+    row.serviceOriginAddress = "123 Main St, Pleasanton, CA 94566";
+    row.originLat = 37.6624;
+    row.originLng = -121.8747;
+    const p = toOrgSettings(row, TEST_ORG_NAME).props;
+    expect(p.serviceOriginAddress).toBe("123 Main St, Pleasanton, CA 94566");
+    expect(p.originLat).toBe(37.6624);
+    expect(p.originLng).toBe(-121.8747);
+  });
+
+  it("maps null service-origin fields to null (unset origin)", () => {
+    const p = toOrgSettings(baseRow(), TEST_ORG_NAME).props;
+    expect(p.serviceOriginAddress).toBeNull();
+    expect(p.originLat).toBeNull();
+    expect(p.originLng).toBeNull();
   });
 
   it("passes the booking jsonb blob through unchanged", () => {

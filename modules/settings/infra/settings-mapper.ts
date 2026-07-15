@@ -35,6 +35,10 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     hoursSunClose: row.hoursSunClose,
     areaCities: row.areaCities,
     areaRadiusMi: row.areaRadiusMi,
+    // Service origin (front-desk vertical coverage) — all nullable in the DB.
+    serviceOriginAddress: row.serviceOriginAddress ?? null,
+    originLat: row.originLat ?? null,
+    originLng: row.originLng ?? null,
     // Jsonb is typed as `unknown` by Drizzle — cast to BookingCfg. The DB enforces NOT NULL
     // and only this app writes the column, so a bad cast indicates programmer error or migration
     // skew: throw loudly so it surfaces immediately rather than propagating corrupted config.
