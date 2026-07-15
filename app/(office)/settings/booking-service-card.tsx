@@ -24,17 +24,20 @@ function laneChipLabel(service: BookingService): string {
   return LANE_LABEL[service.lane];
 }
 
-const LANE_CAPTION: Record<BookingService["lane"], string> = {
-  repair: "Tech diagnoses on site and gives the exact price there.",
-  estimate: "Free visit to scope the job, then you send a quote.",
-  flat: "Booked at the set price below.",
-};
-
 const LANE_OPTIONS = [
   { value: "repair" as const, label: "Repair" },
   { value: "estimate" as const, label: "Estimate" },
   { value: "flat" as const, label: "Flat price" },
 ] as const;
+
+// Compact field sizing for this tab — overrides the roomier global .field input so booking
+// fields read as crisp single-line inputs, not paragraph boxes. Width-capped for the same reason.
+export const COMPACT_INPUT: React.CSSProperties = {
+  fontSize: 13.5,
+  padding: "8px 10px",
+  borderRadius: 8,
+};
+export const FIELD_MAX_WIDTH = 560;
 
 // Small status chip on the collapsed row (lane / emergency / ballpark markers).
 const CHIP_STYLE: React.CSSProperties = {
@@ -142,12 +145,14 @@ function ExpandedEditor({
         borderBottom: isLast ? "none" : "1px solid var(--line-2, var(--line))",
       }}
     >
+      <div style={{ maxWidth: FIELD_MAX_WIDTH }}>
       <div className="field">
         <label>Service name</label>
         <input
           type="text"
           defaultValue={service.name}
           onChange={(e) => updateBookingService(index, "name", e.target.value)}
+          style={COMPACT_INPUT}
         />
       </div>
 
@@ -163,13 +168,10 @@ function ExpandedEditor({
                 min={0}
                 defaultValue={service.price ?? 0}
                 onChange={(e) => updateBookingService(index, "price", e.target.value)}
-                style={{ width: 110 }}
+                style={{ ...COMPACT_INPUT, width: 110 }}
               />
             </div>
           )}
-        </div>
-        <div className="muted" style={{ fontSize: 12, marginTop: 7 }}>
-          {LANE_CAPTION[lane]}
         </div>
       </div>
 
@@ -180,10 +182,8 @@ function ExpandedEditor({
           defaultValue={service.triggers}
           onChange={(e) => updateBookingService(index, "triggers", e.target.value)}
           placeholder="e.g. leaking, no hot water, clog"
+          style={COMPACT_INPUT}
         />
-        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          How customers describe this job when they call — used to match the call to this service.
-        </div>
       </div>
 
       {showEmergency && (
@@ -194,10 +194,8 @@ function ExpandedEditor({
             defaultValue={service.emergencyTriggers ?? ""}
             onChange={(e) => updateBookingService(index, "emergencyTriggers", e.target.value)}
             placeholder="e.g. burst pipe, no heat, flooding"
+            style={COMPACT_INPUT}
           />
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            Booked same-day when a caller says these.
-          </div>
         </div>
       )}
 
@@ -208,13 +206,13 @@ function ExpandedEditor({
             type="text"
             defaultValue={service.ballpark ?? ""}
             onChange={(e) => updateBookingService(index, "ballpark", e.target.value)}
-            placeholder="e.g. $150–$300"
+            placeholder="e.g. $150–$300, said once — exact price after the visit"
+            style={COMPACT_INPUT}
           />
-          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-            Said once on estimate calls — the exact price comes after the visit.
-          </div>
         </div>
       )}
+
+      </div>
 
       {/* Footer: optional-field add buttons left, destructive action right — one calm row. */}
       <div
@@ -224,6 +222,7 @@ function ExpandedEditor({
           justifyContent: "space-between",
           gap: 8,
           marginTop: 2,
+          maxWidth: FIELD_MAX_WIDTH,
         }}
       >
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

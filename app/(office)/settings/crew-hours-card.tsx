@@ -297,9 +297,6 @@ export function CrewHoursCard() {
 
       {!isLoading && !isError && fieldCrew.length > 0 && (
         <div>
-          <p className="muted" style={{ fontSize: "11.5px", margin: "0 0 10px" }}>
-            Set custom working hours per crew member. Days without a custom setting follow business hours.
-          </p>
           {fieldCrew.map((m) => (
             <CrewRow key={m.id} member={m} allEntries={allEntries} />
           ))}
