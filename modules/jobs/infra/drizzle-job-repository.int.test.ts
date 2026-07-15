@@ -55,6 +55,7 @@ const makeVisit = (position = 1, durationMinutes = 120): JobVisit => {
 interface ManualJobOverrides {
   num: string;
   svc?: string | null;
+  scope?: string | null;
 }
 
 const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
@@ -98,6 +99,7 @@ const makeManualJob = (orgId: OrgId, leadId: LeadId, o: ManualJobOverrides): Job
     assigneeUserId: null,
     title: "Manual Job",
     svc: o.svc ?? null,
+    scope: o.scope ?? null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,
@@ -319,6 +321,40 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
       return { svc: back?.props.svc ?? null };
     });
     expect(result.svc).toBe("estimate");
+  });
+
+  it("persists scope on insertManual and reads it back; null when omitted", async () => {
+    const orgA = asOrgId(orgAId);
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+
+      // Job WITH a scope note
+      const numWith = await repo.nextNumber();
+      const withScope = makeManualJob(orgA, asLeadId(leadAId), {
+        num: numWith,
+        scope: "  water heater is ~15 years old, original install  ",
+      });
+      await repo.insertManual(withScope);
+      const backWith = await repo.findById(withScope.props.id);
+
+      // Job WITHOUT a scope note (null)
+      const numWithout = await repo.nextNumber();
+      const withoutScope = makeManualJob(orgA, asLeadId(leadAId), { num: numWithout });
+      await repo.insertManual(withoutScope);
+      const backWithout = await repo.findById(withoutScope.props.id);
+
+      return {
+        foundWith: backWith !== null,
+        withScope: backWith?.props.scope,
+        foundWithout: backWithout !== null,
+        withoutScope: backWithout?.props.scope,
+      };
+    });
+    // The domain trims on create, so the stored value is already trimmed.
+    expect(result.foundWith).toBe(true);
+    expect(result.withScope).toBe("water heater is ~15 years old, original install");
+    expect(result.foundWithout).toBe(true);
+    expect(result.withoutScope).toBeNull();
   });
 
   it("archive soft-deletes the job so findById returns null", async () => {

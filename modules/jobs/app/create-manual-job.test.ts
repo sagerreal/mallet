@@ -85,4 +85,19 @@ describe("CreateManualJobUseCase", () => {
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.props.kind).toBe("estimate");
   });
+
+  it("passes an explicit scope through to the job props", async () => {
+    const r = await useCase.exec({
+      orgId: ORG, leadId: LEAD, title: null, svc: null, addr: null, phone: null, notes: null,
+      scope: "unit is about 12 years old",
+    });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.scope).toBe("unit is about 12 years old");
+  });
+
+  it("defaults scope to null when the command omits it", async () => {
+    const r = await useCase.exec({ orgId: ORG, leadId: LEAD, title: null, svc: null, addr: null, phone: null, notes: null });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.scope).toBeNull();
+  });
 });

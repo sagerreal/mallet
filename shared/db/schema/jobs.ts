@@ -61,6 +61,9 @@ export const jobs = pgTable(
     // Optional before-you-leave checklist attached by the office (see JobChecklistColumn).
     // Nullable: most jobs have none.
     checklist: jsonb("checklist").$type<JobChecklistColumn>(),
+    // Free-text "anything else noticed?" note captured during the booking flow (AI front desk).
+    // Nullable — office-created jobs have none; only set when a caller volunteered context.
+    scope: text("scope"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
