@@ -85,11 +85,10 @@ Timesheets = *labor*, **Checklists = the standard for *how*.**
 
 The surface (the owner's **library of standards**):
 - A **list of checklists**, one per job type, list-first like the booking services (compact rows:
-  name · linked service · item count · a "⚡ from callbacks" chip once Phase 2 lands).
-- Click a row → an **editor** (in-flow, matching the booking-service-card pattern): checklist name,
-  the linked **service** (the auto-attach key), and its **items** — each an ordered row with a text
-  label + a type toggle **Check / Photo** (photo items require a photo to pass). Add/remove/reorder
-  items; a "Remove checklist" action.
+  name · item count · a "⚡ from callbacks" chip once Phase 2 lands).
+- Click a row → an **editor** (in-flow, matching the booking-service-card pattern): checklist name
+  and its **items** — each an ordered row with a text label + a type toggle **Check / Photo**
+  (photo items require a photo to pass). Add/remove/reorder items; a "Remove checklist" action.
 - **"+ New checklist"** and **"Starter checklists"** buttons at the top (mirrors the booking tab's
   add-service modal + starter-playbook picker).
 - No grey helper text; labels + placeholders carry meaning (house rule).
