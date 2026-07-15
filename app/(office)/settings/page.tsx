@@ -29,6 +29,8 @@ import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { ServiceRow } from "./booking-service-card";
+import { AddServiceModal, type NewServiceInput } from "./add-service-modal";
+import { TagInput } from "./tag-input";
 import { HourSelect } from "./hour-select";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
@@ -41,6 +43,14 @@ const MALLET_NUMBER = "(925) 555-0100";
 
 function cap(s: string): string {
   return s ? (s[0] ?? "").toUpperCase() + s.slice(1) : "";
+}
+
+function callRulesSummary(notServices: string, deferKeywords: string): string {
+  const count = [notServices, deferKeywords]
+    .flatMap((v) => v.split(/[,·]/))
+    .map((t) => t.trim())
+    .filter(Boolean).length;
+  return `${count} rule${count === 1 ? "" : "s"}`;
 }
 
 function timeLabel(h: number): string {
@@ -711,14 +721,16 @@ function SecBooking() {
   // Single-expanded service accordion — null = all collapsed
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
-  const [bkSvc, setBkSvc] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
 
-  function handleAddService() {
-    if (!bkSvc.trim()) return;
-    addBookingService(bkSvc);
-    setBkSvc("");
-    // Auto-expand the new service (it will be at the end)
-    setExpandedIdx(bk.services.length);
+  // Modal-driven add: create the named service, then fill lane/price/description on the new
+  // index (append order is stable — addBookingService pushes to the end).
+  function handleAddService(svc: NewServiceInput) {
+    const newIdx = bk.services.length;
+    addBookingService(svc.name);
+    updateBookingService(newIdx, "lane", svc.lane);
+    if (svc.lane === "flat" && svc.price !== "") updateBookingService(newIdx, "price", svc.price);
+    if (svc.triggers.trim()) updateBookingService(newIdx, "triggers", svc.triggers.trim());
   }
 
   function handleToggleService(i: number) {
@@ -796,6 +808,9 @@ function SecBooking() {
       </h3>
 
       <FoldCard title="Services &amp; routing" defaultOpen summary={`${bk.services.length} services`}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <button className="btn primary" onClick={() => setAddOpen(true)}>+ Add service</button>
+        </div>
         {/* List-first accordion: compact rows, single expanded editor */}
         <div style={{ border: "1px solid var(--line-2, var(--line))", borderRadius: 8, overflow: "hidden", marginBottom: 10 }}>
           {bk.services.map((s, i) => (
@@ -812,32 +827,29 @@ function SecBooking() {
           ))}
           {bk.services.length === 0 && (
             <div className="muted" style={{ fontSize: 13, padding: "12px 14px" }}>
-              No services yet — add one below.
+              No services yet — use + Add service above.
             </div>
           )}
         </div>
-        <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "stretch" }}>
-          <div className="field" style={{ flex: 1, maxWidth: 420, marginBottom: 0 }}>
-            <input type="text" id="bkSvc" placeholder="New service name — e.g. Tankless install" value={bkSvc}
-              onChange={(e) => setBkSvc(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddService(); }}
-              style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
-          </div>
-          <button className="btn primary" onClick={handleAddService}>+ Add service</button>
-        </div>
-        <div className="field" style={{ marginTop: 10 }}>
+        <AddServiceModal open={addOpen} onClose={() => setAddOpen(false)} onAdd={handleAddService} />
+      </FoldCard>
+
+      <FoldCard title="Call rules" summary={callRulesSummary(bk.notServices, bk.deferKeywords ?? "")}>
+        <div className="field">
           <label>We don&apos;t do</label>
-          <input type="text" defaultValue={bk.notServices}
-            onChange={(e) => setBookingField("notServices", e.target.value)}
-            placeholder="e.g. new construction, septic"
-            style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8, maxWidth: 560 }} />
+          <TagInput
+            value={bk.notServices}
+            onChange={(v) => setBookingField("notServices", v)}
+            placeholder="Type a service and press Enter — e.g. new construction"
+          />
         </div>
-        <div className="field" style={{ marginTop: 10 }}>
+        <div className="field" style={{ marginBottom: 0 }}>
           <label>Hand off to a person</label>
-          <input type="text" defaultValue={bk.deferKeywords ?? ""}
-            onChange={(e) => setBookingField("deferKeywords", e.target.value)}
-            placeholder="e.g. insurance, claim, adjuster, warranty — the office calls these back"
-            style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8, maxWidth: 560 }} />
+          <TagInput
+            value={bk.deferKeywords ?? ""}
+            onChange={(v) => setBookingField("deferKeywords", v)}
+            placeholder="Type a word and press Enter — e.g. insurance, claim, warranty"
+          />
         </div>
       </FoldCard>
 
