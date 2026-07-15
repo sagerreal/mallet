@@ -2,7 +2,7 @@ import type { OrgId, LeadId, CursorPage } from "@mallet/shared/types";
 
 // How a completed call is classified at record time, derived from its tool invocations.
 // Precedence (highest → lowest) is applied in deriveDisposition (app/disposition.ts), not here:
-//   emergency > booked_estimate > booked_job > quote_request > message > no_action.
+//   emergency > booked_estimate > booked_job > quote_request > callback > message > no_action.
 export type CallDisposition =
   | "booked_job"
   | "booked_estimate"

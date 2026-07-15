@@ -4,8 +4,8 @@ import { logger } from "@mallet/shared/observability";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // The spoken confirmation on success — functional, not chatty (house rule). Promises only what
-// the office actually does: flag it and call back. No dollar amounts, no arrival-time promise,
-// no "I" as a subject (the AI is a router here, not a person making a commitment).
+// the office actually does: flag it and call back. No dollar amounts, no arrival-time promise
+// (the AI is a router here — it hands off, it doesn't commit to work or a price).
 export const ESCALATE_CALLBACK_SPEAK =
   "I've flagged this for the office — someone will call you back shortly.";
 

@@ -84,6 +84,11 @@ describe("deriveDisposition", () => {
       expected: "booked_job",
     },
     {
+      name: "estimate booking beats callback (book_visit estimate + escalate_callback → booked_estimate)",
+      rows: [row("book_visit", { kind: "estimate" }), row("escalate_callback")],
+      expected: "booked_estimate",
+    },
+    {
       name: "emergency still wins over callback",
       rows: [row("escalate_callback"), row("book_visit", { emergency: true })],
       expected: "emergency",
