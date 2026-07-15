@@ -333,6 +333,48 @@ describe("settings-slice persistence", () => {
     expect(buildBookingPayload(booking).serviceOriginAddress).toBeNull();
   });
 
+  it("buildBookingPayload carries emergencyTriggers through per-service objects", () => {
+    const booking = {
+      services: [
+        { name: "Drain cleaning", lane: "flat" as const, price: 99, triggers: "clogged", emergencyTriggers: "burst pipe, flooding" },
+      ],
+      notServices: "",
+      serviceFee: 89,
+      feeCredited: true,
+      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      area: { cities: "", radiusMi: 25, originAddress: "" },
+    };
+    const payload = buildBookingPayload(booking);
+    expect(payload.booking.services[0]?.emergencyTriggers).toBe("burst pipe, flooding");
+  });
+
+  it("buildBookingPayload carries deferKeywords at the cfg level", () => {
+    const booking = {
+      services: [],
+      notServices: "",
+      serviceFee: 89,
+      feeCredited: true,
+      deferKeywords: "insurance, claim, adjuster",
+      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      area: { cities: "", radiusMi: 25, originAddress: "" },
+    };
+    const payload = buildBookingPayload(booking);
+    expect(payload.booking.deferKeywords).toBe("insurance, claim, adjuster");
+  });
+
+  it("buildBookingPayload passes deferKeywords as undefined when not set", () => {
+    const booking = {
+      services: [],
+      notServices: "",
+      serviceFee: 89,
+      feeCredited: true,
+      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      area: { cities: "", radiusMi: 25, originAddress: "" },
+    };
+    const payload = buildBookingPayload(booking);
+    expect(payload.booking.deferKeywords).toBeUndefined();
+  });
+
   // --- misc config -----------------------------------------------------------
 
   it("setTrade persists via updateConfig", async () => {
