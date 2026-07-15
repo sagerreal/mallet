@@ -102,6 +102,8 @@ export class DrizzleJobRepository implements JobRepository {
       scheduledStart: vp.scheduledStart,
       scheduledEnd: vp.scheduledEnd,
       durationMinutes: vp.durationMinutes,
+      lat: vp.lat ?? null,
+      lng: vp.lng ?? null,
       status: vp.status,
       startedAt: vp.startedAt,
       completedAt: vp.completedAt,

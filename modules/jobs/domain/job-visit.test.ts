@@ -271,3 +271,86 @@ describe("Job.isAssignedTo", () => {
     expect(job.isAssignedTo(tech)).toBe(false);
   });
 });
+
+// ── JobVisit.create — lat/lng geocoded point ─────────────────────────────────
+
+describe("JobVisit.create — lat/lng", () => {
+  it("accepts a valid geocoded point and exposes it on props", () => {
+    const r = JobVisit.create(visitProps({ lat: 37.6, lng: -122.4 }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.props.lat).toBe(37.6);
+    expect(r.value.props.lng).toBe(-122.4);
+  });
+
+  it("defaults both lat and lng to null when omitted", () => {
+    const r = JobVisit.create(visitProps());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.props.lat).toBeNull();
+    expect(r.value.props.lng).toBeNull();
+  });
+
+  it("defaults both lat and lng to null when explicitly undefined", () => {
+    const r = JobVisit.create(visitProps({ lat: undefined, lng: undefined }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.props.lat).toBeNull();
+    expect(r.value.props.lng).toBeNull();
+  });
+
+  it("rejects lat without lng (both-or-neither rule)", () => {
+    const r = JobVisit.create(visitProps({ lat: 37.6, lng: undefined }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.field).toBe("lat");
+      expect(r.error.message).toMatch(/must be set together/);
+    }
+  });
+
+  it("rejects lng without lat (both-or-neither rule)", () => {
+    const r = JobVisit.create(visitProps({ lat: undefined, lng: -122.4 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("lat");
+  });
+
+  it("rejects lat null with lng non-null (both-or-neither rule)", () => {
+    const r = JobVisit.create(visitProps({ lat: null, lng: -122.4 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("lat");
+  });
+
+  it("rejects lat above 90 (out of range)", () => {
+    const r = JobVisit.create(visitProps({ lat: 91, lng: -122.4 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("lat");
+  });
+
+  it("rejects lat below -90 (out of range)", () => {
+    const r = JobVisit.create(visitProps({ lat: -91, lng: -122.4 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("lat");
+  });
+
+  it("accepts lat at the extremes (-90 and 90)", () => {
+    expect(JobVisit.create(visitProps({ lat: 90, lng: 0 })).ok).toBe(true);
+    expect(JobVisit.create(visitProps({ lat: -90, lng: 0 })).ok).toBe(true);
+  });
+
+  it("rejects lng above 180 (out of range)", () => {
+    const r = JobVisit.create(visitProps({ lat: 37.6, lng: 181 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("lng");
+  });
+
+  it("rejects lng below -180 (out of range)", () => {
+    const r = JobVisit.create(visitProps({ lat: 37.6, lng: -181 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("lng");
+  });
+
+  it("accepts lng at the extremes (-180 and 180)", () => {
+    expect(JobVisit.create(visitProps({ lat: 0, lng: 180 })).ok).toBe(true);
+    expect(JobVisit.create(visitProps({ lat: 0, lng: -180 })).ok).toBe(true);
+  });
+});
