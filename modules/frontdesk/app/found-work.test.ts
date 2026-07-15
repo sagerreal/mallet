@@ -53,6 +53,22 @@ describe("scopeSuggestsFoundWork", () => {
   it("matches 'rot' keyword", () => {
     expect(scopeSuggestsFoundWork("the wood looks like rot")).toBe(true);
   });
+
+  it("matches keyword inflections at a word boundary (older, leaking, corrosion, damaged)", () => {
+    expect(scopeSuggestsFoundWork("the heater is older than the house")).toBe(true);
+    expect(scopeSuggestsFoundWork("valve is corroded")).toBe(true);
+    expect(scopeSuggestsFoundWork("the cabinet is damaged")).toBe(true);
+  });
+
+  it("does NOT fire on mid-word false positives ('old' in cold/sold/told, 'rust' in trust/crust)", () => {
+    // The classic naive-substring traps: these everyday words must NOT be flagged found-work.
+    expect(scopeSuggestsFoundWork("the water runs cold")).toBe(false);
+    expect(scopeSuggestsFoundWork("they sold the house last year")).toBe(false);
+    expect(scopeSuggestsFoundWork("I told the tenant to call")).toBe(false);
+    expect(scopeSuggestsFoundWork("I don't trust the old owner's work")).toBe(true); // 'old' IS a word here
+    expect(scopeSuggestsFoundWork("just need a new faucet, I trust you")).toBe(false); // 'trust' only → no match
+    expect(scopeSuggestsFoundWork("cut the crust off")).toBe(false);
+  });
 });
 
 // ── decorateScope ────────────────────────────────────────────────────────────
