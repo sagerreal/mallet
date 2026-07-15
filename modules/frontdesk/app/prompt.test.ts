@@ -18,7 +18,6 @@ const baseFacts = (o: Partial<PromptFacts> = {}): PromptFacts => ({
   hoursSatClose: 13,
   hoursSunOpen: 0,
   hoursSunClose: 0,
-  areaCities: "Pleasanton, Dublin",
   areaRadiusMi: 25,
   notServices: "septic tanks, well pumps",
   serviceFee: 89,
@@ -88,8 +87,8 @@ describe("buildSystemPrompt — business facts", () => {
   it("renders weekday/Saturday/Sunday hours and the service area", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     expect(p).toMatch(/8:00.*5:00|8.*17|8 am|8:00/i);
-    expect(p).toMatch(/Pleasanton, Dublin/);
-    expect(p).toMatch(/25/); // radius
+    expect(p).toMatch(/within 25 miles/i);
+    expect(p).toMatch(/measured by real distance/i);
   });
 
   it("declines notServices politely and suggests a specialist", () => {
@@ -247,9 +246,9 @@ describe("buildSystemPrompt — case rules", () => {
     expect(p).toMatch(/out of service area|outside that area|outside the area you cover/i);
     expect(p).toMatch(/take_message/);
     expect(p).toMatch(/do NOT book an out-of-area job|do not book an out-of-area/i);
-    // the service area (cities + radius) is present in the prompt for the agent to reason against
-    expect(p).toMatch(/Pleasanton, Dublin/);
-    expect(p).toMatch(/25 miles|within 25/);
+    // the area check is TOOL-driven (real distance from the shop), not a city-name list
+    expect(p).toMatch(/measures the real distance from the shop/i);
+    expect(p).not.toMatch(/named cities/i);
   });
 
   it("emergency is ALWAYS ON: the generic safety-net rule fires even with no emergency words configured", () => {
