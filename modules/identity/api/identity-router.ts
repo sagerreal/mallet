@@ -11,7 +11,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { ROLES } from "../domain/principal";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
-const meDTO = z.object({ role: roleEnum, orgId: z.string().uuid(), orgName: z.string(), email: z.string(), name: z.string().nullable(), userId: z.string().uuid() });
+const meDTO = z.object({ role: roleEnum, orgId: z.string().uuid(), orgName: z.string(), twilioNumber: z.string().nullable(), email: z.string(), name: z.string().nullable(), userId: z.string().uuid() });
 
 // Result shape for the email-send attempt. `sent` is the source of truth; `reason` is a
 // machine-readable code for the UI to surface a fallback message when `sent` is false.
@@ -97,7 +97,7 @@ export const createIdentityRouter = () =>
             const [row] = await tx.select({ name: users.name }).from(users).where(eq(users.id, principal.userId));
             return row?.name ?? null;
           });
-          return { role: principal.role, orgId: principal.orgId, orgName: await orgNameOf(principal.orgId), email, name: userName, userId: principal.userId };
+          return { role: principal.role, orgId: principal.orgId, orgName: await orgNameOf(principal.orgId), twilioNumber: null, email, name: userName, userId: principal.userId };
         }
         const unmapped = ctx.unmapped;
         if (!unmapped) throw new TRPCError({ code: "UNAUTHORIZED", message: "authentication required" });
@@ -116,14 +116,14 @@ export const createIdentityRouter = () =>
           return row?.id ?? null;
         });
         if (!newUserId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "provisioned user not found" });
-        return { role, orgId: provisioned.orgId, orgName: await orgNameOf(provisioned.orgId), email: unmapped.email, name: unmapped.name ?? null, userId: newUserId };
+        return { role, orgId: provisioned.orgId, orgName: await orgNameOf(provisioned.orgId), twilioNumber: null, email: unmapped.email, name: unmapped.name ?? null, userId: newUserId };
       }),
 
     // Who am I + which org — what the shell routes on. Any role.
     me: anyRole.output(meDTO).query(async ({ ctx }) => {
-      const [org] = await ctx.tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, ctx.principal.orgId));
+      const [org] = await ctx.tx.select({ name: orgs.name, twilioNumber: orgs.twilioNumber }).from(orgs).where(eq(orgs.id, ctx.principal.orgId));
       const [self] = await ctx.tx.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, ctx.principal.userId));
-      return { role: ctx.principal.role, orgId: ctx.principal.orgId, orgName: org?.name ?? "", email: self?.email ?? "", name: self?.name ?? null, userId: ctx.principal.userId };
+      return { role: ctx.principal.role, orgId: ctx.principal.orgId, orgName: org?.name ?? "", twilioNumber: org?.twilioNumber ?? null, email: self?.email ?? "", name: self?.name ?? null, userId: ctx.principal.userId };
     }),
 
     // The org's people — feeds the Jobs assign picker. Office-side only.
@@ -179,6 +179,7 @@ export const createIdentityRouter = () =>
           role: ctx.principal.role,
           orgId: ctx.principal.orgId,
           orgName: await orgNameOf(ctx.principal.orgId),
+          twilioNumber: null,
           email: updated.email,
           name: updated.name ?? null,
           userId: ctx.principal.userId,
