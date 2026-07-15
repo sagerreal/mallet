@@ -7,6 +7,7 @@ import {
   type OrgHours,
   type BookedVisit,
   type ComputeSlotsInput,
+  type CrewSchedule,
 } from "./slots";
 
 // Standard trade-shop hours: weekdays 8–18 (→ 8-10, 10-12, 12-14, 14-16, 16-18), Saturday 8–12
@@ -24,11 +25,14 @@ const HOURS: OrgHours = {
 // today's windows are all still ahead. Anchored so every assertion below is deterministic.
 const TUE_0700 = new Date(2026, 6, 14, 7, 0, 0);
 
+// A crew that works the org's default hours every day (no overrides).
+const ORG_HOURS_CREW: CrewSchedule = { overrides: [] };
+
 const base = (over: Partial<ComputeSlotsInput> = {}): ComputeSlotsInput => ({
   now: TUE_0700,
   hours: HOURS,
   visits: [],
-  crewCount: 1,
+  crews: [ORG_HOURS_CREW],
   lookaheadDays: 5,
   emergency: false,
   ...over,
@@ -208,32 +212,32 @@ describe("computeSlots — closed days", () => {
 
 describe("computeSlots — capacity vs crew", () => {
   it("drops a fully-booked window and offers the next", () => {
-    // crewCount 1, one visit at 08:00, lookahead 0 → 8–10 full; remaining today 10,12,14,16 → spread.
+    // one crew on org hours, one visit at 08:00, lookahead 0 → 8–10 full; remaining today 10,12,14,16 → spread.
     const slots = computeSlots(
-      base({ visits: [bookedAt("2026-07-14", "08:00")], crewCount: 1, lookaheadDays: 0 }),
+      base({ visits: [bookedAt("2026-07-14", "08:00")], crews: [ORG_HOURS_CREW], lookaheadDays: 0 }),
     );
     expect(slots[0]).toMatchObject({ startHHMM: "10:00" });
     expect(slots.every((s) => s.startHHMM !== "08:00")).toBe(true);
   });
 
   it("keeps a window open while overlapping visits are below crew size", () => {
-    // crewCount 2, one 08:00 visit → 8–10 still has capacity (1 < 2), so it's the earliest.
+    // two crews on org hours, one 08:00 visit → 8–10 still has capacity (1 < 2), so it's the earliest.
     const slots = computeSlots(
-      base({ visits: [bookedAt("2026-07-14", "08:00")], crewCount: 2, lookaheadDays: 0 }),
+      base({ visits: [bookedAt("2026-07-14", "08:00")], crews: [ORG_HOURS_CREW, ORG_HOURS_CREW], lookaheadDays: 0 }),
     );
     expect(slots[0]).toMatchObject({ startHHMM: "08:00" });
   });
 
   it("closes a window once overlapping visits reach crew size", () => {
-    // crewCount 2, two visits inside 8–10 → full; earliest offer is 10–12.
+    // two crews on org hours, two visits inside 8–10 → full; earliest offer is 10–12.
     const visits = [bookedAt("2026-07-14", "08:00"), bookedAt("2026-07-14", "09:00")];
-    const slots = computeSlots(base({ visits, crewCount: 2, lookaheadDays: 0 }));
+    const slots = computeSlots(base({ visits, crews: [ORG_HOURS_CREW, ORG_HOURS_CREW], lookaheadDays: 0 }));
     expect(slots[0]).toMatchObject({ startHHMM: "10:00" });
   });
 
   it("treats a null-start visit as occupying the day's first window", () => {
     const nullVisit: BookedVisit = { date: "2026-07-14", startHHMM: null, durationMinutes: 60 };
-    const slots = computeSlots(base({ visits: [nullVisit], crewCount: 1, lookaheadDays: 0 }));
+    const slots = computeSlots(base({ visits: [nullVisit], crews: [ORG_HOURS_CREW], lookaheadDays: 0 }));
     // First window (8–10) consumed by the null-start visit → earliest offer is 10–12.
     expect(slots[0]).toMatchObject({ startHHMM: "10:00" });
   });
@@ -308,5 +312,124 @@ describe("computeSlots — invariants", () => {
     const slots = computeSlots(base({ lookaheadDays: 5 }));
     const keys = slots.map((s) => `${s.date} ${s.startHHMM}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// ── Crew-aware cases (new in Task 2.2a) ──────────────────────────────────────────
+
+describe("computeSlots — crew-aware capacity", () => {
+  it("a window only SOME crews work is offered while any crew is free", () => {
+    // crew A has a Tuesday override 8–12 (windows 8-10, 10-12 only)
+    // crew B has a Tuesday override 12–18 (windows 12-14, 14-16, 16-18 only)
+    // 2026-07-14 is a Tuesday (weekday = 2). No bookings → both crews' windows offered.
+    // 8-10 is offered because crew A works it; 12-14 is offered because crew B works it.
+    const crewA: CrewSchedule = { overrides: [{ weekday: 2, openHour: 8, closeHour: 12 }] };
+    const crewB: CrewSchedule = { overrides: [{ weekday: 2, openHour: 12, closeHour: 18 }] };
+    const slots = computeSlots(base({ crews: [crewA, crewB], lookaheadDays: 0 }));
+    const starts = slots.map((s) => s.startHHMM);
+    // Windows that exist for at least one crew should be offerable when no visits fill them.
+    // With spread applied (≤3 of the 5 windows across both crews: 8,10,12,14,16):
+    // indices 0,2,4 → 08:00, 12:00, 16:00
+    expect(starts).toContain("08:00"); // crew A works it
+    expect(starts).toContain("16:00"); // crew B works it
+    // spread picks index 0, 2, 4 of [8,10,12,14,16] → 08, 12, 16
+    expect(slots).toHaveLength(3);
+  });
+
+  it("a window fully booked for ALL working crews is dropped", () => {
+    // Only crew A works 8–10 (override weekday=2, 8–12). One visit at 08:00 fills the sole crew.
+    // The 8–10 window should be dropped (1 working crew, 1 occupying visit → no capacity).
+    const crewA: CrewSchedule = { overrides: [{ weekday: 2, openHour: 8, closeHour: 12 }] };
+    const slots = computeSlots(
+      base({
+        crews: [crewA],
+        visits: [bookedAt("2026-07-14", "08:00")],
+        lookaheadDays: 0,
+      }),
+    );
+    expect(slots.every((s) => s.startHHMM !== "08:00")).toBe(true);
+    // 10–12 still available (crewA works it, no visit there)
+    expect(slots[0]).toMatchObject({ startHHMM: "10:00" });
+  });
+
+  it("a window with two working crews stays open when only one is occupied", () => {
+    // Two crews both work 8–10 (both have Tuesday override 8–12).
+    // One visit at 08:00 occupies one crew's slot → 1 occupying < 2 working → still offered.
+    const crewA: CrewSchedule = { overrides: [{ weekday: 2, openHour: 8, closeHour: 12 }] };
+    const crewB: CrewSchedule = { overrides: [{ weekday: 2, openHour: 8, closeHour: 12 }] };
+    const slots = computeSlots(
+      base({
+        crews: [crewA, crewB],
+        visits: [bookedAt("2026-07-14", "08:00")],
+        lookaheadDays: 0,
+      }),
+    );
+    expect(slots[0]).toMatchObject({ startHHMM: "08:00" });
+  });
+
+  it("per-weekday override applies to its day only; absent weekday falls back to org hours", () => {
+    // Crew has a Monday override (weekday=1) with 10–14. Tuesday (weekday=2) has no override
+    // → falls back to org hours (8–18 → 8,10,12,14,16).
+    // 2026-07-14 is Tuesday; 2026-07-13 is Monday.
+    const mon0700 = new Date(2026, 6, 13, 7, 0, 0);
+    const crew: CrewSchedule = { overrides: [{ weekday: 1, openHour: 10, closeHour: 14 }] };
+    // Monday (day 0): override 10–14 → windows 10-12, 12-14
+    const monSlots = computeSlots(base({ now: mon0700, crews: [crew], lookaheadDays: 0 }));
+    expect(monSlots.map((s) => s.startHHMM)).toEqual(["10:00", "12:00"]);
+
+    // Tuesday (day 1 from Monday): crew has no Tuesday override → org hours 8–18 → 5 windows.
+    const tueslots = computeSlots(base({ now: mon0700, crews: [crew], lookaheadDays: 1 }));
+    // The Tuesday slots should use org hours (8-18 = 5 windows), so 8am must appear on Tue.
+    const tuesdaySlots = tueslots.filter((s) => s.date === "2026-07-14");
+    // With spread across both days, Tuesday slots may be sampled, but 08:00 Tue should appear
+    // in the full candidate set. Test: override with lookahead=1 on Tuesday-only gives org hours.
+    const tueSlotsOnly = computeSlots(base({ crews: [crew], lookaheadDays: 0 }));
+    // TUE_0700 is Tuesday — crew has no Tuesday override → org hours → 5 windows → spread to 3
+    expect(tueSlotsOnly.map((s) => s.startHHMM)).toEqual(["08:00", "12:00", "16:00"]);
+    expect(tuesdaySlots.length).toBeGreaterThan(0);
+  });
+
+  it("an inverted or zero-width override (openHour >= closeHour) yields no windows and does not throw", () => {
+    // Crew has a bad Tuesday override (12–8 inverted). Should produce NO windows for Tuesday
+    // (bad data yields zero windows silently — no throw). The org fallback is NOT applied
+    // (the override is present but inverted — treat as "closed that day for this crew").
+    const crew: CrewSchedule = { overrides: [{ weekday: 2, openHour: 12, closeHour: 8 }] };
+    expect(() => {
+      const slots = computeSlots(base({ crews: [crew], lookaheadDays: 0 }));
+      // inverted override → crew produces no windows on Tuesday; with MIN_CREW clamping not
+      // applied here (crews: [crew] is non-empty), zero available windows → no slots.
+      expect(slots).toEqual([]);
+    }).not.toThrow();
+  });
+
+  it("equal open/close (zero-width) override yields no windows and does not throw", () => {
+    // openHour === closeHour (e.g. 8/8) → zero-width → no windows for this crew that day.
+    const crew: CrewSchedule = { overrides: [{ weekday: 2, openHour: 8, closeHour: 8 }] };
+    expect(() => {
+      const slots = computeSlots(base({ crews: [crew], lookaheadDays: 0 }));
+      expect(slots).toEqual([]);
+    }).not.toThrow();
+  });
+
+  it("empty crews: [] behaves identically to a single org-hours crew (MIN_CREW clamp)", () => {
+    // Empty crew list → MIN_CREW clamp → treated as one crew on org hours.
+    const withEmpty = computeSlots(base({ crews: [], lookaheadDays: 0 }));
+    const withOne = computeSlots(base({ crews: [ORG_HOURS_CREW], lookaheadDays: 0 }));
+    expect(withEmpty.map((s) => s.startHHMM)).toEqual(withOne.map((s) => s.startHHMM));
+    expect(withEmpty.map((s) => s.date)).toEqual(withOne.map((s) => s.date));
+  });
+
+  it("null-start visit occupies the earliest working-crew window (first of the day)", () => {
+    // With per-crew hours, "first window" = earliest window produced by any working crew.
+    // Crew A works 10–14 (override for Tuesday). First window = 10–12.
+    // A null-start visit should occupy 10–12. With crewCount 1, that window is closed.
+    const crewA: CrewSchedule = { overrides: [{ weekday: 2, openHour: 10, closeHour: 14 }] };
+    const nullVisit: BookedVisit = { date: "2026-07-14", startHHMM: null, durationMinutes: 60 };
+    const slots = computeSlots(
+      base({ crews: [crewA], visits: [nullVisit], lookaheadDays: 0 }),
+    );
+    // 10–12 consumed by null-start → only 12–14 remains
+    expect(slots[0]).toMatchObject({ startHHMM: "12:00" });
+    expect(slots.every((s) => s.startHHMM !== "10:00")).toBe(true);
   });
 });

@@ -30,3 +30,4 @@ export * from "./lead-sources";
 export * from "./inbound-endpoints";
 export * from "./quoting-rules";
 export * from "./frontdesk";
+export * from "./crew-schedules";

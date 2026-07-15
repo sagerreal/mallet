@@ -290,4 +290,74 @@ suite("DrizzleJobRepository — visits round-trip (live RLS)", () => {
 
     expect(listed.items).toHaveLength(0);
   });
+
+  // ── lat/lng geocoded point round-trip ────────────────────────────────────
+
+  it("persists a visit with a geocoded point and reads lat/lng back correctly", async () => {
+    const orgA = asOrgId(orgAId);
+    const visitWithPoint = (() => {
+      const r = JobVisit.create({
+        id: asVisitId(randomUUID()),
+        assigneeUserId: null,
+        scheduledDate: null,
+        scheduledStart: null,
+        scheduledEnd: null,
+        durationMinutes: 120,
+        lat: 37.6,
+        lng: -122.4,
+        status: "pending",
+        startedAt: null,
+        completedAt: null,
+        notes: null,
+        position: 1,
+      });
+      if (!isOk(r)) throw new Error(r.error.message);
+      return r.value;
+    })();
+
+    const jobId = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const num = await repo.nextNumber();
+      const job = makeJob(orgA, asLeadId(leadAId), num);
+      const withV = job.withVisits([visitWithPoint], new Date());
+      if (!isOk(withV)) throw new Error(withV.error.message);
+      await repo.save(withV.value);
+      return withV.value.props.id;
+    });
+
+    const loaded = await withTenant(orgA, async (tx) => {
+      return new DrizzleJobRepository(tx, orgA).findById(jobId);
+    });
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.props.visits).toHaveLength(1);
+    const v = loaded!.props.visits[0]!;
+    expect(v.props.lat).toBe(37.6);
+    expect(v.props.lng).toBe(-122.4);
+  });
+
+  it("persists a visit without a point and reads back null/null", async () => {
+    const orgA = asOrgId(orgAId);
+    const visitNoPoint = pendingVisit(); // no lat/lng
+
+    const jobId = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const num = await repo.nextNumber();
+      const job = makeJob(orgA, asLeadId(leadAId), num);
+      const withV = job.withVisits([visitNoPoint], new Date());
+      if (!isOk(withV)) throw new Error(withV.error.message);
+      await repo.save(withV.value);
+      return withV.value.props.id;
+    });
+
+    const loaded = await withTenant(orgA, async (tx) => {
+      return new DrizzleJobRepository(tx, orgA).findById(jobId);
+    });
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.props.visits).toHaveLength(1);
+    const v = loaded!.props.visits[0]!;
+    expect(v.props.lat).toBeNull();
+    expect(v.props.lng).toBeNull();
+  });
 });

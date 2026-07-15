@@ -2,9 +2,17 @@ import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
 import type { OrgSettings } from "@mallet/settings";
 import { SLOT_LOOKAHEAD_DAYS } from "../../infra/vapi-defaults";
-import { computeSlots, toDateString, addDays, MIN_CREW, type OrgHours, type SlotWindow } from "../slots";
+import {
+  computeSlots,
+  toDateString,
+  addDays,
+  type OrgHours,
+  type SlotWindow,
+  type CrewSchedule,
+} from "../slots";
 import { isInServiceArea } from "../service-area";
 import type { GeoPoint } from "../../domain/geocoder";
+import type { CrewDaySchedule } from "../../domain/availability";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // The three booking lanes (mirrors the playbook). check_availability doesn't behave differently per
@@ -152,25 +160,73 @@ export const checkAvailabilityTool: VoiceTool = {
     }
 
     const now = ctx.deps.clock.now();
-    const snapshot = await ctx.deps.availability.read(rangeFor(now, SLOT_LOOKAHEAD_DAYS));
+    // Run all three availability reads concurrently (no N+1): booked visits, field-crew ids, and
+    // per-crew schedule overrides. crewCount from the snapshot is retained for logging / Task 2.3
+    // reuse — it is no longer the capacity signal for the slot math.
+    const [snapshot, fieldCrewIds, crewScheduleRows] = await Promise.all([
+      ctx.deps.availability.read(rangeFor(now, SLOT_LOOKAHEAD_DAYS)),
+      ctx.deps.availability.readFieldCrewIds(),
+      ctx.deps.availability.readCrewSchedules(),
+    ]);
+
+    // Assemble per-crew schedule shapes for computeSlots. For each field-crew id, collect its
+    // override rows (grouping by userId) and map to CrewWeekdayHours. A crew with no rows gets
+    // { overrides: [] }, meaning "use org hours every day". Empty fieldCrewIds → crews: [] →
+    // computeSlots applies the MIN_CREW clamp (same guarantee as before).
+    const crews: CrewSchedule[] = buildCrewSchedules(fieldCrewIds, crewScheduleRows);
 
     const slots = computeSlots({
       now,
       hours: toOrgHours(settings),
       visits: snapshot.visits,
-      crewCount: Math.max(snapshot.crewCount, MIN_CREW),
+      crews,
       lookaheadDays: SLOT_LOOKAHEAD_DAYS,
       emergency: input.urgency === "emergency",
     });
 
     logger.info(
-      { orgId: ctx.orgId, tool: "check_availability", lane: input.lane, urgency: input.urgency, offered: slots.length },
+      {
+        orgId: ctx.orgId,
+        tool: "check_availability",
+        lane: input.lane,
+        urgency: input.urgency,
+        offered: slots.length,
+        fieldCrewCount: fieldCrewIds.length,
+        crewCount: snapshot.crewCount, // retained for logging / Task 2.3
+      },
       "frontdesk.check_availability.offered",
     );
     // `data.slots` is structured (never spoken) so book_visit / the model can reference the exact
     // date + window the caller picks.
     return { speak: speakForSlots(slots), data: { slots: slots.map(toSlotData) } };
   },
+};
+
+// Assemble one CrewSchedule per field-crew id from the raw override rows. Groups the flat
+// CrewDaySchedule rows by userId, then maps each id to its override set. A crew id absent from the
+// rows (no overrides configured) gets { overrides: [] } → works org hours every day.
+// Pure function — no I/O, no mutation of inputs.
+const buildCrewSchedules = (
+  fieldCrewIds: readonly string[],
+  rows: readonly CrewDaySchedule[],
+): CrewSchedule[] => {
+  // Index override rows by userId for O(1) lookup per crew.
+  const byUserId = new Map<string, CrewDaySchedule[]>();
+  for (const row of rows) {
+    const bucket = byUserId.get(row.userId);
+    if (bucket) bucket.push(row);
+    else byUserId.set(row.userId, [row]);
+  }
+  return fieldCrewIds.map((id) => {
+    const crewRows = byUserId.get(id) ?? [];
+    return {
+      overrides: crewRows.map((r) => ({
+        weekday: r.weekday,
+        openHour: r.openHour,
+        closeHour: r.closeHour,
+      })),
+    };
+  });
 };
 
 // The inclusive calendar-date range [today, today+lookahead] the availability reader queries. Uses

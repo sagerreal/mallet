@@ -15,6 +15,7 @@ import {
   type CursorPage,
   type Paginated,
 } from "@mallet/shared/types";
+import type { CrewLoad } from "../../app/dispatch";
 import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 import type { Principal } from "@mallet/identity";
 import { Lead, type LeadStage } from "../../../customers/domain/lead";
@@ -214,14 +215,28 @@ export const FIRST_CREW_UUID = "44444444-4444-4444-4444-444444444444";
 export const SECOND_CREW_UUID = "55555555-5555-5555-5555-555555555555";
 
 // A fake AvailabilityReader for the book_visit tests: reports the given field-crew ids (in order)
-// and, unless `throws`, returns them from readFieldCrewIds. Extracted so buildHarness stays simple.
-const fakeAvailability = (fieldCrewIds: readonly UserId[], throws: boolean) => ({
+// and, unless `throws` / `sameDayLoadsThrows`, degrades gracefully. Extracted so buildHarness stays
+// simple. `sameDayCrewLoads` defaults to [] → chooseCrew returns null → UNASSIGNED (preserving
+// current zero-crew behaviour for tests that don't set it).
+const fakeAvailability = (
+  fieldCrewIds: readonly UserId[],
+  throws: boolean,
+  sameDayCrewLoads: readonly CrewLoad[],
+  sameDayLoadsThrows: boolean,
+) => ({
   async read() {
     return { crewCount: fieldCrewIds.length, visits: [] as never[] };
   },
   async readFieldCrewIds() {
     if (throws) throw new Error("field crew read failed");
     return [...fieldCrewIds];
+  },
+  async readCrewSchedules() {
+    return [];
+  },
+  async readSameDayCrewLoads(_date: string) {
+    if (sameDayLoadsThrows) throw new Error("crew loads read failed");
+    return [...sameDayCrewLoads];
   },
 });
 
@@ -233,12 +248,18 @@ interface HarnessOverrides {
   createVisit?: CreateVisitUseCase;
   createTask?: CreateTaskUseCase;
   smsMode?: SendMode;
-  // Field-crew ids the availability reader returns, in stable order — book_visit assigns the first.
+  // Field-crew ids the availability reader returns (for readFieldCrewIds — used by check_availability).
   // Defaults to none (zero field crew → the visit stays UNASSIGNED, as before).
   fieldCrewIds?: readonly UserId[];
   // When set, readFieldCrewIds throws — proves a crew-read failure degrades to UNASSIGNED, not a
   // failed booking.
   fieldCrewThrows?: boolean;
+  // Crew loads for readSameDayCrewLoads — drives the proximity-dispatch assignment in book_visit.
+  // Defaults to [] → chooseCrew returns null → UNASSIGNED (unchanged zero-crew behaviour).
+  sameDayCrewLoads?: readonly CrewLoad[];
+  // When set, readSameDayCrewLoads throws — proves a crew-read failure degrades to UNASSIGNED, not
+  // a failed booking (graceful-degrade hard rule).
+  sameDayLoadsThrows?: boolean;
   // The geocoder the service-area check uses. Defaults to an inert one (always misses → "unknown" →
   // book normally), so existing booking tests are unaffected. Service-area tests pass a fixed point.
   geocoder?: Geocoder;
@@ -263,7 +284,12 @@ const buildDeps = (args: {
     createVisit: over.createVisit ?? new CreateVisitUseCase(jobRepo, CLOCK, ids),
     createTask: over.createTask ?? new CreateTaskUseCase(tasks, CLOCK, ids),
     settings: fakeSettings(settings),
-    availability: fakeAvailability(over.fieldCrewIds ?? [], over.fieldCrewThrows ?? false),
+    availability: fakeAvailability(
+      over.fieldCrewIds ?? [],
+      over.fieldCrewThrows ?? false,
+      over.sameDayCrewLoads ?? [],
+      over.sameDayLoadsThrows ?? false,
+    ),
     geocoder: over.geocoder ?? inertGeocoder(),
     sendNotification: sms.useCase,
     bus,

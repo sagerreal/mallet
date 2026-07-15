@@ -20,6 +20,7 @@ import {
   slotPhrase,
 } from "./book-visit-speak";
 import { isInServiceArea } from "../service-area";
+import { chooseCrew } from "../dispatch";
 import type { GeoPoint } from "../../domain/geocoder";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
@@ -199,6 +200,7 @@ const bookConfirmed = async (
   settings: OrgSettings,
   phone: Phone,
   ctx: VoiceToolContext,
+  jobPoint: GeoPoint | null,
 ): Promise<VoiceToolResult> => {
   // Ensure the customer (get-or-create, deduped on phone).
   const ensured = await ctx.deps.ensureCustomer.exec({
@@ -239,16 +241,15 @@ const bookConfirmed = async (
     return bookingFallback(input, ctx, leadId);
   }
 
-  // ASSIGN the booking to the first field crew so it lands ON THE BOARD (owner live-test feedback:
-  // an unassigned voice booking sat in "To schedule" and never reached the crew grid). We pick the
-  // FIRST field crew in the reader's stable order; the office reassigns / rebalances from there. This
-  // is deliberately simple for the 1–3 crew ICP — a future task can round-robin by window capacity.
-  // ZERO field crew → UNASSIGNED (null), so it stays in "To schedule" as before.
-  const assigneeUserId = await firstFieldCrew(ctx);
+  // ASSIGN the booking to the least-loaded field crew (tie-broken by proximity to the caller's
+  // address), so the visit lands ON THE BOARD. A crew-read failure or empty roster → UNASSIGNED
+  // (null), stays in "To schedule" for the office — same non-fatal semantics as the old firstFieldCrew.
+  const assigneeUserId = await assignCrew(ctx, input.slot_date, jobPoint);
 
   // SEED the first visit on the job (the server-side caller does this — no client flow follows).
   // scheduledStart IS the chosen window's start: slot_start was bounds-checked in `handle`
   // (isValidSlotStart), so it's a trusted in-hours "HH:MM", never an unvalidated model clock time.
+  // lat/lng persist the caller's geocoded point so future proximity dispatch can measure distance.
   const visit = await ctx.deps.createVisit.exec({
     jobId: job.value.props.id,
     assigneeUserId,
@@ -256,6 +257,8 @@ const bookConfirmed = async (
     scheduledStart: input.slot_start,
     durationHours: minutesToHours(visitMinutesFor(input.lane, settings)),
     notes: input.problem,
+    lat: jobPoint?.lat ?? null,
+    lng: jobPoint?.lng ?? null,
   });
   if (!isOk(visit)) {
     logger.warn(
@@ -285,14 +288,18 @@ const bookConfirmed = async (
   };
 };
 
-// The org's first field-crew user id (stable order), or UNASSIGNED when the org has no field crew.
+// Pick the least-loaded field crew for `slotDate`, tie-broken by proximity to `jobPoint`.
 // A crew-read failure is NON-FATAL: we log it and fall back to UNASSIGNED so a reader hiccup never
 // blocks a confirmed booking — the office simply places it on the board manually, exactly as the
 // zero-crew case does. Never throws.
-const firstFieldCrew = async (ctx: VoiceToolContext): Promise<UserId | null> => {
+const assignCrew = async (
+  ctx: VoiceToolContext,
+  slotDate: string,
+  jobPoint: GeoPoint | null,
+): Promise<UserId | null> => {
   try {
-    const crewIds = await ctx.deps.availability.readFieldCrewIds();
-    return crewIds[0] ?? UNASSIGNED;
+    const candidates = await ctx.deps.availability.readSameDayCrewLoads(slotDate);
+    return chooseCrew({ candidates, jobPoint });
   } catch (error: unknown) {
     logger.warn(
       { orgId: ctx.orgId, tool: "book_visit", error: error instanceof Error ? error.message : "unknown" },
@@ -386,6 +393,8 @@ export const bookVisitTool: VoiceTool = {
     if (area.check === "out") return outOfAreaDecline(input, ctx);
 
     // (4–9) Ensure customer → job → visit → emergency task → sanctioned confirmation.
-    return bookConfirmed(input, settings, parsed.value, ctx);
+    // area.point is the caller's geocoded GeoPoint (from Phase 1's ServiceAreaResult); it drives
+    // both proximity dispatch (chooseCrew) and is persisted on the visit for future proximity reads.
+    return bookConfirmed(input, settings, parsed.value, ctx, area.point);
   },
 };

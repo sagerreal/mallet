@@ -139,6 +139,14 @@ export interface JobVisitProps {
    * Null only for legacy rows created before the duration_minutes column.
    */
   readonly durationMinutes: number | null;
+  /**
+   * Geocoded location of the visit's service address (WGS84). Both are null when
+   * the location is unknown (office-created or legacy visits). Always set together:
+   * JobVisit.create rejects a row where exactly one of the pair is non-null.
+   * Optional: callers that omit lat/lng get null/null (no point).
+   */
+  readonly lat?: number | null;
+  readonly lng?: number | null;
   readonly status: VisitStatus;
   readonly startedAt: Date | null;
   readonly completedAt: Date | null;
@@ -169,7 +177,20 @@ export class JobVisit {
     ) {
       return err(validation("visit duration must be 1–1440 whole minutes", "durationMinutes"));
     }
-    return ok(new JobVisit({ ...props }));
+    // Normalize undefined → null so props always exposes number | null.
+    const lat = props.lat ?? null;
+    const lng = props.lng ?? null;
+    // Both-or-neither: a geocoded point requires both coordinates.
+    if ((lat === null) !== (lng === null)) {
+      return err(validation("visit lat and lng must be set together", "lat"));
+    }
+    if (lat !== null && (lat < -90 || lat > 90)) {
+      return err(validation("visit lat must be between -90 and 90", "lat"));
+    }
+    if (lng !== null && (lng < -180 || lng > 180)) {
+      return err(validation("visit lng must be between -180 and 180", "lng"));
+    }
+    return ok(new JobVisit({ ...props, lat, lng }));
   }
 
   // A visit is placed when it has a date, an assignee, and a start time.

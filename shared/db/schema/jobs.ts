@@ -13,6 +13,7 @@ import {
   unique,
   check,
   foreignKey,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 import { leads } from "./leads";
@@ -123,6 +124,10 @@ export const jobVisits = pgTable(
     // Authoritative visit length in minutes (set by create/updateDuration/schedule use-cases).
     // Nullable: legacy rows fall back to the start→end window at the mapper read boundary.
     durationMinutes: integer("duration_minutes"),
+    // Geocoded location of the visit's service address (WGS84). Nullable — office-created
+    // and legacy visits have no point. Both columns are set together or not at all.
+    lat: doublePrecision("lat"),   // nullable — the visit's geocoded latitude (WGS84), null when unknown
+    lng: doublePrecision("lng"),   // nullable — the visit's geocoded longitude (WGS84), null when unknown
     status: text("status").notNull().default("pending"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),

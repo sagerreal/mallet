@@ -14,6 +14,10 @@ export interface CreateVisitCommand {
   readonly scheduledStart: string | null;
   readonly durationHours: number; // positive, max 24
   readonly notes: string | null;
+  /** Geocoded latitude (WGS84). Must be paired with lng; omit or null for no point. */
+  readonly lat?: number | null;
+  /** Geocoded longitude (WGS84). Must be paired with lat; omit or null for no point. */
+  readonly lng?: number | null;
 }
 
 // Compute an "HH:MM" end time from a "HH:MM" start and duration in hours.
@@ -56,6 +60,8 @@ export class CreateVisitUseCase {
       // Persist the length explicitly — an unplaced visit has no start/end window
       // to derive it from, so this is the only durable record of the typed hours.
       durationMinutes: Math.round(cmd.durationHours * 60),
+      lat: cmd.lat ?? null,
+      lng: cmd.lng ?? null,
       status: "pending",
       startedAt: null,
       completedAt: null,

@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { asOrgId, asUserId, FixedClock, type OrgId } from "@mallet/shared/types";
+import { asOrgId, asUserId, FixedClock, type OrgId, type UserId } from "@mallet/shared/types";
 import type { Principal } from "@mallet/identity";
 import { OrgSettings, type OrgSettingsProps } from "../../../settings/domain/org-settings";
 import { baseSettingsProps } from "../../../settings/domain/org-settings.fixtures";
 import type { SettingsReader } from "../../domain/assistant";
-import type { AvailabilityReader, AvailabilitySnapshot } from "../../domain/availability";
+import type { AvailabilityReader, AvailabilitySnapshot, CrewDaySchedule } from "../../domain/availability";
 import type { BookedVisit } from "../slots";
 import { checkAvailabilityTool, CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK } from "./check-availability";
 import { inertSendNotification, inertGeocoder, fixedGeocoder } from "./test-support";
@@ -33,11 +33,24 @@ const fakeSettings = (settings: OrgSettings | null): SettingsReader => ({
   },
 });
 
-const fakeAvailability = (snapshot: AvailabilitySnapshot): AvailabilityReader => ({
+// `fieldCrewIds` + `crewScheduleRows` are optional so existing tests are unchanged — empty arrays
+// mean "no field crew configured" which triggers the MIN_CREW clamp in computeSlots (same behavior
+// as before Task 2.2a). Supply them to test per-crew override wiring in check-availability.
+const fakeAvailability = (
+  snapshot: AvailabilitySnapshot,
+  fieldCrewIds: readonly UserId[] = [],
+  crewScheduleRows: readonly CrewDaySchedule[] = [],
+): AvailabilityReader => ({
   async read() {
     return snapshot;
   },
   async readFieldCrewIds() {
+    return [...fieldCrewIds];
+  },
+  async readCrewSchedules() {
+    return [...crewScheduleRows];
+  },
+  async readSameDayCrewLoads() {
     return [];
   },
 });
@@ -47,6 +60,8 @@ const buildCtx = (args: {
   snapshot: AvailabilitySnapshot;
   now?: Date;
   geocoder?: Geocoder;
+  fieldCrewIds?: readonly UserId[];
+  crewScheduleRows?: readonly CrewDaySchedule[];
 }): VoiceToolContext => {
   const deps: VoiceToolDeps = {
     ensureCustomer: {} as never,
@@ -54,7 +69,7 @@ const buildCtx = (args: {
     createVisit: {} as never,
     createTask: {} as never,
     settings: fakeSettings(args.settings),
-    availability: fakeAvailability(args.snapshot),
+    availability: fakeAvailability(args.snapshot, args.fieldCrewIds, args.crewScheduleRows),
     geocoder: args.geocoder ?? inertGeocoder(),
     sendNotification: inertSendNotification(),
     bus: { async emit() {} },
@@ -279,5 +294,40 @@ describe("checkAvailabilityTool", () => {
     );
     expect(result.speak).not.toBe(CHECK_AVAILABILITY_OUT_OF_AREA_SPEAK);
     expect((result.data?.slots as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  // ── per-crew override wiring (Task 2.2a) ──
+  it("a sole crew's Saturday override narrows the offered Saturday windows", async () => {
+    // Shop: Saturday hours 8–18 (org default), one field crew with Saturday override 8–12.
+    // The crew's override narrows Saturday to 8-10 and 10-12 only — the tool should offer those
+    // two windows (not the org's full 8–18 set). 2026-07-18 is a Saturday (weekday=6).
+    const CREW_ID = asUserId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    const satOnlyShop = settingsFrom({
+      hoursWdOpen: 0,
+      hoursWdClose: 0,
+      hoursSatOpen: 8,
+      hoursSatClose: 18, // org default = 8–18 (five 2h windows)
+      hoursSunOpen: 0,
+      hoursSunClose: 0,
+    });
+    const sat0700 = new Date(2026, 6, 18, 7, 0, 0); // Saturday before open
+    const ctx = buildCtx({
+      settings: satOnlyShop,
+      snapshot: { crewCount: 1, visits: [] },
+      now: sat0700,
+      // One crew with a Saturday override narrowing hours to 8–12 (two 2h windows: 8-10, 10-12).
+      fieldCrewIds: [CREW_ID],
+      crewScheduleRows: [
+        { userId: CREW_ID, weekday: 6, openHour: 8, closeHour: 12 },
+      ],
+    });
+    const result = await checkAvailabilityTool.handle({ lane: "estimate", urgency: "normal" }, ctx);
+    const slots = result.data?.slots as Array<{ startHHMM: string }>;
+    // The crew's Saturday is 8–12 → only 8-10 and 10-12 are offered (not the org's 8–18 set).
+    expect(slots).toHaveLength(2);
+    expect(slots[0]!.startHHMM).toBe("08:00");
+    expect(slots[1]!.startHHMM).toBe("10:00");
+    // 12:00 and later would exist under org hours (8-18) but not under the crew override.
+    expect(slots.every((s) => s.startHHMM < "12:00")).toBe(true);
   });
 });
