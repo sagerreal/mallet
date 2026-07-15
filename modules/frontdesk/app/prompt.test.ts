@@ -252,13 +252,37 @@ describe("buildSystemPrompt — case rules", () => {
     expect(p).toMatch(/25 miles|within 25/);
   });
 
-  it("covers emergency via generalized rule → book soonest + note EMERGENCY (no hardcoded plumbing list)", () => {
+  it("emergency is ALWAYS ON: the generic safety-net rule fires even with no emergency words configured", () => {
+    // Build a playbook where NO service has emergencyTriggers — the empty-config case that used to
+    // mean zero emergency routing. The always-on rule must still be present.
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
-    // The generalized rule references the per-service EMERGENCY words, not a hardcoded plumbing list.
-    expect(p).toMatch(/matches a service's EMERGENCY words/i);
-    expect(p).toMatch(/EMERGENCY/);
-    // The old hardcoded plumbing emergency phrase must be GONE.
+    expect(p).toMatch(/Emergency \(always on\)/);
+    expect(p).toMatch(/even if it matches no service's emergency words/i);
+    // The safety-net examples: active damage/safety signals, trade-agnostic.
+    expect(p).toMatch(/actively flowing or flooding/i);
+    expect(p).toMatch(/no heat in freezing weather/i);
+    expect(p).toMatch(/electrical burning smell/i);
+    expect(p).toMatch(/can't be secured/i);
+    // Still books soonest + notes EMERGENCY (the behavior the old rule carried).
+    expect(p).toMatch(/book the soonest slot and note EMERGENCY/i);
+    // The old hardcoded plumbing emergency phrase stays GONE.
     expect(p).not.toMatch(/flooding, sewage/i);
+  });
+
+  it("per-service EMERGENCY words are EXTENSIONS of the always-on rule, not the sole trigger", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    expect(p).toMatch(/EMERGENCY words .*EXTEND/i);
+    expect(p).toMatch(/additions, never the only emergencies/i);
+  });
+
+  it("gas stays 911-only: excluded from the bookable emergency path AND the shutoff coaching", () => {
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    // The emergency rule explicitly defers gas to the 911 rule (a gas leak is never a booking).
+    expect(p).toMatch(/gas leak is 911 — leave the building, never a booking/i);
+    // The shutoff coaching names water/power only — never coach a caller to touch a gas valve
+    // (the gas rule says LEAVE the building; coaching a gas shutoff would contradict it).
+    expect(p).toMatch(/shut off water or power at the source/i);
+    expect(p).not.toMatch(/shut off the water\/gas\/power/i);
   });
 
   it("covers reschedule/cancel/where-is-my-tech/billing → take_message, never discuss amounts", () => {

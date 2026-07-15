@@ -124,9 +124,19 @@ const CASE_RULES: readonly string[] = [
   "Out of service area: if a tool tells you the address is outside the area, or the city is clearly " +
     "OUTSIDE the listed area, politely say it's outside the area you cover and take a message (offer " +
     "a referral if you can) — do NOT book an out-of-area job. When it's unclear, book normally.",
-  "Emergency: if the caller's problem matches a service's EMERGENCY words (listed under SERVICES), " +
-    "book the soonest slot and note EMERGENCY on the booking; coach the caller to shut off the " +
-    "water/gas/power at the source if something is actively leaking or damaging property.",
+  // Two-layer emergency rule (industry pattern: always-on safety net + owner words as EXTENSIONS).
+  // The generic rule fires with an EMPTY playbook, so a shop that never configured emergency words
+  // still gets emergency routing; per-service words sharpen it per trade, they never gate it.
+  // Gas is deliberately EXCLUDED from the bookable path + the shutoff coaching — a gas leak is the
+  // 911 rule above (leave the building), never a booking and never a "go touch the valve".
+  "Emergency (always on): if the caller describes ACTIVE property damage or a safety risk — water " +
+    "or sewage actively flowing or flooding, no heat in freezing weather, an electrical burning " +
+    "smell or sparking, or a home that can't be secured — treat it as an EMERGENCY even if it " +
+    "matches no service's emergency words: book the soonest slot and note EMERGENCY on the " +
+    "booking; coach the caller to shut off water or power at the source if something is actively " +
+    "leaking or damaging property. Exception: a gas leak is 911 — leave the building, never a booking.",
+  "A service's EMERGENCY words (listed under SERVICES) EXTEND that rule — a problem matching them " +
+    "is also an emergency. They are additions, never the only emergencies.",
   `Hand off to a human callback — CALL ${TOOL_NAMES.escalateCallback} — for anything you can't ` +
     `handle: insurance, claims, adjusters, warranties, a service we don't do, a caller who keeps ` +
     `getting confused, or a caller who asks to speak to a person (plus any hand-off words in ` +
