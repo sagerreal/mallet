@@ -44,7 +44,7 @@ export const createFrontdeskRouter = () =>
       list: ownerOrOffice
         .output(crewScheduleListDTO)
         .query(async ({ ctx }) => {
-          const repo = new DrizzleCrewScheduleRepository(ctx.tx!, ctx.principal!.orgId);
+          const repo = new DrizzleCrewScheduleRepository(ctx.tx, ctx.principal.orgId);
           const items = await repo.listForOrg();
           return { items: items.map(toCrewScheduleDTO) };
         }),
@@ -53,11 +53,11 @@ export const createFrontdeskRouter = () =>
         .input(saveInput)
         .output(crewScheduleListDTO)
         .mutation(async ({ ctx, input }) => {
-          const repo = new DrizzleCrewScheduleRepository(ctx.tx!, ctx.principal!.orgId);
+          const repo = new DrizzleCrewScheduleRepository(ctx.tx, ctx.principal.orgId);
           const useCase = new SetCrewScheduleUseCase(repo);
           const result = await useCase.exec(
             { userId: input.userId, entries: input.entries },
-            ctx.principal!.orgId,
+            ctx.principal.orgId,
           );
           const saved = orThrow(result);
           return { items: saved.map(toCrewScheduleDTO) };
