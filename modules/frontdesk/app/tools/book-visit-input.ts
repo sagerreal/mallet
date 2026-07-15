@@ -28,6 +28,7 @@ export const bookVisitInput = z.object({
   slot_date: z.string(),
   slot_start: z.string(),
   urgency: z.enum(BOOK_URGENCIES).default(DEFAULT_URGENCY),
+  scope_signal: z.string().optional(),
 });
 export type BookVisitInput = z.infer<typeof bookVisitInput>;
 
@@ -56,9 +57,15 @@ export const bookVisitParameters: Record<string, unknown> = {
       enum: [...BOOK_URGENCIES],
       description: "normal, or emergency for a true emergency booked ASAP.",
     },
+    scope_signal: {
+      type: "string",
+      description:
+        "Anything else the caller noticed about the job — age/condition of the unit, what's visible. Optional.",
+    },
   },
   // Agrees with the zod input: everything the handler needs is required EXCEPT urgency (optional,
-  // defaults to "normal"). problem IS required here so the schema the model sees matches zod.
+  // defaults to "normal") and scope_signal (optional — a caller with nothing to add must not
+  // dead-end). problem IS required here so the schema the model sees matches zod.
   required: [
     "caller_name",
     "phone",

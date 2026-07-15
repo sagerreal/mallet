@@ -19,6 +19,7 @@ import {
   outOfAreaTaskText,
   slotPhrase,
 } from "./book-visit-speak";
+import { decorateScope } from "../found-work";
 import { isInServiceArea } from "../service-area";
 import { chooseCrew } from "../dispatch";
 import type { GeoPoint } from "../../domain/geocoder";
@@ -222,6 +223,9 @@ const bookConfirmed = async (
   }
   const leadId = ensured.value.lead.props.id;
 
+  // Decorate the caller's scope note (found-work marker when keywords hit; null when absent/blank).
+  const scope = decorateScope(input.scope_signal);
+
   // Create the manual job (kind by lane). addr/phone accepted for parity but not persisted.
   const job = await ctx.deps.createManualJob.exec({
     orgId: ctx.orgId,
@@ -232,6 +236,7 @@ const bookConfirmed = async (
     addr: input.address,
     phone,
     notes: input.problem,
+    scope,
   });
   if (!isOk(job)) {
     logger.warn(

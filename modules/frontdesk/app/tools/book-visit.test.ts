@@ -51,6 +51,7 @@ describe("bookVisitTool", () => {
     );
     expect(params.required).not.toContain("urgency");
     expect(params.required).not.toContain("slot_window");
+    expect(params.required).not.toContain("scope_signal");
     expect(Object.keys(params.properties).sort()).toEqual(
       [
         "address",
@@ -58,6 +59,7 @@ describe("bookVisitTool", () => {
         "lane",
         "phone",
         "problem",
+        "scope_signal",
         "service_name",
         "slot_date",
         "slot_start",
@@ -463,5 +465,76 @@ describe("bookVisitTool", () => {
     expect(h.jobs.jobs.size).toBe(0);
     expect(h.sms.sent).toHaveLength(0);
     expect([...h.sms.rows.values()]).toHaveLength(0);
+  });
+});
+
+// ── scope_signal capture (task 3b) ────────────────────────────────────────────
+// The voice front desk may collect a caller's "anything else you've noticed?" answer and pass it
+// to book_visit as scope_signal. The handler decorates it (found-work prefix when keywords hit)
+// and persists the result on the job's scope field.
+
+import { decorateScope } from "../found-work";
+
+describe("bookVisitTool — scope_signal capture", () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = buildHarness();
+  });
+
+  it("books successfully when scope_signal is omitted (scope is null on the job)", async () => {
+    // scope_signal is optional — a caller with nothing to add must not dead-end.
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(onlyJob(h).props.scope).toBeNull();
+  });
+
+  it("books successfully when scope_signal is explicitly undefined", async () => {
+    const result = await bookVisitTool.handle({ ...REPAIR_INPUT, scope_signal: undefined }, h.ctx);
+    expect(result.data).toMatchObject({ kind: "work" });
+    expect(onlyJob(h).props.scope).toBeNull();
+  });
+
+  it("persists the trimmed plain note as-is when no found-work keyword hits", async () => {
+    const result = await bookVisitTool.handle(
+      { ...REPAIR_INPUT, scope_signal: "  just a dripping faucet  " },
+      h.ctx,
+    );
+    expect(result.data).toMatchObject({ kind: "work" });
+    const job = onlyJob(h);
+    expect(job.props.scope).toBe(decorateScope("  just a dripping faucet  "));
+    expect(job.props.scope).toBe("just a dripping faucet");
+  });
+
+  it("persists the '[likely found-work] ' prefix when the answer trips a found-work keyword", async () => {
+    const foundWorkNote = "the water heater is really old";
+    const result = await bookVisitTool.handle(
+      { ...REPAIR_INPUT, scope_signal: foundWorkNote },
+      h.ctx,
+    );
+    expect(result.data).toMatchObject({ kind: "work" });
+    const job = onlyJob(h);
+    expect(job.props.scope).toBe(decorateScope(foundWorkNote));
+    expect(job.props.scope).toBe("[likely found-work] the water heater is really old");
+  });
+
+  it("persists the '[likely found-work] ' prefix for 'rusty pipes'", async () => {
+    await bookVisitTool.handle({ ...REPAIR_INPUT, scope_signal: "rusty pipes" }, h.ctx);
+    expect(onlyJob(h).props.scope).toBe("[likely found-work] rusty pipes");
+  });
+
+  it("persists the '[likely found-work] ' prefix for 'some water damage under the sink'", async () => {
+    await bookVisitTool.handle(
+      { ...REPAIR_INPUT, scope_signal: "some water damage under the sink" },
+      h.ctx,
+    );
+    expect(onlyJob(h).props.scope).toBe(
+      "[likely found-work] some water damage under the sink",
+    );
+  });
+
+  it("scope on the created job equals decorateScope(scope_signal) — parity with the pure helper", async () => {
+    const signal = "pipes are rusty and there is some mold";
+    await bookVisitTool.handle({ ...REPAIR_INPUT, scope_signal: signal }, h.ctx);
+    expect(onlyJob(h).props.scope).toBe(decorateScope(signal));
   });
 });
