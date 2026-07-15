@@ -1,4 +1,5 @@
 import { router } from "./init";
+import { createFrontdeskRouter } from "@mallet/frontdesk";
 import { createLeadRouter } from "@mallet/customers";
 import { createEstimateRouter } from "@mallet/quoting";
 import { createJobRouter, createFieldRouter, createVisitRouter } from "@mallet/jobs";
@@ -36,6 +37,7 @@ export const appRouter = router({
     checklists: createChecklistRouter(),
     inbound: createInboundRouter(),
     pricebook: createPricebookRouter(),
+    frontdesk: createFrontdeskRouter(),
   }),
 });
 

@@ -76,3 +76,10 @@ export type {
   ParsedEndOfCallReport,
   ParsedStatusUpdate,
 } from "./infra/vapi-schemas";
+
+// ── Crew schedule write path (2.2b-i) ─────────────────────────────────────────
+export { createFrontdeskRouter } from "./api/frontdesk-router";
+export type { CrewScheduleRepository } from "./domain/crew-schedule-repository";
+export { CrewScheduleEntry } from "./domain/crew-schedule";
+export { SetCrewScheduleUseCase } from "./app/set-crew-schedule";
+export { DrizzleCrewScheduleRepository } from "./infra/drizzle-crew-schedule-repository";
