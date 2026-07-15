@@ -13,6 +13,7 @@ import { useState, useRef } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
 import { HourSelect } from "./hour-select";
+import { Segmented } from "./segmented";
 
 // ---- constants ----------------------------------------------------------------
 
@@ -24,6 +25,12 @@ const WEEKDAYS = [
   { label: "Fri", n: 5 },
   { label: "Sat", n: 6 },
   { label: "Sun", n: 0 },
+] as const;
+
+const DAY_MODE_OPTIONS = [
+  { value: "business" as const, label: "Business hours" },
+  { value: "custom" as const, label: "Custom" },
+  { value: "off" as const, label: "Off" },
 ] as const;
 
 // ---- types --------------------------------------------------------------------
@@ -110,33 +117,25 @@ interface WeekdayRowProps {
 }
 
 function WeekdayRow({ dayLabel, weekday, draft, onChange }: WeekdayRowProps) {
+  function handleModeChange(mode: DayDraft["mode"]) {
+    if (mode === "business") {
+      onChange(weekday, { mode: "business", openHour: 8, closeHour: 17 });
+    } else if (mode === "off") {
+      onChange(weekday, { mode: "off", openHour: 0, closeHour: 0 });
+    } else {
+      onChange(weekday, { mode: "custom", openHour: draft.openHour || 8, closeHour: draft.closeHour || 17 });
+    }
+  }
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", flexWrap: "wrap" }}>
       <span style={{ minWidth: 36, fontWeight: 600, fontSize: "12.5px" }}>{dayLabel}</span>
-      <select
+      <Segmented
         value={draft.mode}
-        onChange={(e) => {
-          const mode = e.target.value as DayDraft["mode"];
-          if (mode === "business") {
-            onChange(weekday, { mode: "business", openHour: 8, closeHour: 17 });
-          } else if (mode === "off") {
-            onChange(weekday, { mode: "off", openHour: 0, closeHour: 0 });
-          } else {
-            onChange(weekday, { mode: "custom", openHour: draft.openHour || 8, closeHour: draft.closeHour || 17 });
-          }
-        }}
-        style={{
-          border: "1.5px solid var(--line)",
-          borderRadius: 7,
-          padding: "6px 8px",
-          fontFamily: "inherit",
-          fontSize: 13,
-        }}
-      >
-        <option value="business">Business hours</option>
-        <option value="custom">Custom hours</option>
-        <option value="off">Day off</option>
-      </select>
+        onChange={handleModeChange}
+        options={DAY_MODE_OPTIONS}
+        size="sm"
+      />
       {draft.mode === "custom" && (
         <>
           <HourSelect

@@ -28,7 +28,7 @@ import { CrewHoursCard } from "./crew-hours-card";
 import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
-import { BookingServiceCard } from "./booking-service-card";
+import { ServiceRow } from "./booking-service-card";
 import { HourSelect } from "./hour-select";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
@@ -708,11 +708,27 @@ function SecBooking() {
   const setBookingHours = useAppStore((s) => s.setBookingHours);
   const setBookingArea = useAppStore((s) => s.setBookingArea);
 
+  // Single-expanded service accordion — null = all collapsed
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
   const [bkSvc, setBkSvc] = useState("");
 
   function handleAddService() {
+    if (!bkSvc.trim()) return;
     addBookingService(bkSvc);
     setBkSvc("");
+    // Auto-expand the new service (it will be at the end)
+    setExpandedIdx(bk.services.length);
+  }
+
+  function handleToggleService(i: number) {
+    setExpandedIdx((prev) => (prev === i ? null : i));
+  }
+
+  function handleRemoveService(i: number) {
+    removeBookingService(i);
+    // If we just removed the expanded one, collapse
+    setExpandedIdx((prev) => (prev === i ? null : prev !== null && prev > i ? prev - 1 : prev));
   }
 
   const wdLabel = `${timeLabel(bk.hours.wdOpen)}–${timeLabel(bk.hours.wdClose)} wkdays`;
@@ -780,19 +796,30 @@ function SecBooking() {
       </h3>
 
       <FoldCard title="Services &amp; routing" defaultOpen summary={`${bk.services.length} services`}>
-        <div>
+        {/* List-first accordion: compact rows, single expanded editor */}
+        <div style={{ border: "1px solid var(--line-2, var(--line))", borderRadius: 8, overflow: "hidden", marginBottom: 10 }}>
           {bk.services.map((s, i) => (
-            <BookingServiceCard
+            <ServiceRow
               key={i}
               service={s}
               index={i}
+              isExpanded={expandedIdx === i}
+              onToggle={() => handleToggleService(i)}
               updateBookingService={updateBookingService}
-              onRemove={() => removeBookingService(i)}
+              onRemove={() => handleRemoveService(i)}
+              isLast={i === bk.services.length - 1}
             />
           ))}
+          {bk.services.length === 0 && (
+            <div className="muted" style={{ fontSize: 13, padding: "12px 14px" }}>
+              No services yet — add one below.
+            </div>
+          )}
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <input type="text" id="bkSvc" placeholder="New service name — e.g. Tankless install" value={bkSvc} onChange={(e) => setBkSvc(e.target.value)}
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <input type="text" id="bkSvc" placeholder="New service name — e.g. Tankless install" value={bkSvc}
+            onChange={(e) => setBkSvc(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAddService(); }}
             style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 7, padding: "6px 8px", fontFamily: "inherit", fontSize: 13 }} />
           <button className="btn" onClick={handleAddService}>+ Add service</button>
         </div>
