@@ -26,8 +26,10 @@ import {
   boardItemsFor,
   jobsUnscheduled,
   unplacedEvisits,
+  dayLoad,
   type Held,
 } from "./jobs-helpers";
+import { certAnnotationsFor, armedBannerPhrase } from "./cert-annotations";
 import {
   SCHEDULE_PX_PER_HOUR as WPX,
   CREW_CAPACITY_HOURS as CAP,
@@ -151,6 +153,14 @@ export function SchedulePanel() {
     return leads.find((l) => l.id === placing.ownerId)?.name ?? "";
   })();
 
+  // Skill-annotation state — computed once per render from the active held item.
+  // Only job holds can carry a cert requirement; evisits never have requiredCerts.
+  const heldRequired: readonly string[] | null = (() => {
+    const held = drag ?? placing;
+    if (!held || held.kind !== "job") return null;
+    return jobs.find((x) => x.id === held.ownerId)?.requiredCerts ?? null;
+  })();
+
   function DayView() {
     const iso = schedDay;
     let START = BUSINESS_HOURS.open;
@@ -191,13 +201,18 @@ export function SchedulePanel() {
         </div>
 
         {/* crew rows */}
-        {techs.map((tc) => {
+        {(() => {
+          // Cert annotations for this render pass — computed once for all tech rows.
+          const annotations = certAnnotationsFor(techs, heldRequired);
+          return techs.map((tc) => {
           const items = boardItemsFor(jobs, leads, tc.id, iso);
           const load = items.reduce((s, it) => s + (it.v.dur ?? 0), 0);
+          const ann = annotations.get(tc.id);
+          const dimmed = ann != null && !ann.qualified;
 
           return (
             <div key={tc.id} className="gv-row">
-              <div className="gv-name">
+              <div className={`gv-name${dimmed ? " cert-dim" : ""}`}>
                 <span className="javatar" style={{ background: "var(--green-100)", color: "var(--ink-2)" }}>
                   {tc.initials}
                 </span>
@@ -206,6 +221,9 @@ export function SchedulePanel() {
                   <div className={`cellload${load > CAP ? " over" : load > CAP * CREW_FULL_THRESHOLD ? " full" : ""}`} style={{ textAlign: "left" }}>
                     {load ? `${hmLabel(load)} / ${CAP}h` : "free"}
                   </div>
+                  {dimmed && ann.missing.length > 0 && (
+                    <div className="cert-missing">missing {ann.missing.join(", ")}</div>
+                  )}
                 </div>
               </div>
               <div className="gv-lane" style={{ width: laneW, height: SCHEDULE_LANE_HEIGHT_PX, position: "relative" }}>
@@ -271,7 +289,8 @@ export function SchedulePanel() {
               </div>
             </div>
           );
-        })}
+        });
+        })()}
       </div>
     );
   }
@@ -577,6 +596,14 @@ export function SchedulePanel() {
         >
           <span>
             Tap a crew &amp; time on the board to place <b>{armedName}</b>
+            {armedBannerPhrase(
+              placing?.kind === "job"
+                ? (jobs.find((x) => x.id === placing.ownerId)?.requiredCerts ?? null)
+                : null,
+              techs,
+              (id) => dayLoad(jobs, id, schedDay),
+              (id) => techs.find((t) => t.id === id)?.name ?? "",
+            )}
           </span>
           <span
             className="linklike"
