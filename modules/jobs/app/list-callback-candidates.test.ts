@@ -10,6 +10,7 @@ const LEAD_A = asLeadId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 const JID_ORIG = asJobId("11111111-1111-1111-1111-111111111111");
 const JID_NEW = asJobId("33333333-3333-3333-3333-333333333333");
 const JID_UNRELATED = asJobId("44444444-4444-4444-4444-444444444444");
+const JID_CONFIRMED = asJobId("55555555-5555-5555-5555-555555555555");
 
 const NOW = new Date("2026-07-15T00:00:00Z");
 const COMPLETED_20_DAYS_AGO = new Date(NOW.getTime() - 20 * 86400000);
@@ -120,6 +121,37 @@ describe("ListCallbackCandidatesUseCase", () => {
       callbackReason: "new_issue",
     });
     const repo = new FakeRepo([origRow, dismissedRow]);
+    const clock = new FixedClock(NOW);
+    const uc = new ListCallbackCandidatesUseCase(repo, clock);
+    const result = await uc.exec();
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value).toHaveLength(0);
+  });
+
+  it("filters out a job with callbackReason='callback' (confirmed doesn't resurface)", async () => {
+    const origRow = makeRow({
+      id: JID_ORIG,
+      num: "JOB-100",
+      leadId: LEAD_A as string,
+      svc: "drain cleaning",
+      status: "complete",
+      completedAt: COMPLETED_20_DAYS_AGO,
+      callbackReason: null,
+    });
+    const confirmedRow = makeRow({
+      id: JID_CONFIRMED,
+      num: "JOB-300",
+      leadId: LEAD_A as string,
+      svc: "drain cleaning",
+      status: "scheduled",
+      completedAt: null,
+      createdAt: CREATED_10_DAYS_AGO,
+      // Already confirmed — callbackOf + reason both set
+      callbackOf: JID_ORIG,
+      callbackReason: "callback",
+    });
+    const repo = new FakeRepo([origRow, confirmedRow]);
     const clock = new FixedClock(NOW);
     const uc = new ListCallbackCandidatesUseCase(repo, clock);
     const result = await uc.exec();

@@ -78,7 +78,8 @@ describe("DismissCallbackUseCase", () => {
   it("sets callbackReason=new_issue + callbackOf=null and saves", async () => {
     const job = makeJob(JID);
     const repo = new FakeRepo([job]);
-    const uc = new DismissCallbackUseCase(repo, new InMemoryEventBus(), clock);
+    const bus = new InMemoryEventBus();
+    const uc = new DismissCallbackUseCase(repo, bus, clock);
     const r = await uc.exec({ jobId: JID });
     expect(isOk(r)).toBe(true);
     if (!isOk(r)) return;
@@ -86,6 +87,10 @@ describe("DismissCallbackUseCase", () => {
     expect(r.value.props.callbackOf).toBeNull();
     expect(repo.saved).toBeDefined();
     expect(repo.saved?.props.callbackReason).toBe("new_issue");
+    // event bus must receive a job.updated event
+    const emitted = bus.recorded.filter((e) => e.name === "job.updated");
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]!.payload.jobId).toBe(JID as string);
   });
 
   it("missing job → notFound", async () => {

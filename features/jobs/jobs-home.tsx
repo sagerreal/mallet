@@ -123,11 +123,14 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
         <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>
       </div>
 
-      {(candidates.data?.length ?? 0) > 0 ? (
-        <div className="cb-review-bar">
-          {candidates.data!.length} callback{candidates.data!.length === 1 ? "" : "s"} to review
-        </div>
-      ) : null}
+      {(() => {
+        const count = candidates.data?.length ?? 0;
+        return count > 0 ? (
+          <div className="cb-review-bar">
+            <b>{count}</b> callback{count === 1 ? "" : "s"} to review
+          </div>
+        ) : null;
+      })()}
 
       <JobsToolbar
         archiveSet={archiveSet}

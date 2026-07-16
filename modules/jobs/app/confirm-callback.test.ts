@@ -80,7 +80,8 @@ describe("ConfirmCallbackUseCase", () => {
     const job = makeJob(JID);
     const original = makeJob(ORIG_JID);
     const repo = new FakeRepo([job, original]);
-    const uc = new ConfirmCallbackUseCase(repo, new InMemoryEventBus(), clock);
+    const bus = new InMemoryEventBus();
+    const uc = new ConfirmCallbackUseCase(repo, bus, clock);
     const r = await uc.exec({ jobId: JID, originalJobId: ORIG_JID, reason: "callback" });
     expect(isOk(r)).toBe(true);
     if (!isOk(r)) return;
@@ -88,6 +89,10 @@ describe("ConfirmCallbackUseCase", () => {
     expect(r.value.props.callbackReason).toBe("callback");
     expect(repo.saved).toBeDefined();
     expect(repo.saved?.props.callbackOf).toBe(ORIG_JID);
+    // event bus must receive a job.updated event
+    const emitted = bus.recorded.filter((e) => e.name === "job.updated");
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]!.payload.jobId).toBe(JID as string);
   });
 
   it("missing original → notFound (no save)", async () => {
