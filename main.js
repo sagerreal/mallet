@@ -15,6 +15,7 @@
     easyScenes();
     roiCalc();
     consent();
+    wireConversionEvents();
   });
 
   /* Lenis inertia scrolling (vendored lenis.min.js) — the "expensive site" feel.
@@ -537,10 +538,44 @@
       io.observe(big);
     }
   }
-  /* ============== CONSENT + VISITOR ID ============== */
+  /* ============== CONSENT + VISITOR ID + ANALYTICS ============== */
   /* Shows the privacy-choices card once per visitor. Accept → loads analytics
-     (RB2B). Decline → remembers and never loads. */
+     (RB2B + GA4). Decline → remembers and never loads. */
   var RB2B_KEY = '4O7Z0HZPM2NX'; // RB2B web-identification key (loads only after consent).
+  var GA4_ID = '';               // e.g. 'G-XXXXXXXXXX' — paste from GA4 Admin → Data Streams. Empty = GA off.
+
+  /* GA4, consent-gated. window.malletTrack(event, params) is safe to call anywhere. */
+  function loadGA4() {
+    if (!GA4_ID || window.gtag) return;
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA4_ID;
+    document.head.appendChild(s);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag('js', new Date());
+    window.gtag('config', GA4_ID);
+  }
+  window.malletTrack = function (ev, params) {
+    if (window.gtag) window.gtag('event', ev, params || {});
+  };
+
+  /* Conversion events: demo clicks + Tally form submissions (postMessage). */
+  function wireConversionEvents() {
+    Array.prototype.forEach.call(document.querySelectorAll('.js-book-demo'), function (t) {
+      t.addEventListener('click', function () {
+        window.malletTrack('demo_click', { page: location.pathname });
+      });
+    });
+    window.addEventListener('message', function (e) {
+      var d = e.data;
+      if (typeof d === 'string' && d.indexOf('Tally.FormSubmitted') !== -1) {
+        window.malletTrack('lead_submit', { page: location.pathname });
+      } else if (d && d.event === 'Tally.FormSubmitted') {
+        window.malletTrack('lead_submit', { page: location.pathname });
+      }
+    });
+  }
 
   /* Official RB2B snippet shape (app.rb2b.com/script), wrapped so it only runs post-consent. */
   function loadRB2B() {
@@ -555,19 +590,19 @@
   }
 
   function consent() {
-    var card = document.getElementById('consent');
-    if (!card) return;
     var choice = null;
     try { choice = localStorage.getItem('mallet-consent'); } catch (e) { /* private mode */ }
+    var card = document.getElementById('consent');
 
-    if (choice === 'yes') { loadRB2B(); return; }
-    if (choice === 'no') return;
+    if (choice === 'yes') { loadRB2B(); loadGA4(); return; }
+    if (choice === 'no' || !card) return;
 
     card.hidden = false;
     document.getElementById('consentAccept').addEventListener('click', function () {
       try { localStorage.setItem('mallet-consent', 'yes'); } catch (e) {}
       card.hidden = true;
       loadRB2B();
+      loadGA4();
     });
     document.getElementById('consentDecline').addEventListener('click', function () {
       try { localStorage.setItem('mallet-consent', 'no'); } catch (e) {}
