@@ -18,7 +18,7 @@ tab (trade-playbooks, add/starter modals) and crew-schedules (replace-all update
 
 ## Global Constraints
 
-- **Design principles binding** (`.superpowers/sdd/design-principles.md`): SOLID/DI/ports/repository,
+- **Design principles binding** (`docs/design-principles.md`): SOLID/DI/ports/repository,
   DTO≠domain, validate at boundaries, no silent failures, YAGNI, immutability, small focused files.
 - **Tenant safety (non-negotiable):** org id ALWAYS from `ctx.principal.orgId`, never client input.
   New tenant column/FK follows composite-FK `(org_id, x)→parent(org_id,id)` + `jobs` already has RLS.

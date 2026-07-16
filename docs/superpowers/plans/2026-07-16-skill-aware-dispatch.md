@@ -24,7 +24,7 @@ type (replacing the dead `skills: []` stub), and `requiredCerts` through jobDTO 
 
 ## Global Constraints
 
-- **Design principles binding** (`.superpowers/sdd/design-principles.md`): hexagonal, DTO≠domain,
+- **Design principles binding** (`docs/design-principles.md`): hexagonal, DTO≠domain,
   `Result` returns, validate at boundaries, no silent failures, immutability, YAGNI, no `any`,
   fns <50 lines, files <800.
 - **Tenant safety (non-negotiable):** org id ALWAYS from `ctx.principal.orgId`; every new query

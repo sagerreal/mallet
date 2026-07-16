@@ -172,7 +172,7 @@ Surfaces this phase: candidate callbacks appear as a **confirm prompt** on the j
   visual language — `.field`/`.seg`/list-first accordion, the Modal shell).
 - **Tenant safety**: org id always from `ctx.principal.orgId`; every new query org-scoped; the new
   columns/FK follow the composite-FK + RLS conventions; graceful degradation on any resolver miss.
-- **Design principles** (`.superpowers/sdd/design-principles.md`): SOLID/DI/ports/repository,
+- **Design principles** (`docs/design-principles.md`): SOLID/DI/ports/repository,
   DTO≠domain, validate at boundaries, no silent fail, YAGNI. Immutability, small files.
 
 ## What Phase 1 explicitly does NOT do (deferred)

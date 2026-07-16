@@ -22,7 +22,7 @@ is only reliable when captured by the AI front desk).
 
 ## Global Constraints
 
-- **Design principles binding** (`.superpowers/sdd/design-principles.md`): hexagonal
+- **Design principles binding** (`docs/design-principles.md`): hexagonal
   (router→use-case→domain/pure→repo), DTO≠domain, `Result` returns (no throws for expected
   validation), validate at boundaries, no silent failures, immutability, YAGNI, no `any`, small
   focused files (<800 lines, fns <50).

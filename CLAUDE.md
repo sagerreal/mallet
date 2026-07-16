@@ -18,6 +18,26 @@ Tailwind-free hand-rolled CSS (prototype-faithful).
   `modules/companies/` is the canonical template. Layers: router (thin transport) → use-case
   (DI-constructed, returns `Result`) → domain (immutable value objects, `create → Result`,
   no throws for expected validation) → Drizzle repository (org-scoped).
+
+  **Module inventory (17 modules):**
+  - `accounting-sync` — QuickBooks Online sync (customers, invoices, payments)
+  - `ai` — LLM agent loop, MCP server, Anthropic client, run-agent-turn, write-tools
+  - `checklists` — job checklists (create, assign, complete items)
+  - `companies` — canonical template module; org company profile
+  - `customers` — lead lifecycle, lead sources, ensure-customer deduplication
+  - `frontdesk` — AI voice front desk: Vapi webhook, call records, crew-schedule availability
+  - `identity` — auth, principal resolution, Supabase token verification
+  - `inbound` — web-form lead intake endpoints, per-token throttle, lead receipts
+  - `invoicing` — invoices, invoice lines, payments, status transitions
+  - `jobs` — jobs, job visits (scheduling board), field-tech surface
+  - `messaging` — Twilio SMS in/out, message threads, unread tracking
+  - `notifications` — notification dispatch (Twilio, Resend), follow-up policy, reminders
+  - `pricebook` — services, categories, materials, cost rollups
+  - `quoting` — estimates, tiered GBB lines, edit-delta learning, proposal summaries
+  - `settings` — org settings, booking config, service lanes, branding
+  - `tasks` — tasks / reminders (cursor-paginated, due-date sorted)
+  - `timesheets` — time entries (clock-in/out, job-linked, tech-scoped)
+
 - **Tenant safety (non-negotiable):** org id ALWAYS from `ctx.principal.orgId`, never client
   input. Every org-scoped table has `org_id` + hand-written RLS (`ENABLE` + `FORCE ROW LEVEL
   SECURITY` + `FOR ALL USING/WITH CHECK (org_id = current_org_id())`). drizzle-kit does NOT
@@ -47,7 +67,9 @@ Tailwind-free hand-rolled CSS (prototype-faithful).
 - Migrations: edit `shared/db/schema/*` → `npm run db:generate` (auto-numbers; check
   `git status shared/db/migrations` for drift) → hand-write RLS as a separate numbered file +
   journal entry → `npm run db:migrate` applies to the LIVE DB (it's shared dev/prod — additive
-  changes only). Applied migrations are immutable; fixes go in a NEW migration.
+  changes only) → **`npm run db:verify`** (compares live migration state against the journal;
+  exits 1 on divergence — catches the silent no-op gotcha). Applied migrations are immutable;
+  fixes go in a NEW migration.
 - **Never** manage the Supabase `storage` schema from a drizzle migration (the migrate role
   doesn't own it and the whole batch rolls back) — that lives in `shared/db/storage-setup.sql`,
   run manually in the Supabase SQL editor.
@@ -70,7 +92,7 @@ Tailwind-free hand-rolled CSS (prototype-faithful).
 
 ## House rules (Owen's)
 
-- Design principles are binding: `.superpowers/sdd/design-principles.md` (SOLID, DI, repository
+- Design principles are binding: `docs/design-principles.md` (SOLID, DI, repository
   pattern, DTO≠domain, validate at boundaries, no silent failures, YAGNI — resilience patterns
   only for real external calls like Storage/Twilio/Stripe/Resend, not DB).
 - **No floating UI** — no popovers/portals/floating insets; panels expand in-flow, anchored and

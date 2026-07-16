@@ -45,5 +45,8 @@ pnpm db:generate && pnpm db:migrate
 
 ## Status
 
-- **Phase 0 — T0.1 (scaffold):** done — workspace, module tree, configs, booting Next app.
-- Next: T0.2 ESLint import-boundary gates · T0.3 `shared/types` (branded ids, Money, Result) · T0.4 fail-fast config · then DB + RLS, auth, and the first vertical slice (Customers).
+Production app. 17 modules fully DB-backed (83 migrations applied). Live voice AI front desk
+(Vapi + Twilio). Four AI pillars: proposal generation, AI front desk call handling, Ask Mallet
+agent bar (in-app LLM with tool confirmations), and on-the-job tech AI (photo + "what should I
+do here?" surface). Core loop (lead → quote → dispatch → invoice) live end-to-end with RLS
+tenant isolation.
