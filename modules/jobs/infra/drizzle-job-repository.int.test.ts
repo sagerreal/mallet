@@ -541,4 +541,82 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(out.doneFound).not.toBeNull(); // terminal job preserved as history
     expect(out.otherFound).not.toBeNull(); // lead B's job untouched
   });
+
+  it("listRecentForCallbackScan returns recent org-A rows and excludes ancient + org-B jobs", async () => {
+    const orgA = asOrgId(orgAId);
+    const orgB = asOrgId(orgBId);
+
+    // Fresh dedicated lead so this test doesn't collide with other test data on leadA.
+    const [scanLead] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgAId}, 'Scan Lead ' || gen_random_uuid()) returning id`;
+
+    const now = new Date();
+    const tenDaysAgo = new Date(now.getTime() - 10 * 86400000);
+    const completedAt = new Date(now.getTime() - 20 * 86400000);
+
+    // Insert original job (completed, 10 days ago) and callback candidate (today) via raw SQL
+    // so we can control created_at / completed_at precisely.
+    const [origRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, completed_at, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-SCAN-ORIG', ${scanLead!.id}, 'Original', 'drain cleaning',
+        'complete', ${completedAt.toISOString()}, ${tenDaysAgo.toISOString()}, ${tenDaysAgo.toISOString()}
+      ) returning id`;
+
+    const [newRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-SCAN-NEW', ${scanLead!.id}, 'Callback', 'drain cleaning',
+        'scheduled', ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
+    // Ancient job (200 days ago) — must be excluded by the `since` filter.
+    const ancientDate = new Date(now.getTime() - 200 * 86400000);
+    const [ancientRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-SCAN-ANCIENT', ${scanLead!.id}, 'Ancient', 'drain cleaning',
+        'complete', ${ancientDate.toISOString()}, ${ancientDate.toISOString()}
+      ) returning id`;
+
+    // Fresh lead + job in org B — must not appear in org A's scan.
+    const [scanLeadB] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgBId}, 'Scan Lead B ' || gen_random_uuid()) returning id`;
+    const [orgBRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, created_at, updated_at)
+      values (
+        ${orgBId}, 'JOB-SCAN-B', ${scanLeadB!.id}, 'Org B Job', 'drain cleaning',
+        'scheduled', ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
+    // Use a `since` that is 135 days ago (90 + 45 lookback from "now") — covers orig+new, excludes ancient.
+    const since = new Date(now.getTime() - 135 * 86400000);
+
+    const rows = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      return repo.listRecentForCallbackScan(since);
+    });
+
+    const ids = rows.map((r) => r.id as string);
+
+    // Both recent jobs are returned.
+    expect(ids).toContain(origRow!.id);
+    expect(ids).toContain(newRow!.id);
+
+    // Ancient job excluded.
+    expect(ids).not.toContain(ancientRow!.id);
+
+    // Org B's job excluded (RLS + explicit orgId filter).
+    expect(ids).not.toContain(orgBRow!.id);
+
+    // Field projection: verify key columns project correctly.
+    const origResult = rows.find((r) => (r.id as string) === origRow!.id);
+    expect(origResult).toBeDefined();
+    expect(origResult!.svc).toBe("drain cleaning");
+    expect(origResult!.num).toBe("JOB-SCAN-ORIG");
+    expect(origResult!.status).toBe("complete");
+    expect(origResult!.completedAt).not.toBeNull();
+    expect(origResult!.callbackReason).toBeNull();
+    expect(origResult!.callbackOf).toBeNull();
+  });
 });

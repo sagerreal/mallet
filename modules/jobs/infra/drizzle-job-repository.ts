@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, inArray, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, gte, inArray, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
@@ -6,6 +6,7 @@ import {
   buildPage,
   decodeCursor,
   isOk,
+  asJobId,
   type OrgId,
   type JobId,
   type LeadId,
@@ -14,7 +15,7 @@ import {
   type Paginated,
 } from "@mallet/shared/types";
 import type { Job } from "../domain/job";
-import type { JobRepository, JobFilter, JobExecution } from "../domain/job-repository";
+import type { JobRepository, JobFilter, JobExecution, CallbackScanRow } from "../domain/job-repository";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
 import { lineToDomain, addonToDomain, verifyToDomain, photoToDomain, type JobLineRow, type JobAddonRow, type JobVerifyAnswerRow, type JobPhotoRow } from "./job-execution-mapper";
@@ -537,6 +538,29 @@ export class DrizzleJobRepository implements JobRepository {
       )
       .returning({ id: jobPhotos.id });
     return rows.length;
+  }
+
+  async listRecentForCallbackScan(since: Date): Promise<CallbackScanRow[]> {
+    const rows = await this.tx
+      .select({
+        id: jobs.id,
+        num: jobs.num,
+        leadId: jobs.leadId,
+        svc: jobs.svc,
+        status: jobs.status,
+        completedAt: jobs.completedAt,
+        scheduledStart: jobs.scheduledStart,
+        createdAt: jobs.createdAt,
+        callbackOf: jobs.callbackOf,
+        callbackReason: jobs.callbackReason,
+      })
+      .from(jobs)
+      .where(and(isNull(jobs.deletedAt), gte(jobs.createdAt, since), eq(jobs.orgId, this.orgId)));
+    return rows.map((r) => ({
+      ...r,
+      id: asJobId(r.id),
+      callbackOf: r.callbackOf ? asJobId(r.callbackOf) : null,
+    }));
   }
 
   private async loadPage(baseConds: SQL[], page: CursorPage): Promise<Paginated<Job>> {
