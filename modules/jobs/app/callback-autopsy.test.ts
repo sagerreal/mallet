@@ -1,14 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { asJobId, asLeadId, asOrgId, FixedClock, isOk } from "@mallet/shared/types";
+import { asJobId, FixedClock, isOk } from "@mallet/shared/types";
 import type { JobRepository, AutopsyPairRow, CallbackScanRow } from "../domain/job-repository";
 import type { JobExecution } from "../domain/job-repository";
 import { JobVerifyAnswer } from "../domain/job-execution";
 import { CallbackAutopsyUseCase, AUTOPSY_WINDOW_DAYS } from "./callback-autopsy";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
-
-const ORG = asOrgId("22222222-2222-2222-2222-222222222222");
-const LEAD = asLeadId("33333333-3333-3333-3333-333333333333");
 
 const JID_CB1 = asJobId("cb111111-1111-1111-1111-111111111111");
 const JID_CB2 = asJobId("cb222222-2222-2222-2222-222222222222");

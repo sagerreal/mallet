@@ -1,6 +1,6 @@
 import type { Result, AppError, Clock, JobId } from "@mallet/shared/types";
 import { ok } from "@mallet/shared/types";
-import type { JobRepository } from "../domain/job-repository";
+import type { JobRepository, JobExecution } from "../domain/job-repository";
 import { computeAutopsy, type AutopsyCluster, type AutopsyPair } from "./compute-autopsy";
 import type { VerifyState } from "../domain/job-execution";
 
@@ -40,19 +40,7 @@ export class CallbackAutopsyUseCase {
     );
 
     const execById = await this.repo.listExecutionForJobs(originalIds);
-
-    // Build answers: original id → (itemId → VerifyState).
-    const answers = new Map<string, Map<string, VerifyState>>();
-    for (const origId of seenOriginalIds) {
-      const execution = execById.get(origId);
-      const verifyAnswers = execution?.verifyAnswers ?? [];
-      const itemMap = new Map<string, VerifyState>();
-      for (const answer of verifyAnswers) {
-        // Access itemId/state via .props — same pattern as toVerifyDTO in job-dto.ts.
-        itemMap.set(answer.props.itemId, answer.props.state);
-      }
-      answers.set(origId, itemMap);
-    }
+    const answers = this.buildAnswers(seenOriginalIds, execById);
 
     // Map AutopsyPairRow → AutopsyPair (stringify branded JobIds).
     const autopsyPairs: AutopsyPair[] = rows.map((row) => ({
@@ -70,5 +58,21 @@ export class CallbackAutopsyUseCase {
     }));
 
     return ok(computeAutopsy(autopsyPairs, answers));
+  }
+
+  /** original id → (itemId → VerifyState). Reads itemId/state via .props, as toVerifyDTO does. */
+  private buildAnswers(
+    originalIds: ReadonlySet<string>,
+    execById: Map<string, JobExecution>,
+  ): Map<string, Map<string, VerifyState>> {
+    const answers = new Map<string, Map<string, VerifyState>>();
+    for (const origId of originalIds) {
+      const itemMap = new Map<string, VerifyState>();
+      for (const answer of execById.get(origId)?.verifyAnswers ?? []) {
+        itemMap.set(answer.props.itemId, answer.props.state);
+      }
+      answers.set(origId, itemMap);
+    }
+    return answers;
   }
 }
