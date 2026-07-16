@@ -15,10 +15,11 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { JobsHome } from "@/features/jobs/jobs-home";
 import { SchedulePanel } from "@/features/jobs/schedule-panel";
 import { TimesheetsPanel } from "@/features/jobs/timesheets-panel";
+import { ChecklistsPanel } from "@/features/jobs/checklists-panel";
 
-type JobsSubTab = "jobs" | "schedule" | "timesheets";
+type JobsSubTab = "jobs" | "schedule" | "timesheets" | "checklists";
 
-const JOBS_TABS: readonly JobsSubTab[] = ["jobs", "schedule", "timesheets"];
+const JOBS_TABS: readonly JobsSubTab[] = ["jobs", "schedule", "timesheets", "checklists"];
 
 export default function JobsPage() {
   const openModal = useOpenModal();
@@ -37,6 +38,7 @@ export default function JobsPage() {
       {activeTab === "jobs" && <JobsHome onOpenJob={handleOpenJob} onOpenNewJob={handleOpenNewJob} />}
       {activeTab === "schedule" && <SchedulePanel />}
       {activeTab === "timesheets" && <TimesheetsPanel />}
+      {activeTab === "checklists" && <ChecklistsPanel />}
     </div>
   );
 }
