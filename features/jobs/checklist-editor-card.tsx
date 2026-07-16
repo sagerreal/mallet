@@ -114,7 +114,10 @@ function ExpandedEditor({
       .sort((a, b) => a.position - b.position)
       .map((it) => ({ id: it.id, text: it.text, type: it.type })),
   );
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
+  const nameValid = draftName.trim().length > 0;
   const dirty =
     draftName.trim() !== checklist.name ||
     draftItems.length !== checklist.items.length ||
@@ -147,13 +150,23 @@ function ExpandedEditor({
     );
   }
 
-  function handleSave() {
+  async function handleSave() {
     const items: NewChecklistItem[] = draftItems.map((it) => ({
       text: it.text,
       type: it.type,
     }));
-    void updateChecklist(checklist.id, draftName, items);
-    onToggle();
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // Await the persist so a failed save is SURFACED (the optimistic write + rollback are
+      // invisible otherwise). Only collapse the editor on success.
+      await updateChecklist(checklist.id, draftName, items);
+      setSaving(false);
+      onToggle();
+    } catch {
+      setSaving(false);
+      setSaveError("Couldn't save — check your connection and try again.");
+    }
   }
 
   function handleRemove() {
@@ -228,14 +241,19 @@ function ExpandedEditor({
           maxWidth: FIELD_MAX_WIDTH,
         }}
       >
-        <button
-          type="button"
-          className="btn primary"
-          disabled={!dirty}
-          onClick={handleSave}
-        >
-          Save
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!dirty || !nameValid || saving}
+            onClick={handleSave}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          {saveError && (
+            <span style={{ color: "var(--red, #B3261E)", fontSize: 12 }}>{saveError}</span>
+          )}
+        </div>
         <button
           type="button"
           className="lineedit-tool"
