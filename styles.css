@@ -690,6 +690,54 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 /* industries-grid footnote (solutions page) */
 .ticker-foot{text-align:center;margin-top:1rem;font-size:.9rem;color:var(--ink-soft)}
 
+/* ===================== THE EASY PART ===================== */
+.easy{background:var(--parchment);padding:6rem 0 6.5rem;border-top:1px solid var(--line)}
+.easy-grid{display:grid;grid-template-columns:1fr 1fr;gap:2.2rem;margin-top:2.8rem;align-items:start}
+.easy-card{display:flex;flex-direction:column}
+.easy-tag{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.16em;color:var(--amber-deep);margin-bottom:.9rem}
+.easy-card h3{font-size:1.35rem;letter-spacing:-.02em;margin-top:1.4rem}
+.easy-card > p:last-child{margin-top:.55rem;font-size:.97rem;color:var(--ink-soft);line-height:1.6;max-width:44ch}
+
+/* the phone: a text thread, not an app */
+.phone{
+  position:relative;background:var(--card);border:1px solid var(--line);border-radius:26px;
+  padding:1.5rem 1.2rem 1.4rem;max-width:340px;
+  box-shadow:0 8px 20px rgba(27,26,23,.07), 0 34px 70px -24px rgba(27,26,23,.26);
+}
+.phone-notch{position:absolute;top:.55rem;left:50%;transform:translateX(-50%);width:84px;height:7px;border-radius:99px;background:var(--parchment)}
+.ph-head{text-align:center;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;color:var(--ink-soft);margin:.4rem 0 1rem}
+.ph-head b{color:var(--ink);font-weight:700}
+.ph-thread{display:flex;flex-direction:column;gap:.55rem;min-height:216px}
+.ph-bub{padding:.6rem .9rem;border-radius:16px;font-size:.9rem;line-height:1.45;max-width:88%}
+.ph-bub.in{align-self:flex-start;background:var(--parchment);border:1px solid var(--line);border-bottom-left-radius:5px}
+.ph-bub.out{align-self:flex-end;background:var(--ink);color:var(--paper);border-bottom-right-radius:5px}
+.ph-meta{font-family:var(--font-mono);font-size:.66rem;color:var(--ink-soft);line-height:1.6}
+.ph-meta .ok{color:var(--live);font-weight:700}
+
+/* the ask bar: say it, it's done */
+.askdemo{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:1.3rem 1.4rem 1.4rem;
+  box-shadow:0 8px 20px rgba(27,26,23,.07), 0 34px 70px -24px rgba(27,26,23,.26);
+}
+.ad-bar{
+  display:flex;align-items:center;gap:.6rem;background:var(--parchment);border:1.5px solid var(--ink);
+  border-radius:12px;padding:.8rem 1rem;font-family:var(--font-mono);font-size:.86rem;color:var(--ink);
+  min-height:3.1rem;
+}
+.ad-out{display:flex;flex-direction:column;gap:.5rem;margin-top:1rem;min-height:132px}
+.ad-out .ph-meta{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:.6rem .85rem}
+
+/* scene steps */
+.ez{opacity:0;transform:translateY(8px);transition:opacity .4s ease, transform .4s ease}
+.ez.on{opacity:1;transform:none}
+@media (prefers-reduced-motion: reduce){ .ez{opacity:1;transform:none} }
+@media (max-width:900px){
+  .easy{padding:3.6rem 0 4rem}
+  .easy-grid{grid-template-columns:1fr;gap:2.6rem}
+  .phone{max-width:100%}
+}
+
 /* ======================= PLAIN TERMS ======================= */
 .why{background:var(--paper);padding:6.5rem 0;border-top:1px solid var(--line)}
 .terms-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:3rem;border:1px solid var(--line);border-radius:var(--r);background:var(--card);overflow:hidden}
