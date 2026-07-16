@@ -195,10 +195,10 @@ export const CHECKLIST_STARTERS: readonly ChecklistStarterSet[] = [
       {
         name: "Tree removal",
         items: [
-          { text: "Photo of the cleared stump area at ground level", type: "photo" },
+          { text: "Photo of the canopy after removal — no hanging limbs (widowmakers) left", type: "photo" },
           { text: "All sections limbed, bucked, and cleared from the work zone", type: "check" },
           { text: "Chip or remove all brush — no large debris left on site", type: "check" },
-          { text: "Inspect property for any branches or debris outside the primary drop zone", type: "check" },
+          { text: "Photo of the cleared ground / stump area", type: "photo" },
           { text: "Check roof, gutters, and fence lines for any debris that landed there", type: "check" },
           { text: "Customer walkthrough — confirm satisfaction before leaving", type: "check" },
           { text: "Equipment cleaned and moved off the property", type: "check" },
@@ -435,7 +435,7 @@ export const CHECKLIST_STARTERS: readonly ChecklistStarterSet[] = [
     label: "Appliance repair",
     checklists: [
       {
-        name: "Appliance repair",
+        name: "General appliance repair",
         items: [
           { text: "Photo of the completed repair — component replaced or connection secured", type: "photo" },
           { text: "Run the appliance through a full cycle or test mode", type: "check" },
