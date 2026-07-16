@@ -100,10 +100,9 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         },
       });
 
-    const keptIds: string[] = [];
-    for (const line of p.lines) {
-      keptIds.push(line.props.id);
-      await this.upsertLine(p.id, p.orgId, line, p.updatedAt);
+    const keptIds = p.lines.map((line) => line.props.id);
+    if (p.lines.length > 0) {
+      await this.upsertLines(p.id, p.orgId, p.lines, p.updatedAt);
     }
 
     // Soft-delete any lines that were removed from the aggregate.
@@ -112,29 +111,48 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     await this.tx.update(estimateLines).set({ deletedAt: p.updatedAt }).where(and(...removeConds));
   }
 
-  private async upsertLine(
+  private async upsertLines(
     estimateId: string,
     orgId: OrgId,
-    line: EstimateLine,
+    lines: readonly EstimateLine[],
     updatedAt: Date,
   ): Promise<void> {
-    const lp = line.props;
-    const columns = {
-      description: lp.description,
-      quantity: lp.quantity,
-      rateCents: lp.rate,
-      costCents: lp.cost,
-      isOptional: lp.isOptional,
-      needsPhoto: lp.needsPhoto,
-      position: lp.position,
-      tier: lp.tier,
-      updatedAt,
-      deletedAt: null,
-    };
+    const rows = lines.map((line) => {
+      const lp = line.props;
+      return {
+        id: lp.id,
+        orgId,
+        estimateId,
+        description: lp.description,
+        quantity: lp.quantity,
+        rateCents: lp.rate,
+        costCents: lp.cost,
+        isOptional: lp.isOptional,
+        needsPhoto: lp.needsPhoto,
+        position: lp.position,
+        tier: lp.tier,
+        updatedAt,
+        deletedAt: null as Date | null,
+      };
+    });
     await this.tx
       .insert(estimateLines)
-      .values({ id: lp.id, orgId, estimateId, ...columns })
-      .onConflictDoUpdate({ target: estimateLines.id, set: columns });
+      .values(rows)
+      .onConflictDoUpdate({
+        target: estimateLines.id,
+        set: {
+          description: sql`excluded.description`,
+          quantity: sql`excluded.quantity`,
+          rateCents: sql`excluded.rate_cents`,
+          costCents: sql`excluded.cost_cents`,
+          isOptional: sql`excluded.is_optional`,
+          needsPhoto: sql`excluded.needs_photo`,
+          position: sql`excluded.position`,
+          tier: sql`excluded.tier`,
+          updatedAt: sql`excluded.updated_at`,
+          deletedAt: sql`excluded.deleted_at`,
+        },
+      });
   }
 
   // Write-once snapshot: the WHERE ai_draft IS NULL guard makes overwrites impossible at the
