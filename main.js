@@ -286,38 +286,41 @@
     });
   }
 
-  /* One slider set, four pillar payoffs. Deliberately modest assumptions
-     (stated in the on-page fine print):
+  /* The math, one panel per pillar. Tabs/▸ switch panels (same grammar as
+     the hero stage); the job-value slider appears in three panels and stays
+     synced. Assumptions are deliberately modest and stated in the fine print:
      - Front Desk: 50% of missed calls reachable × 40% book
-     - Estimating: ~30 min saved per quote (AI drafts, owner reviews)
+     - Estimating: ~30 min saved per quote (drafts itself, owner reviews)
      - Foreman: a callback eats half a job's value; checklist prevents 1 in 3
-     - Follow-ups: cash currently sitting in unpaid invoices (not in total —
-       the chase accelerates it, it isn't new revenue)
+     - Follow-ups: cash sitting in unpaid invoices (not in the annual total —
+       it's money already earned, the chase just brings it in sooner)
      Total = front desk + foreman + software halved. */
   function roiCalc() {
     var r = {
       missed: document.getElementById('rMissed'),
-      ticket: document.getElementById('rTicket'),
       quotes: document.getElementById('rQuotes'),
       callbacks: document.getElementById('rCallbacks'),
       unpaid: document.getElementById('rUnpaid'),
       bill: document.getElementById('rBill')
     };
     if (!r.missed) return;
+    var tickets = slice(document.querySelectorAll('.js-ticket'));
+    var ticketOuts = slice(document.querySelectorAll('.js-ticket-out'));
 
     var fmt = function (n) { return '$' + Math.round(n).toLocaleString('en-US'); };
     var totalNow = 0;
 
     function update() {
-      var missed = +r.missed.value, ticket = +r.ticket.value, quotes = +r.quotes.value;
-      var callbacks = +r.callbacks.value, unpaid = +r.unpaid.value, bill = +r.bill.value;
+      var missed = +r.missed.value, quotes = +r.quotes.value, callbacks = +r.callbacks.value;
+      var unpaid = +r.unpaid.value, bill = +r.bill.value;
+      var ticket = tickets.length ? +tickets[0].value : 450;
 
       document.getElementById('oMissed').textContent = missed;
-      document.getElementById('oTicket').textContent = fmt(ticket);
       document.getElementById('oQuotes').textContent = quotes;
       document.getElementById('oCallbacks').textContent = callbacks;
       document.getElementById('oUnpaid').textContent = unpaid;
       document.getElementById('oBill').textContent = fmt(bill);
+      ticketOuts.forEach(function (o) { o.textContent = fmt(ticket); });
 
       var recoveredJobs = missed * 52 * 0.5 * 0.4;        // calls/yr → reachable → booked
       var jobsRevenue = recoveredJobs * ticket;
@@ -325,23 +328,46 @@
       var callbackSave = callbacks * 12 * (ticket * 0.5) / 3;
       var cashOut = unpaid * ticket;
       var softSaveYr = bill * 12 * 0.5;
-      var softSaveMo = bill * 0.5;
 
-      document.getElementById('roiJobs').textContent = fmt(jobsRevenue);
-      document.getElementById('roiJobsN').textContent = Math.round(recoveredJobs);
-      document.getElementById('roiEst').textContent = Math.round(quoteHours) + ' hrs';
-      document.getElementById('roiFore').textContent = fmt(callbackSave);
-      document.getElementById('roiCash').textContent = fmt(cashOut);
-      document.getElementById('roiSoft').textContent = fmt(softSaveYr);
-      document.getElementById('roiSoftM').textContent = fmt(softSaveMo);
+      document.getElementById('pDesk').textContent = fmt(jobsRevenue);
+      document.getElementById('pDeskN').textContent = Math.round(recoveredJobs);
+      document.getElementById('pEst').textContent = Math.round(quoteHours) + ' hrs';
+      document.getElementById('pFore').textContent = fmt(callbackSave);
+      document.getElementById('pCash').textContent = fmt(cashOut);
+      document.getElementById('roiSoftM').textContent = fmt(bill * 0.5);
+      document.getElementById('roiHrs').textContent = Math.round(quoteHours);
       totalNow = jobsRevenue + callbackSave + softSaveYr;
       document.getElementById('roiTotal').textContent = fmt(totalNow);
     }
 
     Object.keys(r).forEach(function (k) { r[k].addEventListener('input', update); });
+    tickets.forEach(function (t) {
+      t.addEventListener('input', function () {
+        tickets.forEach(function (o) { if (o !== t) o.value = t.value; });
+        update();
+      });
+    });
     update();
 
-    // moving part: the headline number counts up the first time it scrolls in
+    // panel switching: tabs jump, ▸ advances and loops
+    var tabs = slice(document.querySelectorAll('.mtab'));
+    var panels = slice(document.querySelectorAll('.mpanel'));
+    var next = document.getElementById('mathNext');
+    var cur = 0;
+    function show(i) {
+      cur = i;
+      tabs.forEach(function (t, j) {
+        t.classList.toggle('on', i === j);
+        t.setAttribute('aria-selected', i === j ? 'true' : 'false');
+      });
+      panels.forEach(function (p, j) { p.classList.toggle('on', i === j); });
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () { show(parseInt(t.getAttribute('data-panel'), 10) || 0); });
+    });
+    if (next) next.addEventListener('click', function () { show((cur + 1) % panels.length); });
+
+    // moving part: the total counts up the first time it scrolls in
     var big = document.getElementById('roiTotal');
     if (big && !reduce && 'IntersectionObserver' in window) {
       var io = new IntersectionObserver(function (entries) {
@@ -363,7 +389,6 @@
       io.observe(big);
     }
   }
-
   /* ============== CONSENT + VISITOR ID ============== */
   /* Shows the privacy-choices card once per visitor. Accept → loads analytics
      (RB2B). Decline → remembers and never loads. */
