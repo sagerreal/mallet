@@ -354,7 +354,7 @@
     var panels = slice(document.querySelectorAll('.mpanel'));
     var next = document.getElementById('mathNext');
     var mathTitle = document.getElementById('mathTitle');
-    var M_TITLES = ['THE MATH · 01 FRONT DESK', 'THE MATH · 02 ESTIMATING', 'THE MATH · 03 FOREMAN', 'THE MATH · 04 FOLLOW-UPS'];
+    var M_TITLES = ['LEAK WORKSHEET · 01 FRONT DESK', 'LEAK WORKSHEET · 02 ESTIMATING', 'LEAK WORKSHEET · 03 FOREMAN', 'LEAK WORKSHEET · 04 FOLLOW-UPS'];
     var cur = 0;
     function show(i) {
       cur = i;

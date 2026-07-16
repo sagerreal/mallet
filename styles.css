@@ -388,31 +388,37 @@ strong{font-weight:700}
 }
 .roi .wrap{position:relative}
 
-/* the stage: window + sheet behind */
-.math-stage{position:relative;margin-top:2.8rem}
-.math-back{
-  position:absolute;z-index:1;top:-1.9rem;right:-1rem;width:200px;
-  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-  padding:.9rem 1rem 1.1rem;transform:rotate(2.2deg);
-  box-shadow:0 18px 44px rgba(27,26,23,.12);
+/* The worksheet: a job-ticket sheet — deliberately NOT another app window.
+   Signature details: amber margin rule, letterhead rule, dotted-leader sum
+   with a double-ruled accounting total. */
+.ledger{
+  position:relative;margin-top:2.8rem;background:var(--card);border:1px solid var(--line);
+  border-radius:6px; /* crisper than the app windows — it's paper */
+  box-shadow:0 8px 20px rgba(27,26,23,.06), 0 36px 70px -28px rgba(27,26,23,.25);
 }
-.math-back .sb-title{font-family:var(--font-mono);font-size:.62rem;letter-spacing:.14em;color:var(--ink-soft)}
-.math-window{
-  position:relative;z-index:2;background:var(--card);border:1px solid var(--line);
-  border-radius:var(--r);overflow:hidden;
-  box-shadow:0 10px 24px rgba(27,26,23,.08), 0 46px 90px -22px rgba(27,26,23,.28);
+.ledger::before{ /* the worksheet margin rule */
+  content:"";position:absolute;top:0;bottom:0;left:2.1rem;width:2px;
+  background:rgba(176,125,0,.32);pointer-events:none;
 }
-.math-body{padding:1.8rem 2.2rem 2.1rem}
+.ledger-head{
+  display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
+  padding:1.35rem 2.4rem 1rem 3.2rem;border-bottom:2px solid var(--ink);
+}
+.lh-title{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.14em;color:var(--ink);font-weight:700}
+.lh-note{font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;color:var(--ink-soft)}
+.ledger-body{padding:.4rem 2.4rem 2.2rem 3.2rem}
 
-/* pillar tabs — same grammar as the hero stage: click a pillar, or ▸ next */
-.math-tabs{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+/* pillar tabs — underline tabs on the sheet (the hero owns the pill style) */
+.math-tabs{display:flex;gap:1.7rem;align-items:center;flex-wrap:wrap;border-bottom:1px dashed var(--line)}
 .mtab{
   font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;color:var(--ink-soft);
-  background:transparent;border:1px solid var(--line);border-radius:999px;
-  padding:.5rem .95rem;cursor:pointer;transition:all .15s ease;
+  background:transparent;border:0;border-radius:0;position:relative;
+  padding:1rem 0 .85rem;cursor:pointer;transition:color .15s ease;
 }
-.mtab:hover{color:var(--ink);border-color:var(--ink)}
-.mtab.on{color:var(--paper);background:var(--ink);border-color:var(--ink);font-weight:700}
+.mtab::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;background:transparent;transition:background .15s ease}
+.mtab:hover{color:var(--ink)}
+.mtab.on{color:var(--ink);font-weight:700}
+.mtab.on::after{background:var(--amber)}
 .math-next{
   margin-left:auto;width:40px;height:40px;border-radius:10px;border:0;cursor:pointer;
   background:var(--ink);color:var(--paper);font-size:.8rem;display:grid;place-items:center;
@@ -449,21 +455,33 @@ input[type="range"]::-moz-range-thumb{
   width:14px;height:14px;border-radius:50%;background:var(--amber);border:2px solid var(--card);
 }
 input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#E7E1D2}
-.roi-hero-card{
-  position:relative;background:#FFF8E6;border:1.5px solid var(--amber);
-  border-radius:var(--r);padding:1.8rem 1.9rem;
-  box-shadow:0 16px 40px -12px rgba(176,125,0,.28);
-}
+/* the payoff: unboxed ledger figure — big ink number straight on the sheet */
+.ledger-payoff{padding-left:2.2rem;border-left:1px dashed var(--line)}
 .roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:var(--amber-deep);margin-top:.2rem}
-.roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(2.6rem,5vw,3.7rem);letter-spacing:-.03em;line-height:1.05;color:var(--ink);margin:.3rem 0 .1rem}
-.roi-note{font-size:.9rem;color:var(--ink-soft);line-height:1.55;margin-top:.45rem}
-.roi-total-bar .roi-label{color:var(--ink-soft)}
+.roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(3rem,5.6vw,4.3rem);letter-spacing:-.035em;line-height:1.02;color:var(--ink);margin:.35rem 0 .1rem}
+.roi-note{font-size:.9rem;color:var(--ink-soft);line-height:1.55;margin-top:.55rem;max-width:38ch}
+.roi-note b{color:var(--ink)}
+
+/* accounting sum: dotted leader into a double-ruled total */
+.lt-row{display:flex;align-items:baseline;gap:.9rem}
+.lt-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:var(--ink);font-weight:700;flex:none}
+.lt-leader{flex:1;border-bottom:2px dotted #CFC8B8;transform:translateY(-8px)}
+.lt-fig{
+  font-family:var(--font-display);font-weight:700;font-size:clamp(2.2rem,3.6vw,3rem);
+  letter-spacing:-.03em;color:var(--ink);flex:none;
+  border-bottom:5px double var(--ink);padding-bottom:.15rem;
+}
 .roi-fine{margin-top:1.5rem;font-size:.8rem;color:var(--ink-soft);max-width:78ch}
 @media (max-width:900px){
   .mpanel,.roi-total-bar{grid-template-columns:1fr;gap:1.6rem}
   .math-next{margin-left:0}
-  .math-body{padding:1.3rem 1.1rem 1.5rem}
-  .math-back{right:.4rem}
+  .ledger::before{left:1rem}
+  .ledger-head{padding:1.1rem 1.1rem .85rem 1.8rem}
+  .ledger-body{padding:.2rem 1.1rem 1.6rem 1.8rem}
+  .ledger-payoff{padding-left:0;border-left:0;border-top:1px dashed var(--line);padding-top:1.4rem}
+  .lt-row{flex-direction:column;align-items:flex-start;gap:.3rem}
+  .lt-leader{display:none}
+  .lt-fig{font-size:2.4rem}
 }
 
 /* ============== PILLAR VIGNETTES (rows) ============== */
