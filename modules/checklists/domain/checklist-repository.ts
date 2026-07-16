@@ -29,4 +29,20 @@ export interface ChecklistRepository {
 
   // Soft-delete the template (and cascade-soft-delete its items). Returns rows affected (0 = not found).
   archive(id: ChecklistId, now: Date): Promise<number>;
+
+  // Replace the template's name + items atomically: update the header name, hard-remove the
+  // template's current items, insert the new ordered set — all in the org-scoped tx. Returns the
+  // updated Checklist, or null if the template doesn't exist (in this org).
+  // trade/stage/match are intentionally NOT changed by this operation.
+  update(input: {
+    id: ChecklistId;
+    name: string;
+    items: readonly {
+      id: ChecklistItemId;
+      text: string;
+      type: ChecklistItemType;
+      required: boolean;
+      position: number;
+    }[];
+  }): Promise<Checklist | null>;
 }

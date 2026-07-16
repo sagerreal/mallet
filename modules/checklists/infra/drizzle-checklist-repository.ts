@@ -128,6 +128,79 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
     }));
   }
 
+  async update(input: {
+    id: ChecklistId;
+    name: string;
+    items: readonly {
+      id: ChecklistItemId;
+      text: string;
+      type: ChecklistItemType;
+      required: boolean;
+      position: number;
+    }[];
+  }): Promise<Checklist | null> {
+    // Guard: template must exist in this org (RLS + explicit predicate).
+    const existing = await this.tx
+      .select()
+      .from(checklistTemplates)
+      .where(
+        and(
+          eq(checklistTemplates.id, input.id),
+          eq(checklistTemplates.orgId, this.orgId),
+          isNull(checklistTemplates.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (existing.length === 0) return null;
+
+    // Update the header name (trade/stage/match stay unchanged).
+    const now = new Date();
+    const updatedRows = await this.tx
+      .update(checklistTemplates)
+      .set({ name: input.name, updatedAt: now })
+      .where(
+        and(
+          eq(checklistTemplates.id, input.id),
+          eq(checklistTemplates.orgId, this.orgId),
+          isNull(checklistTemplates.deletedAt),
+        ),
+      )
+      .returning();
+    const row = updatedRows[0];
+    if (!row) return null;
+
+    // Hard-delete existing items (delete/recreate — never patch items per contract).
+    await this.tx
+      .delete(checklistItems)
+      .where(
+        and(
+          eq(checklistItems.templateId, input.id),
+          eq(checklistItems.orgId, this.orgId),
+        ),
+      );
+
+    // Insert the new ordered item set (same pattern as create).
+    let itemRows: ChecklistItemRow[] = [];
+    if (input.items.length > 0) {
+      itemRows = await this.tx
+        .insert(checklistItems)
+        .values(
+          input.items.map((it) => ({
+            id: it.id,
+            orgId: this.orgId,
+            templateId: input.id,
+            text: it.text,
+            type: it.type,
+            required: it.required,
+            position: it.position,
+          })),
+        )
+        .returning();
+    }
+
+    return toDomain(row, itemRows);
+  }
+
   async archive(id: ChecklistId, now: Date): Promise<number> {
     const rows = await this.tx
       .update(checklistTemplates)

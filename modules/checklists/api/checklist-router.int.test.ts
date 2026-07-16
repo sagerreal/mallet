@@ -146,4 +146,66 @@ suite("checklists tRPC router (full stack, live RLS)", () => {
     const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(callerTech.v1.checklists.create({ name: "Nope", stage: "job" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  it("update replaces name + items; findById shows the new state and trade/stage/match unchanged", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const chk = await caller.v1.checklists.create({
+      name: "Drain close-out",
+      trade: "Plumbing",
+      stage: "job",
+      match: ["drain"],
+      items: [
+        { text: "Old photo", type: "photo" },
+        { text: "Old check", type: "check", required: true },
+      ],
+    });
+    expect(chk.items).toHaveLength(2);
+
+    const updated = await caller.v1.checklists.update({
+      checklistId: chk.id,
+      name: "Drain close-out v2",
+      items: [
+        { text: "New photo", type: "photo", required: true },
+        { text: "New check A", type: "check" },
+        { text: "New check B", type: "check" },
+      ],
+    });
+    expect(updated.name).toBe("Drain close-out v2");
+    expect(updated.items).toHaveLength(3);
+    expect(updated.items.map((i) => i.text)).toEqual(["New photo", "New check A", "New check B"]);
+    expect(updated.items.map((i) => i.position)).toEqual([0, 1, 2]);
+    expect(updated.trade).toBe("Plumbing");
+    expect(updated.stage).toBe("job");
+    expect(updated.match).toEqual(["drain"]);
+
+    // Round-trip via list confirms persistence.
+    const listed = await caller.v1.checklists.list({ limit: 500 });
+    const found = listed.items.find((c) => c.id === chk.id);
+    expect(found?.name).toBe("Drain close-out v2");
+    expect(found?.items).toHaveLength(3);
+  });
+
+  it("update returns NOT_FOUND for a non-existent checklistId", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.checklists.update({
+        checklistId: randomUUID(),
+        name: "Ghost",
+        items: [{ text: "Step", type: "check" }],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("update is blocked for org B trying to modify org A's template (NOT_FOUND via RLS)", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const chk = await callerA.v1.checklists.create({ name: "RLS Update Boundary", stage: "job" });
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    await expect(
+      callerB.v1.checklists.update({
+        checklistId: chk.id,
+        name: "Hijacked",
+        items: [{ text: "Hijacked step", type: "check" }],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
 });

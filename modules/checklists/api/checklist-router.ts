@@ -6,6 +6,7 @@ import { DrizzleChecklistRepository } from "../infra/drizzle-checklist-repositor
 import { CreateChecklistUseCase } from "../app/create-checklist";
 import { ListChecklistsUseCase } from "../app/list-checklists";
 import { ArchiveChecklistUseCase } from "../app/archive-checklist";
+import { UpdateChecklistUseCase } from "../app/update-checklist";
 import { checklistDTO, toChecklistDTO } from "./checklist-dto";
 
 const paginatedChecklistDTO = z.object({
@@ -40,6 +41,20 @@ const createInput = z.object({
 });
 
 const removeInput = z.object({ checklistId: z.string().uuid() });
+
+const updateInput = z.object({
+  checklistId: z.string().uuid(),
+  name: z.string().min(1).max(200),
+  items: z
+    .array(
+      z.object({
+        text: z.string().min(1).max(500),
+        type: z.enum(["check", "photo"]),
+        required: z.boolean().optional(),
+      }),
+    )
+    .max(50),
+});
 
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
 // request's tx + ports, delegate, map the result. No business logic lives here.
@@ -83,6 +98,23 @@ export const createChecklistRouter = () =>
         const useCase = new ArchiveChecklistUseCase(repo, ctx.deps.clock);
         const result = await useCase.exec({ checklistId: asChecklistId(input.checklistId) }, ctx.principal.orgId);
         return orThrow(result);
+      }),
+
+    update: ownerOrOffice
+      .input(updateInput)
+      .output(checklistDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleChecklistRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new UpdateChecklistUseCase(repo, ctx.deps.ids);
+        const result = await useCase.exec(
+          {
+            checklistId: input.checklistId,
+            name: input.name,
+            items: input.items,
+          },
+          ctx.principal.orgId,
+        );
+        return toChecklistDTO(orThrow(result));
       }),
 
     // Item-level mutations (addItem / removeItem / setItemRequired) were removed
