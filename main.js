@@ -353,6 +353,8 @@
     var tabs = slice(document.querySelectorAll('.mtab'));
     var panels = slice(document.querySelectorAll('.mpanel'));
     var next = document.getElementById('mathNext');
+    var mathTitle = document.getElementById('mathTitle');
+    var M_TITLES = ['THE MATH · 01 FRONT DESK', 'THE MATH · 02 ESTIMATING', 'THE MATH · 03 FOREMAN', 'THE MATH · 04 FOLLOW-UPS'];
     var cur = 0;
     function show(i) {
       cur = i;
@@ -361,6 +363,7 @@
         t.setAttribute('aria-selected', i === j ? 'true' : 'false');
       });
       panels.forEach(function (p, j) { p.classList.toggle('on', i === j); });
+      if (mathTitle) mathTitle.textContent = M_TITLES[i] || M_TITLES[0];
     }
     tabs.forEach(function (t) {
       t.addEventListener('click', function () { show(parseInt(t.getAttribute('data-panel'), 10) || 0); });
