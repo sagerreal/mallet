@@ -286,39 +286,55 @@
     });
   }
 
+  /* One slider set, four pillar payoffs. Deliberately modest assumptions
+     (stated in the on-page fine print):
+     - Front Desk: 50% of missed calls reachable × 40% book
+     - Estimating: ~30 min saved per quote (AI drafts, owner reviews)
+     - Foreman: a callback eats half a job's value; checklist prevents 1 in 3
+     - Follow-ups: cash currently sitting in unpaid invoices (not in total —
+       the chase accelerates it, it isn't new revenue)
+     Total = front desk + foreman + software halved. */
   function roiCalc() {
     var r = {
-      techs: document.getElementById('rTechs'),
       missed: document.getElementById('rMissed'),
       ticket: document.getElementById('rTicket'),
+      quotes: document.getElementById('rQuotes'),
+      callbacks: document.getElementById('rCallbacks'),
+      unpaid: document.getElementById('rUnpaid'),
       bill: document.getElementById('rBill')
     };
-    if (!r.techs) return;
+    if (!r.missed) return;
 
     var fmt = function (n) { return '$' + Math.round(n).toLocaleString('en-US'); };
     var totalNow = 0;
 
     function update() {
-      var techs = +r.techs.value, missed = +r.missed.value, ticket = +r.ticket.value, bill = +r.bill.value;
+      var missed = +r.missed.value, ticket = +r.ticket.value, quotes = +r.quotes.value;
+      var callbacks = +r.callbacks.value, unpaid = +r.unpaid.value, bill = +r.bill.value;
 
-      document.getElementById('oTechs').textContent = techs;
       document.getElementById('oMissed').textContent = missed;
       document.getElementById('oTicket').textContent = fmt(ticket);
+      document.getElementById('oQuotes').textContent = quotes;
+      document.getElementById('oCallbacks').textContent = callbacks;
+      document.getElementById('oUnpaid').textContent = unpaid;
       document.getElementById('oBill').textContent = fmt(bill);
 
-      var recoveredJobs = missed * 52 * 0.5 * 0.4;      // calls/yr → answerable → booked
+      var recoveredJobs = missed * 52 * 0.5 * 0.4;        // calls/yr → reachable → booked
       var jobsRevenue = recoveredJobs * ticket;
+      var quoteHours = quotes * 52 * 0.5;                 // 30 min per quote
+      var callbackSave = callbacks * 12 * (ticket * 0.5) / 3;
+      var cashOut = unpaid * ticket;
       var softSaveYr = bill * 12 * 0.5;
       var softSaveMo = bill * 0.5;
-      var hours = Math.min(2.5 * techs + 6, 60);
 
-      var hoursEl = document.getElementById('roiHours');
-      if (hoursEl) hoursEl.textContent = Math.round(hours) + ' hrs';
       document.getElementById('roiJobs').textContent = fmt(jobsRevenue);
       document.getElementById('roiJobsN').textContent = Math.round(recoveredJobs);
+      document.getElementById('roiEst').textContent = Math.round(quoteHours) + ' hrs';
+      document.getElementById('roiFore').textContent = fmt(callbackSave);
+      document.getElementById('roiCash').textContent = fmt(cashOut);
       document.getElementById('roiSoft').textContent = fmt(softSaveYr);
       document.getElementById('roiSoftM').textContent = fmt(softSaveMo);
-      totalNow = jobsRevenue + softSaveYr;
+      totalNow = jobsRevenue + callbackSave + softSaveYr;
       document.getElementById('roiTotal').textContent = fmt(totalNow);
     }
 

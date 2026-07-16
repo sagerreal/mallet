@@ -407,6 +407,10 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:r
   border-radius:var(--r);padding:1.7rem 1.8rem;
 }
 .roi-card{background:rgba(250,248,243,.05);border:1px solid var(--line-dark);border-radius:var(--r);padding:1.4rem 1.5rem}
+.roi-card.wide{grid-column:1 / -1;display:flex;align-items:baseline;gap:1.3rem;padding:1.05rem 1.5rem}
+.roi-card.wide .roi-fig{flex:none}
+.roi-card.wide .roi-label{flex:none;margin-top:0}
+.roi-card.wide .roi-note{margin-top:0}
 .roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:rgba(250,248,243,.55);margin-top:.2rem}
 .roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(2.6rem,5vw,3.7rem);letter-spacing:-.03em;line-height:1.05;color:var(--amber);margin:.3rem 0 .1rem}
 .roi-fig{font-family:var(--font-display);font-weight:700;font-size:1.65rem;letter-spacing:-.02em;color:var(--paper)}
