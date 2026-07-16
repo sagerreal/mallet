@@ -180,37 +180,53 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
 
   private async diffLines(invoice: Invoice): Promise<void> {
     const p = invoice.props;
-    const keptIds: string[] = [];
-    for (const line of p.lines) {
-      keptIds.push(line.props.id);
-      await this.upsertLine(p.id, p.orgId, line, p.updatedAt);
+    const keptIds = p.lines.map((line) => line.props.id);
+    if (p.lines.length > 0) {
+      await this.upsertLines(p.id, p.orgId, p.lines, p.updatedAt);
     }
     const removeConds = [eq(invoiceLines.invoiceId, p.id), isNull(invoiceLines.deletedAt)];
     if (keptIds.length > 0) removeConds.push(notInArray(invoiceLines.id, keptIds));
     await this.tx.update(invoiceLines).set({ deletedAt: p.updatedAt }).where(and(...removeConds));
   }
 
-  private async upsertLine(
+  private async upsertLines(
     invoiceId: string,
     orgId: OrgId,
-    line: InvoiceLine,
+    lines: readonly InvoiceLine[],
     updatedAt: Date,
   ): Promise<void> {
-    const lp = line.props;
-    const columns = {
-      sourceJobLineId: lp.sourceJobLineId,
-      description: lp.description,
-      quantity: lp.quantity,
-      rateCents: lp.rate,
-      costCents: lp.cost,
-      position: lp.position,
-      updatedAt,
-      deletedAt: null,
-    };
+    const rows = lines.map((line) => {
+      const lp = line.props;
+      return {
+        id: lp.id,
+        orgId,
+        invoiceId,
+        sourceJobLineId: lp.sourceJobLineId,
+        description: lp.description,
+        quantity: lp.quantity,
+        rateCents: lp.rate,
+        costCents: lp.cost,
+        position: lp.position,
+        updatedAt,
+        deletedAt: null as Date | null,
+      };
+    });
     await this.tx
       .insert(invoiceLines)
-      .values({ id: lp.id, orgId, invoiceId, ...columns })
-      .onConflictDoUpdate({ target: invoiceLines.id, set: columns });
+      .values(rows)
+      .onConflictDoUpdate({
+        target: invoiceLines.id,
+        set: {
+          sourceJobLineId: sql`excluded.source_job_line_id`,
+          description: sql`excluded.description`,
+          quantity: sql`excluded.quantity`,
+          rateCents: sql`excluded.rate_cents`,
+          costCents: sql`excluded.cost_cents`,
+          position: sql`excluded.position`,
+          updatedAt: sql`excluded.updated_at`,
+          deletedAt: sql`excluded.deleted_at`,
+        },
+      });
   }
 
   private async loadHeaderPage(baseConds: SQL[], page: CursorPage): Promise<Paginated<Invoice>> {

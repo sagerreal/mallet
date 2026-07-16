@@ -56,6 +56,7 @@ import {
 // or inject fake calls. Unset secret → 503 (feature dark, fail-closed).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // The voice tool whitelist. The whitelist IS the guardrail (a live call cannot pause for approval)
 // — only these tools can ever run. PR B adds check_availability + book_visit; the rest follow.

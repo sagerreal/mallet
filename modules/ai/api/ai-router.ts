@@ -16,6 +16,7 @@ import { draftEstimateLines, type EstimateLineDraft } from "../app/draft-estimat
 import { draftEstimateTiers, type EstimateTiersDraft } from "../app/draft-estimate-tiers";
 import { stagesFor, EMPTY_ESTIMATE_CONTEXT } from "../app/estimate-context";
 import { asLeadId } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 
 // Structural validation of an untrusted resume transcript (round-tripped through the client). Mirrors
 // the AgentMessage union so a malformed element becomes a clean BAD_REQUEST, not a 500 deep in the
@@ -413,7 +414,7 @@ const drive = async (
     });
   };
   try {
-    return await runAgentTurn({
+    const result = await runAgentTurn({
       llm: ctx.deps.llmClient,
       system: SYSTEM_PROMPT,
       tools: meta,
@@ -424,6 +425,18 @@ const drive = async (
       approvedToolUseIds: turn.approvedToolUseIds,
       deniedToolUseIds: turn.deniedToolUseIds,
     });
+    logger.info(
+      {
+        orgId: ctx.principal.orgId,
+        status: result.status,
+        transcriptMessages: result.transcript.length,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        cacheReadTokens: result.usage.cacheReadTokens,
+      },
+      "agent.turn.completed",
+    );
+    return result;
   } catch (error) {
     // A provider failure surfaces as a clean, retryable-aware error (not a raw 500). The adapter
     // already logged the provider detail server-side.

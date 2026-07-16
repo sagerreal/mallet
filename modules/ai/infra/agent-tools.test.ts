@@ -23,6 +23,7 @@ vi.mock("@mallet/invoicing", () => ({
   CreateInvoiceFromJobUseCase: vi.fn(),
   RecordPaymentUseCase: vi.fn(),
   VoidInvoiceUseCase: vi.fn(),
+  ManualPaymentGateway: vi.fn(),
 }));
 vi.mock("@mallet/quoting", () => ({
   ListEstimatesUseCase: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("@mallet/jobs", () => ({
   DrizzleJobRepository: vi.fn(),
   ScheduleJobUseCase: vi.fn(),
   AssignJobUseCase: vi.fn(),
+  CreateVisitUseCase: vi.fn(),
 }));
 vi.mock("@mallet/tasks", () => ({
   ListTasksUseCase: vi.fn(),
@@ -56,18 +58,9 @@ vi.mock("@mallet/notifications", () => ({
   FollowUpPolicy: vi.fn(),
   SendNotificationUseCase: vi.fn(),
   SendInvoiceNotificationUseCase: vi.fn(),
-}));
-vi.mock("../../notifications/infra/drizzle-notification-repository", () => ({
   DrizzleNotificationRepository: vi.fn(),
-}));
-vi.mock("../../notifications/infra/drizzle-reminder-target-reader", () => ({
   DrizzleReminderTargetReader: vi.fn(),
-}));
-vi.mock("../../invoicing/infra/manual-payment-gateway", () => ({
-  ManualPaymentGateway: vi.fn(),
-}));
-vi.mock("../../jobs/app/create-visit", () => ({
-  CreateVisitUseCase: vi.fn(),
+  STUB_EXTERNAL_ID: "stub:logged",
 }));
 // The users table import is used directly in member_list, and orgs in get_context —
 // mock @mallet/shared/db/schema with both.
@@ -78,17 +71,13 @@ vi.mock("@mallet/shared/db/schema", () => ({
 
 // Import after mocks are hoisted so the vi.mock() factory captures the mocked modules.
 import { ListLeadsUseCase, DrizzleLeadRepository, EnsureCustomerUseCase } from "@mallet/customers";
-import { ListInvoicesUseCase, DrizzleInvoiceRepository, DraftInvoiceUseCase, RecordPaymentUseCase, VoidInvoiceUseCase } from "@mallet/invoicing";
+import { ListInvoicesUseCase, DrizzleInvoiceRepository, DraftInvoiceUseCase, RecordPaymentUseCase, VoidInvoiceUseCase, ManualPaymentGateway } from "@mallet/invoicing";
 import { ListEstimatesUseCase, DrizzleEstimateRepository, SendEstimateUseCase } from "@mallet/quoting";
-import { ListJobsUseCase, DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase } from "@mallet/jobs";
+import { ListJobsUseCase, DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase, CreateVisitUseCase } from "@mallet/jobs";
 import { ListTasksUseCase, DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { ListTimeEntriesUseCase, DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import { ListCompaniesUseCase, DrizzleCompanyRepository } from "@mallet/companies";
-import { NextRemindersDueUseCase, FollowUpPolicy, SendInvoiceNotificationUseCase } from "@mallet/notifications";
-import { DrizzleNotificationRepository } from "../../notifications/infra/drizzle-notification-repository";
-import { DrizzleReminderTargetReader } from "../../notifications/infra/drizzle-reminder-target-reader";
-import { ManualPaymentGateway } from "../../invoicing/infra/manual-payment-gateway";
-import { CreateVisitUseCase } from "../../jobs/app/create-visit";
+import { NextRemindersDueUseCase, FollowUpPolicy, SendInvoiceNotificationUseCase, DrizzleNotificationRepository, DrizzleReminderTargetReader } from "@mallet/notifications";
 import { buildAgentTools } from "./agent-tools";
 
 // ---------------------------------------------------------------------------

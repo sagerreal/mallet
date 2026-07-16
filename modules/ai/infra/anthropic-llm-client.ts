@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "@mallet/shared/observability";
+import { call, CircuitBreaker } from "@mallet/platform/resilience";
 import { LlmError } from "../domain/llm-client";
 import type {
   LlmClient,
@@ -21,9 +22,10 @@ const DEFAULT_MAX_TOKENS = 16_000;
 // MUST be byte-identical across tenants (RLS scopes at execution, never by varying the schema).
 export class AnthropicLlmClient implements LlmClient {
   private readonly client: Anthropic;
+  private readonly breaker = new CircuitBreaker("anthropic", { failureThreshold: 5, resetMs: 30_000 });
 
   constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey });
+    this.client = new Anthropic({ apiKey, timeout: 180_000, maxRetries: 0 });
   }
 
   async next(request: LlmRequest): Promise<AssistantTurn> {
@@ -37,16 +39,21 @@ export class AnthropicLlmClient implements LlmClient {
 
     let message: Anthropic.Message;
     try {
-      const stream = this.client.messages.stream({
-        model: MODEL,
-        max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-        thinking: { type: "adaptive" },
-        ...(request.effort ? { output_config: { effort: request.effort } } : {}),
-        system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
-        tools: tools.length > 0 ? tools : undefined,
-        messages: request.messages.map(toMessageParam),
-      });
-      message = await stream.finalMessage();
+      message = await call(
+        async () => {
+          const stream = this.client.messages.stream({
+            model: MODEL,
+            max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
+            thinking: { type: "adaptive" },
+            ...(request.effort ? { output_config: { effort: request.effort } } : {}),
+            system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
+            tools: tools.length > 0 ? tools : undefined,
+            messages: request.messages.map(toMessageParam),
+          });
+          return stream.finalMessage();
+        },
+        { idempotent: false, timeoutMs: 180_000, breaker: this.breaker },
+      );
     } catch (error) {
       // Map the SDK error to a safe, domain-typed failure. Log the provider detail server-side only
       // (status/type/request-id — never the request body, which could carry customer data); the

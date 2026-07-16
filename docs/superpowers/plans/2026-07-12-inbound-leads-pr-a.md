@@ -17,7 +17,7 @@
 - **Privileged reads only for the token bootstrap:** use `ownerDb` (BYPASSRLS) ONLY to resolve `{orgId, channel}` from a token and to read brand for the public form page — minimal columns, no tenant writes. Template: `modules/quoting/infra/drizzle-public-estimate-reader.ts`.
 - **Reuse (DRY):** the customer write is `EnsureCustomerUseCase` from `@mallet/customers` — do not reimplement create/dedupe.
 - **Migrations single-writer:** next number is `0058` (last applied is `0057_even_gabe_jones`). Before `db:generate`, re-run `gh pr list` and confirm no open PR touches `shared/db/migrations/`. DO NOT run `db:migrate` — generate files only; the controller applies (or Owen).
-- **Design principles binding** (`.superpowers/sdd/design-principles.md`): SOLID, DI, repository pattern, DTO≠domain, validate at boundaries, no silent failures, idempotency, least privilege, defense in depth, functions < 20 lines ideal, files < 800, structured logging with context. YAGNI: no captcha dep, no metrics stack, no feature-flag system, no pagination (≤3 endpoints/org).
+- **Design principles binding** (`docs/design-principles.md`): SOLID, DI, repository pattern, DTO≠domain, validate at boundaries, no silent failures, idempotency, least privilege, defense in depth, functions < 20 lines ideal, files < 800, structured logging with context. YAGNI: no captcha dep, no metrics stack, no feature-flag system, no pagination (≤3 endpoints/org).
 - **No floating UI**; **UI copy functional, not chatty**; **no dead buttons**.
 - Money is not in play in this PR.
 

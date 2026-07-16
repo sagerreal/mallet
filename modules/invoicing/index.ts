@@ -24,3 +24,4 @@ export { UpdateInvoiceMetadataUseCase } from "./app/update-invoice-metadata";
 export { PatchInvoiceLinesUseCase } from "./app/patch-invoice-lines";
 // Relay handler (invoice.paid) — internal, idempotent; exercises the outbox relay under RLS.
 export { InvoicePaidAuditHandler } from "./app/invoice-paid-audit-handler";
+export { ManualPaymentGateway } from "./infra/manual-payment-gateway";

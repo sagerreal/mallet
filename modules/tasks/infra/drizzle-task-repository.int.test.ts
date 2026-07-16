@@ -160,4 +160,52 @@ suite("DrizzleTaskRepository against live Supabase RLS", () => {
     }
     expect(rejected).toBe(true);
   });
+
+  it("keyset paging: no skips or dupes across page boundary with mixed dueDates (incl. null)", async () => {
+    const orgA = asOrgId(orgAId);
+    // Create 5 tasks:
+    //   - t1, t2: dueDate = "2026-08-01" (same day, different createdAt)
+    //   - t3: dueDate = "2026-08-02"
+    //   - t4, t5: dueDate = null (NULLS LAST)
+    // With pageSize=2, page1 should have [t1, t2] and page2 [t3, ...], no skips/dupes.
+    const prefix = `cursor-test-${crypto.randomUUID().slice(0, 8)}-`;
+    await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleTaskRepository(tx, orgA);
+      await repo.create({ id: crypto.randomUUID(), orgId: orgAId, leadId: null, text: `${prefix}t1`, dueDate: "2026-08-01" });
+      await repo.create({ id: crypto.randomUUID(), orgId: orgAId, leadId: null, text: `${prefix}t2`, dueDate: "2026-08-01" });
+      await repo.create({ id: crypto.randomUUID(), orgId: orgAId, leadId: null, text: `${prefix}t3`, dueDate: "2026-08-02" });
+      await repo.create({ id: crypto.randomUUID(), orgId: orgAId, leadId: null, text: `${prefix}t4`, dueDate: null });
+      await repo.create({ id: crypto.randomUUID(), orgId: orgAId, leadId: null, text: `${prefix}t5`, dueDate: null });
+    });
+
+    // Paginate with limit=2 — collect all pages
+    const allItems: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 5; page++) {
+      const result = await withTenant(orgA, async (tx) => {
+        const repo = new DrizzleTaskRepository(tx, orgA);
+        return repo.list(toPage({ limit: 2, cursor }));
+      });
+      const texts = result.items
+        .map((t) => t.props.text)
+        .filter((text) => text.startsWith(prefix));
+      allItems.push(...texts);
+      cursor = result.nextCursor;
+      if (!result.nextCursor) break;
+    }
+
+    // No skips, no duplicates — all 5 tasks appear exactly once
+    const expected = [`${prefix}t1`, `${prefix}t2`, `${prefix}t3`, `${prefix}t4`, `${prefix}t5`];
+    expect(allItems).toHaveLength(expected.length);
+    expect(new Set(allItems).size).toBe(expected.length);
+    expect(allItems.every((t) => expected.includes(t))).toBe(true);
+
+    // NULLS LAST pinned: the two null-dueDate tasks are the FINAL two items, dated ones first.
+    // (Exact order within a dueDate can tie-break by uuid when createdAt collides at ms — so we
+    // assert the zones, not the intra-zone order.)
+    expect(new Set(allItems.slice(0, 3))).toEqual(new Set([`${prefix}t1`, `${prefix}t2`, `${prefix}t3`]));
+    expect(new Set(allItems.slice(3))).toEqual(new Set([`${prefix}t4`, `${prefix}t5`]));
+    // And the dated zone itself is dueDate-ascending: t3 (08-02) after t1/t2 (08-01).
+    expect(allItems[2]).toBe(`${prefix}t3`);
+  });
 });

@@ -27,3 +27,5 @@ export { SendInvoiceNotificationUseCase } from "./app/send-invoice-notification"
 export { AdvanceReminderUseCase } from "./app/advance-reminder";
 export { NextRemindersDueUseCase } from "./app/next-reminders-due";
 export { ListNotificationsUseCase } from "./app/list-notifications";
+export { DrizzleReminderTargetReader } from "./infra/drizzle-reminder-target-reader";
+export { STUB_EXTERNAL_ID } from "./infra/logging-notification-sender";

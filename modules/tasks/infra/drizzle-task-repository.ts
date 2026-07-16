@@ -1,10 +1,10 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql as rawSql } from "drizzle-orm";
 import { tasks } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import { keysetAfter } from "@mallet/shared/db/keyset";
+import { keysetAfterDueDate } from "@mallet/shared/db/keyset";
 import {
-  buildPage,
-  decodeCursor,
+  buildJsonPage,
+  decodeJsonCursor,
   isOk,
   type OrgId,
   type TaskId,
@@ -62,14 +62,20 @@ export class DrizzleTaskRepository implements TaskRepository {
     if (filter?.leadId !== undefined) conds.push(eq(tasks.leadId, filter.leadId));
 
     if (page.cursor) {
-      const cursor = decodeCursor(page.cursor);
+      const cursor = decodeJsonCursor<{ dueDate: string | null; createdAt: string; id: string }>(
+        page.cursor,
+      );
       if (isOk(cursor)) {
-        // Keyset: tasks ordered by (dueDate asc nulls last, createdAt asc, id asc).
-        // Cursor encodes (createdAt, id) — used as the tiebreaker within the same day.
-        // NOTE: order-by leads with dueDate but the cursor only keys on (createdAt, id) — if
-        // dueDate order disagrees with createdAt order across a page boundary, a row can be
-        // skipped or duplicated. Separate, subtler bug; needs a multi-key cursor. Out of scope here.
-        conds.push(keysetAfter(tasks.createdAt, tasks.id, cursor.value));
+        // 3-key keyset: tasks ordered by (dueDate asc nulls last, createdAt asc, id asc).
+        // Cursor encodes all three so rows are never skipped or duplicated across a page boundary
+        // even when multiple tasks share the same dueDate.
+        conds.push(
+          keysetAfterDueDate(tasks.dueDate, tasks.createdAt, tasks.id, {
+            dueDate: cursor.value.dueDate,
+            createdAt: new Date(cursor.value.createdAt),
+            id: cursor.value.id,
+          }),
+        );
       }
     }
 
@@ -77,11 +83,14 @@ export class DrizzleTaskRepository implements TaskRepository {
       .select()
       .from(tasks)
       .where(and(...conds))
-      .orderBy(asc(tasks.dueDate), asc(tasks.createdAt), asc(tasks.id))
+      // NULLS LAST is Postgres's ASC default, but the cursor helper DEPENDS on it — pin it
+      // explicitly so the ordering contract survives a port or a future drizzle change.
+      .orderBy(rawSql`${tasks.dueDate} asc nulls last`, asc(tasks.createdAt), asc(tasks.id))
       .limit(page.limit + 1);
 
-    return buildPage(rows.map(toDomain), page, (task) => ({
-      createdAt: task.props.createdAt,
+    return buildJsonPage(rows.map(toDomain), page, (task) => ({
+      dueDate: task.props.dueDate,
+      createdAt: task.props.createdAt.toISOString(),
       id: task.props.id,
     }));
   }

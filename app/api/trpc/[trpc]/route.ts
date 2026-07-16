@@ -3,6 +3,9 @@ import { appRouter } from "@/trpc/root";
 import { createContext } from "@/trpc/context";
 import { getAppDeps } from "@/trpc/di";
 
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
 // Single Next.js route that serves the whole tRPC tree under /api/trpc. Each request gets a
 // fresh context (auth + deps); the org-scoped transaction opens inside the procedure middleware.
 const handler = (req: Request): Promise<Response> =>

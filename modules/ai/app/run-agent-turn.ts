@@ -1,3 +1,4 @@
+import { logger } from "@mallet/shared/observability";
 import type {
   LlmClient,
   LlmToolSpec,
@@ -81,7 +82,8 @@ const resolvePending = async (
       try {
         const outcome = await execute(tu.name, tu.input);
         results.push(outcome.ok ? { toolUseId: tu.id, content: outcome.summary } : { toolUseId: tu.id, content: outcome.error, isError: true });
-      } catch {
+      } catch (error: unknown) {
+        logger.error({ toolUseId: tu.id, tool: tu.name, err: error instanceof Error ? error.message : String(error) }, "agent.tool.threw");
         results.push({ toolUseId: tu.id, content: "the tool failed unexpectedly; try a different approach", isError: true });
       }
     }

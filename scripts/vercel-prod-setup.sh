@@ -58,5 +58,8 @@ echo
 echo "Done. Still to set MANUALLY (not from .env.local):"
 echo "  - STRIPE_WEBHOOK_SECRET  → after you create the Stripe webhook endpoint (real whsec_):"
 echo "      printf '%s' 'whsec_REAL' | $VC env add STRIPE_WEBHOOK_SECRET production"
+echo "  - VAPI_WEBHOOK_SECRET    → signing secret from the Vapi dashboard (live features — AI voice"
+echo "                             front desk webhooks will silently fail without this):"
+echo "      printf '%s' 'vapi_REAL' | $VC env add VAPI_WEBHOOK_SECRET production"
 echo
 echo "Then deploy:  $VC --prod"
