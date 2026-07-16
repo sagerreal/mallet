@@ -12,7 +12,7 @@
  * DayView / WeekView / the tray card into leaf components.
  */
 
-import { useState, type DragEvent as ReactDragEvent } from "react";
+import { useState, useRef, useEffect, type DragEvent as ReactDragEvent } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -68,6 +68,11 @@ export function SchedulePanel() {
   const addVisit = useAppStore((s) => s.addVisit);
   const updateVisit = useAppStore((s) => s.updateVisit);
   const removeVisit = useAppStore((s) => s.removeVisit);
+
+  // rAF handle for the resize-drag store write — collapses to one updateVisit per frame.
+  const rafId = useRef<number | null>(null);
+  // Cancel any pending rAF when the component unmounts.
+  useEffect(() => () => { if (rafId.current !== null) cancelAnimationFrame(rafId.current); }, []);
 
   const today = todayISO();
   const [schedView, setSchedView] = useState<SchedView>("day");
@@ -128,15 +133,33 @@ export function SchedulePanel() {
     setPlacing(null);
   }
   // Drag the block's right edge to change its hours (Google-Calendar gesture).
+  // The store write is scheduled via requestAnimationFrame so at most one
+  // updateVisit fires per paint frame — the network debounce (400ms) is unchanged.
   function resizeStart(e: React.MouseEvent, jobId: string, v: Visit) {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
     const startDur = v.dur ?? 1;
+    let lastDur: number | null = null;
     function move(ev: MouseEvent) {
-      updateVisit(jobId, v.id, { dur: snapDuration(startDur + (ev.clientX - startX) / WPX) });
+      // Cancel any pending frame so rapid mousemove events collapse to one write per frame.
+      if (rafId.current !== null) cancelAnimationFrame(rafId.current);
+      lastDur = snapDuration(startDur + (ev.clientX - startX) / WPX);
+      const newDur = lastDur;
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        updateVisit(jobId, v.id, { dur: newDur });
+      });
     }
     function up() {
+      // Drop: FLUSH any pending frame, never cancel-and-drop it — on a fast release the final
+      // mouse position may be scheduled but not yet committed; cancelling here would silently
+      // lose the user's last snap.
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+        if (lastDur !== null) updateVisit(jobId, v.id, { dur: lastDur });
+      }
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     }

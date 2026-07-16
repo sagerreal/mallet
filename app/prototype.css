@@ -116,7 +116,7 @@
   .appmain{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
   /* second-level section tabs — desktop uses the sidebar sub-nav, so hide here */
   .sectiontabs{display:none}
-  .topbar{flex:0 0 auto;background:var(--topbar);-webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);color:var(--ink);display:flex;align-items:center;height:54px;padding:0 18px;gap:8px;border-bottom:1px solid var(--line);z-index:30}
+  .topbar{flex:0 0 auto;background:var(--topbar);color:var(--ink);display:flex;align-items:center;height:54px;padding:0 18px;gap:8px;border-bottom:1px solid var(--line);z-index:30}
   .crumb{font-size:13px;color:var(--ink-3);font-weight:500;display:flex;align-items:center;gap:7px}
   .crumb b{color:var(--ink);font-weight:600}
   .crumb .sep{opacity:.5}
@@ -1553,3 +1553,58 @@
     .auth-mob-logo{display:block}
     .auth-panel{align-items:flex-start;padding:52px 24px 40px}
   }
+
+/* ═══════════════ FEEL KIT (perf/feel Phase 1) ═══════════════
+   Press feedback for every control. The problem this solves: 87 :hover rules, 2 :active —
+   on touch, :hover never fires, so a tap was visually silent until the network settled.
+   Physics: press-in applies INSTANTLY at 0ms; release springs back over each control's
+   ~100ms transition. Press = one step FURTHER IN than hover (never a new theme). */
+
+  /* Global touch reset: kill the iOS gray tap flash + the 300ms tap-disambiguation delay.
+     Lands together with the press states below — never alone (silent taps otherwise). */
+  button,[role=button],a,.navitem,.navsub,.mtab,.md-stop,.kcard,.morerow{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+
+  /* Buttons: press pushes IN (reverses .btn.primary:hover's translateY(-1px) lift).
+     .btn already carries transition: transform .1s — the release rebound is free. */
+  .btn:active{transform:translateY(1px) scale(.98);box-shadow:none;background:var(--manila-2)}
+  .btn.primary:active{transform:translateY(1px) scale(.98);filter:brightness(.94)}
+
+  /* Sidebar nav: one shade deeper than .navitem.active's tint. */
+  .navitem:active,.navsub:active{background:rgba(43,39,32,.14)}
+
+  /* Field tab bar — the tech's only nav; biggest squish in the kit. */
+  .mtab{transition:transform 80ms,opacity 80ms}
+  .mtab:active{transform:scale(.92);opacity:.6}
+
+  /* Rows/cards: tint + barely-there compress. */
+  .md-stop:active,.kcard:active{background:var(--manila-2);transform:scale(.995)}
+
+  /* Both segmented-control variants (.segctl button.on / .seg button[aria-pressed]). */
+  .segctl button:active,.seg button:active{background:var(--manila-2)}
+  .segctl button.on:active,.seg button[aria-pressed="true"]:active{filter:brightness(1.15)}
+
+  /* Field job controls: Start Timer deepens its own green; pay buttons compress. */
+  .tjclock{transition:transform .1s,box-shadow .12s,background .12s}
+  .tjclock:active{transform:scale(.97);background:var(--green-100)}
+  .tjpaid-btn,.tjpaid-btn2{transition:transform .1s,opacity .12s}
+  .tjpaid-btn:active{transform:scale(.97);opacity:.88}
+  .tjpaid-btn2:active{transform:scale(.98)}
+
+  /* Scrim fade: modal.tsx mounts the overlay fresh with .open, so a transition would never
+     fire — an entry ANIMATION (like .modal's existing modalin) fades the scrim in step with
+     the card instead of popping. */
+  @keyframes overlayin{from{opacity:0}to{opacity:1}}
+  .overlay.open{animation:overlayin .15s ease}
+
+  /* Phones: backdrop blur is GPU-expensive mid-range jank — a slightly deeper flat scrim
+     reads the same and composites free. */
+  @media(max-width:760px){
+    .overlay{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(10,12,20,.55)}
+  }
+
+  /* Skeleton primitives (P3 wires these in place of "Loading…" text). Manila-toned so
+     skeletons read as the paper theme. Rule: a skeleton keeps the exact box metrics of the
+     row it becomes — zero layout shift on data arrival. .sk-row mirrors .md-stop. */
+  @keyframes skpulse{0%,100%{opacity:.55}50%{opacity:1}}
+  .sk{background:var(--manila-2);border-radius:8px;animation:skpulse 1.2s ease-in-out infinite}
+  .sk-row{display:flex;gap:14px;padding:14px 4px;border-bottom:1px solid var(--line-2)}

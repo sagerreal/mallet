@@ -12,6 +12,12 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
+import {
+  selectCustomerCount,
+  selectOpenTaskCount,
+  selectJobsCount,
+  selectUnscheduledCount,
+} from "@/components/shell/shell-selectors";
 
 interface SecTab {
   href: string;
@@ -28,25 +34,24 @@ export function SectionTabs() {
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
 
-  const leads = useAppStore((s) => s.leads);
-  const tasks = useAppStore((s) => s.tasks);
-  const jobs = useAppStore((s) => s.jobs);
+  // Primitive selectors — return numbers so referential equality suppresses
+  // re-renders when unrelated store slices are written.
+  const customerCount = useAppStore(selectCustomerCount);
+  const openTasks = useAppStore(selectOpenTaskCount);
+  const jobsCount = useAppStore(selectJobsCount);
+  const unscheduled = useAppStore(selectUnscheduledCount);
 
   const inCustomers = CUSTOMER_AREA.some((r) => pathname.startsWith(r));
   const inJobs = pathname.startsWith("/jobs");
 
   let tabs: SecTab[] = [];
   if (inCustomers) {
-    const customerCount = leads.filter((l) => !l.archived).length;
-    const openTasks = tasks.filter((t) => !t.done).length;
     tabs = [
       { href: "/customers", label: "Customers", active: pathname.startsWith("/customers"), count: customerCount },
       { href: "/pipeline", label: "Pipeline", active: pathname.startsWith("/pipeline") },
       { href: "/tasks", label: "Tasks", active: pathname.startsWith("/tasks"), count: openTasks },
     ];
   } else if (inJobs) {
-    const jobsCount = jobs.filter((j) => !j.archived && j.status !== "done").length;
-    const unscheduled = jobs.filter((j) => !j.archived && j.status === "unscheduled").length;
     tabs = [
       { href: "/jobs", label: "Jobs", active: !tab || (tab !== "schedule" && tab !== "timesheets" && tab !== "checklists"), count: jobsCount },
       { href: "/jobs?tab=schedule", label: "Schedule", active: tab === "schedule", count: unscheduled },

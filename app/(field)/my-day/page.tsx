@@ -177,6 +177,7 @@ function ClockCard({ clockState, onClockStart, onClockStop }: ClockCardProps) {
 export default function MyDayPage() {
   const { data, isLoading, refetch } = api.v1.field.myDay.useQuery(undefined, {
     staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   const startMutation = api.v1.field.start.useMutation({
@@ -219,7 +220,17 @@ export default function MyDayPage() {
     return (
       <>
         <h1>My day</h1>
-        <div className="muted" style={{ marginTop: 16 }}>Loading…</div>
+        <div className="card agenda" style={{ marginTop: 12 }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="sk-row">
+              <div className="sk" style={{ width: 64, height: 14, flexShrink: 0 }} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
+                <div className="sk" style={{ width: "60%", height: 14 }} />
+                <div className="sk" style={{ width: "40%", height: 12 }} />
+              </div>
+            </div>
+          ))}
+        </div>
       </>
     );
   }

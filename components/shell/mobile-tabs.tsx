@@ -13,6 +13,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import { selectCustomerCount, selectJobsCount, selectMoneyCount } from "@/components/shell/shell-selectors";
 
 const HomeIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -85,17 +86,15 @@ interface Tab {
 export function MobileTabs() {
   const pathname = usePathname();
   const me = useMe();
-  const leads = useAppStore((s) => s.leads);
-  const storeJobs = useAppStore((s) => s.jobs);
-  const invoices = useAppStore((s) => s.invoices);
+  // Primitive selectors — return numbers so referential equality suppresses
+  // re-renders when unrelated store slices are written.
+  const customerCount = useAppStore(selectCustomerCount);
+  const jobsCount = useAppStore(selectJobsCount);
+  const moneyCount = useAppStore(selectMoneyCount);
 
   // Don't decide the tab set until the role is known — else a tech doing a cold
   // load on a non-field route would flash the office tabs before role resolves.
   if (me.isLoading) return null;
-
-  const customerCount = leads.filter((l) => !l.archived).length;
-  const jobsCount = storeJobs.filter((j) => !j.archived && j.status !== "done").length;
-  const moneyCount = invoices.filter((i) => !i.archived && (i.status === "sent" || i.status === "partial")).length;
 
   // A tech always gets the field tab set, regardless of current route.
   // While role is loading, fall back to route-based detection so there's no

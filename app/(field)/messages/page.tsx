@@ -254,8 +254,16 @@ function CustomerInbox() {
 
   if (isLoading) {
     return (
-      <div className="empty-att" style={{ color: "var(--ink-3)" }}>
-        Loading…
+      <div>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="sk-row">
+            <div className="sk" style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0 }} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
+              <div className="sk" style={{ width: "60%", height: 14 }} />
+              <div className="sk" style={{ width: "40%", height: 12 }} />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
