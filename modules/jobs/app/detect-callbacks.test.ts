@@ -95,6 +95,20 @@ describe("detectCallbacks — same customer + same service", () => {
     const results = detectCallbacks([original, later]);
     expect(results).toHaveLength(0);
   });
+
+  it("pins the boundary: exactly 45 days is IN, one second past 45 days is OUT", () => {
+    // refTime = ANCHOR (baseCallback.scheduledStart). daysBefore(45) is a gap of exactly 45 days →
+    // inclusive → candidate. One second earlier is a gap of 45d+1s → excluded. This nails the off-by-one.
+    const inAt45 = baseComplete(JID(1), { completedAt: daysBefore(45) });
+    const later1 = baseCallback(JID(2));
+    expect(detectCallbacks([inAt45, later1])).toEqual([{ jobId: JID(2), originalJobId: JID(1) }]);
+
+    const justPast45 = baseComplete(JID(1), {
+      completedAt: new Date(daysBefore(45).getTime() - 1000),
+    });
+    const later2 = baseCallback(JID(2));
+    expect(detectCallbacks([justPast45, later2])).toHaveLength(0);
+  });
 });
 
 // ── detectCallbacks — customer and service isolation ────────────────────────
