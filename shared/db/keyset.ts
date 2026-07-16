@@ -29,3 +29,26 @@ export const keysetAfter = (
   cursor: Cursor,
 ): SQL =>
   sql`(${createdAtCol}, ${idCol}) > (${cursor.createdAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`;
+
+// Three-column ascending keyset for lists ordered by (dueDateCol asc nulls last, createdAtCol asc, idCol asc).
+// NULL dueDates sort LAST; once dueDate is null in the cursor, we only need createdAt+id to distinguish rows.
+// Row-value comparison: (dueDate, createdAt, id) > cursor — with NULLS LAST semantics via CASE:
+//   any non-null dueDate > null cursor.dueDate; null dueDate rows come after all dated rows.
+export const keysetAfterDueDate = (
+  dueDateCol: AnyPgColumn,
+  createdAtCol: AnyPgColumn,
+  idCol: AnyPgColumn,
+  cursor: { dueDate: string | null; createdAt: Date; id: string },
+): SQL => {
+  const createdAtIso = cursor.createdAt.toISOString();
+  if (cursor.dueDate === null) {
+    // Cursor is in the null-dueDate zone: only rows after this createdAt+id within nulls
+    return sql`(${dueDateCol} is null and (${createdAtCol}, ${idCol}) > (${createdAtIso}::timestamptz, ${cursor.id}::uuid))`;
+  }
+  // Cursor has a dueDate: rows after = later dueDate OR same dueDate with later (createdAt, id) OR null dueDate
+  return sql`(
+    ${dueDateCol} > ${cursor.dueDate}::date
+    or (${dueDateCol} = ${cursor.dueDate}::date and (${createdAtCol}, ${idCol}) > (${createdAtIso}::timestamptz, ${cursor.id}::uuid))
+    or ${dueDateCol} is null
+  )`;
+};

@@ -62,3 +62,32 @@ export const buildPage = <T>(
   const nextCursor = hasMore && last ? encodeCursor(toCursor(last)) : null;
   return { items, nextCursor };
 };
+
+// Generic JSON cursor — encodes an arbitrary serialisable payload.
+// Separate from the two-field Cursor so existing repos are unaffected.
+export const encodeJsonCursor = (payload: unknown): string =>
+  Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+
+export const decodeJsonCursor = <T = unknown>(
+  raw: string,
+): Result<T, ValidationError> => {
+  try {
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    return ok(JSON.parse(decoded) as T);
+  } catch {
+    return err(validation("malformed cursor", "cursor"));
+  }
+};
+
+// buildPage variant for callers that carry an arbitrary cursor payload.
+export const buildJsonPage = <T, C>(
+  rows: readonly T[],
+  page: CursorPage,
+  toCursor: (row: T) => C,
+): Paginated<T> => {
+  const hasMore = rows.length > page.limit;
+  const items = hasMore ? rows.slice(0, page.limit) : rows;
+  const last = items[items.length - 1];
+  const nextCursor = hasMore && last ? encodeJsonCursor(toCursor(last)) : null;
+  return { items, nextCursor };
+};
