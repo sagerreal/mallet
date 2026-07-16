@@ -5,15 +5,24 @@
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   document.addEventListener('DOMContentLoaded', function () {
+    smoothScroll();
     heroStagger();
     scrollReveal();
     wireCalendly();
     loadTallyIfPresent();
     frontDesk();
-    rotator();
     roiCalc();
     consent();
   });
+
+  /* Lenis inertia scrolling (vendored lenis.min.js) — the "expensive site" feel.
+     Skipped under reduced motion; native anchors still work via lenis anchors:true. */
+  function smoothScroll() {
+    if (reduce || typeof window.Lenis !== 'function') return;
+    var lenis = new window.Lenis({ lerp: 0.1, wheelMultiplier: 1, anchors: true });
+    function raf(time) { lenis.raf(time); requestAnimationFrame(raf); }
+    requestAnimationFrame(raf);
+  }
 
   /* Hero entrance: reveal each [data-step] element in order. */
   function heroStagger() {
@@ -128,25 +137,6 @@
     select(0);
   }
 
-  /* ============== ROTATING TRADE WORD (hero) ============== */
-  /* Words chosen to be similar length so the headline doesn't reflow between
-     two and three lines as they swap. */
-  function rotator() {
-    var host = document.getElementById('rotator');
-    if (!host || reduce) return;
-    var words = ['plumbing', 'electrical', 'cleaning', 'roofing', 'painting', 'plumbing', 'HVAC repair', 'landscape'];
-    var i = 0;
-    var el = host.querySelector('.rot-word');
-    setInterval(function () {
-      el.classList.remove('on');
-      setTimeout(function () {
-        i = (i + 1) % words.length;
-        el.textContent = words[i];
-        el.classList.add('on');
-      }, 340);
-    }, 2600);
-  }
-
   /* ============== ROI CALCULATOR ============== */
   /* Deliberately conservative model:
      - answerable = 50% of missed calls (some are spam/wrong numbers)
@@ -178,11 +168,12 @@
       var softSaveMo = bill * 0.5;
       var hours = Math.min(2.5 * techs + 6, 60);
 
+      var hoursEl = document.getElementById('roiHours');
+      if (hoursEl) hoursEl.textContent = Math.round(hours) + ' hrs';
       document.getElementById('roiJobs').textContent = fmt(jobsRevenue);
       document.getElementById('roiJobsN').textContent = Math.round(recoveredJobs);
       document.getElementById('roiSoft').textContent = fmt(softSaveYr);
       document.getElementById('roiSoftM').textContent = fmt(softSaveMo);
-      document.getElementById('roiHours').textContent = Math.round(hours) + ' hrs';
       document.getElementById('roiTotal').textContent = fmt(jobsRevenue + softSaveYr);
     }
 
@@ -193,34 +184,18 @@
   /* ============== CONSENT + VISITOR ID ============== */
   /* Shows the privacy-choices card once per visitor. Accept → loads analytics
      (RB2B). Decline → remembers and never loads. */
-  var RB2B_KEY = ''; // TODO(Owen): paste your RB2B site key ("!function () {...}(KEY)" snippet value) here.
+  var RB2B_KEY = '4O7Z0HZPM2NX'; // RB2B web-identification key (loads only after consent).
 
+  /* Official RB2B snippet shape (app.rb2b.com/script), wrapped so it only runs post-consent. */
   function loadRB2B() {
-    if (!RB2B_KEY) return; // not configured yet — consent choice is still honored
-    !function () {
-      var reb2b = window.reb2b = window.reb2b || [];
-      if (reb2b.invoked) return;
-      reb2b.invoked = true;
-      reb2b.methods = ['identify', 'collect'];
-      reb2b.factory = function (method) {
-        return function () {
-          var args = Array.prototype.slice.call(arguments);
-          args.unshift(method); reb2b.push(args); return reb2b;
-        };
-      };
-      for (var i = 0; i < reb2b.methods.length; i++) {
-        var key = reb2b.methods[i]; reb2b[key] = reb2b.factory(key);
-      }
-      reb2b.load = function (key) {
-        var script = document.createElement('script');
-        script.async = true;
-        script.src = 'https://ddwl4m2hdecbv.cloudfront.net/b/' + key + '/' + key + '.js.gz';
-        var first = document.getElementsByTagName('script')[0];
-        first.parentNode.insertBefore(script, first);
-      };
-      reb2b.SNIPPET_VERSION = '1.0.1';
-      reb2b.load(RB2B_KEY);
-    }();
+    if (!RB2B_KEY) return; // not configured — consent choice is still honored
+    if (window.reb2b) return;
+    window.reb2b = { loaded: true };
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://ddwl4m2hdecbv.cloudfront.net/b/' + RB2B_KEY + '/' + RB2B_KEY + '.js.gz';
+    var first = document.getElementsByTagName('script')[0];
+    first.parentNode.insertBefore(s, first);
   }
 
   function consent() {
