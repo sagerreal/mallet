@@ -8,7 +8,9 @@ import { ok, err } from "./result";
 // range scan rather than a count-and-skip.
 
 export const DEFAULT_PAGE_SIZE = 25;
-export const MAX_PAGE_SIZE = 100;
+// 500 matches HYDRATOR_PAGE_LIMIT (lib/store/hydrator-config.ts) — orgs up to 500 records
+// are fully hydrated in one pass without silent truncation.
+export const MAX_PAGE_SIZE = 500;
 
 export interface CursorPage {
   readonly limit: number;

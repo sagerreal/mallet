@@ -3,6 +3,9 @@ import { malletAliases } from "./vitest.aliases";
 
 // Unit suite — hermetic, secret-free, CI-safe. Integration tests (*.int.test.ts) hit a live DB
 // and run under vitest.integration.config.ts instead, so they're excluded here.
+//
+// Coverage scope: shared/, modules/, platform/ only — NOT app/api/** (Next.js route handlers).
+// app/api/** wires tRPC and Next.js plumbing; its behavioural coverage lives in pnpm test:int.
 export default defineConfig({
   test: {
     environment: "node",
