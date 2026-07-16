@@ -193,10 +193,24 @@
     <section class="roi" id="roi">
       <div class="wrap">
         <p class="eyebrow" data-reveal>The math</p>
-        <h2 class="sec-h light" data-reveal>What the leaks actually cost you.</h2>
+        <h2 class="sec-h" data-reveal>What the leaks actually cost you.</h2>
         <p class="sec-sub" data-reveal>Four leaks, four fixes &mdash; click through the pillars. Conservative on purpose.</p>
 
-        <div class="math-tabs" role="tablist" aria-label="Pick a pillar" data-reveal>
+        <div class="math-stage" data-reveal>
+          <div class="math-back" aria-hidden="true">
+            <p class="sb-title">PER&nbsp;YEAR</p>
+            <div class="sb-bar w1"></div>
+            <div class="sb-bar w2"></div>
+            <div class="sb-bar w3"></div>
+          </div>
+          <div class="math-window">
+            <div class="desk-bar">
+              <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="desk-title" id="mathTitle">THE&nbsp;MATH&nbsp;&middot;&nbsp;01&nbsp;FRONT&nbsp;DESK</span>
+              <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>LIVE</span>
+            </div>
+            <div class="math-body">
+        <div class="math-tabs" role="tablist" aria-label="Pick a pillar">
           <button class="mtab on" role="tab" aria-selected="true" data-panel="0">01 &middot; FRONT&nbsp;DESK</button>
           <button class="mtab" role="tab" aria-selected="false" data-panel="1">02 &middot; ESTIMATING</button>
           <button class="mtab" role="tab" aria-selected="false" data-panel="2">03 &middot; FOREMAN</button>
@@ -283,7 +297,7 @@
           </div>
         </div>
 
-        <div class="roi-total-bar" data-reveal>
+        <div class="roi-total-bar">
           <div class="roi-input">
             <div class="roi-input-top"><label for="rBill">Current software bill / month</label><output id="oBill">$300</output></div>
             <input type="range" id="rBill" min="0" max="2000" step="25" value="300" />
@@ -293,6 +307,9 @@
             <p class="roi-label">ALL FOUR TOGETHER, PER YEAR</p>
             <p class="roi-big" id="roiTotal">$27,000</p>
             <p class="roi-note">front desk + callbacks prevented + software halved (<span id="roiSoftM">$150</span>/mo back) &mdash; plus <span id="roiHrs">156</span> hrs of quote-writing.</p>
+          </div>
+        </div>
+            </div>
           </div>
         </div>
 

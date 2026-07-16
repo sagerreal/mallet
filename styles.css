@@ -378,64 +378,92 @@ strong{font-weight:700}
 .src-inline{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;color:var(--ink-soft)}
 
 /* ==================== ROI CALCULATOR ==================== */
-.roi{background:var(--ink);color:var(--paper);padding:5.5rem 0}
-.roi .eyebrow{color:rgba(250,248,243,.55)}
-.roi .sec-sub{color:rgba(250,248,243,.66)}
+/* Warm light section, same world as the hero: the calculator is a Mallet
+   window on the desk — chrome bar, layered shadows, tilted sheet behind. */
+.roi{position:relative;background:var(--parchment);color:var(--ink);padding:5.5rem 0 6rem;overflow:hidden}
+.roi::before{ /* soft amber glow behind the window */
+  content:"";position:absolute;top:6%;right:-8%;width:52%;height:100%;
+  background:radial-gradient(closest-side, rgba(176,125,0,.10), transparent 72%);
+  pointer-events:none;
+}
+.roi .wrap{position:relative}
+
+/* the stage: window + sheet behind */
+.math-stage{position:relative;margin-top:2.8rem}
+.math-back{
+  position:absolute;z-index:1;top:-1.9rem;right:-1rem;width:200px;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:.9rem 1rem 1.1rem;transform:rotate(2.2deg);
+  box-shadow:0 18px 44px rgba(27,26,23,.12);
+}
+.math-back .sb-title{font-family:var(--font-mono);font-size:.62rem;letter-spacing:.14em;color:var(--ink-soft)}
+.math-window{
+  position:relative;z-index:2;background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r);overflow:hidden;
+  box-shadow:0 10px 24px rgba(27,26,23,.08), 0 46px 90px -22px rgba(27,26,23,.28);
+}
+.math-body{padding:1.8rem 2.2rem 2.1rem}
+
 /* pillar tabs — same grammar as the hero stage: click a pillar, or ▸ next */
-.math-tabs{display:flex;gap:.5rem;align-items:center;margin-top:2.6rem;flex-wrap:wrap}
+.math-tabs{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 .mtab{
-  font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;color:rgba(250,248,243,.55);
-  background:transparent;border:1px solid var(--line-dark);border-radius:999px;
+  font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;color:var(--ink-soft);
+  background:transparent;border:1px solid var(--line);border-radius:999px;
   padding:.5rem .95rem;cursor:pointer;transition:all .15s ease;
 }
-.mtab:hover{color:var(--paper);border-color:rgba(250,248,243,.4)}
-.mtab.on{color:var(--ink);background:var(--amber);border-color:var(--amber);font-weight:700}
+.mtab:hover{color:var(--ink);border-color:var(--ink)}
+.mtab.on{color:var(--paper);background:var(--ink);border-color:var(--ink);font-weight:700}
 .math-next{
   margin-left:auto;width:40px;height:40px;border-radius:10px;border:0;cursor:pointer;
-  background:var(--paper);color:var(--ink);font-size:.8rem;display:grid;place-items:center;
+  background:var(--ink);color:var(--paper);font-size:.8rem;display:grid;place-items:center;
   transition:background .15s ease, transform .15s ease;
 }
-.math-next:hover{background:var(--amber)}
+.math-next:hover{background:var(--amber-deep)}
 .math-next:active{transform:scale(.94)}
-.mpanel{display:none;grid-template-columns:1fr 1.05fr;gap:2.6rem;margin-top:2rem;align-items:center}
+.mpanel{display:none;grid-template-columns:1fr 1.05fr;gap:3rem;margin-top:1.9rem;align-items:center}
 .mpanel.on{display:grid;animation:mfade .45s ease}
 @keyframes mfade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){ .mpanel.on{animation:none} }
-.mp-lead{font-size:1.02rem;color:rgba(250,248,243,.75);margin-bottom:1.4rem}
+.mp-lead{font-size:1.05rem;color:var(--ink);margin-bottom:1.5rem;letter-spacing:-.01em}
+.mp-lead::after{content:"";display:block;width:26px;height:2px;background:var(--amber);margin-top:.6rem}
 .roi-total-bar{
-  display:grid;grid-template-columns:1fr 1.05fr;gap:2.6rem;align-items:center;
-  margin-top:2.6rem;border-top:1px solid var(--line-dark);padding-top:2rem;
+  display:grid;grid-template-columns:1fr 1.05fr;gap:3rem;align-items:center;
+  margin-top:2.2rem;border-top:1px dashed var(--line);padding-top:1.9rem;
 }
 .roi-inputs{display:flex;flex-direction:column;gap:1.6rem}
 .roi-input-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.55rem}
-.roi-input-top label{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(250,248,243,.6)}
-.roi-input-top output{font-family:var(--font-display);font-weight:700;font-size:1.35rem;color:var(--paper);letter-spacing:-.02em}
-.roi-scale{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:.64rem;color:rgba(250,248,243,.35);margin-top:.35rem}
+.roi-input-top label{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.roi-input-top output{font-family:var(--font-display);font-weight:700;font-size:1.4rem;color:var(--ink);letter-spacing:-.02em}
+.roi-scale{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:.64rem;color:#B9B2A2;margin-top:.35rem}
 input[type="range"]{
   -webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
-  background:rgba(250,248,243,.18);outline-offset:6px;cursor:pointer;
+  background:#E7E1D2;outline-offset:6px;cursor:pointer;
 }
 input[type="range"]::-webkit-slider-thumb{
   -webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;
-  background:var(--amber);border:3px solid var(--ink);box-shadow:0 0 0 1.5px var(--amber);
+  background:var(--amber);border:3px solid var(--card);box-shadow:0 1px 6px rgba(27,26,23,.3);
   transition:transform .12s ease;
 }
 input[type="range"]::-webkit-slider-thumb:hover{transform:scale(1.15)}
 input[type="range"]::-moz-range-thumb{
-  width:14px;height:14px;border-radius:50%;background:var(--amber);border:0;
+  width:14px;height:14px;border-radius:50%;background:var(--amber);border:2px solid var(--card);
 }
-input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:rgba(250,248,243,.18)}
+input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#E7E1D2}
 .roi-hero-card{
-  background:rgba(176,125,0,.14);border:1px solid rgba(176,125,0,.5);
-  border-radius:var(--r);padding:1.7rem 1.8rem;
+  position:relative;background:#FFF8E6;border:1.5px solid var(--amber);
+  border-radius:var(--r);padding:1.8rem 1.9rem;
+  box-shadow:0 16px 40px -12px rgba(176,125,0,.28);
 }
-.roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:rgba(250,248,243,.55);margin-top:.2rem}
-.roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(2.6rem,5vw,3.7rem);letter-spacing:-.03em;line-height:1.05;color:var(--amber);margin:.3rem 0 .1rem}
-.roi-note{font-size:.85rem;color:rgba(250,248,243,.6);line-height:1.5;margin-top:.45rem}
-.roi-fine{margin-top:1.6rem;font-size:.8rem;color:rgba(250,248,243,.45)}
+.roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:var(--amber-deep);margin-top:.2rem}
+.roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(2.6rem,5vw,3.7rem);letter-spacing:-.03em;line-height:1.05;color:var(--ink);margin:.3rem 0 .1rem}
+.roi-note{font-size:.9rem;color:var(--ink-soft);line-height:1.55;margin-top:.45rem}
+.roi-total-bar .roi-label{color:var(--ink-soft)}
+.roi-fine{margin-top:1.5rem;font-size:.8rem;color:var(--ink-soft);max-width:78ch}
 @media (max-width:900px){
   .mpanel,.roi-total-bar{grid-template-columns:1fr;gap:1.6rem}
   .math-next{margin-left:0}
+  .math-body{padding:1.3rem 1.1rem 1.5rem}
+  .math-back{right:.4rem}
 }
 
 /* ============== PILLAR VIGNETTES (rows) ============== */
