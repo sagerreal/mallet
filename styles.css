@@ -24,7 +24,13 @@
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
+/* NOTE: no `scroll-behavior:smooth` here — it FIGHTS Lenis (the browser re-animates
+   every per-frame scroll write → molasses). Lenis handles smoothing + anchors itself;
+   the media query below restores smooth anchors only when Lenis is off (reduced motion). */
+@media (prefers-reduced-motion: no-preference){ html:not(.lenis) {scroll-behavior:auto} }
+@media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} }
+html.lenis{height:auto}
+.lenis.lenis-smooth{scroll-behavior:auto !important}
 body{
   font-family:var(--font-body);color:var(--ink);background:var(--paper);
   line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
