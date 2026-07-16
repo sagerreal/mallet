@@ -15,6 +15,7 @@
 
 import { useState } from "react";
 import { todayISO } from "@/lib/clock";
+import { myHoursListInput, MY_HOURS_STALE_MS } from "@/features/field/my-hours-input";
 import { api } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/client";
 
@@ -177,13 +178,13 @@ export default function MyHoursPage() {
   // v1.timesheets.list — server auto-scopes to caller when role === "tech".
   // Fetch a wide window (180 days back → today) so week-navigation works client-side.
   const today = todayISO();
-  const fromDate = addDays(today, -84); // 12 weeks back
-  const toDate = addDays(today, 7);     // this week + 1 for safety
 
-  const { data, isLoading } = api.v1.timesheets.list.useQuery(
-    { fromDate, toDate, limit: 500 },
-    { staleTime: 60_000, refetchOnWindowFocus: false },
-  );
+  // myHoursListInput is shared with the field hydrator's idle prefetch — same builder,
+  // same query key, so a tab switch after prefetch renders straight from cache.
+  const { data, isLoading } = api.v1.timesheets.list.useQuery(myHoursListInput(), {
+    staleTime: MY_HOURS_STALE_MS,
+    refetchOnWindowFocus: false,
+  });
 
   const [tsWeek, setTsWeek] = useState(() => weekStart(today));
 

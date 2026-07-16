@@ -57,3 +57,17 @@ h1,
 .modal h2 {
   font-family: var(--font-space-grotesk), "Inter", -apple-system, sans-serif;
 }
+
+/* ── View Transitions ──────────────────────────────────────────────────────
+   Declarative crossfade on same-document navigations (Next 16 + the
+   viewTransition: true flag in next.config.ts).  These rules are inert in
+   browsers that don't support the API — safe to keep even if the config flag
+   is later reverted. */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 120ms;
+}

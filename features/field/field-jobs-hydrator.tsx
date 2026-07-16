@@ -19,9 +19,15 @@
  *
  * The my-day page subscribes to the same query key, so its refetches after
  * start/complete re-run this sync automatically.
+ *
+ * IDLE PREFETCH: once myDay settles we warm the sibling tabs' query caches in
+ * an idle callback. My hours uses a 60-second staleTime, so we match that in
+ * the prefetch options — a tab switch within a normal session hits the cache
+ * and the page renders without a skeleton flash.  Messages uses 15 s; we pass
+ * undefined input (matches the page's query key exactly).
  */
 
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef } from "react";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
@@ -29,6 +35,7 @@ import type { Job } from "@/lib/store/types";
 import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
+import { myHoursListInput, MY_HOURS_STALE_MS } from "./my-hours-input";
 
 type MyDayItem = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -44,6 +51,34 @@ export function FieldJobsHydrator() {
     staleTime: HYDRATOR_STALE_MS,
     refetchOnWindowFocus: false,
   });
+
+  const utils = api.useUtils();
+  const prefetchedRef = useRef(false);
+
+  // Once myDay data has settled, warm the sibling tabs' query caches during an
+  // idle moment.  One-per-mount guard prevents repeated scheduling on re-renders.
+  //
+  // staleTime alignment:
+  //   my-hours → 60_000 ms (page passes staleTime: 60_000; we match it so the
+  //              query isn't considered stale when the page mounts into the cache)
+  //   messages → 15_000 ms (page's staleTime — prefetch honours the same window)
+  useEffect(() => {
+    if (!data || prefetchedRef.current) return;
+    prefetchedRef.current = true;
+
+    function runPrefetch(): void {
+      // myHoursListInput is the SAME builder the page uses — the keys cannot drift.
+      void utils.v1.timesheets.list.prefetch(myHoursListInput(), { staleTime: MY_HOURS_STALE_MS });
+      void utils.v1.messaging.listConversations.prefetch(undefined, { staleTime: 15_000 });
+    }
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(runPrefetch, { timeout: 2_000 });
+    } else {
+      const id = setTimeout(runPrefetch, 200);
+      return () => clearTimeout(id);
+    }
+  }, [data, utils]);
 
   // myDay is not paginated — adapt to the hydrator hook's { items, nextCursor }
   // contract. Memoized so the sync effect only re-runs when the data changes.

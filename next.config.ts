@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
   // Module boundaries are enforced by ESLint (see T0.2), not by separate packages — one deployable.
   reactStrictMode: true,
 
+  experimental: {
+    // View Transitions API — crossfade on route changes (120 ms, see globals.css).
+    // If this flag causes build failures, hydration warnings, or modal breakage, remove it
+    // and keep only the inert CSS rules (they are safe in non-supporting browsers).
+    viewTransition: true,
+  },
+
   async headers() {
     return [
       {
