@@ -471,7 +471,7 @@ interface WorkOrderSecProps {
 // section actually reads. A checklist tap changes job.verify: WorkOrderSec,
 // FoundWorkSec, and NoteFeed read none of those fields, so they skip the re-render.
 
-function workOrderPropsEqual(a: WorkOrderSecProps, b: WorkOrderSecProps): boolean {
+export function workOrderPropsEqual(a: WorkOrderSecProps, b: WorkOrderSecProps): boolean {
   return (
     a.seesPrice === b.seesPrice &&
     a.job.lines === b.job.lines &&
@@ -619,7 +619,7 @@ interface FoundWorkSecProps {
 
 // FoundWorkSec uses a custom comparator so a checklist tap (job.verify change)
 // does NOT re-render it — it only reads job.addons and job.id.
-function foundWorkPropsEqual(a: FoundWorkSecProps, b: FoundWorkSecProps): boolean {
+export function foundWorkPropsEqual(a: FoundWorkSecProps, b: FoundWorkSecProps): boolean {
   return (
     a.seesPrice === b.seesPrice &&
     a.readOnly === b.readOnly &&
@@ -1021,7 +1021,7 @@ interface NoteFeedProps {
 
 // NoteFeed uses a custom comparator so a checklist tap (job.verify change)
 // does NOT re-render it — it only reads job.notes, job.acts, and job.id.
-function noteFeedPropsEqual(a: NoteFeedProps, b: NoteFeedProps): boolean {
+export function noteFeedPropsEqual(a: NoteFeedProps, b: NoteFeedProps): boolean {
   return (
     a.canCompose === b.canCompose &&
     a.updateJob === b.updateJob &&
@@ -1137,7 +1137,7 @@ interface DoneBlockProps {
 
 // DoneBlock uses a custom comparator — it only reads job.invRequested and job.lines
 // (via jobTotal), neither of which changes on a checklist tap.
-function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boolean {
+export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boolean {
   return (
     a.onOpenCloseOut === b.onOpenCloseOut &&
     a.onOpenInvoice === b.onOpenInvoice &&

@@ -176,7 +176,8 @@ function WeekEntries({ entries, wk }: WeekEntriesProps) {
 
 export default function MyHoursPage() {
   // v1.timesheets.list — server auto-scopes to caller when role === "tech".
-  // Fetch a wide window (180 days back → today) so week-navigation works client-side.
+  // Fetch a wide window (84 days back → +7) so week-navigation works client-side — the window
+  // comes from myHoursListInput, shared with the field hydrator prefetch.
   const today = todayISO();
 
   // myHoursListInput is shared with the field hydrator's idle prefetch — same builder,

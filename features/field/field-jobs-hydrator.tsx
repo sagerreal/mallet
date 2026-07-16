@@ -73,11 +73,15 @@ export function FieldJobsHydrator() {
     }
 
     if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(runPrefetch, { timeout: 2_000 });
-    } else {
-      const id = setTimeout(runPrefetch, 200);
-      return () => clearTimeout(id);
+      const w = window as Window & {
+        requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback: (handle: number) => void;
+      };
+      const handle = w.requestIdleCallback(runPrefetch, { timeout: 2_000 });
+      return () => w.cancelIdleCallback(handle);
     }
+    const id = setTimeout(runPrefetch, 200);
+    return () => clearTimeout(id);
   }, [data, utils]);
 
   // myDay is not paginated — adapt to the hydrator hook's { items, nextCursor }
