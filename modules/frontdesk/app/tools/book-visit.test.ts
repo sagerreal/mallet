@@ -562,6 +562,31 @@ describe("bookVisitTool — scope_signal capture", () => {
     expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewA);
   });
 
+  it("gate: the filter runs BEFORE ranking — a qualified-but-loaded tech beats an unqualified idle one", async () => {
+    // The discriminating case: crewB (unqualified) is IDLE and listed FIRST, so WITHOUT the gate
+    // chooseCrew would pick crewB on both least-loaded AND stable-first. Only the cert filter
+    // running before the ranking makes the loaded-but-qualified crewA win.
+    const crewA = asUserId(FIRST_CREW_UUID);   // qualified, 1 job today
+    const crewB = asUserId(SECOND_CREW_UUID);  // unqualified, idle
+    const withCertService = settingsFrom({
+      booking: {
+        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["gas"] }],
+        notServices: "",
+        serviceFee: 89,
+        feeCredited: true,
+      },
+    });
+    const h2 = buildHarness({
+      settings: withCertService,
+      sameDayCrewLoads: [
+        { userId: crewB, skillTags: [], sameDayJobs: [] },                 // idle, listed first, no cert
+        { userId: crewA, skillTags: ["gas"], sameDayJobs: [{ point: null }] }, // loaded, has the cert
+      ],
+    });
+    await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewA);
+  });
+
   it("gate: nobody qualified → booking succeeds but assignee is null (UNASSIGNED)", async () => {
     const crewA = asUserId(FIRST_CREW_UUID);
     const withCertService = settingsFrom({

@@ -146,9 +146,10 @@ suite("readSameDayCrewLoads against live Supabase RLS", () => {
     otherOrgId = o2!.id;
 
     // Two field-crew + one non-field (office) in the target org.
+    // crew1 carries cert tags so the reader's skill_tags projection is exercised.
     const [c1] = await admin<{ id: string }[]>`
-      insert into users (org_id, auth_user_id, email, role, is_field_crew)
-      values (${orgId}, gen_random_uuid(), 'sdcrew1@sd.ex', 'tech', true) returning id`;
+      insert into users (org_id, auth_user_id, email, role, is_field_crew, skill_tags)
+      values (${orgId}, gen_random_uuid(), 'sdcrew1@sd.ex', 'tech', true, ${admin.array(["Gas", "Boiler"])}) returning id`;
     crew1Id = c1!.id;
     const [c2] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role, is_field_crew)
@@ -235,6 +236,17 @@ suite("readSameDayCrewLoads against live Supabase RLS", () => {
       const loads = await new DrizzleAvailabilityReader(tx, org).readSameDayCrewLoads(TARGET_DATE);
       const crew2 = loads.find((c) => c.userId === crew2Id)!;
       expect(crew2.sameDayJobs).toHaveLength(0);
+    });
+  });
+
+  it("projects each crew's skill_tags (tagged crew gets them; untagged crew gets [])", async () => {
+    const org = asOrgId(orgId);
+    await withTenant(org, async (tx) => {
+      const loads = await new DrizzleAvailabilityReader(tx, org).readSameDayCrewLoads(TARGET_DATE);
+      const crew1 = loads.find((c) => c.userId === crew1Id)!;
+      const crew2 = loads.find((c) => c.userId === crew2Id)!;
+      expect(crew1.skillTags).toEqual(["Gas", "Boiler"]);
+      expect(crew2.skillTags).toEqual([]);
     });
   });
 
