@@ -19,7 +19,7 @@
      Skipped under reduced motion; native anchors still work via lenis anchors:true. */
   function smoothScroll() {
     if (reduce || typeof window.Lenis !== 'function') return;
-    var lenis = new window.Lenis({ lerp: 0.17, wheelMultiplier: 1.35, anchors: true });
+    var lenis = new window.Lenis({ lerp: 0.14, wheelMultiplier: 1.1, anchors: true });
     function raf(time) { lenis.raf(time); requestAnimationFrame(raf); }
     requestAnimationFrame(raf);
   }
