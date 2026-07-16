@@ -146,10 +146,9 @@ strong{font-weight:700}
 .beat.on::before{width:26px;background:var(--amber)}
 .lede{font-size:clamp(1.05rem,1.6vw,1.22rem);color:var(--ink-soft);line-height:1.6;max-width:40ch;margin:1.5rem 0 0}
 .hero-actions{display:flex;gap:1rem;flex-wrap:wrap;margin-top:2.1rem;justify-content:flex-start}
-.hero-verts{
-  margin-top:1.7rem;font-family:var(--font-mono);font-size:.66rem;letter-spacing:.1em;
-  color:var(--ink-soft);max-width:52ch;line-height:1.9;
-}
+.hero-kicker{font-size:1rem;font-weight:600;color:var(--amber-deep);letter-spacing:-.01em;margin-bottom:.2rem}
+.hero-verts{margin-top:1.6rem;font-size:.95rem;color:var(--ink-soft);max-width:46ch;line-height:1.6}
+.hero-verts::before{content:"";display:block;width:26px;height:2px;background:var(--amber);margin-bottom:.7rem}
 
 /* The stage: demo window on a desk, receipts popping as the AI works */
 .hero-stage{position:relative;z-index:1}
@@ -657,24 +656,14 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 .roi-note{font-size:.9rem;color:var(--ink-soft);line-height:1.55;margin-top:.55rem;max-width:38ch}
 .roi-note b{color:var(--ink)}
 
-/* accounting sum: dotted leader into a double-ruled total */
-.lt-row{display:flex;align-items:baseline;gap:.9rem}
-.lt-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:var(--ink);font-weight:700;flex:none}
-.lt-leader{flex:1;border-bottom:2px dotted #CFC8B8;transform:translateY(-8px)}
-.lt-fig{
-  font-family:var(--font-display);font-weight:700;font-size:clamp(2.2rem,3.6vw,3rem);
-  letter-spacing:-.03em;color:var(--ink);flex:none;
-  border-bottom:5px double var(--ink);padding-bottom:.15rem;
-}
+/* the sum: same grammar as the payoff — label, big ink figure, note */
+.ledger-total .roi-label{color:var(--ink)}
 .roi-fine{margin-top:1.4rem;font-size:.88rem;color:var(--ink-soft)}
 @media (max-width:900px){
   .mpanel,.roi-total-bar{grid-template-columns:1fr;gap:1.6rem}
   .math-next{margin-left:0}
   .ledger-body{padding:.2rem 1.1rem 1.6rem}
   .ledger-payoff{padding-left:0;border-left:0;border-top:1px dashed var(--line);padding-top:1.4rem}
-  .lt-row{flex-direction:column;align-items:flex-start;gap:.3rem}
-  .lt-leader{display:none}
-  .lt-fig{font-size:2.4rem}
 }
 
 /* "learn more" arrow link (rows, cards) */
