@@ -196,20 +196,13 @@
         <h2 class="sec-h" data-reveal>What the leaks actually cost you.</h2>
         <p class="sec-sub" data-reveal>Four leaks, four fixes &mdash; click through the pillars. Conservative on purpose.</p>
 
-        <div class="math-stage" data-reveal>
-          <div class="math-back" aria-hidden="true">
-            <p class="sb-title">PER&nbsp;YEAR</p>
-            <div class="sb-bar w1"></div>
-            <div class="sb-bar w2"></div>
-            <div class="sb-bar w3"></div>
+        <!-- The worksheet: a job-ticket sheet, not another app window. -->
+        <div class="ledger" data-reveal>
+          <div class="ledger-head">
+            <span class="lh-title" id="mathTitle">LEAK&nbsp;WORKSHEET&nbsp;&middot;&nbsp;01&nbsp;FRONT&nbsp;DESK</span>
+            <span class="lh-note">CONSERVATIVE&nbsp;ON&nbsp;PURPOSE</span>
           </div>
-          <div class="math-window">
-            <div class="desk-bar">
-              <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span class="desk-title" id="mathTitle">THE&nbsp;MATH&nbsp;&middot;&nbsp;01&nbsp;FRONT&nbsp;DESK</span>
-              <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>LIVE</span>
-            </div>
-            <div class="math-body">
+          <div class="ledger-body">
         <div class="math-tabs" role="tablist" aria-label="Pick a pillar">
           <button class="mtab on" role="tab" aria-selected="true" data-panel="0">01 &middot; FRONT&nbsp;DESK</button>
           <button class="mtab" role="tab" aria-selected="false" data-panel="1">02 &middot; ESTIMATING</button>
@@ -232,7 +225,7 @@
               <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
             </div>
           </div>
-          <div class="roi-hero-card">
+          <div class="ledger-payoff">
             <p class="roi-label">LEFT ON THE TABLE, PER YEAR</p>
             <p class="roi-big" id="pDesk">$23,400</p>
             <p class="roi-note"><span id="pDeskN">52</span> jobs a year from calls that ring out today &mdash; answered, booked, dispatched.</p>
@@ -248,7 +241,7 @@
               <div class="roi-scale"><span>0</span><span>40</span></div>
             </div>
           </div>
-          <div class="roi-hero-card">
+          <div class="ledger-payoff">
             <p class="roi-label">QUOTE-WRITING, BACK PER YEAR</p>
             <p class="roi-big" id="pEst">156 hrs</p>
             <p class="roi-note">Drafted from your pricebook and rates as Good&nbsp;/&nbsp;Better&nbsp;/&nbsp;Best &mdash; you review and send. About 30 minutes back per quote.</p>
@@ -269,7 +262,7 @@
               <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
             </div>
           </div>
-          <div class="roi-hero-card">
+          <div class="ledger-payoff">
             <p class="roi-label">CALLBACKS THAT NEVER HAPPEN, PER YEAR</p>
             <p class="roi-big" id="pFore">$1,800</p>
             <p class="roi-note">A callback eats half a job&rsquo;s value. The checklist catches the skipped step &mdash; one in three never happens.</p>
@@ -290,7 +283,7 @@
               <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
             </div>
           </div>
-          <div class="roi-hero-card">
+          <div class="ledger-payoff">
             <p class="roi-label">CASH ON THE STREET, RIGHT NOW</p>
             <p class="roi-big" id="pCash">$1,800</p>
             <p class="roi-note">Sitting in unpaid invoices &mdash; the follow-ups chase it down, nobody at the office has to remember. Already yours, so it&rsquo;s not in the annual total.</p>
@@ -303,13 +296,11 @@
             <input type="range" id="rBill" min="0" max="2000" step="25" value="300" />
             <div class="roi-scale"><span>$0</span><span>$2,000</span></div>
           </div>
-          <div class="roi-total-cell">
-            <p class="roi-label">ALL FOUR TOGETHER, PER YEAR</p>
-            <p class="roi-big" id="roiTotal">$27,000</p>
+          <div class="ledger-total">
+            <div class="lt-row"><span class="lt-label">ALL FOUR TOGETHER, PER&nbsp;YEAR</span><span class="lt-leader" aria-hidden="true"></span><b class="lt-fig" id="roiTotal">$27,000</b></div>
             <p class="roi-note">front desk + callbacks prevented + software halved (<span id="roiSoftM">$150</span>/mo back) &mdash; plus <span id="roiHrs">156</span> hrs of quote-writing.</p>
           </div>
         </div>
-            </div>
           </div>
         </div>
 
