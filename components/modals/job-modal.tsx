@@ -295,14 +295,17 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
         }
         const reqLabel = (job.requiredCerts ?? []).join(", ");
         if (hint.state === "selectedMissing" && hint.suggestedTechId != null) {
-          const selectedName =
-            techs.find((t) => t.id === visit.techId)?.name ?? "This crew";
+          const selected = techs.find((t) => t.id === visit.techId);
           const suggestedName =
             techs.find((t) => t.id === hint.suggestedTechId)?.name ?? "Another crew";
           const missingLabel = hint.missing.join(", ");
+          // Nobody-assigned reads differently from an assigned-but-unqualified tech.
+          const gap = selected
+            ? `${selected.name} is missing ${missingLabel}.`
+            : "nobody assigned yet.";
           return (
             <div className="banner" style={{ marginTop: 8 }}>
-              ⚠ Needs {reqLabel} — {selectedName} is missing {missingLabel}.{" "}
+              ⚠ Needs {reqLabel} — {gap}{" "}
               <b>{suggestedName} is certified and lightest today.</b>
             </div>
           );
