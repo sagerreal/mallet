@@ -315,25 +315,6 @@ strong{font-weight:700}
 /* the leak-tape band (replaced the static stat proofline) */
 .tape-band{background:var(--parchment);padding:2.4rem 0;overflow:hidden}
 
-/* ================= WHAT MALLET DOES (rows) ================= */
-.rows{background:var(--paper);padding:2.5rem 0 4rem}
-.row{
-  display:grid;grid-template-columns:1fr 1fr;gap:4.5rem;align-items:center;
-  padding:4.5rem 0;border-bottom:1px dashed var(--line);
-}
-.row:last-child{border-bottom:0}
-.row:nth-child(even) .row-copy{order:2}
-.row:nth-child(even) .row-visual{order:1}
-.row-num{font-family:var(--font-mono);font-size:.78rem;letter-spacing:.14em;color:var(--amber-deep);margin-bottom:1rem}
-.row-num::after{content:"";display:block;width:26px;height:2px;background:var(--amber);margin-top:.6rem}
-.row-p{font-size:1.12rem;color:var(--ink-soft);line-height:1.65;margin-top:1.1rem;max-width:44ch}
-.row-visual .desk-window.sm .desk-feed{min-height:0}
-@media (max-width:900px){
-  .row{grid-template-columns:1fr;gap:2.2rem;padding:3.2rem 0}
-  .row:nth-child(even) .row-copy{order:1}
-  .row:nth-child(even) .row-visual{order:2}
-}
-
 /* ================= FRONT DESK WINDOW (signature) ================= */
 .desk-window{
   background:var(--card);border:1px solid var(--line);border-radius:var(--r);
@@ -479,6 +460,32 @@ input[type="range"]::-moz-range-thumb{
   width:14px;height:14px;border-radius:50%;background:var(--amber);border:2px solid var(--card);
 }
 input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#E7E1D2}
+/* ===================== THE PLATFORM (real screens) ===================== */
+.plat{background:var(--paper);padding:6rem 0 6.5rem;border-top:1px solid var(--line)}
+.plat-tabs{display:flex;gap:.5rem;margin-top:2.2rem;flex-wrap:wrap}
+.ptab{
+  font-family:var(--font-body);font-size:.92rem;font-weight:600;color:var(--ink-soft);
+  background:transparent;border:1.5px solid var(--line);border-radius:999px;
+  padding:.55rem 1.15rem;cursor:pointer;transition:all .15s ease;
+}
+.ptab:hover{border-color:var(--ink);color:var(--ink)}
+.ptab.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.plat-frame{
+  position:relative;margin-top:1.6rem;border:1px solid var(--line);border-radius:var(--r);
+  overflow:hidden;background:var(--card);aspect-ratio:1360/850;
+  box-shadow:0 10px 24px rgba(27,26,23,.08), 0 46px 90px -22px rgba(27,26,23,.28);
+}
+.plat-shot{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  opacity:0;transition:opacity .35s ease;
+}
+.plat-shot.on{opacity:1}
+.plat-cap{margin-top:1.1rem;font-size:.95rem;color:var(--ink-soft);max-width:64ch}
+@media (max-width:640px){
+  .plat{padding:3.6rem 0 4rem}
+  .ptab{font-size:.84rem;padding:.5rem .9rem}
+}
+
 /* the payoff: unboxed ledger figure — big ink number straight on the sheet */
 .ledger-payoff{padding-left:2.2rem;border-left:1px dashed var(--line)}
 .roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:var(--amber-deep);margin-top:.2rem}
@@ -507,22 +514,6 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
   .lt-leader{display:none}
   .lt-fig{font-size:2.4rem}
 }
-
-/* ============== PILLAR VIGNETTES (rows) ============== */
-/* Elements marked .vg pop in sequence while the card is on screen, then loop. */
-.vg{opacity:0;transform:translateY(8px);transition:opacity .45s ease, transform .45s ease}
-.vg.on{opacity:1;transform:none}
-.fm-body,.inv-body{padding:1.1rem 1.2rem 1.25rem}
-.fm-body .job-list{margin-top:0}
-.jc.on{color:var(--ink)}
-.jc.on::before{content:"\2713";background:var(--ink);border-color:var(--ink);color:var(--paper);display:grid;place-items:center;font-size:.62rem}
-.jc.skip.on{color:var(--amber-deep)}
-.jc.skip.on::before{content:"!";background:#FFF3D6;border-color:var(--amber);color:var(--amber-deep);font-weight:700}
-.aut-card{margin-top:1rem;border:1px solid var(--amber);background:#FFF8E6;border-radius:10px;padding:.75rem .9rem .85rem}
-.aut-head{font-family:var(--font-mono);font-size:.6rem;letter-spacing:.14em;color:var(--amber-deep)}
-.aut-p{margin-top:.35rem;font-size:.88rem;line-height:1.5;color:var(--ink)}
-.aut-btn{display:inline-block;margin-top:.55rem;background:var(--ink);color:var(--paper);border-radius:8px;padding:.4rem .75rem;font-size:.8rem;font-weight:600}
-@media (prefers-reduced-motion: reduce){ .vg{opacity:1;transform:none} }
 
 /* "learn more" arrow link (rows, cards) */
 .card-more{display:inline-block;margin-top:1.3rem;font-size:.92rem;font-weight:600;color:var(--amber-deep)}

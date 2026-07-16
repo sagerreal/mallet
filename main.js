@@ -11,7 +11,7 @@
     wireCalendly();
     loadTallyIfPresent();
     frontDesk();
-    vignettes();
+    platTabs();
     roiCalc();
     consent();
   });
@@ -247,42 +247,27 @@
     show(0, !reduce);
   }
 
-  /* ============== ROI CALCULATOR ============== */
-  /* Deliberately conservative model:
-     - answerable = 50% of missed calls (some are spam/wrong numbers)
-     - booked     = 40% of answerable
-     - software savings = half the current bill
-     - hours: ~2.5 office-hrs per tech per week + 6 base office hrs, capped display */
-  /* ============== PILLAR VIGNETTES ============== */
-  /* Each [data-vignette] card plays its .vg children in sequence while on
-     screen, dwells, then loops. Off screen: paused. Reduced motion: static. */
-  function vignettes() {
-    var hosts = slice(document.querySelectorAll('[data-vignette]'));
-    if (!hosts.length) return;
-    function finishAll(host) {
-      slice(host.querySelectorAll('.vg')).forEach(function (el) { el.classList.add('on'); });
-    }
-    if (reduce || !('IntersectionObserver' in window)) { hosts.forEach(finishAll); return; }
-
-    var STEP_MS = 950, DWELL_MS = 3400;
-    hosts.forEach(function (host) {
-      var steps = slice(host.querySelectorAll('.vg'));
-      var timers = [], playing = false;
-      function stop() { timers.forEach(clearTimeout); timers = []; }
-      function loop() {
-        steps.forEach(function (el) { el.classList.remove('on'); });
-        steps.forEach(function (el, i) {
-          timers.push(setTimeout(function () { el.classList.add('on'); }, 400 + i * STEP_MS));
+  /* ============== THE PLATFORM — real-screen tabs ============== */
+  var PLAT_CAPS = [
+    'Every lead the Front Desk books lands here — first call to won, on one board.',
+    'Good / Better / Best drafted from your pricebook — the customer taps a tier, the accept becomes a job.',
+    'Every job, sold to done — crew, schedule, and the checklist that keeps standards in the system.',
+    'Invoices, payments, and the follow-ups that chase them — nobody has to remember who owes what.'
+  ];
+  function platTabs() {
+    var tabs = slice(document.querySelectorAll('.ptab'));
+    if (!tabs.length) return;
+    var shots = slice(document.querySelectorAll('.plat-shot'));
+    var cap = document.getElementById('platCap');
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () {
+        tabs.forEach(function (o, j) {
+          o.classList.toggle('on', i === j);
+          o.setAttribute('aria-selected', i === j ? 'true' : 'false');
         });
-        timers.push(setTimeout(loop, 400 + steps.length * STEP_MS + DWELL_MS));
-      }
-      var io = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-          if (e.isIntersecting && !playing) { playing = true; loop(); }
-          else if (!e.isIntersecting && playing) { playing = false; stop(); finishAll(host); }
-        });
-      }, { threshold: 0.35 });
-      io.observe(host);
+        shots.forEach(function (s, j) { s.classList.toggle('on', i === j); });
+        if (cap) cap.textContent = PLAT_CAPS[i] || '';
+      });
     });
   }
 
@@ -294,14 +279,13 @@
      - Foreman: a callback eats half a job's value; checklist prevents 1 in 3
      - Follow-ups: cash sitting in unpaid invoices (not in the annual total —
        it's money already earned, the chase just brings it in sooner)
-     Total = front desk + foreman + software halved. */
+     Total = front desk + foreman. */
   function roiCalc() {
     var r = {
       missed: document.getElementById('rMissed'),
       quotes: document.getElementById('rQuotes'),
       callbacks: document.getElementById('rCallbacks'),
-      unpaid: document.getElementById('rUnpaid'),
-      bill: document.getElementById('rBill')
+      unpaid: document.getElementById('rUnpaid')
     };
     if (!r.missed) return;
     var tickets = slice(document.querySelectorAll('.js-ticket'));
@@ -312,14 +296,13 @@
 
     function update() {
       var missed = +r.missed.value, quotes = +r.quotes.value, callbacks = +r.callbacks.value;
-      var unpaid = +r.unpaid.value, bill = +r.bill.value;
+      var unpaid = +r.unpaid.value;
       var ticket = tickets.length ? +tickets[0].value : 450;
 
       document.getElementById('oMissed').textContent = missed;
       document.getElementById('oQuotes').textContent = quotes;
       document.getElementById('oCallbacks').textContent = callbacks;
       document.getElementById('oUnpaid').textContent = unpaid;
-      document.getElementById('oBill').textContent = fmt(bill);
       ticketOuts.forEach(function (o) { o.textContent = fmt(ticket); });
 
       var recoveredJobs = missed * 52 * 0.5 * 0.4;        // calls/yr → reachable → booked
@@ -327,16 +310,14 @@
       var quoteHours = quotes * 52 * 0.5;                 // 30 min per quote
       var callbackSave = callbacks * 12 * (ticket * 0.5) / 3;
       var cashOut = unpaid * ticket;
-      var softSaveYr = bill * 12 * 0.5;
 
       document.getElementById('pDesk').textContent = fmt(jobsRevenue);
       document.getElementById('pDeskN').textContent = Math.round(recoveredJobs);
       document.getElementById('pEst').textContent = Math.round(quoteHours) + ' hrs';
       document.getElementById('pFore').textContent = fmt(callbackSave);
       document.getElementById('pCash').textContent = fmt(cashOut);
-      document.getElementById('roiSoftM').textContent = fmt(bill * 0.5);
       document.getElementById('roiHrs').textContent = Math.round(quoteHours);
-      totalNow = jobsRevenue + callbackSave + softSaveYr;
+      totalNow = jobsRevenue + callbackSave;
       document.getElementById('roiTotal').textContent = fmt(totalNow);
     }
 
