@@ -429,7 +429,7 @@ const drive = async (
       {
         orgId: ctx.principal.orgId,
         status: result.status,
-        iterations: result.transcript.length,
+        transcriptMessages: result.transcript.length,
         inputTokens: result.usage.inputTokens,
         outputTokens: result.usage.outputTokens,
         cacheReadTokens: result.usage.cacheReadTokens,

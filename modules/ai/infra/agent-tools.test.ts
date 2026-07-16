@@ -62,18 +62,6 @@ vi.mock("@mallet/notifications", () => ({
   DrizzleReminderTargetReader: vi.fn(),
   STUB_EXTERNAL_ID: "stub:logged",
 }));
-vi.mock("../../notifications/infra/drizzle-notification-repository", () => ({
-  DrizzleNotificationRepository: vi.fn(),
-}));
-vi.mock("../../notifications/infra/drizzle-reminder-target-reader", () => ({
-  DrizzleReminderTargetReader: vi.fn(),
-}));
-vi.mock("../../invoicing/infra/manual-payment-gateway", () => ({
-  ManualPaymentGateway: vi.fn(),
-}));
-vi.mock("../../jobs/app/create-visit", () => ({
-  CreateVisitUseCase: vi.fn(),
-}));
 // The users table import is used directly in member_list, and orgs in get_context —
 // mock @mallet/shared/db/schema with both.
 vi.mock("@mallet/shared/db/schema", () => ({
