@@ -18,11 +18,11 @@ describe("toPage", () => {
   });
 
   it("passes through a limit equal to MAX_PAGE_SIZE (500) unchanged", () => {
-    expect(toPage({ limit: 500 }).limit).toBe(500);
+    expect(toPage({ limit: 500 }).limit).toBe(MAX_PAGE_SIZE);
   });
 
   it("clamps 501 to MAX_PAGE_SIZE (500)", () => {
-    expect(toPage({ limit: 501 }).limit).toBe(500);
+    expect(toPage({ limit: 501 }).limit).toBe(MAX_PAGE_SIZE);
   });
 
   it("floors a limit of 0 to at least 1", () => {
