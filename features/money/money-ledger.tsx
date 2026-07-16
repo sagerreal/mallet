@@ -8,7 +8,7 @@
  * math in money-derive, UI leaves in money-table / money-toolbar.
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import {
@@ -81,9 +81,17 @@ export function MoneyLedger() {
   // Armed "charge card on file" — first tap arms, second tap charges.
   const [armedCharge, setArmedCharge] = useState<string | null>(null);
 
-  const source =
-    moneySet === "active" ? deriveMoneyRows(invoices, jobs, leads) : deriveArchivedMoneyRows(invoices, leads);
-  const rows = filterMoneyRows(source, { statusFilter, q });
+  const source = useMemo(
+    () =>
+      moneySet === "active"
+        ? deriveMoneyRows(invoices, jobs, leads)
+        : deriveArchivedMoneyRows(invoices, leads),
+    [moneySet, invoices, jobs, leads]
+  );
+  const rows = useMemo(
+    () => filterMoneyRows(source, { statusFilter, q }),
+    [source, statusFilter, q]
+  );
   const activeFilterCount = statusFilter ? 1 : 0;
 
   function toggleCol(key: MoneyColKey) {

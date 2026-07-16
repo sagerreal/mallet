@@ -9,7 +9,7 @@
  * Header verdict = today's scheduled dollars. State lives in the store; this reads + renders.
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { useCallbackCandidates } from "@/features/jobs/hooks";
 import type { Invoice, Job } from "@/lib/store/types";
@@ -77,16 +77,27 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const [visibleCols, setVisibleCols] = useState<JobColKey[]>([...DEFAULT_JOB_COLS]);
 
   const q = jobsQ.trim().toLowerCase();
-  const filtered = q
-    ? jobs.filter((j) =>
-        (custName(j, leads) + " " + (j.title ?? "") + " " + (j.addr ?? "")).toLowerCase().includes(q)
-      )
-    : jobs;
+  const filtered = useMemo(
+    () =>
+      q
+        ? jobs.filter((j) =>
+            (custName(j, leads) + " " + (j.title ?? "") + " " + (j.addr ?? "")).toLowerCase().includes(q)
+          )
+        : jobs,
+    [jobs, leads, q]
+  );
 
-  const shownTrucks = useAnimatedNumber(deriveOnTrucks(jobs));
+  const trucksValue = useMemo(() => deriveOnTrucks(jobs), [jobs]);
+  const shownTrucks = useAnimatedNumber(trucksValue);
 
-  const { bandsToShow, total } = selectBands(filtered, invoices, archiveSet, statusFilter);
-  const finalBands = applyCrew(bandsToShow, techs, crewFilter);
+  const { bandsToShow, total } = useMemo(
+    () => selectBands(filtered, invoices, archiveSet, statusFilter),
+    [filtered, invoices, archiveSet, statusFilter]
+  );
+  const finalBands = useMemo(
+    () => applyCrew(bandsToShow, techs, crewFilter),
+    [bandsToShow, techs, crewFilter]
+  );
   const shown = finalBands.reduce((s, b) => s + b.jobs.length, 0);
   const activeFilterCount = (archiveSet === "active" && statusFilter ? 1 : 0) + (crewFilter ? 1 : 0);
 

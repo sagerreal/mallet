@@ -7,6 +7,13 @@ import { useMe } from "@/features/identity/hooks";
 import { useAppStore } from "@/lib/store/app-store";
 import { NewMenu } from "@/components/shell/new-menu";
 import { signOut } from "@/features/auth/hooks";
+import {
+  selectOpenTaskCount,
+  selectCustomerCount,
+  selectJobsCount,
+  selectUnscheduledCount,
+  selectMoneyCount,
+} from "@/components/shell/shell-selectors";
 
 // SVG icons matching the prototype
 const HomeIcon = () => (
@@ -140,10 +147,13 @@ export function Sidebar() {
     await signOut();
     router.push("/login");
   }
-  const tasks = useAppStore((s) => s.tasks);
-  const storeJobs = useAppStore((s) => s.jobs);
-  const leads = useAppStore((s) => s.leads);
-  const invoices = useAppStore((s) => s.invoices);
+  // Primitive selectors — each returns a number, so referential equality stops
+  // re-renders when unrelated slices (e.g. messages, timesheets) are written.
+  const openTaskCount = useAppStore(selectOpenTaskCount);
+  const unscheduledCount = useAppStore(selectUnscheduledCount);
+  const customerCount = useAppStore(selectCustomerCount);
+  const jobsCount = useAppStore(selectJobsCount);
+  const moneyCount = useAppStore(selectMoneyCount);
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
 
@@ -151,16 +161,6 @@ export function Sidebar() {
   const customersActive = CUSTOMER_AREA.some((r) => pathname.startsWith(r));
   const jobsActive = pathname.startsWith("/jobs");
   const moneyActive = pathname.startsWith("/money");
-  const openTaskCount = tasks.filter((t) => !t.done).length;
-  const unscheduledCount = storeJobs.filter((j) => !j.archived && j.status === "unscheduled").length;
-
-  // Live counts from the store — the same source every page renders from, so the
-  // badges move with the lists (adding a customer bumps Customers, etc.).
-  const customerCount = leads.filter((l) => !l.archived).length;
-  const jobsCount = storeJobs.filter((j) => !j.archived && j.status !== "done").length;
-  const moneyCount = invoices.filter(
-    (i) => !i.archived && (i.status === "sent" || i.status === "partial")
-  ).length;
 
   // Account display
   const userObj = me.data;
@@ -188,77 +188,77 @@ export function Sidebar() {
 
       {/* Nav */}
       <div id="sidenav" style={{ flex: 1, overflowY: "auto", padding: "2px 10px 10px" }}>
-        {roleKnown && (
+        {/* Office-only items: gated on roleKnown so a tech never briefly sees them.
+            The field items below are rendered immediately (no role-conditional risk). */}
+        {roleKnown && !isTech && (
           <>
-            {/* Office-only: + New button + office nav items */}
-            {!isTech && (
-              <>
-                <NewMenu />
+            <NewMenu />
 
-                <NavItem href="/dashboard" icon={<HomeIcon />} label="Home" active={isActive("/dashboard")} />
+            <NavItem href="/dashboard" icon={<HomeIcon />} label="Home" active={isActive("/dashboard")} />
 
-                <div className="navsep" />
+            <div className="navsep" />
 
-                <NavItem
-                  href="/customers"
-                  icon={<PeopleIcon />}
-                  label="Customers"
-                  count={customerCount > 0 ? customerCount : undefined}
-                  active={customersActive}
+            <NavItem
+              href="/customers"
+              icon={<PeopleIcon />}
+              label="Customers"
+              count={customerCount > 0 ? customerCount : undefined}
+              active={customersActive}
+            />
+            {customersActive && (
+              <div className="navsubs">
+                <NavSub href="/pipeline" label="Pipeline" active={pathname.startsWith("/pipeline")} />
+                <NavSub
+                  href="/tasks"
+                  label="Tasks"
+                  count={openTaskCount > 0 ? openTaskCount : undefined}
+                  active={pathname.startsWith("/tasks")}
                 />
-                {customersActive && (
-                  <div className="navsubs">
-                    <NavSub href="/pipeline" label="Pipeline" active={pathname.startsWith("/pipeline")} />
-                    <NavSub
-                      href="/tasks"
-                      label="Tasks"
-                      count={openTaskCount > 0 ? openTaskCount : undefined}
-                      active={pathname.startsWith("/tasks")}
-                    />
-                  </div>
-                )}
-                <NavItem
-                  href="/jobs"
-                  icon={<JobsIcon />}
-                  label="Jobs"
-                  count={jobsCount > 0 ? jobsCount : undefined}
-                  active={jobsActive}
-                />
-                {jobsActive && (
-                  <div className="navsubs">
-                    <NavSub
-                      href="/jobs?tab=schedule"
-                      label="Schedule"
-                      count={unscheduledCount > 0 ? unscheduledCount : undefined}
-                      active={tab === "schedule"}
-                    />
-                    <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
-                    <NavSub href="/jobs?tab=checklists" label="Checklists" active={tab === "checklists"} />
-                  </div>
-                )}
-                <NavItem
-                  href="/money"
-                  icon={<MoneyIcon />}
-                  label="Money"
-                  count={moneyCount > 0 ? moneyCount : undefined}
-                  active={moneyActive}
-                />
-
-                <div className="navsep" />
-
-                <NavItem href="/settings" icon={<SettingsIcon />} label="Settings" active={isActive("/settings")} />
-
-                <div className="navsep" />
-              </>
+              </div>
             )}
+            <NavItem
+              href="/jobs"
+              icon={<JobsIcon />}
+              label="Jobs"
+              count={jobsCount > 0 ? jobsCount : undefined}
+              active={jobsActive}
+            />
+            {jobsActive && (
+              <div className="navsubs">
+                <NavSub
+                  href="/jobs?tab=schedule"
+                  label="Schedule"
+                  count={unscheduledCount > 0 ? unscheduledCount : undefined}
+                  active={tab === "schedule"}
+                />
+                <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
+                <NavSub href="/jobs?tab=checklists" label="Checklists" active={tab === "checklists"} />
+              </div>
+            )}
+            <NavItem
+              href="/money"
+              icon={<MoneyIcon />}
+              label="Money"
+              count={moneyCount > 0 ? moneyCount : undefined}
+              active={moneyActive}
+            />
 
-            {/* FIELD section — visible to all roles; label hidden for tech (it's their only section) */}
-            {!isTech && <div className="navlabel">Field</div>}
-            <NavItem href="/my-day" icon={<MyDayIcon />} label="My day" active={isActive("/my-day")} />
-            <NavItem href="/my-hours" icon={<ClockIcon />} label="My hours" active={isActive("/my-hours")} />
-            <NavItem href="/messages" icon={<ChatIcon />} label="Messages" active={isActive("/messages")} />
+            <div className="navsep" />
+
+            <NavItem href="/settings" icon={<SettingsIcon />} label="Settings" active={isActive("/settings")} />
+
+            <div className="navsep" />
+
+            {/* FIELD label: only shown for office/owner (tech has no preceding office block) */}
+            <div className="navlabel">Field</div>
           </>
         )}
+
+        {/* Field items are always rendered once role is known (or we're on a field route).
+            Tech users go straight here; office/owner get them after the office block. */}
+        <NavItem href="/my-day" icon={<MyDayIcon />} label="My day" active={isActive("/my-day")} />
+        <NavItem href="/my-hours" icon={<ClockIcon />} label="My hours" active={isActive("/my-hours")} />
+        <NavItem href="/messages" icon={<ChatIcon />} label="Messages" active={isActive("/messages")} />
       </div>
 
       {/* Account row */}
