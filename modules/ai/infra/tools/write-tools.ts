@@ -15,12 +15,13 @@ import { DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timeshee
 import {
   SendInvoiceNotificationUseCase,
   SendNotificationUseCase,
+  DrizzleNotificationRepository,
+  DrizzleReminderTargetReader,
+  STUB_EXTERNAL_ID,
 } from "@mallet/notifications";
-import { DrizzleNotificationRepository } from "../../../notifications/infra/drizzle-notification-repository";
-import { DrizzleReminderTargetReader } from "../../../notifications/infra/drizzle-reminder-target-reader";
-import { STUB_EXTERNAL_ID } from "../../../notifications/infra/logging-notification-sender";
-import { ManualPaymentGateway } from "../../../invoicing/infra/manual-payment-gateway";
-import { CreateVisitUseCase } from "../../../jobs/app/create-visit";
+import { ManualPaymentGateway } from "@mallet/invoicing";
+import { CreateVisitUseCase } from "@mallet/jobs";
+import { parseTool } from "./parse-tool";
 import type { AgentTool, ToolOutcome } from "../../domain/tool";
 import { ENTITY_NOT_FOUND } from "../../domain/tool";
 import {
@@ -62,13 +63,13 @@ export const quoteDraftTool: AgentTool = {
   // What the human approved is "a quote for THIS customer" — if the lead is renamed/re-staged (or
   // vanishes) between propose and confirm, the confirm gate refuses and asks for a fresh proposal.
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = quoteDraftInput.safeParse(input);
+    const parsed = parseTool(quoteDraftInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
     return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = quoteDraftInput.safeParse(input);
+    const parsed = parseTool(quoteDraftInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     // Verify the customer exists so a bad/typo'd leadId is a clean, self-correctable error.
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
@@ -99,13 +100,13 @@ export const invoiceSendTool: AgentTool = {
   // The human approved sending THIS invoice at THIS total/status — if it was edited, paid against,
   // or voided between propose and confirm, the confirm gate refuses rather than send stale terms.
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = invoiceSendInput.safeParse(input);
+    const parsed = parseTool(invoiceSendInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const invoice = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
     return invoice ? `invoice:${invoice.props.id}:${invoice.props.status}:${invoice.props.total}:${invoice.props.amountPaid}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = invoiceSendInput.safeParse(input);
+    const parsed = parseTool(invoiceSendInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new SendInvoiceUseCase(new DrizzleInvoiceRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({ invoiceId: asInvoiceId(parsed.data.invoiceId) });
@@ -126,13 +127,13 @@ export const quoteSendTool: AgentTool = {
   input: quoteSendInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = quoteSendInput.safeParse(input);
+    const parsed = parseTool(quoteSendInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const est = await new DrizzleEstimateRepository(ctx.tx, ctx.orgId).findById(asEstimateId(parsed.data.estimateId));
     return est ? `estimate:${est.props.id}:${est.props.status}:${est.total()}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = quoteSendInput.safeParse(input);
+    const parsed = parseTool(quoteSendInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new SendEstimateUseCase(new DrizzleEstimateRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({ estimateId: asEstimateId(parsed.data.estimateId) });
@@ -152,13 +153,13 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
   input: notificationSendInvoiceReminderInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = notificationSendInvoiceReminderInput.safeParse(input);
+    const parsed = parseTool(notificationSendInvoiceReminderInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const inv = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
     return inv ? `invoice:${inv.props.id}:${inv.props.status}:${inv.props.total}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = notificationSendInvoiceReminderInput.safeParse(input);
+    const parsed = parseTool(notificationSendInvoiceReminderInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     if (!ctx.deps.notificationSender) {
       return { ok: false, error: "notification sender not configured — contact your administrator" };
@@ -192,13 +193,13 @@ export const jobScheduleTool: AgentTool = {
   input: jobScheduleInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = jobScheduleInput.safeParse(input);
+    const parsed = parseTool(jobScheduleInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
     return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = jobScheduleInput.safeParse(input);
+    const parsed = parseTool(jobScheduleInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new ScheduleJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
     const result = await uc.exec({
@@ -226,13 +227,13 @@ export const jobAssignTool: AgentTool = {
   input: jobAssignInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = jobAssignInput.safeParse(input);
+    const parsed = parseTool(jobAssignInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
     return job ? `job:${job.props.id}:${job.props.status}:${job.props.assigneeUserId ?? "unassigned"}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = jobAssignInput.safeParse(input);
+    const parsed = parseTool(jobAssignInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new AssignJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({
@@ -256,7 +257,7 @@ export const taskCreateTool: AgentTool = {
   input: taskCreateInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = taskCreateInput.safeParse(input);
+    const parsed = parseTool(taskCreateInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     // Fingerprint the linked lead if provided; otherwise fingerprint the task text (no drift possible).
     if (parsed.data.leadId) {
@@ -266,7 +267,7 @@ export const taskCreateTool: AgentTool = {
     return `task:text:${parsed.data.text.slice(0, 80)}`;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = taskCreateInput.safeParse(input);
+    const parsed = parseTool(taskCreateInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new CreateTaskUseCase(new DrizzleTaskRepository(ctx.tx, ctx.orgId), ctx.deps.clock, ctx.deps.ids);
     const result = await uc.exec(
@@ -294,13 +295,13 @@ export const customerCreateTool: AgentTool = {
   input: customerCreateInput,
   mutating: true,
   async fingerprint(input, _ctx): Promise<string> {
-    const parsed = customerCreateInput.safeParse(input);
+    const parsed = parseTool(customerCreateInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     // No pre-existing entity to drift on — fingerprint the proposed name so the human sees exactly what they approved.
     return `new-customer:${parsed.data.name}`;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = customerCreateInput.safeParse(input);
+    const parsed = parseTool(customerCreateInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new EnsureCustomerUseCase(new DrizzleLeadRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({
@@ -329,13 +330,13 @@ export const invoiceDraftTool: AgentTool = {
   input: invoiceDraftInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = invoiceDraftInput.safeParse(input);
+    const parsed = parseTool(invoiceDraftInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
     return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = invoiceDraftInput.safeParse(input);
+    const parsed = parseTool(invoiceDraftInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.leadId));
     if (!lead) return { ok: false, error: `customer ${parsed.data.leadId} not found — use customer_list to find the right id` };
@@ -362,13 +363,13 @@ export const invoiceCreateFromJobTool: AgentTool = {
   input: invoiceCreateFromJobInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = invoiceCreateFromJobInput.safeParse(input);
+    const parsed = parseTool(invoiceCreateFromJobInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
     return job ? `job:${job.props.id}:${job.props.status}:${job.props.num}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = invoiceCreateFromJobInput.safeParse(input);
+    const parsed = parseTool(invoiceCreateFromJobInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const jobRepo = new DrizzleJobRepository(ctx.tx, ctx.orgId);
     const uc = new CreateInvoiceFromJobUseCase(
@@ -407,13 +408,13 @@ export const scheduleVisitTool: AgentTool = {
   input: scheduleVisitInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = scheduleVisitInput.safeParse(input);
+    const parsed = parseTool(scheduleVisitInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
     return job ? `job:${job.props.id}:${job.props.status}:${job.props.num}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = scheduleVisitInput.safeParse(input);
+    const parsed = parseTool(scheduleVisitInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new CreateVisitUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.clock, ctx.deps.ids);
     const result = await uc.exec({
@@ -458,7 +459,7 @@ export const invoiceRecordPaymentTool: AgentTool = {
   // The propose leg passes ENTITY_NOT_FOUND if the invoice is in an unacceptable state;
   // the confirm gate re-computes this and refuses if the balance changed.
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = invoiceRecordPaymentWithKeyInput.safeParse(input);
+    const parsed = parseTool(invoiceRecordPaymentWithKeyInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const inv = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
     if (!inv) return ENTITY_NOT_FOUND;
@@ -468,7 +469,7 @@ export const invoiceRecordPaymentTool: AgentTool = {
     return `invoice:${inv.props.id}:${inv.props.status}:${inv.due()}:idem:${parsed.data.idempotencyKey}`;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = invoiceRecordPaymentWithKeyInput.safeParse(input);
+    const parsed = parseTool(invoiceRecordPaymentWithKeyInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     // The idempotency key was frozen at propose time (server-minted via enrichArgs); a re-confirm
     // carries the same stored value so the underlying repo's ON CONFLICT DO NOTHING guards double-charge.
@@ -500,13 +501,13 @@ export const invoiceVoidTool: AgentTool = {
   input: invoiceVoidInput,
   mutating: true,
   async fingerprint(input, ctx): Promise<string> {
-    const parsed = invoiceVoidInput.safeParse(input);
+    const parsed = parseTool(invoiceVoidInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const inv = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
     return inv ? `invoice:${inv.props.id}:${inv.props.status}:${inv.props.total}:${inv.props.amountPaid}` : ENTITY_NOT_FOUND;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = invoiceVoidInput.safeParse(input);
+    const parsed = parseTool(invoiceVoidInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new VoidInvoiceUseCase(new DrizzleInvoiceRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({ invoiceId: asInvoiceId(parsed.data.invoiceId) });
@@ -528,13 +529,13 @@ export const timesheetApproveWeekTool: AgentTool = {
   mutating: true,
   // Fingerprint on userId + sorted dates so any change in the approval scope is caught at confirm.
   async fingerprint(input, _ctx): Promise<string> {
-    const parsed = timesheetApproveWeekInput.safeParse(input);
+    const parsed = parseTool(timesheetApproveWeekInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
     const sortedDates = [...parsed.data.dates].sort().join(",");
     return `timesheet-approve:${parsed.data.techUserId}:${sortedDates}`;
   },
   async handle(input, ctx): Promise<ToolOutcome> {
-    const parsed = timesheetApproveWeekInput.safeParse(input);
+    const parsed = parseTool(timesheetApproveWeekInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new ApproveWeekUseCase(new DrizzleTimeEntryRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
     const result = await uc.exec(
