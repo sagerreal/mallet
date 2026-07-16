@@ -252,6 +252,106 @@
      picks the active stop (Messages → Pipeline → Jobs → Invoices). Sidebar
      stops scroll you to their segment. Mobile/reduced motion: no pinning
      (CSS unpins), stops are plain tabs. */
+  /* --- per-stop scenes: each panel plays itself when it becomes active --- */
+  var tourTimers = [];
+  function tAt(ms, fn) { tourTimers.push(setTimeout(fn, ms)); }
+  function clearTour() { tourTimers.forEach(clearTimeout); tourTimers = []; }
+
+  function sceneMessages(panel, animate) {
+    var steps = slice(panel.querySelectorAll('.sc'));
+    var typing = panel.querySelector('.af-typing');
+    steps.forEach(function (s) { s.classList.remove('on'); });
+    if (typing) typing.classList.remove('gone');
+    if (!animate) {
+      steps.forEach(function (s) { s.classList.add('on'); });
+      if (typing) typing.classList.add('gone');
+      return;
+    }
+    var T = [300, 1100, 1900, 3100, 3900]; // meta, caller, typing…, AI answer, done
+    steps.forEach(function (s, i) { tAt(T[i] || 1000, function () { s.classList.add('on'); }); });
+    tAt(3050, function () { if (typing) typing.classList.add('gone'); }); // dots give way to the answer
+  }
+
+  function scenePipeline(panel, animate) {
+    var chips = slice(panel.querySelectorAll('.sc-g'));
+    var card = panel.querySelector('#cardSarah');
+    var ghost = panel.querySelector('#cardSarahOut');
+    var cq = panel.querySelector('#cntQuoting'), co = panel.querySelector('#cntOut');
+    chips.forEach(function (ch) { ch.classList.remove('on'); });
+    card.classList.remove('depart'); card.style.display = '';
+    ghost.classList.remove('arrive');
+    cq.textContent = '2'; co.textContent = '1';
+    if (!animate) {
+      chips.forEach(function (ch) { ch.classList.add('on'); });
+      card.style.display = 'none';
+      ghost.classList.add('arrive');
+      cq.textContent = '1'; co.textContent = '2';
+      return;
+    }
+    chips.forEach(function (ch, i) { tAt(600 + i * 320, function () { ch.classList.add('on'); }); });
+    tAt(2400, function () { card.classList.add('depart'); });
+    tAt(2950, function () {
+      card.style.display = 'none';
+      ghost.classList.add('arrive');
+      cq.textContent = '1'; co.textContent = '2';
+    });
+  }
+
+  function sceneJobs(panel, animate) {
+    var items = slice(panel.querySelectorAll('.sc-ck'));
+    var done = panel.querySelector('.sc-ckdone');
+    var status = panel.querySelector('#jobSarahStatus');
+    items.forEach(function (li) { li.classList.remove('on', 'done'); });
+    done.classList.remove('on');
+    status.textContent = 'IN PROGRESS'; status.className = 'af-status prog';
+    if (!animate) {
+      items.forEach(function (li) { li.classList.add('on', 'done'); });
+      done.classList.add('on');
+      status.textContent = 'DONE · UNBILLED'; status.className = 'af-status done';
+      return;
+    }
+    items.forEach(function (li, i) {
+      tAt(400 + i * 250, function () { li.classList.add('on'); });
+      tAt(1600 + i * 650, function () { li.classList.add('done'); });
+    });
+    var tEnd = 1600 + items.length * 650 + 300;
+    tAt(tEnd, function () { done.classList.add('on'); });
+    tAt(tEnd + 700, function () {
+      status.textContent = 'DONE · UNBILLED'; status.className = 'af-status done';
+    });
+  }
+
+  var AGENT_Q = 'what money can I go get today?';
+  function sceneAgent(panel, animate) {
+    var q = panel.querySelector('#agentQ');
+    var caret = panel.querySelector('#agentCaret');
+    var thinking = panel.querySelector('#agentThinking');
+    var answer = panel.querySelector('#agentAnswer');
+    var hector = panel.querySelector('#invHectorStatus');
+    q.textContent = ''; caret.style.display = '';
+    thinking.classList.remove('on', 'gone');
+    answer.classList.remove('on');
+    hector.textContent = 'OVERDUE · 42D'; hector.className = 'af-status warn';
+    if (!animate) {
+      q.textContent = AGENT_Q; caret.style.display = 'none';
+      thinking.classList.add('gone');
+      answer.classList.add('on');
+      hector.textContent = 'CHASE SENT'; hector.className = 'af-status done';
+      return;
+    }
+    for (var i = 1; i <= AGENT_Q.length; i++) (function (n) {
+      tAt(400 + n * 45, function () { q.textContent = AGENT_Q.slice(0, n); });
+    })(i);
+    var tQ = 400 + AGENT_Q.length * 45;
+    tAt(tQ + 300, function () { thinking.classList.add('on'); });
+    tAt(tQ + 2100, function () { thinking.classList.add('gone'); answer.classList.add('on'); });
+    tAt(tQ + 3300, function () {
+      hector.textContent = 'CHASE SENT'; hector.className = 'af-status done';
+    });
+  }
+
+  var SCENES = [sceneMessages, scenePipeline, sceneJobs, sceneAgent];
+
   function platformTour() {
     var tour = document.querySelector('.tour');
     if (!tour) return;
@@ -259,13 +359,15 @@
     var panels = slice(tour.querySelectorAll('.af-panel'));
     var N = panels.length;
     var order = stops.map(function (s) { return parseInt(s.getAttribute('data-stop'), 10) || 0; });
-    var current = 0;
+    var current = -1;
 
     function activate(i) {
-      if (i === current && panels[i].classList.contains('on')) return;
+      if (i === current) return;
       current = i;
+      clearTour();
       panels.forEach(function (p, j) { p.classList.toggle('on', i === j); });
       stops.forEach(function (s, k) { s.classList.toggle('on', order[k] === i); });
+      SCENES[i](panels[i], !reduce);
     }
 
     var pinned = !reduce && window.matchMedia('(min-width: 901px)').matches;
