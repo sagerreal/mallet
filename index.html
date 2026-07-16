@@ -339,27 +339,105 @@
       </div>
     </section>
 
-    <!-- ===================== THE PLATFORM ===================== -->
-    <section class="plat" id="what">
-      <div class="wrap">
-        <p class="eyebrow" data-reveal>The platform</p>
-        <h2 class="sec-h" data-reveal>This is Mallet.</h2>
-        <p class="sec-sub" data-reveal>Not a mockup &mdash; the real screens your office and crew live in. Click around.</p>
-
-        <div class="plat-tabs" role="tablist" aria-label="Platform screens" data-reveal>
-          <button class="ptab on" role="tab" aria-selected="true" data-shot="0">Pipeline</button>
-          <button class="ptab" role="tab" aria-selected="false" data-shot="1">Quotes</button>
-          <button class="ptab" role="tab" aria-selected="false" data-shot="2">Jobs</button>
-          <button class="ptab" role="tab" aria-selected="false" data-shot="3">Money</button>
+    <!-- ===================== THE PLATFORM TOUR ===================== -->
+    <!-- Pinned scrolly tour: the app frame stays put while scroll walks the
+         four stops; the sidebar highlight follows. Mobile/reduced-motion:
+         no pinning — the sidebar items become tap targets. -->
+    <section class="tour" id="what">
+      <div class="tour-sticky">
+        <div class="wrap tour-head">
+          <h2 class="sec-h center">This is Mallet.</h2>
+          <p class="tour-hint" aria-hidden="true">SCROLL FOR THE TOUR &mdash; OR CLICK THE SIDEBAR</p>
         </div>
+        <div class="wrap">
+          <div class="app-frame">
 
-        <div class="plat-frame" data-reveal>
-          <img class="plat-shot on" src="assets/plat-frontdesk.jpg" alt="Mallet Pipeline — every lead from first call to won, on one board" width="1360" height="850" loading="lazy" />
-          <img class="plat-shot" src="assets/plat-quote.jpg" alt="Mallet Quotes — Good / Better / Best estimates from your pricebook" width="1360" height="850" loading="lazy" />
-          <img class="plat-shot" src="assets/plat-jobs.jpg" alt="Mallet Jobs — every job, sold to done, with crew and checklists" width="1360" height="850" loading="lazy" />
-          <img class="plat-shot" src="assets/plat-invoices.jpg" alt="Mallet Money — invoices, payments, and follow-ups in one ledger" width="1360" height="850" loading="lazy" />
+            <aside class="af-side" aria-label="Mallet navigation">
+              <p class="af-brand"><span class="af-mark" aria-hidden="true">&#10022;</span>Mallet<span class="af-tld">.ai</span></p>
+              <p class="af-new" aria-hidden="true">+ New</p>
+              <p class="af-item dim">Home</p>
+              <p class="af-cat">CUSTOMERS</p>
+              <button class="af-item stop" data-stop="1">Pipeline</button>
+              <p class="af-item dim">Tasks</p>
+              <p class="af-cat">WORK</p>
+              <button class="af-item stop" data-stop="2">Jobs</button>
+              <p class="af-item dim">Schedule</p>
+              <p class="af-item dim">Checklists</p>
+              <p class="af-cat">MONEY</p>
+              <button class="af-item stop" data-stop="3">Invoices</button>
+              <p class="af-cat">FIELD</p>
+              <p class="af-item dim">My day</p>
+              <button class="af-item stop on" data-stop="0">Messages</button>
+            </aside>
+
+            <div class="af-main">
+
+              <!-- STOP 1 · Messages — the AI Front Desk -->
+              <div class="af-panel on" data-panel="0">
+                <div class="af-top"><b>Messages</b><span class="af-pill">01 &middot; AI&nbsp;FRONT&nbsp;DESK</span></div>
+                <div class="af-thread">
+                  <p class="af-meta"><span class="af-time">7:42&nbsp;AM</span> Incoming call &middot; Sarah K. &mdash; Mallet picks up</p>
+                  <p class="af-bub in">&ldquo;My water heater&rsquo;s leaking all over the garage&hellip;&rdquo;</p>
+                  <p class="af-bub ai">That&rsquo;s an emergency &mdash; Marco can be there 2:00&ndash;4:00 today. You&rsquo;re booked, and a confirmation is on its way to your phone.</p>
+                  <p class="af-meta done"><span class="ok">&check;</span> Job created &middot; address in range &middot; Marco &mdash; least loaded, certified</p>
+                </div>
+                <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>
+              </div>
+
+              <!-- STOP 2 · Pipeline — quotes -->
+              <div class="af-panel" data-panel="1">
+                <div class="af-top"><b>Pipeline</b><span class="af-pill">02 &middot; AI&nbsp;ESTIMATING</span></div>
+                <div class="af-cols">
+                  <div class="af-col">
+                    <p class="af-colh">NEW&nbsp;LEADS <span>2</span></p>
+                    <div class="af-card"><b>Tom Brennan</b><span>Possible slab leak &mdash; wet spot in hallway</span></div>
+                  </div>
+                  <div class="af-col">
+                    <p class="af-colh">QUOTING <span>1</span></p>
+                    <div class="af-card hot"><b>Sarah K. <i class="af-amt">$2,400</i></b><span>40-gal water heater swap</span><span class="af-gbb"><i>GOOD $1,850</i><i class="sel">BETTER $2,400</i><i>BEST $3,100</i></span></div>
+                  </div>
+                  <div class="af-col">
+                    <p class="af-colh">OUT <span>1</span></p>
+                    <div class="af-card"><b>Sandy Whitfield <i class="af-amt">$1,450</i></b><span>Kitchen drain + cleanout &middot; sent 2d ago</span></div>
+                  </div>
+                  <div class="af-col">
+                    <p class="af-colh">WON&nbsp;&middot;&nbsp;30D <span>6</span></p>
+                    <div class="af-card"><b>Dave Chen <i class="af-amt">$7,200</i></b><span>Whole-house repipe &mdash; accepted</span></div>
+                  </div>
+                </div>
+                <p class="af-foot">Drafted from your pricebook &mdash; the customer taps a tier, the accept becomes a job.</p>
+              </div>
+
+              <!-- STOP 3 · Jobs — the AI Foreman -->
+              <div class="af-panel" data-panel="2">
+                <div class="af-top"><b>Jobs</b><span class="af-pill">03 &middot; AI&nbsp;FOREMAN</span></div>
+                <div class="af-job">
+                  <p class="af-jobh"><span class="af-time">TODAY &middot; 2:00</span><b>Water heater install &mdash; Sarah K.</b><span class="af-tech">MARCO</span></p>
+                  <ul class="af-ck">
+                    <li class="done">Drain &amp; pull the old unit</li>
+                    <li class="done">Set &amp; plumb the 40-gal tank</li>
+                    <li class="req">Expansion-tank check <em>&mdash; made required after 3 callbacks</em></li>
+                    <li class="done">Pressure test &middot; photo attached</li>
+                  </ul>
+                  <p class="af-meta done"><span class="ok">&check;</span> Checklist complete &middot; time logged &middot; invoice drafted</p>
+                </div>
+                <p class="af-foot">Standards live in the system &mdash; callbacks trace to the skipped step, one tap makes it required.</p>
+              </div>
+
+              <!-- STOP 4 · Invoices — follow-ups -->
+              <div class="af-panel" data-panel="3">
+                <div class="af-top"><b>Invoices</b><span class="af-pill">04 &middot; AI&nbsp;FOLLOW-UPS</span></div>
+                <div class="af-rows">
+                  <div class="af-inv"><b>#2216 &middot; Sarah K.</b><span>follow-ups: day 3 auto &middot; day 7 auto</span><i class="af-amt">$2,585</i><span class="af-status paid">PAID &middot; DAY 8</span></div>
+                  <div class="af-inv"><b>#2214 &middot; Rita Okafor</b><span>reminder scheduled &middot; Thursday</span><i class="af-amt">$920</i><span class="af-status">SENT</span></div>
+                  <div class="af-inv"><b>#2209 &middot; Tom Webb</b><span>deposit in &middot; balance on completion</span><i class="af-amt">$1,450</i><span class="af-status">PARTIAL</span></div>
+                </div>
+                <p class="af-foot">The invoice writes itself from the finished job &mdash; the follow-ups escalate until the money lands.</p>
+              </div>
+
+            </div>
+          </div>
         </div>
-        <p class="plat-cap" id="platCap" data-reveal>Every lead the Front Desk books lands here &mdash; first call to won, on one board.</p>
       </div>
     </section>
 
