@@ -20,6 +20,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:setup-role": "node --env-file=.env.local scripts/setup-app-role.mjs",
     "db:rls-proof": "node --env-file=.env.local scripts/rls-proof.mjs",
+    "db:verify": "node --env-file=.env.local scripts/db-verify.mjs",
     "db:studio": "drizzle-kit studio",
     "seed:e2e": "node --env-file=.env.local scripts/seed-e2e.mjs",
     "test:e2e": "playwright test"
