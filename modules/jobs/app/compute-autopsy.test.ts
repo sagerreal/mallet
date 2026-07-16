@@ -117,6 +117,8 @@ describe("computeAutopsy", () => {
     expect(cluster.topMiss).not.toBeNull();
     expect(cluster.topMiss!.missCount).toBe(1);   // only orig-2 missed it
     expect(cluster.topMiss!.ofAnswered).toBe(2);
+    expect(cluster.topMiss!.itemText).toBe("Check shutoff");
+    expect(cluster.topMiss!.alreadyRequired).toBe(false); // orig-2's occurrence was required:false
   });
 
   // ── Case 3: "override" counts as a miss ──────────────────────────────────
@@ -139,6 +141,7 @@ describe("computeAutopsy", () => {
     expect(cluster.topMiss).not.toBeNull();
     expect(cluster.topMiss!.missCount).toBe(1);
     expect(cluster.topMiss!.itemText).toBe("Test GFCI");
+    expect(cluster.topMiss!.ofAnswered).toBe(1);
   });
 
   // ── Case 4: null checklist → answeredOriginals:0, topMiss:null, callbackCount still counts ──
@@ -375,5 +378,44 @@ describe("computeAutopsy", () => {
     expect(result[0]!.callbackCount).toBe(2);
     // Display label is first non-empty svc seen
     expect(result[0]!.service).toBe(" Water Heater ");
+  });
+
+  // ── Case 14: whitespace-only svc → "Other" (the .trim() path) ────────────────
+  it("whitespace-only svc collapses to the 'Other' cluster", () => {
+    const p1 = pair({
+      cbId: "cb-1", cbNum: "JOB-101", cbSvc: "   ",
+      origId: "orig-1", origNum: "JOB-001", origSvc: "   ",
+      checklist: null,
+    });
+    const result = computeAutopsy([p1], new Map());
+    expect(result).toHaveLength(1);
+    expect(result[0]!.service).toBe("Other");
+  });
+
+  // ── Case 15: alreadyRequired false via a PASSED non-required occurrence ───────
+  // The "missed or not" rule: a step counts toward alreadyRequired even where it was
+  // PASSED. orig-1 passed it with required:false; orig-2 missed it with required:true.
+  it("alreadyRequired is false when a passed (non-missed) occurrence was not required", () => {
+    const p1 = pair({
+      cbId: "cb-1", cbNum: "JOB-101", cbSvc: "plumbing",
+      origId: "orig-1", origNum: "JOB-001", origSvc: "plumbing",
+      checklist: cl("CL1", "item-a", "Check X", false),
+    });
+    const p2 = pair({
+      cbId: "cb-2", cbNum: "JOB-102", cbSvc: "plumbing",
+      origId: "orig-2", origNum: "JOB-002", origSvc: "plumbing",
+      checklist: cl("CL2", "item-b", "Check X", true),
+    });
+    const answers: AnswersByOriginal = new Map([
+      ["orig-1", new Map<string, import("../domain/job-execution").VerifyState>([["item-a", "pass"]])],
+      ["orig-2", new Map()], // missed
+    ]);
+    const result = computeAutopsy([p1, p2], answers);
+    expect(result).toHaveLength(1);
+    const cluster = result[0]!;
+    expect(cluster.answeredOriginals).toBe(2);
+    expect(cluster.topMiss!.itemText).toBe("Check X");
+    expect(cluster.topMiss!.missCount).toBe(1); // only orig-2 missed
+    expect(cluster.topMiss!.alreadyRequired).toBe(false); // orig-1's passed occurrence was required:false
   });
 });
