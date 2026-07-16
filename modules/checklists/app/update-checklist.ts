@@ -5,7 +5,7 @@ import { logger } from "@mallet/shared/observability";
 import type { Checklist, ChecklistItemType } from "../domain/checklist";
 import { CHECKLIST_MAX_ITEMS, ChecklistItem, Checklist as ChecklistDomain, isChecklistItemType } from "../domain/checklist";
 import type { ChecklistRepository } from "../domain/checklist-repository";
-import type { ChecklistId, ChecklistItemId } from "@mallet/shared/types";
+import type { ChecklistId } from "@mallet/shared/types";
 
 export interface UpdateChecklistItemInput {
   readonly text: string;
@@ -19,48 +19,40 @@ export interface UpdateChecklistCommand {
   readonly items: readonly UpdateChecklistItemInput[];
 }
 
-// Validated item ready for repo.update — positions are assigned by index.
-interface ValidatedItem {
-  readonly id: ChecklistItemId;
-  readonly text: string;
-  readonly type: ChecklistItemType;
-  readonly required: boolean;
-  readonly position: number;
-}
-
 // Validate each raw item through the domain value object; return err on the first failure.
-// Positions are set to the item's index in the array.
+// Positions are set to the item's index in the array. Returns the DOMAIN objects so the header
+// factory can reuse them directly (no re-validation, no unreachable-throw path).
 function validateItems(
   rawItems: readonly UpdateChecklistItemInput[],
   ids: IdGenerator,
-): Result<readonly ValidatedItem[], AppError> {
+): Result<readonly ChecklistItem[], AppError> {
   if (rawItems.length > CHECKLIST_MAX_ITEMS) {
     return err({ kind: "validation", message: `a checklist holds at most ${CHECKLIST_MAX_ITEMS} items`, field: "items" });
   }
 
-  const validated: ValidatedItem[] = [];
+  const validated: ChecklistItem[] = [];
   for (const [i, raw] of rawItems.entries()) {
-    const text = raw.text.trim();
     if (!isChecklistItemType(raw.type)) {
       return err({ kind: "validation", message: `unknown item type: ${raw.type}`, field: "type" });
     }
     const itemResult = ChecklistItem.create({
       id: asChecklistItemId(ids.newId()),
-      text,
+      text: raw.text.trim(),
       type: raw.type,
       required: raw.required ?? false,
       position: i,
     });
     if (!itemResult.ok) return itemResult;
-    validated.push(itemResult.value.props);
+    validated.push(itemResult.value);
   }
   return ok(validated);
 }
 
-// Validate the header via the domain factory (enforces name non-empty, stage, etc.).
+// Validate the header via the domain factory (enforces name non-empty, stage, etc.), reusing the
+// already-validated ChecklistItem domain objects — no second ChecklistItem.create pass.
 function validateHeader(
   name: string,
-  items: readonly ValidatedItem[],
+  items: readonly ChecklistItem[],
 ): Result<string, AppError> {
   const trimmed = name.trim();
   const checklistResult = ChecklistDomain.create({
@@ -70,11 +62,7 @@ function validateHeader(
     trade: "Custom",
     stage: "job",
     match: [],
-    items: items.map((it) => {
-      const r = ChecklistItem.create(it);
-      if (!r.ok) throw new Error(`unexpected: validated item failed: ${r.error.message}`);
-      return r.value;
-    }),
+    items: [...items],
     createdAt: new Date(),
     updatedAt: new Date(),
   });
@@ -102,11 +90,11 @@ export class UpdateChecklistUseCase {
     if (!nameResult.ok) return nameResult;
     const trimmedName = nameResult.value;
 
-    // 3. Atomically replace name + items in the repo.
+    // 3. Atomically replace name + items in the repo (repo takes the flat row shape).
     const updated = await this.checklists.update({
       id: asChecklistId(cmd.checklistId as string),
       name: trimmedName,
-      items: validatedItems,
+      items: validatedItems.map((it) => it.props),
     });
 
     if (updated === null) {

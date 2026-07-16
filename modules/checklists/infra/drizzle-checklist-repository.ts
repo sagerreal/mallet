@@ -139,21 +139,9 @@ export class DrizzleChecklistRepository implements ChecklistRepository {
       position: number;
     }[];
   }): Promise<Checklist | null> {
-    // Guard: template must exist in this org (RLS + explicit predicate).
-    const existing = await this.tx
-      .select()
-      .from(checklistTemplates)
-      .where(
-        and(
-          eq(checklistTemplates.id, input.id),
-          eq(checklistTemplates.orgId, this.orgId),
-          isNull(checklistTemplates.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing.length === 0) return null;
-
-    // Update the header name (trade/stage/match stay unchanged).
+    // Update the header name (trade/stage/match stay unchanged). The org-scoped UPDATE is itself the
+    // existence + tenant guard — a template missing or owned by another org matches no row, so
+    // `.returning()` is empty and we bail BEFORE touching items (no separate guard SELECT needed).
     const now = new Date();
     const updatedRows = await this.tx
       .update(checklistTemplates)
