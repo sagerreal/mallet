@@ -9,7 +9,31 @@
     scrollReveal();
     wireCalendly();
     loadTallyIfPresent();
+    frontDesk();
   });
+
+  /* The hero Front Desk window plays its call → booked → notified sequence
+     line-by-line, holds, then replays. Reduced motion: show everything, no loop. */
+  function frontDesk() {
+    var feed = document.getElementById('deskFeed');
+    if (!feed) return;
+    var lines = Array.prototype.slice.call(feed.children);
+    if (reduce) { lines.forEach(function (el) { el.classList.add('on'); }); return; }
+
+    var STEP = [900, 1500, 1700, 1900, 1400]; // delay BEFORE each line, ms
+    var HOLD = 5200;                           // hold the finished state, then replay
+
+    function play() {
+      lines.forEach(function (el) { el.classList.remove('on'); });
+      var t = 700; // small settle after reset
+      lines.forEach(function (el, i) {
+        t += STEP[i] || 1400;
+        setTimeout(function () { el.classList.add('on'); }, t);
+      });
+      setTimeout(play, t + HOLD);
+    }
+    play();
+  }
 
   /* Hero entrance: reveal each [data-step] element in order. */
   function heroStagger() {
