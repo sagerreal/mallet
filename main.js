@@ -12,6 +12,7 @@
     loadTallyIfPresent();
     frontDesk();
     platformTour();
+    easyScenes();
     roiCalc();
     consent();
   });
@@ -396,6 +397,45 @@
     } else {
       activate(0);
     }
+  }
+
+  /* ============== THE EASY PART — both cards loop their scene ============== */
+  var EZ_ASK = 'invoice the Johnson job and remind Rita about Thursday';
+  function easyScenes() {
+    var section = document.querySelector('.easy');
+    if (!section) return;
+    var steps = slice(section.querySelectorAll('.ez'));
+    var typed = document.getElementById('ezTyped');
+    if (reduce) {
+      steps.forEach(function (s) { s.classList.add('on'); });
+      if (typed) typed.textContent = EZ_ASK;
+      return;
+    }
+    var timers = [], playing = false;
+    function loop() {
+      steps.forEach(function (s) { s.classList.remove('on'); });
+      if (typed) typed.textContent = '';
+      steps.forEach(function (s) {
+        timers.push(setTimeout(function () { s.classList.add('on'); },
+          parseInt(s.getAttribute('data-t'), 10) || 400));
+      });
+      for (var i = 1; i <= EZ_ASK.length; i++) (function (n) {
+        timers.push(setTimeout(function () { typed.textContent = EZ_ASK.slice(0, n); }, 500 + n * 42));
+      })(i);
+      timers.push(setTimeout(loop, 5200 + 3400)); // longest step + dwell
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting && !playing) { playing = true; loop(); }
+        else if (!e.isIntersecting && playing) {
+          playing = false;
+          timers.forEach(clearTimeout); timers = [];
+          steps.forEach(function (s) { s.classList.add('on'); });
+          if (typed) typed.textContent = EZ_ASK;
+        }
+      });
+    }, { threshold: 0.3 });
+    io.observe(section.querySelector('.easy-grid'));
   }
 
   /* The math, one panel per pillar. Tabs/▸ switch panels (same grammar as
