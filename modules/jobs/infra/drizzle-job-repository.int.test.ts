@@ -594,6 +594,14 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
         'scheduled', ${origA!.id}, 'new_issue', ${now.toISOString()}, ${now.toISOString()}
       ) returning id`;
 
+    // A job with callbackOf set but callback_reason NULL (unconfirmed candidate) — must NOT be returned.
+    const [nullReasonA] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, callback_of, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-AUTOPSY-NULL-A', ${autopsyLeadA!.id}, 'Null Reason Job', 'drain cleaning',
+        'scheduled', ${origA!.id}, ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
     // A confirmed callback whose CALLBACK job was created before `since` — must be excluded.
     const [ancientCallbackA] = await admin<{ id: string }[]>`
       insert into jobs (org_id, num, lead_id, title, svc, status, callback_of, callback_reason, created_at, updated_at)
@@ -630,6 +638,7 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     const pair = pairs[0]!;
     expect(pair.callback.id).toBe(callbackA!.id);
     expect(pair.callback.num).toBe("JOB-AUTOPSY-CB-A");
+    expect(pair.callback.svc).toBe("drain cleaning");
     expect(pair.original.id).toBe(origA!.id);
     expect(pair.original.num).toBe("JOB-AUTOPSY-ORIG-A");
     expect(pair.original.svc).toBe("drain cleaning");
@@ -640,9 +649,10 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(pair.original.checklist!.items).toHaveLength(2);
     expect(pair.original.checklist!.items[0]!.text).toBe("Check pipe pressure");
 
-    // Non-callback reason must not appear.
+    // Non-callback reason must not appear (new_issue AND null reason).
     const callbackIds = pairs.map((p) => p.callback.id as string);
     expect(callbackIds).not.toContain(newIssueA!.id);
+    expect(callbackIds).not.toContain(nullReasonA!.id);
 
     // Ancient callback (before `since`) must not appear.
     expect(callbackIds).not.toContain(ancientCallbackA!.id);

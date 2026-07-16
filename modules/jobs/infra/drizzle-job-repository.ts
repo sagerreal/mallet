@@ -14,7 +14,7 @@ import {
   type CursorPage,
   type Paginated,
 } from "@mallet/shared/types";
-import type { Job } from "../domain/job";
+import type { Job, JobChecklistProps } from "../domain/job";
 import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPairRow } from "../domain/job-repository";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
@@ -585,7 +585,7 @@ export class DrizzleJobRepository implements JobRepository {
           num: r.num,
           svc: r.svc ?? null,
           completedAt: r.completedAt ?? null,
-          checklist: (r.checklist ?? null) as import("../domain/job").JobChecklistProps | null,
+          checklist: (r.checklist ?? null) as JobChecklistProps | null,
         },
       ]),
     );
