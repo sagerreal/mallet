@@ -84,31 +84,46 @@
 
     <!-- ============================ HERO ============================ -->
     <section class="hero">
-      <div class="wrap hero-inner">
-        <p class="eyebrow center hero-el" data-step="1">The AI-native operating system for service businesses</p>
-        <h1 class="hero-el h1-beats" data-step="2">Answers the call.<br />Writes the quote.<br />Runs the job.<br />Chases the invoice.</h1>
-        <p class="lede hero-el" data-step="3">A purpose-built AI at every step, from lead to invoice &mdash; one platform, half your current software bill.</p>
-        <div class="hero-actions hero-el" data-step="4">
-          <a class="btn-primary lg js-book-demo" href="#demo">Book a demo</a>
-          <a class="btn-outline lg" href="#waitlist">Start a free pilot&nbsp;&rarr;</a>
+      <div class="wrap hero-grid">
+
+        <div class="hero-copy">
+          <p class="eyebrow hero-el" data-step="1">The AI-native operating system for service businesses</p>
+          <h1 class="hero-el h1-beats" data-step="2"><span class="beat" data-beat="0">Answers the call.</span><span class="beat" data-beat="1">Writes the quote.</span><span class="beat" data-beat="2">Runs the job.</span><span class="beat" data-beat="3">Chases the invoice.</span></h1>
+          <p class="lede hero-el" data-step="3">A purpose-built AI at every step, from lead to invoice &mdash; one platform, half your current software bill.</p>
+          <div class="hero-actions hero-el" data-step="4">
+            <a class="btn-primary lg js-book-demo" href="#demo">Book a demo</a>
+            <a class="btn-outline lg" href="#waitlist">Start a free pilot&nbsp;&rarr;</a>
+          </div>
         </div>
 
-        <!-- The product, playing itself. Pick a call. -->
-        <div class="desk hero-el" data-step="5" aria-label="Mallet answering customer calls — interactive demonstration">
-          <div class="desk-tabs" role="tablist" aria-label="Choose a scenario">
-            <button class="desk-tab on" role="tab" aria-selected="true" data-scenario="0">Water heater emergency</button>
-            <button class="desk-tab" role="tab" aria-selected="false" data-scenario="1">The 7:04 AM call</button>
-            <button class="desk-tab" role="tab" aria-selected="false" data-scenario="2">&ldquo;Can I get a quote?&rdquo;</button>
+        <!-- The product, playing itself — a call cycles from ring to booked while you watch. -->
+        <div class="hero-stage hero-el" data-step="5" id="demo" aria-label="Mallet answering customer calls — demonstration, replays on a loop">
+          <div class="stage-back" aria-hidden="true">
+            <p class="sb-title">TODAY &middot; 6 JOBS</p>
+            <div class="sb-bar w1"></div>
+            <div class="sb-bar w2"></div>
+            <div class="sb-bar w3"></div>
           </div>
           <div class="desk-window">
             <div class="desk-bar">
               <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <span class="desk-title">MALLET&nbsp;FRONT&nbsp;DESK</span>
-              <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>LIVE</span>
+              <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>DEMO</span>
             </div>
             <div class="desk-feed" id="deskFeed" aria-live="off"></div>
           </div>
+          <div class="stage-chips" aria-hidden="true">
+            <span class="chip" data-chip="0"></span>
+            <span class="chip" data-chip="1"></span>
+            <span class="chip" data-chip="2"></span>
+          </div>
+          <div class="stage-dots" role="tablist" aria-label="Demo scenarios">
+            <button class="sdot on" role="tab" aria-selected="true" data-scenario="0" aria-label="Water heater emergency"></button>
+            <button class="sdot" role="tab" aria-selected="false" data-scenario="1" aria-label="The 7:04 AM call"></button>
+            <button class="sdot" role="tab" aria-selected="false" data-scenario="2" aria-label="Can I get a quote?"></button>
+          </div>
         </div>
+
       </div>
     </section>
 

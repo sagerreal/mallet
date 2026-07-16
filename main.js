@@ -22,6 +22,15 @@
     var lenis = new window.Lenis({ lerp: 0.14, wheelMultiplier: 1.1, anchors: true });
     function raf(time) { lenis.raf(time); requestAnimationFrame(raf); }
     requestAnimationFrame(raf);
+
+    // Hero depth: the back card drifts slightly slower than the page.
+    var back = document.querySelector('.stage-back');
+    if (back && typeof lenis.on === 'function') {
+      lenis.on('scroll', function (e) {
+        var y = Math.min(e.scroll || 0, 700);
+        back.style.transform = 'rotate(2.6deg) translateY(' + (y * 0.08).toFixed(1) + 'px)';
+      });
+    }
   }
 
   /* Hero entrance: reveal each [data-step] element in order. */
@@ -76,10 +85,34 @@
       { k: 'done', t: '13:29:31', text: 'Quote #1042 sent · 3 options from YOUR pricebook · follow-up scheduled for Thursday' }
     ]
   ];
+  /* Stage choreography: as feed line `line` lands (+extra ms), light headline
+     beat `beat` and/or pop receipt chip `chip` with `label`. Beats: 0 call,
+     1 quote, 2 job, 3 invoice. */
+  var CHOREO = [
+    [ // 0 — water heater emergency
+      { line: 0, beat: 0 },
+      { line: 3, chip: 0, label: 'Booked · 2:00–4:00 · Marco' },
+      { line: 4, beat: 1, chip: 1, label: 'Quote drafted · your pricebook' },
+      { line: 4, extra: 800, beat: 2, chip: 2, label: 'Marco · notified by text' }
+    ],
+    [ // 1 — the 7:04 AM call
+      { line: 0, beat: 0 },
+      { line: 4, chip: 0, label: 'Booked · 9:30 · Dana' },
+      { line: 4, extra: 700, chip: 1, label: 'Confirmation · texted' },
+      { line: 4, extra: 1400, beat: 2, chip: 2, label: 'Dana’s day · updated' }
+    ],
+    [ // 2 — "can I get a quote?"
+      { line: 0, beat: 0 },
+      { line: 3, beat: 1, chip: 0, label: 'Quote #1042 · Good/Better/Best' },
+      { line: 4, chip: 1, label: 'Priced from YOUR book' },
+      { line: 4, extra: 800, beat: 3, chip: 2, label: 'Follow-up · Thursday' }
+    ]
+  ];
   var deskTimers = [];
 
+  /* Renders a scenario into the feed. Returns the per-line reveal times (ms)
+     so the stage can schedule chips/beats off the same clock. */
   function renderScenario(feed, scenario, animate) {
-    // clear pending timers + feed
     deskTimers.forEach(clearTimeout);
     deskTimers = [];
     feed.innerHTML = '';
@@ -105,32 +138,73 @@
     });
 
     var lines = Array.prototype.slice.call(feed.children);
-    if (!animate) { lines.forEach(function (el) { el.classList.add('on'); }); return; }
+    if (!animate) { lines.forEach(function (el) { el.classList.add('on'); }); return []; }
 
     var STEP = [700, 1400, 1600, 1800, 1500];
     var t = 350;
+    var times = [];
     lines.forEach(function (el, i) {
       t += STEP[i] || 1400;
+      times.push(t);
       deskTimers.push(setTimeout(function () { el.classList.add('on'); }, t));
     });
+    return times;
   }
+
+  /* The hero stage: scenarios auto-cycle; chips pop and headline beats light
+     in sync with the feed. Dots switch scenarios manually. */
+  var HOLD_AFTER = 3400; // dwell on the finished scenario before advancing
 
   function frontDesk() {
     var feed = document.getElementById('deskFeed');
     if (!feed) return;
-    var tabs = Array.prototype.slice.call(document.querySelectorAll('.desk-tab'));
+    var dots = Array.prototype.slice.call(document.querySelectorAll('.sdot'));
+    var chips = Array.prototype.slice.call(document.querySelectorAll('.stage-chips .chip'));
+    var beats = Array.prototype.slice.call(document.querySelectorAll('.h1-beats .beat'));
 
-    function select(i) {
-      tabs.forEach(function (tb, j) {
-        tb.classList.toggle('on', i === j);
-        tb.setAttribute('aria-selected', i === j ? 'true' : 'false');
-      });
-      renderScenario(feed, SCENARIOS[i] || SCENARIOS[0], !reduce);
+    function resetStage() {
+      chips.forEach(function (c) { c.classList.remove('on'); });
+      beats.forEach(function (b) { b.classList.remove('on'); });
     }
 
-    tabs.forEach(function (tb) {
-      tb.addEventListener('click', function () {
-        select(parseInt(tb.getAttribute('data-scenario'), 10) || 0);
+    function applyEvent(ev) {
+      if (typeof ev.beat === 'number' && beats[ev.beat]) beats[ev.beat].classList.add('on');
+      if (typeof ev.chip === 'number' && chips[ev.chip] && ev.label) {
+        chips[ev.chip].textContent = ev.label;
+        chips[ev.chip].classList.add('on');
+      }
+    }
+
+    function select(i) {
+      dots.forEach(function (d, j) {
+        d.classList.toggle('on', i === j);
+        d.setAttribute('aria-selected', i === j ? 'true' : 'false');
+      });
+      resetStage();
+
+      var scenario = SCENARIOS[i] || SCENARIOS[0];
+      var events = CHOREO[i] || [];
+
+      if (reduce) { // static final state: everything lit, no timers
+        renderScenario(feed, scenario, false);
+        beats.forEach(function (b) { b.classList.add('on'); });
+        events.forEach(applyEvent);
+        return;
+      }
+
+      var times = renderScenario(feed, scenario, true);
+      var last = times[times.length - 1] || 0;
+      events.forEach(function (ev) {
+        var at = (times[ev.line] || 0) + 420 + (ev.extra || 0);
+        last = Math.max(last, at);
+        deskTimers.push(setTimeout(function () { applyEvent(ev); }, at));
+      });
+      deskTimers.push(setTimeout(function () { select((i + 1) % SCENARIOS.length); }, last + HOLD_AFTER));
+    }
+
+    dots.forEach(function (d) {
+      d.addEventListener('click', function () {
+        select(parseInt(d.getAttribute('data-scenario'), 10) || 0);
       });
     });
 
