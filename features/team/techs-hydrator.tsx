@@ -78,7 +78,7 @@ function toStoreTech(member: MemberDTO): Tech {
     name: displayName,
     initials: deriveInitials(displayName),
     color: deriveColor(member.id),
-    skills: [],
+    skills: member.skillTags ?? [],
     wage: 0,
   };
 }

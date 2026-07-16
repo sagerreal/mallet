@@ -8,6 +8,7 @@ import { logger } from "@mallet/shared/observability";
 import { loadConfig } from "@mallet/shared/config";
 import { router, authedNoPrincipal, anyRole, ownerOrOffice } from "@/trpc/init";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { ROLES } from "../domain/principal";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
@@ -137,13 +138,14 @@ export const createIdentityRouter = () =>
               role: roleEnum,
               name: z.string().nullable(),
               isFieldCrew: z.boolean(),
+              skillTags: z.array(z.string()),
             }),
           ),
         }),
       )
       .query(async ({ ctx }) => {
         const rows = await ctx.tx
-          .select({ id: users.id, email: users.email, role: users.role, name: users.name, isFieldCrew: users.isFieldCrew })
+          .select({ id: users.id, email: users.email, role: users.role, name: users.name, isFieldCrew: users.isFieldCrew, skillTags: users.skillTags })
           .from(users)
           .where(eq(users.orgId, ctx.principal.orgId));
         return {
@@ -153,6 +155,7 @@ export const createIdentityRouter = () =>
             role: roleEnum.parse(r.role),
             name: r.name ?? null,
             isFieldCrew: r.isFieldCrew,
+            skillTags: r.skillTags ?? [],
           })),
         };
       }),
@@ -439,6 +442,61 @@ export const createIdentityRouter = () =>
           role: roleEnum.parse(updated.role),
           name: updated.name ?? null,
           isFieldCrew: updated.isFieldCrew,
+        };
+      }),
+
+    // Set the certification tags for a field-crew member.
+    // Deduplicates case-insensitively (first occurrence wins for display casing).
+    // Restricted to owner/office — org-scoped update + RLS double-lock.
+    setMemberSkillTags: ownerOrOffice
+      .input(
+        z.object({
+          userId: z.string().uuid(),
+          skillTags: z.array(z.string().trim().min(1).max(40)).max(10),
+        }),
+      )
+      .output(
+        z.object({
+          id: z.string().uuid(),
+          email: z.string(),
+          role: roleEnum,
+          name: z.string().nullable(),
+          isFieldCrew: z.boolean(),
+          skillTags: z.array(z.string()),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        // Normalize-dedupe: keep first occurrence per normCert key, preserve display casing.
+        const seen = new Set<string>();
+        const deduped = input.skillTags.filter((tag) => {
+          const key = normCert(tag);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        const [updated] = await ctx.tx
+          .update(users)
+          .set({ skillTags: deduped, updatedAt: new Date() })
+          .where(and(eq(users.id, asUserId(input.userId)), eq(users.orgId, ctx.principal.orgId)))
+          .returning({ id: users.id, email: users.email, role: users.role, name: users.name, isFieldCrew: users.isFieldCrew, skillTags: users.skillTags });
+
+        if (!updated) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "user not found in this org" });
+        }
+
+        logger.info(
+          { targetUserId: input.userId, tagCount: deduped.length, actorUserId: ctx.principal.userId },
+          "identity.setMemberSkillTags",
+        );
+
+        return {
+          id: updated.id,
+          email: updated.email,
+          role: roleEnum.parse(updated.role),
+          name: updated.name ?? null,
+          isFieldCrew: updated.isFieldCrew,
+          skillTags: updated.skillTags ?? [],
         };
       }),
   });
