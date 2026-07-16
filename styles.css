@@ -381,7 +381,31 @@ strong{font-weight:700}
 .roi{background:var(--ink);color:var(--paper);padding:5.5rem 0}
 .roi .eyebrow{color:rgba(250,248,243,.55)}
 .roi .sec-sub{color:rgba(250,248,243,.66)}
-.roi-grid{display:grid;grid-template-columns:1fr 1.15fr;gap:2.6rem;margin-top:2.6rem;align-items:start}
+/* pillar tabs — same grammar as the hero stage: click a pillar, or ▸ next */
+.math-tabs{display:flex;gap:.5rem;align-items:center;margin-top:2.6rem;flex-wrap:wrap}
+.mtab{
+  font-family:var(--font-mono);font-size:.68rem;letter-spacing:.1em;color:rgba(250,248,243,.55);
+  background:transparent;border:1px solid var(--line-dark);border-radius:999px;
+  padding:.5rem .95rem;cursor:pointer;transition:all .15s ease;
+}
+.mtab:hover{color:var(--paper);border-color:rgba(250,248,243,.4)}
+.mtab.on{color:var(--ink);background:var(--amber);border-color:var(--amber);font-weight:700}
+.math-next{
+  margin-left:auto;width:40px;height:40px;border-radius:10px;border:0;cursor:pointer;
+  background:var(--paper);color:var(--ink);font-size:.8rem;display:grid;place-items:center;
+  transition:background .15s ease, transform .15s ease;
+}
+.math-next:hover{background:var(--amber)}
+.math-next:active{transform:scale(.94)}
+.mpanel{display:none;grid-template-columns:1fr 1.05fr;gap:2.6rem;margin-top:2rem;align-items:center}
+.mpanel.on{display:grid;animation:mfade .45s ease}
+@keyframes mfade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){ .mpanel.on{animation:none} }
+.mp-lead{font-size:1.02rem;color:rgba(250,248,243,.75);margin-bottom:1.4rem}
+.roi-total-bar{
+  display:grid;grid-template-columns:1fr 1.05fr;gap:2.6rem;align-items:center;
+  margin-top:2.6rem;border-top:1px solid var(--line-dark);padding-top:2rem;
+}
 .roi-inputs{display:flex;flex-direction:column;gap:1.6rem}
 .roi-input-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.55rem}
 .roi-input-top label{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(250,248,243,.6)}
@@ -401,24 +425,17 @@ input[type="range"]::-moz-range-thumb{
   width:14px;height:14px;border-radius:50%;background:var(--amber);border:0;
 }
 input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:rgba(250,248,243,.18)}
-.roi-results{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .roi-hero-card{
-  grid-column:1 / -1;background:rgba(176,125,0,.14);border:1px solid rgba(176,125,0,.5);
+  background:rgba(176,125,0,.14);border:1px solid rgba(176,125,0,.5);
   border-radius:var(--r);padding:1.7rem 1.8rem;
 }
-.roi-card{background:rgba(250,248,243,.05);border:1px solid var(--line-dark);border-radius:var(--r);padding:1.4rem 1.5rem}
-.roi-card.wide{grid-column:1 / -1;display:flex;align-items:baseline;gap:1.3rem;padding:1.05rem 1.5rem}
-.roi-card.wide .roi-fig{flex:none}
-.roi-card.wide .roi-label{flex:none;margin-top:0}
-.roi-card.wide .roi-note{margin-top:0}
 .roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:rgba(250,248,243,.55);margin-top:.2rem}
 .roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(2.6rem,5vw,3.7rem);letter-spacing:-.03em;line-height:1.05;color:var(--amber);margin:.3rem 0 .1rem}
-.roi-fig{font-family:var(--font-display);font-weight:700;font-size:1.65rem;letter-spacing:-.02em;color:var(--paper)}
 .roi-note{font-size:.85rem;color:rgba(250,248,243,.6);line-height:1.5;margin-top:.45rem}
 .roi-fine{margin-top:1.6rem;font-size:.8rem;color:rgba(250,248,243,.45)}
 @media (max-width:900px){
-  .roi-grid{grid-template-columns:1fr}
-  .roi-results{grid-template-columns:1fr}
+  .mpanel,.roi-total-bar{grid-template-columns:1fr;gap:1.6rem}
+  .math-next{margin-left:0}
 }
 
 /* ============== PILLAR VIGNETTES (rows) ============== */

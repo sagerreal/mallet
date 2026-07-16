@@ -189,80 +189,113 @@
     </section>
     <div class="hatch" aria-hidden="true"></div>
 
-    <!-- ==================== ROI CALCULATOR ==================== -->
+    <!-- ==================== THE MATH — one panel per pillar ==================== -->
     <section class="roi" id="roi">
       <div class="wrap">
         <p class="eyebrow" data-reveal>The math</p>
         <h2 class="sec-h light" data-reveal>What the leaks actually cost you.</h2>
-        <p class="sec-sub" data-reveal>Missed calls, slow quotes, callbacks, invoices nobody chased &mdash; set the sliders to your operation. Conservative on purpose.</p>
+        <p class="sec-sub" data-reveal>Four leaks, four fixes &mdash; click through the pillars. Conservative on purpose.</p>
 
-        <div class="roi-grid" data-reveal>
+        <div class="math-tabs" role="tablist" aria-label="Pick a pillar" data-reveal>
+          <button class="mtab on" role="tab" aria-selected="true" data-panel="0">01 &middot; FRONT&nbsp;DESK</button>
+          <button class="mtab" role="tab" aria-selected="false" data-panel="1">02 &middot; ESTIMATING</button>
+          <button class="mtab" role="tab" aria-selected="false" data-panel="2">03 &middot; FOREMAN</button>
+          <button class="mtab" role="tab" aria-selected="false" data-panel="3">04 &middot; FOLLOW-UPS</button>
+          <button class="math-next" id="mathNext" type="button" aria-label="Next pillar">&#9654;</button>
+        </div>
+
+        <div class="mpanel on" data-mpanel="0">
           <div class="roi-inputs">
+            <p class="mp-lead">Calls that ring out while you&rsquo;re under a sink.</p>
             <div class="roi-input">
               <div class="roi-input-top"><label for="rMissed">Missed calls per week</label><output id="oMissed">5</output></div>
               <input type="range" id="rMissed" min="0" max="25" step="1" value="5" />
               <div class="roi-scale"><span>0</span><span>25</span></div>
             </div>
             <div class="roi-input">
-              <div class="roi-input-top"><label for="rTicket">Average job value</label><output id="oTicket">$450</output></div>
-              <input type="range" id="rTicket" min="100" max="5000" step="50" value="450" />
+              <div class="roi-input-top"><label for="rTicket">Average job value</label><output class="js-ticket-out" id="oTicket">$450</output></div>
+              <input type="range" class="js-ticket" id="rTicket" min="100" max="5000" step="50" value="450" />
               <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
             </div>
+          </div>
+          <div class="roi-hero-card">
+            <p class="roi-label">LEFT ON THE TABLE, PER YEAR</p>
+            <p class="roi-big" id="pDesk">$23,400</p>
+            <p class="roi-note"><span id="pDeskN">52</span> jobs a year from calls that ring out today &mdash; answered, booked, dispatched.</p>
+          </div>
+        </div>
+
+        <div class="mpanel" data-mpanel="1">
+          <div class="roi-inputs">
+            <p class="mp-lead">Evenings spent writing quotes.</p>
             <div class="roi-input">
               <div class="roi-input-top"><label for="rQuotes">Quotes you write per week</label><output id="oQuotes">6</output></div>
               <input type="range" id="rQuotes" min="0" max="40" step="1" value="6" />
               <div class="roi-scale"><span>0</span><span>40</span></div>
             </div>
+          </div>
+          <div class="roi-hero-card">
+            <p class="roi-label">QUOTE-WRITING, BACK PER YEAR</p>
+            <p class="roi-big" id="pEst">156 hrs</p>
+            <p class="roi-note">Drafted from your pricebook and rates as Good&nbsp;/&nbsp;Better&nbsp;/&nbsp;Best &mdash; you review and send. About 30 minutes back per quote.</p>
+          </div>
+        </div>
+
+        <div class="mpanel" data-mpanel="2">
+          <div class="roi-inputs">
+            <p class="mp-lead">The truck roll you don&rsquo;t get to bill.</p>
             <div class="roi-input">
               <div class="roi-input-top"><label for="rCallbacks">Callbacks per month</label><output id="oCallbacks">2</output></div>
               <input type="range" id="rCallbacks" min="0" max="10" step="1" value="2" />
               <div class="roi-scale"><span>0</span><span>10</span></div>
             </div>
             <div class="roi-input">
+              <div class="roi-input-top"><label for="rTicket3">Average job value</label><output class="js-ticket-out" id="oTicket3">$450</output></div>
+              <input type="range" class="js-ticket" id="rTicket3" min="100" max="5000" step="50" value="450" />
+              <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
+            </div>
+          </div>
+          <div class="roi-hero-card">
+            <p class="roi-label">CALLBACKS THAT NEVER HAPPEN, PER YEAR</p>
+            <p class="roi-big" id="pFore">$1,800</p>
+            <p class="roi-note">A callback eats half a job&rsquo;s value. The checklist catches the skipped step &mdash; one in three never happens.</p>
+          </div>
+        </div>
+
+        <div class="mpanel" data-mpanel="3">
+          <div class="roi-inputs">
+            <p class="mp-lead">Money you&rsquo;ve earned but don&rsquo;t have.</p>
+            <div class="roi-input">
               <div class="roi-input-top"><label for="rUnpaid">Unpaid invoices out right now</label><output id="oUnpaid">4</output></div>
               <input type="range" id="rUnpaid" min="0" max="25" step="1" value="4" />
               <div class="roi-scale"><span>0</span><span>25</span></div>
             </div>
             <div class="roi-input">
-              <div class="roi-input-top"><label for="rBill">Current software bill / month</label><output id="oBill">$300</output></div>
-              <input type="range" id="rBill" min="0" max="2000" step="25" value="300" />
-              <div class="roi-scale"><span>$0</span><span>$2,000</span></div>
+              <div class="roi-input-top"><label for="rTicket4">Average job value</label><output class="js-ticket-out" id="oTicket4">$450</output></div>
+              <input type="range" class="js-ticket" id="rTicket4" min="100" max="5000" step="50" value="450" />
+              <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
             </div>
           </div>
-
-          <div class="roi-results">
-            <div class="roi-hero-card">
-              <p class="roi-label">LEFT ON THE TABLE, PER YEAR</p>
-              <p class="roi-big" id="roiTotal">$27,000</p>
-              <p class="roi-note">recovered calls + callbacks prevented + software halved</p>
-            </div>
-            <div class="roi-card">
-              <p class="roi-fig" id="roiJobs">$23,400</p>
-              <p class="roi-label">01 &middot; AI FRONT DESK</p>
-              <p class="roi-note"><span id="roiJobsN">52</span> jobs a year from calls that ring out today.</p>
-            </div>
-            <div class="roi-card">
-              <p class="roi-fig" id="roiEst">156 hrs</p>
-              <p class="roi-label">02 &middot; AI ESTIMATING</p>
-              <p class="roi-note">Quote-writing, back in your year &mdash; drafts itself, you review and send.</p>
-            </div>
-            <div class="roi-card">
-              <p class="roi-fig" id="roiFore">$1,800</p>
-              <p class="roi-label">03 &middot; AI FOREMAN</p>
-              <p class="roi-note">Callbacks that never happen &mdash; the checklist catches the skipped step.</p>
-            </div>
-            <div class="roi-card">
-              <p class="roi-fig" id="roiCash">$1,800</p>
-              <p class="roi-label">04 &middot; AI INVOICE FOLLOW-UPS</p>
-              <p class="roi-note">Sitting in unpaid invoices right now &mdash; the chase runs itself.</p>
-            </div>
-            <div class="roi-card wide">
-              <p class="roi-fig" id="roiSoft">$1,800</p>
-              <p class="roi-label">SOFTWARE, HALVED</p>
-              <p class="roi-note">Whatever you pay today, Mallet is half &mdash; that's <span id="roiSoftM">$150</span>/mo back.</p>
-            </div>
+          <div class="roi-hero-card">
+            <p class="roi-label">CASH ON THE STREET, RIGHT NOW</p>
+            <p class="roi-big" id="pCash">$1,800</p>
+            <p class="roi-note">Sitting in unpaid invoices &mdash; the follow-ups chase it down, nobody at the office has to remember. Already yours, so it&rsquo;s not in the annual total.</p>
           </div>
         </div>
+
+        <div class="roi-total-bar" data-reveal>
+          <div class="roi-input">
+            <div class="roi-input-top"><label for="rBill">Current software bill / month</label><output id="oBill">$300</output></div>
+            <input type="range" id="rBill" min="0" max="2000" step="25" value="300" />
+            <div class="roi-scale"><span>$0</span><span>$2,000</span></div>
+          </div>
+          <div class="roi-total-cell">
+            <p class="roi-label">ALL FOUR TOGETHER, PER YEAR</p>
+            <p class="roi-big" id="roiTotal">$27,000</p>
+            <p class="roi-note">front desk + callbacks prevented + software halved (<span id="roiSoftM">$150</span>/mo back) &mdash; plus <span id="roiHrs">156</span> hrs of quote-writing.</p>
+          </div>
+        </div>
+
         <p class="roi-fine">Estimates, not promises &mdash; the assumptions are deliberately modest: half of missed calls are reachable and 40% book; a quote takes ~30 minutes to write; a callback eats half a job&rsquo;s value and the checklist prevents one in three. Your free pilot measures the real numbers.</p>
       </div>
     </section>
