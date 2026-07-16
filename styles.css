@@ -312,10 +312,8 @@ strong{font-weight:700}
 }
 
 /* ================= ONE-LINE PROOF ================= */
-.proofline{background:var(--parchment);padding:3.6rem 0;text-align:center}
-.proofline-p{font-family:var(--font-display);font-weight:700;font-size:clamp(1.25rem,2.6vw,1.8rem);line-height:1.4;letter-spacing:-.015em;max-width:34ch;margin:0 auto;color:var(--ink)}
-.proofline-p b{font-weight:700}
-.pl-br{display:block;content:""}
+/* the leak-tape band (replaced the static stat proofline) */
+.tape-band{background:var(--parchment);padding:2.4rem 0;overflow:hidden}
 
 /* ================= WHAT MALLET DOES (rows) ================= */
 .rows{background:var(--paper);padding:2.5rem 0 4rem}
@@ -391,7 +389,7 @@ strong{font-weight:700}
 /* The leak tape: money rolling away, Mallet catching it underneath.
    Two counter-scrolling marquee rows; content doubled in the HTML so a
    -50% translate loops seamlessly. Hover pauses. Reduced motion: static. */
-.tape{margin-top:2.6rem;overflow:hidden;transform:rotate(-1.2deg) scale(1.02)}
+.tape{overflow:hidden;transform:rotate(-1.2deg) scale(1.02)}
 .tape-row{display:flex;gap:.65rem;width:max-content;padding:.33rem 0}
 .tape-row.leaks{animation:tapeRoll 42s linear infinite}
 .tape-row.catches{animation:tapeRoll 58s linear infinite reverse}
