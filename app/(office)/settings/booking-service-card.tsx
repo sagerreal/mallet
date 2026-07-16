@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
+import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { Segmented } from "./segmented";
 import {
   routeOf,
@@ -52,6 +53,113 @@ const CHIP_STYLE: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const CERT_MAX = 10;
+
+// ---- Cert chips editor (Certifications required) ---------------------------------
+// Mirrors the CertChipsEditor pattern from the Team section of settings/page.tsx.
+// Calls updateBookingService(index, "requiredCerts", nextArray) on every add/remove.
+// Empty array collapses to undefined (store handles this) to keep clean services clean.
+
+interface ServiceCertChipsEditorProps {
+  index: number;
+  certs: string[];
+  updateBookingService: (index: number, field: keyof BookingService, value: string | string[]) => void;
+}
+
+function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceCertChipsEditorProps) {
+  const [draft, setDraft] = useState("");
+  const atCap = certs.length >= CERT_MAX;
+
+  function handleAdd(): void {
+    const trimmed = draft.trim();
+    if (!trimmed || atCap) return;
+    // Dedupe case-insensitively via normCert.
+    if (certs.some((c) => normCert(c) === normCert(trimmed))) {
+      setDraft("");
+      return;
+    }
+    setDraft("");
+    updateBookingService(index, "requiredCerts", [...certs, trimmed]);
+  }
+
+  function handleRemove(idx: number): void {
+    updateBookingService(index, "requiredCerts", certs.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="field">
+      <label>Certifications required</label>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: certs.length > 0 ? 8 : 0 }}>
+        {certs.map((cert, i) => (
+          <span
+            key={`${cert}-${i}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 12.5,
+              fontWeight: 600,
+              padding: "3px 5px 3px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--line)",
+              background: "var(--manila, var(--bg))",
+              color: "var(--ink)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {cert}
+            <button
+              type="button"
+              aria-label={`Remove ${cert}`}
+              onClick={() => handleRemove(i)}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                color: "var(--ink-3)",
+                fontSize: 12,
+                lineHeight: 1,
+                padding: "2px 4px",
+                fontFamily: "inherit",
+              }}
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="text"
+          value={draft}
+          placeholder={atCap ? "10 max" : "e.g. Gas"}
+          disabled={atCap}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAdd(); } }}
+          style={{
+            flex: "0 0 160px",
+            border: "1.5px solid var(--line)",
+            borderRadius: 8,
+            padding: "6px 8px",
+            fontFamily: "inherit",
+            fontSize: 13,
+            background: atCap ? "var(--bg)" : "var(--card)",
+            ...COMPACT_INPUT,
+          }}
+        />
+        <button
+          className="btn sm ghost"
+          type="button"
+          disabled={atCap || !draft.trim()}
+          onClick={handleAdd}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---- Props ------------------------------------------------------------------------
 
 export interface ServiceRowProps {
@@ -59,7 +167,7 @@ export interface ServiceRowProps {
   index: number;
   isExpanded: boolean;
   onToggle: () => void;
-  updateBookingService: (index: number, field: keyof BookingService, value: string) => void;
+  updateBookingService: (index: number, field: keyof BookingService, value: string | string[]) => void;
   onRemove: () => void;
   isLast: boolean;
 }
@@ -117,6 +225,9 @@ function CollapsedRow({
       {service.lane === "flat" && (service.price ?? 0) > 0 && (
         <span style={CHIP_STYLE}>{`$${service.price}`}</span>
       )}
+      {(service.requiredCerts ?? []).map((cert) => (
+        <span key={cert} style={CHIP_STYLE}>{cert}</span>
+      ))}
       <span style={CHIP_STYLE}>{routeChipLabel(service)}</span>
     </button>
   );
@@ -244,6 +355,12 @@ function ExpandedEditor({
           </div>
         </div>
       )}
+
+      <ServiceCertChipsEditor
+        index={index}
+        certs={service.requiredCerts ?? []}
+        updateBookingService={updateBookingService}
+      />
 
       </div>
 

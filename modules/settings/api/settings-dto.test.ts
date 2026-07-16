@@ -58,6 +58,52 @@ describe("bookingServiceDTO", () => {
       expect(result.data.ballpark).toBe("$150–$300");
     }
   });
+
+  // T3: requiredCerts
+
+  it("parses a service WITHOUT requiredCerts (optional field absent)", () => {
+    const result = bookingServiceDTO.safeParse(baseService);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.requiredCerts).toBeUndefined();
+    }
+  });
+
+  it("parses a service WITH requiredCerts", () => {
+    const input = { ...baseService, requiredCerts: ["Gas", "HVAC"] };
+    const result = bookingServiceDTO.safeParse(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.requiredCerts).toEqual(["Gas", "HVAC"]);
+    }
+  });
+
+  it("rejects a requiredCerts entry exceeding 40 characters", () => {
+    const input = { ...baseService, requiredCerts: ["A".repeat(41)] };
+    const result = bookingServiceDTO.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a requiredCerts entry that is an empty string (min 1)", () => {
+    const input = { ...baseService, requiredCerts: [""] };
+    const result = bookingServiceDTO.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects more than 10 requiredCerts entries (max 10)", () => {
+    const input = { ...baseService, requiredCerts: Array.from({ length: 11 }, (_, i) => `Cert${i}`) };
+    const result = bookingServiceDTO.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+
+  it("strips leading/trailing whitespace from requiredCerts entries via trim()", () => {
+    const input = { ...baseService, requiredCerts: ["  Gas  "] };
+    const result = bookingServiceDTO.safeParse(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.requiredCerts).toEqual(["Gas"]);
+    }
+  });
 });
 
 describe("bookingCfgDTO", () => {
