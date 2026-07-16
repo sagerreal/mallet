@@ -60,6 +60,8 @@ export class DrizzleJobRepository implements JobRepository {
       totalCents: p.total,
       notes: p.notes,
       scope: p.scope,
+      callbackOf: p.callbackOf,
+      callbackReason: p.callbackReason,
       svc: p.svc,
       kind: p.kind,
       // Deep-copy out of the immutable domain props into a plain mutable JSON blob.

@@ -30,6 +30,8 @@ const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   total: zeroMoney,
   notes: null,
   scope: null,
+  callbackOf: null,
+  callbackReason: null,
   checklist: null,
   visits: [],
   createdAt: new Date("2026-06-01T00:00:00Z"),
@@ -316,6 +318,62 @@ describe("Job.create — checklist validation", () => {
     expect(
       Job.create(props({ checklist: { name: "C", items: "oops" as never } })).ok,
     ).toBe(false);
+  });
+});
+
+describe("Job.create — callbackOf + callbackReason fields", () => {
+  it("defaults both to null when omitted from create props", () => {
+    // omit the optional fields entirely — JobCreateProps accepts them as optional
+    const r = Job.create(props());
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.callbackOf).toBeNull();
+      expect(r.value.props.callbackReason).toBeNull();
+    }
+  });
+
+  it("preserves a valid callbackOf + valid callbackReason", () => {
+    const callbackOfId = asJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    const r = Job.create(props({ callbackOf: callbackOfId, callbackReason: "callback" }));
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.callbackOf).toBe(callbackOfId);
+      expect(r.value.props.callbackReason).toBe("callback");
+    }
+  });
+
+  it("rejects an invalid callbackReason when non-null", () => {
+    const callbackOfId = asJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    const r = Job.create(props({ callbackOf: callbackOfId, callbackReason: "bogus" as never }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("callbackReason");
+  });
+
+  it("allows callbackOf set with null reason (unconfirmed candidate link)", () => {
+    const callbackOfId = asJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    const r = Job.create(props({ callbackOf: callbackOfId, callbackReason: null }));
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.callbackOf).toBe(callbackOfId);
+      expect(r.value.props.callbackReason).toBeNull();
+    }
+  });
+
+  it("accepts all valid CALLBACK_REASONS values", () => {
+    const callbackOfId = asJobId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    for (const reason of ["callback", "new_issue", "found_work"] as const) {
+      const r = Job.create(props({ callbackOf: callbackOfId, callbackReason: reason }));
+      expect(isOk(r)).toBe(true);
+    }
+  });
+
+  it("existing Job.create sites keep compiling — callbackOf/callbackReason omitted is ok", () => {
+    const r = Job.create(props());
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.callbackOf).toBeNull();
+      expect(r.value.props.callbackReason).toBeNull();
+    }
   });
 });
 

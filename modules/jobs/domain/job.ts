@@ -32,6 +32,21 @@ export const JOB_KINDS: readonly JobKind[] = ["work", "estimate"];
 export const isJobKind = (value: string): value is JobKind =>
   (JOB_KINDS as readonly string[]).includes(value);
 
+// Reason a job was created as a callback of an earlier job.
+// 'callback'   — customer called back about the same original issue (redo / warranty).
+// 'new_issue'  — tech found and flagged additional work during a prior visit.
+// 'found_work' — office booked follow-on work discovered on-site.
+export type CallbackReason = "callback" | "new_issue" | "found_work";
+
+export const CALLBACK_REASONS: readonly CallbackReason[] = [
+  "callback",
+  "new_issue",
+  "found_work",
+];
+
+export const isCallbackReason = (value: string): value is CallbackReason =>
+  (CALLBACK_REASONS as readonly string[]).includes(value);
+
 export type VisitStatus = "pending" | "in_progress" | "complete" | "canceled";
 
 export const JOB_VISIT_STATUSES: readonly VisitStatus[] = [
@@ -228,17 +243,21 @@ export interface JobProps {
   readonly total: Money; // integer cents, snapshot from the source estimate at creation
   readonly notes: string | null;
   readonly scope: string | null; // free-text "anything else noticed?" note from the booking flow
+  readonly callbackOf: JobId | null; // this job is a callback/redo of an earlier job (nullable)
+  readonly callbackReason: CallbackReason | null; // 'callback' | 'new_issue' | 'found_work' (nullable)
   readonly checklist: JobChecklistProps | null; // optional before-you-leave checklist
   readonly visits: readonly JobVisit[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
 
-// Input to Job.create: kind and scope may be omitted so pre-existing callers keep compiling.
-// kind defaults to "work"; scope defaults to null (office-created jobs have no scope note).
-export type JobCreateProps = Omit<JobProps, "kind" | "scope"> & {
+// Input to Job.create: kind, scope, callbackOf, and callbackReason may be omitted so pre-existing
+// callers keep compiling. kind defaults to "work"; the rest default to null.
+export type JobCreateProps = Omit<JobProps, "kind" | "scope" | "callbackOf" | "callbackReason"> & {
   readonly kind?: JobKind;
   readonly scope?: string | null;
+  readonly callbackOf?: JobId | null;
+  readonly callbackReason?: CallbackReason | null;
 };
 
 // Scheduled field work. Aggregate root with a status state machine
@@ -278,13 +297,18 @@ export class Job {
     if (scope !== null && scope.length > SCOPE_MAX_LENGTH) {
       return err(validation(`scope note must be at most ${SCOPE_MAX_LENGTH} characters`, "scope"));
     }
+    const callbackOf = props.callbackOf ?? null;
+    const callbackReason = props.callbackReason ?? null;
+    if (callbackReason !== null && !isCallbackReason(callbackReason)) {
+      return err(validation(`unknown callback reason: ${String(callbackReason)}`, "callbackReason"));
+    }
     let checklist: JobChecklistProps | null = null;
     if (props.checklist !== null) {
       const validated = normalizeChecklist(props.checklist);
       if (!validated.ok) return validated;
       checklist = validated.value;
     }
-    return ok(new Job({ ...props, num, svc, scope, checklist, kind }));
+    return ok(new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind }));
   }
 
   // Replace the visit set — only allowed while the job is not yet terminal.

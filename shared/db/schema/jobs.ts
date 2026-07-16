@@ -64,6 +64,11 @@ export const jobs = pgTable(
     // Free-text "anything else noticed?" note captured during the booking flow (AI front desk).
     // Nullable — office-created jobs have none; only set when a caller volunteered context.
     scope: text("scope"),
+    // Callback link: this job is a redo/follow-on of an earlier job in the same org.
+    // Nullable — most jobs are not callbacks. callbackOf is the id of the original job;
+    // callbackReason categorises why (see CallbackReason domain type).
+    callbackOf: uuid("callback_of"),
+    callbackReason: text("callback_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -98,8 +103,18 @@ export const jobs = pgTable(
     uniqueIndex("jobs_org_source_estimate_uidx")
       .on(t.orgId, t.sourceEstimateId)
       .where(sql`${t.sourceEstimateId} is not null and ${t.deletedAt} is null`),
+    // Self-referential composite FK: the callback target must be in the same org.
+    foreignKey({
+      name: "jobs_callback_of_fk",
+      columns: [t.orgId, t.callbackOf],
+      foreignColumns: [t.orgId, t.id],
+    }),
     check("jobs_status_check", sql`${t.status} in ('scheduled', 'in_progress', 'complete', 'canceled')`),
     check("jobs_kind_check", sql`${t.kind} in ('work', 'estimate')`),
+    check(
+      "jobs_callback_reason_check",
+      sql`${t.callbackReason} is null or ${t.callbackReason} in ('callback', 'new_issue', 'found_work')`,
+    ),
     check("jobs_total_check", sql`${t.totalCents} >= 0`),
     check(
       "jobs_window_check",

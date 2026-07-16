@@ -1,8 +1,8 @@
-import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, LeadId, JobId, Result, AppError, Clock } from "@mallet/shared/types";
 import { asJobId, zeroMoney, ok, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import { Job, type JobKind } from "../domain/job";
+import { Job, type JobKind, type CallbackReason } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
 
 export interface CreateManualJobCommand {
@@ -21,6 +21,10 @@ export interface CreateManualJobCommand {
   // Free-text "anything else noticed?" note from the booking flow (AI front desk). Optional:
   // office-created jobs omit it; the domain normalises empty/whitespace to null.
   readonly scope?: string | null;
+  // Callback link: this job is a redo/follow-on of an earlier job (set by the confirm-callback
+  // mutation in Phase 1B.3 — office-created jobs leave these null).
+  readonly callbackOf?: JobId | null;
+  readonly callbackReason?: CallbackReason | null;
 }
 
 // A dispatcher creating a standalone job by hand (no source estimate). total is 0:
@@ -66,6 +70,8 @@ export class CreateManualJobUseCase {
       total: zeroMoney,
       notes: cmd.notes,
       scope: cmd.scope ?? null,
+      callbackOf: cmd.callbackOf ?? null,
+      callbackReason: cmd.callbackReason ?? null,
       checklist: null,
       visits: [],
       createdAt: now,
