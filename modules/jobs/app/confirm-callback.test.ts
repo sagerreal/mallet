@@ -47,6 +47,7 @@ class FakeRepo implements JobRepository {
   }
 
   async listRecentForCallbackScan(): Promise<CallbackScanRow[]> { return []; }
+  async listConfirmedCallbacksWithOriginals() { return []; }
   async nextNumber() { return "JOB-1"; }
   async save(j: Job) { this.saved = j; this.jobs.set(j.props.id as string, j); }
   async insertManual(j: Job) { this.saved = j; }

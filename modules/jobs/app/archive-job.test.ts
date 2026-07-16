@@ -32,6 +32,7 @@ function repoWith(archiveResult: number): JobRepository {
     addPhoto: async () => {},
     removePhoto: async () => 0,
     listRecentForCallbackScan: async () => [],
+    listConfirmedCallbacksWithOriginals: async () => [],
   };
 }
 

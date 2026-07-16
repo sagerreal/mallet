@@ -43,6 +43,7 @@ export const useCancelJob = () => {
 };
 
 export const useCallbackCandidates = () => api.v1.jobs.callbackCandidates.useQuery();
+export const useCallbackAutopsy = () => api.v1.jobs.callbackAutopsy.useQuery();
 export const useConfirmCallback = () => {
   const i = useInvalidateJobs();
   return api.v1.jobs.confirmCallback.useMutation({ onSuccess: i });

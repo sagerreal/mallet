@@ -37,6 +37,7 @@ class FakeRepo implements JobRepository {
   async addPhoto() {}
   async removePhoto() { return 0; }
   async listRecentForCallbackScan() { return []; }
+  async listConfirmedCallbacksWithOriginals() { return []; }
 }
 
 const ids = (id = MINTED) => ({ newId: () => id });
