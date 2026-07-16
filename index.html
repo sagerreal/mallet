@@ -96,8 +96,8 @@
           </div>
         </div>
 
-        <!-- The product, playing itself — a call cycles from ring to booked while you watch. -->
-        <div class="hero-stage hero-el" data-step="5" id="demo" aria-label="Mallet answering customer calls — demonstration, replays on a loop">
+        <!-- The four-act demo: one act per headline beat. Auto-plays, ▸ skips, beats jump. -->
+        <div class="hero-stage hero-el" data-step="5" id="demo" aria-label="Mallet demo — the call, the quote, the job, the invoice">
           <div class="stage-back" aria-hidden="true">
             <p class="sb-title">TODAY &middot; 6 JOBS</p>
             <div class="sb-bar w1"></div>
@@ -107,20 +107,73 @@
           <div class="desk-window">
             <div class="desk-bar">
               <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span class="desk-title">MALLET&nbsp;FRONT&nbsp;DESK</span>
+              <span class="desk-title" id="stageTitle">MALLET&nbsp;FRONT&nbsp;DESK</span>
               <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>DEMO</span>
             </div>
-            <div class="desk-feed" id="deskFeed" aria-live="off"></div>
+            <div class="acts" id="acts">
+
+              <!-- ACT 1 · answers the call -->
+              <section class="act on" data-act="0">
+                <div class="call-tiles" aria-hidden="true">
+                  <div class="tile caller-side"><span class="avatar">S</span><span class="tl">CALLER</span></div>
+                  <div class="tile ai-side"><span class="ai-mark">&#10022;</span><span class="tl">MALLET</span></div>
+                </div>
+                <div class="call-cap">
+                  <p class="cc-status"><span class="cc-live">CONNECTED</span><b class="cc-timer">0:00</b></p>
+                  <p class="cc-line"></p>
+                </div>
+                <div class="call-checks">
+                  <span class="ck">Answered &middot; first ring</span>
+                  <span class="ck">Emergency flagged</span>
+                  <span class="ck">Booked &middot; 2:00&ndash;4:00 &middot; Marco</span>
+                  <span class="ck">Confirmation texted</span>
+                </div>
+              </section>
+
+              <!-- ACT 2 · writes the quote -->
+              <section class="act" data-act="1">
+                <p class="qc-cust">New quote &middot; <b>Sarah K.</b> <span class="qc-tag">FROM THE CALL</span></p>
+                <div class="qc-ask"><span class="qc-typed"></span><span class="qc-caret" aria-hidden="true"></span><span class="qc-build">Build it</span></div>
+                <ol class="qc-stages">
+                  <li class="qs"><b>Reading the job</b><span>your description + the call</span></li>
+                  <li class="qs"><b>Pricing from your book &amp; rates</b><span>40-gal tank &middot; labor &middot; haul-away</span></li>
+                  <li class="qs"><b>Comparing to quotes you&rsquo;ve won</b><span>3 similar jobs</span></li>
+                  <li class="qs"><b>Writing the quote</b><span>Good / Better / Best</span></li>
+                </ol>
+                <div class="qc-result">
+                  <div class="gbb"><span>GOOD<b>$1,850</b></span><span class="mid">BETTER<b>$2,400</b></span><span>BEST<b>$3,100</b></span></div>
+                  <p class="qc-sent">&check; Sent to Sarah &mdash; tap to approve</p>
+                </div>
+              </section>
+
+              <!-- ACT 3 · runs the job -->
+              <section class="act" data-act="2">
+                <div class="job-head"><span class="jh-when">TODAY &middot; 2:00</span><b class="jh-name">Water heater install</b><span class="jh-tech">MARCO</span></div>
+                <ul class="job-list">
+                  <li class="jc">Drain &amp; pull the old unit</li>
+                  <li class="jc">Set &amp; plumb the 40-gal tank</li>
+                  <li class="jc">Pressure test &middot; photo</li>
+                  <li class="jc">Haul away &middot; site clean</li>
+                </ul>
+                <p class="job-text"><span class="jt-tag">MARCO &middot; BY TEXT</span>Done at the Johnson job &mdash; install&rsquo;s in and tested, 2 hrs</p>
+                <p class="job-meta"><span class="ok">&check;</span> Checklist complete &middot; time logged &middot; invoice drafted</p>
+              </section>
+
+              <!-- ACT 4 · chases the invoice -->
+              <section class="act" data-act="3">
+                <div class="inv-head"><span>INVOICE #2216</span><b>$2,585</b><span class="inv-status">SENT</span></div>
+                <div class="inv-thread">
+                  <p class="inv-msg"><span class="im-day">DAY 3 &middot; AUTO</span>Hi Sarah &mdash; friendly reminder on invoice #2216 ($2,585). Pay online any time: rossi.co/pay</p>
+                  <p class="inv-msg"><span class="im-day">DAY 7 &middot; AUTO</span>Quick nudge on #2216 &mdash; happy to take a card by text, or call us with any questions.</p>
+                  <p class="inv-paid"><span class="ok">&check;</span> PAID &middot; $2,585 &middot; card &middot; day 8</p>
+                </div>
+              </section>
+
+            </div>
           </div>
-          <div class="stage-chips" aria-hidden="true">
-            <span class="chip" data-chip="0"></span>
-            <span class="chip" data-chip="1"></span>
-            <span class="chip" data-chip="2"></span>
-          </div>
-          <div class="stage-dots" role="tablist" aria-label="Demo scenarios">
-            <button class="sdot on" role="tab" aria-selected="true" data-scenario="0" aria-label="Water heater emergency"></button>
-            <button class="sdot" role="tab" aria-selected="false" data-scenario="1" aria-label="The 7:04 AM call"></button>
-            <button class="sdot" role="tab" aria-selected="false" data-scenario="2" aria-label="Can I get a quote?"></button>
+          <div class="stage-ctl">
+            <span class="stage-hint">WATCH IT WORK &mdash; OR CLICK A LINE</span>
+            <button class="stage-next" id="stageNext" type="button" aria-label="Next: writes the quote">&#9654;</button>
           </div>
         </div>
 
