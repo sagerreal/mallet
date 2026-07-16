@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql as rawSql } from "drizzle-orm";
 import { withTenant } from "@mallet/shared/db/tx";
 import { ownerDb } from "@mallet/shared/db/owner-client";
-import { inboundEndpoints, orgs } from "@mallet/shared/db/schema";
+import { inboundEndpoints, leads, orgs } from "@mallet/shared/db/schema";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
 import { getAppDeps } from "@/trpc/di";
@@ -28,6 +28,9 @@ export const dynamic = "force-dynamic";
 const TOKEN_RE = /^[0-9a-f]{64}$/;
 // Channel → the lead-source label stamped on the created lead (feeds the pipeline + Source list).
 const SOURCE: Record<string, string> = { form: "Website", angi: "Angi", thumbtack: "Thumbtack" };
+
+/** Minimum gap (seconds) between inbound leads for the same org+source. DB-backed, works across serverless. */
+const INBOUND_MIN_GAP_SECONDS = 5;
 
 type Params = { params: Promise<{ channel: string; token: string }> };
 
@@ -59,6 +62,26 @@ export async function POST(req: Request, { params }: Params): Promise<Response> 
         return new NextResponse("not found", { status: 404 });
       }
       enrichRequestContext({ orgId: resolved.orgId });
+
+      // Throttle: reject if a lead for this org+source was created within the cooldown window.
+      // DB-backed so it works across serverless instances (no shared in-process state).
+      const source = SOURCE[channel]!;
+      const recentRows = await ownerDb
+        .select({ id: leads.id })
+        .from(leads)
+        .where(
+          and(
+            eq(leads.orgId, resolved.orgId),
+            eq(leads.source, source),
+            isNull(leads.deletedAt),
+            gt(leads.createdAt, rawSql`now() - (${String(INBOUND_MIN_GAP_SECONDS)} || ' seconds')::interval`),
+          ),
+        )
+        .limit(1);
+      if (recentRows.length > 0) {
+        logger.warn({ channel, orgId: resolved.orgId }, "inbound.throttled");
+        return new NextResponse("too many requests", { status: 429 });
+      }
 
       const result = await withTenant(resolved.orgId, async (tx) => {
         // Tx-bound outbox bus so EnsureCustomer's customer.created event lands durably (matches the
