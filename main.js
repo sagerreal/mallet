@@ -257,19 +257,23 @@
   function tAt(ms, fn) { tourTimers.push(setTimeout(fn, ms)); }
   function clearTour() { tourTimers.forEach(clearTimeout); tourTimers = []; }
 
+  /* steps carry their own clock: data-t = reveal ms, data-off = hide ms */
   function sceneMessages(panel, animate) {
     var steps = slice(panel.querySelectorAll('.sc'));
-    var typing = panel.querySelector('.af-typing');
-    steps.forEach(function (s) { s.classList.remove('on'); });
-    if (typing) typing.classList.remove('gone');
+    steps.forEach(function (s) { s.classList.remove('on', 'gone'); });
     if (!animate) {
-      steps.forEach(function (s) { s.classList.add('on'); });
-      if (typing) typing.classList.add('gone');
+      steps.forEach(function (s) {
+        s.classList.add('on');
+        if (s.hasAttribute('data-off')) s.classList.add('gone');
+      });
       return;
     }
-    var T = [300, 1100, 1900, 3100, 3900]; // meta, caller, typing…, AI answer, done
-    steps.forEach(function (s, i) { tAt(T[i] || 1000, function () { s.classList.add('on'); }); });
-    tAt(3050, function () { if (typing) typing.classList.add('gone'); }); // dots give way to the answer
+    steps.forEach(function (s) {
+      tAt(parseInt(s.getAttribute('data-t'), 10) || 400, function () { s.classList.add('on'); });
+      if (s.hasAttribute('data-off')) {
+        tAt(parseInt(s.getAttribute('data-off'), 10), function () { s.classList.add('gone'); });
+      }
+    });
   }
 
   function scenePipeline(panel, animate) {
@@ -351,15 +355,16 @@
   }
 
   var SCENES = [sceneMessages, scenePipeline, sceneJobs, sceneAgent];
+  var SCENE_DUR = [7000, 5600, 7200, 8600]; // scene length + dwell before auto-advancing
 
   function platformTour() {
     var tour = document.querySelector('.tour');
     if (!tour) return;
     var stops = slice(tour.querySelectorAll('.af-item.stop'));
     var panels = slice(tour.querySelectorAll('.af-panel'));
-    var N = panels.length;
     var order = stops.map(function (s) { return parseInt(s.getAttribute('data-stop'), 10) || 0; });
     var current = -1;
+    var auto = true; // pages flip themselves until someone clicks one
 
     function activate(i) {
       if (i === current) return;
@@ -368,36 +373,29 @@
       panels.forEach(function (p, j) { p.classList.toggle('on', i === j); });
       stops.forEach(function (s, k) { s.classList.toggle('on', order[k] === i); });
       SCENES[i](panels[i], !reduce);
+      if (auto && !reduce) {
+        tAt(SCENE_DUR[i], function () { activate((i + 1) % panels.length); });
+      }
     }
-
-    var pinned = !reduce && window.matchMedia('(min-width: 901px)').matches;
-
-    if (!pinned) { // tap-through mode
-      stops.forEach(function (s, k) {
-        s.addEventListener('click', function () { activate(order[k]); });
-      });
-      activate(0);
-      return;
-    }
-
-    // scroll-driven mode: map progress through the tall section to a stop
-    function segTop(i) {
-      var trackH = tour.offsetHeight - window.innerHeight;
-      return tour.offsetTop + ((i + 0.5) / N) * trackH;
-    }
-    function onScroll() {
-      var trackH = tour.offsetHeight - window.innerHeight;
-      var p = (window.scrollY - tour.offsetTop) / trackH;
-      activate(Math.max(0, Math.min(N - 1, Math.floor(p * N))));
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
 
     stops.forEach(function (s, k) {
       s.addEventListener('click', function () {
-        window.scrollTo({ top: segTop(order[k]), behavior: 'auto' }); // Lenis smooths it
+        auto = false; // they picked a page — stay on it
+        activate(order[k]);
       });
     });
+
+    // start the loop when the frame first comes into view
+    if (!reduce && 'IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { io.disconnect(); activate(0); }
+        });
+      }, { threshold: 0.25 });
+      io.observe(tour.querySelector('.app-frame'));
+    } else {
+      activate(0);
+    }
   }
 
   /* The math, one panel per pillar. Tabs/▸ switch panels (same grammar as
@@ -463,8 +461,6 @@
     var tabs = slice(document.querySelectorAll('.mtab'));
     var panels = slice(document.querySelectorAll('.mpanel'));
     var next = document.getElementById('mathNext');
-    var mathTitle = document.getElementById('mathTitle');
-    var M_TITLES = ['LEAK WORKSHEET · 01 FRONT DESK', 'LEAK WORKSHEET · 02 ESTIMATING', 'LEAK WORKSHEET · 03 FOREMAN', 'LEAK WORKSHEET · 04 FOLLOW-UPS'];
     var cur = 0;
     function show(i) {
       cur = i;
@@ -473,7 +469,6 @@
         t.setAttribute('aria-selected', i === j ? 'true' : 'false');
       });
       panels.forEach(function (p, j) { p.classList.toggle('on', i === j); });
-      if (mathTitle) mathTitle.textContent = M_TITLES[i] || M_TITLES[0];
     }
     tabs.forEach(function (t) {
       t.addEventListener('click', function () { show(parseInt(t.getAttribute('data-panel'), 10) || 0); });
