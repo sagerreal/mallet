@@ -10,6 +10,7 @@ const useInvalidateJobs = () => {
       utils.v1.jobs.list.invalidate(),
       utils.v1.jobs.get.invalidate(),
       utils.v1.jobs.listByLead.invalidate(),
+      utils.v1.jobs.callbackCandidates.invalidate(),
     ]);
 };
 
@@ -40,3 +41,7 @@ export const useCancelJob = () => {
   const i = useInvalidateJobs();
   return api.v1.jobs.cancel.useMutation({ onSuccess: i });
 };
+
+export const useCallbackCandidates = () => api.v1.jobs.callbackCandidates.useQuery();
+export const useConfirmCallback = () => { const i = useInvalidateJobs(); return api.v1.jobs.confirmCallback.useMutation({ onSuccess: i }); };
+export const useDismissCallback = () => { const i = useInvalidateJobs(); return api.v1.jobs.dismissCallback.useMutation({ onSuccess: i }); };
