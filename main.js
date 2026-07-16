@@ -11,6 +11,7 @@
     wireCalendly();
     loadTallyIfPresent();
     frontDesk();
+    vignettes();
     roiCalc();
     consent();
   });
@@ -252,6 +253,39 @@
      - booked     = 40% of answerable
      - software savings = half the current bill
      - hours: ~2.5 office-hrs per tech per week + 6 base office hrs, capped display */
+  /* ============== PILLAR VIGNETTES ============== */
+  /* Each [data-vignette] card plays its .vg children in sequence while on
+     screen, dwells, then loops. Off screen: paused. Reduced motion: static. */
+  function vignettes() {
+    var hosts = slice(document.querySelectorAll('[data-vignette]'));
+    if (!hosts.length) return;
+    function finishAll(host) {
+      slice(host.querySelectorAll('.vg')).forEach(function (el) { el.classList.add('on'); });
+    }
+    if (reduce || !('IntersectionObserver' in window)) { hosts.forEach(finishAll); return; }
+
+    var STEP_MS = 950, DWELL_MS = 3400;
+    hosts.forEach(function (host) {
+      var steps = slice(host.querySelectorAll('.vg'));
+      var timers = [], playing = false;
+      function stop() { timers.forEach(clearTimeout); timers = []; }
+      function loop() {
+        steps.forEach(function (el) { el.classList.remove('on'); });
+        steps.forEach(function (el, i) {
+          timers.push(setTimeout(function () { el.classList.add('on'); }, 400 + i * STEP_MS));
+        });
+        timers.push(setTimeout(loop, 400 + steps.length * STEP_MS + DWELL_MS));
+      }
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting && !playing) { playing = true; loop(); }
+          else if (!e.isIntersecting && playing) { playing = false; stop(); finishAll(host); }
+        });
+      }, { threshold: 0.35 });
+      io.observe(host);
+    });
+  }
+
   function roiCalc() {
     var r = {
       techs: document.getElementById('rTechs'),
@@ -262,6 +296,7 @@
     if (!r.techs) return;
 
     var fmt = function (n) { return '$' + Math.round(n).toLocaleString('en-US'); };
+    var totalNow = 0;
 
     function update() {
       var techs = +r.techs.value, missed = +r.missed.value, ticket = +r.ticket.value, bill = +r.bill.value;
@@ -283,11 +318,34 @@
       document.getElementById('roiJobsN').textContent = Math.round(recoveredJobs);
       document.getElementById('roiSoft').textContent = fmt(softSaveYr);
       document.getElementById('roiSoftM').textContent = fmt(softSaveMo);
-      document.getElementById('roiTotal').textContent = fmt(jobsRevenue + softSaveYr);
+      totalNow = jobsRevenue + softSaveYr;
+      document.getElementById('roiTotal').textContent = fmt(totalNow);
     }
 
     Object.keys(r).forEach(function (k) { r[k].addEventListener('input', update); });
     update();
+
+    // moving part: the headline number counts up the first time it scrolls in
+    var big = document.getElementById('roiTotal');
+    if (big && !reduce && 'IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          io.disconnect();
+          var target = totalNow, t0 = null, DUR = 950;
+          function tick(ts) {
+            if (!t0) t0 = ts;
+            var p = Math.min((ts - t0) / DUR, 1);
+            var eased = 1 - Math.pow(1 - p, 3);
+            big.textContent = fmt(target * eased);
+            if (p < 1 && target === totalNow) requestAnimationFrame(tick);
+            else big.textContent = fmt(totalNow); // hand back to update()
+          }
+          requestAnimationFrame(tick);
+        });
+      }, { threshold: 0.5 });
+      io.observe(big);
+    }
   }
 
   /* ============== CONSENT + VISITOR ID ============== */

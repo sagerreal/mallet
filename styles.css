@@ -417,15 +417,21 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:r
   .roi-results{grid-template-columns:1fr}
 }
 
-/* ===================== WATCH IT RUN ===================== */
-.watch{background:var(--paper);padding:2rem 0 6.5rem}
-.watch-head{margin-bottom:2.2rem}
-.video-frame{
-  background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
-  box-shadow:0 28px 70px rgba(27,26,23,.16);
-}
-.video-body{position:relative;aspect-ratio:16/9;background:var(--ink)}
-.hero-demo{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
+/* ============== PILLAR VIGNETTES (rows) ============== */
+/* Elements marked .vg pop in sequence while the card is on screen, then loop. */
+.vg{opacity:0;transform:translateY(8px);transition:opacity .45s ease, transform .45s ease}
+.vg.on{opacity:1;transform:none}
+.fm-body,.inv-body{padding:1.1rem 1.2rem 1.25rem}
+.fm-body .job-list{margin-top:0}
+.jc.on{color:var(--ink)}
+.jc.on::before{content:"\2713";background:var(--ink);border-color:var(--ink);color:var(--paper);display:grid;place-items:center;font-size:.62rem}
+.jc.skip.on{color:var(--amber-deep)}
+.jc.skip.on::before{content:"!";background:#FFF3D6;border-color:var(--amber);color:var(--amber-deep);font-weight:700}
+.aut-card{margin-top:1rem;border:1px solid var(--amber);background:#FFF8E6;border-radius:10px;padding:.75rem .9rem .85rem}
+.aut-head{font-family:var(--font-mono);font-size:.6rem;letter-spacing:.14em;color:var(--amber-deep)}
+.aut-p{margin-top:.35rem;font-size:.88rem;line-height:1.5;color:var(--ink)}
+.aut-btn{display:inline-block;margin-top:.55rem;background:var(--ink);color:var(--paper);border-radius:8px;padding:.4rem .75rem;font-size:.8rem;font-weight:600}
+@media (prefers-reduced-motion: reduce){ .vg{opacity:1;transform:none} }
 
 /* "learn more" arrow link (rows, cards) */
 .card-more{display:inline-block;margin-top:1.3rem;font-size:.92rem;font-weight:600;color:var(--amber-deep)}
