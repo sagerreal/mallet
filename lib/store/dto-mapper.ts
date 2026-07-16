@@ -283,6 +283,7 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     // Explicitly set (undefined when the DTO carries null) so a reconcile after a
     // detach actually REMOVES the checklist from the store record.
     checklist: dtoChecklistToStore(dto.checklist),
+    requiredCerts: dto.requiredCerts ?? null,
     acts: [],
     visits,
     ...mapExecution(dto),

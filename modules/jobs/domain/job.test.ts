@@ -33,6 +33,7 @@ const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   callbackOf: null,
   callbackReason: null,
   checklist: null,
+  requiredCerts: null,
   visits: [],
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
@@ -468,5 +469,28 @@ describe("Job.create — scope field", () => {
     const r = Job.create(props({ scope: atMax }));
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.props.scope).toBe(atMax);
+  });
+});
+
+describe("Job requiredCerts", () => {
+  it("defaults to null when omitted", () => {
+    // No requiredCerts in props → null after Job.create
+    const job = make();
+    expect(job.props.requiredCerts).toBeNull();
+  });
+
+  it("preserves a non-empty cert array", () => {
+    const job = make({ requiredCerts: ["gas", "water"] });
+    expect(job.props.requiredCerts).toEqual(["gas", "water"]);
+  });
+
+  it("normalizes an empty array to null (no-requirement = always null)", () => {
+    const job = make({ requiredCerts: [] });
+    expect(job.props.requiredCerts).toBeNull();
+  });
+
+  it("preserves null explicitly", () => {
+    const job = make({ requiredCerts: null });
+    expect(job.props.requiredCerts).toBeNull();
   });
 });

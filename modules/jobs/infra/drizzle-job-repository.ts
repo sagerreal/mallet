@@ -69,6 +69,7 @@ export class DrizzleJobRepository implements JobRepository {
       checklist: p.checklist
         ? { name: p.checklist.name, items: p.checklist.items.map((it) => ({ ...it })) }
         : null,
+      requiredCerts: p.requiredCerts ? [...p.requiredCerts] : null,
       updatedAt: p.updatedAt,
     };
   }

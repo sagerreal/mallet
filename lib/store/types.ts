@@ -301,6 +301,8 @@ export interface Job {
   acts: unknown[];
   visits: Visit[];
   checklist?: { name: string; items: ChecklistItem[] };
+  /** Required cert tags resolved from the booking playbook; null means no requirement. */
+  requiredCerts?: string[] | null;
   // Field close-out (tech done-block): what-was-done note shown on the invoice,
   // and the "handed to the office to bill" flag.
   completion?: string;

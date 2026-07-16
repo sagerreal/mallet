@@ -69,6 +69,10 @@ export const jobs = pgTable(
     // callbackReason categorises why (see CallbackReason domain type).
     callbackOf: uuid("callback_of"),
     callbackReason: text("callback_reason"),
+    // Cert requirement resolved from the booking-playbook service at voice-booking time.
+    // Null = no requirement (most jobs). Set by the AI front desk's book_visit tool via
+    // resolveServiceRequirement; office-created and estimate-sourced jobs leave this null.
+    requiredCerts: text("required_certs").array(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

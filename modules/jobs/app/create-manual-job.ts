@@ -25,6 +25,10 @@ export interface CreateManualJobCommand {
   // mutation in Phase 1B.3 — office-created jobs leave these null).
   readonly callbackOf?: JobId | null;
   readonly callbackReason?: CallbackReason | null;
+  // Required certs resolved from the booking playbook service at voice-booking time (set by
+  // the AI front desk's book_visit tool). null / undefined → no requirement; office-created
+  // jobs always leave this null.
+  readonly requiredCerts?: readonly string[] | null;
 }
 
 // A dispatcher creating a standalone job by hand (no source estimate). total is 0:
@@ -72,6 +76,7 @@ export class CreateManualJobUseCase {
       scope: cmd.scope ?? null,
       callbackOf: cmd.callbackOf ?? null,
       callbackReason: cmd.callbackReason ?? null,
+      requiredCerts: cmd.requiredCerts ?? null,
       checklist: null,
       visits: [],
       createdAt: now,
