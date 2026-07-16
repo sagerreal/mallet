@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, gte, inArray, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, gte, inArray, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
@@ -15,7 +15,7 @@ import {
   type Paginated,
 } from "@mallet/shared/types";
 import type { Job } from "../domain/job";
-import type { JobRepository, JobFilter, JobExecution, CallbackScanRow } from "../domain/job-repository";
+import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPairRow } from "../domain/job-repository";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
 import { lineToDomain, addonToDomain, verifyToDomain, photoToDomain, type JobLineRow, type JobAddonRow, type JobVerifyAnswerRow, type JobPhotoRow } from "./job-execution-mapper";
@@ -538,6 +538,73 @@ export class DrizzleJobRepository implements JobRepository {
       )
       .returning({ id: jobPhotos.id });
     return rows.length;
+  }
+
+  async listConfirmedCallbacksWithOriginals(since: Date): Promise<AutopsyPairRow[]> {
+    // Query 1: confirmed callbacks created on/after `since`.
+    const callbackRows = await this.tx
+      .select({
+        id: jobs.id,
+        num: jobs.num,
+        svc: jobs.svc,
+        completedAt: jobs.completedAt,
+        callbackOf: jobs.callbackOf,
+      })
+      .from(jobs)
+      .where(
+        and(
+          isNull(jobs.deletedAt),
+          eq(jobs.orgId, this.orgId),
+          eq(jobs.callbackReason, "callback"),
+          isNotNull(jobs.callbackOf),
+          gte(jobs.createdAt, since),
+        ),
+      );
+
+    const originalIds = [...new Set(callbackRows.map((r) => r.callbackOf).filter((id): id is string => id !== null))];
+    if (originalIds.length === 0) return [];
+
+    // Query 2: load originals by id, same org, non-deleted.
+    const originalRows = await this.tx
+      .select({
+        id: jobs.id,
+        num: jobs.num,
+        svc: jobs.svc,
+        completedAt: jobs.completedAt,
+        checklist: jobs.checklist,
+      })
+      .from(jobs)
+      .where(and(inArray(jobs.id, originalIds), eq(jobs.orgId, this.orgId), isNull(jobs.deletedAt)));
+
+    // Build lookup map and stitch pairs in memory (no N+1).
+    const originalsById = new Map(
+      originalRows.map((r) => [
+        r.id,
+        {
+          id: asJobId(r.id),
+          num: r.num,
+          svc: r.svc ?? null,
+          completedAt: r.completedAt ?? null,
+          checklist: (r.checklist ?? null) as import("../domain/job").JobChecklistProps | null,
+        },
+      ]),
+    );
+
+    const pairs: AutopsyPairRow[] = [];
+    for (const cb of callbackRows) {
+      const original = cb.callbackOf ? originalsById.get(cb.callbackOf) : undefined;
+      if (!original) continue; // original missing or deleted — drop the pair
+      pairs.push({
+        callback: {
+          id: asJobId(cb.id),
+          num: cb.num,
+          svc: cb.svc ?? null,
+          completedAt: cb.completedAt ?? null,
+        },
+        original,
+      });
+    }
+    return pairs;
   }
 
   async listRecentForCallbackScan(since: Date): Promise<CallbackScanRow[]> {

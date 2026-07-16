@@ -6,8 +6,24 @@ import type {
   CursorPage,
   Paginated,
 } from "@mallet/shared/types";
-import type { Job, JobStatus } from "./job";
+import type { Job, JobStatus, JobChecklistProps } from "./job";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "./job-execution";
+
+export interface AutopsyPairRow {
+  readonly callback: {
+    readonly id: JobId;
+    readonly num: string;
+    readonly svc: string | null;
+    readonly completedAt: Date | null;
+  };
+  readonly original: {
+    readonly id: JobId;
+    readonly num: string;
+    readonly svc: string | null;
+    readonly completedAt: Date | null;
+    readonly checklist: JobChecklistProps | null;
+  };
+}
 
 export interface CallbackScanRow {
   readonly id: JobId;
@@ -86,4 +102,9 @@ export interface JobRepository {
   addPhoto(photo: JobPhoto, now: Date): Promise<void>;
   removePhoto(jobId: JobId, photoId: string, now: Date): Promise<number>;
   listRecentForCallbackScan(since: Date): Promise<CallbackScanRow[]>;
+  // Org-scoped. Confirmed callbacks (callbackReason === "callback", callbackOf non-null) whose
+  // CALLBACK job was created on/after `since`, each stitched to its ORIGINAL job (loaded by
+  // the callbackOf id). Non-deleted only. Drop any pair whose original is missing/deleted.
+  // Two queries max (no N+1).
+  listConfirmedCallbacksWithOriginals(since: Date): Promise<AutopsyPairRow[]>;
 }

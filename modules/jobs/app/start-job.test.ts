@@ -95,6 +95,7 @@ class FakeJobRepository implements JobRepository {
   async addPhoto() {}
   async removePhoto() { return 0; }
   async listRecentForCallbackScan() { return []; }
+  async listConfirmedCallbacksWithOriginals() { return []; }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

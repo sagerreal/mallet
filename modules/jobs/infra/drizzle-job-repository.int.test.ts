@@ -542,6 +542,115 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(out.otherFound).not.toBeNull(); // lead B's job untouched
   });
 
+  it("listConfirmedCallbacksWithOriginals returns confirmed pairs, excludes non-callback reasons, date filter, and org-B isolation", async () => {
+    const orgA = asOrgId(orgAId);
+    const orgB = asOrgId(orgBId);
+
+    // Fresh leads so this test doesn't collide with other test data.
+    const [autopsyLeadA] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgAId}, 'Autopsy Lead A ' || gen_random_uuid()) returning id`;
+    const [autopsyLeadB] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgBId}, 'Autopsy Lead B ' || gen_random_uuid()) returning id`;
+
+    const now = new Date();
+    // sinceBase is 1 second before "now" — so only jobs inserted in THIS test run (at `now`)
+    // pass the since filter, while jobs left by other tests in orgA are excluded.
+    const sinceBase = new Date(now.getTime() - 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
+    const completedAtDate = new Date(now.getTime() - 60 * 86400000);
+    // An ancient date clearly before sinceBase so the callback job there is excluded.
+    const ancientDate = new Date(now.getTime() - 200 * 86400000);
+
+    const checklistPayload = JSON.stringify({
+      name: "Plumbing Safety Check",
+      items: [
+        { id: "item-1", text: "Check pipe pressure", type: "check", required: true },
+        { id: "item-2", text: "Photo of shutoff valve", type: "photo", required: false },
+      ],
+    });
+
+    // Org A original job — completed, has a checklist snapshot.
+    const [origA] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, completed_at, checklist, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-AUTOPSY-ORIG-A', ${autopsyLeadA!.id}, 'Original Plumbing Job', 'drain cleaning',
+        'complete', ${completedAtDate.toISOString()}, ${checklistPayload}::jsonb,
+        ${thirtyDaysAgo.toISOString()}, ${thirtyDaysAgo.toISOString()}
+      ) returning id`;
+
+    // Org A confirmed callback — created "now", references origA.
+    const [callbackA] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, callback_of, callback_reason, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-AUTOPSY-CB-A', ${autopsyLeadA!.id}, 'Callback Job', 'drain cleaning',
+        'scheduled', ${origA!.id}, 'callback', ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
+    // A job with callbackReason = 'new_issue' — must NOT be returned (not a confirmed callback).
+    const [newIssueA] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, callback_of, callback_reason, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-AUTOPSY-NI-A', ${autopsyLeadA!.id}, 'New Issue Job', 'drain cleaning',
+        'scheduled', ${origA!.id}, 'new_issue', ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
+    // A confirmed callback whose CALLBACK job was created before `since` — must be excluded.
+    const [ancientCallbackA] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, callback_of, callback_reason, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-AUTOPSY-ANCIENT-A', ${autopsyLeadA!.id}, 'Ancient Callback', 'drain cleaning',
+        'scheduled', ${origA!.id}, 'callback', ${ancientDate.toISOString()}, ${ancientDate.toISOString()}
+      ) returning id`;
+
+    // Org B original job + confirmed callback — must NOT appear when reading as org A.
+    const [origB] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, completed_at, created_at, updated_at)
+      values (
+        ${orgBId}, 'JOB-AUTOPSY-ORIG-B', ${autopsyLeadB!.id}, 'Org B Original', 'hvac',
+        'complete', ${completedAtDate.toISOString()}, ${thirtyDaysAgo.toISOString()}, ${thirtyDaysAgo.toISOString()}
+      ) returning id`;
+    const [callbackB] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, callback_of, callback_reason, created_at, updated_at)
+      values (
+        ${orgBId}, 'JOB-AUTOPSY-CB-B', ${autopsyLeadB!.id}, 'Org B Callback', 'hvac',
+        'scheduled', ${origB!.id}, 'callback', ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
+    // `since` = sinceBase (1 second ago) — includes jobs seeded at `now`, excludes ancient ones
+    // and any "callback" jobs left by other tests in orgA (which have older created_at).
+    const since = sinceBase;
+
+    const pairs = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      return repo.listConfirmedCallbacksWithOriginals(since);
+    });
+
+    // Exactly one pair: the confirmed callback → its original.
+    expect(pairs).toHaveLength(1);
+    const pair = pairs[0]!;
+    expect(pair.callback.id).toBe(callbackA!.id);
+    expect(pair.callback.num).toBe("JOB-AUTOPSY-CB-A");
+    expect(pair.original.id).toBe(origA!.id);
+    expect(pair.original.num).toBe("JOB-AUTOPSY-ORIG-A");
+    expect(pair.original.svc).toBe("drain cleaning");
+
+    // Checklist snapshot is present on the original.
+    expect(pair.original.checklist).not.toBeNull();
+    expect(pair.original.checklist!.name).toBe("Plumbing Safety Check");
+    expect(pair.original.checklist!.items).toHaveLength(2);
+    expect(pair.original.checklist!.items[0]!.text).toBe("Check pipe pressure");
+
+    // Non-callback reason must not appear.
+    const callbackIds = pairs.map((p) => p.callback.id as string);
+    expect(callbackIds).not.toContain(newIssueA!.id);
+
+    // Ancient callback (before `since`) must not appear.
+    expect(callbackIds).not.toContain(ancientCallbackA!.id);
+
+    // Org B's callback must not appear (RLS + explicit org filter).
+    expect(callbackIds).not.toContain(callbackB!.id);
+  });
+
   it("listRecentForCallbackScan returns recent org-A rows and excludes ancient + org-B jobs", async () => {
     const orgA = asOrgId(orgAId);
     const orgB = asOrgId(orgBId);
