@@ -74,7 +74,7 @@ export async function POST(req: Request, { params }: Params): Promise<Response> 
             eq(leads.orgId, resolved.orgId),
             eq(leads.source, source),
             isNull(leads.deletedAt),
-            gt(leads.createdAt, rawSql`now() - (${String(INBOUND_MIN_GAP_SECONDS)} || ' seconds')::interval`),
+            gt(leads.createdAt, rawSql`now() - make_interval(secs => ${INBOUND_MIN_GAP_SECONDS})`),
           ),
         )
         .limit(1);

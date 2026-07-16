@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql as rawSql } from "drizzle-orm";
 import { tasks } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetAfterDueDate } from "@mallet/shared/db/keyset";
@@ -83,7 +83,9 @@ export class DrizzleTaskRepository implements TaskRepository {
       .select()
       .from(tasks)
       .where(and(...conds))
-      .orderBy(asc(tasks.dueDate), asc(tasks.createdAt), asc(tasks.id))
+      // NULLS LAST is Postgres's ASC default, but the cursor helper DEPENDS on it — pin it
+      // explicitly so the ordering contract survives a port or a future drizzle change.
+      .orderBy(rawSql`${tasks.dueDate} asc nulls last`, asc(tasks.createdAt), asc(tasks.id))
       .limit(page.limit + 1);
 
     return buildJsonPage(rows.map(toDomain), page, (task) => ({

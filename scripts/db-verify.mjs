@@ -36,7 +36,7 @@ async function main() {
   try {
     const rows = await db`
       SELECT created_at::text AS created_at FROM drizzle.__drizzle_migrations
-      ORDER BY created_at DESC
+      ORDER BY id DESC
       LIMIT 1
     `;
     const liveWhen = rows[0]?.created_at ? Number(rows[0].created_at) : null;

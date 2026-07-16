@@ -199,5 +199,13 @@ suite("DrizzleTaskRepository against live Supabase RLS", () => {
     expect(allItems).toHaveLength(expected.length);
     expect(new Set(allItems).size).toBe(expected.length);
     expect(allItems.every((t) => expected.includes(t))).toBe(true);
+
+    // NULLS LAST pinned: the two null-dueDate tasks are the FINAL two items, dated ones first.
+    // (Exact order within a dueDate can tie-break by uuid when createdAt collides at ms — so we
+    // assert the zones, not the intra-zone order.)
+    expect(new Set(allItems.slice(0, 3))).toEqual(new Set([`${prefix}t1`, `${prefix}t2`, `${prefix}t3`]));
+    expect(new Set(allItems.slice(3))).toEqual(new Set([`${prefix}t4`, `${prefix}t5`]));
+    // And the dated zone itself is dueDate-ascending: t3 (08-02) after t1/t2 (08-01).
+    expect(allItems[2]).toBe(`${prefix}t3`);
   });
 });
