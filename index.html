@@ -341,8 +341,8 @@
 
     <!-- ===================== THE PLATFORM TOUR ===================== -->
     <!-- Pinned scrolly tour: the app frame stays put while scroll walks the
-         four stops; the sidebar highlight follows. Mobile/reduced-motion:
-         no pinning — the sidebar items become tap targets. -->
+         four stops; each stop PLAYS a scene (timers cleared on switch).
+         Mobile/reduced-motion: unpinned, stops are tap targets. -->
     <section class="tour" id="what">
       <div class="tour-sticky">
         <div class="wrap tour-head">
@@ -372,67 +372,104 @@
 
             <div class="af-main">
 
-              <!-- STOP 1 · Messages — the AI Front Desk -->
+              <!-- STOP 1 · Messages — the AI Front Desk answers while you watch -->
               <div class="af-panel on" data-panel="0">
                 <div class="af-top"><b>Messages</b><span class="af-pill">01 &middot; AI&nbsp;FRONT&nbsp;DESK</span></div>
-                <div class="af-thread">
-                  <p class="af-meta"><span class="af-time">7:42&nbsp;AM</span> Incoming call &middot; Sarah K. &mdash; Mallet picks up</p>
-                  <p class="af-bub in">&ldquo;My water heater&rsquo;s leaking all over the garage&hellip;&rdquo;</p>
-                  <p class="af-bub ai">That&rsquo;s an emergency &mdash; Marco can be there 2:00&ndash;4:00 today. You&rsquo;re booked, and a confirmation is on its way to your phone.</p>
-                  <p class="af-meta done"><span class="ok">&check;</span> Job created &middot; address in range &middot; Marco &mdash; least loaded, certified</p>
+                <div class="af-split">
+                  <div class="af-list">
+                    <div class="af-convo on"><span class="af-dot" aria-hidden="true"></span><b>Sarah K.</b><i>7:42&nbsp;AM</i><span>Booked &middot; 2:00&ndash;4:00 &middot; Marco</span></div>
+                    <div class="af-convo"><b>Hector Ruiz</b><i>8:15&nbsp;AM</i><span>Texted photos of the bathroom</span></div>
+                    <div class="af-convo"><b>Tom Brennan</b><i>YEST</i><span>&ldquo;When can someone come look?&rdquo;</span></div>
+                    <div class="af-convo"><b>Diane Foster</b><i>MON</i><span>Walkthrough confirmed for Tuesday</span></div>
+                    <div class="af-convo"><b>Rita Okafor</b><i>MON</i><span>Reminder scheduled &middot; Thursday</span></div>
+                  </div>
+                  <div class="af-thread">
+                    <p class="af-meta sc" data-s="0"><span class="af-time">7:42&nbsp;AM</span> Incoming call &middot; (555)&nbsp;480-2214 &mdash; Mallet picks up</p>
+                    <p class="af-bub in sc" data-s="1">&ldquo;My water heater&rsquo;s leaking all over the garage&hellip;&rdquo;</p>
+                    <p class="af-typing sc" data-s="2" aria-hidden="true"><span></span><span></span><span></span></p>
+                    <p class="af-bub ai sc" data-s="3">That&rsquo;s an emergency &mdash; Marco can be there 2:00&ndash;4:00 today. You&rsquo;re booked, and a confirmation is on its way to your phone.</p>
+                    <p class="af-meta done sc" data-s="4"><span class="ok">&check;</span> Job created &middot; address in range &middot; Marco &mdash; least loaded, certified</p>
+                  </div>
                 </div>
                 <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>
               </div>
 
-              <!-- STOP 2 · Pipeline — quotes -->
+              <!-- STOP 2 · Pipeline — the quote card moves itself out the door -->
               <div class="af-panel" data-panel="1">
                 <div class="af-top"><b>Pipeline</b><span class="af-pill">02 &middot; AI&nbsp;ESTIMATING</span></div>
                 <div class="af-cols">
                   <div class="af-col">
-                    <p class="af-colh">NEW&nbsp;LEADS <span>2</span></p>
-                    <div class="af-card"><b>Tom Brennan</b><span>Possible slab leak &mdash; wet spot in hallway</span></div>
+                    <p class="af-colh">NEW&nbsp;LEADS <span class="af-cnt">2</span></p>
+                    <div class="af-card"><b>Tom Brennan</b><span>Possible slab leak &mdash; wet spot in hallway</span><span class="af-src">NEXTDOOR &middot; 4D</span></div>
+                    <div class="af-card"><b>Janet Kim</b><span>Water heater making a banging noise</span><span class="af-src">GOOGLE &middot; TODAY</span></div>
                   </div>
                   <div class="af-col">
-                    <p class="af-colh">QUOTING <span>1</span></p>
-                    <div class="af-card hot"><b>Sarah K. <i class="af-amt">$2,400</i></b><span>40-gal water heater swap</span><span class="af-gbb"><i>GOOD $1,850</i><i class="sel">BETTER $2,400</i><i>BEST $3,100</i></span></div>
+                    <p class="af-colh">QUOTING <span class="af-cnt" id="cntQuoting">2</span></p>
+                    <div class="af-card hot" id="cardSarah"><b>Sarah K. <i class="af-amt">$2,400</i></b><span>40-gal water heater swap</span><span class="af-gbb"><i class="sc-g" data-g="0">GOOD $1,850</i><i class="sel sc-g" data-g="1">BETTER $2,400</i><i class="sc-g" data-g="2">BEST $3,100</i></span></div>
+                    <div class="af-card"><b>Hector Ruiz</b><span>Bathroom refit &mdash; from his photos</span><span class="af-src drafting"><span class="af-spark">&#10022;</span> DRAFTING FROM YOUR PRICEBOOK&hellip;</span></div>
                   </div>
                   <div class="af-col">
-                    <p class="af-colh">OUT <span>1</span></p>
+                    <p class="af-colh">OUT <span class="af-cnt" id="cntOut">1</span></p>
+                    <div class="af-card ghost" id="cardSarahOut"><b>Sarah K. <i class="af-amt">$2,400</i></b><span>Sent &middot; tap-to-approve link texted</span><span class="af-src ok-src">&check; JUST NOW</span></div>
                     <div class="af-card"><b>Sandy Whitfield <i class="af-amt">$1,450</i></b><span>Kitchen drain + cleanout &middot; sent 2d ago</span></div>
                   </div>
                   <div class="af-col">
-                    <p class="af-colh">WON&nbsp;&middot;&nbsp;30D <span>6</span></p>
+                    <p class="af-colh">WON&nbsp;&middot;&nbsp;30D <span class="af-cnt">6</span></p>
                     <div class="af-card"><b>Dave Chen <i class="af-amt">$7,200</i></b><span>Whole-house repipe &mdash; accepted</span></div>
+                    <div class="af-card"><b>Linda Park <i class="af-amt">$2,150</i></b><span>Water heater &mdash; accepted</span></div>
+                    <div class="af-card"><b>Rita Okafor <i class="af-amt">$189</i></b><span>AC seasonal tune-up</span></div>
                   </div>
                 </div>
-                <p class="af-foot">Drafted from your pricebook &mdash; the customer taps a tier, the accept becomes a job.</p>
+                <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>
               </div>
 
-              <!-- STOP 3 · Jobs — the AI Foreman -->
+              <!-- STOP 3 · Jobs — the board plus the checklist ticking itself -->
               <div class="af-panel" data-panel="2">
                 <div class="af-top"><b>Jobs</b><span class="af-pill">03 &middot; AI&nbsp;FOREMAN</span></div>
-                <div class="af-job">
-                  <p class="af-jobh"><span class="af-time">TODAY &middot; 2:00</span><b>Water heater install &mdash; Sarah K.</b><span class="af-tech">MARCO</span></p>
-                  <ul class="af-ck">
-                    <li class="done">Drain &amp; pull the old unit</li>
-                    <li class="done">Set &amp; plumb the 40-gal tank</li>
-                    <li class="req">Expansion-tank check <em>&mdash; made required after 3 callbacks</em></li>
-                    <li class="done">Pressure test &middot; photo attached</li>
-                  </ul>
-                  <p class="af-meta done"><span class="ok">&check;</span> Checklist complete &middot; time logged &middot; invoice drafted</p>
+                <div class="af-split jobs">
+                  <div class="af-table">
+                    <div class="af-tr th"><span>CUSTOMER / JOB</span><span>WHEN</span><span>STATUS</span><span class="r">AMOUNT</span></div>
+                    <div class="af-tr on"><span><b>Sarah K.</b> Water heater install</span><span>Today&nbsp;2:00 &middot; MARCO</span><span><i class="af-status prog" id="jobSarahStatus">IN&nbsp;PROGRESS</i></span><span class="r">$2,400</span></div>
+                    <div class="af-tr"><span><b>Dave Chen</b> Whole-house repipe &middot; 2 visits</span><span>Today&nbsp;9a &middot; CD</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$7,200</span></div>
+                    <div class="af-tr"><span><b>Sofia Hernandez</b> Two toilets</span><span>Today&nbsp;1p &middot; MR</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$920</span></div>
+                    <div class="af-tr"><span><b>Lan Nguyen</b> Faucet install</span><span>&mdash;</span><span><i class="af-status warn">NEEDS&nbsp;A&nbsp;SLOT</i></span><span class="r">$340</span></div>
+                    <div class="af-tr"><span><b>Rita Okafor</b> AC tune-up</span><span>Fri&nbsp;10a &middot; TB</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$189</span></div>
+                    <div class="af-tr"><span><b>Tom Webb</b> Drain camera</span><span>Sat&nbsp;1p &middot; CD</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$640</span></div>
+                  </div>
+                  <div class="af-ckpane">
+                    <p class="af-ckh"><span class="af-time">LIVE &middot; MARCO</span><b>Water heater install</b></p>
+                    <ul class="af-ck">
+                      <li class="sc-ck">Drain &amp; pull the old unit</li>
+                      <li class="sc-ck">Set &amp; plumb the 40-gal tank</li>
+                      <li class="req sc-ck">Expansion-tank check <em>required after 3 callbacks</em></li>
+                      <li class="sc-ck photo">Pressure test &middot; photo attached</li>
+                    </ul>
+                    <p class="af-meta done sc-ckdone"><span class="ok">&check;</span> Checklist complete &middot; time logged &middot; invoice drafted</p>
+                  </div>
                 </div>
-                <p class="af-foot">Standards live in the system &mdash; callbacks trace to the skipped step, one tap makes it required.</p>
+                <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>
               </div>
 
-              <!-- STOP 4 · Invoices — follow-ups -->
+              <!-- STOP 4 · Invoices — ask the agent for money -->
               <div class="af-panel" data-panel="3">
                 <div class="af-top"><b>Invoices</b><span class="af-pill">04 &middot; AI&nbsp;FOLLOW-UPS</span></div>
                 <div class="af-rows">
-                  <div class="af-inv"><b>#2216 &middot; Sarah K.</b><span>follow-ups: day 3 auto &middot; day 7 auto</span><i class="af-amt">$2,585</i><span class="af-status paid">PAID &middot; DAY 8</span></div>
+                  <div class="af-inv"><b>#2216 &middot; Sarah K.</b><span>follow-ups: day 3 auto &middot; day 7 auto</span><i class="af-amt">$2,585</i><span class="af-status paid">PAID &middot; DAY&nbsp;8</span></div>
+                  <div class="af-inv"><b>#2211 &middot; Hector Ruiz</b><span>no reply to day 3 &middot; day 7</span><i class="af-amt">$1,890</i><span class="af-status warn" id="invHectorStatus">OVERDUE &middot; 42D</span></div>
                   <div class="af-inv"><b>#2214 &middot; Rita Okafor</b><span>reminder scheduled &middot; Thursday</span><i class="af-amt">$920</i><span class="af-status">SENT</span></div>
                   <div class="af-inv"><b>#2209 &middot; Tom Webb</b><span>deposit in &middot; balance on completion</span><i class="af-amt">$1,450</i><span class="af-status">PARTIAL</span></div>
                 </div>
-                <p class="af-foot">The invoice writes itself from the finished job &mdash; the follow-ups escalate until the money lands.</p>
+                <div class="af-agent">
+                  <p class="af-q"><span class="af-prompt">&gt;</span> <span id="agentQ"></span><span class="qc-caret" id="agentCaret" aria-hidden="true"></span></p>
+                  <p class="af-thinking" id="agentThinking"><span class="af-spark">&#10022;</span> Mallet is thinking&hellip;</p>
+                  <div class="af-answer" id="agentAnswer">
+                    <p class="af-ansh">$4,260 is gettable today:</p>
+                    <p class="af-ansl"><b>#2211 &middot; $1,890</b> &mdash; 42 days overdue. Firmer chase drafted, ready to send.</p>
+                    <p class="af-ansl"><b>#2214 &middot; $920</b> &mdash; nudge ready; card-by-text link attached.</p>
+                    <p class="af-ansl"><b>#2209 &middot; $1,450</b> &mdash; balance due at completion today; reminder queued for job close.</p>
+                    <p class="af-ansb" aria-hidden="true">Send all three</p>
+                  </div>
+                </div>
               </div>
 
             </div>
