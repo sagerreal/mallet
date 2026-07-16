@@ -25,30 +25,57 @@
 </head>
 <body>
 
-  <!-- ====================== OFFER BANNER ====================== -->
-  <a class="banner" href="#waitlist">
-    <span class="banner-spark" aria-hidden="true">✦</span>
-    Founding 100 — lock in half your current software bill, for life
-    <span class="banner-arrow" aria-hidden="true">&rarr;</span>
-  </a>
-
   <!-- ============================ NAV ============================ -->
-  <header class="nav" id="top">
-    <div class="wrap nav-inner">
-      <a class="wordmark" href="#top" aria-label="Mallet home">
+  <header class="navwrap" id="top">
+    <div class="nav wrap">
+      <a class="wordmark" href="/" aria-label="Mallet home">
         <span class="logo-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="30" height="30"><rect width="32" height="32" rx="8" fill="#1B1A17"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#FAF8F3"/></svg>
+          <svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="#1B1A17"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#FAF8F3"/></svg>
         </span>
         <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
       </a>
+
       <nav class="nav-links" aria-label="Primary">
-        <a href="#how">How it works</a>
-        <a href="#compare">Compare</a>
-        <a href="#offer">The offer</a>
+        <div class="nav-item has-menu">
+          <a href="/product" class="nav-top">Product <svg class="chev" viewBox="0 0 10 6" width="9" height="6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></a>
+          <div class="menu" role="menu">
+            <div class="menu-col">
+              <p class="menu-eyebrow">Built-in AI</p>
+              <a href="/product#front-desk" role="menuitem"><b>AI Front Desk</b><span>Every call answered, every job booked</span></a>
+              <a href="/product#estimating" role="menuitem"><b>AI Estimating</b><span>Good / Better / Best from your pricebook</span></a>
+              <a href="/product#dispatch" role="menuitem"><b>AI Dispatch</b><span>The right tech on the right job</span></a>
+            </div>
+            <div class="menu-col">
+              <p class="menu-eyebrow">Run the operation</p>
+              <a href="/product#crew" role="menuitem"><b>Crew by text</b><span>Techs update jobs from the truck</span></a>
+              <a href="/product#money" role="menuitem"><b>Invoicing &amp; payments</b><span>Tap-to-Pay, card on file, QuickBooks</span></a>
+              <a href="/product#office" role="menuitem"><b>The office</b><span>CRM, pipeline, schedule board, timesheets</span></a>
+            </div>
+          </div>
+        </div>
+        <div class="nav-item has-menu">
+          <a href="/solutions" class="nav-top">Solutions <svg class="chev" viewBox="0 0 10 6" width="9" height="6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></a>
+          <div class="menu" role="menu">
+            <div class="menu-col">
+              <p class="menu-eyebrow">By team</p>
+              <a href="/solutions#owners" role="menuitem"><b>For owners</b><span>See the whole business, win more work</span></a>
+              <a href="/solutions#office" role="menuitem"><b>For the office</b><span>One login instead of five tabs</span></a>
+              <a href="/solutions#techs" role="menuitem"><b>For techs</b><span>No app to learn — just text</span></a>
+            </div>
+            <div class="menu-col">
+              <p class="menu-eyebrow">By industry</p>
+              <a href="/solutions#industries" role="menuitem"><b>HVAC · Plumbing · Electrical</b><span>And nine more service verticals</span></a>
+              <a href="/solutions#industries" role="menuitem"><b>Not just the trades</b><span>Any lead → quote → dispatch → invoice business</span></a>
+            </div>
+          </div>
+        </div>
+        <a class="nav-top" href="/#roi">The math</a>
+        <a class="nav-top" href="/#compare">Compare</a>
       </nav>
+
       <div class="nav-cta">
         <a class="btn-outline js-book-demo" href="#demo">Book a demo</a>
-        <a class="btn-primary" href="#waitlist">Join the founding 100</a>
+        <a class="btn-primary" href="#waitlist">Start a free pilot</a>
       </div>
     </div>
   </header>
@@ -58,36 +85,29 @@
     <!-- ============================ HERO ============================ -->
     <section class="hero">
       <div class="wrap hero-inner">
-        <h1 class="hero-el" data-step="1">Never miss a call.<br />Never miss a job.<span class="strike hero-el" data-step="2" aria-hidden="true"></span></h1>
-        <p class="lede hero-el" data-step="3">The AI-native platform that answers your calls, quotes the work, dispatches your crew, and gets you paid.</p>
+        <p class="eyebrow center hero-el" data-step="1">The AI-native service platform</p>
+        <h1 class="hero-el" data-step="1">Never miss a call.<br />Never miss a <span class="rotator" id="rotator" aria-label="job type"><span class="rot-word on">plumbing</span></span> job.</h1>
+        <p class="lede hero-el" data-step="3">Mallet answers your calls, quotes the work, dispatches your crew, and gets you paid &mdash; one platform, from a solo operator to fifty crews.</p>
         <div class="hero-actions hero-el" data-step="4">
           <a class="btn-primary lg js-book-demo" href="#demo">Book a demo</a>
-          <a class="btn-outline lg" href="#waitlist">Join the founding 100&nbsp;&rarr;</a>
+          <a class="btn-outline lg" href="#waitlist">Start a free pilot&nbsp;&rarr;</a>
         </div>
-        <ul class="chips hero-el" data-step="4" aria-label="Why now">
-          <li>Live in a day</li>
-          <li>Half your current bill &mdash; for life</li>
-          <li>First 100 businesses only</li>
-        </ul>
-        <!--
-          Highest-impact upgrade, enable when ready (the Bland/Assort pattern):
-          <p class="hero-call">Or hear it yourself — call <a href="tel:+1XXXXXXXXXX">+1 (XXX) XXX-XXXX</a>. Mallet answers.</p>
-          Point it at a DEDICATED demo front-desk number, not a personal/test line.
-        -->
+        <p class="hero-trust hero-el" data-step="4">Live in a day &middot; No credit card &middot; Half your current bill, guaranteed</p>
 
-        <!-- Signature: the AI Front Desk, playing itself. -->
-        <div class="desk hero-el" data-step="5" aria-label="Mallet answering a customer call and booking the job — demonstration">
-          <div class="desk-bar">
-            <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="desk-title">MALLET&nbsp;FRONT&nbsp;DESK</span>
-            <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>LIVE</span>
+        <!-- Signature: the AI Front Desk — pick a call, watch it get handled. -->
+        <div class="desk hero-el" data-step="5" aria-label="Mallet answering customer calls — interactive demonstration">
+          <div class="desk-tabs" role="tablist" aria-label="Choose a scenario">
+            <button class="desk-tab on" role="tab" aria-selected="true" data-scenario="0">Water heater emergency</button>
+            <button class="desk-tab" role="tab" aria-selected="false" data-scenario="1">The 7:04 AM call</button>
+            <button class="desk-tab" role="tab" aria-selected="false" data-scenario="2">&ldquo;Can I get a quote?&rdquo;</button>
           </div>
-          <div class="desk-feed" id="deskFeed">
-            <p class="feed-meta" data-t="07:42:11">Incoming call &middot; (555)&nbsp;480-2214 &mdash; you're under a sink. Mallet picks up.</p>
-            <p class="feed-bubble in" data-t="07:42:14">&ldquo;Thanks for calling Rossi Plumbing &mdash; I can get someone out today. What's going on?&rdquo;</p>
-            <p class="feed-bubble out" data-t="07:42:31">&ldquo;My water heater's leaking all over the garage&hellip;&rdquo;</p>
-            <p class="feed-bubble in" data-t="07:42:36">&ldquo;That's an emergency &mdash; I have 2:00&ndash;4:00 today with Marco. Booked. Confirmation is on its way to your phone.&rdquo;</p>
-            <p class="feed-meta done" data-t="07:43:02"><span class="ok" aria-hidden="true">&check;</span> Job created &middot; quote drafted from your pricebook &middot; Marco notified by text</p>
+          <div class="desk-window">
+            <div class="desk-bar">
+              <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="desk-title">MALLET&nbsp;FRONT&nbsp;DESK</span>
+              <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>LIVE</span>
+            </div>
+            <div class="desk-feed" id="deskFeed" aria-live="off"></div>
           </div>
         </div>
       </div>
@@ -115,6 +135,64 @@
           </div>
         </div>
         <p class="stat-foot">Mallet answers every one of them &mdash; instantly, day or night.</p>
+      </div>
+    </section>
+
+    <!-- ==================== ROI CALCULATOR ==================== -->
+    <section class="roi" id="roi">
+      <div class="wrap">
+        <p class="eyebrow" data-reveal>The math</p>
+        <h2 class="sec-h light">What missed calls actually cost you.</h2>
+        <p class="sec-sub">Set the sliders to your operation &mdash; the math updates live. Conservative on purpose: we count only half the missed calls as answerable, and less than half of those as booked.</p>
+
+        <div class="roi-grid" data-reveal>
+          <div class="roi-inputs">
+            <div class="roi-input">
+              <div class="roi-input-top"><label for="rTechs">Techs on your crew</label><output id="oTechs">4</output></div>
+              <input type="range" id="rTechs" min="1" max="50" step="1" value="4" />
+              <div class="roi-scale"><span>1</span><span>50</span></div>
+            </div>
+            <div class="roi-input">
+              <div class="roi-input-top"><label for="rMissed">Missed calls per week</label><output id="oMissed">5</output></div>
+              <input type="range" id="rMissed" min="0" max="25" step="1" value="5" />
+              <div class="roi-scale"><span>0</span><span>25</span></div>
+            </div>
+            <div class="roi-input">
+              <div class="roi-input-top"><label for="rTicket">Average job value</label><output id="oTicket">$450</output></div>
+              <input type="range" id="rTicket" min="100" max="5000" step="50" value="450" />
+              <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
+            </div>
+            <div class="roi-input">
+              <div class="roi-input-top"><label for="rBill">Current software bill / month</label><output id="oBill">$300</output></div>
+              <input type="range" id="rBill" min="0" max="2000" step="25" value="300" />
+              <div class="roi-scale"><span>$0</span><span>$2,000</span></div>
+            </div>
+          </div>
+
+          <div class="roi-results">
+            <div class="roi-hero-card">
+              <p class="roi-label">LEFT ON THE TABLE, PER YEAR</p>
+              <p class="roi-big" id="roiTotal">$25,740</p>
+              <p class="roi-note">missed-call revenue + software overspend</p>
+            </div>
+            <div class="roi-card">
+              <p class="roi-fig" id="roiJobs">$23,940</p>
+              <p class="roi-label">RECOVERED JOBS</p>
+              <p class="roi-note"><span id="roiJobsN">53</span> jobs a year booked from calls that ring out today &mdash; counted at a 40% booking rate on half your missed calls.</p>
+            </div>
+            <div class="roi-card">
+              <p class="roi-fig" id="roiSoft">$1,800</p>
+              <p class="roi-label">SOFTWARE, HALVED</p>
+              <p class="roi-note">Whatever you pay today, Mallet is half &mdash; guaranteed. That's <span id="roiSoftM">$150</span>/mo back.</p>
+            </div>
+            <div class="roi-card">
+              <p class="roi-fig" id="roiHours">16 hrs</p>
+              <p class="roi-label">OFFICE HOURS BACK, WEEKLY</p>
+              <p class="roi-note">Quoting, dispatching, invoicing, and chasing updates &mdash; automated. Estimated at ~2.5 hrs per tech + 6 office hrs.</p>
+            </div>
+          </div>
+        </div>
+        <p class="roi-fine">Estimates, not promises &mdash; your pilot measures the real numbers on your own call volume.</p>
       </div>
     </section>
 
@@ -158,9 +236,11 @@
 
     <!-- ===================== WATCH IT RUN ===================== -->
     <section class="watch">
-      <div class="wrap">
-        <p class="eyebrow" data-reveal>The whole platform</p>
-        <h2 class="sec-h">Watch a job go from call to cash.</h2>
+      <div class="wrap-wide">
+        <div class="watch-head wrap">
+          <p class="eyebrow" data-reveal>The whole platform</p>
+          <h2 class="sec-h">Watch a job go from call to cash.</h2>
+        </div>
         <div class="video-frame" data-reveal>
           <div class="desk-bar">
             <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -183,16 +263,48 @@
             <span class="ico-chip"><svg class="ico" viewBox="0 0 24 24"><path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg></span>
             <h3>AI Front Desk</h3>
             <p>Catches every call and text, books the job, and replies to the customer &mdash; before your competitor even sees the missed call.</p>
+            <a class="card-more" href="/product#front-desk">How it answers &rarr;</a>
           </article>
           <article class="card" data-reveal>
             <span class="ico-chip"><svg class="ico" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 13h5M9.5 16.5h3.5"/></svg></span>
             <h3>AI Estimating</h3>
             <p>A photo or a sentence in, a clean Good&nbsp;/&nbsp;Better&nbsp;/&nbsp;Best quote out &mdash; priced straight from your own pricebook.</p>
+            <a class="card-more" href="/product#estimating">How it quotes &rarr;</a>
           </article>
           <article class="card" data-reveal>
             <span class="ico-chip"><svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="18" r="2"/><path d="M7 6h8a4 4 0 0 1 0 8H9a4 4 0 0 0 0 8h8"/></svg></span>
             <h3>AI Dispatch</h3>
             <p>Routes the right tech to the right job and keeps the day full &mdash; no whiteboard, no group texts, no gaps.</p>
+            <a class="card-more" href="/product#dispatch">How it routes &rarr;</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================== IN THE FIELD (examples) ================== -->
+    <section class="field">
+      <div class="wrap">
+        <p class="eyebrow" data-reveal>In the field</p>
+        <h2 class="sec-h">What this looks like in a real week.</h2>
+        <p class="sec-sub">Illustrative scenarios built on the numbers above &mdash; your pilot replaces them with your own.</p>
+        <div class="field-cards">
+          <article class="field-card" data-reveal>
+            <p class="field-tag">EXAMPLE &middot; 6-TECH PLUMBING SHOP</p>
+            <h3>The Saturday water heater</h3>
+            <p>7:41 PM, owner's at dinner. Mallet answers, books the emergency slot, drafts the quote from the pricebook. Crew confirmed by text before dessert.</p>
+            <p class="field-num">1 saved call &asymp; <b>$2,400</b></p>
+          </article>
+          <article class="field-card" data-reveal>
+            <p class="field-tag">EXAMPLE &middot; 3-TECH HVAC SHOP</p>
+            <h3>The quote that went out same-day</h3>
+            <p>Photo of a condenser + one sentence. Good&nbsp;/&nbsp;Better&nbsp;/&nbsp;Best quote out by 2 PM &mdash; signed that evening, before the other two bids even landed.</p>
+            <p class="field-num">Quote turnaround: <b>4 hrs, not 4 days</b></p>
+          </article>
+          <article class="field-card" data-reveal>
+            <p class="field-tag">EXAMPLE &middot; 12-TECH CLEANING CO.</p>
+            <h3>The office that stopped chasing</h3>
+            <p>Crews text &ldquo;done&rdquo; with photos; invoices draft themselves; reminders chase the slow payers. The office runs the day from one screen.</p>
+            <p class="field-num">Office admin: <b>&minus;14 hrs/week</b></p>
           </article>
         </div>
       </div>
@@ -214,7 +326,7 @@
           <div class="cap"><svg class="ico" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><div><b>Dispatch board</b><span>The whole day, drag-and-drop simple.</span></div></div>
           <div class="cap"><svg class="ico" viewBox="0 0 24 24"><path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg><div><b>One business number</b><span>Calls and texts route to the right tech.</span></div></div>
         </div>
-        <div class="cta-row"><a class="btn-amber lg" href="#waitlist">Replace the whole stack &rarr;</a></div>
+        <div class="cta-row"><a class="btn-amber lg" href="/product">See the whole product &rarr;</a></div>
       </div>
     </section>
 
@@ -314,21 +426,21 @@
           </svg>
         </div>
         <div class="guarantee-copy">
-          <p class="eyebrow" data-reveal>The offer</p>
+          <p class="eyebrow" data-reveal>The guarantee</p>
           <h2 class="sec-h light">Whatever you pay Jobber, Housecall&nbsp;Pro, or anyone else &mdash; Mallet is half.</h2>
-          <p class="sec-sub">Founding crews lock it in <strong>for life</strong>. The first 100 only &mdash; then this offer's gone.</p>
-          <a class="btn-amber lg gtee-cta" href="#waitlist">Lock in half-price&nbsp;&rarr;</a>
+          <p class="sec-sub">Bring your current bill to the demo. We'll put the guarantee in writing.</p>
+          <a class="btn-amber lg gtee-cta js-book-demo" href="#demo">Book a demo&nbsp;&rarr;</a>
         </div>
       </div>
     </section>
 
-    <!-- ===================== WAITLIST (convert) ===================== -->
+    <!-- ===================== PILOT (convert) ===================== -->
     <section class="convert" id="waitlist">
       <div class="wrap convert-inner">
         <div class="convert-copy">
-          <p class="eyebrow">Founding crew &middot; first 100</p>
-          <h2 class="convert-h">Join the founding crew.</h2>
-          <p class="convert-sub">The first 100 service businesses on Mallet lock in <strong>half-price for life</strong> and get hands-on onboarding before we open to everyone.</p>
+          <p class="eyebrow">Free pilot</p>
+          <h2 class="convert-h">Put Mallet on your phones.</h2>
+          <p class="convert-sub">Run a free pilot on your real call volume &mdash; live in a day, no credit card. Early businesses lock in <strong>half-price for life</strong>.</p>
           <p class="convert-demo">Want to see it live first? <button class="linkbtn js-book-demo" type="button" id="demoBtn" data-calendly="https://calendly.com/owenduggan2003/30min">Book a 30-minute demo&nbsp;&rarr;</button></p>
         </div>
 
@@ -338,7 +450,7 @@
             <iframe
               data-tally-src="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
               loading="lazy" width="100%" height="320" frameborder="0"
-              title="Join the Mallet waitlist"></iframe>
+              title="Start a free Mallet pilot"></iframe>
           </div>
           <p class="convert-trust">Live in a day &middot; No credit card &middot; Half your bill, for life.</p>
         </div>
@@ -352,7 +464,7 @@
   <footer class="foot">
     <div class="wrap foot-inner">
       <div class="foot-brand">
-        <a class="wordmark foot-wordmark" href="#top">
+        <a class="wordmark foot-wordmark" href="/">
           <span class="logo-mark" aria-hidden="true">
             <svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="#FAF8F3"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#1B1A17"/></svg>
           </span>
@@ -360,17 +472,42 @@
         </a>
         <p class="foot-tag">The AI-native platform for service businesses &mdash; lead to invoice.</p>
       </div>
-      <div class="foot-links">
-        <a href="#how">How it works</a>
-        <a href="#compare">Compare</a>
-        <a href="#offer">The offer</a>
-        <a href="#waitlist">Join the waitlist</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <p class="foot-head">Product</p>
+          <a href="/product#front-desk">AI Front Desk</a>
+          <a href="/product#estimating">AI Estimating</a>
+          <a href="/product#dispatch">AI Dispatch</a>
+          <a href="/product#money">Invoicing &amp; payments</a>
+        </div>
+        <div class="foot-col">
+          <p class="foot-head">Solutions</p>
+          <a href="/solutions#owners">For owners</a>
+          <a href="/solutions#office">For the office</a>
+          <a href="/solutions#techs">For techs</a>
+          <a href="/solutions#industries">Industries</a>
+        </div>
+        <div class="foot-col">
+          <p class="foot-head">Company</p>
+          <a href="/#compare">Compare</a>
+          <a href="/#roi">The math</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+        </div>
       </div>
       <p class="foot-meta"><span>&copy; 2026 Mallet. All rights reserved.</span></p>
     </div>
   </footer>
+
+  <!-- ================= PRIVACY CHOICES (consent) ================= -->
+  <div class="consent" id="consent" hidden>
+    <p class="consent-h">Your privacy choices</p>
+    <p class="consent-p">We use cookies and similar technologies to understand who's visiting and improve the site. See our <a href="/privacy">privacy policy</a>.</p>
+    <div class="consent-row">
+      <button class="btn-primary consent-btn" id="consentAccept" type="button">OK</button>
+      <button class="btn-outline consent-btn" id="consentDecline" type="button">Decline</button>
+    </div>
+  </div>
 
   <script src="main.js" defer></script>
 </body>
