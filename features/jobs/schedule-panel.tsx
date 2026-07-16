@@ -140,20 +140,25 @@ export function SchedulePanel() {
     e.stopPropagation();
     const startX = e.clientX;
     const startDur = v.dur ?? 1;
+    let lastDur: number | null = null;
     function move(ev: MouseEvent) {
       // Cancel any pending frame so rapid mousemove events collapse to one write per frame.
       if (rafId.current !== null) cancelAnimationFrame(rafId.current);
-      const newDur = snapDuration(startDur + (ev.clientX - startX) / WPX);
+      lastDur = snapDuration(startDur + (ev.clientX - startX) / WPX);
+      const newDur = lastDur;
       rafId.current = requestAnimationFrame(() => {
         rafId.current = null;
         updateVisit(jobId, v.id, { dur: newDur });
       });
     }
     function up() {
-      // Drop: cancel any pending frame — the last committed frame's value stands.
+      // Drop: FLUSH any pending frame, never cancel-and-drop it — on a fast release the final
+      // mouse position may be scheduled but not yet committed; cancelling here would silently
+      // lose the user's last snap.
       if (rafId.current !== null) {
         cancelAnimationFrame(rafId.current);
         rafId.current = null;
+        if (lastDur !== null) updateVisit(jobId, v.id, { dur: lastDur });
       }
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);

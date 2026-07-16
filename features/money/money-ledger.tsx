@@ -86,7 +86,7 @@ export function MoneyLedger() {
       moneySet === "active"
         ? deriveMoneyRows(invoices, jobs, leads)
         : deriveArchivedMoneyRows(invoices, leads),
-    [moneySet, invoices, jobs, leads]
+    [moneySet, invoices, jobs, leads] // jobs unused on the archived branch — harmless over-recompute, kept for simplicity
   );
   const rows = useMemo(
     () => filterMoneyRows(source, { statusFilter, q }),
