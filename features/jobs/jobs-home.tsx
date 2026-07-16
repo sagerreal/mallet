@@ -20,6 +20,7 @@ import { deriveOnTrucks, deriveJobBands, deriveArchivedBands, jobTotal, type Job
 import type { Tech } from "@/lib/store/types";
 import { useJobsSort } from "./use-jobs-sort";
 import { JobsListView } from "./jobs-list-view";
+import { CallbackAutopsyCard } from "./callback-autopsy-card";
 import { JobsToolbar } from "./jobs-toolbar";
 import { JobsFilters } from "./jobs-filters";
 import { JobsColumns } from "./jobs-columns";
@@ -131,6 +132,8 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
           </div>
         ) : null;
       })()}
+
+      <CallbackAutopsyCard />
 
       <JobsToolbar
         archiveSet={archiveSet}
