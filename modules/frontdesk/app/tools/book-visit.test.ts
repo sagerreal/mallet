@@ -212,8 +212,8 @@ describe("bookVisitTool", () => {
     const crewB = asUserId(SECOND_CREW_UUID);
     const h2 = buildHarness({
       sameDayCrewLoads: [
-        { userId: crewA, sameDayJobs: [{ point: null }] }, // 1 job
-        { userId: crewB, sameDayJobs: [] },                // 0 jobs → should win
+        { userId: crewA, skillTags: [], sameDayJobs: [{ point: null }] }, // 1 job
+        { userId: crewB, skillTags: [], sameDayJobs: [] },                // 0 jobs → should win
       ],
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
@@ -234,8 +234,8 @@ describe("bookVisitTool", () => {
       settings: settingsFrom({ originLat: origin.lat, originLng: origin.lng, areaRadiusMi: 500 }),
       geocoder: { async geocode() { return jobPt; } },
       sameDayCrewLoads: [
-        { userId: crewA, sameDayJobs: [{ point: { lat: 37.61, lng: -122.0 } }] }, // ~0.7 mi
-        { userId: crewB, sameDayJobs: [{ point: { lat: 38.6,  lng: -122.0 } }] }, // ~69 mi
+        { userId: crewA, skillTags: [], sameDayJobs: [{ point: { lat: 37.61, lng: -122.0 } }] }, // ~0.7 mi
+        { userId: crewB, skillTags: [], sameDayJobs: [{ point: { lat: 38.6,  lng: -122.0 } }] }, // ~69 mi
       ],
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
@@ -253,8 +253,8 @@ describe("bookVisitTool", () => {
       settings: settingsFrom({ originLat: origin.lat, originLng: origin.lng, areaRadiusMi: 500 }),
       geocoder: { async geocode() { return jobPt; } },
       sameDayCrewLoads: [
-        { userId: crewA, sameDayJobs: [{ point: { lat: 38.6,  lng: -122.0 } }] }, // ~69 mi — far
-        { userId: crewB, sameDayJobs: [{ point: { lat: 37.61, lng: -122.0 } }] }, // ~0.7 mi — near
+        { userId: crewA, skillTags: [], sameDayJobs: [{ point: { lat: 38.6,  lng: -122.0 } }] }, // ~69 mi — far
+        { userId: crewB, skillTags: [], sameDayJobs: [{ point: { lat: 37.61, lng: -122.0 } }] }, // ~0.7 mi — near
       ],
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
@@ -536,5 +536,85 @@ describe("bookVisitTool — scope_signal capture", () => {
     const signal = "pipes are rusty and there is some mold";
     await bookVisitTool.handle({ ...REPAIR_INPUT, scope_signal: signal }, h.ctx);
     expect(onlyJob(h).props.scope).toBe(decorateScope(signal));
+  });
+
+  // ── skill gate: cert-filtered dispatch ──
+
+  it("gate: a required cert filters unqualified crew — only the qualified tech is assigned", async () => {
+    const crewA = asUserId(FIRST_CREW_UUID);   // has the cert
+    const crewB = asUserId(SECOND_CREW_UUID);  // lacks it
+    const withCertService = settingsFrom({
+      booking: {
+        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["gas"] }],
+        notServices: "",
+        serviceFee: 89,
+        feeCredited: true,
+      },
+    });
+    const h2 = buildHarness({
+      settings: withCertService,
+      sameDayCrewLoads: [
+        { userId: crewA, skillTags: ["gas"], sameDayJobs: [] },  // qualified
+        { userId: crewB, skillTags: [],       sameDayJobs: [] }, // not qualified
+      ],
+    });
+    await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewA);
+  });
+
+  it("gate: nobody qualified → booking succeeds but assignee is null (UNASSIGNED)", async () => {
+    const crewA = asUserId(FIRST_CREW_UUID);
+    const withCertService = settingsFrom({
+      booking: {
+        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["backflow"] }],
+        notServices: "",
+        serviceFee: 89,
+        feeCredited: true,
+      },
+    });
+    const h2 = buildHarness({
+      settings: withCertService,
+      sameDayCrewLoads: [
+        { userId: crewA, skillTags: ["gas"], sameDayJobs: [] }, // wrong cert
+      ],
+    });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    // Booking still succeeds
+    expect(result.data).toMatchObject({ kind: "work" });
+    // But nobody was assigned
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBeNull();
+  });
+
+  it("gate: no requirement (service not in playbook) → all crew are candidates (no filtering)", async () => {
+    const crewA = asUserId(FIRST_CREW_UUID);
+    // Default settings has no services configured matching "Leaky faucet" with certs.
+    const h2 = buildHarness({
+      sameDayCrewLoads: [
+        { userId: crewA, skillTags: [], sameDayJobs: [] },
+      ],
+    });
+    await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    // crewA assigned despite having no tags (no requirement)
+    expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewA);
+  });
+
+  it("gate: booked job persists the resolved requiredCerts", async () => {
+    const withCertService = settingsFrom({
+      booking: {
+        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["gas"] }],
+        notServices: "",
+        serviceFee: 89,
+        feeCredited: true,
+      },
+    });
+    const h2 = buildHarness({ settings: withCertService });
+    await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
+    expect(onlyJob(h2).props.requiredCerts).toEqual(["gas"]);
+  });
+
+  it("gate: service not in playbook → booked job has null requiredCerts", async () => {
+    // Default settings has no services with certs
+    await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+    expect(onlyJob(h).props.requiredCerts).toBeNull();
   });
 });

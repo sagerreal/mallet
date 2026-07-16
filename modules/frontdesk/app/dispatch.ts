@@ -15,6 +15,7 @@ import { haversineMiles } from "./service-area";
 // toward load — it just can't be used as a distance anchor.
 export interface CrewLoad {
   readonly userId: UserId;
+  readonly skillTags: readonly string[];
   readonly sameDayJobs: readonly { readonly point: GeoPoint | null }[];
 }
 
