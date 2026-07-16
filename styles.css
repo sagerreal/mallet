@@ -17,8 +17,8 @@
   --live:#2E9D63;
   --r:16px;
   --rb:11px;
-  --font-display:"Bricolage Grotesque",system-ui,sans-serif;
-  --font-body:"Inter",system-ui,sans-serif;
+  --font-display:"Instrument Sans",system-ui,sans-serif;
+  --font-body:"Instrument Sans",system-ui,sans-serif;
   --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   --maxw:1160px;
 }
@@ -30,7 +30,7 @@ body{
   line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   overflow-x:hidden;
 }
-h1,h2,h3{font-family:var(--font-display);font-weight:800;line-height:1.06;letter-spacing:-.025em}
+h1,h2,h3{font-family:var(--font-display);font-weight:700;line-height:1.06;letter-spacing:-.025em}
 a{color:inherit;text-decoration:none}
 strong{font-weight:700}
 :focus-visible{outline:3px solid var(--amber);outline-offset:3px;border-radius:3px}
@@ -82,7 +82,7 @@ strong{font-weight:700}
 .convert-sub strong{color:var(--amber-deep)}
 
 /* logo wordmark */
-.wordmark{display:inline-flex;align-items:center;gap:.55rem;font-family:var(--font-display);font-weight:800;font-size:1.4rem;color:var(--ink);letter-spacing:-.03em}
+.wordmark{display:inline-flex;align-items:center;gap:.55rem;font-family:var(--font-display);font-weight:700;font-size:1.4rem;color:var(--ink);letter-spacing:-.03em}
 .logo-mark{display:inline-flex;align-items:center}
 .logo-mark svg{display:block;border-radius:8px}
 .logo-tld{color:var(--ink-soft);font-weight:700}
@@ -127,7 +127,7 @@ strong{font-weight:700}
 /* ================= ONE-LINE PROOF ================= */
 .proofline{background:var(--parchment);padding:3.6rem 0;text-align:center}
 .proofline-p{font-family:var(--font-display);font-weight:700;font-size:clamp(1.25rem,2.6vw,1.8rem);line-height:1.4;letter-spacing:-.015em;max-width:34ch;margin:0 auto;color:var(--ink)}
-.proofline-p b{font-weight:800}
+.proofline-p b{font-weight:700}
 .pl-br{display:block;content:""}
 
 /* ================= WHAT MALLET DOES (rows) ================= */
@@ -207,7 +207,7 @@ strong{font-weight:700}
 .roi-inputs{display:flex;flex-direction:column;gap:1.6rem}
 .roi-input-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.55rem}
 .roi-input-top label{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(250,248,243,.6)}
-.roi-input-top output{font-family:var(--font-display);font-weight:800;font-size:1.35rem;color:var(--paper);letter-spacing:-.02em}
+.roi-input-top output{font-family:var(--font-display);font-weight:700;font-size:1.35rem;color:var(--paper);letter-spacing:-.02em}
 .roi-scale{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:.64rem;color:rgba(250,248,243,.35);margin-top:.35rem}
 input[type="range"]{
   -webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
@@ -230,8 +230,8 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:r
 }
 .roi-card{background:rgba(250,248,243,.05);border:1px solid var(--line-dark);border-radius:var(--r);padding:1.4rem 1.5rem}
 .roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:rgba(250,248,243,.55);margin-top:.2rem}
-.roi-big{font-family:var(--font-display);font-weight:800;font-size:clamp(2.6rem,5vw,3.7rem);letter-spacing:-.03em;line-height:1.05;color:var(--amber);margin:.3rem 0 .1rem}
-.roi-fig{font-family:var(--font-display);font-weight:800;font-size:1.65rem;letter-spacing:-.02em;color:var(--paper)}
+.roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(2.6rem,5vw,3.7rem);letter-spacing:-.03em;line-height:1.05;color:var(--amber);margin:.3rem 0 .1rem}
+.roi-fig{font-family:var(--font-display);font-weight:700;font-size:1.65rem;letter-spacing:-.02em;color:var(--paper)}
 .roi-note{font-size:.85rem;color:rgba(250,248,243,.6);line-height:1.5;margin-top:.45rem}
 .roi-fine{margin-top:1.6rem;font-size:.8rem;color:rgba(250,248,243,.45)}
 @media (max-width:900px){
@@ -279,7 +279,7 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:r
 .compare td{color:var(--ink-soft)}
 .compare .me{background:rgba(176,125,0,.09)}
 .compare thead th.me{background:rgba(176,125,0,.18);color:var(--ink);border-top-left-radius:0}
-.compare .yes{color:var(--amber);font-weight:800;font-size:1.2rem}
+.compare .yes{color:var(--amber);font-weight:700;font-size:1.2rem}
 .compare .no{color:#cbc4b5}
 .compare tbody tr:last-child th,.compare tbody tr:last-child td{border-bottom:0}
 .compare-note{margin-top:1.3rem;text-align:center;font-size:.95rem;color:var(--ink-soft)}
@@ -311,7 +311,7 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:r
 
 /* ================ SUBPAGES (product / solutions) ================ */
 .page-hero{background:var(--paper);padding:5rem 0 3.6rem;border-bottom:1px solid var(--line)}
-.page-h{font-family:var(--font-display);font-weight:800;font-size:clamp(2.4rem,5.6vw,4rem);line-height:1.05;letter-spacing:-.03em}
+.page-h{font-family:var(--font-display);font-weight:700;font-size:clamp(2.4rem,5.6vw,4rem);line-height:1.05;letter-spacing:-.03em}
 .lede-left{font-size:clamp(1.05rem,1.6vw,1.22rem);color:var(--ink-soft);line-height:1.6;max-width:56ch;margin-top:1.2rem}
 
 .feature{background:var(--paper);padding:5.2rem 0}
@@ -336,7 +336,7 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:r
 .qm-tier{font-family:var(--font-mono);font-size:.64rem;letter-spacing:.1em;color:var(--amber-deep);min-width:52px}
 .qm-desc{flex:1;font-size:.95rem;color:var(--ink)}
 .qm-desc.wide{min-width:0}
-.qm-price{font-family:var(--font-display);font-weight:800;font-size:1.1rem;letter-spacing:-.01em;white-space:nowrap}
+.qm-price{font-family:var(--font-display);font-weight:700;font-size:1.1rem;letter-spacing:-.01em;white-space:nowrap}
 .qm-row.total .qm-price{font-size:1.3rem}
 .ok-num{color:var(--live)}
 .qm-foot{font-size:.85rem;color:var(--ink-soft);padding-top:.9rem}
