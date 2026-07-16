@@ -58,157 +58,192 @@
     Array.prototype.forEach.call(items, function (el) { io.observe(el); });
   }
 
-  /* ============== FRONT DESK — scenario player ============== */
-  /* Three call scenarios. Clicking a tab replays the feed for that scenario.
-     Line kinds: meta (mono system line), in (Mallet bubble), out (caller bubble),
-     done (mono success line). Reduced motion: render final state, no animation. */
-  var SCENARIOS = [
-    [ // 0 — water heater emergency
-      { k: 'meta', t: '07:42:11', text: "Incoming call · (555) 480-2214 — you're under a sink. Mallet picks up." },
-      { k: 'in',  text: '“Thanks for calling Rossi Plumbing — I can get someone out today. What’s going on?”' },
-      { k: 'out', text: '“My water heater’s leaking all over the garage…”' },
-      { k: 'in',  text: '“That’s an emergency — I have 2:00–4:00 today with Marco. Booked. Confirmation is on its way to your phone.”' },
-      { k: 'done', t: '07:43:02', text: 'Job created · quote drafted from your pricebook · Marco notified by text' }
-    ],
-    [ // 1 — the 7:04 AM call
-      { k: 'meta', t: '07:04:19', text: 'Incoming call · (555) 217-8830 — before opening hours. Mallet picks up.' },
-      { k: 'out', text: '“Hi — our AC died overnight and we’ve got a baby at home. Anyone free today?”' },
-      { k: 'in',  text: '“We can absolutely help. First opening is 9:30 this morning with Dana — should I lock it in?”' },
-      { k: 'out', text: '“Yes please!”' },
-      { k: 'done', t: '07:05:44', text: 'Booked 9:30 AM · customer texted a confirmation · Dana’s day updated' }
-    ],
-    [ // 2 — "can I get a quote?"
-      { k: 'meta', t: '13:26:03', text: 'Text from (555) 903-4471 · photo attached — a rusted 40-gal water heater.' },
-      { k: 'out', text: '“How much to replace this? It’s original to the house.”' },
-      { k: 'in',  text: '“I’ll put together options right now — give me two minutes.”' },
-      { k: 'in',  text: '“Sent! Good / Better / Best, priced from our book — tap to approve and we’ll get you scheduled.”' },
-      { k: 'done', t: '13:29:31', text: 'Quote #1042 sent · 3 options from YOUR pricebook · follow-up scheduled for Thursday' }
-    ]
+  /* ============== THE FOUR-ACT DEMO ============== */
+  /* One act per headline beat: call → quote → job → invoice. Each act is a
+     timed mini-scene; acts auto-advance and loop. ▸ skips ahead, clicking a
+     headline beat jumps. Reduced motion: acts render finished, no timers. */
+
+  function slice(x) { return Array.prototype.slice.call(x); }
+
+  var CALL_LINES = [
+    { who: 'ai',     text: 'Thanks for calling Rossi Plumbing — what’s going on?', ck: 0 },
+    { who: 'caller', text: 'My water heater’s leaking all over the garage…' },
+    { who: 'ai',     text: 'That’s an emergency — Marco can be there 2:00–4:00 today. You’re booked.', ck: 1, ckEnd: 2 }
   ];
-  /* Stage choreography: as feed line `line` lands (+extra ms), light headline
-     beat `beat` and/or pop receipt chip `chip` with `label`. Beats: 0 call,
-     1 quote, 2 job, 3 invoice. */
-  var CHOREO = [
-    [ // 0 — water heater emergency
-      { line: 0, beat: 0 },
-      { line: 3, chip: 0, label: 'Booked · 2:00–4:00 · Marco' },
-      { line: 4, beat: 1, chip: 1, label: 'Quote drafted · your pricebook' },
-      { line: 4, extra: 800, beat: 2, chip: 2, label: 'Marco · notified by text' }
-    ],
-    [ // 1 — the 7:04 AM call
-      { line: 0, beat: 0 },
-      { line: 4, chip: 0, label: 'Booked · 9:30 · Dana' },
-      { line: 4, extra: 700, chip: 1, label: 'Confirmation · texted' },
-      { line: 4, extra: 1400, beat: 2, chip: 2, label: 'Dana’s day · updated' }
-    ],
-    [ // 2 — "can I get a quote?"
-      { line: 0, beat: 0 },
-      { line: 3, beat: 1, chip: 0, label: 'Quote #1042 · Good/Better/Best' },
-      { line: 4, chip: 1, label: 'Priced from YOUR book' },
-      { line: 4, extra: 800, beat: 3, chip: 2, label: 'Follow-up · Thursday' }
-    ]
-  ];
-  var deskTimers = [];
+  var QC_TEXT = '40-gal water heater swap — leaking, garage install';
+  var TITLES = ['MALLET FRONT DESK', 'MALLET · NEW QUOTE', 'MALLET · JOB BOARD', 'MALLET · INVOICES'];
+  var NEXT_LABELS = ['Next: writes the quote', 'Next: runs the job', 'Next: chases the invoice', 'Replay from the call'];
+  var WORD_MS = 210, TYPE_MS = 38, HOLD = 2600;
 
-  /* Renders a scenario into the feed. Returns the per-line reveal times (ms)
-     so the stage can schedule chips/beats off the same clock. */
-  function renderScenario(feed, scenario, animate) {
-    deskTimers.forEach(clearTimeout);
-    deskTimers = [];
-    feed.innerHTML = '';
+  var actTimers = [], actIvals = [];
+  function at(ms, fn) { actTimers.push(setTimeout(fn, ms)); }
+  function clearAct() {
+    actTimers.forEach(clearTimeout); actTimers = [];
+    actIvals.forEach(clearInterval); actIvals = [];
+  }
+  function fmtClock(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
 
-    scenario.forEach(function (line) {
-      var el;
-      if (line.k === 'meta' || line.k === 'done') {
-        el = document.createElement('p');
-        el.className = 'feed-meta' + (line.k === 'done' ? ' done' : '');
-        el.setAttribute('data-t', line.t || '');
-        if (line.k === 'done') {
-          var ok = document.createElement('span');
-          ok.className = 'ok'; ok.setAttribute('aria-hidden', 'true'); ok.innerHTML = '&check; ';
-          el.appendChild(ok);
-        }
-        el.appendChild(document.createTextNode(line.text));
-      } else {
-        el = document.createElement('p');
-        el.className = 'feed-bubble ' + line.k;
-        el.textContent = line.text;
-      }
-      feed.appendChild(el);
+  /* act 0 — the call: word-by-word captions, checkpoint pills, live timer */
+  function runCall(act, animate) {
+    var line = act.querySelector('.cc-line');
+    var timer = act.querySelector('.cc-timer');
+    var checks = slice(act.querySelectorAll('.ck'));
+    var aiTile = act.querySelector('.tile.ai-side');
+    var callerTile = act.querySelector('.tile.caller-side');
+    checks.forEach(function (c) { c.classList.remove('done'); });
+
+    function setLine(l, lit) {
+      var html = '<span class="cc-who">' + (l.who === 'ai' ? 'MALLET' : 'CALLER') + '</span>';
+      l.text.split(' ').forEach(function (w) {
+        html += '<span class="w' + (lit ? ' lit' : '') + '">' + w + '</span> ';
+      });
+      line.innerHTML = html;
+      aiTile.classList.toggle('speaking', !lit && l.who === 'ai');
+      callerTile.classList.toggle('speaking', !lit && l.who === 'caller');
+    }
+
+    if (!animate) {
+      setLine(CALL_LINES[CALL_LINES.length - 1], true);
+      checks.forEach(function (c) { c.classList.add('done'); });
+      timer.textContent = '0:38';
+      return 0;
+    }
+
+    timer.textContent = '0:00';
+    var secs = 0;
+    actIvals.push(setInterval(function () { secs += 1; timer.textContent = fmtClock(secs); }, 1000));
+
+    var t = 500;
+    CALL_LINES.forEach(function (l) {
+      var words = l.text.split(' ');
+      at(t, function () { setLine(l, false); });
+      words.forEach(function (_, i) {
+        at(t + 200 + i * WORD_MS, function () {
+          var w = line.querySelectorAll('.w')[i];
+          if (w) w.classList.add('lit');
+        });
+      });
+      var end = t + 200 + words.length * WORD_MS;
+      if (typeof l.ck === 'number') at(t + 500, function () { checks[l.ck].classList.add('done'); });
+      if (typeof l.ckEnd === 'number') at(end + 300, function () { checks[l.ckEnd].classList.add('done'); });
+      t = end + 800;
     });
-
-    var lines = Array.prototype.slice.call(feed.children);
-    if (!animate) { lines.forEach(function (el) { el.classList.add('on'); }); return []; }
-
-    var STEP = [700, 1400, 1600, 1800, 1500];
-    var t = 350;
-    var times = [];
-    lines.forEach(function (el, i) {
-      t += STEP[i] || 1400;
-      times.push(t);
-      deskTimers.push(setTimeout(function () { el.classList.add('on'); }, t));
+    at(t + 200, function () {
+      checks[3].classList.add('done');
+      aiTile.classList.remove('speaking'); callerTile.classList.remove('speaking');
     });
-    return times;
+    return t + 900;
   }
 
-  /* The hero stage: scenarios auto-cycle; chips pop and headline beats light
-     in sync with the feed. Dots switch scenarios manually. */
-  var HOLD_AFTER = 3400; // dwell on the finished scenario before advancing
+  /* act 1 — the quote: the ask types itself, the staged run ticks, GBB lands */
+  function runQuote(act, animate) {
+    var typed = act.querySelector('.qc-typed');
+    var build = act.querySelector('.qc-build');
+    var stages = slice(act.querySelectorAll('.qs'));
+    var result = act.querySelector('.qc-result');
+    build.classList.remove('pressed'); result.classList.remove('on');
+    stages.forEach(function (s) { s.classList.remove('run', 'done'); });
+
+    if (!animate) {
+      typed.textContent = QC_TEXT;
+      build.classList.add('pressed');
+      stages.forEach(function (s) { s.classList.add('done'); });
+      result.classList.add('on');
+      return 0;
+    }
+    typed.textContent = '';
+    for (var i = 1; i <= QC_TEXT.length; i++) (function (n) {
+      at(400 + n * TYPE_MS, function () { typed.textContent = QC_TEXT.slice(0, n); });
+    })(i);
+    var tType = 400 + QC_TEXT.length * TYPE_MS;
+    at(tType + 350, function () { build.classList.add('pressed'); });
+    var tSt = tType + 950;
+    stages.forEach(function (s, i) {
+      at(tSt + i * 850, function () { s.classList.add('run'); });
+      at(tSt + i * 850 + 800, function () { s.classList.remove('run'); s.classList.add('done'); });
+    });
+    var tRes = tSt + stages.length * 850 + 350;
+    at(tRes, function () { result.classList.add('on'); });
+    return tRes + 700;
+  }
+
+  /* act 2 — the job: the checklist ticks itself, the crew reports by text */
+  function runJob(act, animate) {
+    var items = slice(act.querySelectorAll('.jc'));
+    var text = act.querySelector('.job-text');
+    var meta = act.querySelector('.job-meta');
+    items.forEach(function (li) { li.classList.remove('done'); });
+    text.classList.remove('on'); meta.classList.remove('on');
+    if (!animate) {
+      items.forEach(function (li) { li.classList.add('done'); });
+      text.classList.add('on'); meta.classList.add('on');
+      return 0;
+    }
+    items.forEach(function (li, i) {
+      at(600 + i * 700, function () { li.classList.add('done'); });
+    });
+    var t = 600 + items.length * 700 + 500;
+    at(t, function () { text.classList.add('on'); });
+    at(t + 900, function () { meta.classList.add('on'); });
+    return t + 1600;
+  }
+
+  /* act 3 — the invoice: automatic nudges, then PAID */
+  function runInvoice(act, animate) {
+    var msgs = slice(act.querySelectorAll('.inv-msg'));
+    var paid = act.querySelector('.inv-paid');
+    var status = act.querySelector('.inv-status');
+    msgs.forEach(function (m) { m.classList.remove('on'); });
+    paid.classList.remove('on'); status.classList.remove('paid'); status.textContent = 'SENT';
+    function pay() { paid.classList.add('on'); status.classList.add('paid'); status.textContent = 'PAID'; }
+    if (!animate) {
+      msgs.forEach(function (m) { m.classList.add('on'); });
+      pay();
+      return 0;
+    }
+    at(700, function () { msgs[0].classList.add('on'); });
+    at(2300, function () { msgs[1].classList.add('on'); });
+    at(4100, pay);
+    return 4900;
+  }
 
   function frontDesk() {
-    var feed = document.getElementById('deskFeed');
-    if (!feed) return;
-    var dots = Array.prototype.slice.call(document.querySelectorAll('.sdot'));
-    var chips = Array.prototype.slice.call(document.querySelectorAll('.stage-chips .chip'));
-    var beats = Array.prototype.slice.call(document.querySelectorAll('.h1-beats .beat'));
+    var actsWrap = document.getElementById('acts');
+    if (!actsWrap) return;
+    var acts = slice(actsWrap.querySelectorAll('.act'));
+    var beats = slice(document.querySelectorAll('.h1-beats .beat'));
+    var title = document.getElementById('stageTitle');
+    var nextBtn = document.getElementById('stageNext');
+    var RUN = [runCall, runQuote, runJob, runInvoice];
+    var current = 0;
 
-    function resetStage() {
-      chips.forEach(function (c) { c.classList.remove('on'); });
-      beats.forEach(function (b) { b.classList.remove('on'); });
-    }
-
-    function applyEvent(ev) {
-      if (typeof ev.beat === 'number' && beats[ev.beat]) beats[ev.beat].classList.add('on');
-      if (typeof ev.chip === 'number' && chips[ev.chip] && ev.label) {
-        chips[ev.chip].textContent = ev.label;
-        chips[ev.chip].classList.add('on');
-      }
-    }
-
-    function select(i) {
-      dots.forEach(function (d, j) {
-        d.classList.toggle('on', i === j);
-        d.setAttribute('aria-selected', i === j ? 'true' : 'false');
+    function show(i, animate) {
+      clearAct();
+      current = i;
+      acts.forEach(function (a, j) { a.classList.toggle('on', i === j); });
+      beats.forEach(function (b, j) {
+        b.classList.toggle('on', j <= i);
+        b.classList.toggle('now', j === i);
       });
-      resetStage();
-
-      var scenario = SCENARIOS[i] || SCENARIOS[0];
-      var events = CHOREO[i] || [];
-
-      if (reduce) { // static final state: everything lit, no timers
-        renderScenario(feed, scenario, false);
-        beats.forEach(function (b) { b.classList.add('on'); });
-        events.forEach(applyEvent);
-        return;
-      }
-
-      var times = renderScenario(feed, scenario, true);
-      var last = times[times.length - 1] || 0;
-      events.forEach(function (ev) {
-        var at = (times[ev.line] || 0) + 420 + (ev.extra || 0);
-        last = Math.max(last, at);
-        deskTimers.push(setTimeout(function () { applyEvent(ev); }, at));
-      });
-      deskTimers.push(setTimeout(function () { select((i + 1) % SCENARIOS.length); }, last + HOLD_AFTER));
+      if (title) title.textContent = TITLES[i];
+      if (nextBtn) nextBtn.setAttribute('aria-label', NEXT_LABELS[i]);
+      var dur = RUN[i](acts[i], animate);
+      if (animate) at(dur + HOLD, function () { show((i + 1) % acts.length, true); });
     }
 
-    dots.forEach(function (d) {
-      d.addEventListener('click', function () {
-        select(parseInt(d.getAttribute('data-scenario'), 10) || 0);
+    if (nextBtn) nextBtn.addEventListener('click', function () {
+      show((current + 1) % acts.length, !reduce);
+    });
+    beats.forEach(function (b, j) {
+      b.setAttribute('role', 'button');
+      b.setAttribute('tabindex', '0');
+      b.addEventListener('click', function () { show(j, !reduce); });
+      b.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(j, !reduce); }
       });
     });
 
-    select(0);
+    show(0, !reduce);
   }
 
   /* ============== ROI CALCULATOR ============== */
