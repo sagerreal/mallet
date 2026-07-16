@@ -83,6 +83,9 @@ strong{font-weight:700}
 .lg{padding:1rem 1.7rem;font-size:1.02rem}
 .caps .btn-outline{border-color:var(--paper);color:var(--paper)}
 .cta-row{margin-top:2.4rem;display:flex;justify-content:center}
+.cta-row.split{margin-top:2.6rem;align-items:center;gap:1.4rem;flex-wrap:wrap}
+.linkish{font-size:.95rem;font-weight:600;color:var(--amber-deep)}
+.linkish:hover{color:var(--ink)}
 .cta-row .btn-primary,.cta-row .btn-amber{white-space:normal;text-align:center;max-width:36ch}
 .convert-trust{margin-top:1rem;text-align:center;font-size:.86rem;color:var(--ink-soft);font-weight:500}
 .convert-sub strong{color:var(--amber-deep)}
@@ -143,6 +146,10 @@ strong{font-weight:700}
 .beat.on::before{width:26px;background:var(--amber)}
 .lede{font-size:clamp(1.05rem,1.6vw,1.22rem);color:var(--ink-soft);line-height:1.6;max-width:40ch;margin:1.5rem 0 0}
 .hero-actions{display:flex;gap:1rem;flex-wrap:wrap;margin-top:2.1rem;justify-content:flex-start}
+.hero-verts{
+  margin-top:1.7rem;font-family:var(--font-mono);font-size:.66rem;letter-spacing:.1em;
+  color:var(--ink-soft);max-width:52ch;line-height:1.9;
+}
 
 /* The stage: demo window on a desk, receipts popping as the AI works */
 .hero-stage{position:relative;z-index:1}
