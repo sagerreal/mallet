@@ -11,7 +11,7 @@
  * Renders nothing when there are no clusters.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useCallbackAutopsy } from "@/features/jobs/hooks";
 import { useAppStore } from "@/lib/store/app-store";
@@ -108,7 +108,7 @@ function ClusterRow({ cluster }: ClusterRowProps) {
   }
 
   // Determine right-side control for this row.
-  let rightControl: React.ReactNode = null;
+  let rightControl: ReactNode = null;
   if (topMiss) {
     if (done) {
       rightControl = (

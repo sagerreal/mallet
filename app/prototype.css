@@ -492,7 +492,7 @@
   .cb-autopsy-refs{font-size:11.5px;color:var(--jink2);font-variant-numeric:tabular-nums}
   .cb-autopsy-error{font-size:12px;color:var(--jrust);margin-top:4px}
   .cb-autopsy-action{flex-shrink:0;padding-top:2px}
-  .cb-autopsy-confirmed{font-size:12.5px;font-weight:700;color:var(--accent,#1a6b3a)}
+  .cb-autopsy-confirmed{font-size:12.5px;font-weight:700;color:var(--jamber)}
   .cb-autopsy-already{font-size:12px;color:var(--jink2)}
 
   /* crew avatar sizing — shared by the List view rows */
