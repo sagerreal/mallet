@@ -234,10 +234,6 @@
         <p class="sec-sub" data-reveal>That&rsquo;s the week rolling by above &mdash; set the sliders to your operation. Conservative on purpose.</p>
         <!-- The worksheet: a job-ticket sheet, not another app window. -->
         <div class="ledger" data-reveal>
-          <div class="ledger-head">
-            <span class="lh-title" id="mathTitle">LEAK&nbsp;WORKSHEET&nbsp;&middot;&nbsp;01&nbsp;FRONT&nbsp;DESK</span>
-            <span class="lh-note">CONSERVATIVE&nbsp;ON&nbsp;PURPOSE</span>
-          </div>
           <div class="ledger-body">
         <div class="math-tabs" role="tablist" aria-label="Pick a pillar">
           <button class="mtab on" role="tab" aria-selected="true" data-panel="0">01 &middot; FRONT&nbsp;DESK</button>
@@ -249,7 +245,6 @@
 
         <div class="mpanel on" data-mpanel="0">
           <div class="roi-inputs">
-            <p class="mp-lead">Calls that ring out while you&rsquo;re under a sink.</p>
             <div class="roi-input">
               <div class="roi-input-top"><label for="rMissed">Missed calls per week</label><output id="oMissed">5</output></div>
               <input type="range" id="rMissed" min="0" max="25" step="1" value="5" />
@@ -264,13 +259,12 @@
           <div class="ledger-payoff">
             <p class="roi-label">LEFT ON THE TABLE, PER YEAR</p>
             <p class="roi-big" id="pDesk">$23,400</p>
-            <p class="roi-note"><span id="pDeskN">52</span> jobs a year from calls that ring out today &mdash; answered, booked, dispatched.</p>
+            <p class="roi-note"><span id="pDeskN">52</span> booked jobs a year.</p>
           </div>
         </div>
 
         <div class="mpanel" data-mpanel="1">
           <div class="roi-inputs">
-            <p class="mp-lead">Evenings spent writing quotes.</p>
             <div class="roi-input">
               <div class="roi-input-top"><label for="rQuotes">Quotes you write per week</label><output id="oQuotes">6</output></div>
               <input type="range" id="rQuotes" min="0" max="40" step="1" value="6" />
@@ -280,13 +274,12 @@
           <div class="ledger-payoff">
             <p class="roi-label">QUOTE-WRITING, BACK PER YEAR</p>
             <p class="roi-big" id="pEst">156 hrs</p>
-            <p class="roi-note">Drafted from your pricebook and rates as Good&nbsp;/&nbsp;Better&nbsp;/&nbsp;Best &mdash; you review and send. About 30 minutes back per quote.</p>
+            <p class="roi-note">It drafts, you review and send.</p>
           </div>
         </div>
 
         <div class="mpanel" data-mpanel="2">
           <div class="roi-inputs">
-            <p class="mp-lead">The truck roll you don&rsquo;t get to bill.</p>
             <div class="roi-input">
               <div class="roi-input-top"><label for="rCallbacks">Callbacks per month</label><output id="oCallbacks">2</output></div>
               <input type="range" id="rCallbacks" min="0" max="10" step="1" value="2" />
@@ -301,13 +294,12 @@
           <div class="ledger-payoff">
             <p class="roi-label">CALLBACKS THAT NEVER HAPPEN, PER YEAR</p>
             <p class="roi-big" id="pFore">$1,800</p>
-            <p class="roi-note">A callback eats half a job&rsquo;s value. The checklist catches the skipped step &mdash; one in three never happens.</p>
+            <p class="roi-note">The checklist catches the skipped step.</p>
           </div>
         </div>
 
         <div class="mpanel" data-mpanel="3">
           <div class="roi-inputs">
-            <p class="mp-lead">Money you&rsquo;ve earned but don&rsquo;t have.</p>
             <div class="roi-input">
               <div class="roi-input-top"><label for="rUnpaid">Unpaid invoices out right now</label><output id="oUnpaid">4</output></div>
               <input type="range" id="rUnpaid" min="0" max="25" step="1" value="4" />
@@ -322,20 +314,20 @@
           <div class="ledger-payoff">
             <p class="roi-label">CASH ON THE STREET, RIGHT NOW</p>
             <p class="roi-big" id="pCash">$1,800</p>
-            <p class="roi-note">Sitting in unpaid invoices &mdash; the follow-ups chase it down, nobody at the office has to remember. Already yours, so it&rsquo;s not in the annual total.</p>
+            <p class="roi-note">The follow-ups chase it down for you.</p>
           </div>
         </div>
 
         <div class="roi-total-bar">
           <div class="ledger-total">
             <div class="lt-row"><span class="lt-label">ADD IT UP, PER&nbsp;YEAR</span><span class="lt-leader" aria-hidden="true"></span><b class="lt-fig" id="roiTotal">$25,200</b></div>
-            <p class="roi-note">recovered calls + callbacks prevented &mdash; plus <span id="roiHrs">156</span> hrs of quote-writing back.</p>
+            <p class="roi-note">plus <span id="roiHrs">156</span> hrs of quote-writing back.</p>
           </div>
         </div>
           </div>
         </div>
 
-        <p class="roi-fine">Estimates, not promises &mdash; the assumptions are deliberately modest: half of missed calls are reachable and 40% book; a quote takes ~30 minutes to write; a callback eats half a job&rsquo;s value and the checklist prevents one in three. Your free pilot measures the real numbers.</p>
+        <p class="roi-fine">Deliberately modest estimates &mdash; your free pilot measures the real numbers.</p>
       </div>
     </section>
 
@@ -347,7 +339,7 @@
       <div class="tour-sticky">
         <div class="wrap tour-head">
           <h2 class="sec-h center">This is Mallet.</h2>
-          <p class="tour-hint" aria-hidden="true">SCROLL FOR THE TOUR &mdash; OR CLICK THE SIDEBAR</p>
+          <p class="tour-hint" aria-hidden="true">WATCH IT WORK &mdash; OR CLICK A PAGE</p>
         </div>
         <div class="wrap">
           <div class="app-frame">
@@ -384,11 +376,14 @@
                     <div class="af-convo"><b>Rita Okafor</b><i>MON</i><span>Reminder scheduled &middot; Thursday</span></div>
                   </div>
                   <div class="af-thread">
-                    <p class="af-meta sc" data-s="0"><span class="af-time">7:42&nbsp;AM</span> Incoming call &middot; (555)&nbsp;480-2214 &mdash; Mallet picks up</p>
-                    <p class="af-bub in sc" data-s="1">&ldquo;My water heater&rsquo;s leaking all over the garage&hellip;&rdquo;</p>
-                    <p class="af-typing sc" data-s="2" aria-hidden="true"><span></span><span></span><span></span></p>
-                    <p class="af-bub ai sc" data-s="3">That&rsquo;s an emergency &mdash; Marco can be there 2:00&ndash;4:00 today. You&rsquo;re booked, and a confirmation is on its way to your phone.</p>
-                    <p class="af-meta done sc" data-s="4"><span class="ok">&check;</span> Job created &middot; address in range &middot; Marco &mdash; least loaded, certified</p>
+                    <p class="af-meta sc" data-t="300"><span class="af-time">7:42&nbsp;AM</span> Incoming call &middot; (555)&nbsp;480-2214 &mdash; Mallet picks up</p>
+                    <p class="af-bub in sc" data-t="1000">&ldquo;My water heater&rsquo;s leaking all over the garage&hellip;&rdquo;</p>
+                    <p class="af-typing sc" data-t="1600" data-off="2500" aria-hidden="true"><span></span><span></span><span></span></p>
+                    <p class="af-bub ai sc" data-t="2600">That&rsquo;s an emergency &mdash; I can get someone out today. What&rsquo;s the address?</p>
+                    <p class="af-bub in sc" data-t="3500">&ldquo;412 Foothill Rd.&rdquo;</p>
+                    <p class="af-meta sc" data-t="4200"><span class="ok">&check;</span> In range &middot; emergency rule applied &middot; checking the crew&rsquo;s real schedule</p>
+                    <p class="af-bub ai sc" data-t="5000">Marco can be there 2:00&ndash;4:00 today. You&rsquo;re booked &mdash; confirmation is on its way to your phone.</p>
+                    <p class="af-meta done sc" data-t="6000"><span class="ok">&check;</span> Job created &middot; quote drafted from your pricebook &middot; Marco texted</p>
                   </div>
                 </div>
                 <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>

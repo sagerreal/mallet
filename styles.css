@@ -382,9 +382,9 @@ strong{font-weight:700}
   padding:.6rem 1rem;color:var(--ink-soft);white-space:nowrap;
 }
 .tk b{font-weight:700}
-.tk.loss{border-left:3px solid #A8442F}
+.tk.loss{background:#FBF1ED}
 .tk.loss b{color:#A8442F}
-.tk.win{border-left:3px solid var(--live);color:var(--ink)}
+.tk.win{background:#F1F7F1;color:var(--ink)}
 @media (prefers-reduced-motion: reduce){
   .tape{transform:none}
   .tape-row{animation:none !important;flex-wrap:wrap;width:auto;padding-left:1.5rem}
@@ -401,17 +401,7 @@ strong{font-weight:700}
   border-radius:6px; /* crisper than the app windows — it's paper */
   box-shadow:0 8px 20px rgba(27,26,23,.06), 0 36px 70px -28px rgba(27,26,23,.25);
 }
-.ledger::before{ /* the worksheet margin rule */
-  content:"";position:absolute;top:0;bottom:0;left:2.1rem;width:2px;
-  background:rgba(176,125,0,.32);pointer-events:none;
-}
-.ledger-head{
-  display:flex;justify-content:space-between;align-items:baseline;gap:1rem;
-  padding:1.35rem 2.4rem 1rem 3.2rem;border-bottom:2px solid var(--ink);
-}
-.lh-title{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.14em;color:var(--ink);font-weight:700}
-.lh-note{font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;color:var(--ink-soft)}
-.ledger-body{padding:.4rem 2.4rem 2.2rem 3.2rem}
+.ledger-body{padding:.4rem 2.4rem 2.4rem}
 
 /* pillar tabs — underline tabs on the sheet (the hero owns the pill style) */
 .math-tabs{display:flex;gap:1.7rem;align-items:center;flex-wrap:wrap;border-bottom:1px dashed var(--line)}
@@ -431,19 +421,17 @@ strong{font-weight:700}
 }
 .math-next:hover{background:var(--amber-deep)}
 .math-next:active{transform:scale(.94)}
-.mpanel{display:none;grid-template-columns:1fr 1.05fr;gap:3rem;margin-top:1.9rem;align-items:center}
+.mpanel{display:none;grid-template-columns:1fr 1.05fr;gap:3rem;margin-top:2.1rem;align-items:center}
 .mpanel.on{display:grid;animation:mfade .45s ease}
 @keyframes mfade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){ .mpanel.on{animation:none} }
-.mp-lead{font-size:1.05rem;color:var(--ink);margin-bottom:1.5rem;letter-spacing:-.01em}
-.mp-lead::after{content:"";display:block;width:26px;height:2px;background:var(--amber);margin-top:.6rem}
 .roi-total-bar{
   display:grid;grid-template-columns:1fr 1.05fr;gap:3rem;align-items:center;
   margin-top:2.2rem;border-top:1px dashed var(--line);padding-top:1.9rem;
 }
 .roi-inputs{display:flex;flex-direction:column;gap:1.6rem}
 .roi-input-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.55rem}
-.roi-input-top label{font-family:var(--font-mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.roi-input-top label{font-family:var(--font-mono);font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
 .roi-input-top output{font-family:var(--font-display);font-weight:700;font-size:1.4rem;color:var(--ink);letter-spacing:-.02em}
 .roi-scale{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:.64rem;color:#B9B2A2;margin-top:.35rem}
 input[type="range"]{
@@ -463,11 +451,8 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 /* ===================== THE PLATFORM TOUR (pinned scrolly) ===================== */
 /* The section is tall; the frame pins and scroll drives the active stop.
    Mobile / reduced motion: no pinning, sidebar stops become tap targets. */
-.tour{position:relative;background:var(--paper);border-top:1px solid var(--line);height:420vh}
-.tour-sticky{
-  position:sticky;top:0;height:100vh;overflow:hidden;
-  display:flex;flex-direction:column;justify-content:center;gap:1.4rem;
-}
+.tour{background:var(--paper);border-top:1px solid var(--line);padding:5.5rem 0 6rem}
+.tour-sticky{display:flex;flex-direction:column;gap:1.4rem}
 /* .wrap's auto side-margins shrink-to-fit inside a flex column — force full width */
 .tour-sticky > .wrap{width:100%}
 .tour-head{text-align:center}
@@ -496,9 +481,9 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 .af-item.stop.on{background:var(--ink);color:var(--paper)}
 
 /* panels */
-.af-main{position:relative;background:var(--card)}
+.af-main{display:grid;background:var(--card)}
 .af-panel{
-  position:absolute;inset:0;padding:1.4rem 1.7rem 1.5rem;display:flex;flex-direction:column;
+  grid-column:1;grid-row:1;padding:1.4rem 1.7rem 1.6rem;display:flex;flex-direction:column;
   opacity:0;visibility:hidden;transform:translateY(12px);
   transition:opacity .38s ease, transform .38s ease, visibility 0s linear .38s;
 }
@@ -525,7 +510,8 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 
 /* stop 2 — pipeline */
 .af-cols{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem}
-.af-colh{font-family:var(--font-mono);font-size:.6rem;letter-spacing:.12em;color:var(--ink-soft);margin-bottom:.45rem}
+.af-col{display:flex;flex-direction:column;gap:.6rem}
+.af-colh{font-family:var(--font-mono);font-size:.6rem;letter-spacing:.12em;color:var(--ink-soft)}
 .af-colh span{color:#B9B2A2}
 .af-card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem .65rem;font-size:.8rem}
 .af-card b{display:flex;justify-content:space-between;gap:.4rem;font-size:.84rem;letter-spacing:-.01em}
@@ -625,7 +611,7 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 @keyframes thinkpulse{0%,100%{opacity:.45}50%{opacity:1}}
 .af-thinking.gone{display:none}
 .af-answer{
-  margin-top:.5rem;background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--amber);
+  margin-top:.5rem;background:#FFFDF4;border:1px solid var(--amber);
   border-radius:10px;padding:.75rem .95rem .85rem;
   opacity:0;transform:translateY(8px);transition:opacity .45s ease, transform .45s ease;
 }
@@ -637,8 +623,7 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 
 /* mobile + reduced motion: unpin, tap-through */
 @media (max-width:900px), (prefers-reduced-motion: reduce){
-  .tour{height:auto;padding:3.6rem 0 4rem}
-  .tour-sticky{position:static;height:auto;overflow:visible}
+  .tour{padding:3.6rem 0 4rem}
   .app-frame{grid-template-columns:1fr;min-height:0}
   .af-side{
     flex-direction:row;align-items:center;overflow-x:auto;gap:.35rem;
@@ -647,7 +632,6 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
   .af-brand,.af-new,.af-cat,.af-item.dim{display:none}
   .af-item.stop{flex:none;border:1.5px solid var(--line);border-radius:999px;padding:.45rem .95rem;font-size:.84rem}
   .af-item.stop.on{border-color:var(--ink)}
-  .af-main{min-height:470px}
   .af-panel{padding:1.1rem 1rem 1.2rem}
   .af-cols{grid-template-columns:1fr 1fr;gap:.5rem}
   .af-top b{font-size:1.15rem}
@@ -661,7 +645,7 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 
 /* the payoff: unboxed ledger figure — big ink number straight on the sheet */
 .ledger-payoff{padding-left:2.2rem;border-left:1px dashed var(--line)}
-.roi-label{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.13em;color:var(--amber-deep);margin-top:.2rem}
+.roi-label{font-family:var(--font-mono);font-size:.74rem;letter-spacing:.12em;color:var(--amber-deep);margin-top:.2rem}
 .roi-big{font-family:var(--font-display);font-weight:700;font-size:clamp(3rem,5.6vw,4.3rem);letter-spacing:-.035em;line-height:1.02;color:var(--ink);margin:.35rem 0 .1rem}
 .roi-note{font-size:.9rem;color:var(--ink-soft);line-height:1.55;margin-top:.55rem;max-width:38ch}
 .roi-note b{color:var(--ink)}
@@ -675,13 +659,11 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
   letter-spacing:-.03em;color:var(--ink);flex:none;
   border-bottom:5px double var(--ink);padding-bottom:.15rem;
 }
-.roi-fine{margin-top:1.5rem;font-size:.8rem;color:var(--ink-soft);max-width:78ch}
+.roi-fine{margin-top:1.4rem;font-size:.88rem;color:var(--ink-soft)}
 @media (max-width:900px){
   .mpanel,.roi-total-bar{grid-template-columns:1fr;gap:1.6rem}
   .math-next{margin-left:0}
-  .ledger::before{left:1rem}
-  .ledger-head{padding:1.1rem 1.1rem .85rem 1.8rem}
-  .ledger-body{padding:.2rem 1.1rem 1.6rem 1.8rem}
+  .ledger-body{padding:.2rem 1.1rem 1.6rem}
   .ledger-payoff{padding-left:0;border-left:0;border-top:1px dashed var(--line);padding-top:1.4rem}
   .lt-row{flex-direction:column;align-items:flex-start;gap:.3rem}
   .lt-leader{display:none}
