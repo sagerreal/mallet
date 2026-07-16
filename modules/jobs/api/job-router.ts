@@ -24,7 +24,8 @@ import { ArchiveJobUseCase } from "../app/archive-job";
 import { ListCallbackCandidatesUseCase } from "../app/list-callback-candidates";
 import { ConfirmCallbackUseCase } from "../app/confirm-callback";
 import { DismissCallbackUseCase } from "../app/dismiss-callback";
-import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum } from "./job-dto";
+import { CallbackAutopsyUseCase } from "../app/callback-autopsy";
+import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum, autopsyClusterDTO } from "./job-dto";
 import {
   AddJobLineUseCase,
   UpdateJobLineUseCase,
@@ -517,5 +518,15 @@ export const createJobRouter = () =>
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new DismissCallbackUseCase(repo, ctx.deps.bus, ctx.deps.clock);
         return toJobDTO(orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
+      }),
+
+    callbackAutopsy: ownerOrOffice
+      .output(z.array(autopsyClusterDTO))
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new CallbackAutopsyUseCase(repo, ctx.deps.clock);
+        const clusters = orThrow(await useCase.exec());
+        // AutopsyCluster.originalNums is readonly; spread to satisfy the mutable DTO shape.
+        return clusters.map((c) => ({ ...c, originalNums: [...c.originalNums] }));
       }),
   });

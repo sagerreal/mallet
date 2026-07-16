@@ -285,6 +285,22 @@ export const callbackCandidateDTO = z.object({
   }),
 });
 
+export const autopsyTopMissDTO = z.object({
+  itemText: z.string(),
+  checklistName: z.string(),
+  missCount: z.number().int(),
+  ofAnswered: z.number().int(),
+  alreadyRequired: z.boolean(),
+});
+
+export const autopsyClusterDTO = z.object({
+  service: z.string(),
+  callbackCount: z.number().int(),
+  originalNums: z.array(z.string()),
+  answeredOriginals: z.number().int(),
+  topMiss: autopsyTopMissDTO.nullable(),
+});
+
 export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution) => {
   const p = job.props;
   return {
