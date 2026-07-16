@@ -388,6 +388,32 @@ strong{font-weight:700}
 }
 .roi .wrap{position:relative}
 
+/* The leak tape: money rolling away, Mallet catching it underneath.
+   Two counter-scrolling marquee rows; content doubled in the HTML so a
+   -50% translate loops seamlessly. Hover pauses. Reduced motion: static. */
+.tape{margin-top:2.6rem;overflow:hidden;transform:rotate(-1.2deg) scale(1.02)}
+.tape-row{display:flex;gap:.65rem;width:max-content;padding:.33rem 0}
+.tape-row.leaks{animation:tapeRoll 42s linear infinite}
+.tape-row.catches{animation:tapeRoll 58s linear infinite reverse}
+.tape:hover .tape-row{animation-play-state:paused}
+@keyframes tapeRoll{to{transform:translateX(-50%)}}
+.tk{
+  flex:none;font-family:var(--font-mono);font-size:.78rem;letter-spacing:.02em;
+  background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:.6rem 1rem;color:var(--ink-soft);white-space:nowrap;
+}
+.tk b{font-weight:700}
+.tk.loss{border-left:3px solid #A8442F}
+.tk.loss b{color:#A8442F}
+.tk.win{border-left:3px solid var(--live);color:var(--ink)}
+@media (prefers-reduced-motion: reduce){
+  .tape{transform:none}
+  .tape-row{animation:none !important;flex-wrap:wrap;width:auto;padding-left:1.5rem}
+}
+@media (max-width:640px){
+  .tk{font-size:.7rem;padding:.5rem .75rem}
+}
+
 /* The worksheet: a job-ticket sheet — deliberately NOT another app window.
    Signature details: amber margin rule, letterhead rule, dotted-leader sum
    with a double-ruled accounting total. */
