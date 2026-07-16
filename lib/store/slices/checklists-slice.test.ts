@@ -5,6 +5,7 @@ import { createChecklistsSlice, type ChecklistsSlice } from "./checklists-slice"
 const mutate = {
   create: vi.fn(),
   remove: vi.fn(),
+  update: vi.fn(),
 };
 
 vi.mock("@/lib/trpc/vanilla", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
       checklists: {
         create: { mutate: (...a: unknown[]) => mutate.create(...a) },
         remove: { mutate: (...a: unknown[]) => mutate.remove(...a) },
+        update: { mutate: (...a: unknown[]) => mutate.update(...a) },
       },
     },
   },
@@ -98,5 +100,71 @@ describe("checklistsSlice", () => {
     expect(store.getState().checklists).toHaveLength(0);
     await flush();
     expect(store.getState().checklists.some((c) => c.id === "c1")).toBe(true);
+  });
+
+  describe("updateChecklist", () => {
+    const EXISTING = { id: "cl-1", name: "Original", trade: "Custom", stage: "job" as const, match: [], items: [] };
+
+    beforeEach(() => {
+      store.getState().setChecklists([EXISTING]);
+    });
+
+    it("optimistically replaces name and items immediately", () => {
+      mutate.update.mockResolvedValue({
+        id: "cl-1", name: "Updated", trade: "Custom", stage: "job", match: [],
+        items: [{ id: "srv-i1", text: "Step 1", type: "check", required: true, position: 0 }],
+        createdAt: "",
+      });
+      void store.getState().updateChecklist("cl-1", "Updated", [{ text: "Step 1", type: "check" }]);
+      const cl = store.getState().checklists.find((c) => c.id === "cl-1");
+      expect(cl?.name).toBe("Updated");
+      expect(cl?.items).toHaveLength(1);
+      expect(cl?.items[0]?.text).toBe("Step 1");
+    });
+
+    it("sends the correct mutate payload (checklistId, name, items array)", () => {
+      mutate.update.mockResolvedValue({
+        id: "cl-1", name: "Updated", trade: "Custom", stage: "job", match: [], items: [], createdAt: "",
+      });
+      void store.getState().updateChecklist("cl-1", "Updated", [
+        { text: "Take photo", type: "photo" },
+        { text: "Verify seal", type: "check" },
+      ]);
+      expect(mutate.update).toHaveBeenCalledOnce();
+      expect(mutate.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          checklistId: "cl-1",
+          name: "Updated",
+          items: [
+            expect.objectContaining({ text: "Take photo", type: "photo" }),
+            expect.objectContaining({ text: "Verify seal", type: "check" }),
+          ],
+        }),
+      );
+    });
+
+    it("reconciles: store adopts the server DTO after the promise resolves", async () => {
+      mutate.update.mockResolvedValue({
+        id: "cl-1", name: "Server Name", trade: "Custom", stage: "job", match: [],
+        items: [{ id: "srv-i2", text: "Server Step", type: "photo", required: true, position: 0 }],
+        createdAt: "",
+      });
+      const reconciled = await store.getState().updateChecklist("cl-1", "Local Name", [{ text: "Step", type: "check" }]);
+      expect(reconciled.name).toBe("Server Name");
+      expect(reconciled.items[0]?.id).toBe("srv-i2");
+      const cl = store.getState().checklists.find((c) => c.id === "cl-1");
+      expect(cl?.name).toBe("Server Name");
+      expect(cl?.items[0]?.id).toBe("srv-i2");
+    });
+
+    it("rolls back and rejects on failure", async () => {
+      mutate.update.mockRejectedValue(new Error("server error"));
+      const promise = store.getState().updateChecklist("cl-1", "Updated", [{ text: "Step", type: "check" }]);
+      await expect(promise).rejects.toThrow("server error");
+      await flush();
+      const cl = store.getState().checklists.find((c) => c.id === "cl-1");
+      expect(cl?.name).toBe("Original");
+      expect(cl?.items).toHaveLength(0);
+    });
   });
 });

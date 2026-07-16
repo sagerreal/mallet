@@ -67,9 +67,22 @@ export class FakeChecklistRepository implements ChecklistRepository {
     return { items: [...this.store.values()], nextCursor: null };
   }
 
-  async archiveByLead(): Promise<number> { return 0; }
   async archive(id: ChecklistId): Promise<number> {
     return this.store.delete(id) ? 1 : 0;
+  }
+
+  async update(input: Parameters<ChecklistRepository["update"]>[0]): Promise<Checklist | null> {
+    const existing = this.store.get(input.id);
+    if (!existing) return null;
+    const items = (input.items ?? []).map((it) => {
+      const r = ChecklistItem.create(it);
+      if (!isOk(r)) throw new Error(`fake update produced an invalid item: ${r.error.message}`);
+      return r.value;
+    });
+    const r = Checklist.create({ ...existing.props, name: input.name, items });
+    if (!isOk(r)) throw new Error(`fake update failed: ${r.error.message}`);
+    this.store.set(r.value.props.id, r.value);
+    return r.value;
   }
 }
 

@@ -40,6 +40,16 @@ export interface ChecklistsSlice {
     items?: readonly NewChecklistItem[],
   ) => { checklist: Checklist; persisted: Promise<Checklist> };
   deleteChecklist: (id: string) => void;
+  /**
+   * Replace an existing checklist's name + items in ONE mutation. Optimistic
+   * update is immediate; resolves with the reconciled (server-canonical)
+   * checklist, rejects on failure after rolling back.
+   */
+  updateChecklist: (
+    id: string,
+    name: string,
+    items: NewChecklistItem[],
+  ) => Promise<Checklist>;
 }
 
 export const createChecklistsSlice: StateCreator<
@@ -123,6 +133,52 @@ export const createChecklistsSlice: StateCreator<
           console.error("[checklists] deleteChecklist rollback", err);
         }
         set({ checklists: snapshot });
+      });
+  },
+
+  updateChecklist: (id, name, items) => {
+    // Snapshot current state for rollback.
+    const snapshot = get().checklists;
+
+    // Mint new UUIDs and assign positions for the updated items.
+    const authored: ChecklistItem[] = items.map((it, i) => ({
+      id: crypto.randomUUID(),
+      text: it.text,
+      type: it.type,
+      required: it.required ?? false,
+      position: i,
+    }));
+
+    // Optimistic replace — UI reflects the update immediately.
+    set((s) => ({
+      checklists: s.checklists.map((c) =>
+        c.id === id ? { ...c, name: name.trim() || c.name, items: authored } : c,
+      ),
+    }));
+
+    return trpcVanilla.v1.checklists.update
+      .mutate({
+        checklistId: id,
+        name: name.trim(),
+        items: authored.map((it) => ({
+          text: it.text,
+          type: it.type,
+          required: it.required,
+        })),
+      })
+      .then((dto) => {
+        const reconciled = checklistDtoToStore(dto);
+        set((s) => ({
+          checklists: s.checklists.map((c) => (c.id === dto.id ? reconciled : c)),
+        }));
+        return reconciled;
+      })
+      .catch((err: unknown) => {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[checklists] updateChecklist rollback", err);
+        }
+        set({ checklists: snapshot });
+        throw err instanceof Error ? err : new Error("updateChecklist failed");
       });
   },
 });

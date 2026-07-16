@@ -233,6 +233,7 @@ export function Sidebar() {
                       active={tab === "schedule"}
                     />
                     <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
+                    <NavSub href="/jobs?tab=checklists" label="Checklists" active={tab === "checklists"} />
                   </div>
                 )}
                 <NavItem

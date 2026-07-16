@@ -48,9 +48,10 @@ export function SectionTabs() {
     const jobsCount = jobs.filter((j) => !j.archived && j.status !== "done").length;
     const unscheduled = jobs.filter((j) => !j.archived && j.status === "unscheduled").length;
     tabs = [
-      { href: "/jobs", label: "Jobs", active: !tab || (tab !== "schedule" && tab !== "timesheets"), count: jobsCount },
+      { href: "/jobs", label: "Jobs", active: !tab || (tab !== "schedule" && tab !== "timesheets" && tab !== "checklists"), count: jobsCount },
       { href: "/jobs?tab=schedule", label: "Schedule", active: tab === "schedule", count: unscheduled },
       { href: "/jobs?tab=timesheets", label: "Timesheets", active: tab === "timesheets" },
+      { href: "/jobs?tab=checklists", label: "Checklists", active: tab === "checklists" },
     ];
   }
 
