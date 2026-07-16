@@ -15,7 +15,8 @@ export async function middleware(request: NextRequest) {
   });
 
   // getClaims() verifies the JWT locally via the project's ES256 JWKS (cached after first fetch),
-  // making the common case network-free. It still calls getSession() internally, which triggers
+  // so the common case is a cacheable JWKS fetch (edge/CDN-cached) instead of an uncacheable
+  // /auth/v1/user round-trip. It still calls getSession() internally, which triggers
   // _callRefreshToken() when the access-token is within its expiry margin — the ssr client's
   // onAuthStateChange handler writes the refreshed session back to cookies via setAll. Expired-token
   // refresh therefore works identically to getUser(), which always made a remote /auth/user call.
@@ -24,7 +25,7 @@ export async function middleware(request: NextRequest) {
   await supabase.auth.getClaims();
   const authDurMs = Date.now() - authStart;
 
-  response.headers.set("Server-Timing", `auth;dur=${authDurMs}`);
+  response.headers.append("Server-Timing", `auth;dur=${authDurMs}`);
   return response;
 }
 
