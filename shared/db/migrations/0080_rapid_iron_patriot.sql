@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "skill_tags" text[] DEFAULT '{}'::text[] NOT NULL;

@@ -96,6 +96,35 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     expect(snap.config.booking.notServices).toBe("septic");
   });
 
+  // ── T3: requiredCerts round-trip ──────────────────────────────────────────
+  // This test MUST FAIL before bookingServiceDTO gains the requiredCerts field
+  // (zod silently strips unknown keys), and PASS after the DTO edit.
+
+  it("requiredCerts survives the updateConfig → get round-trip (T3 strip-trap)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const cfg = await caller.v1.settings.updateConfig({
+      booking: {
+        services: [
+          {
+            name: "Water heater",
+            lane: "repair",
+            triggers: "no hot water",
+            requiredCerts: ["Gas"],
+          },
+        ],
+        notServices: "",
+        serviceFee: 89,
+        feeCredited: true,
+      },
+    });
+    // Field must survive through the DTO parse + persist + response path.
+    expect(cfg.booking.services[0]?.requiredCerts).toEqual(["Gas"]);
+
+    // Durability: must survive a subsequent get.
+    const snap = await caller.v1.settings.get();
+    expect(snap.config.booking.services[0]?.requiredCerts).toEqual(["Gas"]);
+  });
+
   it("updateConfig persists the service-origin address; get returns it", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const address = "1600 Pennsylvania Ave NW, Washington, DC 20500";

@@ -79,6 +79,7 @@ const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
   callbackOf: null,
   callbackReason: null,
   checklist: null,
+  requiredCerts: null,
   visits: [],
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),

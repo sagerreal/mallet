@@ -3,6 +3,7 @@ import type { LeadId, UserId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { JobKind } from "@mallet/jobs";
 import type { OrgSettings } from "@mallet/settings";
+import { resolveServiceRequirement, meetsRequirement } from "@mallet/shared/dispatch/skill-gate";
 import { sendBookingConfirmation } from "./booking-confirmation";
 import {
   BOOK_LANES,
@@ -226,6 +227,10 @@ const bookConfirmed = async (
   // Decorate the caller's scope note (found-work marker when keywords hit; null when absent/blank).
   const scope = decorateScope(input.scope_signal);
 
+  // Resolve the cert requirement for this service from the org's booking playbook.
+  // null = no requirement (service not in playbook, or playbook has no certs for it).
+  const requiredCerts = resolveServiceRequirement(settings.props.booking.services, input.service_name);
+
   // Create the manual job (kind by lane). addr/phone accepted for parity but not persisted.
   const job = await ctx.deps.createManualJob.exec({
     orgId: ctx.orgId,
@@ -237,6 +242,7 @@ const bookConfirmed = async (
     phone,
     notes: input.problem,
     scope,
+    requiredCerts,
   });
   if (!isOk(job)) {
     logger.warn(
@@ -246,10 +252,10 @@ const bookConfirmed = async (
     return bookingFallback(input, ctx, leadId);
   }
 
-  // ASSIGN the booking to the least-loaded field crew (tie-broken by proximity to the caller's
-  // address), so the visit lands ON THE BOARD. A crew-read failure or empty roster → UNASSIGNED
-  // (null), stays in "To schedule" for the office — same non-fatal semantics as the old firstFieldCrew.
-  const assigneeUserId = await assignCrew(ctx, input.slot_date, jobPoint);
+  // ASSIGN the booking to the least-loaded, cert-qualified field crew (tie-broken by proximity to
+  // the caller's address), so the visit lands ON THE BOARD. A crew-read failure, empty roster, or
+  // no qualifying crew → UNASSIGNED (null), stays in "To schedule" for the office to place.
+  const assigneeUserId = await assignCrew(ctx, input.slot_date, jobPoint, requiredCerts);
 
   // SEED the first visit on the job (the server-side caller does this — no client flow follows).
   // scheduledStart IS the chosen window's start: slot_start was bounds-checked in `handle`
@@ -293,18 +299,23 @@ const bookConfirmed = async (
   };
 };
 
-// Pick the least-loaded field crew for `slotDate`, tie-broken by proximity to `jobPoint`.
-// A crew-read failure is NON-FATAL: we log it and fall back to UNASSIGNED so a reader hiccup never
-// blocks a confirmed booking — the office simply places it on the board manually, exactly as the
-// zero-crew case does. Never throws.
+// Pick the best-qualified, least-loaded field crew for `slotDate`, filtered by `required` cert
+// tags when a requirement exists. A crew-read failure is NON-FATAL: we log it and fall back to
+// UNASSIGNED so a reader hiccup never blocks a confirmed booking. When nobody qualifies
+// (required is non-null but no crew holds the certs) chooseCrew returns null → UNASSIGNED —
+// the booking completes normally and the office places it. Never throws.
 const assignCrew = async (
   ctx: VoiceToolContext,
   slotDate: string,
   jobPoint: GeoPoint | null,
+  required: readonly string[] | null,
 ): Promise<UserId | null> => {
   try {
     const candidates = await ctx.deps.availability.readSameDayCrewLoads(slotDate);
-    return chooseCrew({ candidates, jobPoint });
+    const qualified = required
+      ? candidates.filter((c) => meetsRequirement(c.skillTags, required))
+      : candidates;
+    return chooseCrew({ candidates: qualified, jobPoint });
   } catch (error: unknown) {
     logger.warn(
       { orgId: ctx.orgId, tool: "book_visit", error: error instanceof Error ? error.message : "unknown" },

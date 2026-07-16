@@ -41,6 +41,13 @@ type SameDayVisitRaw = {
   lng: number | null;
 };
 
+// Raw shape of one field-crew row including the user's skill tags. `type` to satisfy execute<T>'s
+// Record bound. skillTags is the users.skill_tags array column (nullable when unset).
+type CrewRaw = {
+  id: string;
+  skillTags: string[] | null;
+};
+
 /**
  * AvailabilityReader adapter over the jobs schedule. Two org-scoped queries (no N+1):
  *   1. booked visits whose scheduled_date is in the requested range (active statuses only), and
@@ -147,8 +154,8 @@ export class DrizzleAvailabilityReader implements AvailabilityReader {
     );
 
     const [crewRows, visitRows] = await Promise.all([
-      this.tx.execute<{ id: string }>(sql`
-        SELECT u.id AS "id"
+      this.tx.execute<CrewRaw>(sql`
+        SELECT u.id AS "id", u.skill_tags AS "skillTags"
         FROM users u
         WHERE u.org_id = ${this.orgId}
           AND u.is_field_crew = true
@@ -168,7 +175,7 @@ export class DrizzleAvailabilityReader implements AvailabilityReader {
       `),
     ]);
 
-    return buildCrewLoads(crewRows.map((r) => asUserId(r.id)), visitRows);
+    return buildCrewLoads(crewRows as CrewRaw[], visitRows);
   }
 }
 
@@ -190,15 +197,19 @@ const toBookedVisit = (r: VisitRaw): BookedVisit => ({
   durationMinutes: r.durationMinutes ?? 0,
 });
 
-// Build one CrewLoad per field-crew id from the two flat query results. Every field crew id appears
+// Build one CrewLoad per field-crew row from the two flat query results. Every field crew row appears
 // exactly once (idle crew → sameDayJobs: []). A visit row is attributed to its assignee only when
 // that assignee is a known field-crew id (defense-in-depth: non-crew assignees are dropped).
 // The point is non-null only when BOTH lat and lng are present — a visit with one null coordinate
 // cannot be used as a proximity anchor and its point is treated as null.
-const buildCrewLoads = (crewIds: readonly UserId[], visits: readonly SameDayVisitRaw[]): CrewLoad[] => {
+// skillTags are passed through from the users.skill_tags column (empty array when null).
+const buildCrewLoads = (
+  crewRows: readonly { id: string; skillTags: string[] | null }[],
+  visits: readonly SameDayVisitRaw[],
+): CrewLoad[] => {
   const visitsByUser = new Map<UserId, { readonly point: { lat: number; lng: number } | null }[]>();
-  for (const id of crewIds) {
-    visitsByUser.set(id, []);
+  for (const r of crewRows) {
+    visitsByUser.set(asUserId(r.id), []);
   }
   for (const v of visits) {
     const userId = v.assigneeUserId as UserId;
@@ -207,8 +218,9 @@ const buildCrewLoads = (crewIds: readonly UserId[], visits: readonly SameDayVisi
     const point = v.lat !== null && v.lng !== null ? { lat: v.lat, lng: v.lng } : null;
     bucket.push({ point });
   }
-  return crewIds.map((userId) => ({
-    userId,
-    sameDayJobs: visitsByUser.get(userId) ?? [],
+  return crewRows.map((r) => ({
+    userId: asUserId(r.id),
+    skillTags: r.skillTags ?? [],
+    sameDayJobs: visitsByUser.get(asUserId(r.id)) ?? [],
   }));
 };

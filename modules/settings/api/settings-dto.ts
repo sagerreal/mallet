@@ -12,6 +12,7 @@ export const bookingServiceDTO = z.object({
   triggers: z.string(),
   emergencyTriggers: z.string().optional(),
   ballpark: z.string().optional(),
+  requiredCerts: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
 });
 
 export const bookingCfgDTO = z.object({
@@ -213,7 +214,14 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
     serviceOriginAddress: p.serviceOriginAddress,
     originLat: p.originLat,
     originLng: p.originLng,
-    booking: p.booking,
+    booking: {
+      ...p.booking,
+      services: p.booking.services.map((svc) => ({
+        ...svc,
+        // readonly string[] → string[] for the DTO type (no runtime cost).
+        requiredCerts: svc.requiredCerts ? [...svc.requiredCerts] : undefined,
+      })),
+    },
   };
 };
 

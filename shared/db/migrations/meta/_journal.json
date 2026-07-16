@@ -561,6 +561,20 @@
       "when": 1784165828923,
       "tag": "0079_equal_fantastic_four",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1784185293219,
+      "tag": "0080_rapid_iron_patriot",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1784219686127,
+      "tag": "0081_real_romulus",
+      "breakpoints": true
     }
   ]
 }

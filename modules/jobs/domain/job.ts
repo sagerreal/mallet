@@ -246,18 +246,20 @@ export interface JobProps {
   readonly callbackOf: JobId | null; // this job is a callback/redo of an earlier job (nullable)
   readonly callbackReason: CallbackReason | null; // 'callback' | 'new_issue' | 'found_work' (nullable)
   readonly checklist: JobChecklistProps | null; // optional before-you-leave checklist
+  readonly requiredCerts: readonly string[] | null; // cert requirement from the booking playbook; null = no requirement
   readonly visits: readonly JobVisit[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
 
-// Input to Job.create: kind, scope, callbackOf, and callbackReason may be omitted so pre-existing
-// callers keep compiling. kind defaults to "work"; the rest default to null.
-export type JobCreateProps = Omit<JobProps, "kind" | "scope" | "callbackOf" | "callbackReason"> & {
+// Input to Job.create: kind, scope, callbackOf, callbackReason, and requiredCerts may be omitted
+// so pre-existing callers keep compiling. kind defaults to "work"; the rest default to null.
+export type JobCreateProps = Omit<JobProps, "kind" | "scope" | "callbackOf" | "callbackReason" | "requiredCerts"> & {
   readonly kind?: JobKind;
   readonly scope?: string | null;
   readonly callbackOf?: JobId | null;
   readonly callbackReason?: CallbackReason | null;
+  readonly requiredCerts?: readonly string[] | null;
 };
 
 // Scheduled field work. Aggregate root with a status state machine
@@ -308,7 +310,9 @@ export class Job {
       if (!validated.ok) return validated;
       checklist = validated.value;
     }
-    return ok(new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind }));
+    const rawRequired = props.requiredCerts ?? null;
+    const requiredCerts = rawRequired === null || rawRequired.length === 0 ? null : rawRequired;
+    return ok(new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind, requiredCerts }));
   }
 
   // Replace the visit set — only allowed while the job is not yet terminal.

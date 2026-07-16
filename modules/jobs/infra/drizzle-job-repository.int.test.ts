@@ -58,6 +58,7 @@ interface ManualJobOverrides {
   scope?: string | null;
   callbackOf?: string | null;
   callbackReason?: CallbackReason | null;
+  requiredCerts?: readonly string[] | null;
 }
 
 const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
@@ -104,6 +105,7 @@ const makeManualJob = (orgId: OrgId, leadId: LeadId, o: ManualJobOverrides): Job
     scope: o.scope ?? null,
     callbackOf: o.callbackOf ? asJobId(o.callbackOf) : null,
     callbackReason: o.callbackReason ?? null,
+    requiredCerts: o.requiredCerts ?? null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,
@@ -359,6 +361,35 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(result.withScope).toBe("water heater is ~15 years old, original install");
     expect(result.foundWithout).toBe(true);
     expect(result.withoutScope).toBeNull();
+  });
+
+  it("persists requiredCerts on insertManual and reads them back; null when omitted", async () => {
+    const orgA = asOrgId(orgAId);
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+
+      // Job WITH a cert requirement (resolved at create on the AI path)
+      const numWith = await repo.nextNumber();
+      const withCerts = makeManualJob(orgA, asLeadId(leadAId), {
+        num: numWith,
+        requiredCerts: ["Gas", "Boiler"],
+      });
+      await repo.insertManual(withCerts);
+      const backWith = await repo.findById(withCerts.props.id);
+
+      // Job WITHOUT a requirement (the manual-office default)
+      const numWithout = await repo.nextNumber();
+      const withoutCerts = makeManualJob(orgA, asLeadId(leadAId), { num: numWithout });
+      await repo.insertManual(withoutCerts);
+      const backWithout = await repo.findById(withoutCerts.props.id);
+
+      return {
+        withCerts: backWith?.props.requiredCerts,
+        withoutCerts: backWithout?.props.requiredCerts,
+      };
+    });
+    expect(result.withCerts).toEqual(["Gas", "Boiler"]);
+    expect(result.withoutCerts).toBeNull();
   });
 
   it("archive soft-deletes the job so findById returns null", async () => {

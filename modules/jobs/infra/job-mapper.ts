@@ -69,6 +69,7 @@ export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): J
     // jsonb passes through Job.create, which runtime-validates the shape —
     // corrupt checklist data fails loud below rather than silently coercing.
     checklist: row.checklist ?? null,
+    requiredCerts: (row.requiredCerts as string[] | null) ?? null,
     visits,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

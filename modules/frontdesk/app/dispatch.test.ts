@@ -25,6 +25,7 @@ const SJC: GeoPoint = { lat: 37.3382, lng: -121.8863 };
 // Small factory so tests stay concise; reads as prose.
 const crew = (userId: string, points: (GeoPoint | null)[]): CrewLoad => ({
   userId: userId as CrewLoad["userId"],
+  skillTags: [],
   sameDayJobs: points.map((point) => ({ point })),
 });
 

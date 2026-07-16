@@ -289,4 +289,90 @@ suite("v1.identity (live RLS)", () => {
     const [u] = await admin<{ is_field_crew: boolean }[]>`select is_field_crew from users where auth_user_id = ${authUserId}`;
     expect(u!.is_field_crew).toBe(true);
   });
+
+  // ─── skillTags / setMemberSkillTags ──────────────────────────────────────
+
+  it("members returns skillTags as [] for an untouched user", async () => {
+    const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('SkillTags Default Org') returning id`;
+    createdOrgIds.push(org!.id);
+    await admin`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'sk-default@test.com', 'tech')`;
+
+    const list = await appRouter.createCaller(principalCtx(org!.id, "owner")).v1.identity.members();
+    const member = list.items.find((m) => m.email === "sk-default@test.com");
+    expect(member).toBeDefined();
+    expect(member!.skillTags).toEqual([]);
+  });
+
+  it("setMemberSkillTags round-trip persists display casing", async () => {
+    const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('SkillTags RoundTrip Org') returning id`;
+    createdOrgIds.push(org!.id);
+    const [owner] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'sk-owner@test.com', 'owner') returning id`;
+    const [tech] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'sk-tech@test.com', 'tech') returning id`;
+
+    const ctx: Context = { ...principalCtx(org!.id, "owner"), principal: { userId: asUserId(owner!.id), orgId: asOrgId(org!.id), role: "owner" } };
+
+    const result = await appRouter.createCaller(ctx).v1.identity.setMemberSkillTags({
+      userId: tech!.id,
+      skillTags: ["Gas", "Boiler"],
+    });
+
+    expect(result.skillTags).toEqual(["Gas", "Boiler"]);
+    expect(result.id).toBe(tech!.id);
+
+    // Verify persisted in DB
+    const [row] = await admin<{ skill_tags: string[] }[]>`select skill_tags from users where id = ${tech!.id}`;
+    expect(row!.skill_tags).toEqual(["Gas", "Boiler"]);
+
+    // Verify members query returns the tags
+    const list = await appRouter.createCaller(ctx).v1.identity.members();
+    const member = list.items.find((m) => m.id === tech!.id);
+    expect(member!.skillTags).toEqual(["Gas", "Boiler"]);
+  });
+
+  it("setMemberSkillTags dedupes case-insensitively, first occurrence wins", async () => {
+    const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('SkillTags Dedupe Org') returning id`;
+    createdOrgIds.push(org!.id);
+    const [owner] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'sk-ded-owner@test.com', 'owner') returning id`;
+    const [tech] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'sk-ded-tech@test.com', 'tech') returning id`;
+
+    const ctx: Context = { ...principalCtx(org!.id, "owner"), principal: { userId: asUserId(owner!.id), orgId: asOrgId(org!.id), role: "owner" } };
+
+    const result = await appRouter.createCaller(ctx).v1.identity.setMemberSkillTags({
+      userId: tech!.id,
+      skillTags: ["Gas", " gas "],
+    });
+
+    // After Zod trim + dedupe: only "Gas" survives
+    expect(result.skillTags).toHaveLength(1);
+    expect(result.skillTags[0]).toBe("Gas");
+  });
+
+  it("setMemberSkillTags rejects 11 tags with validation error", async () => {
+    const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('SkillTags Cap Org') returning id`;
+    createdOrgIds.push(org!.id);
+    const [owner] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'sk-cap-owner@test.com', 'owner') returning id`;
+    const [tech] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'sk-cap-tech@test.com', 'tech') returning id`;
+
+    const ctx: Context = { ...principalCtx(org!.id, "owner"), principal: { userId: asUserId(owner!.id), orgId: asOrgId(org!.id), role: "owner" } };
+
+    const elevenTags = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"];
+    await expect(
+      appRouter.createCaller(ctx).v1.identity.setMemberSkillTags({ userId: tech!.id, skillTags: elevenTags }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("setMemberSkillTags: org B cannot set org A's member (NOT_FOUND)", async () => {
+    const [orgA] = await admin<{ id: string }[]>`insert into orgs (name) values ('SkillTags Iso OrgA') returning id`;
+    const [orgB] = await admin<{ id: string }[]>`insert into orgs (name) values ('SkillTags Iso OrgB') returning id`;
+    createdOrgIds.push(orgA!.id, orgB!.id);
+
+    const [techA] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${orgA!.id}, ${randomUUID()}, 'sk-iso-a@test.com', 'tech') returning id`;
+    const [ownerB] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${orgB!.id}, ${randomUUID()}, 'sk-iso-b@test.com', 'owner') returning id`;
+
+    const ctxB: Context = { ...principalCtx(orgB!.id, "owner"), principal: { userId: asUserId(ownerB!.id), orgId: asOrgId(orgB!.id), role: "owner" } };
+
+    await expect(
+      appRouter.createCaller(ctxB).v1.identity.setMemberSkillTags({ userId: techA!.id, skillTags: ["Gas"] }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
 });

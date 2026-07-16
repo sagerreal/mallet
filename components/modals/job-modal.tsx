@@ -15,10 +15,9 @@
  *   - the tech quote builder ("Build the price" / Edit) — a Field-area surface (tq)
  *   - the signed-agreement viewer (openSignedDoc)
  *   - smartPanel's ⏱ estimate line + split suggestion (need estJobHours →
- *     pricebook/DUR_RULES the store doesn't seed); the dispatch suggestion IS built
+ *     pricebook/DUR_RULES the store doesn't seed)
  *   - (checklists: the template picker + in-flow create form now live in
  *     ./job-checklist-block.tsx; the attach persists via v1.jobs.update)
- *   - the skills-gap per-visit banner (needs suggestTechFor / techHasSkill)
  *   - the invoice modal (opened from the money pointer — Money-area task)
  */
 
@@ -38,6 +37,9 @@ import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { JobChecklistBlock } from "./job-checklist-block";
+import { skillHintFor } from "./skill-hint";
+import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
+import { dayLoad } from "@/features/jobs/jobs-helpers";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -137,12 +139,14 @@ interface VisitRowProps {
   visit: Visit;
   techs: Tech[];
   conflict: boolean;
+  /** Cross-job day-load closure pre-bound to the visit's date. */
+  loadOf: (techId: string) => number;
   onUpdate: (patch: Partial<Visit>) => void;
   onRemove: () => void;
   onGoToSchedule: () => void;
 }
 
-function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove, onGoToSchedule }: VisitRowProps) {
+function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onGoToSchedule }: VisitRowProps) {
   // UNPLACED — dashed row with a "Not placed" pill, Length, and where-to-next hint.
   if (!vPlaced(visit)) {
     return (
@@ -216,11 +220,41 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove, onGoToSched
             value={visit.techId ?? ""}
             onChange={(e) => onUpdate({ techId: e.target.value || null })}
           >
-            {techs.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
+            {/* When a requirement exists: qualified techs first (roster order within
+                each group), unqualified get a "— missing {certs}" suffix.
+                When no requirement: render exactly as before (no reordering, no suffix). */}
+            {(() => {
+              const req = job.requiredCerts ?? null;
+              if (req == null || req.length === 0) {
+                return techs.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ));
+              }
+              // Partition — preserve within-group roster order.
+              const qualified: Tech[] = [];
+              const unqualified: Tech[] = [];
+              for (const t of techs) {
+                if (meetsRequirement(t.skills, req)) qualified.push(t);
+                else unqualified.push(t);
+              }
+              return [
+                ...qualified.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                )),
+                ...unqualified.map((t) => {
+                  const lacks = missingCerts(t.skills, req).join(", ");
+                  return (
+                    <option key={t.id} value={t.id}>
+                      {t.name} — missing {lacks}
+                    </option>
+                  );
+                }),
+              ];
+            })()}
           </select>
         </div>
       </div>
@@ -248,7 +282,43 @@ function VisitRow({ job, visit, techs, conflict, onUpdate, onRemove, onGoToSched
         </div>
       )}
 
-      {/* deferred: smartPanel skills-gap per-visit banner (suggestTechFor / techHasSkill) */}
+      {/* Skill-gap banner — suggest-only, never blocks save or disables selects. */}
+      {(() => {
+        const hint = skillHintFor({
+          required: job.requiredCerts ?? null,
+          selectedTechId: visit.techId ?? null,
+          techs: techs.map((t) => ({ id: t.id, skills: t.skills })),
+          loadOf,
+        });
+        if (hint.state === "noRequirement" || hint.state === "selectedQualified") {
+          return null;
+        }
+        const reqLabel = (job.requiredCerts ?? []).join(", ");
+        if (hint.state === "selectedMissing" && hint.suggestedTechId != null) {
+          const selected = techs.find((t) => t.id === visit.techId);
+          const suggestedName =
+            techs.find((t) => t.id === hint.suggestedTechId)?.name ?? "Another crew";
+          const missingLabel = hint.missing.join(", ");
+          // Nobody-assigned reads differently from an assigned-but-unqualified tech.
+          const gap = selected
+            ? `${selected.name} is missing ${missingLabel}.`
+            : "nobody assigned yet.";
+          return (
+            <div className="banner" style={{ marginTop: 8 }}>
+              ⚠ Needs {reqLabel} — {gap}{" "}
+              <b>{suggestedName} is certified and lightest today.</b>
+            </div>
+          );
+        }
+        // noneQualified or selectedMissing with no suggestion
+        const missingLabel =
+          hint.missing.length > 0 ? hint.missing.join(", ") : reqLabel;
+        return (
+          <div className="banner" style={{ marginTop: 8 }}>
+            ⚠ Needs {reqLabel} — no tech on the team holds {missingLabel}.
+          </div>
+        );
+      })()}
 
       <div
         style={{
@@ -496,53 +566,6 @@ function NoteFeed({ job }: { job: Job }) {
       </div>
     </div>
   );
-}
-
-// ---- smartPanel (prototype smartPanel, line 3880) --------------------------
-// Skill-gap / dispatch suggestion surface. The prototype gates three hints
-// behind state.opsAI flags: an estimated-hours line, a "split into N visits"
-// suggestion, and a "best fit crew" dispatch suggestion. The store carries no
-// opsAI flags and no pricebook/DUR_RULES, so:
-//   - deferred: the ⏱ estimate line and the split suggestion both need
-//     estJobHours(job), which reads the pricebook the store doesn't seed —
-//     render nothing for those two hints (degrade gracefully).
-//   - the dispatch suggestion is the hint that uses real store data
-//     (Tech.skills + this-day crew load), so it's replicated faithfully.
-// The .smartwrap / .smartsug markup + classes are kept exactly.
-
-const SKILL_RULES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/hvac|furnace|condenser|mini.?split|heat pump|tune.?up|\bac\b|a\/c/i, "EPA 608 (HVAC)"],
-  [/panel|service upgrade|outlet|fixture|electrical|switch/i, "Electrical"],
-  [/backflow/i, "Backflow"],
-  [/\bgas\b/i, "Gas"],
-  [/drain|sewer|camera|jet|main line/i, "Drain / sewer"],
-  [/repipe|water heater|faucet|toilet|plumb/i, "Journeyman Plumber"],
-];
-
-/** The cert a job's title + line items imply (prototype jobNeededSkill, 3869). */
-function jobNeededSkill(job: Job): string | null {
-  const t = (job.title || "") + " " + (job.lines ?? []).map((l) => l.d).join(" ");
-  for (const [re, sk] of SKILL_RULES) if (re.test(t)) return sk;
-  return null;
-}
-
-/** Does a crew hold the needed cert, incl. the master→journeyman rollups (3870). */
-function techHasSkill(tc: Tech | undefined, sk: string | null): boolean {
-  if (!sk) return true;
-  if (!tc) return false;
-  const has = tc.skills ?? [];
-  if (has.includes(sk)) return true;
-  if (sk === "Journeyman Plumber" && has.includes("Master Plumber")) return true;
-  if (sk === "Electrical" && (has.includes("Master Electrician") || has.includes("Journeyman Electrician")))
-    return true;
-  return false;
-}
-
-/** Booked hours for a crew on a day, across all this job's placed visits (dayLoad, 3874). */
-function jobDayLoad(job: Job, techId: string, iso: string): number {
-  return (job.visits ?? [])
-    .filter((v) => v.techId === techId && v.date === iso)
-    .reduce((s, v) => s + v.dur, 0);
 }
 
 // ---- job checklist block — extracted to ./job-checklist-block (file-size cap).
@@ -852,6 +875,9 @@ export function JobModalContent() {
             visit={v}
             techs={techs}
             conflict={conflictsWith(v)}
+            loadOf={(techId) =>
+              v.date != null ? dayLoad(jobs, techId, v.date) : 0
+            }
             onUpdate={(patch) => updateVisit(job.id, v.id, patch)}
             onRemove={() => removeVisit(job.id, v.id)}
             onGoToSchedule={goToSchedule}

@@ -58,6 +58,7 @@ export interface BookingService {
   triggers: string;
   emergencyTriggers?: string;
   ballpark?: string;
+  requiredCerts?: string[];
 }
 
 export interface BookingHours {
@@ -227,7 +228,7 @@ export interface SettingsSlice {
   removeSource: (id: string) => void;
 
   // booking
-  updateBookingService: (index: number, field: keyof BookingService, value: string) => void;
+  updateBookingService: (index: number, field: keyof BookingService, value: string | string[]) => void;
   addBookingService: (name: string) => void;
   // Append a starter-playbook batch (deduped case-insensitively by name against existing
   // services) and persist ONCE. Used by trade onboarding — never replaces owner services.
@@ -385,6 +386,11 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
         services: s.booking.services.map((svc, i) => {
           if (i !== index) return svc;
           if (field === "price") return { ...svc, price: Math.max(0, Number(value) || 0) };
+          if (field === "requiredCerts") {
+            const certs = Array.isArray(value) ? value : [];
+            // Empty array → undefined so untouched services stay clean in the blob.
+            return { ...svc, requiredCerts: certs.length > 0 ? certs : undefined };
+          }
           return { ...svc, [field]: value };
         }),
       },

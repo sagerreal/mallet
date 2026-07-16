@@ -36,6 +36,7 @@ import { TagInput } from "./tag-input";
 import { HourSelect } from "./hour-select";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
+import { normCert } from "@mallet/shared/dispatch/skill-gate";
 
 // ---- sample state values mirrored from prototype's state -------------------
 
@@ -160,7 +161,130 @@ type MemberItem = {
   role: "owner" | "office" | "tech";
   name: string | null;
   isFieldCrew: boolean;
+  skillTags: string[];
 };
+
+const CERT_MAX = 10;
+
+// Inline cert chips editor — only renders for field-crew members.
+// Add/remove saves immediately via setMemberSkillTags. Cap: 10 tags.
+function CertChipsEditor({ memberId, skillTags }: { memberId: string; skillTags: string[] }) {
+  const utils = api.useUtils();
+  const [draft, setDraft] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const setSkillTags = api.v1.identity.setMemberSkillTags.useMutation({
+    onSuccess: () => {
+      setSaveError(null);
+      utils.v1.identity.members.invalidate().catch(() => {});
+    },
+    onError: (err) => {
+      setSaveError(err.message);
+    },
+  });
+
+  function save(next: string[]): void {
+    setSaveError(null);
+    setSkillTags.mutate({ userId: memberId, skillTags: next });
+  }
+
+  function handleAdd(): void {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    if (skillTags.length >= CERT_MAX) return;
+    // Dedupe case-insensitively via normCert — don't add if already present.
+    if (skillTags.some((t) => normCert(t) === normCert(trimmed))) {
+      setDraft("");
+      return;
+    }
+    setDraft("");
+    save([...skillTags, trimmed]);
+  }
+
+  function handleRemove(idx: number): void {
+    save(skillTags.filter((_, i) => i !== idx));
+  }
+
+  const atCap = skillTags.length >= CERT_MAX;
+
+  return (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line)" }}>
+      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700, color: "var(--ink-2)", marginBottom: 6 }}>
+        Certifications
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: skillTags.length > 0 ? 8 : 0 }}>
+        {skillTags.map((tag, i) => (
+          <span
+            key={`${tag}-${i}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 12.5,
+              fontWeight: 600,
+              padding: "3px 5px 3px 10px",
+              borderRadius: 999,
+              border: "1px solid var(--line)",
+              background: "var(--manila, var(--bg))",
+              color: "var(--ink)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {tag}
+            <button
+              type="button"
+              aria-label={`Remove ${tag}`}
+              disabled={setSkillTags.isPending}
+              onClick={() => handleRemove(i)}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                color: "var(--ink-3)",
+                fontSize: 12,
+                lineHeight: 1,
+                padding: "2px 4px",
+                fontFamily: "inherit",
+              }}
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="text"
+          value={draft}
+          placeholder={atCap ? "10 max" : "Add certification"}
+          disabled={atCap || setSkillTags.isPending}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAdd(); } }}
+          style={{
+            flex: "0 0 160px",
+            border: "1.5px solid var(--line)",
+            borderRadius: 8,
+            padding: "6px 8px",
+            fontFamily: "inherit",
+            fontSize: 13,
+            background: atCap ? "var(--bg)" : "var(--card)",
+          }}
+        />
+        <button
+          className="btn sm ghost"
+          type="button"
+          disabled={atCap || !draft.trim() || setSkillTags.isPending}
+          onClick={handleAdd}
+        >
+          Add
+        </button>
+      </div>
+      {saveError && (
+        <div style={{ color: "var(--red-700)", fontSize: 12, marginTop: 4 }}>{saveError}</div>
+      )}
+    </div>
+  );
+}
 
 function MemberRow({ member }: { member: MemberItem }) {
   const utils = api.useUtils();
@@ -215,6 +339,9 @@ function MemberRow({ member }: { member: MemberItem }) {
       </div>
       {roleError && (
         <div style={{ color: "var(--red-700)", fontSize: 12, paddingLeft: 2 }}>{roleError}</div>
+      )}
+      {member.isFieldCrew && (
+        <CertChipsEditor memberId={member.id} skillTags={member.skillTags} />
       )}
     </div>
   );

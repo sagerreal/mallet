@@ -17,6 +17,9 @@ export const users = pgTable(
     name: text("name"), // nullable — crew roster display name; existing rows/signup unaffected
     role: text("role").notNull().default("owner"),
     isFieldCrew: boolean("is_field_crew").notNull().default(false),
+    // Certification tags for this tech (e.g. ["Gas", "Boiler"]). Additive column —
+    // existing rows default to empty array. No new RLS needed (users table is FOR ALL).
+    skillTags: text("skill_tags").array().notNull().default(sql`'{}'::text[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -100,6 +100,7 @@ function toStoreJob(dto: JobSummaryDTO): Job {
     archived: false,
     notes: dto.notes ?? "",
     checklist: dtoChecklistToStore(dto.checklist),
+    requiredCerts: dto.requiredCerts ?? null,
     acts: [],
     visits,
     ...mapExecution(dto),

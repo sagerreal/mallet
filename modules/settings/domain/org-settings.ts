@@ -24,6 +24,8 @@ export interface BookingService {
   readonly emergencyTriggers?: string;
   /** Owner's rough price range the AI may state ONCE on an estimate call (e.g. '$150–$300'). SANCTIONED price. */
   readonly ballpark?: string;
+  /** Certifications a tech must hold to be auto-dispatched this service (e.g. ["Gas"]). */
+  readonly requiredCerts?: readonly string[];
 }
 
 /**
