@@ -122,15 +122,77 @@ strong{font-weight:700}
 .nav-cta{display:flex;gap:.7rem;align-items:center}
 .nav-cta .btn-primary,.nav-cta .btn-outline{padding:.6rem 1.1rem;font-size:.88rem}
 
-/* ============================ HERO ============================ */
-.hero{background:var(--paper);color:var(--ink);padding:6rem 0 5.5rem}
-.hero-inner{max-width:980px;margin:0 auto;text-align:center}
-.eyebrow.center{justify-content:center;display:flex}
+/* ============================ HERO — the living stage ============================ */
+.hero{position:relative;background:var(--paper);color:var(--ink);padding:4.2rem 0 4.6rem;overflow:hidden}
+.hero::before{ /* warm glow behind the stage */
+  content:"";position:absolute;top:-14%;right:-10%;width:58%;height:130%;
+  background:radial-gradient(closest-side, rgba(176,125,0,.11), transparent 72%);
+  pointer-events:none;
+}
+.hero-grid{display:grid;grid-template-columns:1.04fr .96fr;gap:4rem;align-items:center;position:relative}
+.hero-copy{text-align:left}
 .hero h1{font-size:clamp(2.6rem,7vw,5rem);line-height:1.04;letter-spacing:-.032em;margin:.4rem 0 0;overflow-wrap:break-word}
-/* Four-beat headline: 4 stacked lines need a smaller size to stay hero-shaped */
-.hero h1.h1-beats{font-size:clamp(2.1rem,5.2vw,3.7rem);line-height:1.14}
-.lede{font-size:clamp(1.1rem,1.8vw,1.32rem);color:var(--ink-soft);line-height:1.6;max-width:44ch;margin:1.6rem auto 0}
-.hero-actions{display:flex;gap:1rem;flex-wrap:wrap;margin-top:2.4rem;justify-content:center}
+/* Four-beat headline: each beat is a line that lights up as its stage plays in the demo */
+.hero h1.h1-beats{font-size:clamp(1.9rem,3.3vw,2.85rem);line-height:1.28;margin-top:1.1rem}
+.beat{display:block;position:relative;padding-left:2.2rem;color:rgba(27,26,23,.32);transition:color .55s ease}
+.beat::before{
+  content:"";position:absolute;left:0;top:.68em;width:14px;height:3px;border-radius:2px;
+  background:var(--line);transition:width .55s ease, background-color .55s ease;
+}
+.beat.on{color:var(--ink)}
+.beat.on::before{width:26px;background:var(--amber)}
+.lede{font-size:clamp(1.05rem,1.6vw,1.22rem);color:var(--ink-soft);line-height:1.6;max-width:40ch;margin:1.5rem 0 0}
+.hero-actions{display:flex;gap:1rem;flex-wrap:wrap;margin-top:2.1rem;justify-content:flex-start}
+
+/* The stage: demo window on a desk, receipts popping as the AI works */
+.hero-stage{position:relative;z-index:1}
+.hero-stage .desk-window{
+  position:relative;z-index:2;transform:rotate(-1.3deg);
+  box-shadow:0 10px 24px rgba(27,26,23,.09), 0 46px 90px -20px rgba(27,26,23,.32);
+}
+.stage-back{
+  position:absolute;z-index:1;top:-2.4rem;right:-1.4rem;width:196px;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  padding:.9rem 1rem 1.15rem;transform:rotate(2.6deg);
+  box-shadow:0 18px 44px rgba(27,26,23,.12);
+}
+.sb-title{font-family:var(--font-mono);font-size:.62rem;letter-spacing:.14em;color:var(--ink-soft)}
+.sb-bar{height:9px;border-radius:5px;background:var(--parchment);border:1px solid var(--line);margin-top:.5rem}
+.sb-bar.w1{width:84%;background:#F2E4BC}
+.sb-bar.w2{width:58%}
+.sb-bar.w3{width:70%}
+.stage-chips .chip{
+  position:absolute;z-index:3;display:inline-flex;align-items:center;gap:.45rem;white-space:nowrap;
+  font-family:var(--font-mono);font-size:.72rem;letter-spacing:.04em;color:var(--ink);
+  background:var(--card);border:1px solid var(--line);border-radius:999px;
+  padding:.52rem .95rem;box-shadow:0 16px 34px rgba(27,26,23,.18);
+  opacity:0;transform:translateY(10px) scale(.86);
+}
+.chip::before{content:"\2713";color:var(--live);font-weight:700}
+.chip.on{opacity:1;transform:none;transition:opacity .5s cubic-bezier(.34,1.56,.64,1), transform .5s cubic-bezier(.34,1.56,.64,1)}
+.chip[data-chip="0"]{top:-.9rem;left:-2.8rem}
+.chip[data-chip="1"]{top:51%;right:-3.6rem}
+.chip[data-chip="2"]{bottom:4.5%;left:-3.6rem}
+/* hero-scoped feed sizing: all five lines must fit inside the window */
+.hero-stage .desk-feed{min-height:352px;padding:1.15rem 1.25rem 1.35rem;gap:.7rem}
+.hero-stage .feed-bubble{font-size:.9rem;max-width:78%}
+.hero-stage .feed-meta{font-size:.7rem}
+.stage-dots{display:flex;gap:.55rem;justify-content:center;margin-top:1.5rem;position:relative;z-index:2}
+.sdot{width:9px;height:9px;border-radius:50%;border:1.5px solid #CFC8B8;background:transparent;padding:0;cursor:pointer;transition:all .2s ease}
+.sdot:hover{border-color:var(--ink)}
+.sdot.on{background:var(--amber);border-color:var(--amber)}
+@media (prefers-reduced-motion: reduce){
+  .beat{color:var(--ink)}
+  .beat::before{background:var(--amber);width:26px}
+  .stage-chips .chip{opacity:1;transform:none}
+}
+@media (max-width:1020px){
+  .hero-grid{grid-template-columns:1fr;gap:2.8rem}
+  .hero-stage{max-width:560px;justify-self:start;width:100%}
+  .stage-back{right:.4rem}
+  .stage-chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem}
+  .stage-chips .chip{position:static;box-shadow:0 8px 18px rgba(27,26,23,.10)}
+}
 
 /* ================= ONE-LINE PROOF ================= */
 .proofline{background:var(--parchment);padding:3.6rem 0;text-align:center}
@@ -158,15 +220,6 @@ strong{font-weight:700}
 }
 
 /* ================= FRONT DESK WINDOW (signature) ================= */
-.desk{margin-top:3.2rem;text-align:left}
-.desk-tabs{display:flex;gap:.5rem;justify-content:center;margin-bottom:1rem;flex-wrap:wrap}
-.desk-tab{
-  font-family:var(--font-body);font-size:.86rem;font-weight:600;color:var(--ink-soft);
-  background:transparent;border:1.5px solid var(--line);border-radius:999px;
-  padding:.5rem 1.05rem;cursor:pointer;transition:all .14s ease;
-}
-.desk-tab:hover{border-color:var(--ink);color:var(--ink)}
-.desk-tab.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .desk-window{
   background:var(--card);border:1px solid var(--line);border-radius:var(--r);
   overflow:hidden;box-shadow:0 28px 70px rgba(27,26,23,.16);
@@ -410,12 +463,18 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:r
 @media (max-width:640px){
   .nav-cta .btn-outline{display:none}
   .nav{justify-content:space-between}
-  .hero{padding:3.2rem 0 3rem}
-  .hero-actions{flex-direction:column;align-items:stretch}
-  .hero-actions .btn-primary,.hero-actions .btn-outline{width:100%}
+  /* compress the copy block so the live stage peeks above the fold */
+  .hero{padding:2.2rem 0 3rem}
+  .hero-grid{gap:1.8rem}
+  .hero h1.h1-beats{font-size:1.62rem;margin-top:.9rem}
+  .beat{padding-left:1.7rem}
+  .lede{font-size:1rem;margin-top:1rem}
+  .hero-actions{margin-top:1.4rem;flex-wrap:nowrap;gap:.6rem}
+  .hero-actions .btn-primary,.hero-actions .btn-outline{flex:1;text-align:center;padding:.85rem .6rem;font-size:.92rem;white-space:nowrap}
   .cta-row .btn-primary,.cta-row .btn-amber{width:100%}
   .feed-bubble{max-width:88%}
   .desk-feed{min-height:0}
-  .desk-tab{font-size:.78rem;padding:.42rem .8rem}
+  .hero-stage{margin-top:1.1rem}
+  .hero-stage .desk-feed{min-height:0}
   .foot-cols{gap:2rem}
 }
