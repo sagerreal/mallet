@@ -424,6 +424,15 @@ export class Job {
     });
   }
 
+  markCallback(originalId: JobId, reason: CallbackReason, now: Date): Result<Job, ValidationError> {
+    if (originalId === this.p.id) return err(validation("a job cannot be a callback of itself", "callbackOf"));
+    return ok(new Job({ ...this.p, callbackOf: originalId, callbackReason: reason, updatedAt: now }));
+  }
+
+  dismissCallback(now: Date): Result<Job, ValidationError> {
+    return ok(new Job({ ...this.p, callbackOf: null, callbackReason: "new_issue", updatedAt: now }));
+  }
+
   get props(): JobProps {
     return this.p;
   }

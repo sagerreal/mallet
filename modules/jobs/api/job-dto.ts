@@ -274,6 +274,17 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
   };
 };
 
+export const callbackCandidateDTO = z.object({
+  jobId: z.string(),
+  jobNum: z.string(),
+  original: z.object({
+    jobId: z.string(),
+    num: z.string(),
+    svc: z.string().nullable(),
+    completedAt: z.string().datetime().nullable(),
+  }),
+});
+
 export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution) => {
   const p = job.props;
   return {

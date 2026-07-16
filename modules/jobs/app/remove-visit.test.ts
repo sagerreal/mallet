@@ -91,6 +91,7 @@ class FakeJobRepository implements JobRepository {
   async removeVerifyAnswer() { return 0; }
   async addPhoto() {}
   async removePhoto() { return 0; }
+  async listRecentForCallbackScan() { return []; }
 
   saved(id: JobId): Job | undefined {
     return this.store.get(id);

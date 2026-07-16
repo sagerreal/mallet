@@ -21,7 +21,10 @@ import {
   JOB_CHECKLIST_ITEM_TEXT_MAX,
 } from "../domain/job";
 import { ArchiveJobUseCase } from "../app/archive-job";
-import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput } from "./job-dto";
+import { ListCallbackCandidatesUseCase } from "../app/list-callback-candidates";
+import { ConfirmCallbackUseCase } from "../app/confirm-callback";
+import { DismissCallbackUseCase } from "../app/dismiss-callback";
+import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum } from "./job-dto";
 import {
   AddJobLineUseCase,
   UpdateJobLineUseCase,
@@ -478,5 +481,41 @@ export const createJobRouter = () =>
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new ArchiveJobUseCase(repo, ctx.deps.clock);
         return orThrow(await useCase.exec({ jobId: asJobId(input.jobId) }));
+      }),
+
+    callbackCandidates: ownerOrOffice
+      .output(z.array(callbackCandidateDTO))
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ListCallbackCandidatesUseCase(repo, ctx.deps.clock);
+        const result = await useCase.exec();
+        return orThrow(result).map((v) => ({
+          jobId: v.jobId,
+          jobNum: v.jobNum,
+          original: {
+            jobId: v.original.jobId,
+            num: v.original.num,
+            svc: v.original.svc,
+            completedAt: v.original.completedAt?.toISOString() ?? null,
+          },
+        }));
+      }),
+
+    confirmCallback: ownerOrOffice
+      .input(z.object({ jobId: z.string().uuid(), originalJobId: z.string().uuid(), reason: callbackReasonEnum }))
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ConfirmCallbackUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        return toJobDTO(orThrow(await useCase.exec({ jobId: asJobId(input.jobId), originalJobId: asJobId(input.originalJobId), reason: input.reason })));
+      }),
+
+    dismissCallback: ownerOrOffice
+      .input(z.object({ jobId: z.string().uuid() }))
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new DismissCallbackUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        return toJobDTO(orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
       }),
   });
