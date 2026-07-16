@@ -11,7 +11,7 @@
     wireCalendly();
     loadTallyIfPresent();
     frontDesk();
-    platTabs();
+    platformTour();
     roiCalc();
     consent();
   });
@@ -247,26 +247,53 @@
     show(0, !reduce);
   }
 
-  /* ============== THE PLATFORM — real-screen tabs ============== */
-  var PLAT_CAPS = [
-    'Every lead the Front Desk books lands here — first call to won, on one board.',
-    'Good / Better / Best drafted from your pricebook — the customer taps a tier, the accept becomes a job.',
-    'Every job, sold to done — crew, schedule, and the checklist that keeps standards in the system.',
-    'Invoices, payments, and the follow-ups that chase them — nobody has to remember who owes what.'
-  ];
-  function platTabs() {
-    var tabs = slice(document.querySelectorAll('.ptab'));
-    if (!tabs.length) return;
-    var shots = slice(document.querySelectorAll('.plat-shot'));
-    var cap = document.getElementById('platCap');
-    tabs.forEach(function (t, i) {
-      t.addEventListener('click', function () {
-        tabs.forEach(function (o, j) {
-          o.classList.toggle('on', i === j);
-          o.setAttribute('aria-selected', i === j ? 'true' : 'false');
-        });
-        shots.forEach(function (s, j) { s.classList.toggle('on', i === j); });
-        if (cap) cap.textContent = PLAT_CAPS[i] || '';
+  /* ============== THE PLATFORM TOUR (pinned scrolly) ============== */
+  /* Desktop: the .tour section is 420vh; the frame pins and scroll progress
+     picks the active stop (Messages → Pipeline → Jobs → Invoices). Sidebar
+     stops scroll you to their segment. Mobile/reduced motion: no pinning
+     (CSS unpins), stops are plain tabs. */
+  function platformTour() {
+    var tour = document.querySelector('.tour');
+    if (!tour) return;
+    var stops = slice(tour.querySelectorAll('.af-item.stop'));
+    var panels = slice(tour.querySelectorAll('.af-panel'));
+    var N = panels.length;
+    var order = stops.map(function (s) { return parseInt(s.getAttribute('data-stop'), 10) || 0; });
+    var current = 0;
+
+    function activate(i) {
+      if (i === current && panels[i].classList.contains('on')) return;
+      current = i;
+      panels.forEach(function (p, j) { p.classList.toggle('on', i === j); });
+      stops.forEach(function (s, k) { s.classList.toggle('on', order[k] === i); });
+    }
+
+    var pinned = !reduce && window.matchMedia('(min-width: 901px)').matches;
+
+    if (!pinned) { // tap-through mode
+      stops.forEach(function (s, k) {
+        s.addEventListener('click', function () { activate(order[k]); });
+      });
+      activate(0);
+      return;
+    }
+
+    // scroll-driven mode: map progress through the tall section to a stop
+    function segTop(i) {
+      var trackH = tour.offsetHeight - window.innerHeight;
+      return tour.offsetTop + ((i + 0.5) / N) * trackH;
+    }
+    function onScroll() {
+      var trackH = tour.offsetHeight - window.innerHeight;
+      var p = (window.scrollY - tour.offsetTop) / trackH;
+      activate(Math.max(0, Math.min(N - 1, Math.floor(p * N))));
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    stops.forEach(function (s, k) {
+      s.addEventListener('click', function () {
+        window.scrollTo({ top: segTop(order[k]), behavior: 'auto' }); // Lenis smooths it
       });
     });
   }
