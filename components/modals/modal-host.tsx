@@ -2,35 +2,132 @@
  * components/modals/modal-host.tsx
  * Reads activeModal from the store and renders the matching modal content.
  * Mounted once in (office)/layout.tsx — works app-wide.
+ *
+ * All modal content components are loaded via next/dynamic (ssr:false) so the
+ * 261KB modal chunk is deferred from the shared first-load bundle. Modals open
+ * on user interaction, so the chunk load is imperceptible.
  */
 
 "use client";
 
+import dynamic from "next/dynamic";
 import { useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
 import { MODAL, type ModalId } from "@/lib/store/modal-ids";
-import { LeadModal } from "./lead-modal/lead-modal";
-import { NewCustomerModal } from "./new-customer-modal";
-import { SweepModalContent } from "./sweep-modal";
-import { QuoteSweepModalContent } from "./quote-sweep-modal";
-import { ThreadModalContent } from "./thread-modal";
-import { CallModalContent } from "./call-modal";
-import { EstimateModalContent } from "./estimate-modal";
-import { JobModalContent } from "./job-modal";
-import { NewJobModalContent } from "./new-job-modal";
-import { EvisitModalContent } from "./evisit-modal";
-import { PriceBuilderModalContent } from "./price-builder-modal";
-import { TechQuoteModalContent } from "./tech-quote-modal";
-import { InvoiceModalContent } from "./invoice-modal";
-import { TechJobModalContent } from "./tech-job-modal";
-import { CustQuoteModalContent } from "./cust-quote-modal";
-import { CustInvoiceModalContent } from "./cust-invoice-modal";
-import { CloseOutModalContent } from "./close-out-modal";
 import { Modal } from "./modal";
-import { VisitModalContent } from "./visit-modal";
-import { CleanUpModalContent } from "./placeholder-modals";
-import { CompanyViewModalContent } from "./company-view-modal";
-import { ImportCustomersModalContent } from "./import-customers-modal";
-import { ImportServicesModalContent } from "./import-services-modal";
+
+// ----- dynamic modal content imports (all named exports → { default: X } -----
+
+const LeadModal = dynamic(
+  () => import("./lead-modal/lead-modal").then((m) => ({ default: m.LeadModal })),
+  { ssr: false },
+);
+
+const NewCustomerModal = dynamic(
+  () => import("./new-customer-modal").then((m) => ({ default: m.NewCustomerModal })),
+  { ssr: false },
+);
+
+const SweepModalContent = dynamic(
+  () => import("./sweep-modal").then((m) => ({ default: m.SweepModalContent })),
+  { ssr: false },
+);
+
+const QuoteSweepModalContent = dynamic(
+  () => import("./quote-sweep-modal").then((m) => ({ default: m.QuoteSweepModalContent })),
+  { ssr: false },
+);
+
+const ThreadModalContent = dynamic(
+  () => import("./thread-modal").then((m) => ({ default: m.ThreadModalContent })),
+  { ssr: false },
+);
+
+const CallModalContent = dynamic(
+  () => import("./call-modal").then((m) => ({ default: m.CallModalContent })),
+  { ssr: false },
+);
+
+const EstimateModalContent = dynamic(
+  () => import("./estimate-modal").then((m) => ({ default: m.EstimateModalContent })),
+  { ssr: false },
+);
+
+const JobModalContent = dynamic(
+  () => import("./job-modal").then((m) => ({ default: m.JobModalContent })),
+  { ssr: false },
+);
+
+const NewJobModalContent = dynamic(
+  () => import("./new-job-modal").then((m) => ({ default: m.NewJobModalContent })),
+  { ssr: false },
+);
+
+const EvisitModalContent = dynamic(
+  () => import("./evisit-modal").then((m) => ({ default: m.EvisitModalContent })),
+  { ssr: false },
+);
+
+const PriceBuilderModalContent = dynamic(
+  () => import("./price-builder-modal").then((m) => ({ default: m.PriceBuilderModalContent })),
+  { ssr: false },
+);
+
+const TechQuoteModalContent = dynamic(
+  () => import("./tech-quote-modal").then((m) => ({ default: m.TechQuoteModalContent })),
+  { ssr: false },
+);
+
+const InvoiceModalContent = dynamic(
+  () => import("./invoice-modal").then((m) => ({ default: m.InvoiceModalContent })),
+  { ssr: false },
+);
+
+const TechJobModalContent = dynamic(
+  () => import("./tech-job-modal").then((m) => ({ default: m.TechJobModalContent })),
+  { ssr: false },
+);
+
+const CustQuoteModalContent = dynamic(
+  () => import("./cust-quote-modal").then((m) => ({ default: m.CustQuoteModalContent })),
+  { ssr: false },
+);
+
+const CustInvoiceModalContent = dynamic(
+  () => import("./cust-invoice-modal").then((m) => ({ default: m.CustInvoiceModalContent })),
+  { ssr: false },
+);
+
+const CloseOutModalContent = dynamic(
+  () => import("./close-out-modal").then((m) => ({ default: m.CloseOutModalContent })),
+  { ssr: false },
+);
+
+const VisitModalContent = dynamic(
+  () => import("./visit-modal").then((m) => ({ default: m.VisitModalContent })),
+  { ssr: false },
+);
+
+const CleanUpModalContent = dynamic(
+  () => import("./placeholder-modals").then((m) => ({ default: m.CleanUpModalContent })),
+  { ssr: false },
+);
+
+const CompanyViewModalContent = dynamic(
+  () => import("./company-view-modal").then((m) => ({ default: m.CompanyViewModalContent })),
+  { ssr: false },
+);
+
+const ImportCustomersModalContent = dynamic(
+  () => import("./import-customers-modal").then((m) => ({ default: m.ImportCustomersModalContent })),
+  { ssr: false },
+);
+
+const ImportServicesModalContent = dynamic(
+  () => import("./import-services-modal").then((m) => ({ default: m.ImportServicesModalContent })),
+  { ssr: false },
+);
+
+// ---------------------------------------------------------------------------
 
 export function ModalHost() {
   const activeModal = useActiveModal();

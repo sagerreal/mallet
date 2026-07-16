@@ -182,7 +182,7 @@ export default function MyHoursPage() {
 
   const { data, isLoading } = api.v1.timesheets.list.useQuery(
     { fromDate, toDate, limit: 500 },
-    { staleTime: 60_000 },
+    { staleTime: 60_000, refetchOnWindowFocus: false },
   );
 
   const [tsWeek, setTsWeek] = useState(() => weekStart(today));
@@ -199,7 +199,17 @@ export default function MyHoursPage() {
     return (
       <>
         <h1>My hours</h1>
-        <div className="muted" style={{ marginTop: 16 }}>Loading…</div>
+        <div style={{ marginTop: 12 }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="sk-row">
+              <div className="sk" style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0 }} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
+                <div className="sk" style={{ width: "60%", height: 14 }} />
+                <div className="sk" style={{ width: "40%", height: 12 }} />
+              </div>
+            </div>
+          ))}
+        </div>
       </>
     );
   }

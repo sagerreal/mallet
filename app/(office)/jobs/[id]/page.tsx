@@ -26,7 +26,28 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const onCbError = (err: unknown) => setCbError(userMessage(err));
 
   if (job.isError) return <p className="text-sm text-red">{userMessage(job.error)}</p>;
-  if (job.isLoading) return <p className="text-sm text-ink-muted">Loading…</p>;
+  if (job.isLoading) return (
+    <div style={{ padding: "0 0 24px" }}>
+      {/* Title bar skeleton */}
+      <div className="sk-row" style={{ borderBottom: "none", paddingBottom: 20 }}>
+        <div className="sk" style={{ width: "40%", height: 24 }} />
+      </div>
+      {/* Card block 1 */}
+      <div className="sk-row">
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="sk" style={{ width: "70%", height: 14 }} />
+          <div className="sk" style={{ width: "50%", height: 12 }} />
+        </div>
+      </div>
+      {/* Card block 2 */}
+      <div className="sk-row">
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="sk" style={{ width: "60%", height: 14 }} />
+          <div className="sk" style={{ width: "45%", height: 12 }} />
+        </div>
+      </div>
+    </div>
+  );
   if (!job.data) return <p className="text-sm text-ink-muted">Job not found.</p>;
   const j = job.data;
 
