@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
+import { useCallbackCandidates } from "@/features/jobs/hooks";
 import type { Invoice, Job } from "@/lib/store/types";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
 import { custName } from "./jobs-helpers";
@@ -59,6 +60,7 @@ function applyCrew(bands: JobBand[], techs: Tech[], crewFilter: string): JobBand
 }
 
 export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
+  const candidates = useCallbackCandidates();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const invoices = useAppStore((s) => s.invoices);
@@ -120,6 +122,15 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
       <div className="mob-new">
         <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>
       </div>
+
+      {(() => {
+        const count = candidates.data?.length ?? 0;
+        return count > 0 ? (
+          <div className="cb-review-bar">
+            <b>{count}</b> callback{count === 1 ? "" : "s"} to review
+          </div>
+        ) : null;
+      })()}
 
       <JobsToolbar
         archiveSet={archiveSet}

@@ -91,6 +91,7 @@ class FakeJobRepository implements JobRepository {
   async removeVerifyAnswer() { return 0; }
   async addPhoto() {}
   async removePhoto() { return 0; }
+  async listRecentForCallbackScan() { return []; }
 
   saved(id: JobId): Job | undefined {
     return this.store.get(id);
@@ -140,6 +141,8 @@ const makeJobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
   total: zeroMoney,
   notes: null,
   scope: null,
+  callbackOf: null,
+  callbackReason: null,
   checklist: null,
   visits: [],
   createdAt: new Date("2026-07-01T00:00:00Z"),

@@ -1,6 +1,6 @@
 import { asJobId, asOrgId, asLeadId, asEstimateId, asUserId, asVisitId, money } from "@mallet/shared/types";
 import { jobs, jobVisits } from "@mallet/shared/db/schema";
-import { Job, JobVisit, isJobKind, isJobStatus, isVisitStatus } from "../domain/job";
+import { Job, JobVisit, isJobKind, isJobStatus, isVisitStatus, type CallbackReason } from "../domain/job";
 
 export type JobRow = typeof jobs.$inferSelect;
 export type JobVisitRow = typeof jobVisits.$inferSelect;
@@ -64,6 +64,8 @@ export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): J
     total: money(row.totalCents),
     notes: row.notes,
     scope: row.scope ?? null,
+    callbackOf: row.callbackOf ? asJobId(row.callbackOf) : null,
+    callbackReason: row.callbackReason as CallbackReason | null,
     // jsonb passes through Job.create, which runtime-validates the shape —
     // corrupt checklist data fails loud below rather than silently coercing.
     checklist: row.checklist ?? null,

@@ -31,6 +31,7 @@ function repoWith(archiveResult: number): JobRepository {
     removeVerifyAnswer: async () => 0,
     addPhoto: async () => {},
     removePhoto: async () => 0,
+    listRecentForCallbackScan: async () => [],
   };
 }
 

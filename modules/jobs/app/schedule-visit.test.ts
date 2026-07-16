@@ -66,6 +66,8 @@ const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
   total: zeroMoney,
   notes: null,
   scope: null,
+  callbackOf: null,
+  callbackReason: null,
   checklist: null,
   visits: [],
   createdAt: new Date("2026-07-01T00:00:00Z"),
@@ -131,6 +133,7 @@ class FakeJobRepository implements JobRepository {
   async removeVerifyAnswer() { return 0; }
   async addPhoto() {}
   async removePhoto() { return 0; }
+  async listRecentForCallbackScan() { return []; }
 }
 
 // ── ScheduleVisitUseCase ──────────────────────────────────────────────────────

@@ -475,6 +475,10 @@
   .jh-search input{width:100%;box-sizing:border-box;border:1.5px solid var(--jline);border-radius:9px;padding:9px 13px;font-size:12.5px;font-family:inherit;background:var(--jrow);color:var(--jink)}
   .jh-search input:focus{outline:none;border-color:var(--jamber);box-shadow:0 0 0 2px rgba(154,103,0,.18)}
 
+  /* callback review count — compact amber-tinted attention bar above the toolbar */
+  .cb-review-bar{display:flex;align-items:center;gap:6px;padding:5px 12px;margin-bottom:10px;background:color-mix(in srgb,var(--jamber) 8%,var(--jrow));border:1px solid color-mix(in srgb,var(--jamber) 30%,var(--jline));border-radius:8px;font-size:12.5px;color:var(--jamber);font-weight:500}
+  .cb-review-bar b{font-weight:700;color:var(--jamber)}
+
   /* crew avatar sizing — shared by the List view rows */
   .jh-av{width:24px;height:24px;font-size:9px;flex:0 0 auto}
   /* shared Grouped / List view toggle — used by the Customers header */

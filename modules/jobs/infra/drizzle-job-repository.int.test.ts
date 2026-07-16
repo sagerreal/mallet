@@ -20,7 +20,7 @@ import {
 } from "@mallet/shared/types";
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
-import { Job, JobVisit } from "../domain/job";
+import { Job, JobVisit, type CallbackReason } from "../domain/job";
 import { DrizzleJobRepository } from "./drizzle-job-repository";
 
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
@@ -56,6 +56,8 @@ interface ManualJobOverrides {
   num: string;
   svc?: string | null;
   scope?: string | null;
+  callbackOf?: string | null;
+  callbackReason?: CallbackReason | null;
 }
 
 const draftJob = (orgId: OrgId, leadId: LeadId, o: JobOverrides = {}): Job => {
@@ -100,6 +102,8 @@ const makeManualJob = (orgId: OrgId, leadId: LeadId, o: ManualJobOverrides): Job
     title: "Manual Job",
     svc: o.svc ?? null,
     scope: o.scope ?? null,
+    callbackOf: o.callbackOf ? asJobId(o.callbackOf) : null,
+    callbackReason: o.callbackReason ?? null,
     status: "scheduled",
     scheduledStart: null,
     scheduledEnd: null,
@@ -372,6 +376,126 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(result.found).toBeNull();
   });
 
+  it("persists callbackOf + callbackReason on insertManual and reads them back", async () => {
+    const orgA = asOrgId(orgAId);
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+
+      // Job A — the original job that B will reference as its callback target.
+      const numA = await repo.nextNumber();
+      const jobA = makeManualJob(orgA, asLeadId(leadAId), { num: numA });
+      await repo.insertManual(jobA);
+
+      // Job B — a callback of A with an explicit reason.
+      const numB = await repo.nextNumber();
+      const jobB = makeManualJob(orgA, asLeadId(leadAId), {
+        num: numB,
+        callbackOf: jobA.props.id,
+        callbackReason: "callback",
+      });
+      await repo.insertManual(jobB);
+      const backB = await repo.findById(jobB.props.id);
+
+      // Job C — no callback link; both fields must read back as null.
+      const numC = await repo.nextNumber();
+      const jobC = makeManualJob(orgA, asLeadId(leadAId), { num: numC });
+      await repo.insertManual(jobC);
+      const backC = await repo.findById(jobC.props.id);
+
+      return {
+        backB,
+        backC,
+        aId: jobA.props.id,
+      };
+    });
+    expect(result.backB).not.toBeNull();
+    expect(result.backC).not.toBeNull();
+    expect(result.backB!.props.callbackOf).toBe(result.aId);
+    expect(result.backB!.props.callbackReason).toBe("callback");
+    expect(result.backC!.props.callbackOf).toBeNull();
+    expect(result.backC!.props.callbackReason).toBeNull();
+  });
+
+  it("allows callbackOf with a null reason (unconfirmed candidate link)", async () => {
+    const orgA = asOrgId(orgAId);
+    const result = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const numA = await repo.nextNumber();
+      const jobA = makeManualJob(orgA, asLeadId(leadAId), { num: numA });
+      await repo.insertManual(jobA);
+
+      const numB = await repo.nextNumber();
+      const jobB = makeManualJob(orgA, asLeadId(leadAId), {
+        num: numB,
+        callbackOf: jobA.props.id,
+        callbackReason: null,
+      });
+      await repo.insertManual(jobB);
+      const back = await repo.findById(jobB.props.id);
+      return {
+        callbackOf: back?.props.callbackOf ?? "missing",
+        callbackReason: back?.props.callbackReason,
+        aId: jobA.props.id,
+      };
+    });
+    expect(result.callbackOf).toBe(result.aId);
+    expect(result.callbackReason).toBeNull();
+  });
+
+  it("composite FK rejects a callbackOf pointing at a different org's job", async () => {
+    const orgA = asOrgId(orgAId);
+    const orgB = asOrgId(orgBId);
+
+    // Create a job in org B to use as the cross-tenant target.
+    const jobBId = await withTenant(orgB, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgB);
+      const num = await repo.nextNumber();
+      const job = makeManualJob(orgB, asLeadId(leadBId), { num });
+      await repo.insertManual(job);
+      return job.props.id;
+    });
+
+    // Attempt to create a job in org A referencing org B's job as callbackOf — must fail.
+    let rejected = false;
+    try {
+      await withTenant(orgA, async (tx) => {
+        const repo = new DrizzleJobRepository(tx, orgA);
+        const num = await repo.nextNumber();
+        // Bypass domain validation to test the DB constraint directly.
+        const job = Job.create({
+          id: asJobId(randomUUID()),
+          orgId: orgA,
+          num,
+          leadId: asLeadId(leadAId),
+          sourceEstimateId: null,
+          assigneeUserId: null,
+          title: "Cross-org callback attempt",
+          svc: null,
+          status: "scheduled",
+          scheduledStart: null,
+          scheduledEnd: null,
+          startedAt: null,
+          completedAt: null,
+          canceledAt: null,
+          cancelReason: null,
+          total: zeroMoney,
+          notes: null,
+          callbackOf: jobBId, // org B's job — cross-tenant!
+          callbackReason: "callback",
+          checklist: null,
+          visits: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        if (!isOk(job)) throw new Error("domain rejected");
+        await repo.insertManual(job.value);
+      });
+    } catch {
+      rejected = true;
+    }
+    expect(rejected).toBe(true);
+  });
+
   it("archiveByLead sweeps a lead's ACTIVE jobs + their visits, preserves terminal, isolates other leads", async () => {
     const orgA = asOrgId(orgAId);
     // Two FRESH leads in org A so the counts are isolated from jobs other tests left on leadA:
@@ -416,5 +540,83 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(visitRow!.deleted_at).not.toBeNull(); // its visit swept too — no orphan on the board
     expect(out.doneFound).not.toBeNull(); // terminal job preserved as history
     expect(out.otherFound).not.toBeNull(); // lead B's job untouched
+  });
+
+  it("listRecentForCallbackScan returns recent org-A rows and excludes ancient + org-B jobs", async () => {
+    const orgA = asOrgId(orgAId);
+    const orgB = asOrgId(orgBId);
+
+    // Fresh dedicated lead so this test doesn't collide with other test data on leadA.
+    const [scanLead] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgAId}, 'Scan Lead ' || gen_random_uuid()) returning id`;
+
+    const now = new Date();
+    const tenDaysAgo = new Date(now.getTime() - 10 * 86400000);
+    const completedAt = new Date(now.getTime() - 20 * 86400000);
+
+    // Insert original job (completed, 10 days ago) and callback candidate (today) via raw SQL
+    // so we can control created_at / completed_at precisely.
+    const [origRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, completed_at, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-SCAN-ORIG', ${scanLead!.id}, 'Original', 'drain cleaning',
+        'complete', ${completedAt.toISOString()}, ${tenDaysAgo.toISOString()}, ${tenDaysAgo.toISOString()}
+      ) returning id`;
+
+    const [newRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-SCAN-NEW', ${scanLead!.id}, 'Callback', 'drain cleaning',
+        'scheduled', ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
+    // Ancient job (200 days ago) — must be excluded by the `since` filter.
+    const ancientDate = new Date(now.getTime() - 200 * 86400000);
+    const [ancientRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, created_at, updated_at)
+      values (
+        ${orgAId}, 'JOB-SCAN-ANCIENT', ${scanLead!.id}, 'Ancient', 'drain cleaning',
+        'complete', ${ancientDate.toISOString()}, ${ancientDate.toISOString()}
+      ) returning id`;
+
+    // Fresh lead + job in org B — must not appear in org A's scan.
+    const [scanLeadB] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgBId}, 'Scan Lead B ' || gen_random_uuid()) returning id`;
+    const [orgBRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, num, lead_id, title, svc, status, created_at, updated_at)
+      values (
+        ${orgBId}, 'JOB-SCAN-B', ${scanLeadB!.id}, 'Org B Job', 'drain cleaning',
+        'scheduled', ${now.toISOString()}, ${now.toISOString()}
+      ) returning id`;
+
+    // Use a `since` that is 135 days ago (90 + 45 lookback from "now") — covers orig+new, excludes ancient.
+    const since = new Date(now.getTime() - 135 * 86400000);
+
+    const rows = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      return repo.listRecentForCallbackScan(since);
+    });
+
+    const ids = rows.map((r) => r.id as string);
+
+    // Both recent jobs are returned.
+    expect(ids).toContain(origRow!.id);
+    expect(ids).toContain(newRow!.id);
+
+    // Ancient job excluded.
+    expect(ids).not.toContain(ancientRow!.id);
+
+    // Org B's job excluded (RLS + explicit orgId filter).
+    expect(ids).not.toContain(orgBRow!.id);
+
+    // Field projection: verify key columns project correctly.
+    const origResult = rows.find((r) => (r.id as string) === origRow!.id);
+    expect(origResult).toBeDefined();
+    expect(origResult!.svc).toBe("drain cleaning");
+    expect(origResult!.num).toBe("JOB-SCAN-ORIG");
+    expect(origResult!.status).toBe("complete");
+    expect(origResult!.completedAt).not.toBeNull();
+    expect(origResult!.callbackReason).toBeNull();
+    expect(origResult!.callbackOf).toBeNull();
   });
 });

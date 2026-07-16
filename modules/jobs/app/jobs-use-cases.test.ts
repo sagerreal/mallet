@@ -117,6 +117,7 @@ class FakeJobRepository implements JobRepository {
   async removeVerifyAnswer() { return 0; }
   async addPhoto() {}
   async removePhoto() { return 0; }
+  async listRecentForCallbackScan() { return []; }
 }
 
 class FakeEstimateReader implements EstimateReader {

@@ -3,10 +3,12 @@ import {
   JOB_STATUSES,
   JOB_VISIT_STATUSES,
   JOB_KINDS,
+  CALLBACK_REASONS,
   type Job,
   type JobStatus,
   type VisitStatus,
   type JobKind,
+  type CallbackReason,
   type JobChecklistProps,
 } from "../domain/job";
 import type {
@@ -22,6 +24,9 @@ import type {
 export const statusEnum = z.enum(JOB_STATUSES as unknown as [JobStatus, ...JobStatus[]]);
 export const visitStatusEnum = z.enum(JOB_VISIT_STATUSES as unknown as [VisitStatus, ...VisitStatus[]]);
 export const kindEnum = z.enum(JOB_KINDS as unknown as [JobKind, ...JobKind[]]);
+export const callbackReasonEnum = z.enum(
+  CALLBACK_REASONS as unknown as [CallbackReason, ...CallbackReason[]],
+);
 export const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
 
 export const visitDTO = z.object({
@@ -124,6 +129,8 @@ export const jobDTO = z.object({
   total: moneyDTO,
   notes: z.string().nullable(),
   scope: z.string().nullable(),
+  callbackOf: z.string().uuid().nullable(),
+  callbackReason: callbackReasonEnum.nullable(),
   checklist: jobChecklistDTO.nullable(),
   visits: z.array(visitDTO),
   createdAt: z.string(),
@@ -147,6 +154,8 @@ export const jobSummaryDTO = z.object({
   total: moneyDTO,
   notes: z.string().nullable(),
   scope: z.string().nullable(),
+  callbackOf: z.string().uuid().nullable(),
+  callbackReason: callbackReasonEnum.nullable(),
   checklist: jobChecklistDTO.nullable(),
   visits: z.array(visitDTO),
   createdAt: z.string(),
@@ -256,12 +265,25 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
     total: money(p.total),
     notes: p.notes,
     scope: p.scope,
+    callbackOf: p.callbackOf,
+    callbackReason: p.callbackReason,
     checklist: toChecklistDTO(p.checklist),
     visits: p.visits.map(toVisitDTO),
     createdAt: p.createdAt.toISOString(),
     ...executionFields(execution),
   };
 };
+
+export const callbackCandidateDTO = z.object({
+  jobId: z.string(),
+  jobNum: z.string(),
+  original: z.object({
+    jobId: z.string(),
+    num: z.string(),
+    svc: z.string().nullable(),
+    completedAt: z.string().datetime().nullable(),
+  }),
+});
 
 export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution) => {
   const p = job.props;
@@ -279,6 +301,8 @@ export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution)
     total: money(p.total),
     notes: p.notes,
     scope: p.scope,
+    callbackOf: p.callbackOf,
+    callbackReason: p.callbackReason,
     checklist: toChecklistDTO(p.checklist),
     visits: p.visits.map(toVisitDTO),
     createdAt: p.createdAt.toISOString(),

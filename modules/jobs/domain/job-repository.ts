@@ -9,6 +9,19 @@ import type {
 import type { Job, JobStatus } from "./job";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "./job-execution";
 
+export interface CallbackScanRow {
+  readonly id: JobId;
+  readonly num: string;
+  readonly leadId: string;
+  readonly svc: string | null;
+  readonly status: string;
+  readonly completedAt: Date | null;
+  readonly scheduledStart: Date | null;
+  readonly createdAt: Date;
+  readonly callbackOf: JobId | null;
+  readonly callbackReason: string | null;
+}
+
 export interface JobFilter {
   readonly status?: JobStatus;
   /** Job-level assignee only (the office list's filter). */
@@ -72,4 +85,5 @@ export interface JobRepository {
   removeVerifyAnswer(jobId: JobId, itemId: string): Promise<number>;
   addPhoto(photo: JobPhoto, now: Date): Promise<void>;
   removePhoto(jobId: JobId, photoId: string, now: Date): Promise<number>;
+  listRecentForCallbackScan(since: Date): Promise<CallbackScanRow[]>;
 }
