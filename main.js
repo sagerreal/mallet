@@ -642,7 +642,7 @@
   /* Shows the privacy-choices card once per visitor. Accept → loads analytics
      (RB2B + GA4). Decline → remembers and never loads. */
   var RB2B_KEY = '4O7Z0HZPM2NX'; // RB2B web-identification key (loads only after consent).
-  var GA4_ID = '';               // e.g. 'G-XXXXXXXXXX' — paste from GA4 Admin → Data Streams. Empty = GA off.
+  var GA4_ID = 'G-DQFMJ5R3K5';               // e.g. 'G-XXXXXXXXXX' — paste from GA4 Admin → Data Streams. Empty = GA off.
 
   /* GA4, consent-gated. window.malletTrack(event, params) is safe to call anywhere. */
   function loadGA4() {
