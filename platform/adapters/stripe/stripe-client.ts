@@ -36,6 +36,24 @@ export interface CheckoutResult {
   readonly sessionId: string;
 }
 
+// ── Connect (Express) — PR1 onboarding. No charge/transfer here. ──────────────
+export interface CreateExpressAccountParams {
+  readonly country: string; // "US"
+  readonly idempotencyKey: string;
+}
+
+export interface CreateAccountLinkParams {
+  readonly accountId: string;
+  readonly refreshUrl: string;
+  readonly returnUrl: string;
+}
+
+export interface ConnectAccountStatus {
+  readonly chargesEnabled: boolean;
+  readonly payoutsEnabled: boolean;
+  readonly detailsSubmitted: boolean;
+}
+
 export class StripeClient {
   private readonly stripe: Stripe;
   private readonly breaker = new CircuitBreaker("stripe", { failureThreshold: 5, resetMs: 30_000 });
@@ -75,6 +93,58 @@ export class StripeClient {
     );
     if (!session.url) throw new Error("stripe returned a checkout session without a url");
     return { url: session.url, sessionId: session.id };
+  }
+
+  // Create an Express connected account for a shop. Idempotency-keyed so a retry returns the SAME
+  // account rather than minting a duplicate. card_payments + transfers requested so the account can
+  // later take destination charges (PR2); onboarding collects the rest via the hosted link.
+  async createExpressAccount(params: CreateExpressAccountParams): Promise<{ accountId: string }> {
+    const account = await call(
+      () =>
+        this.stripe.accounts.create(
+          {
+            type: "express",
+            country: params.country,
+            capabilities: {
+              card_payments: { requested: true },
+              transfers: { requested: true },
+            },
+          },
+          { idempotencyKey: params.idempotencyKey, timeout: 10_000 },
+        ),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    return { accountId: account.id };
+  }
+
+  // Create a single-use, short-lived Stripe-hosted onboarding link. NOT idempotency-keyed: each
+  // (re)start of onboarding must mint a FRESH link (a reused/expired link is a dead end).
+  async createAccountLink(params: CreateAccountLinkParams): Promise<{ url: string }> {
+    const link = await call(
+      () =>
+        this.stripe.accountLinks.create({
+          account: params.accountId,
+          refresh_url: params.refreshUrl,
+          return_url: params.returnUrl,
+          type: "account_onboarding",
+        }),
+      { idempotent: false, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    if (!link.url) throw new Error("stripe returned an account link without a url");
+    return { url: link.url };
+  }
+
+  // Read the connected account's onboarding/capability status. GET — safe to retry.
+  async retrieveAccount(accountId: string): Promise<ConnectAccountStatus> {
+    const account = await call(
+      () => this.stripe.accounts.retrieve(accountId),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    return {
+      chargesEnabled: account.charges_enabled ?? false,
+      payoutsEnabled: account.payouts_enabled ?? false,
+      detailsSubmitted: account.details_submitted ?? false,
+    };
   }
 
   // Verifies the webhook signature against the raw body. Throws on any tampering / bad signature.
