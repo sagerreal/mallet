@@ -2,6 +2,7 @@ import { loadConfig } from "@mallet/shared/config";
 import { db } from "@mallet/shared/db/client";
 import { createAuthProvider, createApiKeyAuthenticator, createSupabaseTokenVerifier, SignupStore } from "@mallet/identity";
 import { StripePaymentLinkGateway } from "@mallet/invoicing";
+import { StripeConnectGateway } from "@mallet/settings";
 import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import {
   LoggingNotificationSender,
@@ -15,6 +16,7 @@ import { logger } from "@mallet/shared/observability";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
+import type { ConnectGateway } from "@mallet/settings";
 import { SupabasePhotoStorageGateway } from "@mallet/jobs";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { PhotoStorageGateway } from "@mallet/jobs";
@@ -29,14 +31,14 @@ let cached: AppDeps | null = null;
 export const getAppDeps = (): AppDeps => {
   if (cached) return cached;
   const config = loadConfig();
-  // Card payments self-disable unless both the secret key and the public URL (for hosted-checkout
-  // redirects) are set.
+  // One StripeClient (one process-wide circuit breaker) shared by the payment + connect gateways.
+  // Both self-disable unless the secret key and the public URL (for hosted redirects) are set.
+  const stripe = config.STRIPE_SECRET_KEY ? new StripeClient(config.STRIPE_SECRET_KEY) : null;
   let paymentLinkGateway: PaymentLinkGateway | null = null;
-  if (config.STRIPE_SECRET_KEY && config.PUBLIC_APP_URL) {
-    paymentLinkGateway = new StripePaymentLinkGateway(
-      new StripeClient(config.STRIPE_SECRET_KEY),
-      config.PUBLIC_APP_URL,
-    );
+  let connectGateway: ConnectGateway | null = null;
+  if (stripe && config.PUBLIC_APP_URL) {
+    paymentLinkGateway = new StripePaymentLinkGateway(stripe, config.PUBLIC_APP_URL);
+    connectGateway = new StripeConnectGateway(stripe, uuidGenerator);
   }
 
   // Per-channel comms senders; each self-disables (→ logging fallback) unless fully configured.
@@ -88,6 +90,7 @@ export const getAppDeps = (): AppDeps => {
     clock: systemClock,
     ids: uuidGenerator,
     paymentLinkGateway,
+    connectGateway,
     photoStorageGateway,
     notificationSender,
     llmClient,

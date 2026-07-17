@@ -68,6 +68,7 @@ const ctxFor = (
     clock: systemClock,
     ids: uuidGenerator,
     paymentLinkGateway: null,
+    connectGateway: null,
     photoStorageGateway,
     llmClient: llm,
     apiKeyAuthenticator: { authenticate: async () => null },
