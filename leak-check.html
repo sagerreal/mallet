@@ -103,6 +103,12 @@
             <p class="roi-label">WALKING PAST YOUR SHOP, PER YEAR</p>
             <p class="roi-big" id="lcLeak">$23,400</p>
             <p class="roi-note" id="lcLeakNote">52 calls a year ring out and book with the next shop.</p>
+            <div class="lm-rows lc-mathrows">
+              <div class="lm-row"><span>missed calls &times; 52 weeks</span><i aria-hidden="true"></i><b id="lm1">260</b></div>
+              <div class="lm-row"><span>half don&rsquo;t count &mdash; spam, hang-ups, already gone</span><i aria-hidden="true"></i><b id="lm2">130</b></div>
+              <div class="lm-row"><span>conservatively, 4 in 10 of the rest book</span><i aria-hidden="true"></i><b id="lm3">52 jobs</b></div>
+              <div class="lm-row sum"><span>&times; your average job (<span id="lmTicket">$450</span>)</span><i aria-hidden="true"></i><b id="lm4">$23,400</b></div>
+            </div>
             <p class="roi-note" id="lcStuckNote">Plus <b id="lcStuck">$2,700</b> sitting in unpaid invoices right now.</p>
             <p class="roi-note" id="lcQuoteNote">And homeowners collect 3+ bids &mdash; a 3-day quote loses to a same-day one.</p>
           </div>
@@ -253,6 +259,12 @@
       els.barInv.style.width = Math.min(100, pInv / 24 * 100) + '%';
       els.lcLeak.textContent = fmt(leakYr);
       els.lcLeakNote.textContent = Math.round(recovered) + ' calls a year ring out and book with the next shop.';
+      var callsYr = answers.missed * 52;
+      document.getElementById('lm1').textContent = callsYr.toLocaleString('en-US');
+      document.getElementById('lm2').textContent = Math.round(callsYr * 0.5).toLocaleString('en-US');
+      document.getElementById('lm3').textContent = Math.round(recovered).toLocaleString('en-US') + ' jobs';
+      document.getElementById('lmTicket').textContent = fmt(ticket);
+      document.getElementById('lm4').textContent = fmt(leakYr);
       els.lcStuck.textContent = fmt(stuck);
       document.getElementById('lcStuckNote').style.display = stuck > 0 ? '' : 'none';
 
