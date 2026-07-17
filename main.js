@@ -18,6 +18,7 @@
     consent();
     wireConversionEvents();
     exitIntent();
+    mobileNav();
   });
 
   /* Hero trade rotator: cycles the verticals; the slot's width animates to
@@ -569,6 +570,23 @@
       io.observe(big);
     }
   }
+  /* ============== MOBILE NAV ============== */
+  function mobileNav() {
+    var burger = document.querySelector('.nav-burger');
+    var panel = document.getElementById('mnav');
+    if (!burger || !panel) return;
+    burger.addEventListener('click', function () {
+      var open = panel.classList.toggle('open');
+      burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    slice(panel.querySelectorAll('a')).forEach(function (a) {
+      a.addEventListener('click', function () {
+        panel.classList.remove('open');
+        burger.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
   /* ============== EXIT INTENT — the Leak Check, one last time ============== */
   /* Desktop only (needs a real cursor). Shows once per visitor when the mouse
      leaves the top of the viewport after 5s of dwell. Skipped on /leak-check

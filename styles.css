@@ -1006,3 +1006,26 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 .lc-slider{margin:0.4rem 0 1.6rem}
 .lc-slider .roi-input-top output{font-size:2rem}
 .lc-next{align-self:flex-start}
+
+/* ============== MOBILE NAV (burger + flush slide-down) ============== */
+.nav-burger{display:none;flex-direction:column;justify-content:center;gap:5px;width:44px;height:44px;background:none;border:0;cursor:pointer;padding:10px}
+.nav-burger span{display:block;height:2px;border-radius:2px;background:var(--ink);transition:transform .22s ease, opacity .18s ease}
+.nav-burger[aria-expanded="true"] span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+.nav-burger[aria-expanded="true"] span:nth-child(2){opacity:0}
+.nav-burger[aria-expanded="true"] span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+.mnav{
+  display:none;flex-direction:column;gap:.2rem;
+  border-top:1px solid var(--line);background:var(--paper);
+  padding:.8rem 28px 1.2rem;
+}
+.mnav.open{display:flex}
+.mnav > a{padding:.7rem 0;font-size:1.05rem;font-weight:600;color:var(--ink);border-bottom:1px dashed var(--line)}
+.mnav-ctas{display:flex;gap:.7rem;margin-top:1rem}
+.mnav-ctas a{flex:1;text-align:center}
+@media (max-width:760px){
+  .nav-burger{display:flex}
+}
+
+/* sourced stat line (math section) */
+.src-line{margin-top:.9rem;font-size:.92rem;color:var(--ink-soft)}
+.src-line .src-inline{margin-left:.5rem}
