@@ -114,6 +114,12 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         brandColor: p.brandColor,
         brandLogoUrl: p.brandLogoUrl,
         brandInitials: p.brandInitials,
+        // Stripe Connect (Express) onboarding state (PR1).
+        stripeConnectedAccountId: p.stripeConnectedAccountId,
+        stripeChargesEnabled: p.stripeChargesEnabled,
+        stripePayoutsEnabled: p.stripePayoutsEnabled,
+        stripeDetailsSubmitted: p.stripeDetailsSubmitted,
+        stripeOnboardedAt: p.stripeOnboardedAt,
         updatedAt: p.updatedAt,
       })
       // Guard: match by org_id (the unique identity of this row) + RLS double-checks.

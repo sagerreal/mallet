@@ -31,7 +31,7 @@ const ctxFor = (orgId: string, role: Role): Context => ({
     bus: new InMemoryEventBus(),
     clock: systemClock,
     ids: uuidGenerator,
-    paymentLinkGateway: null, photoStorageGateway: null,
+    paymentLinkGateway: null, connectGateway: null, photoStorageGateway: null,
     llmClient: null,
     apiKeyAuthenticator: { authenticate: async () => null },
     tokenVerifier: { verify: async () => null },
@@ -300,6 +300,34 @@ suite("settings tRPC router (full stack, live RLS)", () => {
       const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
       const bSettings = await callerB.v1.settings.get(); // lazily creates B's own row
       expect(bSettings.brand.color).not.toBe("#123456");
+    });
+  });
+
+  // Stripe Connect payments (PR1). Requires migration 0083 applied to the live DB.
+  describe("payments (stripe connect)", () => {
+    it("status returns not-connected defaults for a fresh org", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgBId, "owner"));
+      const s = await caller.v1.settings.payments.status();
+      expect(s).toEqual({
+        hasAccount: false,
+        detailsSubmitted: false,
+        chargesEnabled: false,
+        payoutsEnabled: false,
+      });
+    });
+
+    it("beginOnboarding is PRECONDITION_FAILED when Stripe is unconfigured (null gateway)", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      await expect(caller.v1.settings.payments.beginOnboarding()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+      });
+    });
+
+    it("a tech is forbidden from reading payments status", async () => {
+      const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+      await expect(callerTech.v1.settings.payments.status()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
     });
   });
 });

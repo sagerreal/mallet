@@ -37,6 +37,8 @@ export class FakeSettingsRepository implements SettingsRepository {
       brandName: "Test Business",
       brandTagline: null, brandSite: null, brandColor: null,
       brandLogoUrl: null, brandInitials: null,
+      stripeConnectedAccountId: null, stripeChargesEnabled: false, stripePayoutsEnabled: false,
+      stripeDetailsSubmitted: false, stripeOnboardedAt: null,
       createdAt: new Date("2026-07-01T00:00:00Z"),
       updatedAt: new Date("2026-07-01T00:00:00Z"),
     });

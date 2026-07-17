@@ -28,6 +28,7 @@ const ctxFor = (orgId: string, userId: string, role: Role): Context => ({
     clock: systemClock,
     ids: uuidGenerator,
     paymentLinkGateway: null,
+    connectGateway: null,
     photoStorageGateway: null,
     llmClient: null,
     apiKeyAuthenticator: { authenticate: async () => null },

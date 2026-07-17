@@ -3,6 +3,20 @@ import type { SettingsSnapshot } from "../app/get-settings";
 import type { PricebookItem, LaborRate, JobTerm, LeadSource } from "../domain/settings-repository";
 import type { OrgSettings } from "../domain/org-settings";
 
+// --- Stripe Connect (Express) — PR1 -----------------------------------------
+
+// Persisted onboarding status projected to the wire. `hasAccount` = onboarding has begun (an acct_
+// id is stored); `detailsSubmitted` = the shop finished Stripe's hosted form; charges/payouts are
+// the live capability flags (can lag behind detailsSubmitted during Stripe verification).
+export const connectStatusDTO = z.object({
+  hasAccount: z.boolean(),
+  detailsSubmitted: z.boolean(),
+  chargesEnabled: z.boolean(),
+  payoutsEnabled: z.boolean(),
+});
+
+export const beginOnboardingResultDTO = z.object({ url: z.string().url() });
+
 // --- Sub-schemas -----------------------------------------------------------
 
 export const bookingServiceDTO = z.object({

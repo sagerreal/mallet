@@ -30,7 +30,7 @@ const ctxFor = (orgId: string, userId: string, role: Role): Context => ({
     bus: new InMemoryEventBus(),
     clock: systemClock,
     ids: uuidGenerator,
-    paymentLinkGateway: null, photoStorageGateway: null,
+    paymentLinkGateway: null, connectGateway: null, photoStorageGateway: null,
     llmClient: null,
     apiKeyAuthenticator: { authenticate: async () => null },
     tokenVerifier: { verify: async () => null },

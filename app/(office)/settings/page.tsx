@@ -22,6 +22,7 @@ import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
+import { PaymentsCard } from "./payments-card";
 import { PricebookCard } from "./pricebook-card";
 import { EstimatorMemoryCard } from "./estimator-memory-card";
 import { CrewHoursCard } from "./crew-hours-card";
@@ -1131,7 +1132,7 @@ function SecArchive() {
 // Main page
 // ============================================================================
 
-type SetTab = "workspace" | "sources" | "pricing" | "booking" | "fields" | "archive";
+type SetTab = "workspace" | "sources" | "pricing" | "payments" | "booking" | "fields" | "archive";
 
 interface SectionDef {
   k: SetTab;
@@ -1146,7 +1147,7 @@ export default function SettingsPage() {
   // useSearchParams/Suspense requirement and any SSR hydration mismatch.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t && ["workspace", "sources", "pricing", "booking", "fields", "archive"].includes(t)) {
+    if (t && ["workspace", "sources", "pricing", "payments", "booking", "fields", "archive"].includes(t)) {
       setActiveTab(t as SetTab);
     }
   }, []);
@@ -1157,6 +1158,7 @@ export default function SettingsPage() {
     { k: "workspace" as SetTab, label: "Workspace",         body: <SecWorkspace role={role} /> },
     { k: "sources"   as SetTab, label: "Lead sources",      body: <SecSources /> },
     { k: "pricing"   as SetTab, label: "Pricing & quotes", ownerOnly: true, body: <SecPricing /> },
+    { k: "payments"  as SetTab, label: "Payments",          ownerOnly: true, body: <PaymentsCard /> },
     { k: "booking"   as SetTab, label: "Booking",           ownerOnly: true, body: <SecBooking /> },
     { k: "fields"    as SetTab, label: "Custom fields",     body: <SecFields /> },
     { k: "archive"   as SetTab, label: "Archive",           body: <SecArchive /> },
