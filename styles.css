@@ -1082,3 +1082,8 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 #lcRows .lm-row,#lcRows .lm-hint{opacity:0;transform:translateY(6px);transition:opacity .4s ease, transform .4s ease}
 #lcRows .lm-row.on,#lcRows .lm-hint.on{opacity:1;transform:none}
 @media (prefers-reduced-motion: reduce){ #lcRows .lm-row,#lcRows .lm-hint{opacity:1;transform:none} }
+
+/* leak-check: the time cost block */
+.lc-time{border-top:1px dashed var(--line);margin-top:1.1rem;padding-top:1rem}
+.lc-time-fig{font-size:1.25rem;letter-spacing:-.015em;margin-top:.3rem}
+.lc-time-fig b{font-weight:700}
