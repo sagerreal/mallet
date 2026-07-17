@@ -7,6 +7,7 @@ import type {
   ToolResultBlock,
   LlmUsage,
   Effort,
+  UserContentBlock,
 } from "../domain/llm-client";
 import type { ToolOutcome } from "../domain/tool";
 
@@ -33,6 +34,7 @@ export interface RunAgentParams {
   readonly tools: readonly ToolMeta[];
   readonly execute: ExecuteTool;
   readonly userMessage?: string; // a fresh turn
+  readonly userBlocks?: readonly UserContentBlock[]; // optional image blocks prepended to the initial user turn
   readonly priorMessages?: readonly AgentMessage[]; // resume: prior transcript
   readonly approvedToolUseIds?: readonly string[]; // resume: mutating tool_use ids the human approved
   readonly deniedToolUseIds?: readonly string[]; // resume: ids the human declined (fed back as errors)
@@ -110,7 +112,18 @@ export const runAgentTurn = async (params: RunAgentParams): Promise<AgentResult>
   const maxIters = params.maxIters ?? MAX_ITERS_DEFAULT;
 
   const messages: AgentMessage[] = [...(params.priorMessages ?? [])];
-  if (params.userMessage) messages.push({ role: "user", kind: "text", text: params.userMessage });
+  if (params.userMessage) {
+    if (params.userBlocks && params.userBlocks.length > 0) {
+      // Multimodal initial turn: image blocks first, then the text prompt.
+      const blocks: readonly UserContentBlock[] = [
+        ...params.userBlocks,
+        { type: "text", text: params.userMessage },
+      ];
+      messages.push({ role: "user", kind: "user_blocks", blocks });
+    } else {
+      messages.push({ role: "user", kind: "text", text: params.userMessage });
+    }
+  }
   let usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
 
   for (let i = 0; i < maxIters; i += 1) {
