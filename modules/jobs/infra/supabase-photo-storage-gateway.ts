@@ -2,6 +2,7 @@ import type { Result, ExternalServiceError } from "@mallet/shared/types";
 import { ok, err, externalService } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type {
+  PhotoMediaType,
   PhotoStorageGateway,
   CreateUploadUrlCmd,
   SignedUpload,
@@ -21,7 +22,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 // Supported image extensions and their canonical MIME types.
-const EXT_TO_MEDIA_TYPE: Readonly<Record<string, string>> = {
+const EXT_TO_MEDIA_TYPE: Readonly<Record<string, PhotoMediaType>> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
@@ -146,7 +147,7 @@ export class SupabasePhotoStorageGateway implements PhotoStorageGateway {
   private async withTimeout<T>(p: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error("signed url request timed out")), this.timeoutMs);
+      timer = setTimeout(() => reject(new Error("storage request timed out")), this.timeoutMs);
     });
     try {
       return await Promise.race([p, timeout]);

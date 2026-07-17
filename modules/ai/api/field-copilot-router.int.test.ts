@@ -362,5 +362,14 @@ suite("v1.fieldCopilot.run — tech-gated agent endpoint (live RLS)", () => {
         await admin`delete from job_photos where id = ${crossPhotoId}`;
       }
     });
+
+    it("photoIds with NO gateway bound → PRECONDITION_FAILED (never silently ignores the photo)", async () => {
+      const llm = new ScriptedLlm([textTurn("advice")]);
+      // Gateway deliberately null while photoIds are supplied.
+      const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech", llm, null));
+      await expect(
+        caller.v1.fieldCopilot.run({ jobId: photoJobId, message: "diagnose", photoIds: [photoId] }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    });
   });
 });

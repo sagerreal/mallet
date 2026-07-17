@@ -20,9 +20,14 @@ export interface DownloadContext {
   readonly jobId: JobId;
 }
 
+// The only media types the pipeline accepts — matches EXT_TO_MEDIA_TYPE in the adapter
+// and the LLM port's image block union. Narrowed HERE so a future map extension that
+// forgets the union fails to compile instead of silently passing a cast.
+export type PhotoMediaType = "image/jpeg" | "image/png" | "image/webp";
+
 export interface DownloadResult {
   readonly dataBase64: string;
-  readonly mediaType: string;
+  readonly mediaType: PhotoMediaType;
   readonly bytes: number;
 }
 

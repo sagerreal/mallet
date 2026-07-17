@@ -31,6 +31,9 @@ import { resolvePhotoPaths, sanitiseTranscript } from "./field-copilot-helpers";
 // Mocks — declared before any imports that pull the mocked modules
 // ---------------------------------------------------------------------------
 
+// The BARREL mock is load-bearing here (not just style): field-read-tools.ts imports
+// from @mallet/jobs, and the barrel pulls the api router → config validator (throws
+// without DB env). Mocking the barrel shields every transitive consumer in one place.
 vi.mock("@mallet/jobs", () => ({
   DrizzleJobRepository: vi.fn(),
   toJobSummaryDTO: vi.fn(),
@@ -40,8 +43,7 @@ vi.mock("@mallet/settings", () => ({
   DrizzleSettingsRepository: vi.fn(),
 }));
 
-import { DrizzleJobRepository } from "@mallet/jobs";
-import { toJobSummaryDTO } from "@mallet/jobs";
+import { DrizzleJobRepository, toJobSummaryDTO } from "@mallet/jobs";
 
 // ---------------------------------------------------------------------------
 // Fake LLM (cloned from ai-router.int.test.ts)

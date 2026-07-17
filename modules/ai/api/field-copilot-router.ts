@@ -37,16 +37,12 @@ const assistantBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tool_use"), id: z.string(), name: z.string(), input: z.unknown() }),
 ]);
 
+// NOTE: no tool_results member — the field copilot is advise-only (zero mutating tools),
+// so a turn never pauses mid-tool and the client transcript can never legitimately hold
+// tool results. Rejecting them closes a forged-transcript entry point the office schema must allow.
 const transcriptSchema = z.array(
   z.union([
     z.object({ role: z.literal("user"), kind: z.literal("text"), text: z.string() }),
-    z.object({
-      role: z.literal("user"),
-      kind: z.literal("tool_results"),
-      results: z.array(
-        z.object({ toolUseId: z.string(), content: z.string(), isError: z.boolean().optional() }),
-      ),
-    }),
     z.object({
       role: z.literal("assistant"),
       kind: z.literal("assistant"),
@@ -157,15 +153,17 @@ const downloadPhotoBlocks = async (
   for (const storagePath of storagePaths) {
     const result = await gateway.download(storagePath, { orgId, jobId });
     if (!result.ok) {
+      // Detail stays server-side; the client gets one actionable message.
+      logger.warn({ storagePath, err: result.error.message }, "copilot.photo.download_failed");
       throw new TRPCError({
         code: "PRECONDITION_FAILED",
-        message: `photo could not be loaded (${result.error.message}) — re-upload and try again`,
+        message: "a photo could not be loaded — re-take it and try again",
       });
     }
     const { dataBase64, mediaType } = result.value;
     // Narrow mediaType to the allowed union. The gateway guarantees this set,
     // but we guard here so the type system is satisfied without `any`.
-    const typedMedia = mediaType as "image/jpeg" | "image/png" | "image/webp";
+    const typedMedia = mediaType; // PhotoMediaType — narrowed at the gateway port
     blocks.push({ type: "image", mediaType: typedMedia, dataBase64 });
   }
   return blocks;

@@ -8,6 +8,7 @@ import { closeDb } from "@mallet/shared/db/client";
 import type { Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
+import type { PhotoStorageGateway } from "../domain/photo-storage-gateway";
 
 // Integration tests for the tech-facing field surface: v1.field.myDay / start / complete /
 // setVerifyAnswer.
@@ -463,8 +464,8 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     let doneJobId = "";
 
     // A fake gateway so the mint path is testable without Supabase Storage env.
-    const fakeGateway = {
-      createUploadUrl: async (cmd: { orgId: string; jobId: string; objectId: string; ext: string }) => ({
+    const fakeGateway: PhotoStorageGateway = {
+      createUploadUrl: async (cmd) => ({
         ok: true as const,
         value: {
           signedUrl: "https://fake/upload",
@@ -472,11 +473,14 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
           storagePath: `${cmd.orgId}/${cmd.jobId}/${cmd.objectId}.${cmd.ext}`,
         },
       }),
-      download: async () => ({ ok: false as const, error: { kind: "external_service", message: "unused", retryable: false } }),
+      download: async () => ({
+        ok: false as const,
+        error: { kind: "external_service" as const, service: "fake-storage", message: "unused in this suite", retryable: false },
+      }),
     };
     const ctxWithGateway = (userId: string, role: Role): Context => {
       const base = ctxFor(userId, orgId, role);
-      return { ...base, deps: { ...base.deps, photoStorageGateway: fakeGateway as never } };
+      return { ...base, deps: { ...base.deps, photoStorageGateway: fakeGateway } };
     };
 
     beforeAll(async () => {
@@ -544,10 +548,22 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
           id: crypto.randomUUID(),
           storagePath: `${orgId}/99999999-9999-9999-9999-999999999999/evil.jpg`,
         }),
-      ).rejects.toMatchObject({});
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
       const [n] = await admin<{ c: string }[]>`
         select count(*)::text as c from job_photos where storage_path like '%evil.jpg'`;
       expect(n!.c).toBe("0");
+    });
+
+    it("addPhoto: BAD_REQUEST on a terminal job even for the assigned tech", async () => {
+      const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech"));
+      const photoId = crypto.randomUUID();
+      await expect(
+        caller.v1.field.addPhoto({
+          jobId: doneJobId,
+          id: photoId,
+          storagePath: `${orgId}/${doneJobId}/${photoId}.jpg`,
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
   });
 });
