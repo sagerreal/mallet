@@ -219,7 +219,7 @@ export const createFieldRouter = () =>
               description: input.description.trim(),
               quantity: 1,
               rateCents,
-              costCents: 0,
+              costCents: 0, // NEVER client-settable from the field; owner/office wanting cost authoring use v1.jobs.addAddon
               isOptional: false,
             },
             ctx.principal.orgId,
