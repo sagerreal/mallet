@@ -13,6 +13,7 @@ import type { ToolDeps } from "../domain/tool";
 import { describeProposal } from "../domain/proposal-summary";
 import type { JsonValue } from "@mallet/shared/ports";
 import { draftEstimateLines, type EstimateLineDraft } from "../app/draft-estimate";
+import { draftChecklist } from "../app/draft-checklist";
 import { draftEstimateTiers, type EstimateTiersDraft } from "../app/draft-estimate-tiers";
 import { stagesFor, EMPTY_ESTIMATE_CONTEXT } from "../app/estimate-context";
 import { asLeadId } from "@mallet/shared/types";
@@ -215,6 +216,33 @@ export const createAiRouter = () =>
           );
           const result = await draftEstimateLines(ctx.deps.llmClient, input.description, context, input.refine);
           return { lines: result.lines, proposals: result.proposals, stages: stagesFor(context) };
+        } catch (error) {
+          if (error instanceof LlmError) {
+            throw new TRPCError({
+              code: error.retryable ? "TOO_MANY_REQUESTS" : "BAD_GATEWAY",
+              message: "the AI assistant is temporarily unavailable — please try again",
+            });
+          }
+          throw error;
+        }
+      }),
+
+    // One-shot LLM call: given a job type, draft a before-you-leave checklist (AI Foreman 1A.4).
+    // Suggest-only — the items land in the checklist editor for the owner to edit/save; nothing
+    // is written here. No DB read needed (the job type IS the context), so no withTenant tx.
+    draftChecklist: ownerOrOfficeNoTx
+      .input(z.object({ jobType: z.string().min(1).max(120) }))
+      .output(
+        z.object({
+          items: z.array(z.object({ text: z.string(), type: z.enum(["check", "photo"]) })),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.llmClient) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "AI is not configured" });
+        }
+        try {
+          return await draftChecklist(ctx.deps.llmClient, input.jobType);
         } catch (error) {
           if (error instanceof LlmError) {
             throw new TRPCError({
