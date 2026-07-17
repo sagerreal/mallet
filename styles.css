@@ -190,7 +190,7 @@ strong{font-weight:700}
 .sb-bar.w2{width:58%}
 .sb-bar.w3{width:70%}
 /* ---- the four acts ---- */
-.acts{position:relative;min-height:372px}
+.acts{position:relative;min-height:372px;min-width:0;max-width:100%}
 .act{
   position:absolute;inset:0;padding:1.15rem 1.25rem 1.3rem;
   opacity:0;visibility:hidden;transform:translateY(10px);
@@ -335,6 +335,7 @@ strong{font-weight:700}
 
 @media (max-width:1020px){
   .hero-grid{grid-template-columns:1fr;gap:2.8rem}
+  .hero-grid > *{min-width:0}
   .hero-stage{max-width:560px;justify-self:start;width:100%}
   .stage-back{right:.4rem}
 }
@@ -509,9 +510,9 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 .af-item.stop.on{background:var(--ink);color:var(--paper)}
 
 /* panels */
-.af-main{display:grid;background:var(--card)}
+.af-main{display:grid;background:var(--card);min-width:0;overflow:hidden}
 .af-panel{
-  grid-column:1;grid-row:1;padding:1.4rem 1.7rem 1.6rem;display:flex;flex-direction:column;
+  grid-column:1;grid-row:1;min-width:0;max-width:100%;padding:1.4rem 1.7rem 1.6rem;display:flex;flex-direction:column;
   opacity:0;visibility:hidden;transform:translateY(12px);
   transition:opacity .38s ease, transform .38s ease, visibility 0s linear .38s;
 }
@@ -666,9 +667,21 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
   .af-inv{column-gap:.6rem}
   .af-split,.af-split.jobs{grid-template-columns:1fr;gap:.9rem}
   .af-list{display:none}
-  .af-tr{grid-template-columns:1.4fr .8fr .5fr}
+  .af-cols{grid-template-columns:1fr}
+  .af-gbb{flex-wrap:wrap}
+  .af-tr{grid-template-columns:minmax(0,1.5fr) auto;font-size:.74rem;gap:.45rem}
   .af-tr :nth-child(2){display:none}
-  .af-tr.th :nth-child(2){display:none}
+  .af-tr .r{display:none}
+  .af-tr.th{display:none}
+  .af-status{font-size:.5rem;padding:.18rem .42rem;letter-spacing:.05em}
+  .af-inv{column-gap:.5rem;font-size:.8rem}
+  .af-inv .af-amt{font-size:.88rem}
+  .af-top b{font-size:1.1rem}
+  .af-pill{font-size:.52rem;padding:.24rem .5rem}
+  .af-ask{font-size:.68rem;padding:.6rem .7rem}
+  .af-agent .af-q{font-size:.76rem}
+  .af-answer{padding:.65rem .75rem}
+  .af-ansl{font-size:.76rem}
 }
 
 /* the payoff: unboxed ledger figure — big ink number straight on the sheet */
@@ -911,12 +924,14 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
   .hero h1.h1-beats{font-size:1.62rem;margin-top:.9rem}
   .beat{padding-left:1.7rem}
   .lede{font-size:1rem;margin-top:1rem}
-  .hero-actions{margin-top:1.4rem;flex-wrap:nowrap;gap:.6rem}
-  .hero-actions .btn-primary,.hero-actions .btn-outline{flex:1;text-align:center;padding:.85rem .6rem;font-size:.92rem;white-space:nowrap}
+  .hero-actions{margin-top:1.4rem;flex-direction:column;align-items:stretch;gap:.6rem}
+  .hero-actions .btn-primary,.hero-actions .btn-outline,.hero-actions .btn-amber{width:100%;text-align:center;justify-content:center;padding:.9rem .6rem;font-size:.95rem;white-space:nowrap}
   .cta-row .btn-primary,.cta-row .btn-amber{width:100%}
   .feed-bubble{max-width:88%}
   .desk-feed{min-height:0}
   .hero-stage{margin-top:1.1rem}
+  .hero-stage .desk-window{transform:none}
+  .stage-back{display:none}
   .acts{min-height:442px}
   .act{padding:1rem .95rem 1.1rem}
   .foot-cols{gap:2rem}

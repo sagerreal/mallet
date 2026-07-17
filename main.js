@@ -33,7 +33,7 @@
     // hidden measurer with the same type styles → target width per word
     var meas = document.createElement('b');
     meas.className = 'tf-word';
-    meas.style.cssText = 'position:absolute;visibility:hidden;opacity:1;transform:none;white-space:nowrap';
+    meas.style.cssText = 'position:absolute;left:0;top:0;visibility:hidden;opacity:1;transform:none;white-space:nowrap';
     host.appendChild(meas);
     function widthOf(t) { meas.textContent = t; return meas.offsetWidth; }
 
