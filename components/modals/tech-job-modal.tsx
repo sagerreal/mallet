@@ -24,7 +24,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   useActiveModal,
   useOpenModal,
@@ -467,7 +467,24 @@ interface WorkOrderSecProps {
   seesPrice: boolean;
 }
 
-function WorkOrderSec({ job, seesPrice }: WorkOrderSecProps) {
+// Custom comparators for memoized sections — compare only the job fields each
+// section actually reads. A checklist tap changes job.verify: WorkOrderSec,
+// FoundWorkSec, and NoteFeed read none of those fields, so they skip the re-render.
+
+export function workOrderPropsEqual(a: WorkOrderSecProps, b: WorkOrderSecProps): boolean {
+  return (
+    a.seesPrice === b.seesPrice &&
+    a.job.lines === b.job.lines &&
+    a.job.photos === b.job.photos &&
+    a.job.title === b.job.title &&
+    a.job.special === b.job.special &&
+    a.job.prep === b.job.prep
+  );
+}
+
+// WorkOrderSec uses a custom comparator so a checklist tap (job.verify change)
+// does NOT re-render it — it only reads lines/photos/title/special/prep.
+function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
   const scope = (job.lines ?? []).filter((l) => (l.d ?? "").trim());
   const photoN = (job.photos ?? []).length;
 
@@ -550,6 +567,7 @@ function WorkOrderSec({ job, seesPrice }: WorkOrderSecProps) {
     </div>
   );
 }
+const WorkOrderSec = memo(WorkOrderSecFn, workOrderPropsEqual);
 
 // ---- found work / add-ons (prototype aoSection, 3826-3837) -----------------
 // One .stage-row per addon: bold desc + ($r when techSeesPrice) + a status
@@ -599,7 +617,20 @@ interface FoundWorkSecProps {
   setAddonStatus: (jobId: string, addonId: number, status: Addon["status"]) => void;
 }
 
-function FoundWorkSec({ job, seesPrice, readOnly, addAddon, setAddonStatus }: FoundWorkSecProps) {
+// FoundWorkSec uses a custom comparator so a checklist tap (job.verify change)
+// does NOT re-render it — it only reads job.addons and job.id.
+export function foundWorkPropsEqual(a: FoundWorkSecProps, b: FoundWorkSecProps): boolean {
+  return (
+    a.seesPrice === b.seesPrice &&
+    a.readOnly === b.readOnly &&
+    a.addAddon === b.addAddon &&
+    a.setAddonStatus === b.setAddonStatus &&
+    a.job.id === b.job.id &&
+    a.job.addons === b.job.addons
+  );
+}
+
+function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: FoundWorkSecProps) {
   const [desc, setDesc] = useState("");
   const [price, setPrice] = useState("");
 
@@ -683,6 +714,7 @@ function FoundWorkSec({ job, seesPrice, readOnly, addAddon, setAddonStatus }: Fo
     </div>
   );
 }
+const FoundWorkSec = memo(FoundWorkSecFn, foundWorkPropsEqual);
 
 // ---- attached checklist, INTERACTIVE (prototype verifySection, 4876-4897) --
 // The field "Before you leave" capture. Derives jobVerifyState(job) in the body
@@ -883,7 +915,7 @@ interface ChecklistSecProps {
   addPhoto: (jobId: string) => void;
 }
 
-function ChecklistSec({ job, checkItem, overrideItem, uncheckItem, addPhoto }: ChecklistSecProps) {
+const ChecklistSec = memo(function ChecklistSec({ job, checkItem, overrideItem, uncheckItem, addPhoto }: ChecklistSecProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const vs = jobVerifyState(job);
   if (!vs) return null;
@@ -924,7 +956,7 @@ function ChecklistSec({ job, checkItem, overrideItem, uncheckItem, addPhoto }: C
       ))}
     </div>
   );
-}
+});
 
 // ---- notes feed (reuses the job-modal NoteFeed pattern, prototype jobNoteFeed)
 // Renders job.acts through the shared .nfeed chip rows. Renders nothing when
@@ -987,7 +1019,19 @@ interface NoteFeedProps {
   updateJob: (id: string, patch: Partial<Job>) => Promise<{ ok: boolean }>;
 }
 
-function NoteFeed({ job, canCompose, updateJob }: NoteFeedProps) {
+// NoteFeed uses a custom comparator so a checklist tap (job.verify change)
+// does NOT re-render it — it only reads job.notes, job.acts, and job.id.
+export function noteFeedPropsEqual(a: NoteFeedProps, b: NoteFeedProps): boolean {
+  return (
+    a.canCompose === b.canCompose &&
+    a.updateJob === b.updateJob &&
+    a.job.id === b.job.id &&
+    a.job.notes === b.job.notes &&
+    a.job.acts === b.job.acts
+  );
+}
+
+function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1071,6 +1115,7 @@ function NoteFeed({ job, canCompose, updateJob }: NoteFeedProps) {
     </div>
   );
 }
+const NoteFeed = memo(NoteFeedFn, noteFeedPropsEqual);
 
 // ---- on-site close-out HERO (prototype techDoneBlock, 5698-5760) -----------
 // The "job done → get paid on site" block, shown when the job is done. Branches
@@ -1090,7 +1135,23 @@ interface DoneBlockProps {
   onReopen: () => void;
 }
 
-function DoneBlock({
+// DoneBlock uses a custom comparator — it only reads job.invRequested and job.lines
+// (via jobTotal), neither of which changes on a checklist tap.
+export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boolean {
+  return (
+    a.onOpenCloseOut === b.onOpenCloseOut &&
+    a.onOpenInvoice === b.onOpenInvoice &&
+    a.onChargeOnFile === b.onChargeOnFile &&
+    a.onSendToOffice === b.onSendToOffice &&
+    a.onReopen === b.onReopen &&
+    a.lead === b.lead &&
+    a.invoice === b.invoice &&
+    a.job.invRequested === b.job.invRequested &&
+    a.job.lines === b.job.lines
+  );
+}
+
+function DoneBlockFn({
   job,
   lead,
   invoice,
@@ -1218,6 +1279,7 @@ function DoneBlock({
     </>
   );
 }
+const DoneBlock = memo(DoneBlockFn, doneBlockPropsEqual);
 
 // ---- the modal body --------------------------------------------------------
 
@@ -1233,9 +1295,23 @@ export function TechJobModalContent() {
   const me = useMe();
   const isOffice = me.data?.role === "owner" || me.data?.role === "office";
 
-  const jobs = useAppStore((s) => s.jobs);
-  const leads = useAppStore((s) => s.leads);
-  const invoices = useAppStore((s) => s.invoices);
+  // Extract jobId before all store subscriptions so by-id selectors below can
+  // capture it in their closure. useActiveModal is already narrow (scalar).
+  const jobId = activeModal?.params?.jobId as string | undefined;
+
+  // --- By-id selectors (narrow subscriptions) --------------------------------
+  // reconcileJob replaces only the matched entry in jobs.map — untouched jobs
+  // keep their object identity, so find(j => j.id === jobId) is referentially
+  // stable across unrelated writes. Same pattern for lead and invoice.
+  const job = useAppStore((s) => s.jobs.find((j) => j.id === jobId));
+  const leadId = job?.leadId;
+  const lead = useAppStore((s) => s.leads.find((l) => l.id === leadId));
+  // The job's invoice links via invoice.jobId (NOT job.invoiceId).
+  const invoice = useAppStore((s) => s.invoices.find((i) => i.jobId === jobId));
+
+  // Store actions — stable function references (Zustand guarantees action
+  // identity across renders; selecting them here avoids re-subscribing the
+  // parent when only the job object changes).
   const setVisitStatus = useAppStore((s) => s.setVisitStatus);
   const updateJob = useAppStore((s) => s.updateJob);
   const recordPayment = useAppStore((s) => s.recordPayment);
@@ -1249,54 +1325,71 @@ export function TechJobModalContent() {
   const uncheckVerifyItem = useAppStore((s) => s.uncheckVerifyItem);
   const addJobPhoto = useAppStore((s) => s.addJobPhoto);
 
-  const jobId = activeModal?.params?.jobId as string | undefined;
-  const job = jobs.find((j) => j.id === jobId);
-  if (!job) return null;
-
-  const lead: Lead | undefined = leads.find((l) => l.id === job.leadId);
-  // the job's invoice links via invoice.jobId === job.id (NOT job.invoiceId).
-  const invoice: Invoice | undefined = invoices.find((i) => i.jobId === job.id);
-  const custName = custNameOf(job, lead);
-  const addr = job.addr || lead?.address || "";
-  const quoted = jobQuoted(job);
-  const done = job.status === "done";
-
+  // Derived values computed after all hooks (never inside selectors to avoid
+  // creating new object references on every store write).
+  const custName = job ? custNameOf(job, lead) : "";
+  const addr = (job?.addr || lead?.address || "") as string;
+  const quoted = job ? jobQuoted(job) : false;
+  const done = job?.status === "done";
   // The tech only sees PLACED visits — never "Invalid Date" rows in the field.
-  const placed = (job.visits ?? []).filter(vPlaced);
+  const placed = (job?.visits ?? []).filter(vPlaced);
   const curVisit = currentVisit(placed);
 
-  function onVisitStatus(visitId: string, status: string) {
-    if (!job) return;
-    setVisitStatus(job.id, visitId, status);
-  }
+  // --- useCallback-stabilized handlers for memoized child components ---------
+  // These are referentially stable across re-renders when their captured
+  // store-action dependencies don't change (store actions are stable by
+  // Zustand's contract). jobId is a primitive string — stable once the modal is
+  // open. curVisit.id can change, so the reopen handler captures curVisit.
 
-  // ---- done-block handlers (prototype techChargeOnFile / techCollect /
-  //      sendForInvoicing) — compose existing store actions ------------------
+  const onVisitStatus = useCallback(
+    (visitId: string, status: string) => {
+      if (!jobId) return;
+      setVisitStatus(jobId, visitId, status);
+    },
+    [jobId, setVisitStatus],
+  );
 
-  function chargeOnFile() {
+  const chargeOnFile = useCallback(() => {
     // charge the balance to the card on file — the "paid before they left" play.
-    if (!job || !invoice) return;
+    if (!invoice) return;
     const card = lead?.card;
     const dueNow = invDue(invoice);
     if (dueNow <= 0 || !card) return;
     recordPayment(invoice.id, { amt: dueNow, when: "Just now", method: "card", onFile: true });
-  }
+  }, [invoice, lead, recordPayment]);
 
-  function openCloseOut() {
-    if (!job) return;
-    openModal(MODAL.CLOSE_OUT, { jobId: job.id });
-  }
+  const openCloseOut = useCallback(() => {
+    if (!jobId) return;
+    openModal(MODAL.CLOSE_OUT, { jobId });
+  }, [jobId, openModal]);
 
-  function sendToOffice() {
-    if (!job) return;
-    updateJob(job.id, { invRequested: true });
+  const openInvoiceModal = useCallback(
+    (invoiceId: string) => openModal(MODAL.INVOICE, { invoiceId }),
+    [openModal],
+  );
+
+  const sendToOffice = useCallback(() => {
+    if (!jobId) return;
+    updateJob(jobId, { invRequested: true });
     close();
-  }
+  }, [jobId, updateJob, close]);
 
-  function navigate() {
+  const onReopen = useCallback(() => {
+    if (curVisit) onVisitStatus(curVisit.id, "scheduled");
+  }, [curVisit, onVisitStatus]);
+
+  const navigate = useCallback(() => {
     // maps deep-link — open the address in the device's maps app.
     if (addr) window.open(`https://maps.google.com/?q=${encodeURIComponent(addr)}`, "_blank");
-  }
+  }, [addr]);
+
+  const onPriceOnSite = useCallback(() => {
+    if (!jobId) return;
+    openModal(MODAL.TECH_QUOTE, { jobId });
+  }, [jobId, openModal]);
+
+  // Early return AFTER all hooks (rules of hooks).
+  if (!job) return null;
 
   return (
     <div>
@@ -1370,12 +1463,10 @@ export function TechJobModalContent() {
             lead={lead}
             invoice={invoice}
             onOpenCloseOut={openCloseOut}
-            onOpenInvoice={(invoiceId) => openModal(MODAL.INVOICE, { invoiceId })}
+            onOpenInvoice={openInvoiceModal}
             onChargeOnFile={chargeOnFile}
             onSendToOffice={sendToOffice}
-            onReopen={() => {
-              if (curVisit) onVisitStatus(curVisit.id, "scheduled");
-            }}
+            onReopen={onReopen}
           />
         ) : null
       ) : curVisit ? (
@@ -1438,7 +1529,7 @@ export function TechJobModalContent() {
         <PricingSec
           job={job}
           quoted={quoted}
-          onPriceOnSite={() => openModal(MODAL.TECH_QUOTE, { jobId: job.id })}
+          onPriceOnSite={onPriceOnSite}
         />
       )}
 

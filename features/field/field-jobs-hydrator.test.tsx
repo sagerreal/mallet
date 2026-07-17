@@ -6,9 +6,13 @@
  * hydrate store.jobs from it — an owner/office user visiting a field page would
  * otherwise have the office hydrator's full jobs list replaced by their own
  * assigned-jobs subset (shared shell components then operate on partial data).
+ *
+ * Also guards the idle prefetch: once myDay resolves the hydrator schedules
+ * prefetch calls for the sibling tabs (timesheets.list + messaging.listConversations)
+ * with the exact input objects and staleTime values those pages use.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, act } from "@testing-library/react";
 import { FieldJobsHydrator } from "./field-jobs-hydrator";
 
 const setJobs = vi.fn();
@@ -16,12 +20,22 @@ vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: { setJobs: typeof setJobs }) => unknown) => sel({ setJobs }),
 }));
 
+const timesheetsPrefetch = vi.fn().mockResolvedValue(undefined);
+const conversationsPrefetch = vi.fn().mockResolvedValue(undefined);
+const mockUtils = {
+  v1: {
+    timesheets: { list: { prefetch: timesheetsPrefetch } },
+    messaging: { listConversations: { prefetch: conversationsPrefetch } },
+  },
+};
+
 const myDayQuery = vi.fn();
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
       field: { myDay: { useQuery: () => myDayQuery() } },
     },
+    useUtils: () => mockUtils,
   },
 }));
 
@@ -74,5 +88,65 @@ describe("FieldJobsHydrator", () => {
     meQuery.mockReturnValue({ data: undefined, isLoading: true });
     render(<FieldJobsHydrator />);
     expect(setJobs).not.toHaveBeenCalled();
+  });
+});
+
+describe("FieldJobsHydrator — idle prefetch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
+    myDayQuery.mockReturnValue({ data: { items: [jobItem] }, isError: false, error: null });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("prefetches timesheets.list with the exact my-hours input (todayISO=2026-07-01)", async () => {
+    render(<FieldJobsHydrator />);
+    // Advance the setTimeout fallback path (requestIdleCallback not available in jsdom)
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(timesheetsPrefetch).toHaveBeenCalledTimes(1);
+    expect(timesheetsPrefetch).toHaveBeenCalledWith(
+      { fromDate: "2026-04-08", toDate: "2026-07-08", limit: 500 },
+      { staleTime: 60_000 },
+    );
+  });
+
+  it("prefetches messaging.listConversations with undefined input + 15s staleTime", async () => {
+    render(<FieldJobsHydrator />);
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(conversationsPrefetch).toHaveBeenCalledTimes(1);
+    expect(conversationsPrefetch).toHaveBeenCalledWith(undefined, { staleTime: 15_000 });
+  });
+
+  it("does NOT prefetch when myDay data is not yet settled", async () => {
+    myDayQuery.mockReturnValue({ data: undefined, isError: false, error: null });
+    render(<FieldJobsHydrator />);
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(timesheetsPrefetch).not.toHaveBeenCalled();
+    expect(conversationsPrefetch).not.toHaveBeenCalled();
+  });
+
+  it("runs the prefetch only once even if data reference changes on re-render", async () => {
+    const { rerender } = render(<FieldJobsHydrator />);
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    // Simulate data reference changing (e.g. a refetch)
+    myDayQuery.mockReturnValue({ data: { items: [] }, isError: false, error: null });
+    rerender(<FieldJobsHydrator />);
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    // Still only one call — the ref guard prevents re-scheduling
+    expect(timesheetsPrefetch).toHaveBeenCalledTimes(1);
   });
 });
