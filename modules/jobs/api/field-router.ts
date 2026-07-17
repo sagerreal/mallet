@@ -67,18 +67,27 @@ export const createFieldRouter = () =>
       return { items };
     }),
 
+    // start/complete return the full jobDTO — redact for techs like every other field
+    // response (the client discards the body today, but money must never cross the wire
+    // to a redacted tech's device).
     start: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
-      return toJobDTO(orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
+      const dto = toJobDTO(orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
+      if (ctx.principal.role !== "tech") return dto;
+      const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+      return redactMoneyForTech(dto, seesPrice);
     }),
 
     complete: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
-      return toJobDTO(orThrow(await new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
+      const dto = toJobDTO(orThrow(await new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
+      if (ctx.principal.role !== "tech") return dto;
+      const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+      return redactMoneyForTech(dto, seesPrice);
     }),
 
     // Crew checklist capture: write one verify answer (pass/override/clear) from the job site.

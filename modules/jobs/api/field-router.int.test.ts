@@ -399,6 +399,8 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       expect(mine?.lines[0]?.cost).toBeNull();
       expect(mine?.addons[0]?.rate?.cents).toBe(12000);
       expect(mine?.addons[0]?.cost).toBeNull();
+      // total survives while seesPrice is on (only the redacted path nulls it)
+      expect(mine?.total).not.toBeNull();
     });
 
     it("tech myDay strips rate too when the org turns techSeesPrice off; owner unchanged", async () => {
