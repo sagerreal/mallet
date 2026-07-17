@@ -30,6 +30,8 @@ import {
 } from "./composer-state";
 import { LineTable } from "./line-table";
 import { FirstRunCard, useFirstRunIntro } from "./first-run-card";
+import { lineProvenance } from "./line-provenance";
+import { EmptyStateHero } from "./empty-state-hero";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
 
 interface DraftRunProps2 {
@@ -298,8 +300,18 @@ export function QuoteCard({
         />
       )}
 
-      {/* Format body */}
-      {!run && (isGbb ? (
+      {/* Empty quote → the hero invitation (B1) replaces the dead empty grid;
+          the command bar below stays the single input. Opening the pricebook
+          panel or adding any line dismisses the hero and shows the normal body. */}
+      {!run && quoteIsEmpty && !state.pbOpen ? (
+        <EmptyStateHero
+          onAddLine={addLine}
+          onOpenPricebook={() => onUpdate({ pbOpen: true })}
+        />
+      ) : null}
+
+      {/* Format body — shown once the hero yields (lines exist or pricebook open) */}
+      {!run && !(quoteIsEmpty && !state.pbOpen) && (isGbb ? (
         <GbbTiers
           state={state}
           onUpdate={onUpdate}
@@ -315,6 +327,7 @@ export function QuoteCard({
             onRemoveLine={removeLine}
               onAddLine={addLine}
             materialize={materialize}
+            provenanceFor={(d) => lineProvenance(d, services)}
             footerTools={
               <>
                 <button
