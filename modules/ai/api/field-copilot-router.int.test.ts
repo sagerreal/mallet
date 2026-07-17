@@ -50,7 +50,15 @@ class ScriptedLlm implements LlmClient {
 // Context builder
 // ---------------------------------------------------------------------------
 
-const ctxFor = (userId: string, orgId: string, role: Role, llm: LlmClient = new ScriptedLlm([textTurn("ok")])): Context => ({
+import type { PhotoStorageGateway } from "@mallet/jobs";
+
+const ctxFor = (
+  userId: string,
+  orgId: string,
+  role: Role,
+  llm: LlmClient = new ScriptedLlm([textTurn("ok")]),
+  photoStorageGateway: PhotoStorageGateway | null = null,
+): Context => ({
   principal: { userId: asUserId(userId), orgId: asOrgId(orgId), role } satisfies Principal,
   unmapped: null,
   tx: null,
@@ -60,7 +68,7 @@ const ctxFor = (userId: string, orgId: string, role: Role, llm: LlmClient = new 
     clock: systemClock,
     ids: uuidGenerator,
     paymentLinkGateway: null,
-    photoStorageGateway: null,
+    photoStorageGateway,
     llmClient: llm,
     apiKeyAuthenticator: { authenticate: async () => null },
     tokenVerifier: { verify: async () => null },
@@ -236,6 +244,122 @@ suite("v1.fieldCopilot.run — tech-gated agent endpoint (live RLS)", () => {
           expect(line.rate, "rate must be null when !seesPrice").toBeNull();
           expect(line.cost, "cost must always be null (stripped by redactMoneyForTech)").toBeNull();
         }
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // C3: photoIds — happy path + cross-job guard (live RLS, fake gateway)
+  // ---------------------------------------------------------------------------
+  describe("photo input (C3)", () => {
+    let photoTechId = "";
+    let photoJobId = "";
+    let otherJobId = "";
+    let photoId = "";
+    const FAKE_B64 = "aW50ZWdyYXRpb25waG90bw=="; // "integrationphoto" in base64
+    let resolvedStoragePath = "";
+
+    beforeAll(async () => {
+      // Create a tech assigned to a photo job
+      const [pt] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgId}, ${randomUUID()}, 'phototech@copilot.test', 'tech') returning id
+      `;
+      photoTechId = pt!.id;
+
+      const [pj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-CP-PHOTO', 'in_progress', 0, ${photoTechId}) returning id
+      `;
+      photoJobId = pj!.id;
+
+      // A second job (not assigned to this tech — for the cross-job test)
+      const [oj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-CP-OTHER', 'in_progress', 0, ${photoTechId}) returning id
+      `;
+      otherJobId = oj!.id;
+
+      // Seed a photo row for photoJobId
+      resolvedStoragePath = `${orgId}/${photoJobId}/testphoto.jpg`;
+      const [ph] = await admin<{ id: string }[]>`
+        insert into job_photos (org_id, job_id, storage_path, caption, verify_pass, position)
+        values (${orgId}, ${photoJobId}, ${resolvedStoragePath}, null, false, 0) returning id
+      `;
+      photoId = ph!.id;
+    });
+
+    afterAll(async () => {
+      if (photoJobId) await admin`delete from jobs where id = ${photoJobId}`;
+      if (otherJobId) await admin`delete from jobs where id = ${otherJobId}`;
+      if (photoTechId) await admin`delete from users where id = ${photoTechId}`;
+    });
+
+    it("happy path: seeded photo row + fake gateway → 200-shape response; returned transcript has no dataBase64", async () => {
+      const llm = new ScriptedLlm([textTurn("The anode rod is corroded — replace it.")]);
+
+      // Fake gateway: download returns the fake base64 payload
+      const fakeGateway: PhotoStorageGateway = {
+        createUploadUrl: async () => { throw new Error("unused"); },
+        download: async () => ({
+          ok: true as const,
+          value: { dataBase64: FAKE_B64, mediaType: "image/jpeg", bytes: 100 },
+        }),
+      };
+
+      const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech", llm, fakeGateway));
+      const res = await caller.v1.fieldCopilot.run({ jobId: photoJobId, message: "diagnose this", photoIds: [photoId] });
+
+      // 1. Response shape is correct
+      expect(res.status).toBe("completed");
+      expect(typeof res.text).toBe("string");
+      expect(res.text.length).toBeGreaterThan(0);
+      expect(Array.isArray(res.transcript)).toBe(true);
+
+      // 2. Returned transcript MUST NOT contain base64 or dataBase64 at any level
+      const transcriptJson = JSON.stringify(res.transcript);
+      expect(transcriptJson, "returned transcript must not contain dataBase64 key").not.toContain("dataBase64");
+      expect(transcriptJson, "returned transcript must not contain fake base64 payload").not.toContain(FAKE_B64);
+
+      // 3. The photo marker text must appear instead
+      expect(transcriptJson).toContain("[photo attached]");
+
+      // 4. The LLM received an image block in the first request
+      expect(llm.requests).toHaveLength(1);
+      const firstMsg = llm.requests[0]!.messages[0]!;
+      expect(firstMsg.kind).toBe("user_blocks");
+      if (firstMsg.kind === "user_blocks") {
+        const imgBlock = firstMsg.blocks.find((b) => b.type === "image");
+        expect(imgBlock).toBeDefined();
+        if (imgBlock?.type === "image") {
+          expect(imgBlock.dataBase64).toBe(FAKE_B64);
+        }
+      }
+    });
+
+    it("cross-job photoId → NOT_FOUND (photo belongs to otherJobId, not photoJobId)", async () => {
+      // Seed a photo for otherJobId
+      const crossPath = `${orgId}/${otherJobId}/cross.jpg`;
+      const [crossPh] = await admin<{ id: string }[]>`
+        insert into job_photos (org_id, job_id, storage_path, caption, verify_pass, position)
+        values (${orgId}, ${otherJobId}, ${crossPath}, null, false, 0) returning id
+      `;
+      const crossPhotoId = crossPh!.id;
+
+      try {
+        const llm = new ScriptedLlm([]);
+        const fakeGateway: PhotoStorageGateway = {
+          createUploadUrl: async () => { throw new Error("unused"); },
+          download: async () => { throw new Error("should not be called"); },
+        };
+        const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech", llm, fakeGateway));
+
+        // Attempt to use a photo from otherJobId in a run for photoJobId → must be rejected
+        await expect(
+          caller.v1.fieldCopilot.run({ jobId: photoJobId, message: "diagnose", photoIds: [crossPhotoId] }),
+        ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      } finally {
+        await admin`delete from job_photos where id = ${crossPhotoId}`;
       }
     });
   });
