@@ -69,7 +69,7 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     const job = await caller.v1.jobs.createFromEstimate({ estimateId });
     expect(job.status).toBe("scheduled");
     expect(job.num).toMatch(/^JOB-\d+$/);
-    expect(job.total.cents).toBe(100_000); // 5 * $200.00
+    expect(job.total?.cents).toBe(100_000); // 5 * $200.00
     expect(job.sourceEstimateId).toBe(estimateId);
 
     // Idempotent: a second call returns the same job.

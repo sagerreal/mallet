@@ -126,7 +126,9 @@ export const jobDTO = z.object({
   completedAt: z.string().nullable(),
   canceledAt: z.string().nullable(),
   cancelReason: z.string().nullable(),
-  total: moneyDTO,
+  // Nullable: the tech-facing field surface redacts total server-side when the
+  // org's techSeesPrice is off. Office/owner responses are never null.
+  total: moneyDTO.nullable(),
   notes: z.string().nullable(),
   scope: z.string().nullable(),
   callbackOf: z.string().uuid().nullable(),
@@ -152,7 +154,9 @@ export const jobSummaryDTO = z.object({
   status: statusEnum,
   assigneeUserId: z.string().uuid().nullable(),
   scheduledStart: z.string().nullable(),
-  total: moneyDTO,
+  // Nullable: the tech-facing field surface redacts total server-side when the
+  // org's techSeesPrice is off. Office/owner responses are never null.
+  total: moneyDTO.nullable(),
   notes: z.string().nullable(),
   scope: z.string().nullable(),
   callbackOf: z.string().uuid().nullable(),

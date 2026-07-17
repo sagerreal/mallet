@@ -88,6 +88,11 @@ export const ownerOrOffice = publicProcedure
 // like orgTx) around each action, never holding one tx across the multi-round-trip model loop.
 export const ownerOrOfficeNoTx = publicProcedure.use(requireAuth).use(requireRole(["owner", "office"]));
 
+// Any org member (owner/office/tech), authenticated + role-checked but WITHOUT the org transaction.
+// Used by endpoints that manage their own per-operation short transactions (e.g. the field copilot
+// agent loop, which must not hold a single DB tx open across multi-round-trip model calls).
+export const anyRoleNoTx = publicProcedure.use(requireAuth).use(requireRole(["owner", "office", "tech"]));
+
 // Authenticated Supabase identity, provisioned OR NOT — the signup entry point. Everything else
 // requires a full principal.
 const requireVerifiedIdentity = t.middleware(({ ctx, next }) => {

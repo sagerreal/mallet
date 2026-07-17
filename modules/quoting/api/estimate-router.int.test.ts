@@ -461,7 +461,7 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     for (const summary of jobsPage.items) {
       const full = await caller.v1.jobs.get({ jobId: summary.id });
       if (full.sourceEstimateId === drafted.id) {
-        jobTotalCents = full.total.cents;
+        jobTotalCents = full.total?.cents;
         break;
       }
     }

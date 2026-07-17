@@ -13,6 +13,7 @@ import { SetVerifyAnswerUseCase } from "../app/job-execution-use-cases";
 import type { Job } from "../domain/job";
 import type { JobId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput } from "./job-dto";
+import { redactMoneyForTech } from "./money-redaction";
 
 // The tech-facing surface. Assignment is the authorization boundary for techs: a tech may act only
 // on jobs they are ON — the job-level assignee OR the assignee of any active visit
@@ -32,32 +33,6 @@ const assertOnJobIfTech = async (
   }
   return job;
 };
-
-// ── Server-side money redaction (tech callers only) ─────────────────────────────
-// Price visibility for techs is an org setting (techSeesPrice) — enforcing it only in the
-// client leaks full pricing (and always leaked internal cost) to every tech's device. On the
-// FIELD surface: cost is ALWAYS stripped for techs; rate is stripped when the org turned
-// tech price visibility off. Office/owner responses are never redacted.
-
-interface PricedRow {
-  rate: { cents: number; currency: "USD" } | null;
-  cost: { cents: number; currency: "USD" } | null;
-}
-
-const redactRow = <T extends PricedRow>(row: T, seesPrice: boolean) => ({
-  ...row,
-  rate: seesPrice ? row.rate : null,
-  cost: null,
-});
-
-const redactMoneyForTech = <T extends { lines: PricedRow[]; addons: PricedRow[] }>(
-  dto: T,
-  seesPrice: boolean,
-) => ({
-  ...dto,
-  lines: dto.lines.map((l) => redactRow(l, seesPrice)),
-  addons: dto.addons.map((a) => redactRow(a, seesPrice)),
-});
 
 const jobIdInput = z.object({ jobId: z.string().uuid() });
 
