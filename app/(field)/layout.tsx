@@ -18,7 +18,8 @@ export const dynamic = "force-dynamic";
  * blocks techs and redirects them here, so a tech can never reach office pages.
  */
 export default async function FieldLayout({ children }: { children: ReactNode }) {
-  await guardRole(["owner", "office", "tech"]);
+  const principal = await guardRole(["owner", "office", "tech"]);
+  const isTech = principal.role === "tech";
   return (
     <div className="appshell field-shell">
       {/* Fills store.jobs from v1.field.myDay — the office JobsHydrator is
@@ -33,7 +34,10 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           <main id="main">{children}</main>
         </div>
       </div>
-      <CommandBar />
+      {/* The office Ask-Mallet bar runs v1.ai.run (ownerOrOffice) — a dead, erroring control
+          for techs. Techs get the job-pinned Copilot in the job modal instead; office/owner
+          users visiting the field surface keep the bar. */}
+      {!isTech && <CommandBar />}
       <CallBar />
       <MobileTabs />
       <ModalHost />
