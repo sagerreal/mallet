@@ -96,6 +96,18 @@ strong{font-weight:700}
 .logo-mark svg{display:block;border-radius:8px}
 .logo-tld{color:var(--ink-soft);font-weight:700}
 
+/* ============== NOTICE BAR (the Leak Check) ============== */
+.notice{
+  display:flex;align-items:center;justify-content:center;gap:.5rem;flex-wrap:wrap;
+  background:var(--ink);color:rgba(250,248,243,.85);
+  padding:.62rem 1rem;font-size:.9rem;font-weight:500;text-align:center;
+  transition:background .15s ease;
+}
+.notice b{color:var(--paper);font-weight:700}
+.notice-go{color:var(--amber);font-weight:700;white-space:nowrap}
+.notice:hover{background:#2A2924}
+.notice:hover .notice-go{text-decoration:underline}
+
 /* ============================ NAV ============================ */
 .navwrap{position:sticky;top:0;z-index:50;background:rgba(250,248,243,.88);backdrop-filter:saturate(140%) blur(10px);border-bottom:1px solid var(--line)}
 .nav{display:flex;align-items:center;gap:1.5rem;height:70px}
@@ -147,7 +159,7 @@ strong{font-weight:700}
 .lede{font-size:clamp(1.05rem,1.6vw,1.22rem);color:var(--ink-soft);line-height:1.6;max-width:40ch;margin:1.5rem 0 0}
 .hero-actions{display:flex;gap:1rem;flex-wrap:wrap;margin-top:2.1rem;justify-content:flex-start}
 .hero-kicker{font-size:1rem;font-weight:600;color:var(--amber-deep);letter-spacing:-.01em;margin-bottom:.2rem}
-.hero-verts{margin-top:1.6rem;font-size:.95rem;color:var(--ink-soft);max-width:46ch;line-height:1.6}
+.hero-verts{margin-top:1.7rem;font-size:1.18rem;color:var(--ink-soft);max-width:44ch;line-height:1.6;letter-spacing:-.01em}
 .hero-verts::before{content:"";display:block;width:26px;height:2px;background:var(--amber);margin-bottom:.7rem}
 /* the trade word flips through the verticals; container width animates so the
    sentence around it slides smoothly instead of jumping (the old rotator sin) */
