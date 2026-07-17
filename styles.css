@@ -147,8 +147,21 @@ strong{font-weight:700}
 .hero::before{ /* the forge glow behind the stage */
   content:"";position:absolute;top:-24%;right:-8%;width:56%;height:150%;
   background:radial-gradient(closest-side, rgba(196,172,130,.14), transparent 70%);
-  pointer-events:none;
+  pointer-events:none;z-index:1;
 }
+.hero::after{ /* drafting-paper blueprint grid + paper grain — the material layer */
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E"),
+    linear-gradient(rgba(196,172,130,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(196,172,130,.055) 1px, transparent 1px),
+    linear-gradient(rgba(196,172,130,.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(196,172,130,.02) 1px, transparent 1px);
+  background-size:140px 140px, 112px 112px, 112px 112px, 28px 28px, 28px 28px;
+  -webkit-mask-image:radial-gradient(120% 100% at 30% 40%, #000 30%, transparent 78%);
+  mask-image:radial-gradient(120% 100% at 30% 40%, #000 30%, transparent 78%);
+}
+.hero .wrap{position:relative;z-index:2}
 .hero-grid{display:grid;grid-template-columns:1.04fr .96fr;gap:4rem;align-items:center;position:relative}
 .hero-copy{text-align:left}
 .hero h1{font-size:clamp(2.6rem,7vw,5rem);line-height:1.04;letter-spacing:-.032em;margin:.4rem 0 0;overflow-wrap:break-word}
