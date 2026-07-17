@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>The Leak Check — what your shop is losing, in 2 minutes | Mallet</title>
-  <meta name="description" content="Seven questions, two minutes: find out what missed calls, slow quotes, and unchased invoices are costing your shop — and get the fix plan." />
+  <meta name="description" content="Eight questions, two minutes: find out what missed calls, slow quotes, and unchased invoices are costing your shop — and get the fix plan." />
   <meta name="robots" content="index,follow" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="The Leak Check — what is your shop losing?" />
-  <meta property="og:description" content="Seven questions, two minutes: what missed calls, slow quotes, and unchased invoices cost you per year." />
+  <meta property="og:description" content="Eight questions, two minutes: what missed calls, slow quotes, and unchased invoices cost you per year." />
 
   <!-- Favicon: Mallet sparkle mark -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B1A17'/%3E%3Cpath d='M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z' fill='%23FAF8F3'/%3E%3C/svg%3E" />
@@ -45,7 +45,7 @@
         <div class="lc-step on" data-lc="intro">
           <p class="hero-kicker">The Leak Check</p>
           <h1 class="lc-h">What is your shop losing<br />right now?</h1>
-          <p class="lc-sub">Seven questions, two minutes &mdash; deliberately modest math, same as a good estimator would do it.</p>
+          <p class="lc-sub">Eight questions, two minutes &mdash; deliberately modest math, same as a good estimator would do it.</p>
           <button class="btn-primary lg" id="lcStart" type="button">Start the check &rarr;</button>
           <p class="lc-fine">Built by Mallet &middot; the AI-native operating system for service businesses</p>
         </div>
@@ -141,7 +141,10 @@
         ['Plumbing', 'plumbing'], ['Electrical', 'electrical'], ['Garage door', 'garage-door'],
         ['Roofing', 'roofing'], ['HVAC', 'hvac'], ['Tree work', 'tree'], ['Other service work', 'other']] },
       { key: 'techs', q: 'How many techs on the crew?', opts: [
-        ['Just me', '1'], ['2–3', '2-3'], ['4–7', '4-7'], ['8 or more', '8+']] },
+        ['Just me', '1'], ['1–10', '1-10'], ['10–50', '10-50'], ['50+', '50+']] },
+      { key: 'runs', q: 'How do you run the shop today?', opts: [
+        ['Paper, whiteboard & texts', 'paper'], ['Spreadsheets & QuickBooks', 'spreadsheets'],
+        ['Field-service software', 'software'], ['A mix of everything', 'mix']] },
       { key: 'phone', q: 'Who answers the phone when you’re on a job?', opts: [
         ['Someone in the office', 'office', 4], ['An answering service', 'service', 8],
         ['Me — from the truck', 'me', 16], ['Voicemail catches it', 'voicemail', 22]] },
@@ -226,7 +229,7 @@
       var params = '&score=' + score + '&leak_yr=' + Math.round(leakYr) + '&stuck=' + Math.round(stuck) +
         '&trade=' + encodeURIComponent(answers.trade) + '&techs=' + encodeURIComponent(answers.techs) +
         '&phone=' + encodeURIComponent(answers.phone) + '&missed_band=' + answers.missed +
-        '&ticket=' + ticket + '&quote_speed=' + encodeURIComponent(answers.quotes) + '&unpaid_band=' + answers.unpaid;
+        '&ticket=' + ticket + '&quote_speed=' + encodeURIComponent(answers.quotes) + '&unpaid_band=' + answers.unpaid + '&runs_on=' + encodeURIComponent(answers.runs);
       t.setAttribute('data-tally-src', t.getAttribute('data-tally-base') + params);
       if (window.Tally && window.Tally.loadEmbeds) {
         window.Tally.loadEmbeds();
