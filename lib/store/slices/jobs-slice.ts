@@ -305,6 +305,14 @@ export interface JobsSlice {
   deleteJob: (id: string) => void;
   // Found-work / add-ons
   addAddon: (jobId: string, draft: { d: string; r: number; c?: number }) => Addon | null;
+  /**
+   * Tech-surface found-work write. Calls v1.field.addAddon (anyRole, assignment-gated,
+   * proposed-only, rate-zeroed when !seesPrice). The copilot card uses this action; the
+   * existing office FoundWorkSec keeps addAddon unchanged.
+   *
+   * Returns the optimistic Addon synchronously (null when description is blank).
+   */
+  addAddonField: (jobId: string, draft: { d: string; r: number }) => Addon | null;
   setAddonStatus: (jobId: string, addonId: number, status: Addon["status"]) => void;
   setAddonInvSkip: (jobId: string, addonId: number) => void;
   // Before-you-leave checklist capture
@@ -1053,6 +1061,51 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
         if (process.env.NODE_ENV !== "production") {
           console.error("[jobs-slice] addAddon failed — rolled back", { jobId, err });
+        }
+      });
+
+    return addon;
+  },
+
+  // ---------------------------------------------------------------------------
+  // addAddonField — tech-surface found-work write via v1.field.addAddon.
+  // Same optimistic pattern as addAddon but routes to the field endpoint which:
+  //   • enforces assignment + non-terminal gates server-side
+  //   • forces status:"proposed" (never accepted from the field)
+  //   • zeroes rateCents when the org's techSeesPrice is off
+  // The copilot card calls this; office FoundWorkSec continues to use addAddon.
+  // ---------------------------------------------------------------------------
+  addAddonField: (jobId, draft) => {
+    const d = draft.d.trim();
+    if (!d) return null;
+    const addon: Addon = {
+      id: ++_nextAuxId,
+      d,
+      q: 1,
+      r: Math.max(0, draft.r || 0),
+      status: "proposed",
+      when: "Just now",
+    };
+    const prior = snapshot(get().jobs, jobId);
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) => ({ ...j, addons: [...j.addons, addon] })),
+    }));
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return addon;
+
+    trpcVanilla.v1.field.addAddon
+      .mutate({
+        jobId,
+        description: d,
+        rateCents: Math.round((draft.r || 0) * 100),
+      })
+      .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[jobs-slice] addAddonField failed — rolled back", { jobId, err });
         }
       });
 

@@ -457,6 +457,164 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     });
   });
 
+  // ── v1.field.addAddon — proposed-only, rate-redacted tech found-work write ────
+
+  describe("field addAddon endpoint", () => {
+    let addonTechId = "";
+    let addonTechSeesId = "";
+    let addonJobId = "";      // assigned to addonTechId (no seesPrice)
+    let addonJobSeesId = ""; // assigned to addonTechSeesId (seesPrice = true)
+    let offJobId = "";        // assigned to addonTechId (terminal)
+    let doneAddonJobId = ""; // complete job for terminal gate test
+
+    beforeAll(async () => {
+      // Turn seesPrice OFF for the org so we can test the redaction contract.
+      await admin`
+        insert into org_settings (org_id, tech_sees_price, booking)
+        values (${orgId}, false, '{"services": [], "notServices": "", "serviceFee": 0, "feeCredited": false}'::jsonb)
+        on conflict (org_id) do update set tech_sees_price = false
+      `;
+
+      const [at] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgId}, gen_random_uuid(), 'addontech@f.ex', 'tech') returning id`;
+      addonTechId = at!.id;
+
+      const [ast] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgId}, gen_random_uuid(), 'addontechsees@f.ex', 'tech') returning id`;
+      addonTechSeesId = ast!.id;
+
+      const [aj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-ADDON-01', 'in_progress', ${addonTechId}) returning id`;
+      addonJobId = aj!.id;
+
+      const [asj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-ADDON-02', 'in_progress', ${addonTechSeesId}) returning id`;
+      addonJobSeesId = asj!.id;
+
+      const [oj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-ADDON-OFF', 'in_progress', ${techBId}) returning id`;
+      offJobId = oj!.id;
+
+      const [dj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, completed_at, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-ADDON-DONE', 'complete', now(), ${addonTechId}) returning id`;
+      doneAddonJobId = dj!.id;
+    });
+
+    afterAll(async () => {
+      for (const id of [addonJobId, addonJobSeesId, offJobId, doneAddonJobId]) {
+        if (id) await admin`delete from jobs where id = ${id}`;
+      }
+      for (const id of [addonTechId, addonTechSeesId]) {
+        if (id) await admin`delete from users where id = ${id}`;
+      }
+      // Restore seesPrice so other tests are not affected.
+      await admin`update org_settings set tech_sees_price = true where org_id = ${orgId}`;
+    });
+
+    it("assigned tech adds an addon → DB row is proposed + response is redacted", async () => {
+      const caller = appRouter.createCaller(ctxFor(addonTechId, orgId, "tech"));
+      const dto = await caller.v1.field.addAddon({
+        jobId: addonJobId,
+        description: "Extra shutoff valve",
+        rateCents: 9999, // !seesPrice → must be stored as 0
+      });
+
+      // Response: rate is null (redacted) because seesPrice is off for this org.
+      const added = dto.addons.find((a) => a.description === "Extra shutoff valve");
+      expect(added).toBeDefined();
+      expect(added!.status).toBe("proposed");
+      expect(added!.rate).toBeNull();
+      expect(added!.cost).toBeNull();
+
+      // DB row: rate_cents must be 0 (not 9999) — the money contract.
+      const [row] = await admin<{ status: string; rate_cents: number }[]>`
+        select status, rate_cents from job_addons where job_id = ${addonJobId} and description = 'Extra shutoff valve'`;
+      expect(row!.status).toBe("proposed");
+      expect(row!.rate_cents).toBe(0);
+    });
+
+    it("!seesPrice tech sending rateCents 9999 → stored 0 in the DB", async () => {
+      // Explicit DB assertion from a second add call (distinct description).
+      const caller = appRouter.createCaller(ctxFor(addonTechId, orgId, "tech"));
+      await caller.v1.field.addAddon({
+        jobId: addonJobId,
+        description: "Pressure reducer check",
+        rateCents: 9999,
+      });
+      const [row] = await admin<{ rate_cents: number }[]>`
+        select rate_cents from job_addons where job_id = ${addonJobId} and description = 'Pressure reducer check'`;
+      expect(row!.rate_cents).toBe(0);
+    });
+
+    it("seesPrice tech's rate is preserved in the DB", async () => {
+      // Turn seesPrice ON just for this test.
+      await admin`update org_settings set tech_sees_price = true where org_id = ${orgId}`;
+      try {
+        const caller = appRouter.createCaller(ctxFor(addonTechSeesId, orgId, "tech"));
+        const dto = await caller.v1.field.addAddon({
+          jobId: addonJobSeesId,
+          description: "Expansion tank",
+          rateCents: 4500,
+        });
+        // seesPrice → rate is visible in the response.
+        const added = dto.addons.find((a) => a.description === "Expansion tank");
+        expect(added!.rate?.cents).toBe(4500);
+        expect(added!.status).toBe("proposed");
+
+        const [row] = await admin<{ rate_cents: number }[]>`
+          select rate_cents from job_addons where job_id = ${addonJobSeesId} and description = 'Expansion tank'`;
+        expect(row!.rate_cents).toBe(4500);
+      } finally {
+        await admin`update org_settings set tech_sees_price = false where org_id = ${orgId}`;
+      }
+    });
+
+    it("tech off-job gets FORBIDDEN — assignment gate fires before the write", async () => {
+      const caller = appRouter.createCaller(ctxFor(addonTechId, orgId, "tech"));
+      await expect(
+        caller.v1.field.addAddon({ jobId: offJobId, description: "Trespassing addon" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      const [n] = await admin<{ c: string }[]>`
+        select count(*)::text as c from job_addons where job_id = ${offJobId}`;
+      expect(n!.c).toBe("0");
+    });
+
+    it("terminal job → BAD_REQUEST even for the assigned tech", async () => {
+      const caller = appRouter.createCaller(ctxFor(addonTechId, orgId, "tech"));
+      await expect(
+        caller.v1.field.addAddon({ jobId: doneAddonJobId, description: "Post-close addon" }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      const [n] = await admin<{ c: string }[]>`
+        select count(*)::text as c from job_addons where job_id = ${doneAddonJobId}`;
+      expect(n!.c).toBe("0");
+    });
+
+    it("office caller through the OFFICE endpoint is unaffected (existing contract)", async () => {
+      // The office endpoint uses ownerOrOffice and has no terminal gate by default.
+      // Verify the office addAddon (v1.jobs.addAddon) still works and stores full rate.
+      const caller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const dto = await caller.v1.jobs.addAddon({
+        jobId: addonJobId,
+        description: "Office-added material",
+        rateCents: 7500,
+        costCents: 3000,
+        quantity: 1,
+      });
+      const added = dto.addons.find((a) => a.description === "Office-added material");
+      expect(added!.rate?.cents).toBe(7500);
+      expect(added!.cost?.cents).toBe(3000);
+      expect(added!.status).toBe("proposed");
+    });
+  });
+
   // ── field photo endpoints (PR2 C2) ────────────────────────────────────────────
   describe("field photo endpoints", () => {
     let photoTechId = "";

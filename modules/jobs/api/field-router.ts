@@ -9,11 +9,21 @@ import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
-import { SetVerifyAnswerUseCase, AddJobPhotoUseCase } from "../app/job-execution-use-cases";
+import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase } from "../app/job-execution-use-cases";
 import type { Job } from "../domain/job";
 import type { JobId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech } from "./money-redaction";
+
+// Field-surface add-addon input: description 1..200, optional client-authored id for idempotent
+// retry (mirrors the office addAddonInput's optional id), optional rate (tech with !seesPrice has
+// it zeroed server-side; seesPrice techs and office callers may send a real rate).
+const fieldAddAddonInput = z.object({
+  jobId: z.string().uuid(),
+  id: z.string().uuid().optional(),
+  description: z.string().trim().min(1, "description is required").max(200, "description must be 200 characters or fewer"),
+  rateCents: z.number().int().min(0).optional(),
+});
 
 // The tech-facing surface. Assignment is the authorization boundary for techs: a tech may act only
 // on jobs they are ON — the job-level assignee OR the assignee of any active visit
@@ -154,6 +164,69 @@ export const createFieldRouter = () =>
         );
         const dto = toJobDTO(r.job, r.execution);
         if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice);
+      }),
+
+    // Field-surface found-work write. Open to all roles (anyRole) but techs are assignment-gated
+    // and non-terminal-gated like every other field write. The money contract is strict:
+    //   • status is ALWAYS "proposed" — the office OK-pill is the approval gate; a tech may never
+    //     land an accepted addon.
+    //   • For tech callers with !techSeesPrice: IGNORE the client's rateCents entirely → store 0.
+    //     seesPrice techs may pass a rate; owner/office callers behave like the office endpoint.
+    //   • org from principal (never from client input).
+    //   • response is redacted for techs (B1 pattern — same as setVerifyAnswer / addPhoto).
+    //   • quantity and costCents are forced to the office defaults (1, 0) — techs don't author
+    //     cost; office callers should use the office addAddon endpoint for full control.
+    //   • isOptional follows the office default (false) for field-created found work.
+    addAddon: anyRole
+      .input(fieldAddAddonInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        if (techJob?.isTerminal()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This job is closed — ask the office to change it.",
+          });
+        }
+        if (!techJob) {
+          const job = await repo.findById(jobId);
+          if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+          if (job.isTerminal()) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "This job is closed — ask the office to change it." });
+          }
+        }
+
+        const isTech = ctx.principal.role === "tech";
+        let rateCents: number;
+        if (isTech) {
+          const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+          // Money contract: !seesPrice → force 0 regardless of what the client sent.
+          rateCents = seesPrice ? (input.rateCents ?? 0) : 0;
+        } else {
+          rateCents = input.rateCents ?? 0;
+        }
+
+        const useCase = new AddJobAddonUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(
+          await useCase.exec(
+            {
+              jobId,
+              id: input.id,
+              description: input.description.trim(),
+              quantity: 1,
+              rateCents,
+              costCents: 0,
+              isOptional: false,
+            },
+            ctx.principal.orgId,
+          ),
+        );
+        const dto = toJobDTO(r.job, r.execution);
+        if (!isTech) return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
         return redactMoneyForTech(dto, seesPrice);
       }),
