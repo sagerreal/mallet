@@ -493,6 +493,7 @@
 
     var fmt = function (n) { return '$' + Math.round(n).toLocaleString('en-US'); };
     var totalNow = 0;
+    var pctReal = 50, pctBook = 40; // the receipt's adjustable assumptions
 
     function update() {
       var missed = +r.missed.value, quotes = +r.quotes.value, callbacks = +r.callbacks.value;
@@ -505,7 +506,7 @@
       document.getElementById('oUnpaid').textContent = unpaid;
       ticketOuts.forEach(function (o) { o.textContent = fmt(ticket); });
 
-      var recoveredJobs = missed * 52 * 0.5 * 0.4;        // calls/yr → reachable → booked
+      var recoveredJobs = missed * 52 * (pctReal / 100) * (pctBook / 100); // calls/yr → real → booked
       var jobsRevenue = recoveredJobs * ticket;
       var quoteHours = quotes * 52 * 0.5;                 // 30 min per quote
       var callbackSave = callbacks * 12 * (ticket * 0.5) / 3;
@@ -517,10 +518,14 @@
       if (wm1) {
         var callsYr = missed * 52;
         wm1.textContent = callsYr.toLocaleString('en-US');
-        document.getElementById('wm2').textContent = Math.round(callsYr * 0.5).toLocaleString('en-US');
+        document.getElementById('wm2').textContent = Math.round(callsYr * pctReal / 100).toLocaleString('en-US');
         document.getElementById('wm3').textContent = Math.round(recoveredJobs).toLocaleString('en-US') + ' jobs';
         document.getElementById('wm4').textContent = fmt(jobsRevenue);
+        document.getElementById('wkPctReal').textContent = pctReal + '%';
+        document.getElementById('wkPctBook').textContent = (pctBook / 10) + ' in 10';
       }
+      var wksEl = document.getElementById('pEstWeeks');
+      if (wksEl) wksEl.textContent = 'almost ' + (Math.round(quoteHours / 40 * 10) / 10) + ' 40-hour weeks';
       document.getElementById('pEst').textContent = Math.round(quoteHours) + ' hrs';
       document.getElementById('pFore').textContent = fmt(callbackSave);
       document.getElementById('pCash').textContent = fmt(cashOut);
@@ -531,6 +536,17 @@
 
     Object.keys(r).forEach(function (k) { r[k].addEventListener('input', update); });
     var mBtn = document.getElementById('wkMathBtn'), mBox = document.getElementById('wkMath');
+    if (mBox) {
+      mBox.addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-t]');
+        if (!b) return;
+        var d = parseInt(b.getAttribute('data-d'), 10);
+        if (b.getAttribute('data-t') === 'real') pctReal = Math.min(90, Math.max(30, pctReal + d));
+        else pctBook = Math.min(70, Math.max(20, pctBook + d));
+        update();
+        window.malletTrack('worksheet_assumption_adjust', { real: pctReal, book: pctBook });
+      });
+    }
     if (mBtn && mBox) {
       mBtn.addEventListener('click', function () {
         var open = mBox.hidden;
@@ -629,7 +645,7 @@
         '<div class="exit-card" role="dialog" aria-modal="true" aria-labelledby="exitH">' +
         '<p class="hero-kicker">Before you go</p>' +
         '<h3 id="exitH">Leaving without your number?</h3>' +
-        '<p class="exit-p">Eight questions, two minutes &mdash; see what missed calls, slow quotes, and unpaid invoices cost your shop every year.</p>' +
+        '<p class="exit-p">Seven questions, two minutes &mdash; see what missed calls, slow quotes, and unpaid invoices cost your shop every year.</p>' +
         '<div class="exit-actions">' +
         '<a class="btn-amber lg" href="/leak-check">Get my Leak Score &rarr;</a>' +
         '<button class="exit-no" type="button">No thanks</button>' +

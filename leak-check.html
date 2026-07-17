@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>The Leak Check — what your shop is losing, in 2 minutes | Mallet</title>
-  <meta name="description" content="Eight questions, two minutes: find out what missed calls, slow quotes, and unchased invoices are costing your shop — and get the fix plan." />
+  <meta name="description" content="Seven questions, two minutes: find out what missed calls, slow quotes, and unchased invoices are costing your shop — and get the fix plan." />
   <meta name="robots" content="index,follow" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="The Leak Check — what is your shop losing?" />
-  <meta property="og:description" content="Eight questions, two minutes: what missed calls, slow quotes, and unchased invoices cost you per year." />
+  <meta property="og:description" content="Seven questions, two minutes: what missed calls, slow quotes, and unchased invoices cost you per year." />
   <meta property="og:image" content="https://www.trymallet.com/assets/og-leak.png" />
   <meta property="og:url" content="https://www.trymallet.com/leak-check" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -49,7 +49,7 @@
         <div class="lc-step on" data-lc="intro">
           <p class="hero-kicker">The Leak Check</p>
           <h1 class="lc-h">What is your shop losing<br />right now?</h1>
-          <p class="lc-sub">Eight questions, two minutes &mdash; deliberately modest math, same as a good estimator would do it.</p>
+          <p class="lc-sub">Seven questions, two minutes &mdash; deliberately modest math, same as a good estimator would do it.</p>
           <button class="btn-primary lg" id="lcStart" type="button">Start the check &rarr;</button>
           <p class="lc-fine">Built by Mallet &middot; the AI-native operating system for service businesses</p>
         </div>
@@ -103,10 +103,11 @@
             <p class="roi-label">WALKING PAST YOUR SHOP, PER YEAR</p>
             <p class="roi-big" id="lcLeak">$23,400</p>
             <p class="roi-note" id="lcLeakNote">52 calls a year ring out and book with the next shop.</p>
-            <div class="lm-rows lc-mathrows">
+            <div class="lm-rows lc-mathrows" id="lcRows">
+              <p class="lm-hint">Our assumptions are deliberately low &mdash; tap &minus;&thinsp;/&thinsp;+ to make them yours.</p>
               <div class="lm-row"><span>missed calls &times; 52 weeks</span><i aria-hidden="true"></i><b id="lm1">260</b></div>
-              <div class="lm-row"><span>half don&rsquo;t count &mdash; spam, hang-ups, already gone</span><i aria-hidden="true"></i><b id="lm2">130</b></div>
-              <div class="lm-row"><span>conservatively, 4 in 10 of the rest book</span><i aria-hidden="true"></i><b id="lm3">52 jobs</b></div>
+              <div class="lm-row"><span>say only <span class="stp"><button type="button" data-t="real" data-d="-10" aria-label="lower">&minus;</button><b id="lcPctReal">50%</b><button type="button" data-t="real" data-d="10" aria-label="raise">+</button></span> are real customers</span><i aria-hidden="true"></i><b id="lm2">130</b></div>
+              <div class="lm-row"><span>and just <span class="stp"><button type="button" data-t="book" data-d="-10" aria-label="lower">&minus;</button><b id="lcPctBook">4 in 10</b><button type="button" data-t="book" data-d="10" aria-label="raise">+</button></span> of those book</span><i aria-hidden="true"></i><b id="lm3">52 jobs</b></div>
               <div class="lm-row sum"><span>&times; your average job (<span id="lmTicket">$450</span>)</span><i aria-hidden="true"></i><b id="lm4">$23,400</b></div>
             </div>
             <p class="roi-note" id="lcStuckNote">Plus <b id="lcStuck">$2,700</b> sitting in unpaid invoices right now.</p>
@@ -152,9 +153,6 @@
         ['Roofing', 'roofing'], ['HVAC', 'hvac'], ['Tree work', 'tree'], ['Other service work', 'other']] },
       { key: 'techs', q: 'How many techs on the crew?', opts: [
         ['Just me', '1'], ['1–10', '1-10'], ['10–50', '10-50'], ['50+', '50+']] },
-      { key: 'runs', q: 'How do you run the shop today?', opts: [
-        ['Paper, whiteboard & texts', 'paper'], ['Spreadsheets & QuickBooks', 'spreadsheets'],
-        ['Field-service software', 'software'], ['A mix of everything', 'mix']] },
       { key: 'phone', q: 'Who answers the phone when you’re on a job?', opts: [
         ['Someone in the office', 'office', 4], ['An answering service', 'service', 8],
         ['Me — from the truck', 'me', 16], ['Voicemail catches it', 'voicemail', 22]] },
@@ -169,6 +167,7 @@
         ['None', 0, 0], ['1–3', 2, 8], ['4–8', 6, 16], ['More than 8', 10, 24]] }
     ];
 
+    function slice(x) { return Array.prototype.slice.call(x); }
     var steps = {}, els = {};
     ['intro', 'quiz', 'gate', 'result'].forEach(function (k) {
       steps[k] = document.querySelector('[data-lc="' + k + '"]');
@@ -252,19 +251,60 @@
 
       var tier = score >= 85 ? 'Watertight' : score >= 65 ? 'Dripping' : score >= 40 ? 'Leaking' : 'Pouring';
 
-      els.lcScore.textContent = score;
       els.lcTier.textContent = tier;
-      els.barDesk.style.width = Math.min(100, pDesk / 56 * 100) + '%';
-      els.barQuote.style.width = Math.min(100, pQuote / 20 * 100) + '%';
-      els.barInv.style.width = Math.min(100, pInv / 24 * 100) + '%';
-      els.lcLeak.textContent = fmt(leakYr);
-      els.lcLeakNote.textContent = Math.round(recovered) + ' calls a year ring out and book with the next shop.';
+      var pctReal = 50, pctBook = 40;
       var callsYr = answers.missed * 52;
-      document.getElementById('lm1').textContent = callsYr.toLocaleString('en-US');
-      document.getElementById('lm2').textContent = Math.round(callsYr * 0.5).toLocaleString('en-US');
-      document.getElementById('lm3').textContent = Math.round(recovered).toLocaleString('en-US') + ' jobs';
-      document.getElementById('lmTicket').textContent = fmt(ticket);
-      document.getElementById('lm4').textContent = fmt(leakYr);
+
+      function paintMath() {
+        var real = callsYr * pctReal / 100;
+        var jobs = real * pctBook / 100;
+        var money = jobs * ticket;
+        document.getElementById('lm1').textContent = callsYr.toLocaleString('en-US');
+        document.getElementById('lm2').textContent = Math.round(real).toLocaleString('en-US');
+        document.getElementById('lm3').textContent = Math.round(jobs).toLocaleString('en-US') + ' jobs';
+        document.getElementById('lmTicket').textContent = fmt(ticket);
+        document.getElementById('lm4').textContent = fmt(money);
+        document.getElementById('lcPctReal').textContent = pctReal + '%';
+        document.getElementById('lcPctBook').textContent = (pctBook / 10) + ' in 10';
+        els.lcLeak.textContent = fmt(money);
+        els.lcLeakNote.textContent = Math.round(jobs) + ' calls a year ring out and book with the next shop.';
+      }
+      document.getElementById('lcRows').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-t]');
+        if (!b) return;
+        var d = parseInt(b.getAttribute('data-d'), 10);
+        if (b.getAttribute('data-t') === 'real') pctReal = Math.min(90, Math.max(30, pctReal + d));
+        else pctBook = Math.min(70, Math.max(20, pctBook + d));
+        paintMath();
+        track('leak_assumption_adjust', { real: pctReal, book: pctBook });
+      });
+      paintMath();
+
+      // the reveal scene: dial + money count up, bars grow, rows cascade
+      var reduceM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      function countUp(el, target, prefix, dur) {
+        if (reduceM) { el.textContent = prefix + Math.round(target).toLocaleString('en-US'); return; }
+        var t0 = null;
+        function tick(ts) {
+          if (!t0) t0 = ts;
+          var p = Math.min((ts - t0) / dur, 1);
+          var eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = prefix + Math.round(target * eased).toLocaleString('en-US');
+          if (p < 1) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      }
+      countUp(els.lcScore, score, '', 900);
+      countUp(els.lcLeak, leakYr, '$', 1100);
+      setTimeout(function () {
+        els.barDesk.style.width = Math.min(100, pDesk / 56 * 100) + '%';
+        els.barQuote.style.width = Math.min(100, pQuote / 20 * 100) + '%';
+        els.barInv.style.width = Math.min(100, pInv / 24 * 100) + '%';
+      }, reduceM ? 0 : 250);
+      slice(document.querySelectorAll('#lcRows .lm-row, #lcRows .lm-hint')).forEach(function (row, i) {
+        if (reduceM) { row.classList.add('on'); return; }
+        setTimeout(function () { row.classList.add('on'); }, 500 + i * 180);
+      });
       els.lcStuck.textContent = fmt(stuck);
       document.getElementById('lcStuckNote').style.display = stuck > 0 ? '' : 'none';
 
@@ -274,7 +314,7 @@
       var params = '&score=' + score + '&leak_yr=' + Math.round(leakYr) + '&stuck=' + Math.round(stuck) +
         '&trade=' + encodeURIComponent(answers.trade) + '&techs=' + encodeURIComponent(answers.techs) +
         '&phone=' + encodeURIComponent(answers.phone) + '&missed=' + answers.missed +
-        '&ticket=' + ticket + '&quote_speed=' + encodeURIComponent(answers.quotes) + '&unpaid_band=' + answers.unpaid + '&runs_on=' + encodeURIComponent(answers.runs);
+        '&ticket=' + ticket + '&quote_speed=' + encodeURIComponent(answers.quotes) + '&unpaid_band=' + answers.unpaid;
       t.setAttribute('data-tally-src', t.getAttribute('data-tally-base') + params);
       if (window.Tally && window.Tally.loadEmbeds) {
         window.Tally.loadEmbeds();
