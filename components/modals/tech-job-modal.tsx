@@ -33,6 +33,7 @@ import {
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
+import { CopilotSection } from "@/features/field-copilot/copilot-section";
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
 import type {
@@ -1319,6 +1320,7 @@ export function TechJobModalContent() {
   // to select directly; never derive an array in a selector).
   const seesPrice = useAppStore((s) => s.toggles.techSeesPrice);
   const addAddon = useAppStore((s) => s.addAddon);
+  const addAddonField = useAppStore((s) => s.addAddonField);
   const setAddonStatus = useAppStore((s) => s.setAddonStatus);
   const checkVerifyItem = useAppStore((s) => s.checkVerifyItem);
   const overrideVerifyItem = useAppStore((s) => s.overrideVerifyItem);
@@ -1531,6 +1533,11 @@ export function TechJobModalContent() {
           quoted={quoted}
           onPriceOnSite={onPriceOnSite}
         />
+      )}
+
+      {/* Copilot (field AI advisor — camera + ask + found-work card). Tech only. */}
+      {!isOffice && jobId && (
+        <CopilotSection job={job} addAddonField={addAddonField} />
       )}
 
       {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes). */}

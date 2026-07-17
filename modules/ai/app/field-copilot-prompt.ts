@@ -92,5 +92,6 @@ export const buildFieldPrompt = ({ seesPrice, techName }: BuildFieldPromptOption
     "## Tone",
     "Be direct and brief — the tech is on-site and needs fast, actionable answers. No filler phrases.",
     "Speak to the trade: assume basic craft knowledge, do not over-explain standard procedures.",
+    "PLAIN TEXT ONLY: replies render on a phone screen with no markdown — never use asterisks, headers, or backticks; use short lines and simple dashes for lists.",
   ].join("\n");
 };
