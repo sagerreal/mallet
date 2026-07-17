@@ -108,7 +108,7 @@
   var QC_TEXT = '40-gal water heater swap — leaking, garage install';
   var TITLES = ['MALLET FRONT DESK', 'MALLET · NEW QUOTE', 'MALLET · JOB BOARD', 'MALLET · INVOICES'];
   var NEXT_LABELS = ['Next: writes the quote', 'Next: runs the job', 'Next: chases the invoice', 'Replay from the call'];
-  var WORD_MS = 210, TYPE_MS = 38, HOLD = 2600;
+  var WORD_MS = 125, TYPE_MS = 20, HOLD = 1400;
 
   var actTimers = [], actIvals = [];
   function at(ms, fn) { actTimers.push(setTimeout(fn, ms)); }
@@ -148,7 +148,7 @@
     var secs = 0;
     actIvals.push(setInterval(function () { secs += 1; timer.textContent = fmtClock(secs); }, 1000));
 
-    var t = 500;
+    var t = 350;
     CALL_LINES.forEach(function (l) {
       var words = l.text.split(' ');
       at(t, function () { setLine(l, false); });
@@ -161,13 +161,13 @@
       var end = t + 200 + words.length * WORD_MS;
       if (typeof l.ck === 'number') at(t + 500, function () { checks[l.ck].classList.add('done'); });
       if (typeof l.ckEnd === 'number') at(end + 300, function () { checks[l.ckEnd].classList.add('done'); });
-      t = end + 800;
+      t = end + 420;
     });
-    at(t + 200, function () {
+    at(t + 150, function () {
       checks[3].classList.add('done');
       aiTile.classList.remove('speaking'); callerTile.classList.remove('speaking');
     });
-    return t + 900;
+    return t + 550;
   }
 
   /* act 1 — the quote: the ask types itself, the staged run ticks, GBB lands */
@@ -191,15 +191,15 @@
       at(400 + n * TYPE_MS, function () { typed.textContent = QC_TEXT.slice(0, n); });
     })(i);
     var tType = 400 + QC_TEXT.length * TYPE_MS;
-    at(tType + 350, function () { build.classList.add('pressed'); });
-    var tSt = tType + 950;
+    at(tType + 250, function () { build.classList.add('pressed'); });
+    var tSt = tType + 650;
     stages.forEach(function (s, i) {
-      at(tSt + i * 850, function () { s.classList.add('run'); });
-      at(tSt + i * 850 + 800, function () { s.classList.remove('run'); s.classList.add('done'); });
+      at(tSt + i * 550, function () { s.classList.add('run'); });
+      at(tSt + i * 550 + 500, function () { s.classList.remove('run'); s.classList.add('done'); });
     });
-    var tRes = tSt + stages.length * 850 + 350;
+    var tRes = tSt + stages.length * 550 + 250;
     at(tRes, function () { result.classList.add('on'); });
-    return tRes + 700;
+    return tRes + 450;
   }
 
   /* act 2 — the job: the checklist ticks itself, the crew reports by text */
@@ -215,12 +215,12 @@
       return 0;
     }
     items.forEach(function (li, i) {
-      at(600 + i * 700, function () { li.classList.add('done'); });
+      at(400 + i * 420, function () { li.classList.add('done'); });
     });
-    var t = 600 + items.length * 700 + 500;
+    var t = 400 + items.length * 420 + 350;
     at(t, function () { text.classList.add('on'); });
-    at(t + 900, function () { meta.classList.add('on'); });
-    return t + 1600;
+    at(t + 550, function () { meta.classList.add('on'); });
+    return t + 1000;
   }
 
   /* act 3 — the invoice: automatic nudges, then PAID */
@@ -236,10 +236,10 @@
       pay();
       return 0;
     }
-    at(700, function () { msgs[0].classList.add('on'); });
-    at(2300, function () { msgs[1].classList.add('on'); });
-    at(4100, pay);
-    return 4900;
+    at(450, function () { msgs[0].classList.add('on'); });
+    at(1450, function () { msgs[1].classList.add('on'); });
+    at(2600, pay);
+    return 3200;
   }
 
   function frontDesk() {
