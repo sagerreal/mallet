@@ -25,7 +25,7 @@
   function tradeFlip() {
     var host = document.getElementById('tradeFlip');
     if (!host || reduce) return;
-    var TRADES = ['plumbing', 'electrical', 'garage door', 'roofing', 'HVAC', 'tree', 'septic', 'appliance repair', 'fencing', 'painting'];
+    var TRADES = ['plumbers', 'electricians', 'garage door pros', 'roofers', 'HVAC techs', 'tree crews', 'septic pros', 'appliance techs', 'fence builders', 'painters'];
     var word = host.querySelector('.tf-word');
 
     // hidden measurer with the same type styles → target width per word
@@ -595,6 +595,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('.js-book-demo'), function (t) {
       t.addEventListener('click', function () {
         window.malletTrack('demo_click', { page: location.pathname });
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('a[href*="leak-check"]'), function (t) {
+      t.addEventListener('click', function () {
+        window.malletTrack('leak_check_click', { page: location.pathname, spot: t.className.indexOf('notice') !== -1 ? 'bar' : 'cta' });
       });
     });
     window.addEventListener('message', function (e) {
