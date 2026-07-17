@@ -17,6 +17,8 @@
   --forge:#16150F;
   --gold:#D8A431;
   --gold-2:#F2CE71;
+  --metal:linear-gradient(100deg,#8F6504,#D8A431);
+  --metal-hover:linear-gradient(100deg,#9A6E00,#E4B448);
   --live:#2E9D63;
   --r:16px;
   --rb:11px;
@@ -81,8 +83,8 @@ strong{font-weight:700}
 .btn-primary:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(27,26,23,.22)}
 .btn-outline{background:transparent;color:var(--ink)}
 .btn-outline:hover{background:var(--ink);color:var(--paper)}
-.btn-amber{background:var(--amber);color:var(--ink);border-color:var(--amber)}
-.btn-amber:hover{transform:translateY(-1px);background:#C99A2E;box-shadow:0 10px 26px rgba(176,125,0,.30)}
+.btn-amber{background:var(--metal);color:#16150F;border-color:transparent;box-shadow:0 8px 24px -8px rgba(154,110,0,.45)}
+.btn-amber:hover{transform:translateY(-1px);background:var(--metal-hover);box-shadow:0 12px 30px -8px rgba(154,110,0,.55)}
 .lg{padding:1rem 1.7rem;font-size:1.02rem}
 .caps .btn-outline{border-color:var(--paper);color:var(--paper)}
 .cta-row{margin-top:2.4rem;display:flex;justify-content:center}
@@ -162,10 +164,10 @@ strong{font-weight:700}
 .lede{font-size:clamp(1.05rem,1.6vw,1.22rem);color:rgba(250,248,243,.62);line-height:1.6;max-width:40ch;margin:1.5rem 0 0}
 .hero-actions{display:flex;gap:1rem;flex-wrap:wrap;margin-top:2.1rem;justify-content:flex-start}
 .hero .btn-primary{
-  background:linear-gradient(100deg,var(--gold),var(--gold-2));color:var(--forge);border-color:transparent;
-  box-shadow:0 10px 34px -8px rgba(216,164,49,.5);
+  background:var(--metal);color:var(--forge);border-color:transparent;
+  box-shadow:0 10px 34px -8px rgba(216,164,49,.55);
 }
-.hero .btn-primary:hover{box-shadow:0 14px 40px -8px rgba(216,164,49,.65)}
+.hero .btn-primary:hover{background:var(--metal-hover);box-shadow:0 14px 40px -8px rgba(216,164,49,.7)}
 .hero .btn-amber{background:transparent;color:var(--paper);border:1.5px solid rgba(250,248,243,.32)}
 .hero .btn-amber:hover{background:rgba(250,248,243,.08);border-color:var(--paper);box-shadow:none;transform:translateY(-1px)}
 .hero-kicker{font-size:1rem;font-weight:600;color:var(--gold);letter-spacing:-.01em;margin-bottom:.2rem}
@@ -341,7 +343,7 @@ strong{font-weight:700}
 .beat.on{color:rgba(250,248,243,.55)}
 .beat.on::before{width:26px;background:#8a7645}
 .beat.now{color:var(--paper)}
-.beat.now::before{width:26px;background:linear-gradient(100deg,var(--gold),var(--gold-2))}
+.beat.now::before{width:26px;background:var(--metal)}
 
 @media (max-width:1020px){
   .hero-grid{grid-template-columns:1fr;gap:2.8rem}
