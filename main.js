@@ -17,6 +17,7 @@
     roiCalc();
     consent();
     wireConversionEvents();
+    exitIntent();
   });
 
   /* Hero trade rotator: cycles the verticals; the slot's width animates to
@@ -568,6 +569,57 @@
       io.observe(big);
     }
   }
+  /* ============== EXIT INTENT — the Leak Check, one last time ============== */
+  /* Desktop only (needs a real cursor). Shows once per visitor when the mouse
+     leaves the top of the viewport after 5s of dwell. Skipped on /leak-check
+     and for anyone who already finished the check. */
+  function exitIntent() {
+    if (location.pathname.indexOf('leak-check') !== -1) return;
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    try {
+      if (localStorage.getItem('mallet-exit-shown') || localStorage.getItem('mallet-lc-done')) return;
+    } catch (e) { return; }
+
+    var t0 = Date.now(), shown = false;
+
+    function dismiss(ov) {
+      ov.remove();
+      window.malletTrack('exit_popup_dismiss', {});
+    }
+
+    function build() {
+      var ov = document.createElement('div');
+      ov.className = 'exit-ov';
+      ov.innerHTML =
+        '<div class="exit-card" role="dialog" aria-modal="true" aria-labelledby="exitH">' +
+        '<p class="hero-kicker">Before you go</p>' +
+        '<h3 id="exitH">Leaving without your number?</h3>' +
+        '<p class="exit-p">Seven questions, two minutes &mdash; see what missed calls, slow quotes, and unpaid invoices cost your shop every year.</p>' +
+        '<div class="exit-actions">' +
+        '<a class="btn-amber lg" href="/leak-check">Get my Leak Score &rarr;</a>' +
+        '<button class="exit-no" type="button">No thanks</button>' +
+        '</div></div>';
+      document.body.appendChild(ov);
+      ov.addEventListener('click', function (e) { if (e.target === ov) dismiss(ov); });
+      ov.querySelector('.exit-no').addEventListener('click', function () { dismiss(ov); });
+      ov.querySelector('a').addEventListener('click', function () {
+        window.malletTrack('exit_popup_click', {});
+      });
+      document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape') { document.removeEventListener('keydown', esc); if (ov.parentNode) dismiss(ov); }
+      });
+      window.malletTrack('exit_popup_shown', {});
+    }
+
+    document.addEventListener('mouseout', function (e) {
+      if (shown || e.relatedTarget || e.clientY > 0) return;
+      if (Date.now() - t0 < 5000) return;
+      shown = true;
+      try { localStorage.setItem('mallet-exit-shown', '1'); } catch (err) {}
+      build();
+    });
+  }
+
   /* ============== CONSENT + VISITOR ID + ANALYTICS ============== */
   /* Shows the privacy-choices card once per visitor. Accept → loads analytics
      (RB2B + GA4). Decline → remembers and never loads. */
