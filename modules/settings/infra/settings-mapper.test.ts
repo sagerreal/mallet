@@ -43,6 +43,11 @@ const baseRow = (): OrgSettingsRow => ({
   brandColor: null,
   brandLogoUrl: null,
   brandInitials: null,
+  stripeConnectedAccountId: null,
+  stripeChargesEnabled: false,
+  stripePayoutsEnabled: false,
+  stripeDetailsSubmitted: false,
+  stripeOnboardedAt: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
 });

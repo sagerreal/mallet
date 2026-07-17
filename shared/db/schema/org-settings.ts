@@ -60,6 +60,15 @@ export const orgSettings = pgTable(
     brandColor: text("brand_color"),
     brandLogoUrl: text("brand_logo_url"),
     brandInitials: text("brand_initials"),
+    // ── Stripe Connect (Express) — PR1 onboarding foundation ──────────────────
+    // The connected account id (acct_...) is null until onboarding begins. Status booleans mirror
+    // the Stripe Account object and default false; onboardedAt stamps the first time charges go live.
+    // No money moves in PR1; destination-charge routing + platform fee land in PR2.
+    stripeConnectedAccountId: text("stripe_connected_account_id"),
+    stripeChargesEnabled: boolean("stripe_charges_enabled").notNull().default(false),
+    stripePayoutsEnabled: boolean("stripe_payouts_enabled").notNull().default(false),
+    stripeDetailsSubmitted: boolean("stripe_details_submitted").notNull().default(false),
+    stripeOnboardedAt: timestamp("stripe_onboarded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
