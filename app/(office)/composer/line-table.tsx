@@ -27,6 +27,7 @@ export function LineTable({
   onAddLine,
   footerTools,
   materialize,
+  provenanceFor,
 }: {
   lines: ComposerLine[];
   showCost: boolean;
@@ -38,6 +39,8 @@ export function LineTable({
   footerTools?: React.ReactNode;
   /** Brief post-draft window: rows animate in (CSS only, reduced-motion safe). */
   materialize?: boolean;
+  /** Optional per-line provenance caption ("pricebook") — B3. Null hides it. */
+  provenanceFor?: (description: string) => "pricebook" | null;
 }) {
   const cols = showCost ? 6 : 5;
 
@@ -80,6 +83,10 @@ export function LineTable({
                     placeholder="Describe the work…"
                     onChange={(e) => onUpdateLine(i, { d: e.target.value })}
                   />
+                  {(() => {
+                    const src = hasContent ? provenanceFor?.(x.d) : null;
+                    return src ? <span className="line-prov">{src}</span> : null;
+                  })()}
                 </td>
                 <td>
                   <input

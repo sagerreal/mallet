@@ -644,6 +644,9 @@
   .lineedit tr:hover .rowacts>*,.lineedit tr:focus-within .rowacts>*,.lineedit .rowacts>.on{opacity:1}
   .lineedit tfoot td{border-top:1px solid var(--line);background:var(--green-50);padding:0}
   .lineedit-bar{display:flex;align-items:center;gap:2px;padding:4px 6px}
+  /* B3 provenance caption — a quiet "pricebook" tag under a drafted line, so the
+     owner sees which prices came from their own book vs the AI's off-book adds. */
+  .line-prov{display:inline-block;margin:2px 0 0 1px;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--green-700)}
   .lineedit-tool{border:0;background:transparent;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink-2);padding:7px 10px;border-radius:8px;cursor:pointer;white-space:nowrap}
   .lineedit-tool:hover{background:var(--card);color:var(--ink)}
   .lineedit-tool.primary{color:var(--ink)}
@@ -656,6 +659,12 @@
   .lineedit-spring{margin-left:auto}
 
   /* ---------- the quote command bar (the bar IS the AI) ---------- */
+  /* B1 empty-state hero — the invitation that replaces the dead empty grid.
+     In-flow, no float; the command bar directly below is the single input. */
+  .es-hero{padding:22px 4px 6px;text-align:center}
+  .es-hero-title{font-size:20px;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
+  .es-hero-eg{margin:7px auto 0;max-width:440px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+  .es-hero-manual{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:12px;font-size:12.5px;color:var(--ink-2)}
   .aibar{display:flex;align-items:center;gap:10px;background:var(--manila);border:1.5px solid var(--manila-line);border-radius:12px;padding:4px 6px 4px 15px;margin-top:12px;transition:border-color .12s}
   .aibar:focus-within{border-color:var(--ink)}
   .aibar input[type=text],.aibar input{flex:1;border:0 !important;box-shadow:none !important;background:transparent;color:var(--manila-ink);font-family:var(--font-mono, ui-monospace, monospace);font-size:13px;padding:9px 0;outline:none;min-width:0;letter-spacing:-.01em}
