@@ -24,11 +24,19 @@ export interface ToolResultBlock {
   readonly isError?: boolean;
 }
 
-// One entry in the running conversation. A user turn is either the initial text or a batch of
-// tool_results answering the assistant's tool_use blocks.
+// A single content block in a multimodal user message. Text blocks carry the prompt text;
+// image blocks carry a base64-encoded image (server-side only — never stored in the transcript).
+export type UserContentBlock =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "image"; readonly mediaType: "image/jpeg" | "image/png" | "image/webp"; readonly dataBase64: string };
+
+// One entry in the running conversation. A user turn is either the initial text, a batch of
+// tool_results answering the assistant's tool_use blocks, or a multimodal user_blocks message
+// carrying image blocks alongside the prompt text (additive — existing members are unchanged).
 export type AgentMessage =
   | { readonly role: "user"; readonly kind: "text"; readonly text: string }
   | { readonly role: "user"; readonly kind: "tool_results"; readonly results: readonly ToolResultBlock[] }
+  | { readonly role: "user"; readonly kind: "user_blocks"; readonly blocks: readonly UserContentBlock[] }
   | { readonly role: "assistant"; readonly kind: "assistant"; readonly blocks: readonly AssistantBlock[] };
 
 export type Effort = "low" | "medium" | "high";

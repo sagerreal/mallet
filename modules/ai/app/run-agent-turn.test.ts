@@ -175,4 +175,71 @@ describe("runAgentTurn", () => {
     const llm: LlmClient = { next: async () => { throw new LlmError(true); } };
     await expect(runAgentTurn({ llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute, userMessage: "x" })).rejects.toBeInstanceOf(LlmError);
   });
+
+  // ── userBlocks (multimodal) ──────────────────────────────────────────────────────────────────
+
+  it("with userBlocks: the initial transcript entry is user_blocks with images first then text", async () => {
+    const llm = new FakeLlm([text("Looks like a leaking pipe.")]);
+    const result = await runAgentTurn({
+      llm,
+      system: "sys",
+      tools: TOOLS,
+      execute: recordingExecute().execute,
+      userMessage: "What do you see?",
+      userBlocks: [{ type: "image", mediaType: "image/jpeg", dataBase64: "abc==" }],
+    });
+
+    expect(result.status).toBe("completed");
+    const firstMsg = llm.requests[0]!.messages[0]!;
+    expect(firstMsg.role).toBe("user");
+    expect(firstMsg.kind).toBe("user_blocks");
+    if (firstMsg.kind === "user_blocks") {
+      expect(firstMsg.blocks).toHaveLength(2);
+      expect(firstMsg.blocks[0]).toEqual({ type: "image", mediaType: "image/jpeg", dataBase64: "abc==" });
+      expect(firstMsg.blocks[1]).toEqual({ type: "text", text: "What do you see?" });
+    }
+  });
+
+  it("without userBlocks: the initial transcript entry is a plain text message (existing behaviour unchanged)", async () => {
+    const llm = new FakeLlm([text("Hello.")]);
+    await runAgentTurn({ llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute, userMessage: "hi" });
+
+    const firstMsg = llm.requests[0]!.messages[0]!;
+    expect(firstMsg.role).toBe("user");
+    expect(firstMsg.kind).toBe("text");
+    if (firstMsg.kind === "text") expect(firstMsg.text).toBe("hi");
+  });
+
+  it("with empty userBlocks array: falls back to plain text (no empty user_blocks message)", async () => {
+    const llm = new FakeLlm([text("Hello.")]);
+    await runAgentTurn({ llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute, userMessage: "hi", userBlocks: [] });
+
+    const firstMsg = llm.requests[0]!.messages[0]!;
+    expect(firstMsg.role).toBe("user");
+    expect(firstMsg.kind).toBe("text");
+  });
+
+  it("with userBlocks: multiple images are all prepended before the text block", async () => {
+    const llm = new FakeLlm([text("I see two photos.")]);
+    await runAgentTurn({
+      llm,
+      system: "sys",
+      tools: TOOLS,
+      execute: recordingExecute().execute,
+      userMessage: "describe both",
+      userBlocks: [
+        { type: "image", mediaType: "image/jpeg", dataBase64: "img1==" },
+        { type: "image", mediaType: "image/png", dataBase64: "img2==" },
+      ],
+    });
+
+    const firstMsg = llm.requests[0]!.messages[0]!;
+    expect(firstMsg.kind).toBe("user_blocks");
+    if (firstMsg.kind === "user_blocks") {
+      expect(firstMsg.blocks).toHaveLength(3);
+      expect(firstMsg.blocks[0]).toMatchObject({ type: "image", dataBase64: "img1==" });
+      expect(firstMsg.blocks[1]).toMatchObject({ type: "image", dataBase64: "img2==" });
+      expect(firstMsg.blocks[2]).toEqual({ type: "text", text: "describe both" });
+    }
+  });
 });

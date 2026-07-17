@@ -9,6 +9,7 @@ import type {
   AssistantBlock,
   AssistantTurn,
   StopReason,
+  UserContentBlock,
 } from "../domain/llm-client";
 
 const MODEL = "claude-opus-4-8";
@@ -80,8 +81,21 @@ export class AnthropicLlmClient implements LlmClient {
   }
 }
 
-const toMessageParam = (msg: AgentMessage): Anthropic.MessageParam => {
+/** @internal exported for unit tests only */
+export const toUserContentBlockParam = (b: UserContentBlock): Anthropic.ContentBlockParam => {
+  if (b.type === "text") return { type: "text", text: b.text };
+  return {
+    type: "image",
+    source: { type: "base64", media_type: b.mediaType, data: b.dataBase64 },
+  };
+};
+
+/** @internal exported for unit tests only */
+export const toMessageParam = (msg: AgentMessage): Anthropic.MessageParam => {
   if (msg.role === "user" && msg.kind === "text") return { role: "user", content: msg.text };
+  if (msg.role === "user" && msg.kind === "user_blocks") {
+    return { role: "user", content: msg.blocks.map(toUserContentBlockParam) };
+  }
   if (msg.role === "user") {
     return {
       role: "user",

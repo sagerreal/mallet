@@ -47,5 +47,5 @@ export {
   RemoveJobPhotoUseCase,
 } from "./app/job-execution-use-cases";
 export type { JobWithExecution } from "./app/job-execution-use-cases";
-export type { PhotoStorageGateway, SignedUpload, CreateUploadUrlCmd } from "./domain/photo-storage-gateway";
+export type { PhotoStorageGateway, SignedUpload, CreateUploadUrlCmd, DownloadContext, DownloadResult } from "./domain/photo-storage-gateway";
 export { SupabasePhotoStorageGateway, JOB_PHOTOS_BUCKET } from "./infra/supabase-photo-storage-gateway";
