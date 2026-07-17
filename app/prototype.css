@@ -1335,11 +1335,16 @@
   /* input row */
   .cp-input-row{display:flex;gap:7px;align-items:center}
   .cp-cam-btn{width:auto;margin-top:0;padding:7px 10px;flex:0 0 auto;font-size:16px;line-height:1;border-radius:8px}
+  .cp-mic-btn{width:auto;margin-top:0;padding:7px 10px;flex:0 0 auto;font-size:16px;line-height:1;border-radius:8px}
+  /* listening: filled + a slow breathing pulse so the tech sees it's live */
+  .cp-mic-on{background:var(--green-100);border-color:var(--green-600);animation:cp-mic-pulse 1.3s ease-in-out infinite}
+  @keyframes cp-mic-pulse{0%,100%{opacity:1}50%{opacity:.55}}
   .cp-ask-btn{flex:0 0 auto;white-space:nowrap}
   /* inline error */
   .cp-error{font-size:12.5px;color:var(--red);margin-bottom:8px}
   /* press states — Feel Kit consistent */
   .cp-cam-btn:active{transform:scale(.96)}
+  .cp-mic-btn:active{transform:scale(.96)}
   .cp-ask-btn:active{transform:scale(.97)}
   /* scheduler sheet — duration (with basis) + crew + slot suggestions */
   .sched-blk{margin-bottom:19px}

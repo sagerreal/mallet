@@ -19,6 +19,7 @@
 
 import { memo, useRef, useState, useCallback } from "react";
 import type { Job } from "@/lib/store/types";
+import { usePushToTalk } from "./use-push-to-talk";
 import { useFieldCopilot } from "./use-field-copilot";
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
@@ -110,6 +111,9 @@ function CopilotSectionFn({ job, addAddonField }: CopilotSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
+  // Push-to-talk fills the text box; the tech reviews/edits, then taps Ask.
+  const ptt = usePushToTalk(setInputText);
+
   // ---- camera handler ----
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,12 +148,13 @@ function CopilotSectionFn({ job, addAddonField }: CopilotSectionProps) {
   const handleAsk = useCallback(async () => {
     const text = inputText.trim();
     if (!text || pending || uploading) return;
+    if (ptt.listening) ptt.stop(); // don't keep dictating into the cleared box
     setInputText("");
     clearError();
     await ask(text);
     // Scroll to bottom after response.
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [inputText, pending, uploading, ask, clearError]);
+  }, [inputText, pending, uploading, ask, clearError, ptt]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -161,7 +166,7 @@ function CopilotSectionFn({ job, addAddonField }: CopilotSectionProps) {
     [handleAsk],
   );
 
-  const displayError = error ?? cameraError;
+  const displayError = error ?? cameraError ?? ptt.error;
 
   return (
     <div className="fsec">
@@ -260,13 +265,28 @@ function CopilotSectionFn({ job, addAddonField }: CopilotSectionProps) {
           aria-hidden="true"
         />
 
+        {/* Push-to-talk mic — only when the browser supports it (typing is always primary). */}
+        {ptt.supported && (
+          <button
+            type="button"
+            className={ptt.listening ? "tjpaid-btn2 cp-mic-btn cp-mic-on" : "tjpaid-btn2 cp-mic-btn"}
+            onClick={() => (ptt.listening ? ptt.stop() : ptt.start())}
+            disabled={pending}
+            aria-label={ptt.listening ? "Stop voice input" : "Speak your question"}
+            aria-pressed={ptt.listening}
+            title={ptt.listening ? "Listening — tap to stop" : "Speak"}
+          >
+            {ptt.listening ? "◉" : "🎤"}
+          </button>
+        )}
+
         {/* Text input */}
         <input
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={clearError}
-          placeholder="Ask the copilot…"
+          placeholder={ptt.listening ? "Listening…" : "Ask the copilot…"}
           disabled={pending}
           style={{ flex: 1, minWidth: 0, ...INPUT_STYLE }}
           aria-label="Ask the copilot"
