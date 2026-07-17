@@ -1,11 +1,15 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { CensusGeocoder } from "@mallet/frontdesk";
+import { loadConfig } from "@mallet/shared/config";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository";
+import { OrgSettings } from "../domain/org-settings";
 import { GetSettingsUseCase } from "../app/get-settings";
 import { UpdateConfigUseCase } from "../app/update-config";
 import { UpdateBrandUseCase } from "../app/update-brand";
+import { BeginConnectOnboardingUseCase, RefreshConnectStatusUseCase } from "../app/connect-onboarding";
 import { CreatePricebookUseCase, UpdatePricebookUseCase, RemovePricebookUseCase } from "../app/pricebook";
 import { CreateLaborRateUseCase, UpdateLaborRateUseCase, RemoveLaborRateUseCase } from "../app/labor-rates";
 import { CreateTermUseCase, UpdateTermUseCase, RemoveTermUseCase } from "../app/terms";
@@ -32,6 +36,8 @@ import {
   termUpdateInput,
   sourceCreateInput,
   updateBrandInput,
+  connectStatusDTO,
+  beginOnboardingResultDTO,
 } from "./settings-dto";
 
 // Shared response for remove/archive operations.
@@ -271,5 +277,56 @@ export const createSettingsRouter = () =>
           );
           return orThrow(result);
         }),
+    }),
+
+    // --- Payments (Stripe Connect Express onboarding — PR1) --------------
+    // Org is ALWAYS ctx.principal.orgId; the connected account id is read from the org's own
+    // settings row under RLS. No money moves here — this only links the shop's bank.
+    payments: router({
+      // Read persisted onboarding status. No Stripe call — cheap, safe to poll on page load.
+      status: ownerOrOffice.output(connectStatusDTO).query(async ({ ctx }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const settings = await repo.getConfig(ctx.principal.orgId, OrgSettings.defaultBooking);
+        const p = settings.props;
+        return {
+          connected: p.stripeChargesEnabled,
+          chargesEnabled: p.stripeChargesEnabled,
+          payoutsEnabled: p.stripePayoutsEnabled,
+          detailsSubmitted: p.stripeDetailsSubmitted,
+        };
+      }),
+
+      // Start/resume Express onboarding; returns the Stripe-hosted url to redirect to.
+      beginOnboarding: ownerOrOffice.output(beginOnboardingResultDTO).mutation(async ({ ctx }) => {
+        const base = loadConfig().PUBLIC_APP_URL;
+        if (!ctx.deps.connectGateway || !base) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "payments are not configured yet" });
+        }
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new BeginConnectOnboardingUseCase(
+          ctx.deps.connectGateway,
+          repo,
+          ctx.deps.clock,
+        ).exec({
+          orgId: ctx.principal.orgId,
+          returnUrl: `${base}/settings?tab=payments&connect=return`,
+          refreshUrl: `${base}/settings?tab=payments&connect=refresh`,
+        });
+        return orThrow(result);
+      }),
+
+      // Pull latest status from Stripe + persist (called on the onboarding-return redirect).
+      refresh: ownerOrOffice.output(connectStatusDTO).mutation(async ({ ctx }) => {
+        if (!ctx.deps.connectGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "payments are not configured yet" });
+        }
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new RefreshConnectStatusUseCase(
+          ctx.deps.connectGateway,
+          repo,
+          ctx.deps.clock,
+        ).exec({ orgId: ctx.principal.orgId });
+        return orThrow(result);
+      }),
     }),
   });

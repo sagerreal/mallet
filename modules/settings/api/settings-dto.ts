@@ -3,6 +3,18 @@ import type { SettingsSnapshot } from "../app/get-settings";
 import type { PricebookItem, LaborRate, JobTerm, LeadSource } from "../domain/settings-repository";
 import type { OrgSettings } from "../domain/org-settings";
 
+// --- Stripe Connect (Express) — PR1 -----------------------------------------
+
+// Persisted onboarding status projected to the wire. `connected` = charges are live.
+export const connectStatusDTO = z.object({
+  connected: z.boolean(),
+  chargesEnabled: z.boolean(),
+  payoutsEnabled: z.boolean(),
+  detailsSubmitted: z.boolean(),
+});
+
+export const beginOnboardingResultDTO = z.object({ url: z.string().url() });
+
 // --- Sub-schemas -----------------------------------------------------------
 
 export const bookingServiceDTO = z.object({

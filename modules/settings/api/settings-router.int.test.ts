@@ -302,4 +302,32 @@ suite("settings tRPC router (full stack, live RLS)", () => {
       expect(bSettings.brand.color).not.toBe("#123456");
     });
   });
+
+  // Stripe Connect payments (PR1). Requires migration 0083 applied to the live DB.
+  describe("payments (stripe connect)", () => {
+    it("status returns not-connected defaults for a fresh org", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgBId, "owner"));
+      const s = await caller.v1.settings.payments.status();
+      expect(s).toEqual({
+        connected: false,
+        chargesEnabled: false,
+        payoutsEnabled: false,
+        detailsSubmitted: false,
+      });
+    });
+
+    it("beginOnboarding is PRECONDITION_FAILED when Stripe is unconfigured (null gateway)", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      await expect(caller.v1.settings.payments.beginOnboarding()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+      });
+    });
+
+    it("a tech is forbidden from reading payments status", async () => {
+      const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+      await expect(callerTech.v1.settings.payments.status()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+    });
+  });
 });
