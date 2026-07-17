@@ -51,6 +51,12 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     brandColor: row.brandColor ?? null,
     brandLogoUrl: row.brandLogoUrl ?? null,
     brandInitials: row.brandInitials ?? null,
+    // Stripe Connect (Express) onboarding state (PR1).
+    stripeConnectedAccountId: row.stripeConnectedAccountId ?? null,
+    stripeChargesEnabled: row.stripeChargesEnabled,
+    stripePayoutsEnabled: row.stripePayoutsEnabled,
+    stripeDetailsSubmitted: row.stripeDetailsSubmitted,
+    stripeOnboardedAt: row.stripeOnboardedAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

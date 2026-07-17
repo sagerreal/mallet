@@ -104,6 +104,17 @@ export interface OrgSettingsProps {
   readonly brandLogoUrl: string | null;
   /** 1-3 character monogram initials. Nullable. */
   readonly brandInitials: string | null;
+  // --- Stripe Connect (Express) onboarding state (PR1) ---
+  /** The shop's Stripe connected account id (acct_...). Null until onboarding begins. */
+  readonly stripeConnectedAccountId: string | null;
+  /** Mirror of Stripe Account.charges_enabled. */
+  readonly stripeChargesEnabled: boolean;
+  /** Mirror of Stripe Account.payouts_enabled. */
+  readonly stripePayoutsEnabled: boolean;
+  /** Mirror of Stripe Account.details_submitted. */
+  readonly stripeDetailsSubmitted: boolean;
+  /** First time charges went live (stamped once). Null until then. */
+  readonly stripeOnboardedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -165,6 +176,11 @@ export class OrgSettings {
     const brandName = props.brandName.trim();
     if (brandName.length === 0) {
       return err(validation("brand name is required", "brandName"));
+    }
+    // A stored Stripe connected account id must be a Stripe account id (acct_...). Null = not yet
+    // onboarded. Guards against a client-supplied or malformed id ever reaching the charge path.
+    if (props.stripeConnectedAccountId !== null && !props.stripeConnectedAccountId.startsWith("acct_")) {
+      return err(validation("stripe connected account id must be an acct_ id", "stripeConnectedAccountId"));
     }
 
     return ok(
@@ -266,6 +282,41 @@ export class OrgSettings {
       brandColor: fields.color !== undefined ? fields.color : this.p.brandColor,
       brandLogoUrl: fields.logoUrl !== undefined ? fields.logoUrl : this.p.brandLogoUrl,
       brandInitials: fields.initials !== undefined ? fields.initials : this.p.brandInitials,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Patch the Stripe Connect onboarding subset. undefined = keep current. Re-runs the acct_
+   * invariant via create. onboardedAt is caller-controlled (the use case stamps it the first time
+   * charges go live). Returns a new OrgSettings or a ValidationError.
+   */
+  patchStripe(
+    fields: {
+      connectedAccountId?: string | null;
+      chargesEnabled?: boolean;
+      payoutsEnabled?: boolean;
+      detailsSubmitted?: boolean;
+      onboardedAt?: Date | null;
+    },
+    now: Date,
+  ): Result<OrgSettings, ValidationError> {
+    return OrgSettings.create({
+      ...this.p,
+      stripeConnectedAccountId:
+        fields.connectedAccountId !== undefined
+          ? fields.connectedAccountId
+          : this.p.stripeConnectedAccountId,
+      stripeChargesEnabled:
+        fields.chargesEnabled !== undefined ? fields.chargesEnabled : this.p.stripeChargesEnabled,
+      stripePayoutsEnabled:
+        fields.payoutsEnabled !== undefined ? fields.payoutsEnabled : this.p.stripePayoutsEnabled,
+      stripeDetailsSubmitted:
+        fields.detailsSubmitted !== undefined
+          ? fields.detailsSubmitted
+          : this.p.stripeDetailsSubmitted,
+      stripeOnboardedAt:
+        fields.onboardedAt !== undefined ? fields.onboardedAt : this.p.stripeOnboardedAt,
       updatedAt: now,
     });
   }
