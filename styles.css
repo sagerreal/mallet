@@ -1001,3 +1001,8 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 .lc-locknote{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.08em;color:var(--ink-soft);max-width:26ch;line-height:1.8}
 .lc-sentnote{margin-top:1.1rem;font-family:var(--font-mono);font-size:.74rem;color:var(--ink-soft)}
 .lc-sentnote .ok{color:var(--live);font-weight:700}
+
+/* leak-check slider questions (reuse the worksheet slider chrome) */
+.lc-slider{margin:0.4rem 0 1.6rem}
+.lc-slider .roi-input-top output{font-size:2rem}
+.lc-next{align-self:flex-start}
