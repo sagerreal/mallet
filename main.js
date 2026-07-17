@@ -513,6 +513,14 @@
 
       document.getElementById('pDesk').textContent = fmt(jobsRevenue);
       document.getElementById('pDeskN').textContent = Math.round(recoveredJobs);
+      var wm1 = document.getElementById('wm1');
+      if (wm1) {
+        var callsYr = missed * 52;
+        wm1.textContent = callsYr.toLocaleString('en-US');
+        document.getElementById('wm2').textContent = Math.round(callsYr * 0.5).toLocaleString('en-US');
+        document.getElementById('wm3').textContent = Math.round(recoveredJobs).toLocaleString('en-US') + ' jobs';
+        document.getElementById('wm4').textContent = fmt(jobsRevenue);
+      }
       document.getElementById('pEst').textContent = Math.round(quoteHours) + ' hrs';
       document.getElementById('pFore').textContent = fmt(callbackSave);
       document.getElementById('pCash').textContent = fmt(cashOut);
@@ -522,6 +530,15 @@
     }
 
     Object.keys(r).forEach(function (k) { r[k].addEventListener('input', update); });
+    var mBtn = document.getElementById('wkMathBtn'), mBox = document.getElementById('wkMath');
+    if (mBtn && mBox) {
+      mBtn.addEventListener('click', function () {
+        var open = mBox.hidden;
+        mBox.hidden = !open;
+        mBtn.innerHTML = open ? 'Hide the math &uarr;' : 'See the math &darr;';
+        window.malletTrack('worksheet_math_open', {});
+      });
+    }
     tickets.forEach(function (t) {
       t.addEventListener('input', function () {
         tickets.forEach(function (o) { if (o !== t) o.value = t.value; });

@@ -1056,3 +1056,14 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 /* sourced stat line (math section) */
 .src-line{margin-top:.9rem;font-size:.92rem;color:var(--ink-soft)}
 .src-line .src-inline{margin-left:.5rem}
+
+/* ============== THE RECEIPT — visible math under the big numbers ============== */
+.lm-toggle{margin-top:.7rem;background:none;border:0;padding:0;font-family:var(--font-mono);font-size:.7rem;letter-spacing:.08em;color:var(--amber-deep);cursor:pointer}
+.lm-toggle:hover{color:var(--ink)}
+.lm-rows{margin-top:.75rem;display:flex;flex-direction:column;gap:.32rem;max-width:40ch}
+.lm-row{display:flex;align-items:baseline;gap:.5rem;font-family:var(--font-mono);font-size:.72rem;color:var(--ink-soft)}
+.lm-row i{flex:1;border-bottom:2px dotted #CFC8B8;transform:translateY(-3px);min-width:16px}
+.lm-row b{font-weight:700;color:var(--ink);white-space:nowrap}
+.lm-row.sum{border-top:1px dashed var(--line);padding-top:.4rem;margin-top:.25rem}
+.lm-row.sum b{font-size:.86rem}
+.lc-mathrows{margin-top:1rem}
