@@ -45,7 +45,7 @@
         <div class="lc-step on" data-lc="intro">
           <p class="hero-kicker">The Leak Check</p>
           <h1 class="lc-h">What is your shop losing<br />right now?</h1>
-          <p class="lc-sub">Seven questions, two minutes. No email needed to see your number &mdash; deliberately modest math, same as a good estimator would do it.</p>
+          <p class="lc-sub">Seven questions, two minutes &mdash; deliberately modest math, same as a good estimator would do it.</p>
           <button class="btn-primary lg" id="lcStart" type="button">Start the check &rarr;</button>
           <p class="lc-fine">Built by Mallet &middot; the AI-native operating system for service businesses</p>
         </div>
@@ -59,6 +59,24 @@
           <h2 class="lc-q" id="lcQ"></h2>
           <div class="lc-opts" id="lcOpts"></div>
           <button class="lc-back" id="lcBack" type="button" hidden>&larr; back</button>
+        </div>
+
+        <!-- ============ GATE — the score is earned, the email unlocks it ============ -->
+        <div class="lc-step" data-lc="gate">
+          <p class="hero-kicker">Your leak check</p>
+          <h2 class="lc-h sm">Your Leak Score is ready.</h2>
+          <div class="lc-locked" aria-hidden="true">
+            <div class="lc-dial lock"><span class="lc-num">&#63;&#63;</span><span class="lc-outof">/ 100</span></div>
+            <p class="lc-locknote">Score &middot; per-area leak bars &middot; dollars walking past your shop</p>
+          </div>
+          <p class="lc-formhead">Where should we send the full worksheet? Unlocks your score on the next screen.</p>
+          <div class="embed-card lc-embed">
+            <iframe id="lcTally"
+              data-tally-base="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
+              loading="lazy" width="100%" height="320" frameborder="0"
+              title="Unlock your Leak Score"></iframe>
+          </div>
+          <p class="lc-fine">One email with your worksheet + the fix plan. No drip campaign, no spam.</p>
         </div>
 
         <!-- ============ RESULT ============ -->
@@ -91,14 +109,7 @@
             <div class="cta-row split lc-cta">
               <button class="btn-primary lg js-book-demo" type="button" data-calendly="https://calendly.com/trymallet/30min">Book the demo &mdash; bring these numbers</button>
             </div>
-            <div class="lc-or" aria-hidden="true"><span>or</span></div>
-            <p class="lc-formhead">Send me the full worksheet + fix plan:</p>
-            <div class="embed-card lc-embed">
-              <iframe id="lcTally"
-                data-tally-base="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
-                loading="lazy" width="100%" height="320" frameborder="0"
-                title="Get your Leak Check worksheet"></iframe>
-            </div>
+            <p class="lc-sentnote"><span class="ok">&check;</span> Your worksheet + fix plan are on their way to your inbox.</p>
           </div>
           <p class="lc-fine">Assumptions: half of missed calls are reachable and 40% book; unpaid invoices at your average job value. Estimates, not promises &mdash; the pilot measures the real numbers.</p>
         </div>
@@ -146,7 +157,7 @@
     ];
 
     var steps = {}, els = {};
-    ['intro', 'quiz', 'result'].forEach(function (k) {
+    ['intro', 'quiz', 'gate', 'result'].forEach(function (k) {
       steps[k] = document.querySelector('[data-lc="' + k + '"]');
     });
     ['lcStart', 'lcCount', 'lcBar', 'lcQ', 'lcOpts', 'lcBack', 'lcScore', 'lcTier',
@@ -228,8 +239,20 @@
         t.src = t.getAttribute('data-tally-src');
       }
 
-      show('result');
-      track('leak_check_complete', { score: score, leak_yr: Math.round(leakYr), trade: answers.trade, techs: answers.techs });
+      show('gate');
+      track('leak_check_gate_shown', { score: score, trade: answers.trade });
+
+      // the Tally submission is the key: unlock the result when it lands
+      window.addEventListener('message', function unlock(e) {
+        var d = e.data;
+        var submitted = (typeof d === 'string' && d.indexOf('Tally.FormSubmitted') !== -1) ||
+                        (d && d.event === 'Tally.FormSubmitted');
+        if (!submitted) return;
+        window.removeEventListener('message', unlock);
+        try { localStorage.setItem('mallet-lc-done', '1'); } catch (err) {}
+        show('result');
+        track('leak_check_complete', { score: score, leak_yr: Math.round(leakYr), trade: answers.trade, techs: answers.techs });
+      });
     }
 
     els.lcStart.addEventListener('click', function () {

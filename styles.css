@@ -959,3 +959,29 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
   .lc{padding:2.6rem 0 3.4rem}
   .lc-score{gap:1.4rem}
 }
+
+/* ============== EXIT-INTENT POPUP + LEAK GATE ============== */
+.exit-ov{
+  position:fixed;inset:0;z-index:90;background:rgba(27,26,23,.45);
+  display:flex;align-items:center;justify-content:center;padding:1.5rem;
+  animation:mfade .25s ease;
+}
+.exit-card{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  max-width:480px;padding:2.2rem 2.3rem 2.1rem;
+  box-shadow:0 40px 90px -20px rgba(27,26,23,.45);
+  animation:cardin .35s cubic-bezier(.34,1.56,.64,1);
+}
+.exit-card h3{font-size:1.7rem;letter-spacing:-.025em;line-height:1.1}
+.exit-p{margin-top:.7rem;color:var(--ink-soft);line-height:1.6}
+.exit-actions{display:flex;align-items:center;gap:1.2rem;margin-top:1.5rem;flex-wrap:wrap}
+.exit-no{background:none;border:0;font-family:var(--font-body);font-size:.92rem;font-weight:600;color:var(--ink-soft);cursor:pointer}
+.exit-no:hover{color:var(--ink)}
+
+/* the locked score teaser on the gate step */
+.lc-locked{display:flex;align-items:center;gap:1.6rem;margin:1.6rem 0 1.8rem}
+.lc-dial.lock{filter:none;border-style:dashed;box-shadow:none}
+.lc-dial.lock .lc-num{color:var(--ink-soft)}
+.lc-locknote{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.08em;color:var(--ink-soft);max-width:26ch;line-height:1.8}
+.lc-sentnote{margin-top:1.1rem;font-family:var(--font-mono);font-size:.74rem;color:var(--ink-soft)}
+.lc-sentnote .ok{color:var(--live);font-weight:700}
