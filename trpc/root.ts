@@ -5,7 +5,7 @@ import { createEstimateRouter } from "@mallet/quoting";
 import { createJobRouter, createFieldRouter, createVisitRouter } from "@mallet/jobs";
 import { createInvoiceRouter } from "@mallet/invoicing";
 import { createNotificationRouter } from "@mallet/notifications";
-import { createAiRouter } from "@mallet/ai";
+import { createAiRouter, createFieldCopilotRouter } from "@mallet/ai";
 import { createIdentityRouter } from "@mallet/identity";
 import { createTaskRouter } from "@mallet/tasks";
 import { createTimesheetRouter } from "@mallet/timesheets";
@@ -29,6 +29,7 @@ export const appRouter = router({
     invoicing: createInvoiceRouter(),
     notifications: createNotificationRouter(),
     ai: createAiRouter(),
+    fieldCopilot: createFieldCopilotRouter(),
     tasks: createTaskRouter(),
     timesheets: createTimesheetRouter(),
     companies: createCompanyRouter(),

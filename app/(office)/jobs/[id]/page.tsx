@@ -103,7 +103,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       <Card className="space-y-2 text-sm">
         <div className="flex items-center gap-2">
           <Badge tone={JOB_STATUS_TONE[j.status] ?? "neutral"}>{j.status.replace("_", " ")}</Badge>
-          <span className="font-medium">{formatMoney(j.total.cents)}</span>
+          <span className="font-medium">{formatMoney(j.total?.cents ?? 0)}</span>
         </div>
         <p className="text-ink-muted">
           Scheduled {formatDateTime(j.scheduledStart)} → {formatDateTime(j.scheduledEnd)}

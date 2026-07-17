@@ -399,6 +399,8 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       expect(mine?.lines[0]?.cost).toBeNull();
       expect(mine?.addons[0]?.rate?.cents).toBe(12000);
       expect(mine?.addons[0]?.cost).toBeNull();
+      // total survives while seesPrice is on (only the redacted path nulls it)
+      expect(mine?.total).not.toBeNull();
     });
 
     it("tech myDay strips rate too when the org turns techSeesPrice off; owner unchanged", async () => {
@@ -413,17 +415,44 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       expect(mine?.lines[0]?.rate).toBeNull();
       expect(mine?.lines[0]?.cost).toBeNull();
       expect(mine?.addons[0]?.rate).toBeNull();
+      // Aggregate total is also redacted — the money-leak fix.
+      expect(mine?.total).toBeNull();
 
       // setVerifyAnswer's returned jobDTO is redacted the same way for techs.
       const dto = await techCaller.v1.field.setVerifyAnswer({ jobId: pricedJobId, itemId: "i1", state: "pass", via: "manual" });
       expect(dto.lines[0]?.rate).toBeNull();
       expect(dto.lines[0]?.cost).toBeNull();
+      // Total is null in the setVerifyAnswer response too.
+      expect(dto.total).toBeNull();
 
       // Owner/office responses are never redacted — same procedure, full figures.
       const ownerCaller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
       const officeDto = await ownerCaller.v1.field.setVerifyAnswer({ jobId: pricedJobId, itemId: "i1", state: "pass", via: "manual" });
       expect(officeDto.lines[0]?.rate?.cents).toBe(25000);
       expect(officeDto.lines[0]?.cost?.cents).toBe(9000);
+      // Office always receives the real total.
+      expect(officeDto.total?.cents).toBe(25000);
+    });
+
+    it("tech myDay total is null when techSeesPrice off; office setVerifyAnswer total is real cents", async () => {
+      // Ensure techSeesPrice is off (may have been set by the prior test; be explicit).
+      await admin`
+        insert into org_settings (org_id, tech_sees_price, booking)
+        values (${orgId}, false, '{"services": [], "notServices": "", "serviceFee": 0, "feeCredited": false}'::jsonb)
+        on conflict (org_id) do update set tech_sees_price = false
+      `;
+      const techCaller = appRouter.createCaller(ctxFor(redactTechId, orgId, "tech"));
+      const techDay = await techCaller.v1.field.myDay();
+      const techMine = techDay.items.find((i) => i.id === pricedJobId);
+      expect(techMine?.total).toBeNull();
+
+      // Reset to default (tech sees price) so other tests are not affected.
+      await admin`update org_settings set tech_sees_price = true where org_id = ${orgId}`;
+      // Owner/office always receive real total via setVerifyAnswer (myDay is scoped
+      // to the caller's own assignments so the owner wouldn't see the tech's job there).
+      const ownerCaller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const ownerDto = await ownerCaller.v1.field.setVerifyAnswer({ jobId: pricedJobId, itemId: "i1", state: "pass", via: "manual" });
+      expect(ownerDto.total?.cents).toBe(25000);
     });
   });
 });

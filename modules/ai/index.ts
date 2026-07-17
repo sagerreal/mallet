@@ -1,5 +1,6 @@
 // Public surface for the AI agent module — the only sanctioned import seam (architecture rule).
 export { createAiRouter } from "./api/ai-router";
+export { createFieldCopilotRouter } from "./api/field-copilot-router";
 export { buildMcpServer } from "./api/mcp-server";
 export { authenticateMcpRequest } from "./api/mcp-auth";
 export { AnthropicLlmClient } from "./infra/anthropic-llm-client";
