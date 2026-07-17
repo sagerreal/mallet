@@ -54,7 +54,7 @@ function seedSettings(over: Partial<OrgSettingsProps> = {}): OrgSettings {
 // In-memory settings repo: getConfig returns the current aggregate, saveConfig replaces it.
 function fakeRepo(initial: OrgSettings) {
   let current = initial;
-  return {
+  const repo = {
     getConfig: vi.fn(async () => current),
     saveConfig: vi.fn(async (s: OrgSettings) => {
       current = s;
@@ -63,6 +63,11 @@ function fakeRepo(initial: OrgSettings) {
       return current;
     },
   };
+  // A tenant runner that "commits" by simply invoking fn against the one in-memory repo. Each call
+  // is an independent commit, so a later thrown/failed step cannot undo an earlier run()'s save —
+  // mirroring the real two-committed-transactions behaviour.
+  const run = <T>(fn: (r: never) => Promise<T>) => fn(repo as never);
+  return { repo, run, get current() { return current; } };
 }
 
 const gwOk = (over: Partial<ConnectGateway> = {}): ConnectGateway => ({
@@ -74,9 +79,9 @@ const gwOk = (over: Partial<ConnectGateway> = {}): ConnectGateway => ({
 
 describe("BeginConnectOnboardingUseCase", () => {
   it("creates an account when the org has none, persists the id, returns the link url", async () => {
-    const repo = fakeRepo(seedSettings());
+    const f = fakeRepo(seedSettings());
     const gw = gwOk();
-    const r = await new BeginConnectOnboardingUseCase(gw, repo as never, clock).exec({
+    const r = await new BeginConnectOnboardingUseCase(gw, f.run, clock).exec({
       orgId: ORG,
       returnUrl: "https://app/return",
       refreshUrl: "https://app/refresh",
@@ -84,13 +89,13 @@ describe("BeginConnectOnboardingUseCase", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.url).toBe("https://connect.stripe.com/x");
     expect(gw.createConnectedAccount).toHaveBeenCalledTimes(1);
-    expect(repo.current.props.stripeConnectedAccountId).toBe("acct_new");
+    expect(f.current.props.stripeConnectedAccountId).toBe("acct_new");
   });
 
   it("reuses the existing account id (no second create)", async () => {
-    const repo = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_existing" }));
+    const f = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_existing" }));
     const gw = gwOk();
-    const r = await new BeginConnectOnboardingUseCase(gw, repo as never, clock).exec({
+    const r = await new BeginConnectOnboardingUseCase(gw, f.run, clock).exec({
       orgId: ORG,
       returnUrl: "r",
       refreshUrl: "f",
@@ -103,11 +108,11 @@ describe("BeginConnectOnboardingUseCase", () => {
   });
 
   it("propagates a gateway create failure and does NOT mint a link", async () => {
-    const repo = fakeRepo(seedSettings());
+    const f = fakeRepo(seedSettings());
     const gw = gwOk({
       createConnectedAccount: vi.fn(async () => err(externalService("stripe", "down", true))),
     });
-    const r = await new BeginConnectOnboardingUseCase(gw, repo as never, clock).exec({
+    const r = await new BeginConnectOnboardingUseCase(gw, f.run, clock).exec({
       orgId: ORG,
       returnUrl: "r",
       refreshUrl: "f",
@@ -115,40 +120,94 @@ describe("BeginConnectOnboardingUseCase", () => {
     expect(r.ok).toBe(false);
     expect(gw.createOnboardingLink).not.toHaveBeenCalled();
   });
+
+  // Review HIGH-1 regression: a link failure AFTER the account id was saved must NOT lose the id.
+  // Because the id is persisted in its own committed run() before the link mint, the next attempt
+  // takes the reuse branch instead of minting a duplicate account.
+  it("keeps the persisted account id when the link mint fails (no orphan / no re-mint)", async () => {
+    const f = fakeRepo(seedSettings());
+    const gw = gwOk({
+      createOnboardingLink: vi.fn(async () => err(externalService("stripe", "link down", true))),
+    });
+    const uc = new BeginConnectOnboardingUseCase(gw, f.run, clock);
+    const first = await uc.exec({ orgId: ORG, returnUrl: "r", refreshUrl: "f" });
+    expect(first.ok).toBe(false); // link failed
+    expect(f.current.props.stripeConnectedAccountId).toBe("acct_new"); // ...but id survived
+
+    // Second attempt (link now works) reuses the stored account — does NOT create a second one.
+    const gw2 = gwOk();
+    const second = await new BeginConnectOnboardingUseCase(gw2, f.run, clock).exec({
+      orgId: ORG,
+      returnUrl: "r",
+      refreshUrl: "f",
+    });
+    expect(second.ok).toBe(true);
+    expect(gw2.createConnectedAccount).not.toHaveBeenCalled();
+    expect(gw2.createOnboardingLink).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: "acct_new" }),
+    );
+  });
+
+  // Review HIGH-2 regression: if a concurrent request already stored an id by the time the save tx
+  // runs, do not overwrite it — the re-check inside the persisting run() adopts the existing id.
+  it("adopts a concurrently-stored account id rather than overwriting it", async () => {
+    const f = fakeRepo(seedSettings());
+    // Simulate a concurrent write landing between the initial read and the persist: the gateway
+    // create resolves, but another request has already stored acct_other.
+    const gw = gwOk({
+      createConnectedAccount: vi.fn(async () => {
+        // another request commits first
+        const s = f.current.patchStripe({ connectedAccountId: "acct_other" }, new Date());
+        if (s.ok) await f.run(async (r: never) => (r as { saveConfig: (x: OrgSettings) => Promise<void> }).saveConfig(s.value));
+        return ok({ accountId: "acct_mine" });
+      }),
+    });
+    const r = await new BeginConnectOnboardingUseCase(gw, f.run, clock).exec({
+      orgId: ORG,
+      returnUrl: "r",
+      refreshUrl: "f",
+    });
+    expect(r.ok).toBe(true);
+    expect(f.current.props.stripeConnectedAccountId).toBe("acct_other"); // not overwritten
+  });
 });
 
 describe("RefreshConnectStatusUseCase", () => {
   it("returns not-connected when no account id is stored (no Stripe call)", async () => {
-    const repo = fakeRepo(seedSettings());
+    const f = fakeRepo(seedSettings());
     const gw = gwOk();
-    const r = await new RefreshConnectStatusUseCase(gw, repo as never, clock).exec({ orgId: ORG });
+    const r = await new RefreshConnectStatusUseCase(gw, f.run, clock).exec({ orgId: ORG });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.connected).toBe(false);
+    if (r.ok) {
+      expect(r.value.hasAccount).toBe(false);
+      expect(r.value.detailsSubmitted).toBe(false);
+    }
     expect(gw.retrieveStatus).not.toHaveBeenCalled();
   });
 
   it("persists retrieved status and stamps onboardedAt once charges go live", async () => {
-    const repo = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_1" }));
+    const f = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_1" }));
     const gw = gwOk();
-    const r = await new RefreshConnectStatusUseCase(gw, repo as never, clock).exec({ orgId: ORG });
+    const r = await new RefreshConnectStatusUseCase(gw, f.run, clock).exec({ orgId: ORG });
     expect(r.ok).toBe(true);
-    expect(repo.current.props.stripeChargesEnabled).toBe(true);
-    expect(repo.current.props.stripeOnboardedAt).toEqual(new Date("2026-03-01T00:00:00Z"));
+    if (r.ok) expect(r.value.hasAccount).toBe(true);
+    expect(f.current.props.stripeChargesEnabled).toBe(true);
+    expect(f.current.props.stripeOnboardedAt).toEqual(new Date("2026-03-01T00:00:00Z"));
   });
 
   it("does NOT re-stamp onboardedAt if already set", async () => {
     const earlier = new Date("2026-02-15T00:00:00Z");
-    const repo = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_1", stripeOnboardedAt: earlier }));
+    const f = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_1", stripeOnboardedAt: earlier }));
     const gw = gwOk();
-    const r = await new RefreshConnectStatusUseCase(gw, repo as never, clock).exec({ orgId: ORG });
+    const r = await new RefreshConnectStatusUseCase(gw, f.run, clock).exec({ orgId: ORG });
     expect(r.ok).toBe(true);
-    expect(repo.current.props.stripeOnboardedAt).toEqual(earlier);
+    expect(f.current.props.stripeOnboardedAt).toEqual(earlier);
   });
 
   it("propagates a retrieve failure", async () => {
-    const repo = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_1" }));
+    const f = fakeRepo(seedSettings({ stripeConnectedAccountId: "acct_1" }));
     const gw = gwOk({ retrieveStatus: vi.fn(async () => err(externalService("stripe", "down", true))) });
-    const r = await new RefreshConnectStatusUseCase(gw, repo as never, clock).exec({ orgId: ORG });
+    const r = await new RefreshConnectStatusUseCase(gw, f.run, clock).exec({ orgId: ORG });
     expect(r.ok).toBe(false);
   });
 });

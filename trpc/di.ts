@@ -38,7 +38,7 @@ export const getAppDeps = (): AppDeps => {
   let connectGateway: ConnectGateway | null = null;
   if (stripe && config.PUBLIC_APP_URL) {
     paymentLinkGateway = new StripePaymentLinkGateway(stripe, config.PUBLIC_APP_URL);
-    connectGateway = new StripeConnectGateway(stripe, uuidGenerator);
+    connectGateway = new StripeConnectGateway(stripe);
   }
 
   // Per-channel comms senders; each self-disables (→ logging fallback) unless fully configured.

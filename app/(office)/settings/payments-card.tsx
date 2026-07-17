@@ -39,15 +39,18 @@ export function PaymentsCard() {
       params.delete("connect");
       window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs once on mount to consume the Stripe onboarding-return redirect; refresh is stable.
   }, []);
 
   const s = status.data;
-  const connected = !!s?.connected;
-  const started = !!s && (s.detailsSubmitted || s.chargesEnabled || s.payoutsEnabled);
+  // detailsSubmitted = the shop finished Stripe's hosted form (onboarding complete). charges/payouts
+  // may still be "pending" while Stripe verifies. hasAccount without detailsSubmitted = they began
+  // but abandoned → offer to resume.
+  const complete = !!s?.detailsSubmitted;
+  const started = !!s && s.hasAccount && !s.detailsSubmitted;
 
   return (
-    <FoldCard title="Payments" summary={connected ? "Connected" : "Not connected"} defaultOpen>
+    <FoldCard title="Payments" summary={complete ? "Connected" : "Not connected"} defaultOpen>
       <p style={{ fontSize: 13.5, color: "var(--ink-2)", margin: "0 0 14px" }}>
         Connect your bank through Stripe so customers can pay you by card. Stripe verifies your
         details and deposits payouts to your account.
@@ -55,7 +58,7 @@ export function PaymentsCard() {
 
       {status.isLoading ? (
         <p style={{ fontSize: 13, color: "var(--ink-3)" }}>Loading…</p>
-      ) : connected ? (
+      ) : complete ? (
         <div style={{ fontSize: 13.5 }}>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>Connected ✓</div>
           <div style={{ color: "var(--ink-2)" }}>

@@ -2,7 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { CensusGeocoder } from "@mallet/frontdesk";
 import { loadConfig } from "@mallet/shared/config";
-import { router, ownerOrOffice } from "@/trpc/init";
+import { withTenant } from "@mallet/shared/db/tx";
+import { router, ownerOrOffice, ownerOrOfficeNoTx } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository";
 import { OrgSettings } from "../domain/org-settings";
@@ -282,6 +283,11 @@ export const createSettingsRouter = () =>
     // --- Payments (Stripe Connect Express onboarding — PR1) --------------
     // Org is ALWAYS ctx.principal.orgId; the connected account id is read from the org's own
     // settings row under RLS. No money moves here — this only links the shop's bank.
+    //
+    // beginOnboarding/refresh use ownerOrOfficeNoTx + a per-op tenant runner so each DB write commits
+    // in its OWN short transaction and the external Stripe calls happen OUTSIDE any open tx — the
+    // account id is durably persisted before the fallible onboarding-link step (a link failure can't
+    // roll back the saved id and orphan the real Stripe account).
     payments: router({
       // Read persisted onboarding status. No Stripe call — cheap, safe to poll on page load.
       status: ownerOrOffice.output(connectStatusDTO).query(async ({ ctx }) => {
@@ -289,26 +295,28 @@ export const createSettingsRouter = () =>
         const settings = await repo.getConfig(ctx.principal.orgId, OrgSettings.defaultBooking);
         const p = settings.props;
         return {
-          connected: p.stripeChargesEnabled,
+          hasAccount: p.stripeConnectedAccountId !== null,
+          detailsSubmitted: p.stripeDetailsSubmitted,
           chargesEnabled: p.stripeChargesEnabled,
           payoutsEnabled: p.stripePayoutsEnabled,
-          detailsSubmitted: p.stripeDetailsSubmitted,
         };
       }),
 
       // Start/resume Express onboarding; returns the Stripe-hosted url to redirect to.
-      beginOnboarding: ownerOrOffice.output(beginOnboardingResultDTO).mutation(async ({ ctx }) => {
+      beginOnboarding: ownerOrOfficeNoTx.output(beginOnboardingResultDTO).mutation(async ({ ctx }) => {
         const base = loadConfig().PUBLIC_APP_URL;
         if (!ctx.deps.connectGateway || !base) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "payments are not configured yet" });
         }
-        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const orgId = ctx.principal.orgId;
+        const run = <T>(fn: (repo: DrizzleSettingsRepository) => Promise<T>): Promise<T> =>
+          withTenant(orgId, (tx) => fn(new DrizzleSettingsRepository(tx, orgId)));
         const result = await new BeginConnectOnboardingUseCase(
           ctx.deps.connectGateway,
-          repo,
+          run,
           ctx.deps.clock,
         ).exec({
-          orgId: ctx.principal.orgId,
+          orgId,
           returnUrl: `${base}/settings?tab=payments&connect=return`,
           refreshUrl: `${base}/settings?tab=payments&connect=refresh`,
         });
@@ -316,16 +324,18 @@ export const createSettingsRouter = () =>
       }),
 
       // Pull latest status from Stripe + persist (called on the onboarding-return redirect).
-      refresh: ownerOrOffice.output(connectStatusDTO).mutation(async ({ ctx }) => {
+      refresh: ownerOrOfficeNoTx.output(connectStatusDTO).mutation(async ({ ctx }) => {
         if (!ctx.deps.connectGateway) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "payments are not configured yet" });
         }
-        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const orgId = ctx.principal.orgId;
+        const run = <T>(fn: (repo: DrizzleSettingsRepository) => Promise<T>): Promise<T> =>
+          withTenant(orgId, (tx) => fn(new DrizzleSettingsRepository(tx, orgId)));
         const result = await new RefreshConnectStatusUseCase(
           ctx.deps.connectGateway,
-          repo,
+          run,
           ctx.deps.clock,
-        ).exec({ orgId: ctx.principal.orgId });
+        ).exec({ orgId });
         return orThrow(result);
       }),
     }),

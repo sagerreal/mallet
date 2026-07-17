@@ -1,6 +1,5 @@
 import { ok, err, externalService, type Result, type ExternalServiceError } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
-import type { IdGenerator } from "@mallet/shared/ports";
 import type { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import type { ConnectGateway, ConnectAccountStatus } from "../domain/connect-gateway";
 
@@ -8,18 +7,19 @@ import type { ConnectGateway, ConnectAccountStatus } from "../domain/connect-gat
 // Raw provider detail is logged server-side; the port returns a generic ExternalServiceError so
 // Stripe internals (masked-key auth errors, request ids, breaker state) never reach office/owner UI.
 export class StripeConnectGateway implements ConnectGateway {
-  constructor(
-    private readonly client: StripeClient,
-    private readonly ids: IdGenerator,
-  ) {}
+  constructor(private readonly client: StripeClient) {}
 
   async createConnectedAccount(cmd: {
     orgId: string;
   }): Promise<Result<{ accountId: string }, ExternalServiceError>> {
     try {
-      // The caller only creates an account when the org has none stored, so a duplicate create can
-      // only come from a transient retry within this call — the idempotency key makes that safe.
-      const out = await this.client.createExpressAccount({ country: "US", idempotencyKey: this.ids.newId() });
+      // STABLE idempotency key per org (mirrors invoicing's `pl:${orgId}:...` convention): two
+      // concurrent creates for the same org — or an immediate retry after a rolled-back save —
+      // collapse to the SAME Express account rather than minting duplicates. One account per org.
+      const out = await this.client.createExpressAccount({
+        country: "US",
+        idempotencyKey: `connect-acct:${cmd.orgId}`,
+      });
       return ok({ accountId: out.accountId });
     } catch (error) {
       logger.error(

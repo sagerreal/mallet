@@ -309,10 +309,10 @@ suite("settings tRPC router (full stack, live RLS)", () => {
       const caller = appRouter.createCaller(ctxFor(orgBId, "owner"));
       const s = await caller.v1.settings.payments.status();
       expect(s).toEqual({
-        connected: false,
+        hasAccount: false,
+        detailsSubmitted: false,
         chargesEnabled: false,
         payoutsEnabled: false,
-        detailsSubmitted: false,
       });
     });
 

@@ -5,12 +5,14 @@ import type { OrgSettings } from "../domain/org-settings";
 
 // --- Stripe Connect (Express) — PR1 -----------------------------------------
 
-// Persisted onboarding status projected to the wire. `connected` = charges are live.
+// Persisted onboarding status projected to the wire. `hasAccount` = onboarding has begun (an acct_
+// id is stored); `detailsSubmitted` = the shop finished Stripe's hosted form; charges/payouts are
+// the live capability flags (can lag behind detailsSubmitted during Stripe verification).
 export const connectStatusDTO = z.object({
-  connected: z.boolean(),
+  hasAccount: z.boolean(),
+  detailsSubmitted: z.boolean(),
   chargesEnabled: z.boolean(),
   payoutsEnabled: z.boolean(),
-  detailsSubmitted: z.boolean(),
 });
 
 export const beginOnboardingResultDTO = z.object({ url: z.string().url() });
