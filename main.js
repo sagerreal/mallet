@@ -594,7 +594,7 @@
         '<div class="exit-card" role="dialog" aria-modal="true" aria-labelledby="exitH">' +
         '<p class="hero-kicker">Before you go</p>' +
         '<h3 id="exitH">Leaving without your number?</h3>' +
-        '<p class="exit-p">Seven questions, two minutes &mdash; see what missed calls, slow quotes, and unpaid invoices cost your shop every year.</p>' +
+        '<p class="exit-p">Eight questions, two minutes &mdash; see what missed calls, slow quotes, and unpaid invoices cost your shop every year.</p>' +
         '<div class="exit-actions">' +
         '<a class="btn-amber lg" href="/leak-check">Get my Leak Score &rarr;</a>' +
         '<button class="exit-no" type="button">No thanks</button>' +
