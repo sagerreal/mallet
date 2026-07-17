@@ -9,10 +9,10 @@ import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
-import { SetVerifyAnswerUseCase } from "../app/job-execution-use-cases";
+import { SetVerifyAnswerUseCase, AddJobPhotoUseCase } from "../app/job-execution-use-cases";
 import type { Job } from "../domain/job";
 import type { JobId } from "@mallet/shared/types";
-import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput } from "./job-dto";
+import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech } from "./money-redaction";
 
 // The tech-facing surface. Assignment is the authorization boundary for techs: a tech may act only
@@ -89,6 +89,74 @@ export const createFieldRouter = () =>
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
       return redactMoneyForTech(dto, seesPrice);
     }),
+
+    // Mint a signed upload URL for a job photo from the field surface. Any role may call this
+    // (techs are assignment-gated via assertOnJobIfTech). A non-terminal gate prevents minting
+    // upload URLs against already-closed jobs. The gateway must be configured or the endpoint
+    // returns PRECONDITION_FAILED (self-disable pattern — same as the office surface).
+    photoUploadUrl: anyRole
+      .input(photoUploadUrlInput)
+      .output(photoUploadUrlDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "photo storage is not configured" });
+        }
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        if (techJob?.isTerminal()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This job is closed — ask the office to change it." });
+        }
+        // Confirm the job exists for non-tech callers (assertOnJobIfTech already loads it for techs).
+        if (!techJob) {
+          const job = await repo.findById(jobId);
+          if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+          if (job.isTerminal()) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "This job is closed — ask the office to change it." });
+          }
+        }
+        const result = await ctx.deps.photoStorageGateway.createUploadUrl({
+          orgId: ctx.principal.orgId,
+          jobId,
+          objectId: input.objectId,
+          ext: input.ext,
+        });
+        if (!result.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "could not create upload url" });
+        return result.value;
+      }),
+
+    // Attach a photo row to a job from the field surface. Delegates to the SAME AddJobPhotoUseCase
+    // as the office surface — the use-case's prefix guard catches any forged storagePath. Response
+    // is redacted for techs (same B1 pattern as setVerifyAnswer).
+    addPhoto: anyRole
+      .input(addPhotoInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        if (techJob?.isTerminal()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This job is closed — ask the office to change it." });
+        }
+        if (!techJob) {
+          const job = await repo.findById(jobId);
+          if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+          if (job.isTerminal()) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "This job is closed — ask the office to change it." });
+          }
+        }
+        const useCase = new AddJobPhotoUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(
+          await useCase.exec(
+            { jobId, id: input.id, storagePath: input.storagePath, caption: input.caption ?? null, verifyPass: input.verifyPass ?? false },
+            ctx.principal.orgId,
+          ),
+        );
+        const dto = toJobDTO(r.job, r.execution);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice);
+      }),
 
     // Crew checklist capture: write one verify answer (pass/override/clear) from the job site.
     // Same input contract and full-jobDTO return as the office v1.jobs.setVerifyAnswer; the tech

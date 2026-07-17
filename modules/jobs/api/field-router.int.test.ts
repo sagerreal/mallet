@@ -455,4 +455,99 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       expect(ownerDto.total?.cents).toBe(25000);
     });
   });
+
+  // ── field photo endpoints (PR2 C2) ────────────────────────────────────────────
+  describe("field photo endpoints", () => {
+    let photoTechId = "";
+    let photoJobId = "";
+    let doneJobId = "";
+
+    // A fake gateway so the mint path is testable without Supabase Storage env.
+    const fakeGateway = {
+      createUploadUrl: async (cmd: { orgId: string; jobId: string; objectId: string; ext: string }) => ({
+        ok: true as const,
+        value: {
+          signedUrl: "https://fake/upload",
+          token: "tok",
+          storagePath: `${cmd.orgId}/${cmd.jobId}/${cmd.objectId}.${cmd.ext}`,
+        },
+      }),
+      download: async () => ({ ok: false as const, error: { kind: "external_service", message: "unused", retryable: false } }),
+    };
+    const ctxWithGateway = (userId: string, role: Role): Context => {
+      const base = ctxFor(userId, orgId, role);
+      return { ...base, deps: { ...base.deps, photoStorageGateway: fakeGateway as never } };
+    };
+
+    beforeAll(async () => {
+      const [pt] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgId}, gen_random_uuid(), 'phototech@f.ex', 'tech') returning id`;
+      photoTechId = pt!.id;
+      const [pj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-PHOTO-01', 'in_progress', ${photoTechId}) returning id`;
+      photoJobId = pj!.id;
+      const [dj] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, completed_at, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-PHOTO-DONE', 'complete', now(), ${photoTechId}) returning id`;
+      doneJobId = dj!.id;
+    });
+
+    it("photoUploadUrl: PRECONDITION_FAILED when the gateway is unbound", async () => {
+      const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech"));
+      await expect(
+        caller.v1.field.photoUploadUrl({ jobId: photoJobId, objectId: crypto.randomUUID(), ext: "jpg" }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    });
+
+    it("photoUploadUrl: tech mints for THEIR job; FORBIDDEN for someone else's; BAD_REQUEST terminal", async () => {
+      const caller = appRouter.createCaller(ctxWithGateway(photoTechId, "tech"));
+      const objectId = crypto.randomUUID();
+      const minted = await caller.v1.field.photoUploadUrl({ jobId: photoJobId, objectId, ext: "jpg" });
+      expect(minted.storagePath).toBe(`${orgId}/${photoJobId}/${objectId}.jpg`);
+
+      // techA (not on photoJob's sibling doneJob? — use jobB owned by techB) is off this job
+      const stranger = appRouter.createCaller(ctxWithGateway(techAId, "tech"));
+      await expect(
+        stranger.v1.field.photoUploadUrl({ jobId: photoJobId, objectId: crypto.randomUUID(), ext: "jpg" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      // terminal job → BAD_REQUEST for the assigned tech
+      await expect(
+        caller.v1.field.photoUploadUrl({ jobId: doneJobId, objectId: crypto.randomUUID(), ext: "jpg" }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("addPhoto: persists the row for the assigned tech and returns a cost-redacted DTO", async () => {
+      const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech"));
+      const photoId = crypto.randomUUID();
+      const dto = await caller.v1.field.addPhoto({
+        jobId: photoJobId,
+        id: photoId,
+        storagePath: `${orgId}/${photoJobId}/${photoId}.jpg`,
+        caption: "before shot",
+      });
+      expect(dto.photos.some((p) => p.id === photoId)).toBe(true);
+      // Redaction shape holds on the field response (cost is ALWAYS null for techs).
+      for (const line of dto.lines) expect(line.cost).toBeNull();
+
+      const [row] = await admin<{ id: string }[]>`select id from job_photos where id = ${photoId}`;
+      expect(row?.id).toBe(photoId);
+    });
+
+    it("addPhoto: rejects a storagePath outside the job's org/job prefix (use-case guard)", async () => {
+      const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech"));
+      await expect(
+        caller.v1.field.addPhoto({
+          jobId: photoJobId,
+          id: crypto.randomUUID(),
+          storagePath: `${orgId}/99999999-9999-9999-9999-999999999999/evil.jpg`,
+        }),
+      ).rejects.toMatchObject({});
+      const [n] = await admin<{ c: string }[]>`
+        select count(*)::text as c from job_photos where storage_path like '%evil.jpg'`;
+      expect(n!.c).toBe("0");
+    });
+  });
 });

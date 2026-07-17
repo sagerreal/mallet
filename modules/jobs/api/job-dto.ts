@@ -76,6 +76,22 @@ export const jobVerifyAnswerDTO = z.object({
   reason: z.string().nullable(),
 });
 
+// Photo upload inputs shared between the office job-router and the tech field-router so
+// the contract stays consistent across both surfaces.
+export const photoUploadUrlInput = z.object({
+  jobId: z.string().uuid(),
+  objectId: z.string().uuid(),
+  ext: z.enum(["jpg", "jpeg", "png", "webp"]),
+});
+export const addPhotoInput = z.object({
+  jobId: z.string().uuid(),
+  id: z.string().uuid().optional(),
+  storagePath: z.string().min(1).max(1024),
+  caption: z.string().max(2000).nullable().optional(),
+  verifyPass: z.boolean().optional(),
+});
+export const photoUploadUrlDTO = z.object({ signedUrl: z.string(), token: z.string(), storagePath: z.string() });
+
 // Input for writing one verify answer. Shared by BOTH surfaces — the office
 // job-router and the tech field-router — so the contract can't drift between them.
 export const setVerifyAnswerInput = z.object({
