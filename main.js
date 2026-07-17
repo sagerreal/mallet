@@ -13,10 +13,40 @@
     frontDesk();
     platformTour();
     easyScenes();
+    tradeFlip();
     roiCalc();
     consent();
     wireConversionEvents();
   });
+
+  /* Hero trade rotator: cycles the verticals; the slot's width animates to
+     each word so the sentence slides instead of reflowing. Reduced motion:
+     stays on the first trade. */
+  function tradeFlip() {
+    var host = document.getElementById('tradeFlip');
+    if (!host || reduce) return;
+    var TRADES = ['plumbing', 'electrical', 'garage door', 'roofing', 'HVAC', 'tree', 'septic', 'appliance repair', 'fencing', 'painting'];
+    var word = host.querySelector('.tf-word');
+
+    // hidden measurer with the same type styles → target width per word
+    var meas = document.createElement('b');
+    meas.className = 'tf-word';
+    meas.style.cssText = 'position:absolute;visibility:hidden;opacity:1;transform:none;white-space:nowrap';
+    host.appendChild(meas);
+    function widthOf(t) { meas.textContent = t; return meas.offsetWidth; }
+
+    host.style.width = widthOf(TRADES[0]) + 'px';
+    var i = 0;
+    setInterval(function () {
+      i = (i + 1) % TRADES.length;
+      word.classList.remove('on');
+      host.style.width = widthOf(TRADES[i]) + 'px'; // width glides while the word fades
+      setTimeout(function () {
+        word.textContent = TRADES[i];
+        word.classList.add('on');
+      }, 230);
+    }, 2100);
+  }
 
   /* Lenis inertia scrolling (vendored lenis.min.js) — the "expensive site" feel.
      Skipped under reduced motion; native anchors still work via lenis anchors:true. */
