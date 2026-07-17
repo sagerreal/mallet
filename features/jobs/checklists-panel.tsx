@@ -14,8 +14,11 @@ export function ChecklistsPanel() {
   const [addOpen, setAddOpen] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
 
-  function handleAdd(name: string) {
-    const { checklist } = addChecklist(name, "job", []);
+  // AI-draft (1A.4) passes proposed items; a plain add passes none. Either way the
+  // new row is created and expanded so the owner edits/saves through the normal path
+  // (drafted items are suggestions, never auto-published).
+  function handleAdd(name: string, items: Array<{ text: string; type: "check" | "photo" }> = []) {
+    const { checklist } = addChecklist(name, "job", items);
     setExpandedId(checklist.id);
     setAddOpen(false);
   }
