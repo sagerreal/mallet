@@ -11,7 +11,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockSignUp = vi.fn().mockResolvedValue({ error: null });
+// A brand-new signup: Supabase returns a user whose `identities` is populated.
+const mockSignUp = vi.fn().mockResolvedValue({ data: { user: { identities: [{ id: "i1" }] } }, error: null });
 const mockUpdateUser = vi.fn().mockResolvedValue({ error: null });
 const mockRefreshSession = vi.fn().mockResolvedValue({ error: null });
 
@@ -30,9 +31,9 @@ import { signUp, completeInvite } from "./hooks";
 describe("signUp", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("threads the org name AND the person's name into user_metadata", async () => {
-    const failure = await signUp("owner@example.com", "hunter2xx", "Rivera Plumbing", "Owen Duggan");
-    expect(failure).toBeNull();
+  it("threads the org name AND the person's name into user_metadata, returning 'sent'", async () => {
+    const outcome = await signUp("owner@example.com", "hunter2xx", "Rivera Plumbing", "Owen Duggan");
+    expect(outcome).toEqual({ kind: "sent" });
     const arg = mockSignUp.mock.calls[0]![0] as {
       email: string;
       password: string;
@@ -50,9 +51,18 @@ describe("signUp", () => {
   });
 
   it("returns the provider error message on failure", async () => {
-    mockSignUp.mockResolvedValueOnce({ error: { message: "Email already registered" } });
-    const failure = await signUp("dupe@example.com", "hunter2xx", "Org", "Name");
-    expect(failure).toBe("Email already registered");
+    mockSignUp.mockResolvedValueOnce({ data: { user: null }, error: { message: "Password is too weak" } });
+    const outcome = await signUp("dupe@example.com", "hunter2xx", "Org", "Name");
+    expect(outcome).toEqual({ kind: "error", message: "Password is too weak" });
+  });
+
+  it("reports 'exists' when Supabase returns an obfuscated user with empty identities (no email sent)", async () => {
+    // Anti-enumeration: signing up an already-registered address returns HTTP 200 with a
+    // fake user whose identities array is empty, and NO confirmation email is sent. The
+    // hook must surface this so the UI does not falsely claim a link was sent.
+    mockSignUp.mockResolvedValueOnce({ data: { user: { identities: [] } }, error: null });
+    const outcome = await signUp("already@example.com", "hunter2xx", "Org", "Name");
+    expect(outcome).toEqual({ kind: "exists" });
   });
 });
 
