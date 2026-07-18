@@ -298,6 +298,23 @@
   .tdue{flex:0 0 auto;font-size:12.5px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums}
   .tdue.od{color:var(--red);font-weight:700}
   .tdue.now{color:var(--amber);font-weight:700}
+  /* Tasks inline editor (features/tasks/editable-task-row.tsx) — the resting pencil affordance
+     (always visible, brightens on hover) + the calm inset edit panel with labeled fields. */
+  .trow-edit{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink-3);display:grid;place-items:center;cursor:pointer;opacity:.55;padding:0;transition:opacity .12s,color .12s,border-color .12s}
+  .trow:hover .trow-edit,.trow:focus-within .trow-edit{opacity:1}
+  .trow-edit:hover{color:var(--ink);border-color:var(--ink-3)}
+  .task-editor{margin:2px 0 8px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+  .task-editor .te-head{display:flex;align-items:center;gap:11px;margin-bottom:12px}
+  .task-editor .te-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .task-editor .te-foot{display:flex;align-items:center;gap:8px;margin-top:14px}
+  .task-editor .te-foot .te-sp{flex:1}
+  .te-fld{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .te-fld > span{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+  .te-input{width:100%;height:36px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);padding:0 10px;font-size:13.5px;font-family:inherit}
+  .te-head .te-input{flex:1;min-width:0}
+  .te-del{border:none;background:none;color:var(--red);font-weight:700;font-size:12.5px;cursor:pointer;padding:6px 2px}
+  .te-del:hover{text-decoration:underline}
+  @media (max-width:560px){.task-editor .te-grid{grid-template-columns:1fr}}
   .chip:focus{outline:none}
   .chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .taskmeta-in{border:1.5px solid var(--line);border-radius:10px;padding:8px 11px;font-family:inherit;font-size:13px;background:var(--card);color:var(--ink)}

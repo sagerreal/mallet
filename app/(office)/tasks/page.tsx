@@ -25,13 +25,16 @@ interface TaskSectionProps {
   label: string;
   tasks: Task[];
   leads: Lead[];
+  editingId: string | null;
+  onStartEdit: (id: string) => void;
+  onStopEdit: () => void;
   onToggle: (id: string) => void;
   onUpdate: (id: string, patch: TaskPatch) => void;
   onRemove: (id: string) => void;
   onOpenLead: (leadId: string) => void;
 }
 
-function TaskSection({ label, tasks, leads, onToggle, onUpdate, onRemove, onOpenLead }: TaskSectionProps) {
+function TaskSection({ label, tasks, leads, editingId, onStartEdit, onStopEdit, onToggle, onUpdate, onRemove, onOpenLead }: TaskSectionProps) {
   if (tasks.length === 0) return null;
   return (
     <>
@@ -41,6 +44,9 @@ function TaskSection({ label, tasks, leads, onToggle, onUpdate, onRemove, onOpen
           key={t.id}
           task={t}
           leads={leads}
+          editing={editingId === t.id}
+          onStartEdit={() => onStartEdit(t.id)}
+          onStopEdit={onStopEdit}
           onToggle={onToggle}
           onUpdate={onUpdate}
           onRemove={onRemove}
@@ -73,6 +79,9 @@ export default function TasksPage() {
   const [newText, setNewText] = useState("");
   const [newDue, setNewDue] = useState(tomorrowISO());
   const [doneOpen, setDoneOpen] = useState(false);
+  // Which task is open in the inline editor — page-level so only ONE row edits at a time.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const stopEdit = () => setEditingId(null);
 
   function handleAdd() {
     const text = newText.trim();
@@ -136,10 +145,10 @@ export default function TasksPage() {
       {open.length > 0 ? (
         <div className="card" style={{ padding: "6px 16px 12px" }}>
           <div className="tasklist">
-            <TaskSection label="⚠ Overdue" tasks={od} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
-            <TaskSection label="Today" tasks={today} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
-            <TaskSection label="Coming up" tasks={later} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
-            <TaskSection label="No due date" tasks={noDue} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
+            <TaskSection label="⚠ Overdue" tasks={od} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
+            <TaskSection label="Today" tasks={today} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
+            <TaskSection label="Coming up" tasks={later} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
+            <TaskSection label="No due date" tasks={noDue} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
           </div>
         </div>
       ) : firstRun ? (
@@ -177,6 +186,9 @@ export default function TasksPage() {
                   key={t.id}
                   task={t}
                   leads={leads}
+                  editing={editingId === t.id}
+                  onStartEdit={() => setEditingId(t.id)}
+                  onStopEdit={stopEdit}
                   onToggle={toggleTask}
                   onUpdate={updateTask}
                   onRemove={removeTask}
