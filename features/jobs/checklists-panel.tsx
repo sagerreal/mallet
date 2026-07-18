@@ -2,9 +2,29 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { shouldShowFirstRun } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { ChecklistEditorCard } from "./checklist-editor-card";
 import { AddChecklistModal } from "./add-checklist-modal";
 import { StarterChecklistsModal } from "./starter-checklists-modal";
+
+// First-run empty-state copy. Checklists are org-level templates (a library), authored anytime.
+const FIRST_RUN = {
+  heading: "No checklists yet",
+  subtext: "Checklists are the steps your crew works through on a job. Load a ready-made set for your trade, or build your own.",
+  starter: {
+    title: "Start from your trade",
+    description: "Load proven checklists for your trade — edit them to match how you work.",
+    actionLabel: "Choose trade",
+  },
+  build: {
+    title: "Build your own",
+    description: "Name a checklist and add the steps and photo checks you want.",
+    actionLabel: "+ New checklist",
+  },
+} as const;
 
 export function ChecklistsPanel() {
   const checklists = useAppStore((s) => s.checklists);
@@ -13,6 +33,12 @@ export function ChecklistsPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
+  // No-flash first-run gate — dedupes the ChecklistsHydrator query (same key → no extra fetch).
+  const clQuery = api.v1.checklists.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const firstRun = shouldShowFirstRun({ isFetched: clQuery.isFetched, isError: clQuery.isError, count: checklists.length });
 
   // AI-draft (1A.4) passes proposed items; a plain add passes none. Either way the
   // new row is created and expanded so the owner edits/saves through the normal path
@@ -55,13 +81,18 @@ export function ChecklistsPanel() {
         </div>
       </div>
 
-      {/* Empty state */}
+      {/* Empty state — first-run screen only once the list has loaded and is genuinely empty. */}
       {checklists.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "60px 0", color: "var(--ink-2)" }}>
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>No checklists yet</div>
-          <div style={{ fontSize: 13, marginBottom: 20, color: "var(--ink-3)" }}>Pick your trade to load starter checklists</div>
-          <button className="btn primary" onClick={() => setStarterOpen(true)}>Choose trade</button>
-        </div>
+        firstRun ? (
+          <FirstRunEmptyState
+            heading={FIRST_RUN.heading}
+            subtext={FIRST_RUN.subtext}
+            paths={[
+              { ...FIRST_RUN.starter, onAction: () => setStarterOpen(true), variant: "primary" },
+              { ...FIRST_RUN.build, onAction: () => setAddOpen(true) },
+            ]}
+          />
+        ) : null
       ) : (
         /* List — bordered card with rows */
         <div style={{ border: "1px solid var(--line-2, var(--line))", borderRadius: 8, overflow: "hidden" }}>

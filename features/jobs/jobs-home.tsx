@@ -10,7 +10,12 @@
  */
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { shouldShowFirstRun } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useCallbackCandidates } from "@/features/jobs/hooks";
 import type { Invoice, Job } from "@/lib/store/types";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
@@ -60,7 +65,25 @@ function applyCrew(bands: JobBand[], techs: Tech[], crewFilter: string): JobBand
     .filter((b) => b.jobs.length > 0);
 }
 
+// First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens Jobs
+// with zero jobs (see shouldShowFirstRun) — replaces the toolbar + list, header stays.
+const FIRST_RUN = {
+  heading: "No jobs yet",
+  subtext: "Jobs land here when you book one, or when a customer accepts a quote.",
+  book: {
+    title: "Book a job",
+    description: "Log the work directly — it creates the customer inline if they're new.",
+    actionLabel: "+ New job",
+  },
+  quote: {
+    title: "Build a quote",
+    description: "Price up the work and send it — an accepted quote becomes a job automatically.",
+    actionLabel: "+ New quote",
+  },
+} as const;
+
 export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
+  const router = useRouter();
   const candidates = useCallbackCandidates();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
@@ -114,6 +137,14 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   }
 
   const empty = jobs.length === 0;
+  // Same query key + options as JobsHydrator → React Query dedupes it (no extra fetch). Gate the
+  // first-run screen on the TOTAL job count (never the filtered `shown`) so a no-match search on a
+  // populated shop still falls through to the list. Never flashes mid-fetch / on a failed load.
+  const { isFetched, isError } = api.v1.jobs.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const firstRun = shouldShowFirstRun({ isFetched, isError, count: jobs.length });
 
   return (
     <div className="jh-wrap">
@@ -146,46 +177,59 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
 
       <CallbackAutopsyCard />
 
-      <JobsToolbar
-        archiveSet={archiveSet}
-        onArchiveSet={setArchiveSet}
-        q={jobsQ}
-        onQ={setJobsQ}
-        filtersOpen={filtersOpen}
-        onToggleFilters={() => setFiltersOpen((o) => !o)}
-        colsOpen={colsOpen}
-        onToggleCols={() => setColsOpen((o) => !o)}
-        activeFilterCount={activeFilterCount}
-        total={total}
-        shown={shown}
-      />
-
-      {colsOpen && <JobsColumns visible={visibleCols} onToggle={toggleCol} />}
-
-      {filtersOpen && (
-        <JobsFilters
-          statusFilter={statusFilter}
-          crewFilter={crewFilter}
-          techs={techs}
-          onStatus={setStatusFilter}
-          onCrew={setCrewFilter}
-          onClear={clearFilters}
-          showStatus={archiveSet === "active"}
+      {firstRun ? (
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={FIRST_RUN.subtext}
+          paths={[
+            { ...FIRST_RUN.book, onAction: onOpenNewJob, variant: "primary" },
+            { ...FIRST_RUN.quote, onAction: () => router.push("/composer") },
+          ]}
         />
-      )}
-
-      {empty ? (
-        <div className="empty-att" style={{ padding: "24px 0" }}>
-          No jobs yet — <span className="linklike" onClick={onOpenNewJob}>create one</span>
-        </div>
       ) : (
-        <JobsListView
-          bands={finalBands}
-          sort={sort}
-          onSort={setSort}
-          onOpenJob={onOpenJob}
-          visibleCols={visibleCols}
-        />
+        <>
+          <JobsToolbar
+            archiveSet={archiveSet}
+            onArchiveSet={setArchiveSet}
+            q={jobsQ}
+            onQ={setJobsQ}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen((o) => !o)}
+            colsOpen={colsOpen}
+            onToggleCols={() => setColsOpen((o) => !o)}
+            activeFilterCount={activeFilterCount}
+            total={total}
+            shown={shown}
+          />
+
+          {colsOpen && <JobsColumns visible={visibleCols} onToggle={toggleCol} />}
+
+          {filtersOpen && (
+            <JobsFilters
+              statusFilter={statusFilter}
+              crewFilter={crewFilter}
+              techs={techs}
+              onStatus={setStatusFilter}
+              onCrew={setCrewFilter}
+              onClear={clearFilters}
+              showStatus={archiveSet === "active"}
+            />
+          )}
+
+          {empty ? (
+            <div className="empty-att" style={{ padding: "24px 0" }}>
+              No jobs yet — <span className="linklike" onClick={onOpenNewJob}>create one</span>
+            </div>
+          ) : (
+            <JobsListView
+              bands={finalBands}
+              sort={sort}
+              onSort={setSort}
+              onOpenJob={onOpenJob}
+              visibleCols={visibleCols}
+            />
+          )}
+        </>
       )}
     </div>
   );
