@@ -12,7 +12,10 @@ import { useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from 
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
 import { isStaleLead } from "@/features/pipeline/pipeline-constants";
-import { filterLeads, sortLeads } from "./customers-utils";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { filterLeads, sortLeads, shouldShowFirstRun } from "./customers-utils";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
 import { ViewToggle } from "@/components/shared/view-toggle";
 import { CustomersFilters } from "./customers-filters";
@@ -24,12 +27,38 @@ import { pressable } from "@/lib/a11y";
 
 const SORTABLE_COLS = new Set(["name", "age", "stage", "value"]);
 
+// First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens
+// Customers with zero people (see shouldShowFirstRun). Both actions open existing modals.
+const FIRST_RUN = {
+  heading: "No customers yet",
+  subtext: "Start from scratch, or bring your existing customers over.",
+  add: {
+    title: "Add one by hand",
+    description: "Type in a name and number — good for your first job or a walk-in.",
+    actionLabel: "+ Add a customer",
+  },
+  importCsv: {
+    title: "Import a spreadsheet",
+    description: "Bring your list over from QuickBooks, Jobber, Google Contacts, or any CSV.",
+    actionLabel: "Upload a CSV",
+  },
+} as const;
+
 export function CustomersView() {
   const leads = useLeads();
   const estimates = useEstimates();
   const openModal = useOpenModal();
   const custSeg = useCustSeg();
   const setCustSeg = useSetCustSeg();
+
+  // Same query key + options as LeadsHydrator, so React Query dedupes it — no extra fetch. We only
+  // read the load state to tell "still loading" and "load errored" apart from a genuinely empty
+  // list, so the first-run screen never flashes mid-fetch or misfires on a failed load.
+  const { isFetched, isError } = api.v1.customers.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const firstRun = shouldShowFirstRun({ isFetched, isError, count: leads.length });
 
   // $ on the table per customer: open (sent) quotes for active pipeline, else
   // the won total once accepted, else nothing. Derived in the body (not a selector).
@@ -133,6 +162,17 @@ export function CustomersView() {
         <button className="btn primary" onClick={() => openModal(MODAL.NEW_CUSTOMER)}>+ New customer</button>
       </div>
 
+      {firstRun ? (
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={FIRST_RUN.subtext}
+          paths={[
+            { ...FIRST_RUN.add, onAction: () => openModal(MODAL.NEW_CUSTOMER), variant: "primary" },
+            { ...FIRST_RUN.importCsv, onAction: () => openModal(MODAL.IMPORT_CUSTOMERS) },
+          ]}
+        />
+      ) : (
+        <>
       <CustomersToolbar
         archiveSet={archiveSet}
         onArchiveSet={setArchiveSet}
@@ -234,6 +274,8 @@ export function CustomersView() {
       <p className="muted">
         Add columns or filters when you need them. Custom fields become filterable once defined.
       </p>
+        </>
+      )}
     </div>
   );
 }
