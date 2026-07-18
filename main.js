@@ -242,43 +242,95 @@
     return 3200;
   }
 
+  /* Scroll-driven on desktop: the .hero-track is tall, the scene pins, and
+     scroll progress picks the stage (Front Desk → Estimating → Foreman →
+     Follow-ups). The flow rail fills and the outcome card updates in step.
+     Mobile / reduced motion: no pin (CSS), the acts auto-play instead. */
+  var ANNO = [
+    { t: 'MISSED CALL', w: 'Sarah K.', rows: ['Texted back in 6 seconds', 'Booked without you'] },
+    { t: 'NEW QUOTE', w: 'Sarah K.', rows: ['Priced from your book', 'Good / Better / Best sent'] },
+    { t: 'ON SITE', w: 'Marco', rows: ['Checklist from the office', 'Photos land in the job file'] },
+    { t: 'PAID', w: '$2,585', rows: ['Reminders sent themselves', 'Paid — no chasing'] }
+  ];
+
   function frontDesk() {
     var actsWrap = document.getElementById('acts');
     if (!actsWrap) return;
     var acts = slice(actsWrap.querySelectorAll('.act'));
-    var beats = slice(document.querySelectorAll('.h1-beats .beat'));
+    var frNodes = slice(document.querySelectorAll('.flow-rail .fr'));
+    var frFill = document.getElementById('frFill');
     var title = document.getElementById('stageTitle');
     var nextBtn = document.getElementById('stageNext');
+    var acTitle = document.getElementById('acTitle');
+    var acWho = document.getElementById('acWho');
+    var acList = document.getElementById('acList');
+    var track = document.querySelector('.hero-track');
     var RUN = [runCall, runQuote, runJob, runInvoice];
-    var current = 0;
+    var N = acts.length, current = -1;
+    var pinScroll = !!track && !reduce && window.matchMedia('(min-width:861px)').matches;
+    var driven = pinScroll; // scroll picks the stage; timer runs otherwise
 
+    function paintRail(i) {
+      frNodes.forEach(function (n, j) {
+        n.classList.toggle('on', j === i);
+        n.classList.toggle('done', j < i);
+      });
+      if (frFill) frFill.style.height = (N > 1 ? (i / (N - 1)) * 100 : 0) + '%';
+    }
+    function paintAnno(i) {
+      var a = ANNO[i]; if (!a) return;
+      if (acTitle) acTitle.textContent = a.t;
+      if (acWho) acWho.textContent = a.w;
+      if (acList) acList.innerHTML = a.rows.map(function (r) { return '<li>✓ ' + r + '</li>'; }).join('');
+    }
     function show(i, animate) {
+      if (i === current) return;
       clearAct();
       current = i;
       acts.forEach(function (a, j) { a.classList.toggle('on', i === j); });
-      beats.forEach(function (b, j) {
-        b.classList.toggle('on', j <= i);
-        b.classList.toggle('now', j === i);
-      });
+      paintRail(i); paintAnno(i);
       if (title) title.textContent = TITLES[i];
       if (nextBtn) nextBtn.setAttribute('aria-label', NEXT_LABELS[i]);
       var dur = RUN[i](acts[i], animate);
-      if (animate) at(dur + HOLD, function () { show((i + 1) % acts.length, true); });
+      if (!driven && animate) at(dur + HOLD, function () { show((i + 1) % N, true); });
+    }
+    function scrollToStage(j) {
+      if (!track) return;
+      var total = track.offsetHeight - window.innerHeight;
+      var y = track.offsetTop + Math.min(0.99, (j + 0.15) / N) * total;
+      window.scrollTo({ top: y, behavior: 'smooth' });
     }
 
     if (nextBtn) nextBtn.addEventListener('click', function () {
-      show((current + 1) % acts.length, !reduce);
+      if (pinScroll) scrollToStage((current + 1) % N);
+      else { driven = false; show((current + 1) % N, !reduce); }
     });
-    beats.forEach(function (b, j) {
-      b.setAttribute('role', 'button');
-      b.setAttribute('tabindex', '0');
-      b.addEventListener('click', function () { show(j, !reduce); });
-      b.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(j, !reduce); }
+    frNodes.forEach(function (n, j) {
+      n.setAttribute('role', 'button');
+      n.setAttribute('tabindex', '0');
+      function go() { if (pinScroll) scrollToStage(j); else { driven = false; show(j, !reduce); } }
+      n.addEventListener('click', go);
+      n.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
       });
     });
 
-    show(0, !reduce);
+    if (pinScroll) {
+      var ticking = false;
+      var onScroll = function () {
+        var total = track.offsetHeight - window.innerHeight;
+        var scrolled = -track.getBoundingClientRect().top;
+        var p = total > 0 ? Math.min(1, Math.max(0, scrolled / total)) : 0;
+        var i = Math.min(N - 1, Math.floor(p * N));
+        if (i !== current) show(i, true);
+      };
+      window.addEventListener('scroll', function () {
+        if (!ticking) { ticking = true; requestAnimationFrame(function () { onScroll(); ticking = false; }); }
+      }, { passive: true });
+      show(0, true); onScroll();
+    } else {
+      show(0, !reduce);
+    }
   }
 
   /* ============== THE PLATFORM TOUR (pinned scrolly) ============== */
