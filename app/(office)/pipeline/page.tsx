@@ -14,11 +14,32 @@ import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { shouldShowFirstRun } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
 import { deriveRail } from "@/features/quotes/derive";
 import { deriveIntake, deriveGetting } from "@/features/pipeline/working";
 import { IntakeCard, GettingCard, OutCard, WonCard } from "@/features/pipeline/board-cards";
 import type { Snap } from "@/features/counter/types";
+
+// First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens Pipeline
+// with zero leads (see shouldShowFirstRun) — the board would otherwise be four empty columns.
+const FIRST_RUN = {
+  heading: "Your pipeline is empty",
+  subtext: "As you add customers and send quotes, they move through here: new leads → quoting → out → won.",
+  add: {
+    title: "Add a customer",
+    description: "A new lead lands in the first column, ready to quote.",
+    actionLabel: "+ Add a customer",
+  },
+  quote: {
+    title: "Start a quote",
+    description: "Build and send a price — it sits in Out until they say yes.",
+    actionLabel: "+ New quote",
+  },
+} as const;
 
 export default function PipelinePage() {
   const estimates = useAppStore((s) => s.estimates);
@@ -44,6 +65,16 @@ export default function PipelinePage() {
 
   const shownSum = useAnimatedNumber(rail.outSum);
 
+  // Same query key + options as LeadsHydrator → React Query dedupes it (no extra fetch). Used only
+  // to tell "still loading" / "load errored" apart from a genuinely empty pipeline, so the first-run
+  // screen never flashes mid-fetch or misfires on a failed load. Pipeline is driven by leads, so
+  // zero leads = an empty board.
+  const { isFetched, isError } = api.v1.customers.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const firstRun = shouldShowFirstRun({ isFetched, isError, count: leads.length });
+
   return (
     <div>
       <div className="pagehead">
@@ -68,6 +99,17 @@ export default function PipelinePage() {
         </button>
       </div>
 
+      {firstRun ? (
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={FIRST_RUN.subtext}
+          paths={[
+            { ...FIRST_RUN.add, onAction: () => openModal(MODAL.NEW_CUSTOMER), variant: "primary" },
+            { ...FIRST_RUN.quote, onAction: () => router.push("/composer") },
+          ]}
+        />
+      ) : (
+        <>
       {/* the rail's verdict, as a strip above the board */}
       <div className="ticket qstrip">
         <div>
@@ -143,6 +185,8 @@ export default function PipelinePage() {
           the record ›
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 }

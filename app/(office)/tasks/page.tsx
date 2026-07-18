@@ -14,6 +14,9 @@ import { useTasks, useLeads, useAppStore, useOpenModal } from "@/lib/store/app-s
 import { MODAL } from "@/lib/store/modal-ids";
 import { pressable } from "@/lib/a11y";
 import { isOverdue, dueLabel, tomorrowISO } from "@/lib/task-dates";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { shouldShowFirstRun } from "@/lib/first-run";
 
 // ---- Task row --------------------------------------------------------------
 
@@ -96,6 +99,14 @@ export default function TasksPage() {
   const toggleTask = useAppStore((s) => s.toggleTask);
   const openModal = useOpenModal();
 
+  // Same query key + options as TasksHydrator → React Query dedupes it (no extra fetch). Lets us
+  // tell a brand-new shop (never had a task) apart from a shop that has cleared its list, and never
+  // flash the first-run copy mid-load.
+  const { isFetched, isError } = api.v1.tasks.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+
   const [newText, setNewText] = useState("");
   const [newDue, setNewDue] = useState(tomorrowISO());
   const [doneOpen, setDoneOpen] = useState(false);
@@ -123,6 +134,8 @@ export default function TasksPage() {
   const later = open.filter((t) => !isOverdue(t) && t.due != null && t.due !== todayStr);
   const noDue = open.filter((t) => !t.due);
   const done = tasks.filter((t) => t.done);
+  // A brand-new shop has never created a task; distinguish that from "cleared the list" (all done).
+  const firstRun = shouldShowFirstRun({ isFetched, isError, count: tasks.length });
 
   return (
     <div>
@@ -169,6 +182,13 @@ export default function TasksPage() {
             <TaskSection label="Coming up" tasks={later} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
             <TaskSection label="No due date" tasks={noDue} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
           </div>
+        </div>
+      ) : firstRun ? (
+        <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>No tasks yet</div>
+          <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
+            Add your first above — reminders like &ldquo;Call Rob back&rdquo; or &ldquo;Send the quote.&rdquo;
+          </p>
         </div>
       ) : (
         <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
