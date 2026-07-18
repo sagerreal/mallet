@@ -79,6 +79,52 @@ describe("OrgSettings.create", () => {
   });
 });
 
+// A day's hours are either the CLOSED sentinel (open===0 && close===0) or a valid forward range
+// (open < close). A half-open (open=8, close=0), zero-width (12/12), or inverted (17/9) range reads
+// as "closed" to the voice availability math and silently sends every caller to voicemail — so the
+// aggregate must REJECT it at the boundary (no silent failure), not persist a broken schedule.
+describe("OrgSettings.create — business hours invariant", () => {
+  it("rejects weekday hours with close=0 and open>0 (the silent-voicemail bug)", () => {
+    const r = OrgSettings.create(baseProps({ hoursWdOpen: 8, hoursWdClose: 0 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("hoursWdClose");
+  });
+
+  it("rejects inverted weekday hours (close before open)", () => {
+    const r = OrgSettings.create(baseProps({ hoursWdOpen: 17, hoursWdClose: 9 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("hoursWdClose");
+  });
+
+  it("rejects zero-width weekday hours (open===close, nonzero)", () => {
+    const r = OrgSettings.create(baseProps({ hoursWdOpen: 12, hoursWdClose: 12 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("hoursWdClose");
+  });
+
+  it("accepts the closed sentinel (open===0 && close===0)", () => {
+    const s = unwrap(OrgSettings.create(baseProps({ hoursWdOpen: 0, hoursWdClose: 0 })));
+    expect(s.props.hoursWdClose).toBe(0);
+  });
+
+  it("accepts a valid forward weekday range", () => {
+    const s = unwrap(OrgSettings.create(baseProps({ hoursWdOpen: 8, hoursWdClose: 17 })));
+    expect(s.props.hoursWdClose).toBe(17);
+  });
+
+  it("rejects an invalid Saturday range even when weekdays are valid", () => {
+    const r = OrgSettings.create(baseProps({ hoursSatOpen: 9, hoursSatClose: 0 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("hoursSatClose");
+  });
+
+  it("rejects an invalid Sunday range", () => {
+    const r = OrgSettings.create(baseProps({ hoursSunOpen: 10, hoursSunClose: 8 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("hoursSunClose");
+  });
+});
+
 describe("OrgSettings.patch", () => {
   const now = new Date("2026-07-09T12:00:00Z");
 

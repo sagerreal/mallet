@@ -331,6 +331,43 @@ describe("settings-slice persistence", () => {
     expect(store.get().booking.services.length).toBe(before);
   });
 
+  // --- setBookingDayHours (atomic open+close) --------------------------------
+
+  it("setBookingDayHours persists open+close in ONE write, never the invalid {open, close:0} intermediate", async () => {
+    const store = makeStore();
+    // Start from Closed (the sentinel), then clear so we only observe the toggle-to-open write.
+    store.get().setBookingDayHours("wdOpen", "wdClose", 0, 0);
+    await Promise.resolve();
+    vi.clearAllMocks();
+
+    // Toggle back to Open: 8–17 must land as a single persisted write with BOTH fields set.
+    store.get().setBookingDayHours("wdOpen", "wdClose", 8, 17);
+    expect(store.get().booking.hours.wdOpen).toBe(8);
+    expect(store.get().booking.hours.wdClose).toBe(17);
+    await Promise.resolve();
+
+    expect(mockUpdateConfig).toHaveBeenCalledTimes(1);
+    const payload = mockUpdateConfig.mock.calls[0]![0] as { hoursWdOpen: number; hoursWdClose: number };
+    expect(payload.hoursWdOpen).toBe(8);
+    expect(payload.hoursWdClose).toBe(17);
+    // The bug was a separate first write persisting {open:8, close:0}; it must never be emitted.
+    const emittedInvalidIntermediate = mockUpdateConfig.mock.calls.some((c) => {
+      const p = c[0] as { hoursWdOpen: number; hoursWdClose: number };
+      return p.hoursWdOpen === 8 && p.hoursWdClose === 0;
+    });
+    expect(emittedInvalidIntermediate).toBe(false);
+  });
+
+  it("setBookingDayHours rolls back both fields when the persist rejects", async () => {
+    mockUpdateConfig.mockRejectedValueOnce(new Error("fail"));
+    const store = makeStore();
+    const before = { ...store.get().booking.hours };
+    store.get().setBookingDayHours("wdOpen", "wdClose", 9, 18);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.get().booking.hours).toEqual(before);
+  });
+
   // --- buildBookingPayload ---------------------------------------------------
 
   it("buildBookingPayload produces the correct flat payload", () => {

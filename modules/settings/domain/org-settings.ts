@@ -127,6 +127,29 @@ const clampMinutes = (n: number): number =>
 const clampHour = (n: number): number =>
   Math.min(HOUR_MAX, Math.max(HOUR_MIN, Math.round(Number.isFinite(n) ? n : 0)));
 
+// One day's [open, close] is valid iff it is the closed sentinel (0/0) or a forward range
+// (open < close). Hours are clamped to [0, 24] first so the check matches what would be stored.
+const isValidDayHours = (open: number, close: number): boolean => {
+  const o = clampHour(open);
+  const c = clampHour(close);
+  return (o === 0 && c === 0) || o < c;
+};
+
+// The first day whose hours violate the invariant, anchored to that day's CLOSE field (the field the
+// hours editor drives against a fixed open), or null when weekday/Saturday/Sunday are all valid.
+const firstInvalidDayHours = (p: OrgSettingsProps): ValidationError | null => {
+  if (!isValidDayHours(p.hoursWdOpen, p.hoursWdClose)) {
+    return validation("weekday hours: closing time must be after opening time", "hoursWdClose");
+  }
+  if (!isValidDayHours(p.hoursSatOpen, p.hoursSatClose)) {
+    return validation("Saturday hours: closing time must be after opening time", "hoursSatClose");
+  }
+  if (!isValidDayHours(p.hoursSunOpen, p.hoursSunClose)) {
+    return validation("Sunday hours: closing time must be after opening time", "hoursSunClose");
+  }
+  return null;
+};
+
 // --- Aggregate -----------------------------------------------------------
 
 /**
@@ -182,6 +205,12 @@ export class OrgSettings {
     if (props.stripeConnectedAccountId !== null && !props.stripeConnectedAccountId.startsWith("acct_")) {
       return err(validation("stripe connected account id must be an acct_ id", "stripeConnectedAccountId"));
     }
+    // Business-hours invariant: each day is either CLOSED (open===0 && close===0, the schema sentinel)
+    // or a valid forward range (open < close). A half-open (open=8, close=0), zero-width, or inverted
+    // range reads as "closed" to the voice availability math and would silently route every caller to
+    // voicemail — reject it at the boundary so no write path persists a silently-broken schedule.
+    const hoursError = firstInvalidDayHours(props);
+    if (hoursError) return err(hoursError);
 
     return ok(
       new OrgSettings({
