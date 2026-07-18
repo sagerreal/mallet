@@ -27,7 +27,7 @@ describe("StripeConnectGateway", () => {
     const gw = new StripeConnectGateway(fakeStripe({ createExpressAccount: create }));
     await gw.createConnectedAccount({ orgId: "org-42" });
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ idempotencyKey: "connect-acct:org-42" }),
+      expect.objectContaining({ idempotencyKey: "connect-acct:v2:org-42" }),
     );
   });
 
