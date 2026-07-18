@@ -17,7 +17,6 @@ import { useState } from "react";
 import type { Lead, Task } from "@/lib/store/types";
 import { isOverdue, dueLabel } from "@/lib/task-dates";
 import { todayISO } from "@/lib/clock";
-import { pressable } from "@/lib/a11y";
 
 export type TaskPatch = { t?: string; due?: string | null; leadId?: string | null };
 
@@ -74,45 +73,52 @@ function RestingRow({
   const isToday = !overdue && task.due === todayISO();
   const dueCls = overdue ? "od" : isToday ? "now" : "";
 
+  // The WHOLE row opens the editor — click anywhere on the line. The check and the customer
+  // pill stopPropagation so they keep their own actions (toggle done / open that customer).
   return (
-    <div className="trow">
+    <div
+      className="trow clickable"
+      role="button"
+      tabIndex={0}
+      aria-label={`Edit task: ${task.t}`}
+      title="Click to edit"
+      onClick={onEdit}
+      onKeyDown={(e) => {
+        // Only when the row itself is focused — Enter on a focused child (check/pill) is theirs.
+        if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) {
+          e.preventDefault();
+          onEdit();
+        }
+      }}
+    >
       <button
         className={`tchk${task.done ? " done" : ""}`}
         aria-label={task.done ? "Reopen task" : "Mark task done"}
-        onClick={() => onToggle(task.id)}
+        onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
       />
-      {/* Text and the customer pill are SIBLING controls: text opens the editor, the
-          customer name opens that customer. Neither nests inside the other. */}
       <div className="tmain">
-        <span
-          className="ttitle"
-          onClick={onEdit}
-          title="Click to edit"
-          aria-label={`Edit task: ${task.t}`}
-          {...pressable(onEdit)}
-          style={{ cursor: "text" }}
-        >
-          {task.done ? <s className="muted">{task.t}</s> : task.t}
-        </span>
+        <span className="ttitle">{task.done ? <s className="muted">{task.t}</s> : task.t}</span>
         {leadName && (
           <span
             className="pill src"
-            onClick={openLead}
+            role="button"
+            tabIndex={0}
             title={`Open ${leadName}`}
             aria-label={`Open ${leadName}`}
-            {...pressable(openLead)}
+            onClick={(e) => { e.stopPropagation(); openLead(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); e.preventDefault(); openLead(); } }}
             style={{ cursor: "pointer" }}
           >
             {leadName}
           </span>
         )}
       </div>
-      <button className="trow-edit" aria-label="Edit" title="Edit" onClick={onEdit}>
+      <span className="trow-edit" aria-hidden="true">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 20h9" />
           <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
         </svg>
-      </button>
+      </span>
       <span className={`tdue${dueCls ? " " + dueCls : ""}`}>{dueLabel(task.due)}</span>
     </div>
   );

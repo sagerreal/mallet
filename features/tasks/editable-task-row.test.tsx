@@ -26,29 +26,30 @@ function setup(over: Partial<Task> = {}, editing = false) {
 }
 
 describe("EditableTaskRow — resting row", () => {
-  it("has a visible edit (pencil) control and clicking it starts editing", () => {
-    const { onStartEdit } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    expect(onStartEdit).toHaveBeenCalledTimes(1);
-  });
-
-  it("clicking the task text also starts editing", () => {
+  it("clicking anywhere on the row starts editing", () => {
     const { onStartEdit } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Edit task: Call client" }));
     expect(onStartEdit).toHaveBeenCalledTimes(1);
   });
 
-  it("clicking the attached customer opens that customer (not the editor)", () => {
+  it("clicking the task text (inside the row) also starts editing", () => {
+    const { onStartEdit } = setup();
+    fireEvent.click(screen.getByText("Call client"));
+    expect(onStartEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it("clicking the attached customer opens that customer, NOT the editor", () => {
     const { onOpenLead, onStartEdit } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Open Ada Lovelace" }));
     expect(onOpenLead).toHaveBeenCalledWith("L1");
     expect(onStartEdit).not.toHaveBeenCalled();
   });
 
-  it("the check toggles done", () => {
-    const { onToggle } = setup();
+  it("the check toggles done and does NOT open the editor", () => {
+    const { onToggle, onStartEdit } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Mark task done" }));
     expect(onToggle).toHaveBeenCalledWith("t1");
+    expect(onStartEdit).not.toHaveBeenCalled();
   });
 
   it("does not render the editor while resting", () => {
