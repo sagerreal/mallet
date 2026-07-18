@@ -183,10 +183,9 @@
     });
 
     var answers = {}, penalties = {}, idx = 0, seenStep = {};
-    // GA4 (consent-gated) AND Vercel (cookieless) so drop-off is visible even without cookie consent
+    // malletTrack fans out to GA4 (consent-gated) AND Vercel (cookieless), so drop-off is visible without consent
     function track(ev, params) {
       if (window.malletTrack) window.malletTrack(ev, params || {});
-      try { if (typeof window.va === 'function') window.va('event', { name: ev }); } catch (e) {}
     }
     function trackStep(n) { if (!seenStep[n]) { seenStep[n] = 1; track('leak_step_' + n); } }
 
