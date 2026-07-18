@@ -29,6 +29,8 @@ export class StripePaymentLinkGateway implements PaymentLinkGateway {
         idempotencyKey: cmd.idempotencyKey,
         successUrl: `${this.publicAppUrl}/pay/success?invoice=${cmd.invoiceId}`,
         cancelUrl: `${this.publicAppUrl}/pay/cancel?invoice=${cmd.invoiceId}`,
+        connectedAccountId: cmd.connectedAccountId,
+        applicationFeeCents: cmd.applicationFeeCents,
       });
       return ok({ url: result.url, externalRef: result.sessionId });
     } catch (error) {

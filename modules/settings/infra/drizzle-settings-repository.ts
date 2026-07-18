@@ -136,6 +136,27 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
     return rows[0]?.techSeesPrice ?? true;
   }
 
+  /**
+   * Focused, side-effect-free read of the org's Connect charge target (PR1 onboarding state) —
+   * used by the invoicing charge path to route a destination charge and gate on charges-enabled.
+   * No lazy create (mirrors getTechSeesPrice): a shop that never onboarded reads as not-enabled.
+   */
+  async getConnectTarget(): Promise<{ connectedAccountId: string | null; chargesEnabled: boolean }> {
+    const rows = await this.tx
+      .select({
+        connectedAccountId: orgSettings.stripeConnectedAccountId,
+        chargesEnabled: orgSettings.stripeChargesEnabled,
+      })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    const row = rows[0];
+    return {
+      connectedAccountId: row?.connectedAccountId ?? null,
+      chargesEnabled: row?.chargesEnabled ?? false,
+    };
+  }
+
   // ── OrgNameWriter ──────────────────────────────────────────────────────────
 
   /**

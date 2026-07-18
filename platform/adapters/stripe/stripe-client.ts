@@ -65,6 +65,18 @@ export class StripeClient {
 
   async createCheckoutSession(params: CreateCheckoutParams): Promise<CheckoutResult> {
     const metadata = { orgId: params.orgId, invoiceId: params.invoiceId };
+    // Destination charge (Connect, PR2): settle the funds to the shop's connected account and skim
+    // Mallet's application fee. on_behalf_of makes the charge present as the shop's; transfer_data
+    // .destination routes the money. Attached only when a connected account is supplied so the
+    // platform-charge shape stays available for tests / a Stripe-not-Connected fallback.
+    const paymentIntentData: Stripe.Checkout.SessionCreateParams.PaymentIntentData = { metadata };
+    if (params.connectedAccountId) {
+      paymentIntentData.on_behalf_of = params.connectedAccountId;
+      paymentIntentData.transfer_data = { destination: params.connectedAccountId };
+      if (params.applicationFeeCents !== undefined) {
+        paymentIntentData.application_fee_amount = params.applicationFeeCents;
+      }
+    }
     const session = await call(
       () =>
         this.stripe.checkout.sessions.create(
@@ -81,7 +93,7 @@ export class StripeClient {
               },
             ],
             metadata,
-            payment_intent_data: { metadata },
+            payment_intent_data: paymentIntentData,
             success_url: params.successUrl,
             cancel_url: params.cancelUrl,
           },

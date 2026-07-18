@@ -24,7 +24,8 @@ import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
 import type { Payment } from "../domain/payment";
 import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
-import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
+import type { PaymentLinkGateway, CreatePaymentSessionCmd } from "../domain/payment-link-gateway";
+import type { ConnectTargetReader } from "../domain/connect-target-reader";
 import { CreatePaymentUseCase } from "./create-payment";
 import { RecordCardPaymentUseCase } from "./record-card-payment";
 import { processStripeEvent } from "./stripe-webhook";
@@ -118,22 +119,32 @@ const okGateway: PaymentLinkGateway = {
 const failGateway: PaymentLinkGateway = {
   createPaymentSession: async () => err(externalService("stripe", "down", true)),
 };
+// The shop has finished Connect onboarding — the happy-path precondition for taking a card.
+const okConnect: ConnectTargetReader = {
+  read: async () => ({ connectedAccountId: "acct_test", chargesEnabled: true }),
+};
+const notOnboarded: ConnectTargetReader = {
+  read: async () => ({ connectedAccountId: null, chargesEnabled: false }),
+};
+const chargesDisabled: ConnectTargetReader = {
+  read: async () => ({ connectedAccountId: "acct_test", chargesEnabled: false }),
+};
 
 describe("CreatePaymentUseCase", () => {
   it("creates a hosted payment for the balance of a sent invoice", async () => {
-    const uc = new CreatePaymentUseCase(new FakeRepo(invoice()), okGateway);
+    const uc = new CreatePaymentUseCase(new FakeRepo(invoice()), okGateway, okConnect);
     const r = await uc.exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
     expect(isOk(r) && r.value.url).toBe("https://checkout.stripe.test/cs_1");
   });
 
   it("rejects a draft/paid invoice (conflict) and a zero balance (validation)", async () => {
-    expect((await new CreatePaymentUseCase(new FakeRepo(invoice({ status: "draft" })), okGateway).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) })).ok).toBe(false);
+    expect((await new CreatePaymentUseCase(new FakeRepo(invoice({ status: "draft" })), okGateway, okConnect).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) })).ok).toBe(false);
     const paid = invoice({ status: "paid", amountPaid: money(100_000) });
-    expect((await new CreatePaymentUseCase(new FakeRepo(paid), okGateway).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) })).ok).toBe(false);
+    expect((await new CreatePaymentUseCase(new FakeRepo(paid), okGateway, okConnect).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) })).ok).toBe(false);
   });
 
   it("propagates a gateway failure as external_service", async () => {
-    const r = await new CreatePaymentUseCase(new FakeRepo(invoice()), failGateway).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    const r = await new CreatePaymentUseCase(new FakeRepo(invoice()), failGateway, okConnect).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("external_service");
   });
@@ -148,10 +159,47 @@ describe("CreatePaymentUseCase", () => {
     };
     // total $1000, $999.70 already paid → 30c balance, > 0 but < 50c.
     const inv = invoice({ status: "partial", amountPaid: money(99_970) });
-    const r = await new CreatePaymentUseCase(new FakeRepo(inv), spyGateway).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    const r = await new CreatePaymentUseCase(new FakeRepo(inv), spyGateway, okConnect).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("validation");
     expect(called).toBe(false); // never reached Stripe → no deterministic 400, no breaker hit
+  });
+
+  it("routes a destination charge to the shop's connected account with the 0.25% platform fee", async () => {
+    const calls: CreatePaymentSessionCmd[] = [];
+    const capturing: PaymentLinkGateway = {
+      createPaymentSession: async (cmd) => {
+        calls.push(cmd);
+        return ok({ url: "https://checkout.stripe.test/cs_2", externalRef: "cs_2" });
+      },
+    };
+    const r = await new CreatePaymentUseCase(new FakeRepo(invoice()), capturing, okConnect).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    expect(r.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    const cmd = calls[0];
+    if (!cmd) throw new Error("gateway was not called");
+    expect(cmd.connectedAccountId).toBe("acct_test");
+    expect(cmd.applicationFeeCents).toBe(250); // 0.25% of the $1,000.00 balance
+  });
+
+  it("requires Connect: blocks the charge (conflict) when the shop has not onboarded, without calling Stripe", async () => {
+    let called = false;
+    const spy: PaymentLinkGateway = {
+      createPaymentSession: async () => {
+        called = true;
+        return ok({ url: "x", externalRef: "x" });
+      },
+    };
+    const r = await new CreatePaymentUseCase(new FakeRepo(invoice()), spy, notOnboarded).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("conflict");
+    expect(called).toBe(false);
+  });
+
+  it("requires Connect: blocks the charge when the connected account cannot yet take charges", async () => {
+    const r = await new CreatePaymentUseCase(new FakeRepo(invoice()), okGateway, chargesDisabled).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("conflict");
   });
 });
 
