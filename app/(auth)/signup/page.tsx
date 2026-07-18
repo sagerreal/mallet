@@ -12,14 +12,22 @@ export default function SignupPage() {
     e.preventDefault();
     setBusy(true);
     const form = new FormData(e.currentTarget);
-    const failure = await signUp(
+    const outcome = await signUp(
       String(form.get("email")),
       String(form.get("password")),
       String(form.get("orgName")),
       String(form.get("fullName")),
     );
-    if (failure) {
-      setError(failure);
+    if (outcome.kind === "error") {
+      setError(outcome.message);
+      setBusy(false);
+      return;
+    }
+    if (outcome.kind === "exists") {
+      // No confirmation email was sent — the address already has an account. Point the
+      // person at sign-in (the "Sign in" link below the form) instead of the check-your-email
+      // screen, which would strand them waiting for a link that never arrives.
+      setError("That email already has a Mallet account. Sign in below instead.");
       setBusy(false);
       return;
     }

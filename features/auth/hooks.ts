@@ -6,6 +6,14 @@ export const signIn = async (email: string, password: string): Promise<string | 
   return error ? "Email or password is incorrect." : null;
 };
 
+// The three ways a signup attempt can resolve. "exists" is distinct from "sent" because
+// Supabase sends NO confirmation email for an already-registered address (see below), so the
+// UI must not claim a link went out.
+export type SignUpOutcome =
+  | { kind: "sent" }
+  | { kind: "exists" }
+  | { kind: "error"; message: string };
+
 // org_name AND the owner's display name ride in user_metadata so provisioning can read them
 // AFTER email confirmation, when the signup form's state is long gone. The token verifier maps
 // user_metadata.name → principal.name → app_signup_create_org(p_name) → users.name.
@@ -14,9 +22,9 @@ export const signUp = async (
   password: string,
   orgName: string,
   name: string,
-): Promise<string | null> => {
+): Promise<SignUpOutcome> => {
   const trimmedName = name.trim();
-  const { error } = await createSupabaseBrowser().auth.signUp({
+  const { data, error } = await createSupabaseBrowser().auth.signUp({
     email,
     password,
     options: {
@@ -24,7 +32,15 @@ export const signUp = async (
       emailRedirectTo: `${window.location.origin}/auth/confirm`,
     },
   });
-  return error ? error.message : null;
+  if (error) return { kind: "error", message: error.message };
+  // Anti-enumeration: with email confirmation on, signing up an address that already has a
+  // (confirmed) account returns HTTP 200 with an obfuscated user whose `identities` array is
+  // EMPTY, and Supabase sends nothing. Detect that so the caller shows an honest "sign in"
+  // message instead of a "check your email" screen for a link that was never sent.
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    return { kind: "exists" };
+  }
+  return { kind: "sent" };
 };
 
 export const requestPasswordReset = async (email: string): Promise<void> => {
