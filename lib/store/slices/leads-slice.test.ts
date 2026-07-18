@@ -39,6 +39,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         create: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: false }) },
         setDone: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: true }) },
         update: { mutate: vi.fn().mockResolvedValue({ id: "t1", text: "", dueDate: null, leadId: null, done: false }) },
+        remove: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
       },
     },
   },
@@ -821,5 +822,62 @@ describe("updateTask (with trpcVanilla mock)", () => {
     const task = slice.state.tasks.find((t) => t.id === "task-abc");
     expect(task?.t).toBe("Call client");
     expect(task?.due).toBe("2026-07-20");
+  });
+
+  it("re-attaches a task to a different lead, and detaches with '' → null", () => {
+    const slice = makeSlice();
+    seedTask(slice);
+
+    slice.state.updateTask("task-abc", { leadId: "lead-999" });
+    expect(slice.state.tasks.find((t) => t.id === "task-abc")?.leadId).toBe("lead-999");
+    let call = updateMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.leadId).toBe("lead-999");
+    expect(call.text).toBeUndefined(); // only the changed field is sent
+    expect(call.dueDate).toBeUndefined();
+
+    updateMutate.mockClear();
+    slice.state.updateTask("task-abc", { leadId: "" });
+    expect(slice.state.tasks.find((t) => t.id === "task-abc")?.leadId).toBeNull();
+    call = updateMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.leadId).toBeNull();
+  });
+});
+
+describe("removeTask (with trpcVanilla mock)", () => {
+  let removeMutate: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    const { trpcVanilla } = await import("@/lib/trpc/vanilla");
+    removeMutate = trpcVanilla.v1.tasks.remove.mutate as ReturnType<typeof vi.fn>;
+    removeMutate.mockReset();
+    removeMutate.mockResolvedValue({ ok: true });
+  });
+
+  it("optimistically removes the task and calls v1.tasks.remove with its id", () => {
+    const slice = makeSlice();
+    slice.state.setTasks([
+      { id: "task-abc", t: "Call client", due: null, leadId: null, done: false },
+      { id: "task-def", t: "Send quote", due: null, leadId: null, done: false },
+    ]);
+
+    slice.state.removeTask("task-abc");
+
+    expect(slice.state.tasks.map((t) => t.id)).toEqual(["task-def"]);
+    expect(removeMutate).toHaveBeenCalledOnce();
+    expect((removeMutate.mock.calls[0]?.[0] as Record<string, unknown>).taskId).toBe("task-abc");
+  });
+
+  it("restores the task on remove failure (rollback)", async () => {
+    const slice = makeSlice();
+    slice.state.setTasks([{ id: "task-abc", t: "Call client", due: null, leadId: null, done: false }]);
+    removeMutate.mockRejectedValue(new Error("network error"));
+
+    slice.state.removeTask("task-abc");
+    expect(slice.state.tasks).toHaveLength(0); // optimistic remove first
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(slice.state.tasks.map((t) => t.id)).toEqual(["task-abc"]); // rolled back
   });
 });
