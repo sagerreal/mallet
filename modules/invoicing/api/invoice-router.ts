@@ -7,6 +7,7 @@ import { INVOICE_STATUSES, type Invoice, type InvoiceStatus } from "../domain/in
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
+import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
 import { CreateInvoiceFromJobUseCase } from "../app/create-invoice-from-job";
@@ -299,7 +300,8 @@ export const createInvoiceRouter = () =>
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
         }
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
-        const useCase = new CreatePaymentUseCase(repo, ctx.deps.paymentLinkGateway);
+        const connect = new DrizzleConnectTargetReader(ctx.tx, ctx.principal.orgId);
+        const useCase = new CreatePaymentUseCase(repo, ctx.deps.paymentLinkGateway, connect);
         const result = orThrow(
           await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: asInvoiceId(input.invoiceId) }),
         );

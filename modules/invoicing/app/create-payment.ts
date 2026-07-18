@@ -2,6 +2,8 @@ import type { OrgId, InvoiceId, Result, AppError } from "@mallet/shared/types";
 import { notFound, conflict, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
+import type { ConnectTargetReader } from "../domain/connect-target-reader";
+import { platformFeeCents } from "../domain/platform-fee";
 
 // Stripe's minimum charge for a USD Checkout Session. A balance below this is rejected by Stripe
 // with a deterministic 400, so we guard it here rather than send a request that can only fail (a
@@ -26,6 +28,7 @@ export class CreatePaymentUseCase {
   constructor(
     private readonly repo: InvoiceRepository,
     private readonly gateway: PaymentLinkGateway,
+    private readonly connect: ConnectTargetReader,
   ) {}
 
   async exec(cmd: CreatePaymentCommand): Promise<Result<CreatedPayment, AppError>> {
@@ -45,13 +48,29 @@ export class CreatePaymentUseCase {
       );
     }
 
+    // Require Connect: a card payment routes to the shop's connected account as a destination
+    // charge, so a shop that hasn't finished Stripe onboarding has nowhere for the money to settle.
+    // Fail with a clear, actionable message rather than attempting a charge that cannot succeed.
+    const target = await this.connect.read();
+    if (!target.connectedAccountId || !target.chargesEnabled) {
+      return err(
+        conflict(
+          "this shop hasn't finished Stripe payment setup — complete onboarding in Settings → Payments to accept cards",
+        ),
+      );
+    }
+
+    const applicationFeeCents = platformFeeCents(dueCents);
     const session = await this.gateway.createPaymentSession({
       orgId: cmd.orgId,
       invoiceId: cmd.invoiceId,
       amountCents: dueCents,
       currency: "usd",
-      idempotencyKey: `pl:${cmd.orgId}:${cmd.invoiceId}:${dueCents}`,
+      // Key includes the destination + fee so a later config change can't collide with a prior session.
+      idempotencyKey: `pl:${cmd.orgId}:${cmd.invoiceId}:${dueCents}:${target.connectedAccountId}:${applicationFeeCents}`,
       description: `Invoice ${invoice.props.num}`,
+      connectedAccountId: target.connectedAccountId,
+      applicationFeeCents,
     });
     if (!isOk(session)) return err(session.error);
     return ok({ url: session.value.url });

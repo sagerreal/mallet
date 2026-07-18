@@ -7,6 +7,12 @@ export interface CreatePaymentSessionCmd {
   readonly currency: string; // "usd"
   readonly idempotencyKey: string;
   readonly description: string;
+  // Connect destination charge (PR2). Required: card payments route to the shop's connected
+  // account, so the use-case supplies both on every call.
+  /** The shop's Stripe connected account (acct_...) — the destination the charge settles to. */
+  readonly connectedAccountId: string;
+  /** Mallet's platform fee in integer cents (application_fee_amount on the destination charge). */
+  readonly applicationFeeCents: number;
 }
 
 export interface HostedPayment {
