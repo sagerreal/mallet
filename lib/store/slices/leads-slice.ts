@@ -197,7 +197,8 @@ export interface LeadsSlice {
   taskDone: (id: string) => void;
   toggleTask: (id: string) => void;
   addTask: (draft: Omit<Task, "id" | "done">) => void;
-  updateTask: (id: string, patch: { t?: string; due?: string | null }) => void;
+  updateTask: (id: string, patch: { t?: string; due?: string | null; leadId?: string | null }) => void;
+  removeTask: (id: string) => void;
 }
 
 export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (set, get) => ({
@@ -473,8 +474,8 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   },
 
   // ---------------------------------------------------------------------------
-  // updateTask — optimistic update of text and/or due date; persist via
-  // v1.tasks.update({ taskId, text?, dueDate? }); reconcile returned DTO;
+  // updateTask — optimistic update of text, due date, and/or attached lead; persist via
+  // v1.tasks.update({ taskId, text?, dueDate?, leadId? }); reconcile returned DTO;
   // rollback on error. Only sends changed fields; empty string due → null.
   // ---------------------------------------------------------------------------
   updateTask: (id, patch) => {
@@ -487,12 +488,13 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
               ...t,
               ...(patch.t !== undefined ? { t: patch.t } : {}),
               ...(patch.due !== undefined ? { due: patch.due } : {}),
+              ...(patch.leadId !== undefined ? { leadId: patch.leadId === "" ? null : patch.leadId } : {}),
             }
           : t,
       ),
     }));
     // Build the mutation payload — only send changed fields.
-    const mutInput: { taskId: string; text?: string; dueDate?: string | null } = {
+    const mutInput: { taskId: string; text?: string; dueDate?: string | null; leadId?: string | null } = {
       taskId: id,
     };
     if (patch.t !== undefined) mutInput.text = patch.t;
@@ -500,6 +502,8 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       // Map empty string → null (no due date).
       mutInput.dueDate = patch.due === "" ? null : patch.due;
     }
+    // Map empty string → null (unattached); a uuid string → that lead.
+    if (patch.leadId !== undefined) mutInput.leadId = patch.leadId === "" ? null : patch.leadId;
     trpcVanilla.v1.tasks.update
       .mutate(mutInput)
       .then((dto) => {
@@ -544,6 +548,24 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         if (process.env.NODE_ENV !== "production") {
           // eslint-disable-next-line no-console
           console.error("[leads-slice] addTask failed — rolled back", { id, err });
+        }
+      });
+  },
+
+  // ---------------------------------------------------------------------------
+  // removeTask — optimistic remove; persist via v1.tasks.remove({ taskId }) (a
+  // server-side soft-delete); rollback on error. Mirrors addTask's snapshot shape.
+  // ---------------------------------------------------------------------------
+  removeTask: (id) => {
+    const prior = get().tasks.slice();
+    set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) }));
+    trpcVanilla.v1.tasks.remove
+      .mutate({ taskId: id })
+      .catch((err: unknown) => {
+        set({ tasks: prior });
+        if (process.env.NODE_ENV !== "production") {
+          // eslint-disable-next-line no-console
+          console.error("[leads-slice] removeTask failed — rolled back", { id, err });
         }
       });
   },

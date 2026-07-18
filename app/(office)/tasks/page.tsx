@@ -9,80 +9,41 @@
 
 import { useState } from "react";
 import { todayISO } from "@/lib/clock";
-import type { Task } from "@/lib/store/types";
+import type { Lead, Task } from "@/lib/store/types";
 import { useTasks, useLeads, useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { pressable } from "@/lib/a11y";
-import { isOverdue, dueLabel, tomorrowISO } from "@/lib/task-dates";
+import { isOverdue, tomorrowISO } from "@/lib/task-dates";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { shouldShowFirstRun } from "@/lib/first-run";
-
-// ---- Task row --------------------------------------------------------------
-
-interface TaskRowProps {
-  task: Task;
-  leadName: string | null;
-  onToggle: (id: string) => void;
-  onOpenLead: (leadId: string) => void;
-}
-
-function TaskRow({ task, leadName, onToggle, onOpenLead }: TaskRowProps) {
-  const overdue = isOverdue(task);
-  const isToday = !overdue && task.due === todayISO();
-  const dueCls = overdue ? "od" : isToday ? "now" : "";
-  const dueText = dueLabel(task.due);
-  const clickable = task.leadId != null && !!leadName;
-  const openLead = () => {
-    if (task.leadId != null) onOpenLead(task.leadId);
-  };
-
-  return (
-    <div
-      className={`trow${clickable ? " clickable" : ""}`}
-      onClick={clickable ? openLead : undefined}
-      {...(clickable ? pressable(openLead) : {})}
-    >
-      <button
-        className={`tchk${task.done ? " done" : ""}`}
-        aria-label={task.done ? "Reopen task" : "Mark task done"}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle(task.id);
-        }}
-      />
-      <div className="tmain">
-        <span className="ttitle">
-          {task.done ? <s className="muted">{task.t}</s> : task.t}
-        </span>
-        {leadName && <span className="pill src">{leadName}</span>}
-      </div>
-      <span className={`tdue${dueCls ? " " + dueCls : ""}`}>{dueText}</span>
-    </div>
-  );
-}
+import { EditableTaskRow, type TaskPatch } from "@/features/tasks/editable-task-row";
 
 // ---- Section ---------------------------------------------------------------
 
 interface TaskSectionProps {
   label: string;
   tasks: Task[];
-  leadNameOf: (leadId: string | null) => string | null;
+  leads: Lead[];
   onToggle: (id: string) => void;
+  onUpdate: (id: string, patch: TaskPatch) => void;
+  onRemove: (id: string) => void;
   onOpenLead: (leadId: string) => void;
 }
 
-function TaskSection({ label, tasks, leadNameOf, onToggle, onOpenLead }: TaskSectionProps) {
+function TaskSection({ label, tasks, leads, onToggle, onUpdate, onRemove, onOpenLead }: TaskSectionProps) {
   if (tasks.length === 0) return null;
   return (
     <>
       <div className="tsec">{label}</div>
       {tasks.map((t) => (
-        <TaskRow
+        <EditableTaskRow
           key={t.id}
           task={t}
-          leadName={leadNameOf(t.leadId)}
+          leads={leads}
           onToggle={onToggle}
+          onUpdate={onUpdate}
+          onRemove={onRemove}
           onOpenLead={onOpenLead}
         />
       ))}
@@ -97,6 +58,8 @@ export default function TasksPage() {
   const leads = useLeads();
   const addTask = useAppStore((s) => s.addTask);
   const toggleTask = useAppStore((s) => s.toggleTask);
+  const updateTask = useAppStore((s) => s.updateTask);
+  const removeTask = useAppStore((s) => s.removeTask);
   const openModal = useOpenModal();
 
   // Same query key + options as TasksHydrator → React Query dedupes it (no extra fetch). Lets us
@@ -110,10 +73,6 @@ export default function TasksPage() {
   const [newText, setNewText] = useState("");
   const [newDue, setNewDue] = useState(tomorrowISO());
   const [doneOpen, setDoneOpen] = useState(false);
-
-  // Derived in the body (never inside a selector).
-  const leadNameOf = (leadId: string | null): string | null =>
-    leadId == null ? null : (leads.find((l) => l.id === leadId)?.name ?? null);
 
   function handleAdd() {
     const text = newText.trim();
@@ -177,10 +136,10 @@ export default function TasksPage() {
       {open.length > 0 ? (
         <div className="card" style={{ padding: "6px 16px 12px" }}>
           <div className="tasklist">
-            <TaskSection label="⚠ Overdue" tasks={od} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
-            <TaskSection label="Today" tasks={today} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
-            <TaskSection label="Coming up" tasks={later} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
-            <TaskSection label="No due date" tasks={noDue} leadNameOf={leadNameOf} onToggle={toggleTask} onOpenLead={openLead} />
+            <TaskSection label="⚠ Overdue" tasks={od} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
+            <TaskSection label="Today" tasks={today} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
+            <TaskSection label="Coming up" tasks={later} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
+            <TaskSection label="No due date" tasks={noDue} leads={leads} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
           </div>
         </div>
       ) : firstRun ? (
@@ -214,11 +173,13 @@ export default function TasksPage() {
           <div className="reveal-body">
             <div className="tasklist">
               {done.map((t) => (
-                <TaskRow
+                <EditableTaskRow
                   key={t.id}
                   task={t}
-                  leadName={leadNameOf(t.leadId)}
+                  leads={leads}
                   onToggle={toggleTask}
+                  onUpdate={updateTask}
+                  onRemove={removeTask}
                   onOpenLead={openLead}
                 />
               ))}
