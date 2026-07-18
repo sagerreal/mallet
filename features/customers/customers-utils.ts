@@ -5,6 +5,21 @@
 
 import type { Lead } from "@/lib/store/types";
 
+// Whether the Customers (People) list should show the first-run empty state instead of the list
+// chrome. True ONLY on a SUCCESSFUL, empty load: a still-loading list (isFetched === false) must
+// not flash the empty screen, and a FAILED load (isError) must not be mistaken for "no customers"
+// (that would wrongly tell a real shop to add their first one). `count` is the TOTAL leads (active
+// + archived) — a shop with only archived customers is not first-run.
+export interface FirstRunInput {
+  readonly isFetched: boolean;
+  readonly isError: boolean;
+  readonly count: number;
+}
+
+export function shouldShowFirstRun({ isFetched, isError, count }: FirstRunInput): boolean {
+  return isFetched && !isError && count === 0;
+}
+
 export function filterLeads(leads: Lead[], q: string, stage: string, source: string): Lead[] {
   const lq = q.toLowerCase();
   return leads.filter((l) => {
