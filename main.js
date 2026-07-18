@@ -17,6 +17,7 @@
     roiCalc();
     consent();
     wireConversionEvents();
+    scrollDepth();
     exitIntent();
     mobileNav();
   });
@@ -742,7 +743,8 @@
     window.gtag('config', GA4_ID);
   }
   window.malletTrack = function (ev, params) {
-    if (window.gtag) window.gtag('event', ev, params || {});
+    if (window.gtag) window.gtag('event', ev, params || {});                      // GA4 (consent-gated)
+    try { if (typeof window.va === 'function') window.va('event', { name: ev }); } catch (e) {} // Vercel (cookieless — counts everyone)
   };
 
   /* Conversion events: demo clicks + Tally form submissions (postMessage). */
@@ -757,6 +759,11 @@
         window.malletTrack('leak_check_click', { page: location.pathname, spot: t.className.indexOf('notice') !== -1 ? 'bar' : 'cta' });
       });
     });
+    Array.prototype.forEach.call(document.querySelectorAll('a[href*="waitlist"]'), function (t) {
+      t.addEventListener('click', function () {
+        window.malletTrack('pilot_click', { page: location.pathname });
+      });
+    });
     window.addEventListener('message', function (e) {
       var d = e.data;
       if (typeof d === 'string' && d.indexOf('Tally.FormSubmitted') !== -1) {
@@ -765,6 +772,24 @@
         window.malletTrack('lead_submit', { page: location.pathname });
       }
     });
+  }
+
+  /* Scroll depth: fire once at each quarter reached — shows how far visitors get before they leave. */
+  function scrollDepth() {
+    var marks = [25, 50, 75, 100], hit = {}, ticking = false;
+    function check() {
+      var doc = document.documentElement;
+      var total = doc.scrollHeight - window.innerHeight;
+      if (total <= 0) return;
+      var pct = Math.round((window.scrollY || doc.scrollTop) / total * 100);
+      marks.forEach(function (m) {
+        if (!hit[m] && pct >= m) { hit[m] = 1; window.malletTrack('scroll_' + m); }
+      });
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(function () { check(); ticking = false; }); }
+    }, { passive: true });
+    check();
   }
 
   /* Official RB2B snippet shape (app.rb2b.com/script), wrapped so it only runs post-consent. */

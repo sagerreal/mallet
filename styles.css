@@ -206,13 +206,16 @@ strong{font-weight:700}
 
 /* mobile: unpin, stack device → rail → card, acts auto-play */
 @media(max-width:860px){
-  .hero-inner{padding:2.4rem 0 2rem}
-  .hero-scene{grid-template-columns:1fr;gap:1.5rem;margin-top:1.6rem}
-  .hero-device{order:1;max-width:100%}
-  .anno-pill{top:-1.9rem;font-size:.6rem}
-  .flow-rail{order:2;padding-left:.2rem;gap:1rem}
-  .anno-card{order:3;justify-self:stretch;max-width:100%}
-  .hero-cue{display:none}
+  .hero-inner{padding:2.2rem 0 1.8rem}
+  /* Lead with the Leak Check: it becomes the filled primary, Book a demo the quiet outline */
+  .hero-actions{flex-direction:column;gap:.7rem;margin-top:1.1rem}
+  .hero-actions .btn-amber{order:-1;background:var(--metal);color:#16150F;border-color:transparent;font-weight:700;box-shadow:0 10px 30px -8px rgba(180,96,44,.5)}
+  .hero-actions .btn-amber:hover{background:var(--metal-hover)}
+  .hero-actions .btn-primary{background:rgba(250,248,243,.07);color:var(--paper);border:1.5px solid rgba(250,248,243,.32);box-shadow:none}
+  /* Strip the scene to just the product proof — no rail, no floating card */
+  .hero-scene{display:block;margin-top:1.4rem}
+  .hero-device{max-width:100%;margin:0 auto}
+  .flow-rail,.anno-card,.hero-cue{display:none}
 }
 @media (prefers-reduced-motion:reduce){ .ap-spin,.hero-cue i{animation:none} }
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
