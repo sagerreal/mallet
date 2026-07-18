@@ -274,7 +274,7 @@ strong{font-weight:700}
 .ck{
   font-family:var(--font-mono);font-size:.66rem;letter-spacing:.03em;color:var(--ink-soft);
   border:1px solid var(--line);border-radius:999px;padding:.38rem .75rem;
-  opacity:.4;transform:translateY(4px);transition:all .4s ease;
+  opacity:.58;transform:translateY(4px);transition:all .4s ease;
 }
 .ck.done{opacity:1;transform:none;border-color:#E4DBC6;background:#F4EFE1;color:var(--ink)}
 .ck.done::before{content:"\2713 ";color:var(--live);font-weight:700}
@@ -296,7 +296,7 @@ strong{font-weight:700}
 }
 .qc-build.pressed{opacity:1;transform:scale(.95)}
 .qc-stages{list-style:none;margin-top:.85rem;display:flex;flex-direction:column;gap:.42rem}
-.qs{position:relative;padding-left:1.7rem;display:flex;align-items:baseline;gap:.55rem;opacity:.35;transition:opacity .3s ease}
+.qs{position:relative;padding-left:1.7rem;display:flex;align-items:baseline;gap:.55rem;opacity:.62;transition:opacity .3s ease}
 .qs b{font-size:.88rem;letter-spacing:-.01em}
 .qs span{font-family:var(--font-mono);font-size:.66rem;color:var(--ink-soft)}
 .qs::before{
