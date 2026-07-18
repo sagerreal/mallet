@@ -240,12 +240,13 @@ strong{font-weight:700}
 .sb-bar.w3{width:70%}
 /* ---- the four acts ---- */
 .acts{position:relative;min-height:372px;min-width:0;max-width:100%}
+/* Acts are opaque cards that swap instantly — no cross-fade, so text is never
+   caught half-transparent mid-transition. The motion lives inside each act. */
 .act{
-  position:absolute;inset:0;padding:1.15rem 1.25rem 1.3rem;
-  opacity:0;visibility:hidden;transform:translateY(10px);
-  transition:opacity .4s ease, transform .4s ease, visibility 0s linear .4s;
+  position:absolute;inset:0;padding:1.15rem 1.25rem 1.3rem;background:var(--card);
+  opacity:0;visibility:hidden;
 }
-.act.on{opacity:1;visibility:visible;transform:none;transition:opacity .45s ease, transform .45s ease}
+.act.on{opacity:1;visibility:visible}
 
 /* act 1 · the call */
 .call-tiles{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
