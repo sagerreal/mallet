@@ -182,8 +182,13 @@
       els[id] = document.getElementById(id);
     });
 
-    var answers = {}, penalties = {}, idx = 0;
-    function track(ev, params) { if (window.malletTrack) window.malletTrack(ev, params || {}); }
+    var answers = {}, penalties = {}, idx = 0, seenStep = {};
+    // GA4 (consent-gated) AND Vercel (cookieless) so drop-off is visible even without cookie consent
+    function track(ev, params) {
+      if (window.malletTrack) window.malletTrack(ev, params || {});
+      try { if (typeof window.va === 'function') window.va('event', { name: ev }); } catch (e) {}
+    }
+    function trackStep(n) { if (!seenStep[n]) { seenStep[n] = 1; track('leak_step_' + n); } }
 
     function show(k) {
       Object.keys(steps).forEach(function (s) { steps[s].classList.toggle('on', s === k); });
@@ -192,6 +197,7 @@
 
     function renderQ() {
       var q = QS[idx];
+      trackStep(idx + 1);
       els.lcCount.textContent = (idx + 1) + ' / ' + QS.length;
       els.lcBar.style.width = ((idx) / QS.length * 100) + '%';
       els.lcQ.textContent = q.q;
