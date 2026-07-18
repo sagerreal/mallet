@@ -238,6 +238,20 @@ export interface SettingsSlice {
   setFeeCredited: (b: boolean) => void;
   setBookingField: (field: "notServices" | "deferKeywords", value: string) => void;
   setBookingHours: (key: keyof BookingHours, value: number) => void;
+  /**
+   * Set a single day's open AND close in ONE persisted write. The Closed↔Open toggle (and any
+   * open change that must bump close to stay forward) route through this so the store never
+   * round-trips through an invalid intermediate — open set while close is still the closed
+   * sentinel 0. Two separate persists could otherwise strand {open:8, close:0} on an out-of-order
+   * or dropped response, which the voice availability math reads as a closed day and silently sends
+   * every caller to voicemail. The domain now rejects that intermediate, so it must never ship.
+   */
+  setBookingDayHours: (
+    openKey: keyof BookingHours,
+    closeKey: keyof BookingHours,
+    open: number,
+    close: number,
+  ) => void;
   setBookingArea: (field: keyof BookingArea, value: string) => void;
 
   // misc config
@@ -454,6 +468,21 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
       booking: {
         ...s.booking,
         hours: { ...s.booking.hours, [key]: Math.max(0, Number(value) || 0) },
+      },
+    }));
+    persistBooking(get, set, snapshot);
+  },
+
+  setBookingDayHours: (openKey, closeKey, open, close) => {
+    const snapshot = get().booking;
+    set((s) => ({
+      booking: {
+        ...s.booking,
+        hours: {
+          ...s.booking.hours,
+          [openKey]: Math.max(0, Number(open) || 0),
+          [closeKey]: Math.max(0, Number(close) || 0),
+        },
       },
     }));
     persistBooking(get, set, snapshot);

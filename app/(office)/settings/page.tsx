@@ -846,6 +846,7 @@ function SecBooking() {
   const setFeeCredited = useAppStore((s) => s.setFeeCredited);
   const setBookingField = useAppStore((s) => s.setBookingField);
   const setBookingHours = useAppStore((s) => s.setBookingHours);
+  const setBookingDayHours = useAppStore((s) => s.setBookingDayHours);
   const setBookingArea = useAppStore((s) => s.setBookingArea);
 
   // Single-expanded service accordion — null = all collapsed
@@ -899,13 +900,11 @@ function SecBooking() {
             type="checkbox"
             checked={isOpen}
             onChange={(e) => {
-              if (e.target.checked) {
-                setBookingHours(oKey, 8);
-                setBookingHours(cKey, 17);
-              } else {
-                setBookingHours(oKey, 0);
-                setBookingHours(cKey, 0);
-              }
+              // Set open + close in ONE persisted write so the row never round-trips through the
+              // invalid {open:8, close:0} the domain now rejects (which read as a closed day and
+              // sent every voice caller to voicemail).
+              if (e.target.checked) setBookingDayHours(oKey, cKey, 8, 17);
+              else setBookingDayHours(oKey, cKey, 0, 0);
             }}
           />
           <i />
@@ -915,10 +914,12 @@ function SecBooking() {
             <HourSelect
               value={ov}
               onChange={(h) => {
-                setBookingHours(oKey, h);
                 // Keep the range valid: close stays after open (an inverted range reads as a
-                // closed day to the slot math, silently killing that day's availability).
-                if (h >= cv) setBookingHours(cKey, Math.min(h + 1, 24));
+                // closed day to the slot math, silently killing that day's availability — and the
+                // domain now rejects it). When the new open would cross close, set BOTH atomically
+                // so we never persist the invalid intermediate; otherwise just move open.
+                if (h >= cv) setBookingDayHours(oKey, cKey, h, Math.min(h + 1, 24));
+                else setBookingHours(oKey, h);
               }}
               min={0}
               max={23}
