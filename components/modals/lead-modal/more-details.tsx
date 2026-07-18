@@ -33,9 +33,16 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [showAddField, setShowAddField] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState("");
+  const [deleteArmed, setDeleteArmed] = useState(false);
 
+  // "Delete" here ARCHIVES the customer (deleteLead → archiveLead, a soft-delete): they're
+  // recoverable from the Archived filter, never hard-deleted. Two-step arm-then-confirm (matches the
+  // job modal) instead of a native browser dialog, with copy that tells the truth about what happens.
   function handleDelete() {
-    if (!confirm(`Delete ${lead.name}? This cannot be undone.`)) return;
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      return;
+    }
     deleteLead(lead.id);
     closeModal();
   }
@@ -154,8 +161,8 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
 
       {/* Footer — both "get rid of it" paths grouped on the LEFT, away from the
           bottom-right corner where the eye expects a confirm/primary action.
-          Clean up (Lost/Archive, reversible) is the button; Delete (permanent)
-          is a de-emphasized red link beside it. */}
+          "Clean up" opens the Lost/Archive picker; "Delete" is a de-emphasized red
+          link that ARCHIVES (soft-delete, recoverable) after a two-step confirm. */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 8, borderTop: "1px solid var(--line-2)" }}>
         <button
           className="btn ghost sm"
@@ -166,10 +173,18 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
         <span
           className="linklike"
           role="button"
-          style={{ color: "var(--red)", fontSize: 12.5, cursor: "pointer" }}
+          tabIndex={0}
+          aria-label={deleteArmed ? `Confirm — archive ${lead.name}` : `Delete ${lead.name}`}
+          style={{ color: "var(--red)", fontSize: 12.5, cursor: "pointer", fontWeight: deleteArmed ? 700 : undefined }}
           onClick={handleDelete}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleDelete();
+            }
+          }}
         >
-          Delete
+          {deleteArmed ? "Confirm — archives, recoverable" : "Delete"}
         </span>
       </div>
     </>
