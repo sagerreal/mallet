@@ -21,7 +21,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="styles.css" />
   <noscript><style>[data-reveal],.hero-el,.sc,.sc-g,.sc-ck,.sc-ckdone,.ez,.act,.af-panel,.mpanel{opacity:1!important;transform:none!important;visibility:visible!important;display:block}</style></noscript>
@@ -72,35 +72,43 @@
   <main class="frame">
 
     <!-- ============================ HERO ============================ -->
-    <section class="hero">
-      <div class="wrap hero-grid">
+    <section class="hero" id="hero">
+      <div class="hero-track">
+        <div class="hero-pin">
+          <div class="bench" aria-hidden="true"></div>
+          <div class="bench-veil" aria-hidden="true"></div>
 
-        <div class="hero-copy">
-          <p class="hero-kicker hero-el" data-step="1">The AI-native operating system for service businesses</p>
-          <h1 class="hero-el h1-beats" data-step="2"><span class="beat" data-beat="0">Answers the call.</span><span class="beat" data-beat="1">Writes the quote.</span><span class="beat" data-beat="2">Runs the job.</span><span class="beat" data-beat="3">Chases the invoice.</span></h1>
-          <p class="lede hero-el" data-step="3">A purpose-built AI at every step, from lead to invoice &mdash; one platform that runs the whole business.</p>
-          <div class="hero-actions hero-el" data-step="4">
-            <a class="btn-primary lg js-book-demo" href="#demo">Book a demo</a>
-            <a class="btn-amber lg" href="/leak-check">What&rsquo;s my shop leaking?&nbsp;&rarr;</a>
-          </div>
-          <p class="hero-verts hero-el" data-step="5">Built for <span class="trade-flip" id="tradeFlip" aria-hidden="true"><b class="tf-word on">plumbers</b></span><span class="sr-only">plumbers, electricians, garage door pros, roofers, HVAC techs, tree crews, septic pros, appliance techs, fence builders, and painters</span> &mdash; one platform for the owner, the office, and the crew.</p>
-        </div>
-
-        <!-- The four-act demo: one act per headline beat. Auto-plays, ▸ skips, beats jump. -->
-        <div class="hero-stage hero-el" data-step="6" id="demo" aria-label="Mallet demo — the call, the quote, the job, the invoice">
-          <div class="stage-back" aria-hidden="true">
-            <p class="sb-title">TODAY &middot; 6 JOBS</p>
-            <div class="sb-bar w1"></div>
-            <div class="sb-bar w2"></div>
-            <div class="sb-bar w3"></div>
-          </div>
-          <div class="desk-window">
-            <div class="desk-bar">
-              <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <span class="desk-title" id="stageTitle">MALLET&nbsp;FRONT&nbsp;DESK</span>
-              <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>DEMO</span>
+          <div class="hero-inner">
+            <div class="hero-head">
+              <p class="hero-kicker">The AI-native operating system for service businesses</p>
+              <h1 class="hero-serif">Run the whole shop<br>from one screen.</h1>
+              <p class="hero-lede">Mallet answers the calls, writes the quotes, runs the jobs, and gets you paid.</p>
+              <div class="hero-actions">
+                <a class="btn-primary lg js-book-demo" href="#demo">Book a demo</a>
+                <a class="btn-amber lg" href="/leak-check">What&rsquo;s my shop leaking?&nbsp;&rarr;</a>
+              </div>
             </div>
-            <div class="acts" id="acts">
+
+            <div class="hero-scene" id="demo" aria-label="Mallet demo — the call, the quote, the job, the invoice">
+              <!-- the flow: four stages, each feeding the next -->
+              <ol class="flow-rail" id="flowRail" aria-label="How one job flows through Mallet">
+                <li class="fr on" data-stage="0"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Front&nbsp;Desk</b><span>answers the call</span></span></li>
+                <li class="fr" data-stage="1"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Estimating</b><span>writes the quote</span></span></li>
+                <li class="fr" data-stage="2"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Foreman</b><span>runs the job</span></span></li>
+                <li class="fr" data-stage="3"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Follow-ups</b><span>chases the invoice</span></span></li>
+                <span class="fr-line" aria-hidden="true"><i class="fr-fill" id="frFill"></i></span>
+              </ol>
+
+              <!-- the device: the real Mallet screens -->
+              <div class="hero-device">
+                <span class="anno-pill" aria-hidden="true"><i class="ap-spin"></i>Answering every call</span>
+                <div class="desk-window">
+                  <div class="desk-bar">
+                    <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="desk-title" id="stageTitle">MALLET&nbsp;FRONT&nbsp;DESK</span>
+                    <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>DEMO</span>
+                  </div>
+                  <div class="acts" id="acts">
 
               <!-- ACT 1 · answers the call -->
               <section class="act on" data-act="0">
@@ -159,14 +167,24 @@
                 </div>
               </section>
 
+                  </div>
+                </div>
+                <button class="stage-next" id="stageNext" type="button" aria-label="Next: writes the quote">&#9654;</button>
+              </div>
+
+              <!-- contextual outcome card, updates per stage -->
+              <aside class="anno-card" id="annoCard" aria-hidden="true">
+                <p class="ac-head"><span id="acTitle">MISSED CALL</span><b id="acWho">Sarah&nbsp;K.</b></p>
+                <ul id="acList">
+                  <li>&check; Texted back in 6 seconds</li>
+                  <li>&check; Booked without you</li>
+                </ul>
+              </aside>
             </div>
-          </div>
-          <div class="stage-ctl">
-            <span class="stage-hint">WATCH IT WORK &mdash; OR CLICK A LINE</span>
-            <button class="stage-next" id="stageNext" type="button" aria-label="Next: writes the quote">&#9654;</button>
+
+            <p class="hero-cue" aria-hidden="true"><span>Scroll to watch a job run itself</span><i>&darr;</i></p>
           </div>
         </div>
-
       </div>
     </section>
 
