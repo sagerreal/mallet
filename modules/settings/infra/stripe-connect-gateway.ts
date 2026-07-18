@@ -16,9 +16,13 @@ export class StripeConnectGateway implements ConnectGateway {
       // STABLE idempotency key per org (mirrors invoicing's `pl:${orgId}:...` convention): two
       // concurrent creates for the same org — or an immediate retry after a rolled-back save —
       // collapse to the SAME Express account rather than minting duplicates. One account per org.
+      // CAVEAT: Stripe also caches FAILED responses under an idempotency key for 24h, so a
+      // precondition failure (e.g. Connect not yet enabled on the platform) poisons every retry
+      // for a full day. The `:v2:` segment rotates past a key poisoned during initial Connect
+      // setup; bump the version again only if a stale cached failure ever recurs.
       const out = await this.client.createExpressAccount({
         country: "US",
-        idempotencyKey: `connect-acct:${cmd.orgId}`,
+        idempotencyKey: `connect-acct:v2:${cmd.orgId}`,
       });
       return ok({ accountId: out.accountId });
     } catch (error) {
