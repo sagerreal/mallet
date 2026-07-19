@@ -50,6 +50,7 @@ export function QuoteSweepModalContent() {
   const leads = useAppStore((s) => s.leads);
   const updateEstimate = useAppStore((s) => s.updateEstimate);
   const deleteEstimate = useAppStore((s) => s.deleteEstimate);
+  const restoreEstimate = useAppStore((s) => s.restoreEstimate);
 
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const [deleteArmed, setDeleteArmed] = useState(false);
@@ -57,6 +58,9 @@ export function QuoteSweepModalContent() {
   const live = estimates.filter((e) => !e.archived);
   const clutter = live.filter(isClutter);
   const rest = live.filter((e) => !isClutter(e));
+  // Archived quotes restore HERE now — archive is a state on the record, not a
+  // Settings destination (the old Settings → Archive tab is retired).
+  const archived = estimates.filter((e) => e.archived);
 
   function toggle(id: string) {
     setChecked((prev) => {
@@ -133,6 +137,32 @@ export function QuoteSweepModalContent() {
           </>
         )}
         {live.length === 0 && <div className="empty-att">No quotes on file.</div>}
+        {archived.length > 0 && (
+          <>
+            <div className="navlabel" style={{ padding: `${live.length ? 12 : 2}px 0 6px` }}>
+              Archived — {archived.length}
+            </div>
+            {archived.map((e) => {
+              const l = leads.find((x) => x.id === e.leadId);
+              return (
+                <div className="sweeprow" key={e.id}>
+                  <b style={{ flex: 1 }}>
+                    {e.num} — {e.title}
+                  </b>
+                  <span className="muted">{l ? l.name : ""}</span>
+                  <span className="muted">{fmt$(estTotal(e))}</span>
+                  <button
+                    className="btn sm"
+                    aria-label={`Restore ${e.num}`}
+                    onClick={() => restoreEstimate(e.id)}
+                  >
+                    ↩ Restore
+                  </button>
+                </div>
+              );
+            })}
+          </>
+        )}
       </div>
 
       <div

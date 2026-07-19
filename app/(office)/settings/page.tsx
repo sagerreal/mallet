@@ -18,13 +18,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
 import { CrewHoursCard } from "./crew-hours-card";
-import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { ServiceRow } from "./booking-service-card";
@@ -33,7 +32,6 @@ import { StarterPlaybookModal } from "./starter-playbook-modal";
 import { playbookFor } from "./trade-playbooks";
 import { TagInput } from "./tag-input";
 import { HourSelect } from "./hour-select";
-import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 
@@ -77,12 +75,24 @@ function SecWorkspace({ role }: { role: string }) {
             Your account
           </h3>
           <YourNameField />
-          <h3 className="setgrp" style={{ margin: "20px 0 10px" }}>
-            Team &amp; roles
-          </h3>
-          <TeamRolesBlock />
         </>
       )}
+    </>
+  );
+}
+
+// ============================================================================
+// Section: Team — people, roles, permissions, and when each crew member works.
+// Crew hours moved here from Booking (settings-IA regroup): a person's identity
+// and their working hours belong together — the Front Desk playbook reads the
+// same crew_schedules data either way.
+// ============================================================================
+
+function SecTeam() {
+  return (
+    <>
+      <TeamRolesBlock />
+      <CrewHoursCard />
     </>
   );
 }
@@ -576,14 +586,11 @@ function TeamRolesBlock() {
 // Section: Lead sources
 // ============================================================================
 
-function SecSources() {
+function SecChannels() {
   const sources = useAppStore((s) => s.sources);
   const leads = useAppStore((s) => s.leads);
   const addSource = useAppStore((s) => s.addSource);
   const removeSource = useAppStore((s) => s.removeSource);
-  const setToggle = useAppStore((s) => s.setToggle);
-  const frontDesk = useAppStore((s) => s.toggles.frontDesk);
-  const openModal = useOpenModal();
 
   const [srcName, setSrcName] = useState("");
   const [srcError, setSrcError] = useState<string | null>(null);
@@ -604,68 +611,7 @@ function SecSources() {
 
   return (
     <>
-      <FoldCard title="AI Front Desk" defaultOpen summary={frontDesk ? "On" : "Off"}>
-        <div className="stage-row" style={{ borderTop: "none", marginTop: 0 }}>
-          <div style={{ flex: 1 }}>
-            <b style={{ fontWeight: 700 }}>Front Desk</b>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Answers calls &amp; texts you miss, books a slot, holds it for your one-tap yes.
-            </div>
-          </div>
-          <label className="switch">
-            <input type="checkbox" checked={frontDesk} onChange={(e) => setToggle("frontDesk", e.target.checked)} />
-            <i />
-          </label>
-        </div>
-        <div className="muted" style={{ fontSize: "11.5px", marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line)" }}>
-          Unknown number → Front Desk, handled as a lead. A <b>verified crew phone</b> → your assistant — never the Front Desk.
-        </div>
-        <div className="rail muted" style={{ marginTop: 10, fontSize: 12 }}>
-          Off — missed calls go to voicemail. On — they text back, parsed and held for your yes.
-        </div>
-      </FoldCard>
-
-      <h3 className="setgrp" style={{ margin: "20px 0 10px" }}>
-        Ways leads reach you
-      </h3>
-
-      <FoldCard title="Your Mallet number" summary={MALLET_NUMBER}>
-        <div className="hookurl">
-          <code>{MALLET_NUMBER}</code>
-          <button className="btn sm" onClick={() => navigator.clipboard.writeText(MALLET_NUMBER)}>Copy</button>
-        </div>
-        <p className="muted" style={{ marginTop: 9, fontSize: "11.5px" }}>
-          Your business line. Customers call &amp; text this; it rings your crew and every reply goes out as this number — personal cells stay private.
-        </p>
-        <div style={{ display: "flex", gap: 8, marginTop: 11, flexWrap: "wrap" }}>
-          {/* deferred: external integration (forward existing number) */}
-          <button className="btn sm" onClick={() => {}}>Forward your existing number</button>
-          {/* deferred: external integration (port number in) */}
-          <button className="btn sm ghost" onClick={() => {}}>Port your number in</button>
-        </div>
-      </FoldCard>
-
       <LeadMarketplacesCard />
-
-      <FoldCard title="Import customers" summary="CSV">
-        <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
-          <IconWell>
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          </IconWell>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="muted" style={{ fontSize: 13, margin: "1px 0 11px", lineHeight: 1.45 }}>
-              Bring your existing customers over from QuickBooks, Google Contacts, Jobber, or any spreadsheet — export a CSV and upload it.
-            </p>
-            <button className="btn primary" onClick={() => openModal(MODAL.IMPORT_CUSTOMERS)}>
-              Upload a spreadsheet (CSV)
-            </button>
-          </div>
-        </div>
-      </FoldCard>
 
       <WebsiteFormCard />
 
@@ -713,10 +659,14 @@ function SecSources() {
 }
 
 // ============================================================================
-// Section: Booking
+// Section: Front Desk — ONE home for the flagship: the on/off switch, the
+// business number, and the whole booking playbook it reads (settings-IA
+// regroup — previously split across the Lead sources and Booking tabs).
 // ============================================================================
 
-function SecBooking() {
+function SecFrontDesk() {
+  const setToggle = useAppStore((s) => s.setToggle);
+  const frontDesk = useAppStore((s) => s.toggles.frontDesk);
   const bk = useAppStore((s) => s.booking);
   const updateBookingService = useAppStore((s) => s.updateBookingService);
   const addBookingService = useAppStore((s) => s.addBookingService);
@@ -820,7 +770,44 @@ function SecBooking() {
 
   return (
     <>
-      <h3 className="setgrp" style={{ margin: "2px 0 12px" }}>
+      <FoldCard title="AI Front Desk" defaultOpen summary={frontDesk ? "On" : "Off"}>
+        <div className="stage-row" style={{ borderTop: "none", marginTop: 0 }}>
+          <div style={{ flex: 1 }}>
+            <b style={{ fontWeight: 700 }}>Front Desk</b>
+            <div className="muted" style={{ fontSize: 12 }}>
+              Answers calls &amp; texts you miss, books a slot, holds it for your one-tap yes.
+            </div>
+          </div>
+          <label className="switch">
+            <input type="checkbox" checked={frontDesk} onChange={(e) => setToggle("frontDesk", e.target.checked)} />
+            <i />
+          </label>
+        </div>
+        <div className="muted" style={{ fontSize: "11.5px", marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line)" }}>
+          Unknown number → Front Desk, handled as a lead. A <b>verified crew phone</b> → your assistant — never the Front Desk.
+        </div>
+        <div className="rail muted" style={{ marginTop: 10, fontSize: 12 }}>
+          Off — missed calls go to voicemail. On — they text back, parsed and held for your yes.
+        </div>
+      </FoldCard>
+
+      <FoldCard title="Your Mallet number" summary={MALLET_NUMBER}>
+        <div className="hookurl">
+          <code>{MALLET_NUMBER}</code>
+          <button className="btn sm" onClick={() => navigator.clipboard.writeText(MALLET_NUMBER)}>Copy</button>
+        </div>
+        <p className="muted" style={{ marginTop: 9, fontSize: "11.5px" }}>
+          Your business line. Customers call &amp; text this; it rings your crew and every reply goes out as this number — personal cells stay private.
+        </p>
+        <div style={{ display: "flex", gap: 8, marginTop: 11, flexWrap: "wrap" }}>
+          {/* deferred: external integration (forward existing number) */}
+          <button className="btn sm" onClick={() => {}}>Forward your existing number</button>
+          {/* deferred: external integration (port number in) */}
+          <button className="btn sm ghost" onClick={() => {}}>Port your number in</button>
+        </div>
+      </FoldCard>
+
+      <h3 className="setgrp" style={{ margin: "20px 0 12px" }}>
         Booking playbook{" "}
         <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 500, color: "var(--ink-3)" }}>
           · what your AI Front Desk reads to triage &amp; book
@@ -925,86 +912,7 @@ function SecBooking() {
           </div>
         </div>
       </FoldCard>
-
-      <CrewHoursCard />
     </>
-  );
-}
-
-// ============================================================================
-// Section: Custom fields
-// ============================================================================
-
-function SecFields() {
-  return (
-    <>
-      <FoldCard title="Custom fields" defaultOpen summary="0 fields">
-        <div className="empty-att">
-          None yet — add one here, or from any lead&apos;s More details.
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="setCfName" placeholder="e.g. Gate code"
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          {/* deferred: custom fields */}
-          <button className="btn" onClick={() => {}}>+ Add</button>
-        </div>
-      </FoldCard>
-
-      <FoldCard title="Company custom fields" summary="0">
-        <div className="empty-att">
-          None yet — add one here, or from any company&apos;s Details.
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="setCoCfName" placeholder="e.g. Account number, Region"
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          {/* deferred: custom fields */}
-          <button className="btn" onClick={() => {}}>+ Add</button>
-        </div>
-      </FoldCard>
-    </>
-  );
-}
-
-// ============================================================================
-// Section: Archive
-// ============================================================================
-
-function SecArchive() {
-  const leads = useAppStore((s) => s.leads);
-  const estimates = useAppStore((s) => s.estimates);
-  const archLeads = leads.filter((l) => l.archived);
-  const archEsts = estimates.filter((e) => e.archived);
-  const restoreLead = useAppStore((s) => s.restoreLead);
-  const restoreEstimate = useAppStore((s) => s.restoreEstimate);
-
-  const count = archLeads.length + archEsts.length;
-
-  return (
-    <FoldCard
-      title="Archive"
-      defaultOpen
-      summary={count ? `${count} item${count === 1 ? "" : "s"}` : "empty"}
-    >
-      {archLeads.map((l) => (
-        <div key={l.id} className="stage-row">
-          <span style={{ fontWeight: 700 }}>{l.name}</span>
-          <span className="trig">lead · {l.job} · {l.source}</span>
-          <button className="btn sm" onClick={() => restoreLead(l.id)}>↩ Restore</button>
-        </div>
-      ))}
-      {archEsts.map((e) => (
-        <div key={e.id} className="stage-row">
-          <span style={{ fontWeight: 700 }}>{e.num} — {e.title}</span>
-          <span className="trig">quote · {e.status}</span>
-          <button className="btn sm" onClick={() => restoreEstimate(e.id)}>↩ Restore</button>
-        </div>
-      ))}
-      {count === 0 && (
-        <div className="empty-att">
-          Nothing archived. Anything you archive — leads, quotes, companies, jobs — lands here, recoverable.
-        </div>
-      )}
-    </FoldCard>
   );
 }
 
@@ -1012,7 +920,16 @@ function SecArchive() {
 // Main page
 // ============================================================================
 
-type SetTab = "workspace" | "sources" | "payments" | "booking" | "fields" | "archive";
+type SetTab = "workspace" | "team" | "channels" | "frontdesk" | "payments";
+
+// Old deep-link tab names → their new homes (settings-IA regroup). ?tab=payments must keep
+// working verbatim — Stripe's Connect onboarding return URL points at it server-side.
+const TAB_ALIASES: Record<string, SetTab> = {
+  sources: "channels",
+  booking: "frontdesk",
+  fields: "workspace",
+  archive: "workspace",
+};
 
 interface SectionDef {
   k: SetTab;
@@ -1034,20 +951,21 @@ export default function SettingsPage() {
       router.replace("/pricebook");
       return;
     }
-    if (t && ["workspace", "sources", "payments", "booking", "fields", "archive"].includes(t)) {
-      setActiveTab(t as SetTab);
-    }
+    if (!t) return;
+    const canonical: SetTab | undefined = ["workspace", "team", "channels", "frontdesk", "payments"].includes(t)
+      ? (t as SetTab)
+      : TAB_ALIASES[t];
+    if (canonical) setActiveTab(canonical);
   }, [router]);
   const { data: me } = api.v1.identity.me.useQuery();
   const role = me?.role ?? "office";
 
   const allSections = [
-    { k: "workspace" as SetTab, label: "Workspace",         body: <SecWorkspace role={role} /> },
-    { k: "sources"   as SetTab, label: "Lead sources",      body: <SecSources /> },
-    { k: "payments"  as SetTab, label: "Payments",          ownerOnly: true, body: <PaymentsCard /> },
-    { k: "booking"   as SetTab, label: "Booking",           ownerOnly: true, body: <SecBooking /> },
-    { k: "fields"    as SetTab, label: "Custom fields",     body: <SecFields /> },
-    { k: "archive"   as SetTab, label: "Archive",           body: <SecArchive /> },
+    { k: "workspace" as SetTab, label: "Workspace",  body: <SecWorkspace role={role} /> },
+    { k: "team"      as SetTab, label: "Team",       body: <SecTeam /> },
+    { k: "channels"  as SetTab, label: "Channels",   body: <SecChannels /> },
+    { k: "frontdesk" as SetTab, label: "Front Desk", ownerOnly: true, body: <SecFrontDesk /> },
+    { k: "payments"  as SetTab, label: "Payments",   ownerOnly: true, body: <PaymentsCard /> },
   ] satisfies SectionDef[];
   const sections: SectionDef[] = allSections.filter((s) => role === "owner" || role === "office" || !s.ownerOnly);
 
@@ -1064,7 +982,12 @@ export default function SettingsPage() {
             <div
               key={s.k}
               className={`navitem${tab === s.k ? " active" : ""}`}
-              onClick={() => setActiveTab(s.k)}
+              onClick={() => {
+                setActiveTab(s.k);
+                // Keep the URL addressable (shareable / AI-bar linkable) without a
+                // navigation — replaceState avoids the useSearchParams/Suspense cost.
+                window.history.replaceState(null, "", `/settings?tab=${s.k}`);
+              }}
             >
               <span>{s.label}</span>
             </div>
@@ -1072,11 +995,9 @@ export default function SettingsPage() {
         </nav>
 
         <div className="setbody">
-          {sections.map((s) => (
-            <div key={s.k} style={{ display: tab === s.k ? "block" : "none" }}>
-              {s.body}
-            </div>
-          ))}
+          {/* Only the ACTIVE section mounts — previously every tab rendered behind
+              display:none, so all their queries fired on page load. */}
+          {sections.find((s) => s.k === tab)?.body}
         </div>
       </div>
     </div>

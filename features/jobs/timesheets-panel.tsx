@@ -157,7 +157,7 @@ export function TimesheetsPanel() {
           heading={FIRST_RUN.heading}
           subtext={FIRST_RUN.subtext}
           paths={[
-            { ...FIRST_RUN.crew, onAction: () => router.push("/settings?tab=workspace"), variant: "primary" },
+            { ...FIRST_RUN.crew, onAction: () => router.push("/settings?tab=team"), variant: "primary" },
             // Only offer a manual entry once there's a crew member to attribute it to (no dead button).
             ...(techs.length > 0 ? [{ ...FIRST_RUN.entry, onAction: () => handleAdd(techs[0]!.id) }] : []),
           ]}

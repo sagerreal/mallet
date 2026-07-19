@@ -140,19 +140,19 @@ export function SetupChecklist() {
         open={openStep === "marketplaces"} onClose={() => setOpenStep(null)}
         title="Connect lead marketplaces" blurb="Pull Angi & Thumbtack leads straight into your pipeline."
         points={["Mint a webhook link for each marketplace", "New leads land automatically, no copy-paste", "Same pipeline as your calls and website"]}
-        href="/settings?tab=sources" cta="Connect marketplaces"
+        href="/settings?tab=channels" cta="Connect marketplaces"
       />
       <GrowStepModal
         open={openStep === "website-form"} onClose={() => setOpenStep(null)}
         title="Add your website form" blurb="Turn site visitors into leads you can quote."
         points={["Get a shareable link or one-line embed", "Every submission becomes a lead", "Works on any website"]}
-        href="/settings?tab=sources" cta="Set up the form"
+        href="/settings?tab=channels" cta="Set up the form"
       />
       <GrowStepModal
         open={openStep === "crew"} onClose={() => setOpenStep(null)}
         title="Add your field crew" blurb="So the AI books the nearest available tech."
         points={["Mark who's out in the field", "Set each crew's working hours", "Jobs route by proximity + availability"]}
-        href="/settings?tab=workspace" cta="Add crew"
+        href="/settings?tab=team" cta="Add crew"
       />
     </div>
   );
