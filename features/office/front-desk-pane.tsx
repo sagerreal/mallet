@@ -156,8 +156,11 @@ export function FrontDeskPane() {
         <span className={frontDesk ? "odot" : "odot off"} aria-hidden="true" />
         <span className="fds">{frontDesk ? "Answering" : "Off — calls go to voicemail"}</span>
         <span className="fdnum">{MALLET_NUMBER}</span>
+        <span className="fdsep" aria-hidden="true">·</span>
         <a className="tedit" href={`tel:${MALLET_NUMBER.replace(/[^\d]/g, "")}`}>Test call</a>
+        <span className="fdsep" aria-hidden="true">·</span>
         <button className="tedit" onClick={() => navigator.clipboard.writeText(MALLET_NUMBER)}>Copy</button>
+        <span className="fdsep" aria-hidden="true">·</span>
         <button className="tedit" onClick={() => setAboutOpen((v) => !v)}>{aboutOpen ? "close" : "about your number"}</button>
         <span className="sp" />
         <label className="switch">
@@ -186,11 +189,15 @@ export function FrontDeskPane() {
       <div className="fdcols">
         {/* main object: the services accordion, unchanged */}
         <div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10 }}>
-            <button className="btn ghost" onClick={() => setStarterOpen(true)}>Starter playbook</button>
-            <button className="btn primary" onClick={() => setAddOpen(true)}>+ Add service</button>
-          </div>
-          <div style={{ border: "1px solid var(--line-2, var(--line))", borderRadius: 8, overflow: "hidden", background: "var(--card)" }}>
+          {/* Polaris-style card header: title + count left, actions right — nothing floats. */}
+          <div className="svccard">
+            <div className="svccard-h">
+              <b>Services</b>
+              <span className="m">{bk.services.length}</span>
+              <span className="sp" />
+              <button className="btn sm ghost" onClick={() => setStarterOpen(true)}>Starter playbook</button>
+              <button className="btn sm primary" onClick={() => setAddOpen(true)}>+ Add service</button>
+            </div>
             {bk.services.map((s, i) => (
               <ServiceRow
                 key={i}
