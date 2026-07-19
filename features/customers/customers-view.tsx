@@ -8,7 +8,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
+import { useAppStore, useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
 import { isStaleLead } from "@/features/pipeline/pipeline-constants";
@@ -51,6 +51,7 @@ export function CustomersView() {
   const openModal = useOpenModal();
   const custSeg = useCustSeg();
   const setCustSeg = useSetCustSeg();
+  const restoreLead = useAppStore((s) => s.restoreLead);
 
   // Same query key + options as LeadsHydrator, so React Query dedupes it — no extra fetch. We only
   // read the load state to tell "still loading" and "load errored" apart from a genuinely empty
@@ -139,6 +140,9 @@ export function CustomersView() {
                 {staleCount}
               </span>
             )}
+          </button>
+          <button className="btn ghost" onClick={() => openModal(MODAL.IMPORT_CUSTOMERS)}>
+            Import
           </button>
           <button className="btn primary" onClick={() => openModal(MODAL.NEW_CUSTOMER)}>
             + New customer
@@ -237,6 +241,7 @@ export function CustomersView() {
                   </th>
                 );
               })}
+              {archiveSet === "archived" && <th aria-label="Restore" />}
             </tr>
           </thead>
           <tbody>
@@ -248,11 +253,12 @@ export function CustomersView() {
                   visibleCols={visible}
                   value={valueByLead.get(lead.id) ?? null}
                   onOpen={(id) => openModal(MODAL.LEAD, { leadId: id })}
+                  onRestore={archiveSet === "archived" ? restoreLead : undefined}
                 />
               ))
             ) : (
               <tr>
-                <td colSpan={visible.length}>
+                <td colSpan={visible.length + (archiveSet === "archived" ? 1 : 0)}>
                   <div className="empty-att">
                     {archiveSet === "archived" ? (
                       "No archived customers."

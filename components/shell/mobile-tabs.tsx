@@ -104,7 +104,7 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
   const onField = isTech || FIELD_ROUTES.some((r) => pathname.startsWith(r));
 
   const officeTabs: Tab[] = [
-    { href: "/dashboard", label: "Home", icon: <HomeIcon />, active: pathname.startsWith("/dashboard") },
+    { href: "/dashboard", label: "Office", icon: <HomeIcon />, active: pathname.startsWith("/dashboard") || pathname.startsWith("/frontdesk") || pathname.startsWith("/pricebook") },
     {
       href: "/customers",
       label: "Customers",

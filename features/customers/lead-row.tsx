@@ -62,9 +62,12 @@ interface LeadRowProps {
   visibleCols: string[];
   value: number | null;
   onOpen: (id: string) => void;
+  /** Present on the Archived view only — renders a Restore cell (archive is a state
+      on this list, not a place; restore moved here from the retired Settings tab). */
+  onRestore?: (id: string) => void;
 }
 
-export function LeadRow({ lead, visibleCols, value, onOpen }: LeadRowProps) {
+export function LeadRow({ lead, visibleCols, value, onOpen, onRestore }: LeadRowProps) {
   return (
     <tr className="clickable" onClick={() => onOpen(lead.id)} {...pressable(() => onOpen(lead.id))}>
       {visibleCols.map((col) => (
@@ -72,6 +75,20 @@ export function LeadRow({ lead, visibleCols, value, onOpen }: LeadRowProps) {
           <LeadCell lead={lead} col={col} value={value} />
         </td>
       ))}
+      {onRestore && (
+        <td data-label="Restore">
+          <button
+            className="btn sm"
+            aria-label={`Restore ${lead.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRestore(lead.id);
+            }}
+          >
+            ↩ Restore
+          </button>
+        </td>
+      )}
     </tr>
   );
 }

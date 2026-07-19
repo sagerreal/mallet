@@ -10,6 +10,7 @@ let queryState = { isFetched: true, isError: false };
 const openModal = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
+  useAppStore: (sel: (s: { restoreLead: () => void }) => unknown) => sel({ restoreLead: vi.fn() }),
   useLeads: () => leads,
   useEstimates: () => [],
   useOpenModal: () => openModal,
@@ -76,6 +77,13 @@ describe("CustomersView — first-run empty state", () => {
     render(<CustomersView />);
     expect(screen.queryByText("No customers yet")).toBeNull();
     expect(screen.getByTestId("toolbar")).toBeTruthy();
+  });
+
+  it("the header Import action opens the CSV import modal (moved from Settings)", () => {
+    leads = [aLead()]; // populated view — the header button, not the first-run path
+    render(<CustomersView />);
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(openModal).toHaveBeenCalledWith("import-customers");
   });
 
   it("wires the two paths to the New-customer and Import-customers modals", () => {

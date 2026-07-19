@@ -49,12 +49,6 @@ const MoneyIcon = () => (
   </svg>
 );
 
-const PricebookIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-  </svg>
-);
 
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -133,6 +127,10 @@ function NavSub({ href, label, count, active }: NavSubProps) {
 // Routes that belong to the Customers group (its sidebar sub-nav).
 const CUSTOMER_AREA = ["/customers", "/pipeline", "/tasks"];
 
+// Routes that belong to the Office group — the shop's own surfaces: today's brief
+// (Home content), the AI Front Desk, and the Pricebook.
+const OFFICE_AREA = ["/dashboard", "/frontdesk", "/pricebook"];
+
 export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identity"]["me"] }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -167,6 +165,7 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
 
   const isActive = (href: string) => pathname.startsWith(href);
   const customersActive = CUSTOMER_AREA.some((r) => pathname.startsWith(r));
+  const officeActive = OFFICE_AREA.some((r) => pathname.startsWith(r));
   const jobsActive = pathname.startsWith("/jobs");
   const moneyActive = pathname.startsWith("/money");
 
@@ -202,7 +201,13 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
           <>
             <NewMenu />
 
-            <NavItem href="/dashboard" icon={<HomeIcon />} label="Home" active={isActive("/dashboard")} />
+            <NavItem href="/dashboard" icon={<HomeIcon />} label="Office" active={officeActive} />
+            {officeActive && (
+              <div className="navsubs">
+                <NavSub href="/frontdesk" label="Front Desk" active={pathname.startsWith("/frontdesk")} />
+                <NavSub href="/pricebook" label="Pricebook" active={pathname.startsWith("/pricebook")} />
+              </div>
+            )}
 
             <div className="navsep" />
 
@@ -243,12 +248,6 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
                 <NavSub href="/jobs?tab=checklists" label="Checklists" active={tab === "checklists"} />
               </div>
             )}
-            <NavItem
-              href="/pricebook"
-              icon={<PricebookIcon />}
-              label="Pricebook"
-              active={isActive("/pricebook")}
-            />
             <NavItem
               href="/money"
               icon={<MoneyIcon />}

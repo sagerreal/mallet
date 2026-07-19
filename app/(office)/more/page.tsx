@@ -14,7 +14,8 @@ import { useMe } from "@/features/identity/hooks";
 import { SignOutButton } from "@/components/shell/sign-out-button";
 
 const OFFICE_LINKS: Array<{ href: string; label: string }> = [
-  { href: "/dashboard", label: "Home" },
+  { href: "/dashboard", label: "Office" },
+  { href: "/frontdesk", label: "Front Desk" },
   { href: "/customers", label: "Customers" },
   { href: "/jobs", label: "Jobs" },
   { href: "/pricebook", label: "Pricebook" },

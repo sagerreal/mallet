@@ -18,28 +18,19 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore } from "@/lib/store/app-store";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
 import { CrewHoursCard } from "./crew-hours-card";
-import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
-import { ServiceRow } from "./booking-service-card";
-import { AddServiceModal, type NewServiceInput } from "./add-service-modal";
-import { StarterPlaybookModal } from "./starter-playbook-modal";
-import { playbookFor } from "./trade-playbooks";
-import { TagInput } from "./tag-input";
-import { HourSelect } from "./hour-select";
-import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 
 // ---- sample state values mirrored from prototype's state -------------------
 
-const MALLET_NUMBER = "(925) 555-0100";
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -47,20 +38,7 @@ function cap(s: string): string {
   return s ? (s[0] ?? "").toUpperCase() + s.slice(1) : "";
 }
 
-function callRulesSummary(notServices: string, deferKeywords: string): string {
-  const count = [notServices, deferKeywords]
-    .flatMap((v) => v.split(/[,·]/))
-    .map((t) => t.trim())
-    .filter(Boolean).length;
-  return `${count} rule${count === 1 ? "" : "s"}`;
-}
 
-function timeLabel(h: number): string {
-  if (!h) return "closed";
-  const period = h < 12 ? "a" : "p";
-  const dh = h > 12 ? h - 12 : h;
-  return `${dh}${period}`;
-}
 
 // ============================================================================
 // Section: Workspace
@@ -77,12 +55,24 @@ function SecWorkspace({ role }: { role: string }) {
             Your account
           </h3>
           <YourNameField />
-          <h3 className="setgrp" style={{ margin: "20px 0 10px" }}>
-            Team &amp; roles
-          </h3>
-          <TeamRolesBlock />
         </>
       )}
+    </>
+  );
+}
+
+// ============================================================================
+// Section: Team — people, roles, permissions, and when each crew member works.
+// Crew hours moved here from Booking (settings-IA regroup): a person's identity
+// and their working hours belong together — the Front Desk playbook reads the
+// same crew_schedules data either way.
+// ============================================================================
+
+function SecTeam() {
+  return (
+    <>
+      <TeamRolesBlock />
+      <CrewHoursCard />
     </>
   );
 }
@@ -576,14 +566,11 @@ function TeamRolesBlock() {
 // Section: Lead sources
 // ============================================================================
 
-function SecSources() {
+function SecChannels() {
   const sources = useAppStore((s) => s.sources);
   const leads = useAppStore((s) => s.leads);
   const addSource = useAppStore((s) => s.addSource);
   const removeSource = useAppStore((s) => s.removeSource);
-  const setToggle = useAppStore((s) => s.setToggle);
-  const frontDesk = useAppStore((s) => s.toggles.frontDesk);
-  const openModal = useOpenModal();
 
   const [srcName, setSrcName] = useState("");
   const [srcError, setSrcError] = useState<string | null>(null);
@@ -604,68 +591,7 @@ function SecSources() {
 
   return (
     <>
-      <FoldCard title="AI Front Desk" defaultOpen summary={frontDesk ? "On" : "Off"}>
-        <div className="stage-row" style={{ borderTop: "none", marginTop: 0 }}>
-          <div style={{ flex: 1 }}>
-            <b style={{ fontWeight: 700 }}>Front Desk</b>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Answers calls &amp; texts you miss, books a slot, holds it for your one-tap yes.
-            </div>
-          </div>
-          <label className="switch">
-            <input type="checkbox" checked={frontDesk} onChange={(e) => setToggle("frontDesk", e.target.checked)} />
-            <i />
-          </label>
-        </div>
-        <div className="muted" style={{ fontSize: "11.5px", marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--line)" }}>
-          Unknown number → Front Desk, handled as a lead. A <b>verified crew phone</b> → your assistant — never the Front Desk.
-        </div>
-        <div className="rail muted" style={{ marginTop: 10, fontSize: 12 }}>
-          Off — missed calls go to voicemail. On — they text back, parsed and held for your yes.
-        </div>
-      </FoldCard>
-
-      <h3 className="setgrp" style={{ margin: "20px 0 10px" }}>
-        Ways leads reach you
-      </h3>
-
-      <FoldCard title="Your Mallet number" summary={MALLET_NUMBER}>
-        <div className="hookurl">
-          <code>{MALLET_NUMBER}</code>
-          <button className="btn sm" onClick={() => navigator.clipboard.writeText(MALLET_NUMBER)}>Copy</button>
-        </div>
-        <p className="muted" style={{ marginTop: 9, fontSize: "11.5px" }}>
-          Your business line. Customers call &amp; text this; it rings your crew and every reply goes out as this number — personal cells stay private.
-        </p>
-        <div style={{ display: "flex", gap: 8, marginTop: 11, flexWrap: "wrap" }}>
-          {/* deferred: external integration (forward existing number) */}
-          <button className="btn sm" onClick={() => {}}>Forward your existing number</button>
-          {/* deferred: external integration (port number in) */}
-          <button className="btn sm ghost" onClick={() => {}}>Port your number in</button>
-        </div>
-      </FoldCard>
-
       <LeadMarketplacesCard />
-
-      <FoldCard title="Import customers" summary="CSV">
-        <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
-          <IconWell>
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          </IconWell>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="muted" style={{ fontSize: 13, margin: "1px 0 11px", lineHeight: 1.45 }}>
-              Bring your existing customers over from QuickBooks, Google Contacts, Jobber, or any spreadsheet — export a CSV and upload it.
-            </p>
-            <button className="btn primary" onClick={() => openModal(MODAL.IMPORT_CUSTOMERS)}>
-              Upload a spreadsheet (CSV)
-            </button>
-          </div>
-        </div>
-      </FoldCard>
 
       <WebsiteFormCard />
 
@@ -711,308 +637,19 @@ function SecSources() {
     </>
   );
 }
-
-// ============================================================================
-// Section: Booking
-// ============================================================================
-
-function SecBooking() {
-  const bk = useAppStore((s) => s.booking);
-  const updateBookingService = useAppStore((s) => s.updateBookingService);
-  const addBookingService = useAppStore((s) => s.addBookingService);
-  const removeBookingService = useAppStore((s) => s.removeBookingService);
-  const setServiceFee = useAppStore((s) => s.setServiceFee);
-  const setFeeCredited = useAppStore((s) => s.setFeeCredited);
-  const setBookingField = useAppStore((s) => s.setBookingField);
-  const setBookingHours = useAppStore((s) => s.setBookingHours);
-  const setBookingDayHours = useAppStore((s) => s.setBookingDayHours);
-  const setBookingArea = useAppStore((s) => s.setBookingArea);
-
-  // Single-expanded service accordion — null = all collapsed
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
-
-  const [addOpen, setAddOpen] = useState(false);
-  const [starterOpen, setStarterOpen] = useState(false);
-  const seedBookingServices = useAppStore((st) => st.seedBookingServices);
-  const setTrade = useAppStore((st) => st.setTrade);
-
-  function handleSeedTrade(tradeKey: string) {
-    const playbook = playbookFor(tradeKey);
-    if (!playbook) return;
-    seedBookingServices(playbook.services);
-    if (tradeKey !== "other") setTrade(playbook.label);
-  }
-
-  // Modal-driven add: create the named service, then fill lane/price/description on the new
-  // index (append order is stable — addBookingService pushes to the end).
-  function handleAddService(svc: NewServiceInput) {
-    const newIdx = bk.services.length;
-    addBookingService(svc.name);
-    updateBookingService(newIdx, "lane", svc.lane);
-    if (svc.lane === "flat" && svc.price !== "") updateBookingService(newIdx, "price", svc.price);
-    if (svc.triggers.trim()) updateBookingService(newIdx, "triggers", svc.triggers.trim());
-  }
-
-  function handleToggleService(i: number) {
-    setExpandedIdx((prev) => (prev === i ? null : i));
-  }
-
-  function handleRemoveService(i: number) {
-    removeBookingService(i);
-    // If we just removed the expanded one, collapse
-    setExpandedIdx((prev) => (prev === i ? null : prev !== null && prev > i ? prev - 1 : prev));
-  }
-
-  const wdLabel = `${timeLabel(bk.hours.wdOpen)}–${timeLabel(bk.hours.wdClose)} wkdays`;
-
-  type HoursKey = keyof typeof bk.hours;
-
-  function HrRow({ lbl, oKey, cKey }: { lbl: string; oKey: HoursKey; cKey: HoursKey }) {
-    const ov = bk.hours[oKey];
-    const cv = bk.hours[cKey];
-    const isOpen = !(ov === 0 && cv === 0);
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
-        <span style={{ minWidth: 84, fontWeight: 700, fontSize: 13.5 }}>{lbl}</span>
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={isOpen}
-            onChange={(e) => {
-              // Set open + close in ONE persisted write so the row never round-trips through the
-              // invalid {open:8, close:0} the domain now rejects (which read as a closed day and
-              // sent every voice caller to voicemail).
-              if (e.target.checked) setBookingDayHours(oKey, cKey, 8, 17);
-              else setBookingDayHours(oKey, cKey, 0, 0);
-            }}
-          />
-          <i />
-        </label>
-        {isOpen ? (
-          <>
-            <HourSelect
-              value={ov}
-              onChange={(h) => {
-                // Keep the range valid: close stays after open (an inverted range reads as a
-                // closed day to the slot math, silently killing that day's availability — and the
-                // domain now rejects it). When the new open would cross close, set BOTH atomically
-                // so we never persist the invalid intermediate; otherwise just move open.
-                if (h >= cv) setBookingDayHours(oKey, cKey, h, Math.min(h + 1, 24));
-                else setBookingHours(oKey, h);
-              }}
-              min={0}
-              max={23}
-            />
-            <span className="muted">to</span>
-            <HourSelect
-              value={cv}
-              onChange={(h) => setBookingHours(cKey, h)}
-              min={ov + 1}
-              max={24}
-            />
-          </>
-        ) : (
-          <span className="muted" style={{ fontSize: "11.5px" }}>Closed</span>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <h3 className="setgrp" style={{ margin: "2px 0 12px" }}>
-        Booking playbook{" "}
-        <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 500, color: "var(--ink-3)" }}>
-          · what your AI Front Desk reads to triage &amp; book
-        </span>
-      </h3>
-
-      <FoldCard title="Services &amp; routing" defaultOpen summary={`${bk.services.length} services`}>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10 }}>
-          <button className="btn ghost" onClick={() => setStarterOpen(true)}>Starter playbook</button>
-          <button className="btn primary" onClick={() => setAddOpen(true)}>+ Add service</button>
-        </div>
-        {/* List-first accordion: compact rows, single expanded editor */}
-        <div style={{ border: "1px solid var(--line-2, var(--line))", borderRadius: 8, overflow: "hidden", marginBottom: 10 }}>
-          {bk.services.map((s, i) => (
-            <ServiceRow
-              key={i}
-              service={s}
-              index={i}
-              isExpanded={expandedIdx === i}
-              onToggle={() => handleToggleService(i)}
-              updateBookingService={updateBookingService}
-              onRemove={() => handleRemoveService(i)}
-              isLast={i === bk.services.length - 1}
-            />
-          ))}
-          {bk.services.length === 0 && (
-            <div style={{ padding: "22px 14px", textAlign: "center" }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
-                Pick your trade to load starter services
-              </div>
-              <button className="btn primary" onClick={() => setStarterOpen(true)}>
-                Choose trade
-              </button>
-            </div>
-          )}
-        </div>
-        <AddServiceModal open={addOpen} onClose={() => setAddOpen(false)} onAdd={handleAddService} />
-        <StarterPlaybookModal open={starterOpen} onClose={() => setStarterOpen(false)} onSeed={handleSeedTrade} />
-      </FoldCard>
-
-      <FoldCard title="Call rules" summary={callRulesSummary(bk.notServices, bk.deferKeywords ?? "")}>
-        <div className="field">
-          <label>We don&apos;t do</label>
-          <TagInput
-            value={bk.notServices}
-            onChange={(v) => setBookingField("notServices", v)}
-            placeholder="Type a service and press Enter — e.g. new construction"
-          />
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Hand off to a person</label>
-          <TagInput
-            value={bk.deferKeywords ?? ""}
-            onChange={(v) => setBookingField("deferKeywords", v)}
-            placeholder="Type a word and press Enter — e.g. insurance, claim, warranty"
-          />
-        </div>
-      </FoldCard>
-
-      <FoldCard title="Service-call fee" summary={`$${bk.serviceFee}`}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span className="muted">$</span>
-          <input type="number" min={0} defaultValue={bk.serviceFee}
-            onChange={(e) => setServiceFee(Number(e.target.value))}
-            style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: 10, padding: "10px 12px", fontFamily: "inherit", fontSize: 14, background: "var(--card)" }} />
-          <span className="muted" style={{ fontSize: 12 }}>to come diagnose a repair</span>
-        </div>
-        <div className="stage-row" style={{ marginTop: 10 }}>
-          <div style={{ flex: 1 }}>
-            <b style={{ fontWeight: 700, fontSize: "13.5px" }}>Credited toward the work</b>
-            <div className="muted" style={{ fontSize: "11.5px" }}>Comes off the price if they approve the repair.</div>
-          </div>
-          <label className="switch">
-            <input type="checkbox" checked={bk.feeCredited}
-              onChange={(e) => setFeeCredited(e.target.checked)} />
-            <i />
-          </label>
-        </div>
-      </FoldCard>
-
-      <FoldCard title="Hours &amp; service area" summary={wdLabel}>
-        <div style={{fontSize:11, textTransform:"uppercase", letterSpacing:".04em", margin:"2px 0 8px"}} className="muted">Business hours</div>
-        <div>
-          <HrRow lbl="Weekdays" oKey="wdOpen" cKey="wdClose" />
-          <HrRow lbl="Saturday" oKey="satOpen" cKey="satClose" />
-          <HrRow lbl="Sunday"   oKey="sunOpen" cKey="sunClose" />
-        </div>
-        <div style={{fontSize:11, textTransform:"uppercase", letterSpacing:".04em", margin:"14px 0 8px"}} className="muted">Service area</div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, maxWidth: 640 }}>
-          <div className="field" style={{ margin: 0 }}>
-            <label>Office address</label>
-            <input type="text" defaultValue={bk.area.originAddress}
-              onChange={(e) => setBookingArea("originAddress", e.target.value)}
-              placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
-              style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
-          </div>
-          <div className="field" style={{ margin: 0 }}>
-            <label>Radius (miles)</label>
-            <input type="number" min={0} defaultValue={bk.area.radiusMi}
-              onChange={(e) => setBookingArea("radiusMi", e.target.value)}
-              style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
-          </div>
-        </div>
-      </FoldCard>
-
-      <CrewHoursCard />
-    </>
-  );
-}
-
-// ============================================================================
-// Section: Custom fields
-// ============================================================================
-
-function SecFields() {
-  return (
-    <>
-      <FoldCard title="Custom fields" defaultOpen summary="0 fields">
-        <div className="empty-att">
-          None yet — add one here, or from any lead&apos;s More details.
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="setCfName" placeholder="e.g. Gate code"
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          {/* deferred: custom fields */}
-          <button className="btn" onClick={() => {}}>+ Add</button>
-        </div>
-      </FoldCard>
-
-      <FoldCard title="Company custom fields" summary="0">
-        <div className="empty-att">
-          None yet — add one here, or from any company&apos;s Details.
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="setCoCfName" placeholder="e.g. Account number, Region"
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          {/* deferred: custom fields */}
-          <button className="btn" onClick={() => {}}>+ Add</button>
-        </div>
-      </FoldCard>
-    </>
-  );
-}
-
-// ============================================================================
-// Section: Archive
-// ============================================================================
-
-function SecArchive() {
-  const leads = useAppStore((s) => s.leads);
-  const estimates = useAppStore((s) => s.estimates);
-  const archLeads = leads.filter((l) => l.archived);
-  const archEsts = estimates.filter((e) => e.archived);
-  const restoreLead = useAppStore((s) => s.restoreLead);
-  const restoreEstimate = useAppStore((s) => s.restoreEstimate);
-
-  const count = archLeads.length + archEsts.length;
-
-  return (
-    <FoldCard
-      title="Archive"
-      defaultOpen
-      summary={count ? `${count} item${count === 1 ? "" : "s"}` : "empty"}
-    >
-      {archLeads.map((l) => (
-        <div key={l.id} className="stage-row">
-          <span style={{ fontWeight: 700 }}>{l.name}</span>
-          <span className="trig">lead · {l.job} · {l.source}</span>
-          <button className="btn sm" onClick={() => restoreLead(l.id)}>↩ Restore</button>
-        </div>
-      ))}
-      {archEsts.map((e) => (
-        <div key={e.id} className="stage-row">
-          <span style={{ fontWeight: 700 }}>{e.num} — {e.title}</span>
-          <span className="trig">quote · {e.status}</span>
-          <button className="btn sm" onClick={() => restoreEstimate(e.id)}>↩ Restore</button>
-        </div>
-      ))}
-      {count === 0 && (
-        <div className="empty-att">
-          Nothing archived. Anything you archive — leads, quotes, companies, jobs — lands here, recoverable.
-        </div>
-      )}
-    </FoldCard>
-  );
-}
-
 // ============================================================================
 // Main page
 // ============================================================================
 
-type SetTab = "workspace" | "sources" | "payments" | "booking" | "fields" | "archive";
+type SetTab = "workspace" | "team" | "channels" | "payments";
+
+// Old deep-link tab names → their new homes (settings-IA regroup). ?tab=payments must keep
+// working verbatim — Stripe's Connect onboarding return URL points at it server-side.
+const TAB_ALIASES: Record<string, SetTab> = {
+  sources: "channels",
+  fields: "workspace",
+  archive: "workspace",
+};
 
 interface SectionDef {
   k: SetTab;
@@ -1034,20 +671,25 @@ export default function SettingsPage() {
       router.replace("/pricebook");
       return;
     }
-    if (t && ["workspace", "sources", "payments", "booking", "fields", "archive"].includes(t)) {
-      setActiveTab(t as SetTab);
+    // The Front Desk moved to its own Office page — old booking/frontdesk links follow it.
+    if (t === "booking" || t === "frontdesk") {
+      router.replace("/frontdesk");
+      return;
     }
+    if (!t) return;
+    const canonical: SetTab | undefined = ["workspace", "team", "channels", "payments"].includes(t)
+      ? (t as SetTab)
+      : TAB_ALIASES[t];
+    if (canonical) setActiveTab(canonical);
   }, [router]);
   const { data: me } = api.v1.identity.me.useQuery();
   const role = me?.role ?? "office";
 
   const allSections = [
-    { k: "workspace" as SetTab, label: "Workspace",         body: <SecWorkspace role={role} /> },
-    { k: "sources"   as SetTab, label: "Lead sources",      body: <SecSources /> },
-    { k: "payments"  as SetTab, label: "Payments",          ownerOnly: true, body: <PaymentsCard /> },
-    { k: "booking"   as SetTab, label: "Booking",           ownerOnly: true, body: <SecBooking /> },
-    { k: "fields"    as SetTab, label: "Custom fields",     body: <SecFields /> },
-    { k: "archive"   as SetTab, label: "Archive",           body: <SecArchive /> },
+    { k: "workspace" as SetTab, label: "Workspace",  body: <SecWorkspace role={role} /> },
+    { k: "team"      as SetTab, label: "Team",       body: <SecTeam /> },
+    { k: "channels"  as SetTab, label: "Channels",   body: <SecChannels /> },
+    { k: "payments"  as SetTab, label: "Payments",   ownerOnly: true, body: <PaymentsCard /> },
   ] satisfies SectionDef[];
   const sections: SectionDef[] = allSections.filter((s) => role === "owner" || role === "office" || !s.ownerOnly);
 
@@ -1064,7 +706,12 @@ export default function SettingsPage() {
             <div
               key={s.k}
               className={`navitem${tab === s.k ? " active" : ""}`}
-              onClick={() => setActiveTab(s.k)}
+              onClick={() => {
+                setActiveTab(s.k);
+                // Keep the URL addressable (shareable / AI-bar linkable) without a
+                // navigation — replaceState avoids the useSearchParams/Suspense cost.
+                window.history.replaceState(null, "", `/settings?tab=${s.k}`);
+              }}
             >
               <span>{s.label}</span>
             </div>
@@ -1072,11 +719,9 @@ export default function SettingsPage() {
         </nav>
 
         <div className="setbody">
-          {sections.map((s) => (
-            <div key={s.k} style={{ display: tab === s.k ? "block" : "none" }}>
-              {s.body}
-            </div>
-          ))}
+          {/* Only the ACTIVE section mounts — previously every tab rendered behind
+              display:none, so all their queries fired on page load. */}
+          {sections.find((s) => s.k === tab)?.body}
         </div>
       </div>
     </div>
