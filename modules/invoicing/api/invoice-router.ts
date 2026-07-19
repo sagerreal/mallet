@@ -78,6 +78,8 @@ const lineInput = z.object({
   costCents: z.number().int().nonnegative().optional(),
 });
 const draftInput = z.object({
+  // Client-authored id — preserved so the store's optimistic id matches the persisted row.
+  id: z.string().uuid().optional(),
   leadId: z.string().uuid(),
   title: z.string().optional(),
   termsDays: z.number().int().min(0).optional(),
@@ -181,6 +183,7 @@ export const createInvoiceRouter = () =>
         const useCase = new DraftInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec({
           orgId: ctx.principal.orgId,
+          id: input.id ? asInvoiceId(input.id) : undefined,
           leadId: asLeadId(input.leadId),
           title: input.title ?? null,
           termsDays: input.termsDays ?? 7,

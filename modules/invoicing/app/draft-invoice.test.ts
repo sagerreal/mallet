@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   asOrgId,
   asLeadId,
+  asInvoiceId,
   FixedClock,
   isOk,
   type OrgId,
@@ -173,5 +174,23 @@ describe("DraftInvoiceUseCase – branch coverage", () => {
       expect(result.value.props.total).toBe(10_000); // 1 * 10_000
     }
     expect(bus.recorded.filter((e) => e.name === "invoice.drafted")).toHaveLength(1);
+  });
+
+  it("preserves a client-authored id so the store's optimistic id matches the persisted row", async () => {
+    const clientId = asInvoiceId("99999999-9999-4999-8999-999999999999");
+    const result = await useCase.exec({ ...baseCmd(), id: clientId });
+
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) expect(result.value.props.id).toBe(clientId);
+    // The persisted row is addressable by that same id (findById round-trips it).
+    expect(await repo.findById(clientId)).not.toBeNull();
+  });
+
+  it("falls back to a generated id when no client id is supplied", async () => {
+    const result = await useCase.exec(baseCmd());
+
+    expect(isOk(result)).toBe(true);
+    // seqIds mints the line id (…0001) then the invoice id (…0002); no client id was given.
+    if (isOk(result)) expect(result.value.props.id).toBe("00000000-0000-0000-0000-000000000002");
   });
 });

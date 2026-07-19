@@ -29,6 +29,7 @@
 import { useState } from "react";
 import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
@@ -56,12 +57,6 @@ function invCustName(invoice: Invoice, leads: Lead[]): string {
 function invPhone(invoice: Invoice, leads: Lead[]): string {
   const lead = leads.find((l) => l.id === invoice.leadId);
   return lead?.phone || invoice.phone || "";
-}
-
-/** custCard — saved card on the linked lead (prototype custCard). */
-function custCard(invoice: Invoice, leads: Lead[]): Lead["card"] | null {
-  const lead = leads.find((l) => l.id === invoice.leadId);
-  return lead?.card ?? null;
 }
 
 /** pricingSummary — the reveal-head "— …" hint (prototype pricingSummary). */
@@ -247,15 +242,14 @@ function EditBlock({
           />
         </div>
         <div className="field" style={{ margin: 0 }}>
-          <label>Terms</label>
+          <label>Due</label>
           <select
-            value={td == null ? "" : String(td)}
-            onChange={(e) => onSetTerms(e.target.value === "" ? null : Number(e.target.value))}
+            value={td == null ? "0" : String(td)}
+            onChange={(e) => onSetTerms(Number(e.target.value))}
           >
-            {td == null ? <option value="">Choose…</option> : null}
-            <option value="0">Due on receipt</option>
-            <option value="15">Net 15</option>
-            <option value="30">Net 30</option>
+            <option value="0">On receipt</option>
+            <option value="15">In 15 days</option>
+            <option value="30">In 30 days</option>
           </select>
         </div>
       </div>
@@ -540,152 +534,86 @@ function ReadOnlyView({ invoice }: ReadOnlyViewProps) {
 }
 
 // ===========================================================================
-//  SEND-IT CARD (prototype openInvoice §Send it → sendInvoice)
+//  GET PAID — Send (finalize) · Charge a card · Record cash/check
 // ===========================================================================
 
-interface SendCardProps {
-  invoice: Invoice;
-  phone: string;
+type RecordMethod = "cash" | "check";
+
+interface GetPaidProps {
   due: number;
+  sent: boolean;
+  busy: boolean;
+  error: string | null;
   onSend: () => void;
+  onCharge: () => void;
+  onRecord: (method: RecordMethod) => void;
 }
 
-function SendCard({ invoice, phone, due, onSend }: SendCardProps) {
+// One panel, three verb-honest actions. A draft's only action is Send (which finalizes it).
+// A sent, still-owed invoice offers Charge a card (real Stripe checkout) or Record for cash/check
+// already collected. "Card" is never a recordable method — a card always charges.
+function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaidProps) {
+  const [recOpen, setRecOpen] = useState(false);
+  const [method, setMethod] = useState<RecordMethod>("cash");
+
   return (
     <div className="card" style={{ marginTop: 12, background: "var(--paper)" }}>
-      <b style={{ fontSize: 13 }}>Send it</b>
-      <p className="muted" style={{ fontSize: 12, margin: "3px 0 8px" }}>
-        {phone ? (
-          <>
-            Texts a pay link to <b>{phone}</b>
-            {invoice.email ? (
-              <>
-                {" "}
-                and emails a PDF to <b>{invoice.email}</b>
-              </>
-            ) : null}{" "}
-            — they pay from their phone, nothing to retype.
-          </>
-        ) : (
-          "Add a phone above to text it."
-        )}
-      </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button className="btn primary" onClick={onSend}>
+      <div className="muted" style={{ ...SEC_LABEL, margin: "0 0 10px" }}>
+        Get paid
+      </div>
+      {error ? (
+        <div style={{ color: "var(--red)", fontSize: 12.5, marginBottom: 10 }}>{error}</div>
+      ) : null}
+      {!sent ? (
+        <button
+          className="btn primary"
+          style={{ minHeight: 46, width: "100%" }}
+          disabled={busy}
+          onClick={onSend}
+        >
           Send invoice{due > 0 ? " — " + fmt$(due) : ""}
         </button>
-        {invoice.email ? null : (
-          <span className="muted" style={{ fontSize: 11.5 }}>
-            add an email above to also send a PDF
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ===========================================================================
-//  TAKE-A-PAYMENT CARD (prototype openInvoice §Take a payment + coPayBlock)
-// ===========================================================================
-
-type PayMethod = "card" | "check" | "cash" | "ach";
-
-const PAY_METHODS: ReadonlyArray<{ key: PayMethod; label: string }> = [
-  { key: "card", label: "Card" },
-  { key: "check", label: "Check" },
-  { key: "cash", label: "Cash" },
-  { key: "ach", label: "Bank" },
-];
-
-interface PaymentCardProps {
-  invoice: Invoice;
-  leads: Lead[];
-  due: number;
-  onRecord: (amt: number, method: PayMethod) => void;
-}
-
-function PaymentCard({ invoice, leads, due, onRecord }: PaymentCardProps) {
-  const [payOpen, setPayOpen] = useState(false);
-  const [amt, setAmt] = useState<number>(due);
-  const [method, setMethod] = useState<PayMethod>("card");
-
-  const card = custCard(invoice, leads);
-
-  function record() {
-    const entered = Number.isFinite(amt) && amt > 0 ? amt : due;
-    onRecord(Math.min(entered, due), method);
-  }
-
-  return (
-    <div className="card" style={{ marginTop: 12, background: "var(--green-50)", borderColor: "#DDD7C9" }}>
-      <b style={{ fontSize: 13 }}>Take a payment</b>
-      {payOpen ? (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-            <span className="muted" style={{ fontSize: 12 }}>
-              Amount due
-            </span>
-            <span className="muted">$</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={amt}
-              onChange={(e) => setAmt(Number(e.target.value) || 0)}
-              style={{
-                width: 118,
-                border: "1.5px solid var(--line)",
-                borderRadius: 8,
-                padding: "9px 10px",
-                fontFamily: "inherit",
-                fontWeight: 700,
-              }}
-            />
-          </div>
-          <div className="chips">
-            {PAY_METHODS.map((mth) => (
-              <button
-                key={mth.key}
-                className={`chip ${method === mth.key ? "sel" : ""}`}
-                onClick={() => setMethod(mth.key)}
-              >
-                {mth.label}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 11, flexWrap: "wrap" }}>
-            <button className="btn primary" onClick={record}>
-              Record payment
-            </button>
-            <span
-              className="linklike"
-              style={{ display: "inline-block" }}
-              onClick={() => setPayOpen(false)}
-            >
-              ← back
-            </span>
-          </div>
-        </div>
       ) : (
-        <>
-          <p className="muted" style={{ fontSize: 12, margin: "3px 0 9px" }}>
-            {card
-              ? "Charge the card on file, Tap to Pay, or take a bank transfer, check or cash."
-              : "Tap to Pay, bank transfer, check or cash."}{" "}
-            A partial is fine — the rest stays badged on Money.
-          </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              className="btn primary"
-              style={{ minHeight: 46, fontSize: 14 }}
-              onClick={() => {
-                setAmt(due);
-                setPayOpen(true);
-              }}
-            >
-              Take payment — {fmt$(due)}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button
+            className="btn primary"
+            style={{ minHeight: 46 }}
+            disabled={busy}
+            onClick={onCharge}
+          >
+            {busy ? "Opening…" : `Charge a card — ${fmt$(due)}`}
+          </button>
+          {recOpen ? (
+            <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, background: "var(--bg)" }}>
+              <div className="chips" style={{ marginBottom: 10 }}>
+                <button className={`chip ${method === "cash" ? "sel" : ""}`} onClick={() => setMethod("cash")}>
+                  Cash
+                </button>
+                <button className={`chip ${method === "check" ? "sel" : ""}`} onClick={() => setMethod("check")}>
+                  Check
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  className="btn primary"
+                  onClick={() => {
+                    onRecord(method);
+                    setRecOpen(false);
+                  }}
+                >
+                  Record payment — {fmt$(due)}
+                </button>
+                <span className="linklike" onClick={() => setRecOpen(false)}>
+                  ← back
+                </span>
+              </div>
+            </div>
+          ) : (
+            <button className="btn ghost" onClick={() => setRecOpen(true)}>
+              Record cash or check
             </button>
-          </div>
-        </>
+          )}
+        </div>
       )}
     </div>
   );
@@ -709,6 +637,9 @@ export function InvoiceModalContent() {
   const setInvoiceLines = useAppStore((s) => s.setInvoiceLines);
   const recordPayment = useAppStore((s) => s.recordPayment);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
+
+  const [busy, setBusy] = useState(false);
+  const [payErr, setPayErr] = useState<string | null>(null);
 
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
@@ -748,13 +679,31 @@ export function InvoiceModalContent() {
 
   function send() {
     if (!invoice) return;
+    // Finalize (draft → sent). The modal stays open and re-renders to the sent state, where
+    // Charge / Record become available — no dead-end close.
     sendInvoice(invoice.id);
-    close();
   }
 
-  function record(amt: number, method: PayMethod) {
+  function record(amt: number, method: RecordMethod) {
     if (!invoice) return;
     recordPayment(invoice.id, { amt, when: "Just now", method });
+  }
+
+  // Charge a card: mint the Stripe hosted-checkout link for the balance and open it. Because the
+  // client id is preserved through draft, invoice.id is the server row id. Surfaces the provider
+  // error (e.g. "finish payment setup") instead of failing silently.
+  async function charge() {
+    if (!invoice) return;
+    setPayErr(null);
+    setBusy(true);
+    try {
+      const { url } = await trpcVanilla.v1.invoicing.createPayment.mutate({ invoiceId: invoice.id });
+      window.open(url, "_blank", "noopener");
+    } catch (e) {
+      setPayErr(e instanceof Error ? e.message : "Couldn't start the card payment — try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -810,11 +759,18 @@ export function InvoiceModalContent() {
         <ReadOnlyView invoice={invoice} />
       )}
 
-      {/* Send it — not yet sent + something to bill */}
-      {!sent && total > 0 ? <SendCard invoice={invoice} phone={phone} due={due} onSend={send} /> : null}
-
-      {/* Take a payment — anything still owed */}
-      {due > 0 ? <PaymentCard invoice={invoice} leads={leads} due={due} onRecord={record} /> : null}
+      {/* Get paid — Send (draft, finalizes) · Charge a card / Record cash-check (sent, owed) */}
+      {total > 0 && (due > 0 || !sent) ? (
+        <GetPaid
+          due={due}
+          sent={sent}
+          busy={busy}
+          error={payErr}
+          onSend={send}
+          onCharge={charge}
+          onRecord={(m) => record(due, m)}
+        />
+      ) : null}
 
       {/* Footer — Preview as customer + Done */}
       <div
