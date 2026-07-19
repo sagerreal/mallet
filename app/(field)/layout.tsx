@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { guardRole } from "@/lib/auth/guard";
+import { resolveMe } from "@/lib/auth/server-me";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileTabs } from "@/components/shell/mobile-tabs";
 import { Topbar } from "@/components/shell/topbar";
@@ -20,6 +21,7 @@ export const dynamic = "force-dynamic";
 export default async function FieldLayout({ children }: { children: ReactNode }) {
   const principal = await guardRole(["owner", "office", "tech"]);
   const isTech = principal.role === "tech";
+  const initialMe = await resolveMe(principal);
   return (
     <div className="appshell field-shell">
       {/* Fills store.jobs from v1.field.myDay — the office JobsHydrator is
@@ -27,7 +29,7 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           tech-job-modal it feeds) would stay empty. */}
       <FieldJobsHydrator />
       <div className="layout">
-        <Sidebar />
+        <Sidebar initialMe={initialMe} />
         <div className="appmain">
           <Topbar />
           <div id="flashbar" />
@@ -39,7 +41,7 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           users visiting the field surface keep the bar. */}
       {!isTech && <CommandBar />}
       <CallBar />
-      <MobileTabs />
+      <MobileTabs initialMe={initialMe} />
       <ModalHost />
     </div>
   );

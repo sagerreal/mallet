@@ -13,6 +13,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import type { RouterOutputs } from "@/lib/trpc/client";
 import { selectCustomerCount, selectJobsCount, selectMoneyCount } from "@/components/shell/shell-selectors";
 
 const HomeIcon = () => (
@@ -83,9 +84,9 @@ interface Tab {
   count?: number;
 }
 
-export function MobileTabs() {
+export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["identity"]["me"] }) {
   const pathname = usePathname();
-  const me = useMe();
+  const me = useMe(initialMe);
   // Primitive selectors — return numbers so referential equality suppresses
   // re-renders when unrelated store slices are written.
   const customerCount = useAppStore(selectCustomerCount);

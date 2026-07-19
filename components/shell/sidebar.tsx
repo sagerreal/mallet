@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { useMe } from "@/features/identity/hooks";
+import type { RouterOutputs } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { NewMenu } from "@/components/shell/new-menu";
 import { signOut } from "@/features/auth/hooks";
@@ -125,10 +126,10 @@ function NavSub({ href, label, count, active }: NavSubProps) {
 // Routes that belong to the Customers group (its sidebar sub-nav).
 const CUSTOMER_AREA = ["/customers", "/pipeline", "/tasks"];
 
-export function Sidebar() {
+export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identity"]["me"] }) {
   const pathname = usePathname();
   const router = useRouter();
-  const me = useMe();
+  const me = useMe(initialMe);
   const [acctOpen, setAcctOpen] = useState(false);
   const acctRef = useRef<HTMLDivElement>(null);
 

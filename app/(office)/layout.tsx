@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { guardRole } from "@/lib/auth/guard";
+import { resolveMe } from "@/lib/auth/server-me";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileTabs } from "@/components/shell/mobile-tabs";
 import { SectionTabs } from "@/components/shell/section-tabs";
@@ -23,11 +24,12 @@ import { BrandHydrator } from "@/features/settings/brand-hydrator";
 export const dynamic = "force-dynamic";
 
 export default async function OfficeLayout({ children }: { children: ReactNode }) {
-  await guardRole(["owner", "office"]);
+  const principal = await guardRole(["owner", "office"]);
+  const initialMe = await resolveMe(principal);
   return (
     <div className="appshell">
       <div className="layout">
-        <Sidebar />
+        <Sidebar initialMe={initialMe} />
         <div className="appmain">
           <Topbar />
           <SectionTabs />
@@ -39,7 +41,7 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
       </div>
       <CommandBar />
       <CallBar />
-      <MobileTabs />
+      <MobileTabs initialMe={initialMe} />
       <ModalHost />
       <LeadsHydrator />
       <JobsHydrator />
