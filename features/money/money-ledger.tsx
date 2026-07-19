@@ -9,8 +9,13 @@
  */
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { shouldShowFirstRun } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import {
   deriveMoneyRows,
   deriveArchivedMoneyRows,
@@ -61,7 +66,24 @@ function MoneyHeader({
   );
 }
 
+// First-run empty-state copy. Shown when a brand-new shop opens Money with zero invoices.
+const FIRST_RUN = {
+  heading: "No invoices yet",
+  subtext: "This is where you get paid — every dollar from finished work to money in the bank.",
+  create: {
+    title: "Create an invoice",
+    description: "Bill a customer directly — add the line items and send it.",
+    actionLabel: "+ New invoice",
+  },
+  fromJob: {
+    title: "Bill a finished job",
+    description: "Wrap up a job and turn it into an invoice in one tap.",
+    actionLabel: "Go to jobs",
+  },
+} as const;
+
 export function MoneyLedger() {
+  const router = useRouter();
   const invoices = useAppStore((s) => s.invoices);
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
@@ -194,6 +216,15 @@ export function MoneyLedger() {
       "Nothing owed — every finished job is billed and paid."
     );
 
+  // Same query key + options as InvoicesHydrator → React Query dedupes it (no extra fetch). Gate on
+  // the TOTAL invoice count so a no-match search on a populated shop still falls through to the
+  // table. Never flashes mid-fetch / on a failed load.
+  const invQuery = api.v1.invoicing.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const firstRun = shouldShowFirstRun({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
+
   return (
     <>
       <MoneyHeader autoRemind={autoRemind} onAutoRemind={() => setAutoRemind((v) => !v)} onNewInvoice={newInvoice} />
@@ -202,24 +233,37 @@ export function MoneyLedger() {
         <button className="btn primary" onClick={newInvoice}>+ New invoice</button>
       </div>
 
-      <MoneyToolbar
-        moneySet={moneySet}
-        onMoneySet={switchSet}
-        q={q}
-        onQ={setQ}
-        filtersOpen={filtersOpen}
-        onToggleFilters={() => setFiltersOpen((v) => !v)}
-        colsOpen={colsOpen}
-        onToggleCols={() => setColsOpen((v) => !v)}
-        activeFilterCount={activeFilterCount}
-        shown={rows.length}
-        total={source.length}
-      />
+      {firstRun ? (
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={FIRST_RUN.subtext}
+          paths={[
+            { ...FIRST_RUN.create, onAction: newInvoice, variant: "primary" },
+            { ...FIRST_RUN.fromJob, onAction: () => router.push("/jobs") },
+          ]}
+        />
+      ) : (
+        <>
+          <MoneyToolbar
+            moneySet={moneySet}
+            onMoneySet={switchSet}
+            q={q}
+            onQ={setQ}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen((v) => !v)}
+            colsOpen={colsOpen}
+            onToggleCols={() => setColsOpen((v) => !v)}
+            activeFilterCount={activeFilterCount}
+            shown={rows.length}
+            total={source.length}
+          />
 
-      {colsOpen && <MoneyColumnsPanel visible={visibleCols} onToggle={toggleCol} />}
-      {filtersOpen && <MoneyFiltersPanel statusFilter={statusFilter} onStatus={setStatusFilter} onClear={clearFilters} />}
+          {colsOpen && <MoneyColumnsPanel visible={visibleCols} onToggle={toggleCol} />}
+          {filtersOpen && <MoneyFiltersPanel statusFilter={statusFilter} onStatus={setStatusFilter} onClear={clearFilters} />}
 
-      <MoneyTable rows={rows} visibleCols={visibleCols} armedCharge={armedCharge} cb={cb} emptyState={emptyState} />
+          <MoneyTable rows={rows} visibleCols={visibleCols} armedCharge={armedCharge} cb={cb} emptyState={emptyState} />
+        </>
+      )}
     </>
   );
 }
