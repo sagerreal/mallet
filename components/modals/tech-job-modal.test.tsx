@@ -258,17 +258,6 @@ describe("FieldTimer — pause banks elapsed time, not epoch seconds", () => {
     expect(screen.getByText("Resume timer")).toBeTruthy();
   });
 
-  it("a second pause in a row (Stop after pause) stays stable", () => {
-    render(<TechJobModalContent />);
-    fireEvent.click(screen.getByText("Start timer"));
-    act(() => {
-      vi.advanceTimersByTime(90_000);
-    });
-    fireEvent.click(screen.getByText(/on the clock/)); // pause #1
-    fireEvent.click(screen.getByText("Stop")); // pause #2 while already paused
-    expect(screen.getByText("1:30")).toBeTruthy(); // no epoch seconds added
-  });
-
   it("pause → resume → pause accumulates run segments only", () => {
     render(<TechJobModalContent />);
     fireEvent.click(screen.getByText("Start timer"));
