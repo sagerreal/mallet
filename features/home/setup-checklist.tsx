@@ -134,7 +134,7 @@ export function SetupChecklist() {
         open={openStep === "pricebook"} onClose={() => setOpenStep(null)}
         title="Build your pricebook" blurb="Your prices, so visits turn into quotes in seconds."
         points={["List your common services and their prices", "The AI and your estimator quote straight from it", "Good/Better/Best options supported"]}
-        href="/pricebook" cta="Open pricebook"
+        href="/dashboard?tab=pricebook" cta="Open pricebook"
       />
       <GrowStepModal
         open={openStep === "marketplaces"} onClose={() => setOpenStep(null)}

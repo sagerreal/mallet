@@ -9,23 +9,28 @@
  *   • TimesheetsPanel— the crew week timesheets (features/jobs/timesheets-panel)
  */
 
-import { useSearchParams } from "next/navigation";
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { JobsHome } from "@/features/jobs/jobs-home";
 import { SchedulePanel } from "@/features/jobs/schedule-panel";
 import { TimesheetsPanel } from "@/features/jobs/timesheets-panel";
-import { ChecklistsPanel } from "@/features/jobs/checklists-panel";
 
-type JobsSubTab = "jobs" | "schedule" | "timesheets" | "checklists";
+type JobsSubTab = "jobs" | "schedule" | "timesheets";
 
-const JOBS_TABS: readonly JobsSubTab[] = ["jobs", "schedule", "timesheets", "checklists"];
+const JOBS_TABS: readonly JobsSubTab[] = ["jobs", "schedule", "timesheets"];
 
 export default function JobsPage() {
   const openModal = useOpenModal();
   const searchParams = useSearchParams();
 
   const tabParam = searchParams.get("tab");
+  const router = useRouter();
+  // Checklists moved to the Office page (Jul 2026) — old links follow it.
+  useEffect(() => {
+    if (tabParam === "checklists") router.replace("/dashboard?tab=checklists");
+  }, [tabParam, router]);
   const activeTab: JobsSubTab = JOBS_TABS.includes(tabParam as JobsSubTab)
     ? (tabParam as JobsSubTab)
     : "jobs";
@@ -38,7 +43,6 @@ export default function JobsPage() {
       {activeTab === "jobs" && <JobsHome onOpenJob={handleOpenJob} onOpenNewJob={handleOpenNewJob} />}
       {activeTab === "schedule" && <SchedulePanel />}
       {activeTab === "timesheets" && <TimesheetsPanel />}
-      {activeTab === "checklists" && <ChecklistsPanel />}
     </div>
   );
 }

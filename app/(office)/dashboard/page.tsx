@@ -1,17 +1,15 @@
 "use client";
 
 /**
- * Home — "The Handoff": the figure that drains.
- * One dollar figure (the money waiting on the owner's OK) is the subject of the
- * Front Desk's note. Below it: THE PIPE — the shop's money flowing through the
- * process (New → Quoted → Needs a slot → On the trucks → To bill → Owed →
- * Collected), each figure a door into its page, leaks glowing amber at the exact
- * stage. Then the drafts: real outbound SMS bubbles in ghost ink, one amber Send
- * from real; sending drains the hero (Undo refills it).
- *
- * Derivations: features/home/derive.ts + pipe.ts. Drafts: features/home/drafts.ts.
+ * Office — one page, four tabs: Today (the Home handoff), Front Desk, Pricebook,
+ * Checklists. The underline tab bar is the in-page switcher (Stripe/GitHub
+ * pattern); the sidebar has a single Office item, no subs. ?tab= deep-links each
+ * pane (read once on mount, replaceState on click — same approach as Settings).
+ * The Front Desk tab carries a live status dot so the shop's heartbeat is
+ * visible from any tab.
  */
 
+import { useState, useEffect } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
 import { deriveShiftReport, deriveOkQueue } from "@/features/home/derive";
@@ -21,6 +19,12 @@ import { HomePipe } from "@/features/home/home-pipe";
 import { OkQueue } from "@/features/home/ok-queue";
 import { SetupChecklist } from "@/features/home/setup-checklist";
 import { useMe } from "@/features/identity/hooks";
+import { FrontDeskPane } from "@/features/office/front-desk-pane";
+import { PricebookPane } from "@/features/office/pricebook-pane";
+import { ChecklistsPanel } from "@/features/jobs/checklists-panel";
+
+type OfficeTab = "today" | "frontdesk" | "pricebook" | "checklists";
+const OFFICE_TABS: readonly OfficeTab[] = ["today", "frontdesk", "pricebook", "checklists"];
 
 /** "WED, JUL 8" from the live clock. */
 function dateLabel(): string {
@@ -29,7 +33,47 @@ function dateLabel(): string {
     .toUpperCase();
 }
 
-export default function DashboardPage() {
+export default function OfficePage() {
+  const [tab, setTab] = useState<OfficeTab>("today");
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t && OFFICE_TABS.includes(t as OfficeTab)) setTab(t as OfficeTab);
+  }, []);
+  const frontDeskOn = useAppStore((s) => s.toggles.frontDesk);
+  const serviceCount = useAppStore((s) => s.services.length);
+  const checklistCount = useAppStore((s) => s.checklists.length);
+
+  function switchTab(t: OfficeTab) {
+    setTab(t);
+    window.history.replaceState(null, "", t === "today" ? "/dashboard" : `/dashboard?tab=${t}`);
+  }
+
+  return (
+    <div>
+      <div className="otabs" role="tablist" aria-label="Office">
+        <button className={tab === "today" ? "otab on" : "otab"} role="tab" aria-selected={tab === "today"} onClick={() => switchTab("today")}>
+          Today
+        </button>
+        <button className={tab === "frontdesk" ? "otab on" : "otab"} role="tab" aria-selected={tab === "frontdesk"} onClick={() => switchTab("frontdesk")}>
+          <span className={frontDeskOn ? "odot" : "odot off"} aria-hidden="true" /> Front Desk
+        </button>
+        <button className={tab === "pricebook" ? "otab on" : "otab"} role="tab" aria-selected={tab === "pricebook"} onClick={() => switchTab("pricebook")}>
+          Pricebook {serviceCount > 0 && <span className="oct">{serviceCount}</span>}
+        </button>
+        <button className={tab === "checklists" ? "otab on" : "otab"} role="tab" aria-selected={tab === "checklists"} onClick={() => switchTab("checklists")}>
+          Checklists {checklistCount > 0 && <span className="oct">{checklistCount}</span>}
+        </button>
+      </div>
+
+      {tab === "today" && <TodayPane />}
+      {tab === "frontdesk" && <FrontDeskPane />}
+      {tab === "pricebook" && <PricebookPane />}
+      {tab === "checklists" && <ChecklistsPanel />}
+    </div>
+  );
+}
+
+function TodayPane() {
   const leads = useAppStore((s) => s.leads);
   const estimates = useAppStore((s) => s.estimates);
   const invoices = useAppStore((s) => s.invoices);

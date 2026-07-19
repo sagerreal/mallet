@@ -15,10 +15,10 @@ import { SignOutButton } from "@/components/shell/sign-out-button";
 
 const OFFICE_LINKS: Array<{ href: string; label: string }> = [
   { href: "/dashboard", label: "Office" },
-  { href: "/frontdesk", label: "Front Desk" },
+  { href: "/dashboard?tab=frontdesk", label: "Front Desk" },
   { href: "/customers", label: "Customers" },
   { href: "/jobs", label: "Jobs" },
-  { href: "/pricebook", label: "Pricebook" },
+  { href: "/dashboard?tab=pricebook", label: "Pricebook" },
   { href: "/money", label: "Money" },
   { href: "/settings", label: "Settings" },
 ];
