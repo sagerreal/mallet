@@ -190,7 +190,7 @@ function CollapsedRow({
         alignItems: "center",
         gap: 10,
         width: "100%",
-        padding: "13px 14px",
+        padding: "10px 14px",
         background: "none",
         border: "none",
         borderBottom: isLast && !isExpanded ? "none" : "1px solid var(--line-2, var(--line))",
