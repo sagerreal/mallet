@@ -9,8 +9,13 @@
  */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { shouldShowFirstRun } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import type { TimeEntry } from "@/lib/store/types";
 import { techById } from "./jobs-helpers";
 import {
@@ -28,7 +33,25 @@ import { TsCrewChips, TsTechWeekCard } from "./timesheets-crew";
 // crew reassignment not supported here — techId is intentionally excluded.
 const TS_EDITABLE: ReadonlySet<string> = new Set(["kind", "jobId", "date", "start", "end", "note"]);
 
+// First-run empty-state copy. Timesheets are DOWNSTREAM — hours only exist once field crew clock
+// into jobs (or the office adds one by hand). Shown when there are no time entries at all.
+const FIRST_RUN = {
+  heading: "No hours logged yet",
+  subtext: "Hours show up here once your field crew clock into jobs. Set up your crew, or add an entry by hand.",
+  crew: {
+    title: "Add field crew",
+    description: "Invite a team member and mark them field crew — their hours land here.",
+    actionLabel: "Set up crew",
+  },
+  entry: {
+    title: "Add an entry by hand",
+    description: "Log time for a crew member yourself — edit the hours and job right in the grid.",
+    actionLabel: "+ Add entry",
+  },
+} as const;
+
 export function TimesheetsPanel() {
+  const router = useRouter();
   const techs = useAppStore((s) => s.techs);
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
@@ -116,6 +139,32 @@ export function TimesheetsPanel() {
   }
 
   const selTech = selId != null ? techById(techs, selId) : undefined;
+
+  // No-flash first-run gate on the TOTAL time-entry count (not the week-scoped `anyEntries`).
+  // Dedupes the TimesheetsHydrator query (same key → no extra fetch). Full early return — the grid
+  // below is untouched.
+  const tsQuery = api.v1.timesheets.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const firstRun = shouldShowFirstRun({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
+
+  if (firstRun) {
+    return (
+      <>
+        <h1>Timesheets</h1>
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={FIRST_RUN.subtext}
+          paths={[
+            { ...FIRST_RUN.crew, onAction: () => router.push("/settings?tab=workspace"), variant: "primary" },
+            // Only offer a manual entry once there's a crew member to attribute it to (no dead button).
+            ...(techs.length > 0 ? [{ ...FIRST_RUN.entry, onAction: () => handleAdd(techs[0]!.id) }] : []),
+          ]}
+        />
+      </>
+    );
+  }
 
   return (
     <>

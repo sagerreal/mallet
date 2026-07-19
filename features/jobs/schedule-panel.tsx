@@ -15,6 +15,10 @@
 import { useState, useRef, useEffect, type DragEvent as ReactDragEvent } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { shouldShowFirstRun } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Visit } from "@/lib/store/types";
 import { timeLabelShort, hmLabel, colLabel } from "@/lib/time";
@@ -56,6 +60,18 @@ function addDaysLocal(iso: string, n: number): string {
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
+
+// First-run empty-state copy. Shown when a brand-new shop opens Schedule with nothing to place
+// (no jobs and no estimate visits). Rendered via a full early return that never touches the board.
+const FIRST_RUN = {
+  heading: "Nothing to schedule yet",
+  subtext: "The board fills up as you win work — book a job and it lands in the tray, ready to drop onto a crew.",
+  book: {
+    title: "Book a job",
+    description: "New jobs show up in the To-schedule tray, ready to place on a crew and time.",
+    actionLabel: "+ New job",
+  },
+} as const;
 
 export function SchedulePanel() {
   const openModal = useOpenModal();
@@ -446,6 +462,34 @@ export function SchedulePanel() {
       )}
     </>
   );
+
+  // No-flash first-run gate. The board has nothing to place when there are no jobs AND no estimate
+  // visits carried on leads. Dedupes the JobsHydrator query (same key → no extra fetch). This is a
+  // FULL early return that renders only the header + empty state — the board JSX below is untouched.
+  const scheduleCount = jobs.length + leads.reduce((n, l) => n + (l.evisits?.length ?? 0), 0);
+  const jobsQuery = api.v1.jobs.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const firstRun = shouldShowFirstRun({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
+
+  if (firstRun) {
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <h1>Schedule</h1>
+          <button className="btn" onClick={() => openModal(MODAL.NEW_JOB)}>
+            + New job
+          </button>
+        </div>
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={FIRST_RUN.subtext}
+          paths={[{ ...FIRST_RUN.book, onAction: () => openModal(MODAL.NEW_JOB), variant: "primary" }]}
+        />
+      </>
+    );
+  }
 
   return (
     <>
