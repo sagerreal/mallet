@@ -17,14 +17,12 @@
  */
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
-import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
-import { PricebookCard } from "./pricebook-card";
-import { EstimatorMemoryCard } from "./estimator-memory-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { IconWell } from "./icon-well";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
@@ -715,125 +713,6 @@ function SecSources() {
 }
 
 // ============================================================================
-// Section: Pricing & quotes
-// ============================================================================
-
-function SecPricing() {
-  const laborRates = useAppStore((s) => s.laborRates);
-  const addLaborRate = useAppStore((s) => s.addLaborRate);
-  const updateLaborRate = useAppStore((s) => s.updateLaborRate);
-  const removeLaborRate = useAppStore((s) => s.removeLaborRate);
-  const markup = useAppStore((s) => s.markup);
-  const setMarkup = useAppStore((s) => s.setMarkup);
-  const terms = useAppStore((s) => s.terms);
-  const addTerm = useAppStore((s) => s.addTerm);
-  const removeTerm = useAppStore((s) => s.removeTerm);
-
-  const [lrName, setLrName] = useState("");
-  const [lrRate, setLrRate] = useState("");
-  const [lrKind, setLrKind] = useState<LaborRateKind>("hourly");
-  const [tlName, setTlName] = useState("");
-  const [tlBody, setTlBody] = useState("");
-
-  function handleAddLabor() {
-    addLaborRate(lrName, Number(lrRate), lrKind);
-    setLrName("");
-    setLrRate("");
-    setLrKind("hourly");
-  }
-
-  function handleAddTerm() {
-    addTerm(tlName, tlBody);
-    setTlName("");
-    setTlBody("");
-  }
-
-  return (
-    <>
-      <FoldCard title="Labor rates" defaultOpen summary={`${laborRates.length} rate${laborRates.length === 1 ? "" : "s"}`}>
-        <div>
-          {laborRates.map((lr) => (
-            <div key={lr.id} className="stage-row">
-              <input type="text" defaultValue={lr.name}
-                onChange={(e) => updateLaborRate(lr.id, "name", e.target.value)}
-                style={{ flex: 1, minWidth: 120, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                <span className="muted">$</span>
-                <input type="number" defaultValue={lr.rate}
-                  onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
-                  style={{ width: 80, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-                <select
-                  aria-label={`Unit for ${lr.name}`}
-                  value={lr.kind}
-                  onChange={(e) => updateLaborRate(lr.id, "kind", e.target.value)}
-                  style={{ border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 6px", fontFamily: "inherit", fontSize: 12, color: "var(--ink-2)", background: "var(--card)" }}
-                >
-                  <option value="hourly">/hr</option>
-                  <option value="flat_fee">flat</option>
-                </select>
-              </span>
-              {laborRates.length > 1 && (
-                <button className="btn sm ghost" onClick={() => removeLaborRate(lr.id)}>✕</button>
-              )}
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <div className="chips" style={{ marginBottom: 8 }}>
-            <button type="button" className={`chip${lrKind === "hourly" ? " sel" : ""}`} onClick={() => setLrKind("hourly")}>
-              Hourly
-            </button>
-            <button type="button" className={`chip${lrKind === "flat_fee" ? " sel" : ""}`} onClick={() => setLrKind("flat_fee")}>
-              Flat fee
-            </button>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
-              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-            <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
-              style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-            <button className="btn" onClick={handleAddLabor}>+ Add</button>
-          </div>
-        </div>
-      </FoldCard>
-
-      <PricebookCard />
-
-      <EstimatorMemoryCard />
-
-      <FoldCard title="Default parts markup" summary={`${markup}%`}>
-        <div className="field" style={{ maxWidth: 200, margin: 0 }}>
-          <label>Markup on new parts (%)</label>
-          <input type="number" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
-        </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
-          Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
-        </p>
-      </FoldCard>
-
-      <FoldCard title="Terms library" summary={`${terms.length} terms`}>
-        <div>
-          {terms.map((t) => (
-            <div key={t.id} className="stage-row">
-              <span style={{ fontWeight: 700 }}>{t.t}</span>
-              <span className="trig" style={{ maxWidth: 280, whiteSpace: "normal" }}>{t.body.slice(0, 60)}…</span>
-              <button className="btn sm ghost" onClick={() => removeTerm(t.id)}>✕</button>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <input type="text" id="tlName" placeholder="name (e.g. Repipe terms)" value={tlName} onChange={(e) => setTlName(e.target.value)}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <input type="text" id="tlBody" placeholder="the fine print…" value={tlBody} onChange={(e) => setTlBody(e.target.value)}
-            style={{ flex: 2, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
-          <button className="btn" onClick={handleAddTerm}>+ Add</button>
-        </div>
-      </FoldCard>
-    </>
-  );
-}
-
-// ============================================================================
 // Section: Booking
 // ============================================================================
 
@@ -1133,7 +1012,7 @@ function SecArchive() {
 // Main page
 // ============================================================================
 
-type SetTab = "workspace" | "sources" | "pricing" | "payments" | "booking" | "fields" | "archive";
+type SetTab = "workspace" | "sources" | "payments" | "booking" | "fields" | "archive";
 
 interface SectionDef {
   k: SetTab;
@@ -1143,22 +1022,28 @@ interface SectionDef {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<SetTab>("workspace");
   // Deep-link support (/settings?tab=booking) — read once on mount; avoids the
   // useSearchParams/Suspense requirement and any SSR hydration mismatch.
+  // ?tab=pricing moved to its own surface (settings-IA decision, Jul 2026) —
+  // old links redirect there rather than dead-ending on Workspace.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t && ["workspace", "sources", "pricing", "payments", "booking", "fields", "archive"].includes(t)) {
+    if (t === "pricing") {
+      router.replace("/pricebook");
+      return;
+    }
+    if (t && ["workspace", "sources", "payments", "booking", "fields", "archive"].includes(t)) {
       setActiveTab(t as SetTab);
     }
-  }, []);
+  }, [router]);
   const { data: me } = api.v1.identity.me.useQuery();
   const role = me?.role ?? "office";
 
   const allSections = [
     { k: "workspace" as SetTab, label: "Workspace",         body: <SecWorkspace role={role} /> },
     { k: "sources"   as SetTab, label: "Lead sources",      body: <SecSources /> },
-    { k: "pricing"   as SetTab, label: "Pricing & quotes", ownerOnly: true, body: <SecPricing /> },
     { k: "payments"  as SetTab, label: "Payments",          ownerOnly: true, body: <PaymentsCard /> },
     { k: "booking"   as SetTab, label: "Booking",           ownerOnly: true, body: <SecBooking /> },
     { k: "fields"    as SetTab, label: "Custom fields",     body: <SecFields /> },

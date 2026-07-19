@@ -12,6 +12,7 @@ const CRUMBS: Record<string, { section: string; label: string }> = {
   "/tasks": { section: "Customer", label: "Tasks" },
   "/composer": { section: "Customer", label: "New quote" },
   "/jobs": { section: "Customer", label: "Jobs" },
+  "/pricebook": { section: "Customer", label: "Pricebook" },
   "/money": { section: "Customer", label: "Money" },
   "/settings": { section: "Customer", label: "Settings" },
   "/more": { section: "Customer", label: "More" },
