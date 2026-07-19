@@ -17,6 +17,7 @@ const OFFICE_LINKS: Array<{ href: string; label: string }> = [
   { href: "/dashboard", label: "Home" },
   { href: "/customers", label: "Customers" },
   { href: "/jobs", label: "Jobs" },
+  { href: "/pricebook", label: "Pricebook" },
   { href: "/money", label: "Money" },
   { href: "/settings", label: "Settings" },
 ];

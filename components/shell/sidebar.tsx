@@ -48,6 +48,13 @@ const MoneyIcon = () => (
   </svg>
 );
 
+const PricebookIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+  </svg>
+);
+
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
@@ -235,6 +242,12 @@ export function Sidebar() {
                 <NavSub href="/jobs?tab=checklists" label="Checklists" active={tab === "checklists"} />
               </div>
             )}
+            <NavItem
+              href="/pricebook"
+              icon={<PricebookIcon />}
+              label="Pricebook"
+              active={isActive("/pricebook")}
+            />
             <NavItem
               href="/money"
               icon={<MoneyIcon />}
