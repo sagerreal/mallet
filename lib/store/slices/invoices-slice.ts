@@ -328,6 +328,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
 
       trpcVanilla.v1.invoicing.draft
         .mutate({
+          id: inv.id,
           leadId: inv.leadId,
           title: inv.title ?? undefined,
           termsDays: inv.termsDays ?? 7,

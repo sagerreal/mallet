@@ -1,4 +1,4 @@
-import type { OrgId, LeadId, Money, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, LeadId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
 import { asInvoiceId, money, zeroMoney, addMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
@@ -14,6 +14,9 @@ export interface InvoiceLineInput {
 
 export interface DraftInvoiceCommand {
   readonly orgId: OrgId;
+  // Client-authored id (the store needs a stable id synchronously); preserved so the store's
+  // local id === the server row id. Falls back to a fresh id for callers that don't supply one.
+  readonly id?: InvoiceId;
   readonly leadId: LeadId;
   readonly title: string | null;
   readonly termsDays: number;
@@ -55,7 +58,7 @@ export class DraftInvoiceUseCase {
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
     const invoice = Invoice.create({
-      id: asInvoiceId(this.ids.newId()),
+      id: cmd.id ?? asInvoiceId(this.ids.newId()),
       orgId: cmd.orgId,
       num,
       sourceJobId: null,
