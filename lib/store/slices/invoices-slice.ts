@@ -19,13 +19,13 @@
  *   addInvoice (fromJob path)  → v1.invoicing.createFromJob  (when jobId is set + job is "db")
  *   sendInvoice                → v1.invoicing.draft + v1.invoicing.send sequence
  *   recordPayment              → v1.invoicing.recordPayment
- *   archiveInvoice             → v1.invoicing.void  (only for non-draft invoices)
+ *   archiveInvoice             → v1.invoicing.void  (any db invoice, incl. drafts)
  *   updateInvoice   → v1.invoicing.updateMetadata (db invoices; DB-backed fields only)
  *   setInvoiceLines → v1.invoicing.patchLines     (db invoices; recomputes total)
  *
  * DEFERRED (no backend endpoint yet — store-local only):
  *   addInvoice (blank path)    — skips network; DB row created at sendInvoice time
- *   archiveInvoice on draft    — guarded: only void non-draft invoices
+ *   archiveInvoice on manual   — no DB row yet; optimistic hide is store-local
  */
 
 import type { StateCreator } from "zustand";
@@ -380,11 +380,17 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   },
 
   // ---------------------------------------------------------------------------
-  // archiveInvoice — maps to v1.invoicing.void (irreversible in the backend).
+  // archiveInvoice — maps to v1.invoicing.void, which moves the invoice to the
+  // Archived tab (status "void" → archived, per dtoInvoiceToStore / the hydrator).
   //
-  // Guard: only void non-draft "db" invoices. Voiding a draft is semantically
-  // wrong (use deleteInvoice once that endpoint exists). Voiding a "manual"
-  // invoice that has no DB row would fail, so skip the network call there too.
+  // Drafts archive the SAME way (Owen's call Jul 19 2026 — a removed draft lives
+  // in Archived, not deleted): the domain void() accepts a draft, so we persist it
+  // rather than leaving the archive store-local (which reappeared on the next
+  // reload as the hydrator re-derived archived=false from status "draft").
+  //
+  // Guard: only a "db"-origin invoice has a row to void. A "manual" invoice that
+  // was never persisted has no DB row, so skip the network call and keep the
+  // optimistic hide store-local (it never existed server-side to come back).
   // ---------------------------------------------------------------------------
   archiveInvoice: (id) => {
     const prior = snapshotInv(get().invoices, id);
@@ -393,9 +399,8 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     // 1. Optimistic update.
     set((s) => ({ invoices: s.invoices.map((i) => (i.id === id ? { ...i, archived: true } : i)) }));
 
-    // 2. Guard: only void DB-origin, non-draft invoices.
-    if (!inv || inv.origin !== "db" || inv.status === "draft") {
-      // TODO(persist): void endpoint only valid for non-draft; draft archive is store-local
+    // 2. Guard: only DB-origin invoices have a row to void.
+    if (!inv || inv.origin !== "db") {
       return;
     }
 
