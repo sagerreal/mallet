@@ -202,12 +202,6 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
             <NewMenu />
 
             <NavItem href="/dashboard" icon={<HomeIcon />} label="Office" active={officeActive} />
-            {officeActive && (
-              <div className="navsubs">
-                <NavSub href="/frontdesk" label="Front Desk" active={pathname.startsWith("/frontdesk")} />
-                <NavSub href="/pricebook" label="Pricebook" active={pathname.startsWith("/pricebook")} />
-              </div>
-            )}
 
             <div className="navsep" />
 
@@ -245,7 +239,6 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
                   active={tab === "schedule"}
                 />
                 <NavSub href="/jobs?tab=timesheets" label="Timesheets" active={tab === "timesheets"} />
-                <NavSub href="/jobs?tab=checklists" label="Checklists" active={tab === "checklists"} />
               </div>
             )}
             <NavItem

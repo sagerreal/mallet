@@ -33,6 +33,7 @@ export function ChecklistsPanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [starterOpen, setStarterOpen] = useState(false);
+  const [query, setQuery] = useState("");
   // No-flash first-run gate — dedupes the ChecklistsHydrator query (same key → no extra fetch).
   const clQuery = api.v1.checklists.list.useQuery(
     { limit: HYDRATOR_PAGE_LIMIT },
@@ -55,6 +56,8 @@ export function ChecklistsPanel() {
   ) {
     // Batch add, dedupe by name
     const existingNames = new Set(checklists.map((c) => c.name));
+  const q = query.trim().toLowerCase();
+  const visibleChecklists = q ? checklists.filter((c) => c.name.toLowerCase().includes(q)) : checklists;
     items.forEach(({ name, items: itms }) => {
       if (!existingNames.has(name)) {
         addChecklist(name, "job", itms);
@@ -69,6 +72,8 @@ export function ChecklistsPanel() {
   }
 
   const existingNames = new Set(checklists.map((c) => c.name));
+  const q = query.trim().toLowerCase();
+  const visibleChecklists = q ? checklists.filter((c) => c.name.toLowerCase().includes(q)) : checklists;
 
   return (
     <div style={{ padding: "20px 24px" }}>
@@ -76,6 +81,14 @@ export function ChecklistsPanel() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>Checklists</h2>
         <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            placeholder="Search checklists…"
+            aria-label="Search checklists"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ border: "1.4px solid var(--line)", borderRadius: 9, padding: "8px 11px", fontSize: 12.5, fontFamily: "inherit", background: "var(--card)", color: "var(--ink)" }}
+          />
           <button className="btn ghost" onClick={() => setStarterOpen(true)}>Starter checklists</button>
           <button className="btn primary" onClick={() => setAddOpen(true)}>+ New checklist</button>
         </div>
@@ -96,15 +109,18 @@ export function ChecklistsPanel() {
       ) : (
         /* List — bordered card with rows */
         <div style={{ border: "1px solid var(--line-2, var(--line))", borderRadius: 8, overflow: "hidden" }}>
-          {checklists.map((cl, i) => (
+          {visibleChecklists.map((cl, i) => (
             <ChecklistEditorCard
               key={cl.id}
               checklist={cl}
               isExpanded={expandedId === cl.id}
               onToggle={() => handleToggle(cl.id)}
-              isLast={i === checklists.length - 1}
+              isLast={i === visibleChecklists.length - 1}
             />
           ))}
+          {visibleChecklists.length === 0 && (
+            <div className="empty-att">No checklists match “{query}”.</div>
+          )}
         </div>
       )}
 

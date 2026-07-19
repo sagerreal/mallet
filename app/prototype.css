@@ -298,6 +298,52 @@
   .tdue{flex:0 0 auto;font-size:12.5px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums}
   .tdue.od{color:var(--red);font-weight:700}
   .tdue.now{color:var(--amber);font-weight:700}
+  /* ===== Office page (dashboard tabs + panes) ===================== */
+  /* Underline tab bar — Stripe/GitHub-style: quiet text tabs, ink underline on
+     the active one, counts as small mono chips, live status as a dot. */
+  .otabs{display:flex;gap:2px;border-bottom:1.5px solid var(--line);margin:2px 0 18px}
+  .otab{position:relative;padding:9px 13px 11px;font-size:13.5px;font-weight:600;color:var(--ink-2);display:flex;align-items:center;gap:7px;cursor:pointer;background:none;border:none;font-family:inherit}
+  .otab:hover{color:var(--ink)}
+  .otab.on{color:var(--ink);font-weight:700}
+  .otab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1.5px;height:2.5px;border-radius:2px;background:var(--ink)}
+  .otab .oct{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-3);background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:1px 6px}
+  .odot{width:8px;height:8px;border-radius:50%;background:var(--green-700);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--green-700) 22%,transparent);animation:odotbreathe 2.6s ease-in-out infinite;flex:0 0 auto}
+  .odot.off{background:var(--ink-3);box-shadow:none;animation:none}
+  @keyframes odotbreathe{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--green-700) 10%,transparent)}}
+  @media (prefers-reduced-motion:reduce){.odot{animation:none}}
+  /* Front Desk pane */
+  .fdstatus{display:flex;align-items:center;gap:10px;margin:2px 0 14px;flex-wrap:wrap}
+  .fdstatus .fds{font-family:var(--font-display);font-size:16px;font-weight:700}
+  .fdstatus .fdnum{font-family:var(--font-mono);font-size:12.5px;color:var(--ink-2)}
+  .fdstatus .sp{flex:1}
+  .fdabout{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:12px 15px;margin-bottom:12px}
+  .fdgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media (max-width:760px){.fdgrid{grid-template-columns:1fr}}
+  /* Tracker card: summary always visible; "edit" reveals the full editor in-flow. */
+  .tcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px;box-shadow:var(--shadow-sm);min-width:0}
+  .tcard.open{grid-column:1 / -1}
+  .tcard .th{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:9px}
+  .tcard .th b{font-size:12.5px;font-weight:800}
+  .tcard .th .tm{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);white-space:nowrap}
+  .tcard .tedit{background:none;border:none;padding:0;font:inherit;font-size:11.5px;font-weight:700;color:var(--ink-2);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+  .tcard .tbody{margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2)}
+  .tchips{display:flex;flex-wrap:wrap;gap:5px}
+  .tchip{border:1px solid var(--manila-line);background:var(--manila);border-radius:16px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--ink-2);display:inline-flex;gap:5px;align-items:center}
+  .tchip .lane{font-size:8.5px;font-weight:800;color:var(--amber)}
+  .tchip.neg{background:transparent;border-style:dashed;color:var(--ink-3)}
+  .tfig{font-family:var(--font-mono);font-size:19px;font-weight:700}
+  .tsub{font-size:11px;color:var(--ink-3)}
+  .oweek{display:flex;gap:4px;align-items:flex-end;height:34px;margin-top:2px}
+  .oweek .d{flex:1;display:flex;flex-direction:column;gap:3px;align-items:center}
+  .oweek .bar{width:100%;border-radius:3px;background:var(--manila-2);border:1px solid var(--manila-line);height:26px}
+  .oweek .bar.off{height:8px;background:transparent;border-style:dashed}
+  .oweek .lb{font-size:8.5px;color:var(--ink-3);font-weight:700}
+  /* Pricebook pane */
+  .pbtoolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .pbsearch{flex:1;min-width:150px;border:1.4px solid var(--line);border-radius:9px;padding:8px 11px;font-size:12.5px;font-family:inherit;background:var(--card);color:var(--ink)}
+  .ratechip{border:1px solid var(--line);border-radius:16px;background:var(--card);padding:4px 11px;font-size:11px;color:var(--ink-2);white-space:nowrap}
+  .ratechip b{font-family:var(--font-mono);color:var(--ink);font-weight:700}
+  .pbtablewrap{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;padding:0 12px}
   /* Tasks inline editor (features/tasks/editable-task-row.tsx) — the resting pencil affordance
      (always visible, brightens on hover) + the calm inset edit panel with labeled fields. */
   .trow-edit{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink-3);display:grid;place-items:center;cursor:pointer;opacity:.55;padding:0;transition:opacity .12s,color .12s,border-color .12s}
