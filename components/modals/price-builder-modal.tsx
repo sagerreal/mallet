@@ -167,10 +167,7 @@ export function PriceBuilderModalContent() {
 
   return (
     <div>
-      {/* Header — eyebrow + title (office single-tier: "Price the job") */}
-      <button className="x" onClick={returnToJob}>
-        ✕
-      </button>
+      {/* Header — eyebrow + title (office single-tier: "Price the job"). The shell renders the ✕. */}
       <div
         className="muted"
         style={{

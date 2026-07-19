@@ -264,12 +264,6 @@ function FieldTimer({ visit }: FieldTimerProps) {
     setRunning(false);
   }
 
-  function stop() {
-    // deferred: persist timer + log to timesheets — for now Stop just parks the
-    // clock (pause + keep elapsed) so it reads back when re-opened this session.
-    pause();
-  }
-
   if (running) {
     return (
       <button className="tjclock run" onClick={pause}>
@@ -286,13 +280,6 @@ function FieldTimer({ visit }: FieldTimerProps) {
         <span className="tjclock-time">{hasElapsed ? clockLabel(elapsedH) : "0:00"}</span>
         <span className="tjclock-lbl">{hasElapsed ? "Resume timer" : "Start timer"}</span>
       </button>
-      {hasElapsed && (
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button className="btn ghost" style={{ flex: 1 }} onClick={stop}>
-            Stop
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -1561,6 +1548,14 @@ export function TechJobModalContent() {
       {/* 8. Notes feed — office composes while the job is open (same gate as
           Call/Text; the server refuses note edits once the job is complete). */}
       <NoteFeed job={job} canCompose={isOffice && !done} updateJob={updateJob} />
+
+      {/* Close — a real full-width Done so the field view isn't dismissable only
+          via the tiny shell ✕ (every other modal ends with a primary action). */}
+      <div style={{ display: "flex", marginTop: 18 }}>
+        <button className="btn primary" style={{ flex: 1 }} onClick={close}>
+          Done
+        </button>
+      </div>
     </div>
   );
 }
