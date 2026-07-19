@@ -21,6 +21,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const updateMetadataMutate = vi.fn();
 const patchLinesMutate = vi.fn();
+const voidMutate = vi.fn();
 
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
@@ -32,7 +33,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         draft: { mutate: vi.fn() },
         send: { mutate: vi.fn() },
         recordPayment: { mutate: vi.fn() },
-        void: { mutate: vi.fn() },
+        void: { mutate: (...a: unknown[]) => voidMutate(...a) },
       },
     },
   },
@@ -196,5 +197,44 @@ describe("setInvoiceLines persistence", () => {
     expect(s.state.invoices[0]?.total).toBe(500);
     await Promise.resolve(); await Promise.resolve();
     expect(s.state.invoices[0]?.total).toBe(1000); // reverted to seed total
+  });
+});
+
+describe("archiveInvoice persistence", () => {
+  beforeEach(() => { voidMutate.mockReset(); voidMutate.mockResolvedValue(dbDto({ status: "void" })); });
+
+  // The fix: a DRAFT must persist its archive via void, not just hide locally — otherwise the
+  // next hydrate re-derives archived=false from status "draft" and the row reappears.
+  it("voids a DRAFT db invoice (persists the archive) and hides it optimistically", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "draft", origin: "db", archived: false })]);
+    s.state.archiveInvoice("inv-1");
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.archived).toBe(true); // optimistic
+    expect(voidMutate).toHaveBeenCalledWith({ invoiceId: "inv-1" }); // persisted
+  });
+
+  it("voids a SENT db invoice too", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "sent", origin: "db", archived: false })]);
+    s.state.archiveInvoice("inv-1");
+    expect(voidMutate).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+  });
+
+  it("does NOT call void for a manual invoice (no DB row yet — store-local hide only)", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "draft", origin: "manual", archived: false })]);
+    s.state.archiveInvoice("inv-1");
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.archived).toBe(true);
+    expect(voidMutate).not.toHaveBeenCalled();
+  });
+
+  it("rolls the archive back if the void mutation fails", async () => {
+    voidMutate.mockRejectedValue(new Error("boom"));
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "draft", origin: "db", archived: false })]);
+    s.state.archiveInvoice("inv-1");
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.archived).toBe(true); // optimistic
+    await Promise.resolve(); await Promise.resolve();
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.archived).toBe(false); // reverted
   });
 });

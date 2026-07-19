@@ -108,6 +108,12 @@ describe("Invoice.void", () => {
     const paid = make({ total: money(1_000), status: "paid", amountPaid: money(1_000) });
     expect(paid.void(now).ok).toBe(false);
   });
+
+  it("voids a DRAFT (archiving a draft moves it to void — the store relies on this)", () => {
+    const voided = make({ status: "draft" }).void(now);
+    expect(isOk(voided)).toBe(true);
+    if (isOk(voided)) expect(voided.value.props.status).toBe("void");
+  });
 });
 
 describe("Invoice.isOverdue", () => {
