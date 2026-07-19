@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 
 // Route → breadcrumb, so the topbar reflects the current screen (like the prototype's crumb).
 const CRUMBS: Record<string, { section: string; label: string }> = {
-  "/dashboard": { section: "Customer", label: "Home" },
+  "/dashboard": { section: "Customer", label: "Office" },
+  "/frontdesk": { section: "Customer", label: "Front Desk" },
   "/customers": { section: "Customer", label: "Customers" },
   "/quotes": { section: "Customer", label: "Quotes" },
   "/pipeline": { section: "Customer", label: "Pipeline" },
