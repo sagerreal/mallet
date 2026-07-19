@@ -308,7 +308,7 @@ export function EstimateModalContent() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, paddingRight: 34 }}>
         <div>
           <div className="muted">{e.num}</div>
           <h2>{e.title}</h2>
@@ -403,11 +403,15 @@ export function EstimateModalContent() {
                   const updated = await clearChangeRequestMutation.mutateAsync({ estimateId: e.id });
                   adoptEstimate(updated, e.fu ?? { on: false, stage: 0 });
                 } catch {
-                  // Non-fatal — leave the card in place; the error is swallowed intentionally.
+                  // Surfaced on the button itself (isError → "Failed — retry"); no silent failure.
                 }
               }}
             >
-              {clearChangeRequestMutation.isPending ? "Clearing…" : "Mark handled"}
+              {clearChangeRequestMutation.isPending
+                ? "Clearing…"
+                : clearChangeRequestMutation.isError
+                  ? "Failed — retry"
+                  : "Mark handled"}
             </button>
           </div>
         </div>

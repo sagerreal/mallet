@@ -190,15 +190,11 @@ function SignaturePad({ onClearRef }: SignaturePadProps) {
 
 interface EyebrowProps {
   custName: string;
-  onClose: () => void;
 }
 
-function Eyebrow({ custName, onClose }: EyebrowProps) {
+function Eyebrow({ custName }: EyebrowProps) {
   return (
     <>
-      <button className="x" onClick={onClose}>
-        ✕
-      </button>
       <div
         className="muted"
         style={{
@@ -401,7 +397,7 @@ export function TechQuoteModalContent() {
     const total = tierTotal(chosenTier);
     return (
       <div>
-        <Eyebrow custName={custName} onClose={returnToJob} />
+        <Eyebrow custName={custName} />
         <h2>Approve &amp; sign</h2>
 
         <div className="card" style={{ background: "var(--manila)" }}>
@@ -472,7 +468,7 @@ export function TechQuoteModalContent() {
     const firstName = custName.split(" ")[0] ?? custName;
     return (
       <div>
-        <Eyebrow custName={custName} onClose={returnToJob} />
+        <Eyebrow custName={custName} />
         <h2>Present — on glass</h2>
         <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
           Hand {firstName} the tablet — they pick:
@@ -524,7 +520,7 @@ export function TechQuoteModalContent() {
 
   return (
     <div>
-      <Eyebrow custName={custName} onClose={returnToJob} />
+      <Eyebrow custName={custName} />
       <h2 style={{ marginBottom: 14 }}>Build the price</h2>
 
       {/* tier chips (only better + opted-in tiers; each shows label · $total) */}

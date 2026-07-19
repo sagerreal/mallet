@@ -243,14 +243,29 @@ function EditBlock({
         </div>
         <div className="field" style={{ margin: 0 }}>
           <label>Due</label>
-          <select
-            value={td == null ? "0" : String(td)}
-            onChange={(e) => onSetTerms(Number(e.target.value))}
-          >
-            <option value="0">On receipt</option>
-            <option value="15">In 15 days</option>
-            <option value="30">In 30 days</option>
-          </select>
+          <div className="chips">
+            <button
+              type="button"
+              className={`chip${(td ?? 0) === 0 ? " sel" : ""}`}
+              onClick={() => onSetTerms(0)}
+            >
+              On receipt
+            </button>
+            <button
+              type="button"
+              className={`chip${td === 15 ? " sel" : ""}`}
+              onClick={() => onSetTerms(15)}
+            >
+              15 days
+            </button>
+            <button
+              type="button"
+              className={`chip${td === 30 ? " sel" : ""}`}
+              onClick={() => onSetTerms(30)}
+            >
+              30 days
+            </button>
+          </div>
         </div>
       </div>
 
@@ -708,8 +723,8 @@ export function InvoiceModalContent() {
 
   return (
     <div>
-      {/* Header — num · customer · title + phone · status pill */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+      {/* Header — num · customer · title + phone · status pill. paddingRight clears the shell ✕. */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, paddingRight: 34 }}>
         <div>
           <div className="muted">{invoice.num}</div>
           <h2>{custName}</h2>
