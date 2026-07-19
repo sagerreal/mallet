@@ -55,10 +55,21 @@ describe("JobsHome — first-run empty state", () => {
     expect(screen.getByTestId("list")).toBeTruthy();
   });
 
-  it("does not flash the first-run screen while loading", () => {
+  it("shows a loading line — not the first-run screen, toolbar, or 'No jobs yet' copy — while first-loading", () => {
     q = { isFetched: false, isError: false };
     setup();
-    expect(screen.queryByText(/Jobs land here/)).toBeNull();
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(screen.queryByText(/Jobs land here/)).toBeNull(); // not the rich first-run
+    expect(screen.queryByText(/create one/)).toBeNull(); // not the compact "No jobs yet — create one" flash
+    expect(screen.queryByTestId("toolbar")).toBeNull();
+  });
+
+  it("does not show the loading line once jobs are present, even mid-refetch", () => {
+    storeState = store([{ id: "j1" }]);
+    q = { isFetched: false, isError: false };
+    setup();
+    expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.getByTestId("toolbar")).toBeTruthy();
+    expect(screen.getByTestId("list")).toBeTruthy();
   });
 });

@@ -18,3 +18,12 @@ export interface FirstRunInput {
 export function shouldShowFirstRun({ isFetched, isError, count }: FirstRunInput): boolean {
   return isFetched && !isError && count === 0;
 }
+
+// Whether a list page is still doing its FIRST load — the hydrator query is in flight and the store
+// is empty, so there is nothing yet to show. Pages use this to render a loading affordance instead
+// of a "nothing here" empty state, which during a cold reload would otherwise flash (e.g. telling a
+// shop that HAS jobs "No jobs yet" for a beat before the rows arrive). Distinct from
+// shouldShowFirstRun, which fires only once the load has SUCCEEDED and is genuinely empty.
+export function isFirstLoad({ isFetched, isError, count }: FirstRunInput): boolean {
+  return !isFetched && !isError && count === 0;
+}

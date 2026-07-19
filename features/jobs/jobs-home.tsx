@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useCallbackCandidates } from "@/features/jobs/hooks";
 import type { Invoice, Job } from "@/lib/store/types";
@@ -145,6 +145,10 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: jobs.length });
+  // Cold reload: the store hasn't hydrated yet (query in flight, nothing cached). Render a loading
+  // line rather than falling through to the "No jobs yet" copy below — otherwise a shop that HAS
+  // jobs is told it has none for a beat before the rows (or the first-run screen) arrive.
+  const loading = isFirstLoad({ isFetched, isError, count: jobs.length });
 
   return (
     <div className="jh-wrap">
@@ -186,6 +190,10 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
             { ...FIRST_RUN.quote, onAction: () => router.push("/composer") },
           ]}
         />
+      ) : loading ? (
+        <div className="empty-att" style={{ padding: "24px 0" }} aria-busy="true">
+          Loading…
+        </div>
       ) : (
         <>
           <JobsToolbar
