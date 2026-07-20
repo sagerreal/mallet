@@ -1,0 +1,167 @@
+{
+  "total": 32,
+  "routes": {
+    "login": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(6)"
+      ]
+    },
+    "signup": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(7)"
+      ]
+    },
+    "forgot-password": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(4)"
+      ]
+    },
+    "office-today": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(17)"
+      ]
+    },
+    "office-frontdesk": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(5)"
+      ]
+    },
+    "office-pricebook": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(4)"
+      ]
+    },
+    "office-checklists": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(5)"
+      ]
+    },
+    "customers": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(11)"
+      ]
+    },
+    "pipeline": {
+      "violations": 1,
+      "ids": [
+        "nested-interactive(13)"
+      ]
+    },
+    "tasks": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(7)"
+      ]
+    },
+    "jobs": {
+      "violations": 4,
+      "ids": [
+        "aria-allowed-attr(3)",
+        "color-contrast(15)",
+        "nested-interactive(4)",
+        "target-size(4)"
+      ]
+    },
+    "jobs-schedule": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(27)"
+      ]
+    },
+    "jobs-timesheets": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(4)"
+      ]
+    },
+    "money": {
+      "violations": 2,
+      "ids": [
+        "color-contrast(32)",
+        "nested-interactive(14)"
+      ]
+    },
+    "composer": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(6)"
+      ]
+    },
+    "quotes": {
+      "violations": 1,
+      "ids": [
+        "nested-interactive(13)"
+      ]
+    },
+    "messages": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(5)"
+      ]
+    },
+    "settings-workspace": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(8)"
+      ]
+    },
+    "settings-team": {
+      "violations": 2,
+      "ids": [
+        "color-contrast(13)",
+        "select-name(3)"
+      ]
+    },
+    "settings-channels": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(7)"
+      ]
+    },
+    "settings-payments": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(5)"
+      ]
+    },
+    "account": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(5)"
+      ]
+    },
+    "more": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(5)"
+      ]
+    },
+    "field-my-day": {
+      "violations": 2,
+      "ids": [
+        "color-contrast(4)",
+        "nested-interactive(1)"
+      ]
+    },
+    "field-my-hours": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(3)"
+      ]
+    },
+    "field-messages": {
+      "violations": 1,
+      "ids": [
+        "color-contrast(4)"
+      ]
+    }
+  }
+}
