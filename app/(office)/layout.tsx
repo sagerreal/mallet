@@ -20,6 +20,7 @@ import { ChecklistsHydrator } from "@/features/checklists/checklists-hydrator";
 import { SettingsHydrator } from "@/features/settings/settings-hydrator";
 import { PricebookHydrator } from "@/features/pricebook/pricebook-hydrator";
 import { BrandHydrator } from "@/features/settings/brand-hydrator";
+import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
           <main id="main">
             {children}
           </main>
+          <WriteErrorToast />
         </div>
       </div>
       <CommandBar />

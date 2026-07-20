@@ -27,3 +27,13 @@ export function shouldShowFirstRun({ isFetched, isError, count }: FirstRunInput)
 export function isFirstLoad({ isFetched, isError, count }: FirstRunInput): boolean {
   return !isFetched && !isError && count === 0;
 }
+
+// Whether a list page should show the LOAD-FAILED state. True only when the query errored AND the
+// store has nothing cached to fall back on: if rows are already in hand, showing them (slightly
+// stale) beats replacing real data with an error screen. Mutually exclusive with both predicates
+// above, which each require `!isError`. Without this, an errored load fell through to
+// shouldShowFirstRun's sibling branch and rendered the friendly empty state — telling a shop with
+// 400 customers and bad wifi that they have none.
+export function shouldShowLoadFailed({ isError, count }: FirstRunInput): boolean {
+  return isError && count === 0;
+}

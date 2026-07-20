@@ -17,6 +17,7 @@ import type { StateCreator } from "zustand";
 import type { Checklist, ChecklistItem } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { checklistDtoToStore } from "@/lib/store/checklists-mapper";
+import { reportWriteError } from "../write-error";
 
 /** An item authored at create time — ids/positions are minted by the slice. */
 export interface NewChecklistItem {
@@ -109,9 +110,7 @@ export const createChecklistsSlice: StateCreator<
         return updated;
       })
       .catch((err: unknown) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[checklists] addChecklist rollback", err);
-        }
+        reportWriteError("addChecklist", err);
         // Rollback on failure, then rethrow so the caller can tell the user.
         set((s) => ({ checklists: s.checklists.filter((c) => c.id !== id) }));
         throw err instanceof Error ? err : new Error("addChecklist failed");
@@ -129,9 +128,7 @@ export const createChecklistsSlice: StateCreator<
     void trpcVanilla.v1.checklists.remove
       .mutate({ checklistId: id })
       .catch((err: unknown) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[checklists] deleteChecklist rollback", err);
-        }
+        reportWriteError("deleteChecklist", err);
         set({ checklists: snapshot });
       });
   },
@@ -174,9 +171,7 @@ export const createChecklistsSlice: StateCreator<
         return reconciled;
       })
       .catch((err: unknown) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[checklists] updateChecklist rollback", err);
-        }
+        reportWriteError("updateChecklist", err);
         set({ checklists: snapshot });
         throw err instanceof Error ? err : new Error("updateChecklist failed");
       });

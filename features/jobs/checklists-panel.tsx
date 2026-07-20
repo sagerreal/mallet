@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun } from "@/lib/first-run";
+import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { ChecklistEditorCard } from "./checklist-editor-card";
 import { AddChecklistModal } from "./add-checklist-modal";
 import { StarterChecklistsModal } from "./starter-checklists-modal";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 // First-run empty-state copy. Checklists are org-level templates (a library), authored anytime.
 const FIRST_RUN = {
@@ -40,6 +41,7 @@ export function ChecklistsPanel() {
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
   const firstRun = shouldShowFirstRun({ isFetched: clQuery.isFetched, isError: clQuery.isError, count: checklists.length });
+  const loadFailed = shouldShowLoadFailed({ isFetched: clQuery.isFetched, isError: clQuery.isError, count: checklists.length });
 
   // AI-draft (1A.4) passes proposed items; a plain add passes none. Either way the
   // new row is created and expanded so the owner edits/saves through the normal path
@@ -96,7 +98,9 @@ export function ChecklistsPanel() {
 
       {/* Empty state — first-run screen only once the list has loaded and is genuinely empty. */}
       {checklists.length === 0 ? (
-        firstRun ? (
+        loadFailed ? (
+          <LoadFailed noun="checklists" onRetry={() => void clQuery.refetch()} retrying={clQuery.isRefetching} />
+        ) : firstRun ? (
           <FirstRunEmptyState
             heading={FIRST_RUN.heading}
             subtext={FIRST_RUN.subtext}

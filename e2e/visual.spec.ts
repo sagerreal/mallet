@@ -27,7 +27,15 @@ async function shoot(page: import("@playwright/test").Page, route: RouteDef, the
     fullPage: true,
     animations: "disabled",
     mask: dynamicRegions(page),
-    maxDiffPixelRatio: 0.01,
+    // ABSOLUTE budget, not a ratio. A ratio scales with page height, so on a long
+    // page it silently permits huge changes: the original 1% setting allowed ~43k
+    // pixels — a whole component — to change undetected, and did in fact miss the
+    // first real change made against it. `threshold` still absorbs antialiasing.
+    //
+    // Known limit of the technique: a colour-only change to text moves few pixels on
+    // a long page, so it can still slip under any budget. Colour regressions are
+    // caught by the axe contrast scan in a11y.spec.ts; this net is for layout.
+    maxDiffPixels: 150,
     timeout: 20_000,
   });
 }

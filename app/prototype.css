@@ -8,7 +8,7 @@
     /* monochrome / professional. --green-* kept as the neutral "fill" ramp; --accent==--pri-bg (near-black, warmed so it reads as INK on the manila chrome, not cool-black). --dot retired as a color → now warm ink (no green anywhere). */
     --green-900:#1A1510; --green-700:#3A352D; --green-600:#1A1510; --green-100:#ECE7DC; --green-50:#F4F1EA;
     --accent:#1A1510; --accent-2:#3A352D; --dot:var(--manila-ink); --pri-bg:#1A1510; --pri-fg:#FFFFFF;
-    --ink:#15110B; --ink-2:#585D66; --ink-3:#9499A1;
+    --ink:#15110B; --ink-2:#585D66; --ink-3:#636870;
     /* warm "software white" — content stays WHITE (just a warm one, not stark #FFF); only the chrome (sidebar/command line) is manila. bg is a soft warm white LIGHTER than the manila chrome, so content reads as the white work-surface, not cream. */
     --bg:#FCFBF7; --card:#FEFEFC; --paper:#F1EDE4; --line:#EAE4D7; --line-2:#F4F1E9;
     --amber:#9A6700; --amber-bg:#F2EAD9; --red:#B23A2A; --red-bg:#F4E7E1;
@@ -29,7 +29,7 @@
     --manila:#1E1B15; --manila-2:#262019; --manila-line:#3A3326; --manila-ink:#EAE2D0; --stamp-good:var(--ink);
     --green-900:#F4F5F7; --green-700:#C7CBD2; --green-600:#F4F5F7; --green-100:#2C2619; --green-50:#221E16;
     --accent:#F4F5F7; --accent-2:#C7CBD2; --dot:var(--manila-ink); --pri-bg:#F4F5F7; --pri-fg:#111317;
-    --ink:#F3F4F6; --ink-2:#A0A5AE; --ink-3:#6B6F78;
+    --ink:#F3F4F6; --ink-2:#A0A5AE; --ink-3:#9096A0;
     --bg:#13110C; --card:#1B1813; --paper:#221E18; --line:#332E25; --line-2:#272218;
     --amber:#E0A53B; --amber-bg:#262019; --red:#DE6F62; --red-bg:#35201E;
     --blue:#8FA0C8; --blue-bg:#1B2440; --purple:#9B8FCB; --purple-bg:#262019;
@@ -81,7 +81,7 @@
   .navitem.newitem{animation:navpulse .9s ease 3;background:rgba(43,39,32,.10);color:var(--ink)}
   .nav-more{color:var(--ink-3);font-size:12.5px}
   .sideacct-wrap{position:relative}
-  .sideacct{border-top:1px solid var(--manila-line);padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;outline:none}
+  .sideacct{border-top:1px solid var(--manila-line);padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer}
   .sideacct:hover,.sideacct.open{background:rgba(43,39,32,.05)}
   .sideacct .avatar{width:30px;height:30px;flex-shrink:0}
   .sideacct .who{min-width:0;flex:1}
@@ -356,6 +356,31 @@
   .fdd-v{display:block;font-size:13px;font-weight:600;color:var(--ink);margin-top:1px}
   .fdd-v .mono{font-family:var(--font-mono);font-size:12px}
   .fdd-body{padding:6px 2px 14px}
+
+  /* ===== Write-failure announcement + load-failed state ======================
+     Both are the "no silent failures" rule made visible. Anchored in flow, not
+     floating over the content. */
+  .werr-live{position:sticky;bottom:0;z-index:5;padding:0 var(--pad,18px)}
+  .werr{display:flex;align-items:center;gap:10px;margin:10px 0;padding:11px 14px;border-radius:var(--radius-sm);
+    background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 30%,transparent);box-shadow:var(--shadow-sm)}
+  .werr-msg{flex:1;font-size:13px;color:var(--ink);font-weight:600}
+  .werr-x{background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:13px;padding:2px 4px;line-height:1}
+  .loadfail{text-align:center;padding:44px 20px;max-width:420px;margin:0 auto}
+  .loadfail-h{font-size:15px;font-weight:700;margin:0 0 6px}
+  .loadfail-s{font-size:13px;color:var(--ink-2);margin:0 0 16px;line-height:1.5}
+
+  /* ===== Focus (WCAG 2.4.7) ==================================================
+     One rule covers every interactive element. Previously 11 :focus-visible
+     rules served 104 interactive selectors, so most controls showed nothing on
+     keyboard focus. :focus-visible (not :focus) keeps mouse clicks quiet. */
+  :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), [role="button"], [role="tab"], [role="switch"]):focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+    border-radius:var(--radius-sm);
+  }
+  /* The switch's real control is a visually-hidden checkbox — surface its focus
+     on the painted track instead. */
+  .switch:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:3px;border-radius:999px}
   .fdsep{color:var(--ink-3);font-size:11px}
   .svccard{border:1px solid var(--line-2,var(--line));border-radius:10px;overflow:hidden;background:var(--card)}
   .svccard-h{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line-2);background:color-mix(in srgb,var(--paper) 45%,transparent)}
@@ -404,6 +429,9 @@
   .btn.ghost:hover{background:var(--manila-2);border-color:var(--ink-3)}
   .btn.sm{padding:5px 10px;font-size:11.5px;border-radius:8px}
   .btn.sim{border:1.5px dashed var(--purple);color:var(--purple);background:var(--purple-bg)}
+  /* Irreversible / money-moving confirmations (e.g. Confirm charge). */
+  .btn.danger{background:var(--red-bg);border-color:color-mix(in srgb,var(--red) 45%,transparent);color:var(--red);font-weight:700}
+  .btn.danger:hover{background:color-mix(in srgb,var(--red) 16%,var(--red-bg));border-color:var(--red)}
   .pill{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:600;white-space:nowrap}
   .pill.gray{background:var(--line-2);color:var(--ink-2)}
   .pill.blue{background:var(--blue-bg);color:var(--blue)}
@@ -1156,7 +1184,6 @@
   .nmeta .pill{font-size:10px}
   .nwho{font-size:10.5px;color:var(--ink-3)}
   .ntext{font-size:13px;color:var(--ink);white-space:pre-line}
-  .pill.blue{background:var(--blue-bg,#E7EEF6);color:var(--blue,#2C6FB0);border:1px solid color-mix(in srgb,var(--blue,#2C6FB0) 22%,transparent)}
   /* office job modal → a single anchored pointer to where money lives (Finance), never a P&L panel */
   .jmoney{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;padding:11px 13px;border:1px solid var(--line);border-radius:11px;background:var(--paper);font-size:13px}
   /* iPhone SMS mock (tech texts the Mallet AI) — uses literal iOS colors, not theme vars */

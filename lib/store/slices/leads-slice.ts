@@ -21,6 +21,7 @@ import type { AppRouter } from "@/trpc/root";
 import type { Lead, LeadNote, Task, Visit } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { storeStageToBackend, backendStageToStore } from "@/lib/store/dto-mapper";
+import { reportWriteError } from "../write-error";
 
 type CustomerUpdateInput = inferRouterInputs<AppRouter>["v1"]["customers"]["update"];
 
@@ -248,10 +249,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       .catch((err: unknown) => {
         // Rollback: restore the pre-insert snapshot (removes the optimistic row).
         set({ leads: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] addLead failed — rolled back", { id, err });
-        }
+        reportWriteError("addLead", err);
         throw err instanceof Error ? err : new Error("addLead failed");
       });
 
@@ -305,10 +303,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
             return reverted;
           }),
         }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] updateLead failed — rolled back", { id, patch, err });
-        }
+        reportWriteError("updateLead", err);
       });
   },
 
@@ -353,10 +348,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       .mutate({ leadId: id })
       .catch((err: unknown) => {
         set({ leads: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] archiveLead failed — rolled back", { id, err });
-        }
+        reportWriteError("archiveLead", err);
       });
   },
 
@@ -375,10 +367,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       })
       .catch((err: unknown) => {
         set({ leads: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] restoreLead failed — rolled back", { id, err });
-        }
+        reportWriteError("restoreLead", err);
       });
   },
 
@@ -441,10 +430,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       })
       .catch((err: unknown) => {
         set({ tasks: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] taskDone failed — rolled back", { id, err });
-        }
+        reportWriteError("taskDone", err);
       });
   },
 
@@ -466,10 +452,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       })
       .catch((err: unknown) => {
         set({ tasks: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] toggleTask failed — rolled back", { id, err });
-        }
+        reportWriteError("toggleTask", err);
       });
   },
 
@@ -514,10 +497,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       })
       .catch((err: unknown) => {
         set({ tasks: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] updateTask failed — rolled back", { id, patch, err });
-        }
+        reportWriteError("updateTask", err);
       });
   },
 
@@ -545,10 +525,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       .catch((err: unknown) => {
         // Rollback: restore pre-mutation state (removes the optimistic task).
         set({ tasks: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] addTask failed — rolled back", { id, err });
-        }
+        reportWriteError("addTask", err);
       });
   },
 
@@ -563,10 +540,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       .mutate({ taskId: id })
       .catch((err: unknown) => {
         set({ tasks: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[leads-slice] removeTask failed — rolled back", { id, err });
-        }
+        reportWriteError("removeTask", err);
       });
   },
 });

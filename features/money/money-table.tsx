@@ -25,6 +25,7 @@ export interface MoneyRowCallbacks {
   onOpenInvoice: (id: string) => void;
   onRemind: (id: string) => void;
   onCharge: (id: string) => void;
+  onCancelCharge: () => void;
 }
 
 function RowActions({ row, armedCharge, cb }: { row: MoneyRow; armedCharge: string | null; cb: MoneyRowCallbacks }) {
@@ -53,9 +54,23 @@ function RowActions({ row, armedCharge, cb }: { row: MoneyRow; armedCharge: stri
           Remind
         </button>
         {row.card ? (
-          <button className="btn sm primary" onClick={(e) => stop(e, () => cb.onCharge(row.invoiceId!))}>
-            {armedCharge === row.invoiceId ? "Confirm charge" : `Charge ···· ${row.card.last4}`}
-          </button>
+          // Charging real money is a two-step. The trigger must NOT relabel itself into
+          // its own confirm — same control, two meanings, and a double-click charges the
+          // card. Armed state swaps in an explicit Confirm / Cancel pair instead.
+          armedCharge === row.invoiceId ? (
+            <>
+              <button className="btn sm danger" onClick={(e) => stop(e, () => cb.onCharge(row.invoiceId!))}>
+                Confirm charge ···· {row.card.last4}
+              </button>
+              <button className="btn sm ghost" onClick={(e) => stop(e, () => cb.onCancelCharge())}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="btn sm primary" onClick={(e) => stop(e, () => cb.onCharge(row.invoiceId!))}>
+              Charge ···· {row.card.last4}
+            </button>
+          )
         ) : (
           <button className="btn sm primary" onClick={(e) => stop(e, () => cb.onOpenInvoice(row.invoiceId!))}>
             Take payment

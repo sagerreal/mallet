@@ -56,9 +56,6 @@ test.describe("keyboard operability", () => {
   });
 
   test("the focused element always shows a visible focus indicator", async ({ page }) => {
-    // KNOWN FAILING until P1 adds the global :focus-visible rule. Playwright reports
-    // "expected to fail, but passed" once fixed — that's the signal to delete this line.
-    test.fail();
     await page.goto("/dashboard");
     await settle(page);
 
@@ -82,8 +79,6 @@ test.describe("keyboard operability", () => {
   });
 
   test("a modal traps focus and closes on Escape", async ({ page }) => {
-    // KNOWN FAILING until P1 adds role="dialog" + focus trap to modal.tsx (all 22 inherit).
-    test.fail();
     await page.goto("/customers");
     await settle(page);
 

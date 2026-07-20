@@ -16,6 +16,7 @@ import type { StateCreator } from "zustand";
 import type { TimeEntry } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoToTimeEntry } from "@/lib/store/dto-mapper";
+import { reportWriteError } from "../write-error";
 
 export interface TimesheetsSlice {
   timeEntries: TimeEntry[];
@@ -76,9 +77,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       .catch((err: unknown) => {
         // 4. Rollback.
         set((s) => ({ timeEntries: s.timeEntries.filter((e) => e.id !== id) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[timesheets-slice] addTimeEntry failed — rolled back", { id, err });
-        }
+        reportWriteError("addTimeEntry", err);
       });
 
     return entry;
@@ -127,9 +126,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
         set((s) => ({
           timeEntries: s.timeEntries.map((e) => (e.id === id && prior ? prior : e)),
         }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[timesheets-slice] updateTimeEntry failed — rolled back", { id, err });
-        }
+        reportWriteError("updateTimeEntry", err);
       });
   },
 
@@ -149,9 +146,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       .catch((err: unknown) => {
         // 3. Rollback — re-insert the removed entry.
         set((s) => ({ timeEntries: [prior, ...s.timeEntries] }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[timesheets-slice] deleteTimeEntry failed — rolled back", { id, err });
-        }
+        reportWriteError("deleteTimeEntry", err);
       });
   },
 
@@ -173,9 +168,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       .catch((err: unknown) => {
         // 3. Rollback on error.
         set({ timeEntries: prior });
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[timesheets-slice] approveTechWeek failed — rolled back", { techId, err });
-        }
+        reportWriteError("approveTechWeek", err);
       });
   },
 
@@ -203,9 +196,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
         set((s) => ({
           timeEntries: s.timeEntries.map((e) => (e.id === id && prior ? prior : e)),
         }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[timesheets-slice] reopenEntry failed — rolled back", { id, err });
-        }
+        reportWriteError("reopenEntry", err);
       });
   },
 });

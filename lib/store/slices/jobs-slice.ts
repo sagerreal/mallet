@@ -75,6 +75,7 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
+import { reportWriteError } from "../write-error";
 
 /** Narrow type for the job summary embedded in the accept response. */
 type AcceptJobDTO = NonNullable<RouterOutputs["v1"]["quoting"]["accept"]["job"]>;
@@ -530,10 +531,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .catch((err: unknown) => {
         // Roll back: remove the optimistic job.
         set(() => ({ jobs: priorJobs.filter((j) => j.id !== id) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[jobs-slice] addJob failed — rolled back", { id, err });
-        }
+        reportWriteError("addJob", err);
         throw err instanceof Error ? err : new Error("addJob failed");
       });
 
@@ -580,10 +578,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         // 4. Roll back the whole job to the pre-patch snapshot.
         if (touchesChecklist) _recentChecklistWrites.delete(id);
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[jobs-slice] updateJob failed — rolled back", { id, patch, err });
-        }
+        reportWriteError("updateJob", err);
         return { ok: false };
       });
   },
@@ -643,10 +638,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .catch((err: unknown) => {
         _recentLineWrites.delete(jobId);
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[jobs-slice] setJobLines failed — rolled back", { jobId, err });
-        }
+        reportWriteError("setJobLines", err);
         return { ok: false };
       });
   },
@@ -722,9 +714,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           // set at execution time and skips its mutate).
           _pendingVisitRemovals.delete(id);
           if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-          if (process.env.NODE_ENV !== "production") {
-            console.error("[jobs-slice] addVisit failed — rolled back", { jobId, err });
-          }
+          reportWriteError("addVisit", err);
         })
         .finally(() => {
           _pendingVisitCreates.delete(id);
@@ -779,9 +769,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           if (prior && visitExists(get().jobs, jobId, visitId)) {
             set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
           }
-          if (process.env.NODE_ENV !== "production") {
-            console.error("[jobs-slice] placeVisit failed — rolled back", { jobId, visitId, err });
-          }
+          reportWriteError("placeVisit", err);
         });
     });
   },
@@ -864,9 +852,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
               if (preDragSnapshot && visitExists(get().jobs, jobId, visitId)) {
                 set((s) => ({ jobs: restoreJob(s.jobs, preDragSnapshot) }));
               }
-              if (process.env.NODE_ENV !== "production") {
-                console.error("[jobs-slice] updateVisit(dur) failed — rolled back", { jobId, visitId, err });
-              }
+              reportWriteError("updateVisit", err);
             });
         });
       }, DUR_DEBOUNCE_MS);
@@ -895,9 +881,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         })
         .catch((err: unknown) => {
           if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-          if (process.env.NODE_ENV !== "production") {
-            console.error("[jobs-slice] updateVisit(patch) failed — rolled back", { jobId, visitId, err });
-          }
+          reportWriteError("updateVisit", err);
         });
     }
   },
@@ -937,9 +921,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           if (prior && visitExists(get().jobs, jobId, visitId)) {
             set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
           }
-          if (process.env.NODE_ENV !== "production") {
-            console.error("[jobs-slice] setVisitStatus failed — rolled back", { jobId, visitId, status, err });
-          }
+          reportWriteError("setVisitStatus", err);
         });
     });
   },
@@ -981,9 +963,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         .catch((err: unknown) => {
           _pendingVisitRemovals.delete(visitId);
           if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-          if (process.env.NODE_ENV !== "production") {
-            console.error("[jobs-slice] removeVisit failed — rolled back", { jobId, visitId, err });
-          }
+          reportWriteError("removeVisit", err);
         });
     });
   },
@@ -1003,9 +983,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .mutate({ jobId: id })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] archiveJob failed — rolled back", { id, err });
-        }
+        reportWriteError("archiveJob", err);
       });
   },
 
@@ -1022,9 +1000,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .catch((err: unknown) => {
         // Rollback: re-insert the removed job at the front (order is not load-bearing here).
         if (prior) set((s) => ({ jobs: [prior, ...s.jobs] }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] deleteJob failed — rolled back", { id, err });
-        }
+        reportWriteError("deleteJob", err);
       });
   },
 
@@ -1059,9 +1035,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] addAddon failed — rolled back", { jobId, err });
-        }
+        reportWriteError("addAddon", err);
       });
 
     return addon;
@@ -1103,10 +1077,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[jobs-slice] addAddonField failed — rolled back", { jobId, err });
-        }
+        reportWriteError("addAddonField", err);
       });
 
     return addon;
@@ -1133,9 +1104,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] setAddonStatus failed — rolled back", { jobId, addonId, err });
-        }
+        reportWriteError("setAddonStatus", err);
       });
   },
 
@@ -1160,9 +1129,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] setAddonInvSkip failed — rolled back", { jobId, addonId, err });
-        }
+        reportWriteError("setAddonInvSkip", err);
       });
   },
 
@@ -1183,9 +1150,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] checkVerifyItem failed — rolled back", { jobId, itemId, err });
-        }
+        reportWriteError("checkVerifyItem", err);
       });
   },
 
@@ -1203,9 +1168,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] overrideVerifyItem failed — rolled back", { jobId, itemId, err });
-        }
+        reportWriteError("overrideVerifyItem", err);
       });
   },
 
@@ -1226,9 +1189,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) })))
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[jobs-slice] uncheckVerifyItem failed — rolled back", { jobId, itemId, err });
-        }
+        reportWriteError("uncheckVerifyItem", err);
       });
   },
 
@@ -1272,10 +1233,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       )
       .catch((err: unknown) => {
         set((s) => ({ jobs: restoreJob(s.jobs, current) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[jobs-slice] addJobPhoto failed — rolled back", { jobId, err });
-        }
+        reportWriteError("addJobPhoto", err);
       });
   },
 });

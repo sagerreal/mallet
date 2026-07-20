@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, isFirstLoad } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useCallbackCandidates } from "@/features/jobs/hooks";
 import type { Invoice, Job } from "@/lib/store/types";
@@ -30,6 +30,7 @@ import { JobsToolbar } from "./jobs-toolbar";
 import { JobsFilters } from "./jobs-filters";
 import { JobsColumns } from "./jobs-columns";
 import { JOB_STATUS_FILTERS, DEFAULT_JOB_COLS, JOB_COL_ORDER, type JobColKey, type JobsArchiveSet } from "./jobs-list-config";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 export interface JobsHomeProps {
   onOpenJob: (id: string) => void;
@@ -140,11 +141,12 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   // Same query key + options as JobsHydrator → React Query dedupes it (no extra fetch). Gate the
   // first-run screen on the TOTAL job count (never the filtered `shown`) so a no-match search on a
   // populated shop still falls through to the list. Never flashes mid-fetch / on a failed load.
-  const { isFetched, isError } = api.v1.jobs.list.useQuery(
+  const { isFetched, isError, refetch, isRefetching } = api.v1.jobs.list.useQuery(
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: jobs.length });
+  const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: jobs.length });
   // Cold reload: the store hasn't hydrated yet (query in flight, nothing cached). Render a loading
   // line rather than falling through to the "No jobs yet" copy below — otherwise a shop that HAS
   // jobs is told it has none for a beat before the rows (or the first-run screen) arrive.
@@ -181,7 +183,9 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
 
       <CallbackAutopsyCard />
 
-      {firstRun ? (
+      {loadFailed ? (
+        <LoadFailed noun="jobs" onRetry={() => void refetch()} retrying={isRefetching} />
+      ) : firstRun ? (
         <FirstRunEmptyState
           heading={FIRST_RUN.heading}
           subtext={FIRST_RUN.subtext}

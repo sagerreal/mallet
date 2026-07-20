@@ -8,6 +8,7 @@ import { CommandBar } from "@/components/shell/command-bar";
 import { CallBar } from "@/components/shell/call-bar";
 import { ModalHost } from "@/components/modals/modal-host";
 import { FieldJobsHydrator } from "@/features/field/field-jobs-hydrator";
+import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           <Topbar />
           <div id="flashbar" />
           <main id="main">{children}</main>
+          <WriteErrorToast />
         </div>
       </div>
       {/* The office Ask-Mallet bar runs v1.ai.run (ownerOrOffice) — a dead, erroring control

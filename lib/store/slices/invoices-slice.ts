@@ -32,6 +32,7 @@ import type { StateCreator } from "zustand";
 import type { Invoice, InvoiceLine, Payment } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
+import { reportWriteError } from "../write-error";
 
 // Continue the sample's INV numbers.
 // After reconcile, the server-canonical `num` overwrites this optimistic value.
@@ -152,10 +153,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         })
         .catch((err: unknown) => {
           set({ invoices: prior });
-          if (process.env.NODE_ENV !== "production") {
-            // eslint-disable-next-line no-console
-            console.error("[invoices-slice] addInvoice(fromJob) failed — rolled back", { id, jobId: draft.jobId, err });
-          }
+          reportWriteError("addInvoice", err);
         });
     }
     // Blank path: DB row deferred to sendInvoice.
@@ -191,10 +189,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[invoices-slice] updateInvoice failed — rolled back", { id, err });
-        }
+        reportWriteError("updateInvoice", err);
       });
   },
 
@@ -235,10 +230,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[invoices-slice] setInvoiceLines failed — rolled back", { id, err });
-        }
+        reportWriteError("setInvoiceLines", err);
       });
   },
 
@@ -287,10 +279,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[invoices-slice] recordPayment failed — rolled back", { id, err });
-        }
+        reportWriteError("recordPayment", err);
       });
   },
 
@@ -354,10 +343,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         })
         .catch((err: unknown) => {
           if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
-          if (process.env.NODE_ENV !== "production") {
-            // eslint-disable-next-line no-console
-            console.error("[invoices-slice] sendInvoice(manual→draft→send) failed — rolled back", { id, err });
-          }
+          reportWriteError("sendInvoice", err);
         });
       return;
     }
@@ -372,10 +358,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[invoices-slice] sendInvoice(db) failed — rolled back", { id, err });
-        }
+        reportWriteError("sendInvoice", err);
       });
   },
 
@@ -413,10 +396,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[invoices-slice] archiveInvoice(void) failed — rolled back", { id, err });
-        }
+        reportWriteError("archiveInvoice", err);
       });
   },
 });

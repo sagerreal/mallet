@@ -33,6 +33,7 @@ import {
   type MaterialUpdateFields,
   type MaterialDTO,
 } from "@/lib/store/pricebook-mapper";
+import { reportWriteError } from "../write-error";
 
 // Outcome of addService / addCategory so the UI can give feedback instead of silently
 // swallowing a failure — mirrors AddSourceResult in settings-slice.
@@ -192,7 +193,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     } catch (e) {
       // Roll back the optimistic row and surface the failure — never silently swallow it.
       set((s) => ({ services: s.services.filter((x) => x.id !== id) }));
-      if (process.env.NODE_ENV !== "production") console.warn("[addService] create failed", e);
+      reportWriteError("addService", e);
       return { ok: false, reason: "failed" };
     }
   },
@@ -211,7 +212,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
         return { ok: true };
       })
       .catch((e: unknown) => {
-        if (process.env.NODE_ENV !== "production") console.warn("[updateService] update failed", e);
+        reportWriteError("updateService", e);
         set({ services: snapshot });
         return { ok: false };
       });
@@ -224,7 +225,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     void trpcVanilla.v1.pricebook.service.archive
       .mutate({ serviceId: id })
       .catch((e: unknown) => {
-        if (process.env.NODE_ENV !== "production") console.warn("[archiveService] archive failed", e);
+        reportWriteError("archiveService", e);
         set({ services: snapshot });
       });
   },
@@ -250,7 +251,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
       return { ok: true };
     } catch (e) {
       set((s) => ({ categories: s.categories.filter((x) => x.id !== id) }));
-      if (process.env.NODE_ENV !== "production") console.warn("[addCategory] create failed", e);
+      reportWriteError("addCategory", e);
       return { ok: false, reason: "failed" };
     }
   },
@@ -269,7 +270,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
       }));
       return { ok: true };
     } catch (e) {
-      if (process.env.NODE_ENV !== "production") console.warn("[seedPricebook] seed failed", e);
+      reportWriteError("seedPricebook", e);
       return { ok: false, reason: "failed" };
     }
   },
@@ -319,7 +320,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     } catch (e) {
       // Roll back the optimistic row and surface the failure — never silently swallow it.
       set((s) => ({ materials: s.materials.filter((x) => x.id !== id) }));
-      if (process.env.NODE_ENV !== "production") console.warn("[addMaterial] create failed", e);
+      reportWriteError("addMaterial", e);
       return { ok: false, reason: "failed" };
     }
   },
@@ -335,7 +336,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
         set((s) => ({ materials: reconcileMaterial(s.materials, id, dto) }));
       })
       .catch((e: unknown) => {
-        if (process.env.NODE_ENV !== "production") console.warn("[updateMaterial] update failed", e);
+        reportWriteError("updateMaterial", e);
         set({ materials: snapshot });
       });
   },
@@ -347,7 +348,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     void trpcVanilla.v1.pricebook.material.archive
       .mutate({ materialId: id })
       .catch((e: unknown) => {
-        if (process.env.NODE_ENV !== "production") console.warn("[archiveMaterial] archive failed", e);
+        reportWriteError("archiveMaterial", e);
         set({ materials: snapshot });
       });
   },
@@ -400,7 +401,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     } catch (e) {
       // Roll back to the pre-attach snapshot and surface the failure — never silently swallow it.
       set({ serviceMaterials: snapshot });
-      if (process.env.NODE_ENV !== "production") console.warn("[attachMaterial] attach failed", e);
+      reportWriteError("attachMaterial", e);
       return { ok: false, reason: "failed" };
     }
   },
@@ -416,7 +417,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     void trpcVanilla.v1.pricebook.serviceMaterial.detach
       .mutate({ serviceId, materialId })
       .catch((e: unknown) => {
-        if (process.env.NODE_ENV !== "production") console.warn("[detachMaterial] detach failed", e);
+        reportWriteError("detachMaterial", e);
         set({ serviceMaterials: snapshot });
       });
   },

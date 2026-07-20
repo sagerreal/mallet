@@ -14,7 +14,7 @@ import type { Estimate } from "@/lib/store/types";
 import { isStaleLead } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun } from "@/lib/first-run";
+import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { filterLeads, sortLeads } from "./customers-utils";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
@@ -25,6 +25,7 @@ import { LeadRow } from "./lead-row";
 import { CompaniesView } from "./companies-view";
 import { estTotal } from "@/lib/estimates";
 import { pressable } from "@/lib/a11y";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 const SORTABLE_COLS = new Set(["name", "age", "stage", "value"]);
 
@@ -56,11 +57,12 @@ export function CustomersView() {
   // Same query key + options as LeadsHydrator, so React Query dedupes it — no extra fetch. We only
   // read the load state to tell "still loading" and "load errored" apart from a genuinely empty
   // list, so the first-run screen never flashes mid-fetch or misfires on a failed load.
-  const { isFetched, isError } = api.v1.customers.list.useQuery(
+  const { isFetched, isError, refetch, isRefetching } = api.v1.customers.list.useQuery(
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: leads.length });
+  const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: leads.length });
 
   // $ on the table per customer: open (sent) quotes for active pipeline, else
   // the won total once accepted, else nothing. Derived in the body (not a selector).
@@ -167,7 +169,9 @@ export function CustomersView() {
         <button className="btn primary" onClick={() => openModal(MODAL.NEW_CUSTOMER)}>+ New customer</button>
       </div>
 
-      {firstRun ? (
+      {loadFailed ? (
+        <LoadFailed noun="customers" onRetry={() => void refetch()} retrying={isRefetching} />
+      ) : firstRun ? (
         <FirstRunEmptyState
           heading={FIRST_RUN.heading}
           subtext={FIRST_RUN.subtext}

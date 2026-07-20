@@ -17,7 +17,7 @@ import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun } from "@/lib/first-run";
+import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Visit } from "@/lib/store/types";
@@ -48,6 +48,7 @@ import {
   SCHEDULE_LANE_HEIGHT_PX,
   TRAY_CARD_MIN_WIDTH_PX,
 } from "./schedule-constants";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 type SchedView = "day" | "week";
 
@@ -472,7 +473,11 @@ export function SchedulePanel() {
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
   const firstRun = shouldShowFirstRun({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
+  const loadFailed = shouldShowLoadFailed({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
 
+  if (loadFailed) {
+    return <LoadFailed noun="schedule" onRetry={() => void jobsQuery.refetch()} retrying={jobsQuery.isRefetching} />;
+  }
   if (firstRun) {
     return (
       <>
