@@ -82,7 +82,10 @@ export function HandoffNote({
       <div className="eyebrow">
         {orgName.toUpperCase()} · {dateLabel}
       </div>
-      <h1>
+      {/* data-dynamic: the greeting is derived from the wall clock during SSR, which
+          the E2E clock freeze (a browser-side shim) cannot reach — mask it in visual
+          baselines so a real regression here isn't hidden behind a time-of-day flake. */}
+      <h1 data-dynamic>
         {timeGreeting()}, {ownerFirst}.
       </h1>
 

@@ -1,15 +1,17 @@
 import type { ReactNode } from "react";
 
-const tones = {
-  neutral: "bg-paper text-ink",
-  amber: "bg-amber-bg text-amber",
-  red: "bg-red-bg text-red",
-  blue: "bg-blue-bg text-blue",
-  green: "bg-green-bg text-green",
+const TONE = {
+  neutral: "gray",
+  amber: "amber",
+  red: "red",
+  blue: "blue",
+  green: "green",
 } as const;
 
-export type BadgeTone = keyof typeof tones;
+export type BadgeTone = keyof typeof TONE;
 
+/** Static status/label pill — renders the prototype `.pill`. For stage/status
+ *  dots use SoftPill (components/shared/stage-pill); this is the flat variant. */
 export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; children: ReactNode }) {
-  return <span className={`inline-flex rounded-control px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
+  return <span className={`pill ${TONE[tone]}`}>{children}</span>;
 }

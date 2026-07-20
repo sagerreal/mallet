@@ -1,21 +1,25 @@
 import type { InputHTMLAttributes, SelectHTMLAttributes, ReactNode } from "react";
 
-const controlClass =
-  "min-h-11 w-full rounded-control border border-line bg-card px-3 text-sm text-ink outline-none focus:border-ink";
-
-export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={`${controlClass} ${className}`} {...props} />;
+/**
+ * The field layer — Field (label + control) plus Input/Select that inherit the
+ * prototype `.field` styling. Wrapping in `.field` means the descendant rules in
+ * prototype.css style the control; no per-input class needed.
+ */
+export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} />;
 }
 
-export function Select({ className = "", ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={`${controlClass} ${className}`} {...props} />;
+export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} />;
 }
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
+  // Mirrors the prototype `.field` markup used across the app (div > label +
+  // control), so the descendant rules in prototype.css style the control for free.
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-ink-muted">{label}</span>
+    <div className="field">
+      <label>{label}</label>
       {children}
-    </label>
+    </div>
   );
 }
