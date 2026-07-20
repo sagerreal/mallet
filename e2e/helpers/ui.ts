@@ -1,0 +1,68 @@
+/**
+ * e2e/helpers/ui.ts
+ * Shared plumbing for the UI safety net: login, theme control, and the
+ * determinism shims that let screenshots be compared across days.
+ */
+
+import type { Page, Locator } from "@playwright/test";
+
+export const OWNER = { email: "owner@e2e.mallet.test", password: "e2e-password-1" };
+export const TECH = { email: "tech@e2e.mallet.test", password: "e2e-password-1" };
+
+/** The instant every visual run pretends it is: 2025-07-15T12:00:00Z. */
+const FROZEN_MS = 1_752_580_800_000;
+
+/** Sign in through the real form and wait for the app shell. */
+export async function login(page: Page, who: { email: string; password: string }): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(who.email);
+  await page.getByLabel("Password").fill(who.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.waitForURL(/\/(dashboard|my-day|welcome)/, { timeout: 30_000 });
+}
+
+/**
+ * Freeze the clock and pin the theme BEFORE the app boots.
+ *
+ * The clock freeze is what lets visual baselines survive to tomorrow: the app
+ * renders "WED, JUL 8"-style labels and day-count ages straight from Date, so an
+ * unfrozen run would diff every single morning.
+ */
+export async function prepare(page: Page, theme: "light" | "dark"): Promise<void> {
+  await page.addInitScript(
+    ({ theme: themeName, frozen }: { theme: string; frozen: number }) => {
+      window.localStorage.setItem("mallet-theme", themeName);
+      document.documentElement.setAttribute("data-theme", themeName);
+
+      const OriginalDate = Date;
+      class FrozenDate extends OriginalDate {
+        constructor(...args: unknown[]) {
+          // `new Date()` yields the frozen instant; every other form is untouched.
+          if (args.length === 0) super(frozen);
+          else super(...(args as [number]));
+        }
+        static now(): number {
+          return frozen;
+        }
+      }
+      window.Date = FrozenDate as unknown as DateConstructor;
+    },
+    { theme, frozen: FROZEN_MS },
+  );
+}
+
+/** Wait for the app to settle: network quiet, fonts loaded, hydrators done. */
+export async function settle(page: Page): Promise<void> {
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await page.evaluate(() => document.fonts?.ready);
+  // Hydrators fill the Zustand store client-side; give them a beat past networkidle.
+  await page.waitForTimeout(600);
+}
+
+/**
+ * Regions that stay non-deterministic even with a frozen clock (live relative
+ * labels, generated ids). Masked in screenshots rather than asserted.
+ */
+export function dynamicRegions(page: Page): Locator[] {
+  return [page.locator("[data-dynamic]")];
+}
