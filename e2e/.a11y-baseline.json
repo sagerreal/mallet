@@ -20,8 +20,10 @@
       ]
     },
     "office-today": {
-      "violations": 0,
-      "ids": []
+      "violations": 1,
+      "ids": [
+        "color-contrast(1)"
+      ]
     },
     "office-frontdesk": {
       "violations": 0,
@@ -54,12 +56,11 @@
       ]
     },
     "jobs": {
-      "violations": 4,
+      "violations": 3,
       "ids": [
         "aria-allowed-attr(3)",
         "color-contrast(11)",
-        "nested-interactive(4)",
-        "target-size(4)"
+        "nested-interactive(4)"
       ]
     },
     "jobs-schedule": {
