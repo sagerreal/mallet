@@ -1,0 +1,46 @@
+{
+  "extends": "stylelint-config-standard",
+  "defaultSeverity": "warning",
+  "rules": {
+    "no-duplicate-selectors": true,
+    "declaration-property-value-allowed-list": {
+      "font-size": [
+        "/^var\\(--type-/",
+        "/^(inherit|100%)$/"
+      ],
+      "border-radius": [
+        "/^var\\(--radius/",
+        "/^(50%|inherit|0)$/"
+      ],
+      "gap": [
+        "/^var\\(--space-/",
+        "/^0$/"
+      ],
+      "box-shadow": [
+        "/^var\\(--shadow/",
+        "/^none$/"
+      ]
+    },
+    "custom-property-pattern": null,
+    "selector-class-pattern": null,
+    "no-descending-specificity": null,
+    "declaration-block-no-redundant-longhand-properties": null,
+    "shorthand-property-no-redundant-values": null,
+    "color-function-notation": null,
+    "alpha-value-notation": null,
+    "media-feature-range-notation": null,
+    "value-keyword-case": null,
+    "comment-empty-line-before": null,
+    "rule-empty-line-before": null,
+    "declaration-empty-line-before": null,
+    "custom-property-empty-line-before": null,
+    "length-zero-no-unit": null,
+    "number-max-precision": null,
+    "declaration-block-single-line-max-declarations": null
+  },
+  "ignoreFiles": [
+    "node_modules/**",
+    ".next/**",
+    "app/globals.css"
+  ]
+}
