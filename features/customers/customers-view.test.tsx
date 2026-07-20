@@ -72,10 +72,22 @@ describe("CustomersView — first-run empty state", () => {
     expect(screen.getByTestId("toolbar")).toBeTruthy();
   });
 
-  it("does NOT show the first-run screen when the load errored (empty ≠ no customers on error)", () => {
+  it("shows the load-failed state — not the first-run screen — when the load errored", () => {
+    // A failed load is not "no customers". Previously this rendered the toolbar over an
+    // empty table, which read to a shop with 400 customers as though they had none.
     queryState = { isFetched: true, isError: true };
     render(<CustomersView />);
     expect(screen.queryByText("No customers yet")).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByText(/Couldn.t load your customers/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("keeps showing cached rows when a refetch fails (stale data beats an error screen)", () => {
+    leads = [aLead()];
+    queryState = { isFetched: true, isError: true };
+    render(<CustomersView />);
+    expect(screen.queryByText(/Couldn.t load your customers/)).toBeNull();
     expect(screen.getByTestId("toolbar")).toBeTruthy();
   });
 

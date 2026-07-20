@@ -34,6 +34,7 @@ import type { Estimate, EstimateRead } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoEstimateToStore } from "@/lib/store/dto-mapper";
 import type { JobsSlice } from "./jobs-slice";
+import { reportWriteError } from "../write-error";
 
 // Continue the sample's Q-numbers (sample tops out at Q-1044).
 // After reconcile, the server-canonical `num` overwrites this optimistic value.
@@ -154,10 +155,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
       .catch((err: unknown) => {
         // 4. Roll back.
         set({ estimates: prior });
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[estimates-slice] addEstimate failed — rolled back", { id, err });
-        }
+        reportWriteError("addEstimate", err);
       });
 
     return newEst;
@@ -195,10 +193,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         })
         .catch((err: unknown) => {
           if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));
-          if (process.env.NODE_ENV !== "production") {
-            // eslint-disable-next-line no-console
-            console.error("[estimates-slice] updateEstimate(send) failed — rolled back", { id, err });
-          }
+          reportWriteError("updateEstimate", err);
         });
       return;
     }
@@ -232,10 +227,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         })
         .catch((err: unknown) => {
           if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));
-          if (process.env.NODE_ENV !== "production") {
-            // eslint-disable-next-line no-console
-            console.error("[estimates-slice] updateEstimate(accept) failed — rolled back", { id, err });
-          }
+          reportWriteError("updateEstimate", err);
         });
       return;
     }
@@ -247,10 +239,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         .catch((err: unknown) => {
           // Roll back optimistic archived flag.
           if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));
-          if (process.env.NODE_ENV !== "production") {
-            // eslint-disable-next-line no-console
-            console.error("[estimates-slice] updateEstimate(archive) failed — rolled back", { id, err });
-          }
+          reportWriteError("updateEstimate", err);
         });
       return;
     }
@@ -288,10 +277,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[estimates-slice] declineEstimate failed — rolled back", { id, reason, err });
-        }
+        reportWriteError("declineEstimate", err);
       });
   },
 
@@ -341,10 +327,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[estimates-slice] restoreEstimate failed — rolled back", { id, err });
-        }
+        reportWriteError("restoreEstimate", err);
       });
   },
 
@@ -368,10 +351,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
       .mutate({ estimateId: id })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));
-        if (process.env.NODE_ENV !== "production") {
-          // eslint-disable-next-line no-console
-          console.error("[estimates-slice] deleteEstimate failed — rolled back", { id, err });
-        }
+        reportWriteError("deleteEstimate", err);
       });
   },
 });

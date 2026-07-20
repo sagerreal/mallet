@@ -20,6 +20,7 @@
 import type { StateCreator } from "zustand";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { isDefaultSourceLabel } from "@/lib/store/default-sources";
+import { reportWriteError } from "../write-error";
 
 // ---- shapes ----------------------------------------------------------------
 
@@ -189,7 +190,7 @@ function persistBooking(get: GetFn, set: SetFn, snapshot: BookingCfg): void {
   const payload = buildBookingPayload(get().booking);
   void trpcVanilla.v1.settings.updateConfig
     .mutate(payload)
-    .catch(() => set({ booking: snapshot }));
+    .catch((err: unknown) => { set({ booking: snapshot }); reportWriteError("write", err); });
 }
 
 // ---- slice interface -------------------------------------------------------
@@ -316,7 +317,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     if (!next) return;
     void trpcVanilla.v1.settings.laborRates.update
       .mutate({ id, label: next.name, rateCentsPerHour: next.rate * 100, kind: next.kind })
-      .catch(() => set({ laborRates: snapshot }));
+      .catch((err: unknown) => { set({ laborRates: snapshot }); reportWriteError("updateLaborRate", err); });
   },
 
   removeLaborRate: (id) => {
@@ -324,7 +325,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     if (get().laborRates.length <= 1) return;
     const snapshot = get().laborRates;
     set((s) => ({ laborRates: s.laborRates.filter((lr) => lr.id !== id) }));
-    void trpcVanilla.v1.settings.laborRates.remove.mutate({ id }).catch(() => set({ laborRates: snapshot }));
+    void trpcVanilla.v1.settings.laborRates.remove.mutate({ id }).catch((err: unknown) => { set({ laborRates: snapshot }); reportWriteError("removeLaborRate", err); });
   },
 
   // ---- terms ----------------------------------------------------------------
@@ -352,7 +353,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   removeTerm: (id) => {
     const snapshot = get().terms;
     set((s) => ({ terms: s.terms.filter((x) => x.id !== id) }));
-    void trpcVanilla.v1.settings.terms.remove.mutate({ id }).catch(() => set({ terms: snapshot }));
+    void trpcVanilla.v1.settings.terms.remove.mutate({ id }).catch((err: unknown) => { set({ terms: snapshot }); reportWriteError("removeTerm", err); });
   },
 
   // ---- sources --------------------------------------------------------------
@@ -377,7 +378,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     } catch (e) {
       // Roll back the optimistic row and surface the failure — never silently swallow it.
       set((s) => ({ sources: s.sources.filter((x) => x.id !== id) }));
-      if (process.env.NODE_ENV !== "production") console.warn("[addSource] create failed", e);
+      reportWriteError("addSource", e);
       return { ok: false, reason: "failed" };
     }
   },
@@ -385,7 +386,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   removeSource: (id) => {
     const snapshot = get().sources;
     set((s) => ({ sources: s.sources.filter((x) => x.id !== id) }));
-    void trpcVanilla.v1.settings.sources.remove.mutate({ id }).catch(() => set({ sources: snapshot }));
+    void trpcVanilla.v1.settings.sources.remove.mutate({ id }).catch((err: unknown) => { set({ sources: snapshot }); reportWriteError("removeSource", err); });
   },
 
   // ---- booking (full blob persisted via updateConfig on every edit) ----------
@@ -510,13 +511,13 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     set({ markup });
     void trpcVanilla.v1.settings.updateConfig
       .mutate({ markupBps: Math.round(markup * 100) })
-      .catch(() => set(snapshot));
+      .catch((err: unknown) => { set(snapshot); reportWriteError("setMarkup", err); });
   },
 
   setTrade: (t) => {
     const snapshot = { trade: get().trade };
     set({ trade: t });
-    void trpcVanilla.v1.settings.updateConfig.mutate({ trade: t }).catch(() => set(snapshot));
+    void trpcVanilla.v1.settings.updateConfig.mutate({ trade: t }).catch((err: unknown) => { set(snapshot); reportWriteError("setTrade", err); });
   },
 
   setToggle: (key, value) => {
@@ -530,6 +531,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     const col = toggleToField[key];
     void trpcVanilla.v1.settings.updateConfig
       .mutate({ [col]: value })
-      .catch(() => set(snapshot));
+      .catch((err: unknown) => { set(snapshot); reportWriteError("setToggle", err); });
   },
 });

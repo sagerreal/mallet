@@ -14,7 +14,7 @@ import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun } from "@/lib/first-run";
+import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import type { TimeEntry } from "@/lib/store/types";
 import { techById } from "./jobs-helpers";
@@ -28,6 +28,7 @@ import {
 } from "./timesheet-derive";
 import { type TsPick } from "./timesheets-entries";
 import { TsCrewChips, TsTechWeekCard } from "./timesheets-crew";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 // Fields the office is allowed to edit (mirrors prototype tsSetField whitelist).
 // crew reassignment not supported here — techId is intentionally excluded.
@@ -148,7 +149,11 @@ export function TimesheetsPanel() {
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
   const firstRun = shouldShowFirstRun({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
+  const loadFailed = shouldShowLoadFailed({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
 
+  if (loadFailed) {
+    return <LoadFailed noun="hours" onRetry={() => void tsQuery.refetch()} retrying={tsQuery.isRefetching} />;
+  }
   if (firstRun) {
     return (
       <>

@@ -2,11 +2,21 @@
  * components/modals/modal.tsx
  * Reusable overlay shell using prototype CSS: .overlay.open / .modal / .x
  * Backdrop click and Escape both close the modal.
+ *
+ * This is the single dialog contract — all 22 modal bodies render inside it, so
+ * the accessibility behaviour lives here once rather than 22 times:
+ *   - role="dialog" + aria-modal so assistive tech announces it as a dialog
+ *   - focus moves INTO the panel on open and returns to the trigger on close
+ *   - Tab / Shift+Tab cycle within the panel instead of escaping behind the overlay
  */
 
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+
+/** Elements that can hold keyboard focus inside the panel. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 interface ModalProps {
   open: boolean;
@@ -16,13 +26,64 @@ interface ModalProps {
   wide?: boolean;
   /** exact max-width override (px) — e.g. the 560px price/quote builder sheet */
   maxWidth?: number;
+  /** Accessible name for the dialog, announced on open. */
+  label?: string;
 }
 
-export function Modal({ open, onClose, children, wide, maxWidth }: ModalProps) {
+export function Modal({ open, onClose, children, wide, maxWidth, label }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+
+  // Remember the trigger, move focus into the panel, and put it back on close.
+  useEffect(() => {
+    if (!open) return;
+    restoreRef.current = document.activeElement as HTMLElement | null;
+
+    const panel = panelRef.current;
+    const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? panel)?.focus();
+
+    return () => {
+      const target = restoreRef.current;
+      // Only restore if the trigger still exists — a row that closed with the modal doesn't.
+      if (target && document.contains(target)) target.focus();
+    };
+  }, [open]);
+
+  // Escape closes; Tab cycles inside the panel rather than escaping behind it.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null || el === document.activeElement,
+      );
+      if (items.length === 0) {
+        e.preventDefault();
+        panel.focus();
+        return;
+      }
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      const active = document.activeElement;
+
+      if (!panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -38,8 +99,13 @@ export function Modal({ open, onClose, children, wide, maxWidth }: ModalProps) {
       }}
     >
       <div
+        ref={panelRef}
         className={`modal${wide ? " wide" : ""}`}
         style={maxWidth != null ? { maxWidth } : undefined}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label ?? "Dialog"}
+        tabIndex={-1}
       >
         <button className="x" aria-label="Close" onClick={onClose}>
           ✕

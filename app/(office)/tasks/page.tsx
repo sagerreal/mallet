@@ -16,8 +16,9 @@ import { pressable } from "@/lib/a11y";
 import { isOverdue, tomorrowISO } from "@/lib/task-dates";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun } from "@/lib/first-run";
+import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { EditableTaskRow, type TaskPatch } from "@/features/tasks/editable-task-row";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 // ---- Section ---------------------------------------------------------------
 
@@ -71,7 +72,7 @@ export default function TasksPage() {
   // Same query key + options as TasksHydrator → React Query dedupes it (no extra fetch). Lets us
   // tell a brand-new shop (never had a task) apart from a shop that has cleared its list, and never
   // flash the first-run copy mid-load.
-  const { isFetched, isError } = api.v1.tasks.list.useQuery(
+  const { isFetched, isError, refetch, isRefetching } = api.v1.tasks.list.useQuery(
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
@@ -104,6 +105,7 @@ export default function TasksPage() {
   const done = tasks.filter((t) => t.done);
   // A brand-new shop has never created a task; distinguish that from "cleared the list" (all done).
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: tasks.length });
+  const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: tasks.length });
 
   return (
     <div>
@@ -151,6 +153,8 @@ export default function TasksPage() {
             <TaskSection label="No due date" tasks={noDue} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
           </div>
         </div>
+      ) : loadFailed ? (
+        <LoadFailed noun="tasks" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : firstRun ? (
         <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>No tasks yet</div>

@@ -16,13 +16,14 @@ import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun } from "@/lib/first-run";
+import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
 import { deriveRail } from "@/features/quotes/derive";
 import { deriveIntake, deriveGetting } from "@/features/pipeline/working";
 import { IntakeCard, GettingCard, OutCard, WonCard } from "@/features/pipeline/board-cards";
 import type { Snap } from "@/features/counter/types";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 // First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens Pipeline
 // with zero leads (see shouldShowFirstRun) — the board would otherwise be four empty columns.
@@ -69,11 +70,12 @@ export default function PipelinePage() {
   // to tell "still loading" / "load errored" apart from a genuinely empty pipeline, so the first-run
   // screen never flashes mid-fetch or misfires on a failed load. Pipeline is driven by leads, so
   // zero leads = an empty board.
-  const { isFetched, isError } = api.v1.customers.list.useQuery(
+  const { isFetched, isError, refetch, isRefetching } = api.v1.customers.list.useQuery(
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: leads.length });
+  const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: leads.length });
 
   return (
     <div>
@@ -99,7 +101,9 @@ export default function PipelinePage() {
         </button>
       </div>
 
-      {firstRun ? (
+      {loadFailed ? (
+        <LoadFailed noun="pipeline" onRetry={() => void refetch()} retrying={isRefetching} />
+      ) : firstRun ? (
         <FirstRunEmptyState
           heading={FIRST_RUN.heading}
           subtext={FIRST_RUN.subtext}
