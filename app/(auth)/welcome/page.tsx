@@ -19,9 +19,9 @@ export default function WelcomePage() {
   return (
     <Card>
       {provision.isError ? (
-        <p className="text-sm" style={{ color: "var(--red)" }}>{userMessage(provision.error)}</p>
+        <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{userMessage(provision.error)}</p>
       ) : (
-        <p className="text-sm" style={{ color: "var(--ink-2)" }}>Setting up your workspace…</p>
+        <p style={{ fontSize: "var(--type-sm)", color: "var(--ink-2)" }}>Setting up your workspace…</p>
       )}
     </Card>
   );

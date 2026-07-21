@@ -22,10 +22,10 @@ export default function ResetPasswordPage() {
 
   return (
     <Card>
-      <form onSubmit={onSubmit} className="space-y-3">
+      <form onSubmit={onSubmit} className="stack-3">
         <Field label="New password"><Input name="password" type="password" required minLength={8} autoComplete="new-password" /></Field>
-        {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
-        <Button type="submit" className="w-full">Set password</Button>
+        {error ? <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{error}</p> : null}
+        <Button type="submit" style={{ width: "100%" }}>Set password</Button>
       </form>
     </Card>
   );

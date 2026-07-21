@@ -391,7 +391,6 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             onChange={setAddress}
             placeholder="123 Main St, Oakland CA 94601"
             aria-label="Service address"
-            className="w-full"
           />
         </div>
 
