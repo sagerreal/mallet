@@ -27,6 +27,9 @@ for other open UI branches before starting a batch.
 | P4a inline tokens | #150 | 576 exact-on-scale inline values → tokens across 86 files (codemod; radius map bug caught: `--radius-sm` is 9px not 8) |
 | P4b nested-interactive | #151 | all 32 row-in-button nodes fixed (`.rowopen` pattern); a11y 14→10; money-mobile font-swap flake KILLED via `settle()` scroll-prime; tasks date input masked |
 | P4c a11y zero | #152 | axe **0 violations / 25 routes**; `A11Y_MAX` default **0 (enforcing)**; select labels, `<th aria-sort>` restructure, 5 contrast darkenings (`--jink3`, `--amber/--jamber #8A5A00`, eyebrow, auth foot, `.cnt`) |
+| P4d/1 modal net | #154 | `e2e/visual-modals.spec.ts` — 9 dialog panels driven via dev-only `window.__appStore.openModal(id, params)`; reads seeded ids from the hydrated store (modals were NOT in the route net — the modal-heavy snap below is now verifiable) |
+| P4d/2a CSS snap | #156 | `prototype.css` padding/margin snapped to `--space-*` (ties round UP); stylelint `declaration-property-value-allowed-list` extended to padding/margin (0/auto/negatives/calc/env legal); CSS drift 0 |
+| P4d/2b inline snap | #157 | 1,022 raw-px inline-style values → `--space-*`/`--type-*`/`--radius-*` across 91 tsx files (single-value only; `--space-*` shorthands per-value; asymmetric radius/`50%`/`em` left intact by design); 65 visual baselines re-generated; codemod greedy-quote bug caught+fixed (mangled shorthands/percents) |
 
 **Current scores:** a11y ~9 (automated-clean, locked) · states ~8 · tokens ~7 ·
 DRY ~5 · consistency ~5 · disclosure 4.
@@ -37,7 +40,7 @@ DRY ~5 · consistency ~5 · disclosure 4.
 
 | Rule | Status | Closed by |
 |---|---|---|
-| No magic numbers → tokens | CSS: font-size/radius/gap/shadow clean; **417 raw padding/margin in prototype.css** (stylelint allowlist doesn't cover them yet); **~500 off-scale inline values in 87 tsx files** | **P4d** |
+| No magic numbers → tokens | **DONE** (P4d): CSS font-size/radius/gap/shadow/padding/margin all tokenized + stylelint-guarded (#146/#147/#156); inline off-scale values snapped app-wide (#150/#157). Residual: 5 template-`<style>` CSS blocks in 2 public token pages + 1 optical `gap:3px` (both listed in #157) | ✓ #157 |
 | DRY / component library | Primitives exist; adoption sweep not done (12 inline pill sites, ~150 ad-hoc CSS cards, 162 bare inputs, dup constants) | **P4e** |
 | Single responsibility | Charge button fixed; remaining double-duty elements live in the IA surfaces | **P6** |
 | Component contracts | Primitives have props; per-surface hacks remain until adoption | **P4e** |
