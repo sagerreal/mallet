@@ -1,19 +1,28 @@
 import type { ButtonHTMLAttributes } from "react";
 
-const variants = {
-  primary: "bg-accent text-accent-fg hover:opacity-90",
-  quiet: "border border-line bg-transparent text-ink hover:bg-paper",
-  danger: "bg-red-bg text-red hover:opacity-90",
+/**
+ * The one button primitive — renders the prototype `.btn` so every button in the
+ * app shares one look, one height set, and one focus ring (from the global
+ * :focus-visible rule). Variant/size map to prototype modifier classes; no
+ * Tailwind, no per-surface style hacks.
+ */
+const VARIANT = {
+  primary: "primary",
+  quiet: "ghost",
+  danger: "danger",
 } as const;
 
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof variants };
+const SIZE = {
+  sm: "sm",
+  md: "",
+} as const;
 
-export function Button({ variant = "primary", className = "", type = "button", ...props }: ButtonProps) {
-  return (
-    <button
-      type={type}
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 text-sm font-medium transition disabled:opacity-50 ${variants[variant]} ${className}`}
-      {...props}
-    />
-  );
+export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: keyof typeof VARIANT;
+  size?: keyof typeof SIZE;
+};
+
+export function Button({ variant = "primary", size = "md", className = "", type = "button", ...props }: ButtonProps) {
+  const cls = ["btn", VARIANT[variant], SIZE[size], className].filter(Boolean).join(" ");
+  return <button type={type} className={cls} {...props} />;
 }

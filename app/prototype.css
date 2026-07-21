@@ -406,6 +406,18 @@
   .loadfail-h{font-size:var(--type-md);font-weight:700;margin:0 0 6px}
   .loadfail-s{font-size:var(--type-base);color:var(--ink-2);margin:0 0 16px;line-height:1.5}
 
+  /* ===== Row primitive (components/ui/row.tsx) ===============================
+     One list row: label · value · trailing. Whole row is the click target when
+     interactive, and renders as a <button> so it's keyboard-operable for free. */
+  .uirow{display:flex;align-items:center;gap:var(--space-3);width:100%;padding:var(--space-3) var(--space-4);
+    border-bottom:1px solid var(--line-2);font-size:var(--type-md);text-align:left;background:none;font-family:inherit;color:var(--ink)}
+  .uirow:last-child{border-bottom:none}
+  .uirow-clickable{cursor:pointer;border-left:none;border-right:none;border-top:none}
+  .uirow-clickable:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
+  .uirow-label{flex:1;font-weight:600;min-width:0}
+  .uirow-value{font-family:var(--font-mono);font-size:var(--type-base);color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .uirow-trailing{color:var(--ink-3);display:inline-flex;align-items:center}
+
   /* ===== Focus (WCAG 2.4.7) ==================================================
      One rule covers every interactive element. Previously 11 :focus-visible
      rules served 104 interactive selectors, so most controls showed nothing on
@@ -742,7 +754,7 @@
   .modal .x:hover{color:var(--ink)}
   .field{margin-bottom:14px}
   .field label{display:block;font-size:var(--type-sm);font-weight:700;color:var(--ink-2);margin-bottom:5px}
-  .field input[type=text],.field input[type=number],.field input[type=tel],.field input[type=email],.field input[type=date],.field input[type=time],.field textarea,.field select{width:100%;border:1.5px solid var(--line);border-radius:var(--radius-md);padding:10px 12px;font-size:var(--type-md);font-family:inherit;background:var(--card);color:var(--ink);transition:border-color .12s,box-shadow .12s}
+  .field input[type=text],.field input[type=number],.field input[type=tel],.field input[type=email],.field input[type=password],.field input[type=search],.field input[type=url],.field input[type=date],.field input[type=time],.field textarea,.field select{width:100%;border:1.5px solid var(--line);border-radius:var(--radius-md);padding:10px 12px;font-size:var(--type-md);font-family:inherit;background:var(--card);color:var(--ink);transition:border-color .12s,box-shadow .12s}
   .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
   /* compact app-styled select (kills raw native chrome + blue focus ring) */
   .tsel{appearance:none;-webkit-appearance:none;border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:7px 30px 7px 12px;font-family:inherit;font-size:var(--type-base);font-weight:600;color:var(--ink);background-color:var(--card);background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%23999" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>');background-repeat:no-repeat;background-position:right 10px center;cursor:pointer;transition:border-color .12s,box-shadow .12s}
