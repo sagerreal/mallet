@@ -188,18 +188,18 @@ export function QuoteCard({
     : services;
 
   return (
-    <div className="card" style={{ marginTop: 18 }}>
+    <div className="card" style={{ marginTop: "var(--space-5)" }}>
       {/* Header row — title + the format toggle */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          gap: 10,
+          gap: "var(--space-3)",
           flexWrap: "wrap",
         }}
       >
-        <h3 style={{ margin: 0 }}>
+        <h3 style={{ margin: "0" }}>
           The quote
           {state.aiDrafted && (
             <span
@@ -234,7 +234,7 @@ export function QuoteCard({
 
       {/* One-line note describing what the last format switch did */}
       {state.switchNote && (
-        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "8px 0 0" }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
           {state.switchNote}
         </p>
       )}
@@ -242,7 +242,7 @@ export function QuoteCard({
       {/* GBB-only toolbar — Suggest lives at card level (it spans all tiers).
           Same quiet .lineedit-tool style as the table footers for uniformity. */}
       {isGbb && (
-        <div className="lineedit-bar" style={{ padding: "8px 0 0" }}>
+        <div className="lineedit-bar" style={{ padding: "var(--space-2) 0 0" }}>
           {!confirmSuggest ? (
             <button
               className="lineedit-tool"
@@ -360,7 +360,7 @@ export function QuoteCard({
                   flexBasis: "100%",
                   border: "1.5px solid var(--line)",
                   borderRadius: "var(--radius-sm)",
-                  padding: "7px 10px",
+                  padding: "var(--space-2) var(--space-3)",
                   fontFamily: "inherit",
                   fontSize: "var(--type-base)",
                 }}
@@ -392,7 +392,7 @@ export function QuoteCard({
           Mode follows the quote: empty → build; AI-drafted → refine; hand-typed
           lines → rebuild behind an in-flow confirm (never silently replaced). */}
       {!run && (
-        <div style={{ marginBottom: 2 }}>
+        <div style={{ marginBottom: "var(--space-2xs)" }}>
           <div className="aibar">
             <input
               type="text"
@@ -429,8 +429,8 @@ export function QuoteCard({
             </button>
           </div>
           {confirmRebuild && (
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: 7 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+              <span style={{ fontSize: "var(--type-base)", fontWeight: 600 }}>
                 Replaces the lines you typed — sure?
               </span>
               <button className="btn sm primary" onClick={runBar}>
@@ -452,7 +452,7 @@ export function QuoteCard({
             </p>
           )}
           {aiDraftError && (
-            <div style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", marginTop: 6 }}>
+            <div style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", marginTop: "var(--space-2)" }}>
               {aiDraftError}
             </div>
           )}
@@ -462,7 +462,7 @@ export function QuoteCard({
       {/* One-tap proposals — under the quote they refine (the bar above is the
           input; these are its answers). */}
       {!run && proposals.length > 0 && (
-        <div style={{ padding: "12px 8px 0" }}>
+        <div style={{ padding: "var(--space-3) var(--space-2) 0" }}>
           {/* One-tap proposals — visible, explicit, never written silently. A
               labor_hours proposal without a pricebook match saves as a shop
               rule instead; the label says which (same matcher as the handler).
@@ -482,7 +482,7 @@ export function QuoteCard({
                 key={p.id}
                 style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-2)" }}
               >
-                <span style={{ fontSize: 12.5 }}>{label}</span>
+                <span style={{ fontSize: "var(--type-base)" }}>{label}</span>
                 <button
                   className="btn sm primary"
                   disabled={p.saving}
@@ -501,7 +501,7 @@ export function QuoteCard({
             );
           })}
           {proposalError && (
-            <div style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", marginTop: 6 }}>{proposalError}</div>
+            <div style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", marginTop: "var(--space-2)" }}>{proposalError}</div>
           )}
         </div>
       )}
@@ -513,8 +513,8 @@ export function QuoteCard({
             display: "flex",
             flexDirection: "column",
             alignItems: "flex-end",
-            gap: 5,
-            padding: "12px 8px",
+            gap: "var(--space-1)",
+            padding: "var(--space-3) var(--space-2)",
           }}
         >
           {isGbb && rec && (
@@ -540,11 +540,11 @@ export function QuoteCard({
               <b style={{ color: "var(--ink)" }}>+{fmt$(m.taxed)}</b>
             </div>
           ) : null}
-          <div style={{ fontWeight: 800, fontSize: "15.5px" }}>
+          <div style={{ fontWeight: 800, fontSize: "var(--type-md)" }}>
             Total &nbsp; {fmt$(m.total)}
           </div>
           {state.pricing.dep ? (
-            <span className="pill green" style={{ marginTop: 3 }}>
+            <span className="pill green" style={{ marginTop: "var(--space-1)" }}>
               Deposit due on acceptance: {fmt$(m.dep)} ({state.pricing.dep}%)
             </span>
           ) : null}

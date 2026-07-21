@@ -183,8 +183,8 @@ export function AddressInput({
             left: 0,
             right: 0,
             zIndex: 10,
-            margin: 0,
-            padding: 0,
+            margin: "0",
+            padding: "0",
             listStyle: "none",
             background: "var(--surface, #fff)",
             border: "1px solid var(--line, #e0e0e0)",
@@ -205,8 +205,8 @@ export function AddressInput({
                 selectSuggestion(s.text);
               }}
               style={{
-                padding: "9px 12px",
-                fontSize: 13.5,
+                padding: "var(--space-2) var(--space-3)",
+                fontSize: "var(--type-base)",
                 cursor: "pointer",
                 background: i === activeIdx ? "var(--surface-2, #f5f5f5)" : "transparent",
                 color: "var(--ink, #111)",

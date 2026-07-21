@@ -93,7 +93,7 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
 
   if (editing) {
     return (
-      <div className="stage-row" style={{ gap: 10, alignItems: "center", padding: "8px 0" }}>
+      <div className="stage-row" style={{ gap: "var(--space-3)", alignItems: "center", padding: "var(--space-2) 0" }}>
         <TaskCheck done={!!task.done} onToggle={onToggle} />
         <input
           type="text"
@@ -115,7 +115,7 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
           style={{
             flex: 1,
             minWidth: 0,
-            fontSize: 13.5,
+            fontSize: "var(--type-base)",
           }}
           aria-label="Edit task text"
         />
@@ -138,8 +138,8 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
           style={{
             width: 130,
             flexShrink: 0,
-            fontSize: 12.5,
-            padding: "0 6px",
+            fontSize: "var(--type-base)",
+            padding: "0 var(--space-2)",
             height: "var(--input-h, 34px)",
             border: "1px solid var(--line)",
             borderRadius: "var(--radius-sm, 9px)",
@@ -152,7 +152,7 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
   }
 
   return (
-    <div className="stage-row" style={{ gap: 10, alignItems: "center", padding: "8px 0" }}>
+    <div className="stage-row" style={{ gap: "var(--space-3)", alignItems: "center", padding: "var(--space-2) 0" }}>
       <TaskCheck done={!!task.done} onToggle={onToggle} />
       <div
         role="button"
@@ -165,7 +165,7 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
       >
         <div
           style={{
-            fontSize: 13.5,
+            fontSize: "var(--type-base)",
             textDecoration: task.done ? "line-through" : "none",
             color: task.done ? "var(--ink-3)" : "var(--ink)",
           }}
@@ -173,7 +173,7 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
           {task.t}
         </div>
         {task.due && (
-          <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
             Due {dueLabel(task.due)}
           </div>
         )}
@@ -236,7 +236,7 @@ export function TasksCard({ lead }: TasksCardProps) {
       )}
 
       {/* Add a task — text + optional due date + Add button, all in one row */}
-      <div className="cfrow" style={{ marginTop: "var(--space-3)", gap: 6 }}>
+      <div className="cfrow" style={{ marginTop: "var(--space-3)", gap: "var(--space-2)" }}>
         <input
           type="text"
           placeholder="Add a task — e.g. First call, send quote…"
@@ -259,8 +259,8 @@ export function TasksCard({ lead }: TasksCardProps) {
           style={{
             width: 130,
             flexShrink: 0,
-            fontSize: 12.5,
-            padding: "0 6px",
+            fontSize: "var(--type-base)",
+            padding: "0 var(--space-2)",
             height: "var(--input-h, 34px)",
             border: "1px solid var(--line)",
             borderRadius: "var(--radius-sm, 9px)",

@@ -65,7 +65,7 @@ export default function MorePage() {
       <MenuGroup label="Office" links={OFFICE_LINKS} />
       <MenuGroup label="Field" links={FIELD_LINKS} />
 
-      <div style={{ marginTop: 18 }}>
+      <div style={{ marginTop: "var(--space-5)" }}>
         <SignOutButton />
       </div>
     </div>

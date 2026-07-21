@@ -228,7 +228,7 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
           )}
 
           {empty ? (
-            <div className="empty-att" style={{ padding: "24px 0" }}>
+            <div className="empty-att" style={{ padding: "var(--space-6) 0" }}>
               No jobs yet — <span className="linklike" onClick={onOpenNewJob}>create one</span>
             </div>
           ) : (

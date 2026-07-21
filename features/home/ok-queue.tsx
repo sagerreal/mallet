@@ -60,10 +60,10 @@ function OkCard({
   return (
     <div className={`okwrap${leaving ? " leaving" : ""}`}>
       <div className="okinner">
-        <div className="card okcard" style={{ padding: "14px 16px", marginBottom: 10 }}>
+        <div className="card okcard" style={{ padding: "var(--space-4) var(--space-4)", marginBottom: "var(--space-3)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
-            <b style={{ fontSize: 14, whiteSpace: "nowrap" }}>{item.lead.name}</b>
-            <span className="muted" style={{ fontSize: 12.5, flex: 1, minWidth: 0 }}>
+            <b style={{ fontSize: "var(--type-md)", whiteSpace: "nowrap" }}>{item.lead.name}</b>
+            <span className="muted" style={{ fontSize: "var(--type-base)", flex: 1, minWidth: 0 }}>
               {item.situation}
             </span>
             <button
@@ -85,10 +85,10 @@ function OkCard({
               style={{
                 width: "100%",
                 boxSizing: "border-box",
-                margin: "10px 0 0",
+                margin: "var(--space-3) 0 0",
                 border: "1.5px solid var(--accent)",
                 borderRadius: "18px 18px 18px 4px",
-                padding: "10px 14px",
+                padding: "var(--space-3) var(--space-4)",
                 fontFamily: "inherit",
                 fontSize: "var(--type-base)",
                 lineHeight: 1.55,
@@ -97,7 +97,7 @@ function OkCard({
               }}
             />
           ) : (
-            <div className="okghost" style={{ margin: "10px 0 0" }}>
+            <div className="okghost" style={{ margin: "var(--space-3) 0 0" }}>
               {text}
             </div>
           )}
@@ -105,7 +105,7 @@ function OkCard({
           {/* Send/Call stay TAPPABLE: without a phone on file, PhoneGate expands
               an in-flow add-number row and auto-proceeds once saved (Send is a
               local draft-send; Call opens the call sheet). */}
-          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
             <PhoneGate
               bearer={item.lead}
               addLabel="No phone number yet"
@@ -222,7 +222,7 @@ export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftConte
   }
 
   return (
-    <div style={{ marginTop: 18 }}>
+    <div style={{ marginTop: "var(--space-5)" }}>
       {items.map((item) => (
         <OkCard
           key={item.key}

@@ -138,8 +138,8 @@ function SchedFields({
 }: SchedFieldsProps) {
   return (
     <div>
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div className="field" style={{ margin: 0 }}>
+      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Day</label>
           <input
             type="date"
@@ -148,7 +148,7 @@ function SchedFields({
             onChange={(e) => onSet("date", e.target.value)}
           />
         </div>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Crew</label>
           <select
             value={visit.techId ?? ""}
@@ -167,9 +167,9 @@ function SchedFields({
 
       <div
         className="row2"
-        style={{ gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: "var(--space-2)" }}
+        style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginTop: "var(--space-2)" }}
       >
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Start</label>
           <input
             type="time"
@@ -178,7 +178,7 @@ function SchedFields({
             onChange={(e) => onSet("start", e.target.value)}
           />
         </div>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Length (h)</label>
           <input
             type="number"
@@ -191,7 +191,7 @@ function SchedFields({
       </div>
 
       {!placed ? (
-        <div className="muted" style={{ fontSize: 11.5, marginTop: "var(--space-2)" }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
           Set a crew, day &amp; time — or drag it onto the board.
         </div>
       ) : conflict ? (
@@ -212,20 +212,20 @@ function ScopePreview({ visit }: { visit: Visit }) {
   // Nothing captured yet → the office builds the quote after the tech scopes.
   if (!hasScope) {
     return (
-      <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 14 }}>
+      <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-4)" }}>
         The tech scopes this on site → you build the quote after.
       </div>
     );
   }
 
   return (
-    <div className="card" style={{ marginTop: 14, background: "var(--paper)" }}>
+    <div className="card" style={{ marginTop: "var(--space-4)", background: "var(--paper)" }}>
       <h3 style={{ fontSize: "var(--type-base)" }}>What the tech captured</h3>
       {visit.scopeNotes && (
-        <div style={{ fontSize: "var(--type-base)", marginTop: 6 }}>{visit.scopeNotes}</div>
+        <div style={{ fontSize: "var(--type-base)", marginTop: "var(--space-2)" }}>{visit.scopeNotes}</div>
       )}
       {photoCount > 0 && (
-        <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
           {photoCount} photo{photoCount === 1 ? "" : "s"} attached
         </div>
       )}
@@ -295,7 +295,7 @@ export function EvisitModalContent() {
   return (
     <div>
       {/* 1. Header — avatar, name, Estimate-visit label, status, conflict, See customer */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-2)" }}>
         <div
           className="avatar"
           style={{
@@ -303,17 +303,17 @@ export function EvisitModalContent() {
             height: 42,
             background: "var(--green-100)",
             color: "var(--green-900)",
-            fontSize: 14,
+            fontSize: "var(--type-md)",
           }}
         >
           {initialsOf(lead.name)}
         </div>
         <div style={{ flex: 1 }}>
-          <h2 style={{ marginBottom: 2 }}>{lead.name}</h2>
-          <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+          <h2 style={{ marginBottom: "var(--space-2xs)" }}>{lead.name}</h2>
+          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
             <span
               style={{
-                fontSize: 10.5,
+                fontSize: "var(--type-xs)",
                 fontWeight: 800,
                 textTransform: "uppercase",
                 letterSpacing: ".05em",
@@ -335,7 +335,7 @@ export function EvisitModalContent() {
 
       {/* 2. Call / Text + phone — Call/Text stay TAPPABLE; the call sheet /
           thread each prompt to add a number in-flow when none is on file. */}
-      <div style={{ margin: "12px 0" }}>
+      <div style={{ margin: "var(--space-3) 0" }}>
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button
             className="btn"
@@ -350,7 +350,7 @@ export function EvisitModalContent() {
             Text
           </button>
           {hasPhone(lead) && (
-            <span className="muted" style={{ fontSize: 11.5, alignSelf: "center" }}>
+            <span className="muted" style={{ fontSize: "var(--type-sm)", alignSelf: "center" }}>
               {lead.phone}
             </span>
           )}
@@ -358,13 +358,13 @@ export function EvisitModalContent() {
       </div>
 
       {/* 3. Job · address */}
-      <div className="muted" style={{ fontSize: 12.5, marginBottom: "var(--space-3)" }}>
+      <div className="muted" style={{ fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}>
         {lead.job || "Estimate visit"}
         {lead.address ? " · " + lead.address : ""}
       </div>
 
       {/* 4. Schedule */}
-      <h3 style={{ fontSize: 14, fontWeight: 800, margin: "2px 0 9px" }}>Schedule</h3>
+      <h3 style={{ fontSize: "var(--type-md)", fontWeight: 800, margin: "var(--space-2xs) 0 var(--space-2)" }}>Schedule</h3>
       <SchedFields
         visit={visit}
         techs={techs}
@@ -383,9 +383,9 @@ export function EvisitModalContent() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginTop: 18,
+          marginTop: "var(--space-5)",
           borderTop: "1px solid var(--line)",
-          paddingTop: 14,
+          paddingTop: "var(--space-4)",
         }}
       >
         <span className="linklike" style={{ color: "var(--red)" }} onClick={removeVisit}>

@@ -69,7 +69,7 @@ export function MoneyToolbar({
       >
         Filters
         {activeFilterCount > 0 && (
-          <span className="pill amber" style={{ marginLeft: 2 }}>
+          <span className="pill amber" style={{ marginLeft: "var(--space-2xs)" }}>
             {activeFilterCount}
           </span>
         )}
@@ -119,7 +119,7 @@ export function MoneyFiltersPanel({
           ))}
         </select>
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
         <span className="linklike" onClick={onClear}>
           Clear all
         </span>

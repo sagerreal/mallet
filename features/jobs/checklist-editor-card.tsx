@@ -10,13 +10,13 @@ import type { NewChecklistItem } from "@/lib/store/slices/checklists-slice";
 import { useAppStore } from "@/lib/store/app-store";
 import { Segmented } from "@/app/(office)/settings/segmented";
 
-const COMPACT_INPUT: React.CSSProperties = { fontSize: 13.5, padding: "8px 10px", borderRadius: 8 };
+const COMPACT_INPUT: React.CSSProperties = { fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" };
 const FIELD_MAX_WIDTH = 560;
 const CHIP_STYLE: React.CSSProperties = {
-  fontSize: 11.5,
+  fontSize: "var(--type-sm)",
   fontWeight: 700,
-  padding: "3px 10px",
-  borderRadius: 999,
+  padding: "var(--space-1) var(--space-3)",
+  borderRadius: "var(--radius-xl)",
   border: "1px solid var(--line)",
   color: "var(--ink-2)",
   background: "var(--card)",
@@ -62,9 +62,9 @@ function CollapsedRow({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: "var(--space-3)",
         width: "100%",
-        padding: "13px 14px",
+        padding: "var(--space-3) var(--space-4)",
         background: "none",
         border: "none",
         cursor: "pointer",
@@ -79,7 +79,7 @@ function CollapsedRow({
       <span
         style={{
           fontWeight: 700,
-          fontSize: 14,
+          fontSize: "var(--type-md)",
           flex: 1,
           color: "var(--ink)",
           minWidth: 0,
@@ -176,7 +176,7 @@ function ExpandedEditor({
   return (
     <div
       style={{
-        padding: "16px 14px 14px 36px",
+        padding: "var(--space-4) var(--space-4) var(--space-4) var(--space-10)",
         borderBottom: isLast ? "none" : "1px solid var(--line-2, var(--line))",
       }}
     >
@@ -226,7 +226,7 @@ function ExpandedEditor({
           </div>
         )}
 
-        <button type="button" className="btn sm ghost" onClick={handleAddStep} style={{ marginBottom: 14 }}>
+        <button type="button" className="btn sm ghost" onClick={handleAddStep} style={{ marginBottom: "var(--space-4)" }}>
           + Add step
         </button>
       </div>
@@ -241,7 +241,7 @@ function ExpandedEditor({
           maxWidth: FIELD_MAX_WIDTH,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
           <button
             type="button"
             className="btn primary"

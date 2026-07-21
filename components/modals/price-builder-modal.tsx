@@ -180,11 +180,11 @@ export function PriceBuilderModalContent() {
       >
         Price the job · {custLabel(job, lead)}
       </div>
-      <h2 style={{ marginBottom: 14 }}>Build the price</h2>
+      <h2 style={{ marginBottom: "var(--space-4)" }}>Build the price</h2>
 
       {/* Built line list + single-tier Total */}
       {lines.length ? (
-        <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card" style={{ marginBottom: "var(--space-4)" }}>
           {lines.map((l, i) => (
             <LineRow
               key={i}
@@ -198,10 +198,10 @@ export function PriceBuilderModalContent() {
               display: "flex",
               justifyContent: "space-between",
               fontWeight: 800,
-              fontSize: 16,
+              fontSize: "var(--type-lg)",
               borderTop: "1px solid var(--line)",
               marginTop: "var(--space-2)",
-              paddingTop: 9,
+              paddingTop: "var(--space-2)",
             }}
           >
             <span>Total</span>
@@ -239,7 +239,7 @@ export function PriceBuilderModalContent() {
       )}
 
       {saveError ? (
-        <p style={{ color: "var(--red)", fontSize: 12.5, margin: "12px 0 0" }}>{saveError}</p>
+        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{saveError}</p>
       ) : null}
 
       {/* Footer — Back to the job + office single-tier save (prototype tqSavePrice) */}
@@ -248,7 +248,7 @@ export function PriceBuilderModalContent() {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          marginTop: 18,
+          marginTop: "var(--space-5)",
         }}
       >
         <button className="btn ghost" onClick={returnToJob} disabled={saving}>

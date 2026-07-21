@@ -33,8 +33,8 @@ interface Summary { created: number; deduped: number; failed: number; }
 const ZERO = { done: 0, created: 0, deduped: 0, failed: 0 };
 
 const selectStyle: React.CSSProperties = {
-  flex: 1, minWidth: 0, border: "1.5px solid var(--line)", borderRadius: 8,
-  padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)", background: "var(--card)", color: "var(--ink)",
+  flex: 1, minWidth: 0, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)", background: "var(--card)", color: "var(--ink)",
 };
 
 function Pill({ label, tone }: { label: string; tone: "ready" | "skipped" | "warn" }) {
@@ -44,7 +44,7 @@ function Pill({ label, tone }: { label: string; tone: "ready" | "skipped" | "war
     warn: { background: "var(--amber-bg)", color: "var(--amber)" },
   };
   return (
-    <span style={{ ...tones[tone], borderRadius: 999, padding: "3px 10px", fontSize: "var(--type-sm)", fontWeight: 700 }}>
+    <span style={{ ...tones[tone], borderRadius: "var(--radius-xl)", padding: "var(--space-1) var(--space-3)", fontSize: "var(--type-sm)", fontWeight: 700 }}>
       {label}
     </span>
   );
@@ -138,7 +138,7 @@ export function ImportCustomersModalContent() {
 
       {phase === "upload" && (
         <>
-          <p className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-1)", marginBottom: 18 }}>
+          <p className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-1)", marginBottom: "var(--space-5)" }}>
             Bring in your customers from QuickBooks, Google Contacts, Jobber, or a spreadsheet — export a
             CSV from that tool and drop it here.
           </p>
@@ -149,9 +149,9 @@ export function ImportCustomersModalContent() {
             onDrop={onDrop}
             style={{
               display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-2)",
-              padding: "34px 20px", textAlign: "center", cursor: "pointer",
+              padding: "var(--space-8) var(--space-5)", textAlign: "center", cursor: "pointer",
               border: `2px dashed ${dragging ? "var(--ink)" : "var(--manila-line)"}`,
-              borderRadius: 14, background: dragging ? "var(--green-100)" : "var(--manila)",
+              borderRadius: "var(--radius-lg)", background: dragging ? "var(--green-100)" : "var(--manila)",
               transition: "border-color .12s, background .12s",
             }}
           >
@@ -161,15 +161,15 @@ export function ImportCustomersModalContent() {
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            <div style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>
+            <div style={{ fontWeight: 700, fontSize: "var(--type-md)", color: "var(--ink)" }}>
               Drag a CSV here, or click to browse
             </div>
             <div className="muted" style={{ fontSize: "var(--type-sm)" }}>.csv files only · up to a few thousand rows</div>
             <input type="file" accept=".csv,text/csv" onChange={onFile} aria-label="Upload a CSV file"
-              style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0 0 0 0)", border: 0 }} />
+              style={{ position: "absolute", width: 1, height: 1, padding: "0", margin: -1, overflow: "hidden", clip: "rect(0 0 0 0)", border: 0 }} />
           </label>
 
-          {error && <p className="auth-error" style={{ marginTop: 14, marginBottom: 0 }}>{error}</p>}
+          {error && <p className="auth-error" style={{ marginTop: "var(--space-4)", marginBottom: "0" }}>{error}</p>}
         </>
       )}
 
@@ -179,7 +179,7 @@ export function ImportCustomersModalContent() {
             We matched your columns to Mallet fields — adjust any that look wrong.
           </p>
 
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "12px 0 16px" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", margin: "var(--space-3) 0 var(--space-4)" }}>
             <Pill tone="ready" label={`${built.rows.length} ready`} />
             {built.skipped.length > 0 && <Pill tone="skipped" label={`${built.skipped.length} skipped — no name`} />}
             {built.warnings.length > 0 && <Pill tone="warn" label={`${built.warnings.length} to import without a bad field`} />}
@@ -188,10 +188,10 @@ export function ImportCustomersModalContent() {
           <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius)", overflow: "hidden" }}>
             {TARGETS.map((t, i) => (
               <label key={t.key} style={{
-                display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "10px 14px",
+                display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-3) var(--space-4)",
                 borderTop: i === 0 ? "none" : "1px solid var(--manila-line)",
               }}>
-                <span style={{ width: 96, fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}>{t.label}</span>
+                <span style={{ width: 96, fontSize: "var(--type-base)", fontWeight: 700, color: "var(--ink-2)" }}>{t.label}</span>
                 <select value={map[t.key] ?? ""} onChange={(e) => setField(t.key, e.target.value)} style={selectStyle}>
                   <option value="">— skip —</option>
                   {headers.map((h) => <option key={h} value={h}>{h}</option>)}
@@ -199,19 +199,19 @@ export function ImportCustomersModalContent() {
               </label>
             ))}
             <label style={{
-              display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "10px 14px",
+              display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-3) var(--space-4)",
               borderTop: "1px solid var(--manila-line)", background: "var(--manila)",
             }}>
-              <span style={{ width: 96, fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}>Tag source</span>
+              <span style={{ width: 96, fontSize: "var(--type-base)", fontWeight: 700, color: "var(--ink-2)" }}>Tag source</span>
               <input value={map.sourceTag} maxLength={255}
                 onChange={(e) => { setMap((m) => m ? { ...m, sourceTag: e.target.value } : m); setProgress(ZERO); }}
                 style={{ ...selectStyle }} />
             </label>
           </div>
 
-          {error && <p className="auth-error" style={{ marginTop: 14, marginBottom: 0 }}>{error}</p>}
+          {error && <p className="auth-error" style={{ marginTop: "var(--space-4)", marginBottom: "0" }}>{error}</p>}
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "var(--space-5)" }}>
             <button type="button" className="btn ghost" onClick={reset}>← Choose a different file</button>
             <button type="button" className="btn primary"
               disabled={built.rows.length === 0 || importMut.isPending}
@@ -225,15 +225,15 @@ export function ImportCustomersModalContent() {
       )}
 
       {phase === "importing" && (
-        <p className="muted" style={{ fontSize: 14, padding: "24px 0" }}>
+        <p className="muted" style={{ fontSize: "var(--type-md)", padding: "var(--space-6) 0" }}>
           Importing… {progress.done > 0 ? `${progress.done} of ${built?.rows.length ?? 0}` : "hang tight"}
         </p>
       )}
 
       {phase === "done" && summary && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "14px 0 4px" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "var(--space-4) 0 var(--space-1)" }}>
           <div style={{
-            width: 46, height: 46, borderRadius: 999, background: "var(--green-100)",
+            width: 46, height: 46, borderRadius: "var(--radius-xl)", background: "var(--green-100)",
             display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "var(--space-3)",
           }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--ink)"
@@ -251,7 +251,7 @@ export function ImportCustomersModalContent() {
               {summary.failed > 0 && `${summary.failed} couldn’t be read`}
             </div>
           )}
-          <button type="button" className="btn primary" style={{ marginTop: 18 }} onClick={close}>Done</button>
+          <button type="button" className="btn primary" style={{ marginTop: "var(--space-5)" }} onClick={close}>Done</button>
         </div>
       )}
     </div>

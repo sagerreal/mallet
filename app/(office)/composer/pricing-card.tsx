@@ -29,7 +29,7 @@ export function PricingCard({
           </span>
         </div>
         <div className="reveal-body">
-        <div style={{ display: "flex", gap: 14 }}>
+        <div style={{ display: "flex", gap: "var(--space-4)" }}>
           <div className="field" style={{ flex: 1 }}>
             <label>Discount %</label>
             <input

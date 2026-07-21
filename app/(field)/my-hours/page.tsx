@@ -230,8 +230,8 @@ export default function MyHoursPage() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          margin: "10px 0",
+          gap: "var(--space-3)",
+          margin: "var(--space-3) 0",
           flexWrap: "wrap",
         }}
       >

@@ -119,25 +119,25 @@ function TotalsBlock({
         flexDirection: "column",
         alignItems: "flex-end",
         gap: "var(--space-1)",
-        padding: "14px 0 4px",
+        padding: "var(--space-4) 0 var(--space-1)",
       }}
     >
       {showSub && (
-        <div className="muted" style={{ fontSize: 12.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)" }}>
           Subtotal {centsToDisplay(subtotalCents)}
         </div>
       )}
       {discBps > 0 && (
-        <div className="muted" style={{ fontSize: 12.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)" }}>
           Discount {disc}% −{centsToDisplay(discountCents)}
         </div>
       )}
       {taxBps > 0 && (
-        <div className="muted" style={{ fontSize: 12.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)" }}>
           Tax {tax}% +{centsToDisplay(taxCents)}
         </div>
       )}
-      <div style={{ fontWeight: 900, fontSize: 19 }}>
+      <div style={{ fontWeight: 900, fontSize: "var(--type-xl)" }}>
         Total {centsToDisplay(totalCents)}
       </div>
       {dep > 0 && (

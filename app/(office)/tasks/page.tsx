@@ -116,7 +116,7 @@ export default function TasksPage() {
       </div>
 
       {/* Quick add — one cohesive field: type it, hit Enter (due date optional) */}
-      <div className="taskadd" style={{ marginBottom: 18 }}>
+      <div className="taskadd" style={{ marginBottom: "var(--space-5)" }}>
         <input
           type="text"
           aria-label="Add a task"
@@ -151,7 +151,7 @@ export default function TasksPage() {
 
       {/* The list, grouped by urgency */}
       {open.length > 0 ? (
-        <div className="card" style={{ padding: "6px 16px 12px" }}>
+        <div className="card" style={{ padding: "var(--space-2) var(--space-4) var(--space-3)" }}>
           <div className="tasklist">
             <TaskSection label="⚠ Overdue" tasks={od} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
             <TaskSection label="Today" tasks={today} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
@@ -164,16 +164,16 @@ export default function TasksPage() {
       ) : loadFailed ? (
         <LoadFailed noun="tasks" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : firstRun ? (
-        <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
+        <div className="card" style={{ padding: "var(--space-8) var(--space-4)", textAlign: "center" }}>
           <div style={{ fontSize: "var(--type-md)", fontWeight: 700 }}>No tasks yet</div>
-          <p className="muted" style={{ fontSize: "var(--type-base)", margin: "4px 0 0" }}>
+          <p className="muted" style={{ fontSize: "var(--type-base)", margin: "var(--space-1) 0 0" }}>
             Add your first above — reminders like &ldquo;Call Rob back&rdquo; or &ldquo;Send the quote.&rdquo;
           </p>
         </div>
       ) : (
-        <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
+        <div className="card" style={{ padding: "var(--space-8) var(--space-4)", textAlign: "center" }}>
           <div style={{ fontSize: "var(--type-md)", fontWeight: 700 }}>You&apos;re all caught up</div>
-          <p className="muted" style={{ fontSize: "var(--type-base)", margin: "4px 0 0" }}>
+          <p className="muted" style={{ fontSize: "var(--type-base)", margin: "var(--space-1) 0 0" }}>
             No open tasks. Add one above when something needs doing.
           </p>
         </div>

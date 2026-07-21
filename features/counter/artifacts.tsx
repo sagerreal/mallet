@@ -144,7 +144,7 @@ export function QuoteCard({
           <button
             type="button"
             className="linklike"
-            style={{ fontSize: 12.5 }}
+            style={{ fontSize: "var(--type-base)" }}
             onClick={() => h.onOpen({ type: "est", id: artifact.estId, label: artifact.num })}
           >
             open the quote ›
@@ -392,7 +392,7 @@ function MultiApprovalReceipt({
 
       {pending.slice(0, shown).map((item, i) => (
         <div key={item.toolUseId} className="ct-runrow">
-          <div className="ledgerrow" style={{ paddingBottom: 2 }}>
+          <div className="ledgerrow" style={{ paddingBottom: "var(--space-2xs)" }}>
             <b className="fig" style={{ whiteSpace: "nowrap" }}>
               {stampsRef.current[i] ?? ""}
             </b>

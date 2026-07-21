@@ -34,8 +34,8 @@ export interface MaterialManagerProps {
 
 const inputStyle: React.CSSProperties = {
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "7px 9px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
   fontSize: "var(--type-base)",
 };
@@ -145,13 +145,13 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
   }
 
   return (
-    <div style={{ marginTop: 2, paddingTop: 10, borderTop: "1px dashed var(--line)", display: "grid", gap: "var(--space-2)" }}>
+    <div style={{ marginTop: "var(--space-2xs)", paddingTop: "var(--space-3)", borderTop: "1px dashed var(--line)", display: "grid", gap: "var(--space-2)" }}>
       <div style={{ fontSize: "var(--type-sm)", fontWeight: 700, color: "var(--ink-2)" }}>
         Parts — internal only, never shown to the customer
       </div>
 
       {attached.length > 0 && (
-        <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ display: "grid", gap: "var(--space-2)" }}>
           {attached.map((link) => {
             const material = materials.find((m) => m.id === link.materialId);
             if (!material) return null;
@@ -185,12 +185,12 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
       </div>
 
       {suggestions.length > 0 && (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
           {suggestions.map((m) => (
             <div
               key={m.id}
               className="stage-row"
-              style={{ cursor: "pointer", padding: "7px 9px" }}
+              style={{ cursor: "pointer", padding: "var(--space-2) var(--space-2)" }}
               onClick={() => void handleAttachExisting(m.id)}
               role="button"
             >
@@ -201,7 +201,7 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
         </div>
       )}
       {q && suggestions.length === 0 && !creating && (
-        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>
           No match for “{search}” — create it with “+ New material”.
         </p>
       )}
@@ -218,7 +218,7 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
             }}
             style={{ ...inputStyle, flex: 1, minWidth: 140 }}
           />
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
             <span className="muted">$</span>
             <input
               type="number"
@@ -244,9 +244,9 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
         </div>
       )}
 
-      {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: 0 }}>{error}</p>}
+      {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "0" }}>{error}</p>}
 
-      <p className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 600, margin: 0 }}>
+      <p className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 600, margin: "0" }}>
         {attached.length > 0
           ? `Parts cost ${fmt$2(partsCost)} → price basis`
           : "No parts added — the flat price above stays the source of truth."}

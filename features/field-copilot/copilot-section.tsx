@@ -31,8 +31,8 @@ import { AiThinkingBlock } from "@/features/counter/artifacts";
 
 const INPUT_STYLE: React.CSSProperties = {
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "7px 9px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
   fontSize: "var(--type-base)",
 };

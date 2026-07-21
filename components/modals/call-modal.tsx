@@ -63,7 +63,7 @@ export function CallModalContent() {
     <div>
       <h2>{lead.name}</h2>
       {phoneOnFile ? (
-        <p className="muted" style={{ marginBottom: 2 }}>
+        <p className="muted" style={{ marginBottom: "var(--space-2xs)" }}>
           {lead.phone}
         </p>
       ) : (
@@ -98,7 +98,7 @@ export function CallModalContent() {
       )}
 
       {logging && (
-        <div style={{ borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: "var(--space-3)" }}>
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-4)", paddingTop: "var(--space-3)" }}>
           <div className="field">
             <label>How did it go?</label>
             <div className="chips">
@@ -114,15 +114,15 @@ export function CallModalContent() {
               ))}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <div className="field" style={{ marginBottom: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--space-3)" }}>
+            <div className="field" style={{ marginBottom: "0" }}>
               <label>Direction</label>
               <select value={dir} onChange={(e) => setDir(e.target.value)}>
                 <option value="out">I called them</option>
                 <option value="in">They called me</option>
               </select>
             </div>
-            <div className="field" style={{ marginBottom: 0 }}>
+            <div className="field" style={{ marginBottom: "0" }}>
               <label>How long</label>
               <input
                 value={dur}
@@ -130,7 +130,7 @@ export function CallModalContent() {
                 placeholder="e.g. 5m — optional"
               />
             </div>
-            <div className="field" style={{ marginBottom: 0 }}>
+            <div className="field" style={{ marginBottom: "0" }}>
               <label>When</label>
               <select value={when} onChange={(e) => setWhen(e.target.value)}>
                 <option>Just now</option>

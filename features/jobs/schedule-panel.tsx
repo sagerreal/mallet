@@ -228,7 +228,7 @@ export function SchedulePanel() {
         {/* header row */}
         <div className="gv-row gv-head">
           <div className="gv-name">
-            <span className="muted" style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em" }}>
+            <span className="muted" style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em" }}>
               Crew
             </span>
           </div>
@@ -415,14 +415,14 @@ export function SchedulePanel() {
     <div style={{ display: "inline-flex", border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
       <button
         className={`btn sm ${day ? "primary" : "ghost"}`}
-        style={{ border: "none", borderRadius: 0 }}
+        style={{ border: "none", borderRadius: "0" }}
         onClick={() => setSchedView("day")}
       >
         Day
       </button>
       <button
         className={`btn sm ${!day ? "primary" : "ghost"}`}
-        style={{ border: "none", borderRadius: 0 }}
+        style={{ border: "none", borderRadius: "0" }}
         onClick={() => setSchedView("week")}
       >
         Week
@@ -512,11 +512,11 @@ export function SchedulePanel() {
 
       {/* To-schedule tray */}
       {trayCards.length > 0 ? (
-        <div className="rail" style={{ marginBottom: 14 }}>
+        <div className="rail" style={{ marginBottom: "var(--space-4)" }}>
           <b style={{ fontSize: "var(--type-base)" }}>
             To schedule <span className="muted" style={{ fontWeight: 600 }}>· {trayCards.length}</span>
           </b>
-          <div className="tray-grid" style={{ marginTop: 10, display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: "var(--space-2)" }}>
+          <div className="tray-grid" style={{ marginTop: "var(--space-3)", display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: "var(--space-2)" }}>
             {trayCards.map((card) => {
               const isJob = card.kind === "job";
               const name = isJob ? custName(card.j, leads) : card.l.name;
@@ -559,20 +559,20 @@ export function SchedulePanel() {
                     <button className="rail-addv" onClick={(e) => { e.stopPropagation(); splitTray(card.j); }} title="Add another visit">
                       +
                     </button>
-                    <b style={{ fontSize: "13.5px" }}>{name}</b>
-                    <div className="muted" style={{ fontSize: "11.5px", margin: "2px 0 10px" }}>{title}</div>
+                    <b style={{ fontSize: "var(--type-base)" }}>{name}</b>
+                    <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2xs) 0 var(--space-3)" }}>{title}</div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-2)" }}>
-                      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
+                      <span style={{ fontSize: "var(--type-xs)", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
                         {m.lbl}
                       </span>
                       <span className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>
                         {hmLabel(total)} · {unplacedList.length} visits
                       </span>
                     </div>
-                    <div className="muted" style={{ fontSize: "10.5px", marginBottom: 6 }}>
+                    <div className="muted" style={{ fontSize: "var(--type-xs)", marginBottom: "var(--space-2)" }}>
                       Tap a visit, then a crew &amp; time — or drag it
                     </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                       {unplacedList.map((v) => (
                         <span
                           key={v.id}
@@ -601,7 +601,7 @@ export function SchedulePanel() {
                               removeVisit(card.j.id, v.id);
                             }}
                             title="remove this visit"
-                            style={{ color: "var(--ink-3)", fontWeight: 800, padding: "0 1px" }}
+                            style={{ color: "var(--ink-3)", fontWeight: 800, padding: "0 var(--space-2xs)" }}
                           >
                             ✕
                           </span>
@@ -627,15 +627,15 @@ export function SchedulePanel() {
                       +
                     </button>
                   )}
-                  <b style={{ fontSize: "13.5px" }}>{name}</b>
-                  <div className="muted" style={{ fontSize: "11.5px", margin: "2px 0 10px" }}>{title}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: 10 }}>
-                    <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
+                  <b style={{ fontSize: "var(--type-base)" }}>{name}</b>
+                  <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2xs) 0 var(--space-3)" }}>{title}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
+                    <span style={{ fontSize: "var(--type-xs)", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
                       {m.lbl}
                     </span>
                     <span className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>{hmLabel(hrs)}</span>
                   </div>
-                  <div style={{ display: "flex", gap: 7 }}>
+                  <div style={{ display: "flex", gap: "var(--space-2)" }}>
                     <button
                       className={`btn sm${armed ? " arm" : " primary"}`}
                       style={{ flex: 1, justifyContent: "center" }}
@@ -650,7 +650,7 @@ export function SchedulePanel() {
           </div>
         </div>
       ) : (
-        <div className="rail" style={{ background: "var(--green-50)", borderColor: "#DDD7C9", marginBottom: 14 }}>
+        <div className="rail" style={{ background: "var(--green-50)", borderColor: "#DDD7C9", marginBottom: "var(--space-4)" }}>
           <b style={{ fontSize: "var(--type-base)" }}>Everything sold is scheduled.</b>
         </div>
       )}
@@ -661,12 +661,12 @@ export function SchedulePanel() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: 10,
+            gap: "var(--space-3)",
             background: "var(--ink)",
             color: "#fff",
             borderRadius: "var(--radius-sm)",
-            padding: "11px 14px",
-            marginBottom: 11,
+            padding: "var(--space-3) var(--space-4)",
+            marginBottom: "var(--space-3)",
             fontSize: "var(--type-base)",
             fontWeight: 600,
           }}
@@ -692,10 +692,10 @@ export function SchedulePanel() {
         </div>
       )}
 
-      <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "2px 0 8px" }}>
+      <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "var(--space-2xs) 0 var(--space-2)" }}>
         On the board
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
         {toggle}
         <span style={{ width: 6 }} />
         {nav}

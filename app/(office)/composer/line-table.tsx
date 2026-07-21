@@ -123,7 +123,7 @@ export function LineTable({
                   {showCost && margin !== null && (
                     <div
                       className="muted"
-                      style={{ fontWeight: 500, fontSize: "10.5px" }}
+                      style={{ fontWeight: 500, fontSize: "var(--type-xs)" }}
                     >
                       {margin}% margin
                     </div>

@@ -111,7 +111,7 @@ export function HandoffNote({
       {frontDeskOn && report.busy && (
         <div
           className="muted"
-          style={{ textAlign: "right", fontSize: 12.5, marginTop: 10, color: "var(--manila-ink)", opacity: 0.55 }}
+          style={{ textAlign: "right", fontSize: "var(--type-base)", marginTop: "var(--space-3)", color: "var(--manila-ink)", opacity: 0.55 }}
         >
           — Front Desk
         </div>

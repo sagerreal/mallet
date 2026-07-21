@@ -143,13 +143,13 @@ export function EstimateModalContent() {
   if (fullQuery.isError && fullQuery.error?.data?.code !== "NOT_FOUND") {
     return (
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)" }}>
           <div>
             <div className="muted">{e.num}</div>
             <h2>{e.title}</h2>
           </div>
         </div>
-        <div className="card" style={{ marginTop: 14, color: "var(--ink-2)", fontSize: "var(--type-base)" }}>
+        <div className="card" style={{ marginTop: "var(--space-4)", color: "var(--ink-2)", fontSize: "var(--type-base)" }}>
           Couldn&apos;t load the quote details — close and reopen to retry.
         </div>
       </div>
@@ -308,7 +308,7 @@ export function EstimateModalContent() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, paddingRight: 34 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)", paddingRight: "var(--space-8)" }}>
         <div>
           <div className="muted">{e.num}</div>
           <h2>{e.title}</h2>
@@ -322,7 +322,7 @@ export function EstimateModalContent() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
+      <div className="card" style={{ marginTop: "var(--space-4)" }}>
         <table>
           <thead>
             <tr>
@@ -385,10 +385,10 @@ export function EstimateModalContent() {
       )}
 
       {e.status === "sent" && e.changeRequestedAt && (
-        <div className="reqcard" style={{ marginTop: 10 }}>
+        <div className="reqcard" style={{ marginTop: "var(--space-3)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-2)" }}>
             <div>
-              <span className="muted" style={{ fontSize: 11.5, display: "block", marginBottom: 3 }}>Change requested</span>
+              <span className="muted" style={{ fontSize: "var(--type-sm)", display: "block", marginBottom: "var(--space-1)" }}>Change requested</span>
               {e.changeRequest
                 ? <span>&ldquo;{e.changeRequest}&rdquo;</span>
                 : <span className="muted">Message loading…</span>
@@ -420,7 +420,7 @@ export function EstimateModalContent() {
 
       {(e.status === "draft" || e.status === "sent") && (
         <div style={{ marginTop: "var(--space-3)" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-3)" }}>
             <button className="btn ghost" onClick={() => openModal(MODAL.CUST_QUOTE, { estId: e.id })}>
               Preview as customer
             </button>
@@ -436,14 +436,14 @@ export function EstimateModalContent() {
             <div
               style={{
                 marginTop: "var(--space-3)",
-                padding: "14px 16px",
+                padding: "var(--space-4) var(--space-4)",
                 border: "1.5px solid var(--line)",
                 borderRadius: "var(--radius-sm, 9px)",
                 background: "var(--card)",
               }}
             >
               {/* Channel toggle */}
-              <div style={{ display: "flex", gap: 6, marginBottom: "var(--space-3)" }}>
+              <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
                 {(["text", "email"] as const).map((ch) => (
                   <button
                     key={ch}
@@ -461,10 +461,10 @@ export function EstimateModalContent() {
                 <label
                   style={{
                     display: "block",
-                    fontSize: 11.5,
+                    fontSize: "var(--type-sm)",
                     fontWeight: 600,
                     color: "var(--ink-2)",
-                    marginBottom: 3,
+                    marginBottom: "var(--space-1)",
                   }}
                 >
                   {sendChannel === "text" ? "Mobile number" : "Email address"}
@@ -491,9 +491,9 @@ export function EstimateModalContent() {
                     maxWidth: 280,
                     border: `1.5px solid ${destError ? "var(--red)" : "var(--line)"}`,
                     borderRadius: "var(--radius-sm, 9px)",
-                    padding: "8px 11px",
+                    padding: "var(--space-2) var(--space-3)",
                     fontFamily: "inherit",
-                    fontSize: 13.5,
+                    fontSize: "var(--type-base)",
                     background: "var(--card)",
                     color: "var(--ink)",
                   }}
@@ -507,13 +507,13 @@ export function EstimateModalContent() {
 
               {/* Inline delivery error */}
               {sendError && (
-                <div style={{ marginTop: "var(--space-2)", fontSize: 12.5, color: "var(--red)" }}>
+                <div style={{ marginTop: "var(--space-2)", fontSize: "var(--type-base)", color: "var(--red)" }}>
                   {sendError}
                 </div>
               )}
 
               {/* Panel actions */}
-              <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 14, justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)", justifyContent: "flex-end" }}>
                 <button
                   className="btn sm ghost"
                   onClick={closeSendPanel}
@@ -543,7 +543,7 @@ export function EstimateModalContent() {
           display: "flex",
           justifyContent: "flex-end",
           alignItems: "center",
-          marginTop: 14,
+          marginTop: "var(--space-4)",
           borderTop: "1px solid var(--line)",
           paddingTop: "var(--space-3)",
           gap: "var(--space-2)",

@@ -199,10 +199,10 @@ export function BrowseRow({ label, right, onClick }: BrowseRowProps) {
   return (
     <div
       className="stage-row clickable"
-      style={{ cursor: "pointer", borderBottom: "1px solid var(--line-2)", padding: "11px 0" }}
+      style={{ cursor: "pointer", borderBottom: "1px solid var(--line-2)", padding: "var(--space-3) 0" }}
       onClick={onClick}
     >
-      <span style={{ flex: 1, fontSize: 14.5, fontWeight: 600, color: "var(--ink)" }}>{label}</span>
+      <span style={{ flex: 1, fontSize: "var(--type-md)", fontWeight: 600, color: "var(--ink)" }}>{label}</span>
       {right}
     </div>
   );
@@ -236,10 +236,10 @@ export function AddMenu({
 }: AddMenuProps) {
   if (sub === "pb") {
     return (
-      <div className="card" style={{ marginBottom: 2 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+      <div className="card" style={{ marginBottom: "var(--space-2xs)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
           <span style={SEC_LABEL}>Pricebook</span>
-          <span className="linklike" style={{ fontSize: 12.5 }} onClick={() => onSetSub(null)}>
+          <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={() => onSetSub(null)}>
             ← back
           </span>
         </div>
@@ -253,7 +253,7 @@ export function AddMenu({
             />
           ))
         ) : (
-          <div className="muted" style={{ fontSize: 12.5, padding: "4px 0" }}>
+          <div className="muted" style={{ fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}>
             No saved items yet — use a custom item.
           </div>
         )}
@@ -263,10 +263,10 @@ export function AddMenu({
 
   if (sub === "labor") {
     return (
-      <div className="card" style={{ marginBottom: 2 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+      <div className="card" style={{ marginBottom: "var(--space-2xs)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
           <span style={SEC_LABEL}>Labor rates</span>
-          <span className="linklike" style={{ fontSize: 12.5 }} onClick={() => onSetSub(null)}>
+          <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={() => onSetSub(null)}>
             ← back
           </span>
         </div>
@@ -283,11 +283,11 @@ export function AddMenu({
   }
 
   return (
-    <div style={{ marginBottom: 2 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 12px" }}>
+    <div style={{ marginBottom: "var(--space-2xs)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 var(--space-3)" }}>
         <span style={SEC_LABEL}>Add a line</span>
         {hasLines ? (
-          <span className="linklike" style={{ fontSize: 12.5 }} onClick={onDone}>
+          <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={onDone}>
             done
           </span>
         ) : null}
@@ -306,8 +306,8 @@ export function AddMenu({
 
 const INP: React.CSSProperties = {
   border: "1.5px solid var(--line)",
-  borderRadius: 7,
-  padding: 6,
+  borderRadius: "var(--radius-xs)",
+  padding: "var(--space-2)",
   fontFamily: "inherit",
 };
 
@@ -321,13 +321,13 @@ interface LineRowProps {
 export function LineRow({ line, onSet, onRemove }: LineRowProps) {
   if (line.kind === "tm") {
     return (
-      <div className="stage-row" style={{ gap: 6, flexWrap: "wrap", border: "none", padding: "5px 0" }}>
+      <div className="stage-row" style={{ gap: "var(--space-2)", flexWrap: "wrap", border: "none", padding: "var(--space-1) 0" }}>
         <input
           value={line.d}
           onChange={(e) => onSet({ d: e.target.value })}
-          style={{ flex: 1, minWidth: 120, ...INP, padding: "6px 8px", fontSize: "var(--type-base)" }}
+          style={{ flex: 1, minWidth: 120, ...INP, padding: "var(--space-2) var(--space-2)", fontSize: "var(--type-base)" }}
         />
-        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
           <input
             type="number"
             min={0}
@@ -359,14 +359,14 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
   }
 
   return (
-    <div className="stage-row" style={{ gap: 6, flexWrap: "wrap", border: "none", padding: "5px 0" }}>
+    <div className="stage-row" style={{ gap: "var(--space-2)", flexWrap: "wrap", border: "none", padding: "var(--space-1) 0" }}>
       <input
         value={line.d}
         placeholder={line.kind === "custom" ? "part, material, or flat fee" : ""}
         onChange={(e) => onSet({ d: e.target.value })}
-        style={{ flex: 1, minWidth: 140, ...INP, padding: "6px 8px", fontSize: "var(--type-base)" }}
+        style={{ flex: 1, minWidth: 140, ...INP, padding: "var(--space-2) var(--space-2)", fontSize: "var(--type-base)" }}
       />
-      <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
         <span className="muted">$</span>
         <input
           type="number"

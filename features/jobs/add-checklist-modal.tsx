@@ -11,7 +11,7 @@ import { Modal } from "@/components/modals/modal";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { userMessage } from "@/lib/trpc/error-map";
 
-const COMPACT_INPUT: React.CSSProperties = { fontSize: 13.5, padding: "8px 10px", borderRadius: 8 };
+const COMPACT_INPUT: React.CSSProperties = { fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" };
 
 type DraftItem = { text: string; type: "check" | "photo" };
 
@@ -62,7 +62,7 @@ export function AddChecklistModal({
 
   return (
     <Modal open={open} onClose={handleClose} maxWidth={480}>
-      <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>
+      <h3 style={{ margin: "0 0 var(--space-4)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
         New checklist
       </h3>
 
@@ -81,10 +81,10 @@ export function AddChecklistModal({
       </div>
 
       {error && (
-        <p style={{ color: "var(--red)", fontSize: 12.5, margin: "8px 0 0" }} role="alert">{error}</p>
+        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-2) 0 0" }} role="alert">{error}</p>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)", marginTop: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
         {/* Draft with AI: the name is the job type; drafted steps land in the editor to edit + save. */}
         <button className="btn ghost" onClick={handleDraft} disabled={!name.trim() || drafting}>
           {drafting ? "Drafting…" : "Draft with AI"}

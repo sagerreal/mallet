@@ -88,9 +88,9 @@ export function SetupChecklist() {
     <div className="card" style={{ position: "relative" }}>
       <button className="x" aria-label="Dismiss setup" onClick={dismiss}>✕</button>
 
-      <h3 style={{ marginBottom: 2 }}>
+      <h3 style={{ marginBottom: "var(--space-2xs)" }}>
         {liveDone ? "Your AI Front Desk is live 🎉" : "Set up your AI Front Desk"}
-        <span className="muted" style={{ fontWeight: 600, fontSize: 12.5, marginLeft: "var(--space-2)" }}>
+        <span className="muted" style={{ fontWeight: 600, fontSize: "var(--type-base)", marginLeft: "var(--space-2)" }}>
           {doneCount(steps)} of {steps.length}
         </span>
       </h3>
@@ -98,7 +98,7 @@ export function SetupChecklist() {
       {/* Tier 1 — required path to the first call */}
       {!liveDone && (
         <>
-          <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", margin: "12px 0 2px" }}>
+          <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", margin: "var(--space-3) 0 var(--space-2xs)" }}>
             Get live
           </div>
           {live.map((s, i) => (
@@ -109,7 +109,7 @@ export function SetupChecklist() {
 
       {liveDone && (
         <div style={{
-          borderRadius: "var(--radius)", padding: "12px 14px", margin: "12px 0 4px",
+          borderRadius: "var(--radius)", padding: "var(--space-3) var(--space-4)", margin: "var(--space-3) 0 var(--space-1)",
           background: "var(--green-50, #edf7ee)", border: "1px solid var(--green-600, #2e7d32)",
           fontSize: "var(--type-base)", fontWeight: 700, color: "var(--green-900, #1b5e20)",
         }}>
@@ -118,7 +118,7 @@ export function SetupChecklist() {
       )}
 
       {/* Tier 2 — deferred "make it better" */}
-      <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", margin: "14px 0 2px" }}>
+      <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", margin: "var(--space-4) 0 var(--space-2xs)" }}>
         Make it even better
       </div>
       {grow.map((s, i) => (
@@ -162,7 +162,7 @@ function StepRow({ step, last, onOpen }: { step: SetupStep; last: boolean; onOpe
   return (
     <div
       style={{
-        display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "11px 0",
+        display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-3) 0",
         borderBottom: last ? "none" : "1px solid var(--line-2, var(--line))",
       }}
     >
@@ -181,14 +181,14 @@ function StepRow({ step, last, onOpen }: { step: SetupStep; last: boolean; onOpe
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontWeight: 600, fontSize: 13.5,
+          fontWeight: 600, fontSize: "var(--type-base)",
           color: step.done ? "var(--ink-3)" : "var(--ink)",
           textDecoration: step.done ? "line-through" : "none",
         }}>
           {step.label}
         </div>
         {!step.done && (
-          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 1 }}>{step.blurb}</div>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>{step.blurb}</div>
         )}
       </div>
       {!step.done && (

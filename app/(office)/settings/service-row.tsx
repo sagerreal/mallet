@@ -26,8 +26,8 @@ export interface ServiceRowProps {
 
 const fieldInputStyle: React.CSSProperties = {
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "7px 9px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
   fontSize: "var(--type-base)",
 };
@@ -56,7 +56,7 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
       </div>
 
       {open && (
-        <div style={{ padding: "4px 6px 14px", display: "grid", gap: 11 }}>
+        <div style={{ padding: "var(--space-1) var(--space-2) var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
           <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Category</label>
             <select
@@ -72,9 +72,9 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
           </div>
 
           {canSeeCost && (
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
               <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Your cost</label>
-              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                 <span className="muted">$</span>
                 <input
                   type="number"
@@ -108,7 +108,7 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
             <span className="muted" style={{ fontSize: "var(--type-sm)" }}>hrs</span>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Taxable</span>
             <label className="switch">
               <input

@@ -182,7 +182,7 @@ export function CompaniesView() {
       />
 
       {/* Table */}
-      <div className="card" style={{ padding: "6px 14px" }}>
+      <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
         <table className="list-tbl">
           <thead>
             <tr>

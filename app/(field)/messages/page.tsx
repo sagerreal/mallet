@@ -137,9 +137,9 @@ function AiPhone({ onBack }: AiPhoneProps) {
                             background: "#007AFF",
                             color: "#fff",
                             borderRadius: "17px 17px 4px 17px",
-                            padding: "8px 12px",
+                            padding: "var(--space-2) var(--space-3)",
                             maxWidth: "78%",
-                            fontSize: 13.5,
+                            fontSize: "var(--type-base)",
                             lineHeight: 1.35,
                             whiteSpace: "pre-wrap",
                           }
@@ -148,9 +148,9 @@ function AiPhone({ onBack }: AiPhoneProps) {
                             background: "#e5e5ea",
                             color: "#000",
                             borderRadius: "17px 17px 17px 4px",
-                            padding: "8px 12px",
+                            padding: "var(--space-2) var(--space-3)",
                             maxWidth: "78%",
-                            fontSize: 13.5,
+                            fontSize: "var(--type-base)",
                             lineHeight: 1.35,
                             whiteSpace: "pre-wrap",
                           }

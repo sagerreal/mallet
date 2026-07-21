@@ -70,7 +70,7 @@ export function RunBlock({
 
       {artifact.steps.slice(0, shown).map((st, i) => (
         <div key={st.key} className="ct-runrow">
-          <div className="ledgerrow" style={{ paddingBottom: 2 }}>
+          <div className="ledgerrow" style={{ paddingBottom: "var(--space-2xs)" }}>
             <b className="fig" style={{ whiteSpace: "nowrap" }}>{stampsRef.current[i] ?? ""}</b>
             <span style={{ minWidth: 0 }}>
               ✓ {st.title}
@@ -98,7 +98,7 @@ export function RunBlock({
       {artifact.asides.map((a, i) =>
         shown > artifact.steps.length + i ? (
           <div key={a.leadId} className="ct-runrow">
-            <div className="ledgerrow" style={{ paddingBottom: 2 }}>
+            <div className="ledgerrow" style={{ paddingBottom: "var(--space-2xs)" }}>
               <b className="fig" style={{ whiteSpace: "nowrap" }}>
                 {stampsRef.current[artifact.steps.length + i] ?? ""}
               </b>

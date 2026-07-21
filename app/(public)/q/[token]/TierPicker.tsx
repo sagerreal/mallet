@@ -42,13 +42,13 @@ export function TierPicker({
 }: TierPickerProps) {
   return (
     <>
-      <div className="muted" style={{ fontSize: "var(--type-xs)", marginTop: "var(--space-1)", marginBottom: 6 }}>
+      <div className="muted" style={{ fontSize: "var(--type-xs)", marginTop: "var(--space-1)", marginBottom: "var(--space-2)" }}>
         Choose an option
       </div>
       <div
         role="radiogroup"
         aria-label="Quote options"
-        style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", marginBottom: 6 }}
+        style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
       >
         {options.map((opt) => {
           const selected = opt.tier === selectedTier;
@@ -65,10 +65,10 @@ export function TierPicker({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 10,
+                gap: "var(--space-3)",
                 width: "100%",
                 minHeight: 52, // ≥44px tap target — this is a phone surface
-                padding: "12px 14px",
+                padding: "var(--space-3) var(--space-4)",
                 boxSizing: "border-box",
                 borderRadius: "var(--radius-md)",
                 // Constant border WIDTH so selection never shifts layout.
@@ -76,14 +76,14 @@ export function TierPicker({
                 background: selected ? "var(--green-50)" : "var(--card)",
                 color: "var(--ink)",
                 fontFamily: "inherit",
-                fontSize: 13.5,
+                fontSize: "var(--type-base)",
                 textAlign: "left",
                 cursor: locked ? "not-allowed" : "pointer",
                 opacity: locked && !selected ? 0.6 : 1,
               }}
             >
-              <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <b style={{ fontSize: 14 }}>{opt.name}</b>
+              <span style={{ display: "flex", flexDirection: "column", gap: "var(--space-2xs)" }}>
+                <b style={{ fontSize: "var(--type-md)" }}>{opt.name}</b>
                 {recommended && (
                   <span style={{ fontSize: "var(--type-xs)", fontWeight: 600, color: "var(--ink-2)" }}>
                     Recommended

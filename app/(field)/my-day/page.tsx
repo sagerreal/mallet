@@ -133,7 +133,7 @@ function ClockCard({ clockState, onClockStart, onClockStop }: ClockCardProps) {
       <div className="clock-head">
         <div className="clock-meta">
           <b style={{ fontWeight: 700 }}>Time clock</b>
-          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
             {clockState !== "idle" ? (
               <span style={{ color: "var(--green-700)", fontWeight: 600 }}>
                 {`● ${TS_KINDS[clockState] ?? clockState} running`}

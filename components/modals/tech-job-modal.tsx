@@ -171,7 +171,7 @@ function TechHeader({ job, custName }: { job: Job; custName: string }) {
   const showTitle = custName !== job.title;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: 11 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-3)" }}>
       <div
         className="avatar"
         style={{
@@ -179,17 +179,17 @@ function TechHeader({ job, custName }: { job: Job; custName: string }) {
           height: 42,
           background: "var(--green-100)",
           color: "var(--green-900)",
-          fontSize: 14,
+          fontSize: "var(--type-md)",
         }}
       >
         {initialsOf(custName)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <h2 style={{ marginBottom: 3 }}>{custName}</h2>
+        <h2 style={{ marginBottom: "var(--space-1)" }}>{custName}</h2>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
           <span
             style={{
-              fontSize: 10.5,
+              fontSize: "var(--type-xs)",
               fontWeight: 800,
               textTransform: "uppercase",
               letterSpacing: ".05em",
@@ -199,7 +199,7 @@ function TechHeader({ job, custName }: { job: Job; custName: string }) {
             {meta.word}
           </span>
           {showTitle && (
-            <span style={{ fontWeight: 600, fontSize: 13.5, color: "var(--ink-2)" }}>
+            <span style={{ fontWeight: 600, fontSize: "var(--type-base)", color: "var(--ink-2)" }}>
               {job.title}
             </span>
           )}
@@ -339,14 +339,14 @@ function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
     );
 
   return (
-    <div style={{ marginBottom: 2 }}>
+    <div style={{ marginBottom: "var(--space-2xs)" }}>
       <div
         style={{
           display: "flex",
           alignItems: "baseline",
           justifyContent: "space-between",
           gap: "var(--space-3)",
-          marginBottom: 13,
+          marginBottom: "var(--space-3)",
         }}
       >
         <div>
@@ -357,12 +357,12 @@ function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
               letterSpacing: ".05em",
               textTransform: "uppercase",
               color: "var(--ink-3)",
-              marginBottom: 2,
+              marginBottom: "var(--space-2xs)",
             }}
           >
             Arrive
           </div>
-          <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.01em" }}>
+          <div style={{ fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
             {colLabel(date)} · {startTimeStr(start)}
           </div>
         </div>
@@ -374,12 +374,12 @@ function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
               letterSpacing: ".05em",
               textTransform: "uppercase",
               color: "var(--ink-3)",
-              marginBottom: 2,
+              marginBottom: "var(--space-2xs)",
             }}
           >
             On site
           </div>
-          <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.01em" }}>
+          <div style={{ fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
             ~{hmLabel(visit.dur)}
           </div>
         </div>
@@ -412,7 +412,7 @@ function PricingSec({ job, quoted, onPriceOnSite }: PricingSecProps) {
         <span>{heading}</span>
       </div>
       {mode === "estimate" ? (
-        <div style={{ fontSize: 13.5, fontWeight: 700 }}>
+        <div style={{ fontSize: "var(--type-base)", fontWeight: 700 }}>
           ✦ Scoping visit{" "}
           <span className="muted" style={{ fontWeight: 500 }}>
             — the office builds the quote
@@ -420,7 +420,7 @@ function PricingSec({ job, quoted, onPriceOnSite }: PricingSecProps) {
         </div>
       ) : quoted ? (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
-          <b style={{ fontSize: 14 }}>✓ Priced — {fmt$(jobTotal(job))}</b>
+          <b style={{ fontSize: "var(--type-md)" }}>✓ Priced — {fmt$(jobTotal(job))}</b>
           <button className="btn sm ghost" onClick={onPriceOnSite}>
             re-price
           </button>
@@ -428,7 +428,7 @@ function PricingSec({ job, quoted, onPriceOnSite }: PricingSecProps) {
       ) : (
         <button
           className="btn primary"
-          style={{ width: "100%", fontSize: 14.5, padding: "var(--space-3)" }}
+          style={{ width: "100%", fontSize: "var(--type-md)", padding: "var(--space-3)" }}
           onClick={onPriceOnSite}
         >
           Price it on site →
@@ -444,7 +444,7 @@ function PricingSec({ job, quoted, onPriceOnSite }: PricingSecProps) {
 // The sold $ shows ONLY when techSeesPrice (the crew usually gets scope, no $).
 
 const SCOPE_HEAD: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: "var(--type-xs)",
   fontWeight: 800,
   textTransform: "uppercase",
   letterSpacing: ".05em",
@@ -486,13 +486,13 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
 
       {scope.length ? (
         <>
-          <div className="muted" style={{ ...SCOPE_HEAD, margin: "13px 0 5px" }}>
+          <div className="muted" style={{ ...SCOPE_HEAD, margin: "var(--space-3) 0 var(--space-1)" }}>
             Scope — what was sold
           </div>
           {scope.map((x, i) => (
             <div
               key={i}
-              style={{ fontSize: 13.5, padding: "3px 0", display: "flex", gap: "var(--space-2)", alignItems: "baseline" }}
+              style={{ fontSize: "var(--type-base)", padding: "var(--space-1) 0", display: "flex", gap: "var(--space-2)", alignItems: "baseline" }}
             >
               <span style={{ color: "var(--green-700)" }}>✓</span>
               <span style={{ flex: 1 }}>
@@ -513,37 +513,37 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
       {job.special ? (
         <div
           style={{
-            marginTop: 11,
+            marginTop: "var(--space-3)",
             background: "#FFFBEF",
             border: "1px solid var(--manila-line)",
             borderRadius: "var(--radius-sm)",
-            padding: "9px 11px",
+            padding: "var(--space-2) var(--space-3)",
           }}
         >
           <b style={{ fontSize: "var(--type-sm)", color: "#b45309" }}>★ Homeowner&rsquo;s requests</b>
-          <div style={{ fontSize: 12.5, marginTop: 2 }}>{job.special}</div>
+          <div style={{ fontSize: "var(--type-base)", marginTop: "var(--space-2xs)" }}>{job.special}</div>
         </div>
       ) : null}
 
       {job.prep ? (
-        <div style={{ fontSize: 12.5, marginTop: 9 }}>
+        <div style={{ fontSize: "var(--type-base)", marginTop: "var(--space-2)" }}>
           <b>Bring:</b> {job.prep}
         </div>
       ) : null}
 
       {photoN ? (
-        <div style={{ marginTop: 11 }}>
+        <div style={{ marginTop: "var(--space-3)" }}>
           <span className="muted" style={SCOPE_HEAD}>
             Site photos · {photoN}
           </span>
-          <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-1)" }}>
             {Array.from({ length: Math.min(photoN, 4) }).map((_, i) => (
               <div
                 key={i}
                 style={{
                   width: 52,
                   height: 52,
-                  borderRadius: 8,
+                  borderRadius: "var(--radius-sm)",
                   background: "var(--green-100)",
                   border: "1px solid var(--manila-line)",
                 }}
@@ -564,8 +564,8 @@ const WorkOrderSec = memo(WorkOrderSecFn, workOrderPropsEqual);
 
 const AO_INPUT: React.CSSProperties = {
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "7px 9px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
   fontSize: "var(--type-base)",
 };
@@ -741,10 +741,10 @@ const OVERRIDE_REASONS = ["N/A", "Customer declined"] as const;
 const VROW_BASE: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 11,
-  padding: "10px 0",
+  gap: "var(--space-3)",
+  padding: "var(--space-3) 0",
   borderTop: "1px solid var(--line)",
-  fontSize: 13.5,
+  fontSize: "var(--type-base)",
 };
 
 interface ChecklistItemRowProps {
@@ -788,7 +788,7 @@ function ChecklistItemRow({
           {ov ? "⊘" : "✓"}
         </span>
         <span style={{ flex: 1, minWidth: 0, color: "var(--ink-2)" }}>{it.text}</span>
-        <span className="muted" style={{ fontSize: 11.5, flex: "none" }}>
+        <span className="muted" style={{ fontSize: "var(--type-sm)", flex: "none" }}>
           {how}
         </span>
         <span
@@ -820,7 +820,7 @@ function ChecklistItemRow({
     <span style={{ flex: 1, minWidth: 0 }}>
       {it.text}
       {!it.required && (
-        <span className="muted" style={{ fontSize: 11.5 }}>
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
           {" "}
           · optional
         </span>
@@ -832,7 +832,7 @@ function ChecklistItemRow({
     it.type === "photo" ? (
       <button
         className="btn sm ghost"
-        style={{ flex: "none", padding: "5px 14px" }}
+        style={{ flex: "none", padding: "var(--space-1) var(--space-4)" }}
         onClick={(e) => {
           e.stopPropagation();
           onPhoto();
@@ -845,7 +845,7 @@ function ChecklistItemRow({
   const kebab = (
     <span
       className="linklike"
-      style={{ flex: "none", color: "var(--ink-3)", fontSize: "var(--type-lg)", lineHeight: 1, padding: "0 5px", fontWeight: 800 }}
+      style={{ flex: "none", color: "var(--ink-3)", fontSize: "var(--type-lg)", lineHeight: 1, padding: "0 var(--space-1)", fontWeight: 800 }}
       title="N/A or customer declined"
       onClick={(e) => {
         e.stopPropagation();
@@ -857,12 +857,12 @@ function ChecklistItemRow({
   );
 
   const expRow = expanded ? (
-    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", padding: "0 0 11px 27px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", padding: "0 0 var(--space-3) var(--space-6)" }}>
       {OVERRIDE_REASONS.map((r) => (
         <button
           key={r}
           className="chip"
-          style={{ padding: "3px 11px", fontSize: 11.5 }}
+          style={{ padding: "var(--space-1) var(--space-3)", fontSize: "var(--type-sm)" }}
           onClick={() => onOverride(r)}
         >
           {r}
@@ -922,7 +922,7 @@ const ChecklistSec = memo(function ChecklistSec({ job, checkItem, overrideItem, 
         ) : null}
       </div>
       <div
-        style={{ height: 4, borderRadius: 2, background: "var(--line)", overflow: "hidden", margin: "0 0 4px" }}
+        style={{ height: 4, borderRadius: "var(--radius-2xs)", background: "var(--line)", overflow: "hidden", margin: "0 0 var(--space-1)" }}
       >
         <div style={{ height: "100%", width: `${pct}%`, background: barColor }} />
       </div>
@@ -1069,7 +1069,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
         </div>
       ) : !canCompose ? (
         // Zero entries and no composer — never a bare labeled header.
-        <div className="muted" style={{ fontSize: 12.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)" }}>
           No notes yet.
         </div>
       ) : null}
@@ -1096,7 +1096,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
             </button>
           </div>
           {error && (
-            <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: 6 }}>{error}</div>
+            <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{error}</div>
           )}
         </>
       )}
@@ -1155,7 +1155,7 @@ function DoneBlockFn({
   const card = lead?.card ?? null;
 
   const reopen = (
-    <div style={{ display: "flex", justifyContent: "flex-end", margin: "14px 0 0" }}>
+    <div style={{ display: "flex", justifyContent: "flex-end", margin: "var(--space-4) 0 0" }}>
       <button className="btn sm ghost" onClick={onReopen}>
         ↩ Reopen
       </button>
@@ -1391,7 +1391,7 @@ export function TechJobModalContent() {
           each prompt to add a number in-flow when none is on file. They disable
           only with NO linked customer (nobody to call). */}
       {isOffice && (
-        <div style={{ marginBottom: 0 }}>
+        <div style={{ marginBottom: "0" }}>
           <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
             <button
               className="btn"
@@ -1437,7 +1437,7 @@ export function TechJobModalContent() {
           <span className="nav">Navigate →</span>
         </button>
       ) : (
-        <div className="muted" style={{ fontSize: 12.5, margin: "12px 0 4px" }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)", margin: "var(--space-3) 0 var(--space-1)" }}>
           No address on this job yet.
         </div>
       )}
@@ -1479,7 +1479,7 @@ export function TechJobModalContent() {
         </div>
         {done ? (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
-            <span className="muted" style={{ fontSize: 12.5 }}>
+            <span className="muted" style={{ fontSize: "var(--type-base)" }}>
               {curVisit
                 ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site`
                 : "Completed"}
@@ -1507,7 +1507,7 @@ export function TechJobModalContent() {
             />
           ))
         ) : (
-          <div className="empty-att" style={{ marginBottom: 0 }}>
+          <div className="empty-att" style={{ marginBottom: "0" }}>
             Not scheduled yet — the office will set the time.
           </div>
         )}
@@ -1551,7 +1551,7 @@ export function TechJobModalContent() {
 
       {/* Close — a real full-width Done so the field view isn't dismissable only
           via the tiny shell ✕ (every other modal ends with a primary action). */}
-      <div style={{ display: "flex", marginTop: 18 }}>
+      <div style={{ display: "flex", marginTop: "var(--space-5)" }}>
         <button className="btn primary" style={{ flex: 1 }} onClick={close}>
           Done
         </button>

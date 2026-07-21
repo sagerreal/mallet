@@ -128,7 +128,7 @@ function WeekdayRow({ dayLabel, weekday, draft, onChange }: WeekdayRowProps) {
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-2) 0", flexWrap: "wrap" }}>
       <span style={{ minWidth: 40, fontWeight: 700, fontSize: "var(--type-base)" }}>{dayLabel}</span>
       <Segmented
         value={draft.mode}
@@ -212,18 +212,18 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
   }
 
   return (
-    <div style={{ borderBottom: "1px solid var(--line-2)", paddingBottom: 10, marginBottom: 10 }}>
+    <div style={{ borderBottom: "1px solid var(--line-2)", paddingBottom: "var(--space-3)", marginBottom: "var(--space-3)" }}>
       <div
         style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer", userSelect: "none" }}
         onClick={() => setOpen((v) => !v)}
       >
         <span style={{ fontSize: "var(--type-base)", color: "var(--ink-3)" }}>{open ? "▾" : "▸"}</span>
-        <span style={{ flex: 1, fontWeight: 600, fontSize: "13.5px" }}>{displayName}</span>
-        <span className="muted" style={{ fontSize: "11.5px" }}>{summary}</span>
+        <span style={{ flex: 1, fontWeight: 600, fontSize: "var(--type-base)" }}>{displayName}</span>
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{summary}</span>
       </div>
 
       {open && (
-        <div style={{ paddingTop: 10, paddingLeft: "var(--space-5)" }}>
+        <div style={{ paddingTop: "var(--space-3)", paddingLeft: "var(--space-5)" }}>
           {WEEKDAYS.map(({ label, n }) => (
             <WeekdayRow
               key={n}
@@ -233,7 +233,7 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
               onChange={handleDayChange}
             />
           ))}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
             <button
               className="btn primary"
               disabled={save.isPending || !isDirty}
@@ -248,7 +248,7 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
             )}
           </div>
           {saveError && (
-            <div style={{ color: "var(--red-700, #b42318)", fontSize: "var(--type-sm)", marginTop: 6 }}>
+            <div style={{ color: "var(--red-700, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
               {saveError}
             </div>
           )}
@@ -280,17 +280,17 @@ export function CrewHoursCard() {
   return (
     <FoldCard title="Crew hours" summary={summary}>
       {isLoading && (
-        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>Loading…</p>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>Loading…</p>
       )}
 
       {isError && !isLoading && (
-        <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-sm)", margin: 0 }}>
+        <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-sm)", margin: "0" }}>
           Couldn&apos;t load crew schedules — refresh to try again.
         </p>
       )}
 
       {!isLoading && !isError && fieldCrew.length === 0 && (
-        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>
           No field crew yet — mark a team member as field crew to set their hours.
         </p>
       )}

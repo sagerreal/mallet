@@ -129,7 +129,7 @@ export interface MoneyTableProps {
 export function MoneyTable({ rows, visibleCols, armedCharge, cb, emptyState }: MoneyTableProps) {
   const cols = MONEY_COL_ORDER.filter((c) => visibleCols.includes(c));
   return (
-    <div className="card" style={{ padding: "6px 14px" }}>
+    <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
       <table className="list-tbl">
         <thead>
           <tr>

@@ -56,7 +56,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
   const callIsPrimary = lead.stage === "New customer";
 
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div style={{ marginBottom: "var(--space-5)" }}>
       {/* Header: avatar beside a column of name + metadata, both left-aligned
           to each other; right padding keeps the editable name clear of the ✕. */}
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
@@ -78,7 +78,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         >
           {initials}
         </div>
-        <div style={{ flex: 1, minWidth: 0, paddingRight: 34 }}>
+        <div style={{ flex: 1, minWidth: 0, paddingRight: "var(--space-8)" }}>
           <input
             className="lead-name"
             value={nameVal}
@@ -93,7 +93,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           />
 
           {/* Metadata line: soft stage pill (dot carries the color) · source · phone */}
-          <div className="lead-meta" style={{ marginTop: 7 }}>
+          <div className="lead-meta" style={{ marginTop: "var(--space-2)" }}>
             <span className={`stage-pill ${stageCls}`}>
               <span className="dot" aria-hidden="true" />
               {lead.stage}
@@ -132,10 +132,10 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           display: "flex",
           alignItems: "center",
           gap: "var(--space-2)",
-          marginBottom: 14,
+          marginBottom: "var(--space-4)",
           border: "1.5px solid var(--line)",
           borderRadius: "var(--radius-md)",
-          padding: "8px 11px",
+          padding: "var(--space-2) var(--space-3)",
         }}
       >
         <svg
@@ -165,10 +165,10 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
             border: "none",
             background: "transparent",
             fontFamily: "inherit",
-            fontSize: 13.5,
+            fontSize: "var(--type-base)",
             color: "var(--ink)",
             outline: "none",
-            padding: 0,
+            padding: "0",
           }}
         />
       </label>
@@ -193,13 +193,13 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         >
           <ChatIcon /> Text
           {lead.unread ? (
-            <span className="pill blue" style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10 }}>new</span>
+            <span className="pill blue" style={{ marginLeft: "var(--space-2)", padding: "var(--space-2xs) var(--space-2)", fontSize: "var(--type-xs)" }}>new</span>
           ) : null}
         </button>
 
         {/* Thin divider between contact and advance-the-deal clusters */}
         <span
-          style={{ width: 1, alignSelf: "stretch", background: "var(--line)", margin: "3px 5px" }}
+          style={{ width: 1, alignSelf: "stretch", background: "var(--line)", margin: "var(--space-1) var(--space-1)" }}
           aria-hidden="true"
         />
         {lead.stage !== "Won" && lead.stage !== "Lost" && (
@@ -224,7 +224,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
 // Small inline icons so Call / Text read as quick utilities, not heavy buttons.
 function PhoneIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: "-2px" }} aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "var(--space-1)", verticalAlign: "-2px" }} aria-hidden="true">
       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
     </svg>
   );
@@ -232,7 +232,7 @@ function PhoneIcon() {
 
 function ChatIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 5, verticalAlign: "-2px" }} aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "var(--space-1)", verticalAlign: "-2px" }} aria-hidden="true">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
     </svg>
   );

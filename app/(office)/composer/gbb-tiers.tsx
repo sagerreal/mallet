@@ -22,9 +22,9 @@ import { LineTable } from "./line-table";
 const tierInputStyle: React.CSSProperties = {
   border: "1.5px solid var(--line)",
   borderRadius: "var(--radius-sm)",
-  padding: "6px 9px",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
-  fontSize: "13px",
+  fontSize: "var(--type-base)",
   background: "var(--card)",
   color: "var(--ink)",
 };
@@ -71,7 +71,7 @@ export function GbbTiers({
             key={tier.k}
             className="card"
             style={{
-              margin: 0,
+              margin: "0",
               border: isRec ? "2px solid var(--green-600)" : undefined,
             }}
           >
@@ -80,7 +80,7 @@ export function GbbTiers({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
+                gap: "var(--space-3)",
                 flexWrap: "wrap",
               }}
             >
@@ -101,8 +101,8 @@ export function GbbTiers({
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 5,
-                  fontSize: 12.5,
+                  gap: "var(--space-1)",
+                  fontSize: "var(--type-base)",
                   fontWeight: 700,
                   color: isRec ? "var(--green-700)" : "var(--ink-3)",
                   cursor: "pointer",
@@ -125,7 +125,7 @@ export function GbbTiers({
 
             {/* Suggestion blurb — set by "Suggest Better & Best from Good" */}
             {tier.note && (
-              <p className="muted" style={{ fontSize: 11.5, margin: "6px 0 0" }}>
+              <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
                 {tier.note}
               </p>
             )}
@@ -142,7 +142,7 @@ export function GbbTiers({
         );
       })}
 
-      <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+      <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>
         Customers pick one of the options on their quote page — the recommended
         one is highlighted.
       </p>

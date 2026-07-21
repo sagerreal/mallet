@@ -55,9 +55,9 @@ function DeliveryContactField({
   const placeholder = channel === "text" ? "(925) 555-0123" : "name@email.com";
 
   return (
-    <div style={{ marginTop: 10 }}>
+    <div style={{ marginTop: "var(--space-3)" }}>
       <label
-        style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 3 }}
+        style={{ display: "block", fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--space-1)" }}
       >
         {label}
       </label>
@@ -78,9 +78,9 @@ function DeliveryContactField({
           maxWidth: 280,
           border: "1.5px solid var(--line)",
           borderRadius: "var(--radius-sm, 9px)",
-          padding: "8px 11px",
+          padding: "var(--space-2) var(--space-3)",
           fontFamily: "inherit",
-          fontSize: 13.5,
+          fontSize: "var(--type-base)",
           background: "var(--card)",
           color: "var(--ink)",
         }}
@@ -129,10 +129,10 @@ export function SendCard({
 
   return (
     <div className="card" style={{ borderColor: "#E6DCC4" }}>
-      <h3 style={{ marginTop: 0 }}>Send</h3>
+      <h3 style={{ marginTop: "0" }}>Send</h3>
 
       {/* Text / email channel toggle */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
         <button
           type="button"
           className={`btn sm${state.sendChannel === "text" ? " primary" : " ghost"}`}
@@ -156,7 +156,7 @@ export function SendCard({
           <b style={{ fontSize: "var(--type-base)" }}>Send by text</b>
           <p
             className="muted"
-            style={{ fontSize: "var(--type-sm)", margin: "3px 0 0" }}
+            style={{ fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}
           >
             They tap the link, see it, approve it — no inbox to dig
             through, nothing blocks the send.
@@ -172,7 +172,7 @@ export function SendCard({
           <b style={{ fontSize: "var(--type-base)" }}>Send by email</b>
           <p
             className="muted"
-            style={{ fontSize: "var(--type-sm)", margin: "3px 0 0" }}
+            style={{ fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}
           >
             They click the link in the email, see the quote, and approve
             right there.
@@ -210,8 +210,8 @@ export function SendCard({
             background: "var(--amber-bg)",
             border: "1px solid var(--amber)",
             borderRadius: "var(--radius-sm)",
-            padding: "8px 12px",
-            fontSize: 12.5,
+            padding: "var(--space-2) var(--space-3)",
+            fontSize: "var(--type-base)",
             color: "var(--amber)",
             marginTop: "var(--space-3)",
           }}
@@ -226,12 +226,12 @@ export function SendCard({
           display: "flex",
           justifyContent: "flex-end",
           alignItems: "center",
-          gap: 10,
+          gap: "var(--space-3)",
           marginTop: "var(--space-3)",
         }}
       >
         {shownReason && (
-          <span className="muted" style={{ fontSize: 12.5 }}>
+          <span className="muted" style={{ fontSize: "var(--type-base)" }}>
             {shownReason}
           </span>
         )}

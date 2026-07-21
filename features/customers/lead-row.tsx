@@ -26,7 +26,7 @@ function LeadCell({ lead, col, value }: LeadCellProps) {
         <b>
           {lead.name}
           {lead.unread && (
-            <span className="pill blue" style={{ marginLeft: 6 }}>
+            <span className="pill blue" style={{ marginLeft: "var(--space-2)" }}>
               new text
             </span>
           )}

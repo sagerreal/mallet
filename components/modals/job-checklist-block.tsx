@@ -168,7 +168,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
 
   return (
     <div className="card" style={{ marginTop: "var(--space-4)" }}>
-      <h3 style={{ margin: "0 0 6px", fontSize: "var(--type-base)" }}>Add a checklist</h3>
+      <h3 style={{ margin: "0 0 var(--space-2)", fontSize: "var(--type-base)" }}>Add a checklist</h3>
 
       {saved.map((c) => (
         <div key={c.id} className="stage-row clickable" style={{ gap: "var(--space-2)" }}>
@@ -193,7 +193,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
         <div className="stage-row" style={{ gap: "var(--space-2)" }}>
           <span
             className="linklike"
-            style={{ fontSize: 12.5, fontWeight: 700 }}
+            style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
             onClick={() => void seedStarters()}
           >
             Start with plumbing basics
@@ -213,7 +213,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
           setLinesRaw(e.target.value);
           if (error) setError("");
         }}
-        style={{ width: "100%", marginTop: 10, resize: "vertical" }}
+        style={{ width: "100%", marginTop: "var(--space-3)", resize: "vertical" }}
       />
       <input
         type="text"
@@ -225,7 +225,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
         style={{ width: "100%", marginTop: "var(--space-2)" }}
       />
       {error && (
-        <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: 6 }}>{error}</div>
+        <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{error}</div>
       )}
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", marginTop: "var(--space-2)" }}>
         <button
@@ -270,7 +270,7 @@ export function JobChecklistBlock({ job }: { job: Job }) {
     return (
       <div className="card" style={{ marginTop: "var(--space-4)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <h3 style={{ margin: 0, fontSize: "var(--type-base)" }}>Before you leave</h3>
+          <h3 style={{ margin: "0", fontSize: "var(--type-base)" }}>Before you leave</h3>
           <span
             className="linklike"
             style={{ fontSize: "var(--type-sm)" }}
@@ -279,12 +279,12 @@ export function JobChecklistBlock({ job }: { job: Job }) {
             Remove
           </span>
         </div>
-        <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>{job.checklist.name}</div>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>{job.checklist.name}</div>
         {removeError && (
-          <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginBottom: 6 }}>{removeError}</div>
+          <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>{removeError}</div>
         )}
         {job.checklist.items.map((it) => (
-          <div key={it.id} className="stage-row" style={{ gap: "var(--space-2)", padding: "4px 0" }}>
+          <div key={it.id} className="stage-row" style={{ gap: "var(--space-2)", padding: "var(--space-1) 0" }}>
             <span style={{ color: it.required ? "var(--amber)" : "var(--ink-3)" }}>
               {it.type === "photo" ? "📷" : "○"}
             </span>
@@ -310,7 +310,7 @@ export function JobChecklistBlock({ job }: { job: Job }) {
       >
         + Add a checklist
       </span>{" "}
-      <span className="muted" style={{ fontSize: 11.5 }}>
+      <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
         — the crew runs it before they leave (optional, per job)
       </span>
     </div>

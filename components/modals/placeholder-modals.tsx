@@ -32,7 +32,7 @@ export function CleanUpModalContent() {
           ? "Mark as lost or archive this customer."
           : "No customer selected — close and pick one to clean up."}
       </p>
-      <div style={{ marginTop: "var(--space-5)", display: "flex", gap: 10 }}>
+      <div style={{ marginTop: "var(--space-5)", display: "flex", gap: "var(--space-3)" }}>
         <button
           className="btn ghost bad"
           onClick={handleArchive}

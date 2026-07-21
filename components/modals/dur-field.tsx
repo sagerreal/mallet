@@ -101,7 +101,7 @@ export function DurField({ dur, onChange }: DurFieldProps) {
   }
 
   return (
-    <div className="field" style={{ margin: 0 }}>
+    <div className="field" style={{ margin: "0" }}>
       <label>Length</label>
       <div
         className="sched-dur"
