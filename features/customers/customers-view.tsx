@@ -14,7 +14,7 @@ import type { Estimate } from "@/lib/store/types";
 import { isStaleLead } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { filterLeads, sortLeads } from "./customers-utils";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
@@ -26,6 +26,7 @@ import { CompaniesView } from "./companies-view";
 import { estTotal } from "@/lib/estimates";
 import { pressable } from "@/lib/a11y";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
 
 const SORTABLE_COLS = new Set(["name", "age", "stage", "value"]);
 
@@ -63,6 +64,7 @@ export function CustomersView() {
   );
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: leads.length });
   const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: leads.length });
+  const loading = isFirstLoad({ isFetched, isError, count: leads.length });
 
   // $ on the table per customer: open (sent) quotes for active pipeline, else
   // the won total once accepted, else nothing. Derived in the body (not a selector).
@@ -169,7 +171,9 @@ export function CustomersView() {
         <button className="btn primary" onClick={() => openModal(MODAL.NEW_CUSTOMER)}>+ New customer</button>
       </div>
 
-      {loadFailed ? (
+      {loading ? (
+        <ListLoading />
+      ) : loadFailed ? (
         <LoadFailed noun="customers" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : firstRun ? (
         <FirstRunEmptyState

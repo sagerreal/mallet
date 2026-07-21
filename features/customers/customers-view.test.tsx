@@ -65,11 +65,15 @@ describe("CustomersView — first-run empty state", () => {
     expect(screen.getByTestId("toolbar")).toBeTruthy();
   });
 
-  it("does NOT flash the first-run screen while the list is still loading", () => {
+  it("shows the quiet loading state on cold load — not the first-run flash, not the list chrome", () => {
+    // isFirstLoad window: the hydrator's first fetch is in flight and the store is
+    // empty. A shop that HAS customers must not see "No customers yet" for ~1s on
+    // reload, and the toolbar shouldn't render over an empty table either.
     queryState = { isFetched: false, isError: false };
     render(<CustomersView />);
     expect(screen.queryByText("No customers yet")).toBeNull();
-    expect(screen.getByTestId("toolbar")).toBeTruthy();
+    expect(screen.queryByTestId("toolbar")).toBeNull();
+    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
   it("shows the load-failed state — not the first-run screen — when the load errored", () => {

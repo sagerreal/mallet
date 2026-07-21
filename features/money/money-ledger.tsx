@@ -14,7 +14,7 @@ import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import {
   deriveMoneyRows,
@@ -26,6 +26,7 @@ import {
 import { MoneyTable, MONEY_COL_ORDER, type MoneyColKey, type MoneyRowCallbacks } from "./money-table";
 import { MoneyToolbar, MoneyColumnsPanel, MoneyFiltersPanel, type MoneySet } from "./money-toolbar";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
 
 function MoneyHeader({
   autoRemind,
@@ -227,6 +228,7 @@ export function MoneyLedger() {
   );
   const firstRun = shouldShowFirstRun({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
   const loadFailed = shouldShowLoadFailed({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
+  const loading = isFirstLoad({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
 
   return (
     <>
@@ -236,7 +238,9 @@ export function MoneyLedger() {
         <button className="btn primary" onClick={newInvoice}>+ New invoice</button>
       </div>
 
-      {loadFailed ? (
+      {loading ? (
+        <ListLoading />
+      ) : loadFailed ? (
         <LoadFailed noun="invoices" onRetry={() => void invQuery.refetch()} retrying={invQuery.isRefetching} />
       ) : firstRun ? (
         <FirstRunEmptyState

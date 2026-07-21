@@ -61,10 +61,10 @@ describe("MoneyLedger — first-run empty state", () => {
     expect(screen.getByTestId("table")).toBeTruthy();
   });
 
-  it("does not flash the first-run screen while loading", () => {
+  it("shows the quiet loading state on cold load — not the first-run flash", () => {
     q = { isFetched: false, isError: false };
     render(<MoneyLedger />);
     expect(screen.queryByText("No invoices yet")).toBeNull();
-    expect(screen.getByTestId("toolbar")).toBeTruthy();
+    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 });

@@ -49,10 +49,10 @@ describe("TimesheetsPanel — first-run empty state", () => {
     expect(screen.getByRole("button", { name: "+ Add entry" })).toBeTruthy();
   });
 
-  it("does not flash the first-run screen while loading (grid renders instead)", () => {
+  it("shows the quiet loading state on cold load — not the first-run flash", () => {
     q = { isFetched: false, isError: false };
     render(<TimesheetsPanel />);
     expect(screen.queryByText("No hours logged yet")).toBeNull();
-    expect(screen.getByText("Timesheets")).toBeTruthy();
+    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 });
