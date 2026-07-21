@@ -16,8 +16,9 @@ import { writeFileSync } from "node:fs";
 import { ROUTES } from "./helpers/routes";
 import { login, prepare, settle, OWNER, TECH } from "./helpers/ui";
 
-/** Phase 7 sets this to 0. Until then the scan reports rather than blocks. */
-const ALLOW_VIOLATIONS = Number(process.env.A11Y_MAX ?? Number.POSITIVE_INFINITY);
+/** Now 0 — the automated axe scan is clean, so any regression fails the run.
+ *  Override with A11Y_MAX=<n> only to triage locally. */
+const ALLOW_VIOLATIONS = Number(process.env.A11Y_MAX ?? 0);
 
 const results: Record<string, { violations: number; ids: string[] }> = {};
 

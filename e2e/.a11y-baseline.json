@@ -1,29 +1,21 @@
 {
-  "total": 10,
+  "total": 0,
   "routes": {
     "login": {
-      "violations": 1,
-      "ids": [
-        "color-contrast(1)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "signup": {
-      "violations": 1,
-      "ids": [
-        "color-contrast(1)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "forgot-password": {
-      "violations": 1,
-      "ids": [
-        "color-contrast(1)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "office-today": {
-      "violations": 1,
-      "ids": [
-        "color-contrast(1)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "office-frontdesk": {
       "violations": 0,
@@ -38,27 +30,20 @@
       "ids": []
     },
     "customers": {
-      "violations": 1,
-      "ids": [
-        "color-contrast(2)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "pipeline": {
       "violations": 0,
       "ids": []
     },
     "tasks": {
-      "violations": 1,
-      "ids": [
-        "color-contrast(1)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "jobs": {
-      "violations": 2,
-      "ids": [
-        "aria-allowed-attr(3)",
-        "color-contrast(11)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "jobs-schedule": {
       "violations": 0,
@@ -69,10 +54,8 @@
       "ids": []
     },
     "money": {
-      "violations": 1,
-      "ids": [
-        "color-contrast(7)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "composer": {
       "violations": 0,
@@ -87,10 +70,8 @@
       "ids": []
     },
     "settings-team": {
-      "violations": 1,
-      "ids": [
-        "select-name(3)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "settings-channels": {
       "violations": 0,

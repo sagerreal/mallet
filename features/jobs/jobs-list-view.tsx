@@ -80,20 +80,13 @@ function SortTh({
       : "descending"
     : "none";
   return (
-    <th
-      className={right ? "r" : undefined}
-      role="button"
-      tabIndex={0}
-      aria-sort={ariaSort}
-      onClick={() => onActivate(col)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate(col);
-        }
-      }}
-    >
-      {label} {active ? <span className="caret">{sort.dir === "asc" ? "▴" : "▾"}</span> : null}
+    // The <th> keeps its implicit columnheader role (which allows aria-sort); the
+    // sort trigger is a nested <button>, so aria-sort is no longer on a button role
+    // (aria-allowed-attr) and the header is properly a sortable column header.
+    <th className={right ? "r" : undefined} aria-sort={ariaSort}>
+      <button type="button" className="th-sort" onClick={() => onActivate(col)}>
+        {label} {active ? <span className="caret">{sort.dir === "asc" ? "▴" : "▾"}</span> : null}
+      </button>
     </th>
   );
 }
