@@ -36,7 +36,7 @@ export default function SetPasswordPage() {
       <h1 className="auth-title">Set your password</h1>
       <p className="auth-sub">Choose a password to finish joining your team.</p>
       <Card>
-        <form onSubmit={onSubmit} className="space-y-3">
+        <form onSubmit={onSubmit} className="stack-3">
           <Field label="Your name">
             <Input
               name="fullName"
@@ -57,8 +57,8 @@ export default function SetPasswordPage() {
               placeholder="8+ characters"
             />
           </Field>
-          {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
-          <Button type="submit" className="w-full" disabled={busy}>
+          {error ? <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{error}</p> : null}
+          <Button type="submit" style={{ width: "100%" }} disabled={busy}>
             {busy ? "Saving…" : "Set password and continue"}
           </Button>
         </form>

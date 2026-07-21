@@ -30,7 +30,7 @@ export function RecordPaymentSheet({ invoiceId, dueCents, open, onClose }: { inv
 
   return (
     <Sheet open={open} title="Record payment" onClose={onClose}>
-      <form onSubmit={onSubmit} className="space-y-3">
+      <form onSubmit={onSubmit} className="stack-3">
         <Field label="Amount ($)">
           <Input name="amount" type="number" min={0.01} step={0.01} defaultValue={(dueCents / 100).toFixed(2)} required />
         </Field>
@@ -39,7 +39,7 @@ export function RecordPaymentSheet({ invoiceId, dueCents, open, onClose }: { inv
             {METHODS.map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
           </Select>
         </Field>
-        {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
+        {error ? <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{error}</p> : null}
         <Button type="submit" disabled={record.isPending}>Record payment</Button>
       </form>
     </Sheet>

@@ -1,26 +1,8 @@
-@import "tailwindcss";
-
-/* Design tokens live in prototype.css (:root block).
-   This file only maps next/font CSS variables → prototype token names,
-   and wires up a minimal Tailwind theme bridge so existing Tailwind utility
-   classes that reference colors keep working. */
-
-@theme {
-  /* Fonts — variables injected by next/font in layout.tsx */
-  --font-display: var(--font-space-grotesk);
-
-  /* Color bridge: Tailwind utilities → prototype CSS vars.
-     Shrunk in P3b — the primitive rewrite (P3a) orphaned every other entry, and
-     the simple adopter files were ported to inline token styles. What remains is
-     the minimal set still referenced by the two heavy Tailwind pages
-     (money/[id], jobs/[id]); THIS BLOCK DIES ENTIRELY when P4 migrates those two.
-     prototype.css :root is the single source of truth for tokens. */
-  --color-line: var(--line);
-  --color-ink: var(--ink);
-  --color-ink-muted: var(--ink-2);
-  --color-red: var(--red);
-  --color-blue: var(--blue);
-}
+/* Global overrides layered on top of prototype.css — the single source of truth
+   for design tokens. Tailwind (and its @theme color/font bridge) was removed in
+   P4f/2; prototype.css now wires the next/font variables into its own font tokens
+   and carries the base line-height. This file only holds a few app-level
+   overrides + the view-transition rules. */
 
 /* Override: the prototype had a fixed AI sidebar (360px right margin) that
    is retired in this app — the AI lives in the command bar instead. */
