@@ -24,7 +24,7 @@ export default function ResetPasswordPage() {
     <Card>
       <form onSubmit={onSubmit} className="space-y-3">
         <Field label="New password"><Input name="password" type="password" required minLength={8} autoComplete="new-password" /></Field>
-        {error ? <p className="text-sm text-red">{error}</p> : null}
+        {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
         <Button type="submit" className="w-full">Set password</Button>
       </form>
     </Card>

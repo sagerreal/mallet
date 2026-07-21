@@ -8,30 +8,18 @@
 @theme {
   /* Fonts — variables injected by next/font in layout.tsx */
   --font-display: var(--font-space-grotesk);
-  --font-body: var(--font-inter);
-  --font-mono: var(--font-space-mono);
 
-  /* Color bridge: Tailwind utilities → prototype CSS vars */
-  --color-bg: var(--bg);
-  --color-card: var(--card);
-  --color-paper: var(--paper);
+  /* Color bridge: Tailwind utilities → prototype CSS vars.
+     Shrunk in P3b — the primitive rewrite (P3a) orphaned every other entry, and
+     the simple adopter files were ported to inline token styles. What remains is
+     the minimal set still referenced by the two heavy Tailwind pages
+     (money/[id], jobs/[id]); THIS BLOCK DIES ENTIRELY when P4 migrates those two.
+     prototype.css :root is the single source of truth for tokens. */
   --color-line: var(--line);
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-2);
-  --color-accent: var(--accent);
-  --color-accent-fg: var(--pri-fg);
-  --color-manila: var(--manila);
-  --color-manila-line: var(--manila-line);
-  --color-amber: var(--amber);
-  --color-amber-bg: var(--amber-bg);
   --color-red: var(--red);
-  --color-red-bg: var(--red-bg);
   --color-blue: var(--blue);
-  --color-blue-bg: var(--blue-bg);
-
-  /* Shape */
-  --radius-card: var(--radius);
-  --radius-control: var(--radius-sm);
 }
 
 /* Override: the prototype had a fixed AI sidebar (360px right margin) that

@@ -57,7 +57,7 @@ export default function SetPasswordPage() {
               placeholder="8+ characters"
             />
           </Field>
-          {error ? <p className="text-sm text-red">{error}</p> : null}
+          {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? "Saving…" : "Set password and continue"}
           </Button>

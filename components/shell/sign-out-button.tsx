@@ -4,7 +4,7 @@ import { signOut } from "@/features/auth/hooks";
 export function SignOutButton() {
   return (
     <button
-      className="text-sm text-ink-muted underline"
+      className="text-sm underline" style={{ color: "var(--ink-2)" }}
       onClick={async () => {
         await signOut();
         location.assign("/login");

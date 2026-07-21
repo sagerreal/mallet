@@ -72,7 +72,7 @@ export function JobActions({ job }: { job: JobLike }) {
           </Select>
         </Field>
       ) : null}
-      {error ? <p className="text-sm text-red">{error}</p> : null}
+      {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
       <Sheet open={panel === "reschedule"} title="Reschedule" onClose={() => setPanel("none")}>
         <form
           className="space-y-3"
