@@ -1,5 +1,5 @@
 {
-  "total": 14,
+  "total": 10,
   "routes": {
     "login": {
       "violations": 1,
@@ -44,10 +44,8 @@
       ]
     },
     "pipeline": {
-      "violations": 1,
-      "ids": [
-        "nested-interactive(13)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "tasks": {
       "violations": 1,
@@ -56,11 +54,10 @@
       ]
     },
     "jobs": {
-      "violations": 3,
+      "violations": 2,
       "ids": [
         "aria-allowed-attr(3)",
-        "color-contrast(11)",
-        "nested-interactive(4)"
+        "color-contrast(11)"
       ]
     },
     "jobs-schedule": {
@@ -72,10 +69,9 @@
       "ids": []
     },
     "money": {
-      "violations": 2,
+      "violations": 1,
       "ids": [
-        "color-contrast(7)",
-        "nested-interactive(14)"
+        "color-contrast(7)"
       ]
     },
     "composer": {
@@ -113,10 +109,8 @@
       "ids": []
     },
     "field-my-day": {
-      "violations": 1,
-      "ids": [
-        "nested-interactive(1)"
-      ]
+      "violations": 0,
+      "ids": []
     },
     "field-my-hours": {
       "violations": 0,

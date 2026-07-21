@@ -57,6 +57,22 @@ export async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts?.ready);
   // Hydrators fill the Zustand store client-side; give them a beat past networkidle.
   await page.waitForTimeout(600);
+
+  // Scroll-prime: a fullPage screenshot of a very long list (e.g. /money mobile)
+  // was flaking — content below the initial viewport rendered in the next/font
+  // fallback face and only swapped to the real face when the capture scrolled it
+  // into view, so its glyph edges differed run-to-run. Walk the whole page once
+  // to force every row to render + swap fonts, then wait for fonts.ready again.
+  await page.evaluate(async () => {
+    const step = window.innerHeight;
+    for (let y = 0; y <= document.body.scrollHeight; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    window.scrollTo(0, 0);
+  });
+  await page.evaluate(() => document.fonts?.ready);
+  await page.waitForTimeout(300);
 }
 
 /**
