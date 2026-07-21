@@ -39,7 +39,7 @@ export function RecordPaymentSheet({ invoiceId, dueCents, open, onClose }: { inv
             {METHODS.map((m) => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
           </Select>
         </Field>
-        {error ? <p className="text-sm text-red">{error}</p> : null}
+        {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
         <Button type="submit" disabled={record.isPending}>Record payment</Button>
       </form>
     </Sheet>
