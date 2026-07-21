@@ -84,12 +84,12 @@ export function AddChecklistModal({
         <p style={{ color: "var(--red)", fontSize: 12.5, margin: "8px 0 0" }} role="alert">{error}</p>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-2)", marginTop: 18 }}>
         {/* Draft with AI: the name is the job type; drafted steps land in the editor to edit + save. */}
         <button className="btn ghost" onClick={handleDraft} disabled={!name.trim() || drafting}>
           {drafting ? "Drafting…" : "Draft with AI"}
         </button>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button className="btn ghost" onClick={handleClose} disabled={drafting}>Cancel</button>
           <button className="btn primary" disabled={!name.trim() || drafting} onClick={handleAdd}>
             Add checklist

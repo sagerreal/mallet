@@ -380,7 +380,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
           />
-          <div className="muted" id="qaDupHint" style={{ fontSize: 12, marginTop: 4 }} />
+          <div className="muted" id="qaDupHint" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }} />
         </div>
 
         {/* 3. Service address — right under Phone; field service lives or dies on it */}
@@ -561,7 +561,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         </div>
 
         {/* 8. More details reveal */}
-        <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginBottom: 20 }}>
+        <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginBottom: "var(--space-5)" }}>
           <div
             className="reveal-head"
             onClick={() => setMoreOpen((o) => !o)}
@@ -633,7 +633,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
               <button
                 type="button"
                 className="btn ghost sm"
-                style={{ fontSize: 12 }}
+                style={{ fontSize: "var(--type-sm)" }}
                 onClick={() => setShowAddField(true)}
               >
                 + Add a custom field
@@ -643,7 +643,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         </div>
 
         {error && (
-          <p style={{ color: "var(--red)", fontSize: 13, margin: "0 0 12px" }}>{error}</p>
+          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "0 0 12px" }}>{error}</p>
         )}
 
         {/* Dedup notice — shown when the submitted phone already belongs to an existing customer */}
@@ -653,8 +653,8 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             border: "1px solid var(--border, #e0e0e0)",
             borderRadius: 8,
             padding: "10px 14px",
-            marginBottom: 12,
-            fontSize: 13,
+            marginBottom: "var(--space-3)",
+            fontSize: "var(--type-base)",
           }}>
             <p style={{ margin: "0 0 8px", color: "var(--text-1, #111)" }}>
               A customer with that phone already exists.

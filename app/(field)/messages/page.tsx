@@ -220,7 +220,7 @@ function ConversationRow({
         style={{
           width: 38,
           height: 38,
-          fontSize: 13,
+          fontSize: "var(--type-base)",
           background: "var(--manila-2)",
           color: "var(--ink-2)",
         }}
@@ -258,7 +258,7 @@ function CustomerInbox() {
         {[0, 1, 2].map((i) => (
           <div key={i} className="sk-row">
             <div className="sk" style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0 }} />
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-2)", justifyContent: "center" }}>
               <div className="sk" style={{ width: "60%", height: 14 }} />
               <div className="sk" style={{ width: "40%", height: 12 }} />
             </div>
@@ -316,7 +316,7 @@ function MalletAiCard({ onClick }: MalletAiCardProps) {
         style={{
           width: 38,
           height: 38,
-          fontSize: 17,
+          fontSize: "var(--type-lg)",
           background: "var(--ink)",
           color: "var(--paper)",
         }}

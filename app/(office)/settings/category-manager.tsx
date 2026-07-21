@@ -36,7 +36,7 @@ export function CategoryManager({ categories, onAdd }: CategoryManagerProps) {
   }
 
   return (
-    <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+    <div style={{ marginTop: 14, paddingTop: "var(--space-3)", borderTop: "1px solid var(--line)" }}>
       <div
         style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}
         onClick={() => setOpen((v) => !v)}
@@ -47,24 +47,24 @@ export function CategoryManager({ categories, onAdd }: CategoryManagerProps) {
         Categories ({categories.length})
       </div>
       {open && (
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: "var(--space-2)" }}>
           {categories.map((c) => (
             <div key={c.id} className="stage-row" style={{ padding: "6px 0" }}>
               <span style={{ flex: 1 }}>{c.name}</span>
             </div>
           ))}
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
             <input
               type="text"
               placeholder="e.g. Water Heaters"
               value={name}
               onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
               onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
-              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 9px", fontFamily: "inherit", fontSize: 13 }}
+              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 9px", fontFamily: "inherit", fontSize: "var(--type-base)" }}
             />
             <button className="btn sm" onClick={() => void handleAdd()}>+ Add category</button>
           </div>
-          {error && <p style={{ color: "var(--red)", fontSize: 12, margin: "6px 0 0" }}>{error}</p>}
+          {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "6px 0 0" }}>{error}</p>}
         </div>
       )}
     </div>

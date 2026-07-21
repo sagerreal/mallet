@@ -43,7 +43,7 @@ const ZERO = { done: 0, created: 0, deduped: 0, failed: 0 };
 
 const selectStyle: React.CSSProperties = {
   flex: 1, minWidth: 0, border: "1.5px solid var(--line)", borderRadius: 8,
-  padding: "8px 10px", fontFamily: "inherit", fontSize: 13, background: "var(--card)", color: "var(--ink)",
+  padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)", background: "var(--card)", color: "var(--ink)",
 };
 
 function Pill({ label, tone }: { label: string; tone: "ready" | "skipped" | "warn" }) {
@@ -53,7 +53,7 @@ function Pill({ label, tone }: { label: string; tone: "ready" | "skipped" | "war
     warn: { background: "var(--amber-bg)", color: "var(--amber)" },
   };
   return (
-    <span style={{ ...tones[tone], borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>
+    <span style={{ ...tones[tone], borderRadius: 999, padding: "3px 10px", fontSize: "var(--type-sm)", fontWeight: 700 }}>
       {label}
     </span>
   );
@@ -148,7 +148,7 @@ export function ImportServicesModalContent() {
 
       {phase === "upload" && (
         <>
-          <p className="muted" style={{ fontSize: 13, marginTop: 4, marginBottom: 18 }}>
+          <p className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-1)", marginBottom: 18 }}>
             Bring in your price book from Housecall Pro, Jobber, ServiceTitan, or a spreadsheet —
             export a CSV and drop it here.
           </p>
@@ -158,7 +158,7 @@ export function ImportServicesModalContent() {
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
             style={{
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-2)",
               padding: "34px 20px", textAlign: "center", cursor: "pointer",
               border: `2px dashed ${dragging ? "var(--ink)" : "var(--manila-line)"}`,
               borderRadius: 14, background: dragging ? "var(--green-100)" : "var(--manila)",
@@ -174,7 +174,7 @@ export function ImportServicesModalContent() {
             <div style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>
               Drag a CSV here, or click to browse
             </div>
-            <div className="muted" style={{ fontSize: 12 }}>.csv files only · up to a few thousand rows</div>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>.csv files only · up to a few thousand rows</div>
             <input type="file" accept=".csv,text/csv" onChange={onFile} aria-label="Upload a CSV file"
               style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0 0 0 0)", border: 0 }} />
           </label>
@@ -185,7 +185,7 @@ export function ImportServicesModalContent() {
 
       {phase === "map" && map && built && (
         <>
-          <p className="muted" style={{ fontSize: 13, marginTop: 4, marginBottom: 4 }}>
+          <p className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-1)", marginBottom: "var(--space-1)" }}>
             We matched your columns to Mallet fields — adjust any that look wrong.
           </p>
 
@@ -208,10 +208,10 @@ export function ImportServicesModalContent() {
             </div>
           )}
 
-          <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius)", overflow: "hidden" }}>
             {TARGETS.map((t, i) => (
               <label key={t.key} style={{
-                display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "10px 14px",
                 borderTop: i === 0 ? "none" : "1px solid var(--manila-line)",
               }}>
                 <span style={{ width: 96, fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}>{t.label}</span>
@@ -248,18 +248,18 @@ export function ImportServicesModalContent() {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "14px 0 4px" }}>
           <div style={{
             width: 46, height: 46, borderRadius: 999, background: "var(--green-100)",
-            display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12,
+            display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "var(--space-3)",
           }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--ink)"
               strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>
+          <div style={{ fontWeight: 800, fontSize: "var(--type-lg)" }}>
             {summary.created} service{summary.created === 1 ? "" : "s"} added
           </div>
           {(summary.deduped > 0 || summary.failed > 0) && (
-            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+            <div className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-1)" }}>
               {summary.deduped > 0 && `${summary.deduped} already in your book`}
               {summary.deduped > 0 && summary.failed > 0 && " · "}
               {summary.failed > 0 && `${summary.failed} couldn’t be read`}

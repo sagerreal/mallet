@@ -341,7 +341,7 @@ export function SchedulePanel() {
     return (
       <div
         className="wk-overview"
-        style={{ display: "grid", gridTemplateColumns: `repeat(${days.length}, minmax(0,1fr))`, gap: 8 }}
+        style={{ display: "grid", gridTemplateColumns: `repeat(${days.length}, minmax(0,1fr))`, gap: "var(--space-2)" }}
       >
         {days.map((iso) => {
           const entries = techs
@@ -411,7 +411,7 @@ export function SchedulePanel() {
   const day = schedView === "day";
 
   const toggle = (
-    <div style={{ display: "inline-flex", border: "1.5px solid var(--line)", borderRadius: 9, overflow: "hidden" }}>
+    <div style={{ display: "inline-flex", border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
       <button
         className={`btn sm ${day ? "primary" : "ghost"}`}
         style={{ border: "none", borderRadius: 0 }}
@@ -434,7 +434,7 @@ export function SchedulePanel() {
       <button className="btn sm ghost" onClick={() => setSchedDay((d) => addDaysLocal(d, -1))}>
         ‹ Prev
       </button>
-      <b style={{ fontSize: 13 }}>
+      <b style={{ fontSize: "var(--type-base)" }}>
         {schedDay === today ? "Today" : colLabel(schedDay)} ·{" "}
         {new Date(schedDay + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}
       </b>
@@ -452,7 +452,7 @@ export function SchedulePanel() {
       <button className="btn sm ghost" onClick={() => setWeekStart((w) => addDaysLocal(w, -7))}>
         ‹ Prev
       </button>
-      <b style={{ fontSize: 13 }}>{weekStart === today ? "This week" : `Week of ${colLabel(weekStart)}`}</b>
+      <b style={{ fontSize: "var(--type-base)" }}>{weekStart === today ? "This week" : `Week of ${colLabel(weekStart)}`}</b>
       <button className="btn sm ghost" onClick={() => setWeekStart((w) => addDaysLocal(w, 7))}>
         Next ›
       </button>
@@ -481,7 +481,7 @@ export function SchedulePanel() {
   if (firstRun) {
     return (
       <>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-4)" }}>
           <h1>Schedule</h1>
           <button className="btn" onClick={() => openModal(MODAL.NEW_JOB)}>
             + New job
@@ -498,7 +498,7 @@ export function SchedulePanel() {
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-4)" }}>
         <h1>Schedule</h1>
         <button className="btn" onClick={() => openModal(MODAL.NEW_JOB)}>
           + New job
@@ -508,10 +508,10 @@ export function SchedulePanel() {
       {/* To-schedule tray */}
       {trayCards.length > 0 ? (
         <div className="rail" style={{ marginBottom: 14 }}>
-          <b style={{ fontSize: 13 }}>
+          <b style={{ fontSize: "var(--type-base)" }}>
             To schedule <span className="muted" style={{ fontWeight: 600 }}>· {trayCards.length}</span>
           </b>
-          <div className="tray-grid" style={{ marginTop: 10, display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: 8 }}>
+          <div className="tray-grid" style={{ marginTop: 10, display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: "var(--space-2)" }}>
             {trayCards.map((card) => {
               const isJob = card.kind === "job";
               const name = isJob ? custName(card.j, leads) : card.l.name;
@@ -556,11 +556,11 @@ export function SchedulePanel() {
                     </button>
                     <b style={{ fontSize: "13.5px" }}>{name}</b>
                     <div className="muted" style={{ fontSize: "11.5px", margin: "2px 0 10px" }}>{title}</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-2)" }}>
                       <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
                         {m.lbl}
                       </span>
-                      <span className="muted" style={{ fontSize: 12, fontWeight: 700 }}>
+                      <span className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>
                         {hmLabel(total)} · {unplacedList.length} visits
                       </span>
                     </div>
@@ -624,11 +624,11 @@ export function SchedulePanel() {
                   )}
                   <b style={{ fontSize: "13.5px" }}>{name}</b>
                   <div className="muted" style={{ fontSize: "11.5px", margin: "2px 0 10px" }}>{title}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: 10 }}>
                     <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
                       {m.lbl}
                     </span>
-                    <span className="muted" style={{ fontSize: 12, fontWeight: 700 }}>{hmLabel(hrs)}</span>
+                    <span className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>{hmLabel(hrs)}</span>
                   </div>
                   <div style={{ display: "flex", gap: 7 }}>
                     <button
@@ -646,7 +646,7 @@ export function SchedulePanel() {
         </div>
       ) : (
         <div className="rail" style={{ background: "var(--green-50)", borderColor: "#DDD7C9", marginBottom: 14 }}>
-          <b style={{ fontSize: 13 }}>Everything sold is scheduled.</b>
+          <b style={{ fontSize: "var(--type-base)" }}>Everything sold is scheduled.</b>
         </div>
       )}
 
@@ -659,10 +659,10 @@ export function SchedulePanel() {
             gap: 10,
             background: "var(--ink)",
             color: "#fff",
-            borderRadius: 9,
+            borderRadius: "var(--radius-sm)",
             padding: "11px 14px",
             marginBottom: 11,
-            fontSize: 13,
+            fontSize: "var(--type-base)",
             fontWeight: 600,
           }}
         >
@@ -687,10 +687,10 @@ export function SchedulePanel() {
         </div>
       )}
 
-      <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "2px 0 8px" }}>
+      <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "2px 0 8px" }}>
         On the board
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
         {toggle}
         <span style={{ width: 6 }} />
         {nav}

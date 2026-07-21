@@ -73,7 +73,7 @@ function CollapsedRow({
         minHeight: 48,
       }}
     >
-      <span style={{ fontSize: 12, color: "var(--ink-3)", flexShrink: 0 }}>
+      <span style={{ fontSize: "var(--type-sm)", color: "var(--ink-3)", flexShrink: 0 }}>
         {isExpanded ? "▾" : "▸"}
       </span>
       <span
@@ -193,11 +193,11 @@ function ExpandedEditor({
 
         {/* Steps list */}
         {draftItems.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Steps</label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ marginBottom: "var(--space-3)" }}>
+            <label style={{ display: "block", fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>Steps</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
               {draftItems.map((item) => (
-                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
                   <input
                     type="text"
                     value={item.text}
@@ -237,7 +237,7 @@ function ExpandedEditor({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 8,
+          gap: "var(--space-2)",
           maxWidth: FIELD_MAX_WIDTH,
         }}
       >
@@ -251,7 +251,7 @@ function ExpandedEditor({
             {saving ? "Saving…" : "Save"}
           </button>
           {saveError && (
-            <span style={{ color: "var(--red, #B3261E)", fontSize: 12 }}>{saveError}</span>
+            <span style={{ color: "var(--red, #B3261E)", fontSize: "var(--type-sm)" }}>{saveError}</span>
           )}
         </div>
         <button

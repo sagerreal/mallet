@@ -83,7 +83,7 @@ export function OfficeHoursModal({ open, onClose }: { open: boolean; onClose: ()
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
         <button className="btn primary" onClick={onClose}>Done</button>
       </div>
     </Modal>
@@ -114,24 +114,24 @@ export function ConnectPhoneModal({
       </p>
 
       <div style={{
-        border: "1px solid var(--line)", borderRadius: 12, padding: "14px 16px",
-        marginBottom: 16, background: "var(--card)",
+        border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: "14px 16px",
+        marginBottom: "var(--space-4)", background: "var(--card)",
       }}>
-        <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 4 }}>
+        <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "var(--space-1)" }}>
           Your Mallet number
         </div>
-        <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-.01em" }}>
+        <div style={{ fontSize: "var(--type-xl)", fontWeight: 800, letterSpacing: "-.01em" }}>
           {twilioNumber ?? "Being provisioned — we'll email it shortly"}
         </div>
       </div>
 
-      <ol style={{ margin: "0 0 20px", paddingLeft: 18, fontSize: 13, lineHeight: 1.7, color: "var(--ink-2)" }}>
+      <ol style={{ margin: "0 0 20px", paddingLeft: 18, fontSize: "var(--type-base)", lineHeight: 1.7, color: "var(--ink-2)" }}>
         <li>Open your phone carrier&apos;s call-forwarding settings.</li>
         <li>Forward calls {twilioNumber ? `to ${twilioNumber}` : "to your Mallet number"} — all calls, or just when unanswered.</li>
         <li>Come back and make a test call.</li>
       </ol>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
         <button className="btn ghost" onClick={onClose}>Later</button>
         <button className="btn primary" onClick={() => { onAck(); onClose(); }}>
           I&apos;ve forwarded my number
@@ -165,8 +165,8 @@ export function TestCallModal({
       </p>
 
       <div style={{
-        border: "1px solid var(--line)", borderRadius: 12, padding: "14px 16px",
-        marginBottom: 16, textAlign: "center", background: "var(--card)",
+        border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: "14px 16px",
+        marginBottom: "var(--space-4)", textAlign: "center", background: "var(--card)",
       }}>
         <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em" }}>
           {twilioNumber ?? "Your Mallet number is on its way"}
@@ -175,9 +175,9 @@ export function TestCallModal({
 
       {done ? (
         <div style={{
-          borderRadius: 12, padding: "12px 16px", marginBottom: 16,
+          borderRadius: "var(--radius)", padding: "12px 16px", marginBottom: "var(--space-4)",
           background: "var(--green-50, #edf7ee)", border: "1px solid var(--green-600, #2e7d32)",
-          fontSize: 13, fontWeight: 700, color: "var(--green-900, #1b5e20)",
+          fontSize: "var(--type-base)", fontWeight: 700, color: "var(--green-900, #1b5e20)",
         }}>
           ✓ Your AI Front Desk answered a call — you&apos;re live.
         </div>
@@ -187,7 +187,7 @@ export function TestCallModal({
         </p>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
         <button className="btn primary" onClick={onClose}>Done</button>
       </div>
     </Modal>
@@ -217,10 +217,10 @@ export function GrowStepModal({
     <Modal open={open} onClose={onClose} maxWidth={460}>
       <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>{title}</h3>
       <p className="muted" style={{ fontSize: 12.5, margin: "0 0 14px" }}>{blurb}</p>
-      <ul style={{ margin: "0 0 20px", paddingLeft: 18, fontSize: 13, lineHeight: 1.7, color: "var(--ink-2)" }}>
+      <ul style={{ margin: "0 0 20px", paddingLeft: 18, fontSize: "var(--type-base)", lineHeight: 1.7, color: "var(--ink-2)" }}>
         {points.map((p) => <li key={p}>{p}</li>)}
       </ul>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
         <button className="btn ghost" onClick={onClose}>Later</button>
         <Link href={href} className="btn primary" style={{ textDecoration: "none" }}>{cta}</Link>
       </div>

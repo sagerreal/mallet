@@ -103,9 +103,9 @@ export function TsTechWeekCard({
 }: TsTechWeekCardProps) {
   const locked = rollup.approved;
   return (
-    <div className="card" style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-        <b style={{ fontWeight: 700, fontSize: 15 }}>{tech.name} · this week</b>
+    <div className="card" style={{ marginTop: "var(--space-3)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--space-1)", flexWrap: "wrap" }}>
+        <b style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{tech.name} · this week</b>
         <span className="muted" style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
           {rollup.paid.toFixed(2)} h{rollup.ot ? ` · ${rollup.ot.toFixed(2)} OT` : ""}
         </span>

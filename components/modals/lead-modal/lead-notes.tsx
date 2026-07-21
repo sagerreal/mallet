@@ -38,11 +38,11 @@ export function LeadNotes({ lead }: LeadNotesProps) {
       <h3>Notes</h3>
 
       {entries.length === 0 ? (
-        <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+        <p className="muted" style={{ fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}>
           No notes yet — add the first below.
         </p>
       ) : (
-        <div className="nfeed" style={{ marginBottom: 12 }}>
+        <div className="nfeed" style={{ marginBottom: "var(--space-3)" }}>
           {entries.map((entry) => (
             <NoteRow key={entry.key} entry={entry} />
           ))}

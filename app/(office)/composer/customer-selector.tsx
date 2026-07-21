@@ -59,7 +59,7 @@ export function CustomerSelector({
 
   return (
     <div style={{ margin: "6px 0 16px", maxWidth: 520 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+      <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: 6 }}>
         Customer
       </div>
       <input

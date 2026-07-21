@@ -170,7 +170,7 @@ export function QuoteSweepModalContent() {
           display: "flex",
           justifyContent: "flex-end",
           gap: 9,
-          marginTop: 16,
+          marginTop: "var(--space-4)",
           flexWrap: "wrap",
         }}
       >

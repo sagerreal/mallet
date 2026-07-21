@@ -155,7 +155,7 @@ export function CustomersView() {
 
       {/* Segment tabs — this branch only renders for the People segment, so the
           People tab is always active and Companies is always inactive here. */}
-      <div className="segsw" style={{ marginBottom: 12, marginTop: 12 }}>
+      <div className="segsw" style={{ marginBottom: "var(--space-3)", marginTop: "var(--space-3)" }}>
         <button className="btn sm primary" onClick={() => setCustSeg("people")}>
           People
         </button>

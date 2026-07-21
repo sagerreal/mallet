@@ -98,7 +98,7 @@ function CustTotals({ invoice, due, paid }: { invoice: Invoice; due: number; pai
         display: "flex",
         flexDirection: "column",
         alignItems: "flex-end",
-        gap: 4,
+        gap: "var(--space-1)",
         padding: "12px 0 4px",
       }}
     >
@@ -163,7 +163,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
       </div>
 
       {/* amount (defaults to due, editable) + Pay button */}
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: "var(--space-2)" }}>
         <input
           type="number"
           inputMode="decimal"
@@ -172,11 +172,11 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
           style={{
             flex: "0 0 110px",
             border: "1.5px solid var(--line)",
-            borderRadius: 10,
+            borderRadius: "var(--radius-md)",
             padding: 10,
             fontFamily: "inherit",
             fontWeight: 800,
-            fontSize: 15,
+            fontSize: "var(--type-md)",
           }}
         />
         <button
@@ -194,9 +194,9 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
         <label
           style={{
             display: "flex",
-            gap: 8,
+            gap: "var(--space-2)",
             alignItems: "flex-start",
-            fontSize: 12,
+            fontSize: "var(--type-sm)",
             color: "var(--ink-2)",
             marginTop: 9,
             cursor: "pointer",
@@ -216,7 +216,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
       ) : null}
 
       {/* footer copy — method-aware */}
-      <p className="muted" style={{ fontSize: 11, textAlign: "center", marginTop: 6 }}>
+      <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: 6 }}>
         {method === "ach" ? "Bank transfer (ACH) · no card fee" : "Card or Apple Pay"} · pay part
         now if you need to — the amount is yours to edit.
       </p>
@@ -277,7 +277,7 @@ export function CustInvoiceModalContent() {
           )}{" "}
           — here&rsquo;s the bill, line by line.
         </p>
-        <p className="muted" style={{ marginBottom: 8 }}>
+        <p className="muted" style={{ marginBottom: "var(--space-2)" }}>
           Invoice {invoice.num}
         </p>
 
@@ -299,7 +299,7 @@ export function CustInvoiceModalContent() {
 
         <p
           className="muted"
-          style={{ fontSize: 10.5, textAlign: "center", marginTop: 12 }}
+          style={{ fontSize: 10.5, textAlign: "center", marginTop: "var(--space-3)" }}
         >
           Powered by Mallet — licensed &amp; insured
         </p>

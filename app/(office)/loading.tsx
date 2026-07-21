@@ -2,7 +2,7 @@ export default function Loading() {
   return (
     <div style={{ padding: "0 0 24px" }}>
       {/* Title bar skeleton */}
-      <div className="sk-row" style={{ borderBottom: "none", paddingBottom: 20 }}>
+      <div className="sk-row" style={{ borderBottom: "none", paddingBottom: "var(--space-5)" }}>
         <div className="sk" style={{ width: "40%", height: 24 }} />
       </div>
       {/* Card block 1 */}

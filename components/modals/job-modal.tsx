@@ -155,9 +155,9 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
           border: "1px dashed var(--line)",
           borderRadius: 11,
           padding: 11,
-          marginBottom: 8,
+          marginBottom: "var(--space-2)",
           display: "flex",
-          gap: 12,
+          gap: "var(--space-3)",
           alignItems: "flex-end",
           flexWrap: "wrap",
         }}
@@ -182,7 +182,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
         </button>
         <span
           className="linklike"
-          style={{ color: "var(--red)", fontSize: 12, alignSelf: "center" }}
+          style={{ color: "var(--red)", fontSize: "var(--type-sm)", alignSelf: "center" }}
           onClick={onRemove}
         >
           remove
@@ -201,7 +201,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
         border: `1px solid ${conflict ? "var(--red)" : "var(--line)"}`,
         borderRadius: 11,
         padding: 11,
-        marginBottom: 8,
+        marginBottom: "var(--space-2)",
       }}
     >
       <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -261,7 +261,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
 
       <div
         className="row2"
-        style={{ gridTemplateColumns: "1fr auto", gap: 10, marginTop: 8, alignItems: "end" }}
+        style={{ gridTemplateColumns: "1fr auto", gap: 10, marginTop: "var(--space-2)", alignItems: "end" }}
       >
         <div className="field" style={{ margin: 0 }}>
           <label>Start</label>
@@ -276,7 +276,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
       </div>
 
       {conflict && (
-        <div className="banner" style={{ marginTop: 8 }}>
+        <div className="banner" style={{ marginTop: "var(--space-2)" }}>
           ⚠ Overlaps another visit for {techFirst} on{" "}
           {visit.date ? colLabel(visit.date) : "that day"} — <b>Mallet flagged the clash</b> — nudge the time.
         </div>
@@ -304,7 +304,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
             ? `${selected.name} is missing ${missingLabel}.`
             : "nobody assigned yet.";
           return (
-            <div className="banner" style={{ marginTop: 8 }}>
+            <div className="banner" style={{ marginTop: "var(--space-2)" }}>
               ⚠ Needs {reqLabel} — {gap}{" "}
               <b>{suggestedName} is certified and lightest today.</b>
             </div>
@@ -314,7 +314,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
         const missingLabel =
           hint.missing.length > 0 ? hint.missing.join(", ") : reqLabel;
         return (
-          <div className="banner" style={{ marginTop: 8 }}>
+          <div className="banner" style={{ marginTop: "var(--space-2)" }}>
             ⚠ Needs {reqLabel} — no tech on the team holds {missingLabel}.
           </div>
         );
@@ -335,7 +335,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
         <span style={{ marginLeft: "auto" }}>
           <span
             className="linklike"
-            style={{ color: "var(--red)", fontSize: 12 }}
+            style={{ color: "var(--red)", fontSize: "var(--type-sm)" }}
             onClick={onRemove}
           >
             remove visit
@@ -384,12 +384,12 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
         ? `Priced from quote ${est.num} — ${fmt$(total)}`
         : "Priced from its quote";
     return (
-      <div style={{ margin: "14px 0 0", display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 13 }}>{label}</span>
+      <div style={{ margin: "14px 0 0", display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
+        <span style={{ fontSize: "var(--type-base)" }}>{label}</span>
         {est && (
           <span
             className="linklike"
-            style={{ fontSize: 12 }}
+            style={{ fontSize: "var(--type-sm)" }}
             onClick={() => onViewQuote(est.id)}
           >
             View the quote →
@@ -404,7 +404,7 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
       <div style={{ margin: "14px 0 0" }}>
         <span
           className="linklike"
-          style={{ fontSize: 13, fontWeight: 700 }}
+          style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
           onClick={onBuildPrice}
         >
           ✦ Build the price →
@@ -419,15 +419,15 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
   return (
     <div className="card" style={{ margin: "14px 0 0", background: "var(--paper)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 style={{ fontSize: 13, margin: 0 }}>Price</h3>
-        <span className="linklike" style={{ fontSize: 12 }} onClick={onBuildPrice}>
+        <h3 style={{ fontSize: "var(--type-base)", margin: 0 }}>Price</h3>
+        <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
           Edit
         </span>
       </div>
       {(job.lines ?? []).map((x, i) => (
         <div
           key={i}
-          style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}
+          style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "3px 0" }}
         >
           <span>
             {x.d}
@@ -441,7 +441,7 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
           display: "flex",
           justifyContent: "space-between",
           fontWeight: 800,
-          fontSize: 15,
+          fontSize: "var(--type-md)",
           borderTop: "1px solid var(--line)",
           marginTop: 5,
           paddingTop: 5,
@@ -547,7 +547,7 @@ function NoteFeed({ job }: { job: Job }) {
 
   return (
     <div className="card" style={{ marginTop: 14 }}>
-      <h3 style={{ fontSize: 13 }}>Notes</h3>
+      <h3 style={{ fontSize: "var(--type-base)" }}>Notes</h3>
       <div className="nfeed">
         {entries.map((n) => (
           <div className="nrow" key={n.key}>
@@ -626,7 +626,7 @@ function TypeField({ job, onSetSvc }: TypeFieldProps) {
   const isEst = job.svc === "estimate";
 
   return (
-    <div className="field" style={{ marginTop: 12 }}>
+    <div className="field" style={{ marginTop: "var(--space-3)" }}>
       <label>Type</label>
       <div className="chips">
         {TYPE_CHIPS.map(({ t, lbl, sub }) => {
@@ -735,7 +735,7 @@ export function JobModalContent() {
   return (
     <div>
       {/* 1. Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: 6 }}>
         <div
           className="avatar"
           style={{
@@ -762,7 +762,7 @@ export function JobModalContent() {
             {lead && (
               <span
                 className="linklike"
-                style={{ fontSize: 12 }}
+                style={{ fontSize: "var(--type-sm)" }}
                 onClick={() => {
                   close();
                   openModal(MODAL.LEAD, { leadId: lead.id });
@@ -780,7 +780,7 @@ export function JobModalContent() {
           when none is on file. They disable only with NO linked customer (there
           is nobody to call). */}
       <div style={{ margin: "12px 0" }}>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button
             className="btn"
             disabled={!lead}
@@ -836,7 +836,7 @@ export function JobModalContent() {
       <TypeField job={job} onSetSvc={(svc) => setJobSvc(job.id, svc)} />
 
       {/* 6. Service address */}
-      <div className="field" style={{ marginTop: 12 }}>
+      <div className="field" style={{ marginTop: "var(--space-3)" }}>
         <label>Service address</label>
         <input
           type="text"
@@ -884,7 +884,7 @@ export function JobModalContent() {
           />
         ))
       ) : (
-        <div className="empty-att" style={{ marginBottom: 8 }}>
+        <div className="empty-att" style={{ marginBottom: "var(--space-2)" }}>
           Not scheduled yet.
         </div>
       )}

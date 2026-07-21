@@ -236,7 +236,7 @@ export function TasksCard({ lead }: TasksCardProps) {
       )}
 
       {/* Add a task — text + optional due date + Add button, all in one row */}
-      <div className="cfrow" style={{ marginTop: 12, gap: 6 }}>
+      <div className="cfrow" style={{ marginTop: "var(--space-3)", gap: 6 }}>
         <input
           type="text"
           placeholder="Add a task — e.g. First call, send quote…"

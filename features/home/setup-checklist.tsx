@@ -90,7 +90,7 @@ export function SetupChecklist() {
 
       <h3 style={{ marginBottom: 2 }}>
         {liveDone ? "Your AI Front Desk is live 🎉" : "Set up your AI Front Desk"}
-        <span className="muted" style={{ fontWeight: 600, fontSize: 12.5, marginLeft: 8 }}>
+        <span className="muted" style={{ fontWeight: 600, fontSize: 12.5, marginLeft: "var(--space-2)" }}>
           {doneCount(steps)} of {steps.length}
         </span>
       </h3>
@@ -98,7 +98,7 @@ export function SetupChecklist() {
       {/* Tier 1 — required path to the first call */}
       {!liveDone && (
         <>
-          <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", margin: "12px 0 2px" }}>
+          <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", margin: "12px 0 2px" }}>
             Get live
           </div>
           {live.map((s, i) => (
@@ -109,16 +109,16 @@ export function SetupChecklist() {
 
       {liveDone && (
         <div style={{
-          borderRadius: 12, padding: "12px 14px", margin: "12px 0 4px",
+          borderRadius: "var(--radius)", padding: "12px 14px", margin: "12px 0 4px",
           background: "var(--green-50, #edf7ee)", border: "1px solid var(--green-600, #2e7d32)",
-          fontSize: 13, fontWeight: 700, color: "var(--green-900, #1b5e20)",
+          fontSize: "var(--type-base)", fontWeight: 700, color: "var(--green-900, #1b5e20)",
         }}>
           ✓ It answered a real call and booked a job. Now make it even better ↓
         </div>
       )}
 
       {/* Tier 2 — deferred "make it better" */}
-      <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", margin: "14px 0 2px" }}>
+      <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", margin: "14px 0 2px" }}>
         Make it even better
       </div>
       {grow.map((s, i) => (
@@ -162,7 +162,7 @@ function StepRow({ step, last, onOpen }: { step: SetupStep; last: boolean; onOpe
   return (
     <div
       style={{
-        display: "flex", alignItems: "center", gap: 12, padding: "11px 0",
+        display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "11px 0",
         borderBottom: last ? "none" : "1px solid var(--line-2, var(--line))",
       }}
     >
@@ -171,7 +171,7 @@ function StepRow({ step, last, onOpen }: { step: SetupStep; last: boolean; onOpe
         style={{
           width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
           display: "inline-flex", alignItems: "center", justifyContent: "center",
-          fontSize: 11, fontWeight: 800,
+          fontSize: "var(--type-xs)", fontWeight: 800,
           border: step.done ? "none" : "1.6px solid var(--line)",
           background: step.done ? "var(--green-600, #2e7d32)" : "transparent",
           color: step.done ? "var(--card, #fff)" : "transparent",
@@ -188,7 +188,7 @@ function StepRow({ step, last, onOpen }: { step: SetupStep; last: boolean; onOpe
           {step.label}
         </div>
         {!step.done && (
-          <div className="muted" style={{ fontSize: 12, marginTop: 1 }}>{step.blurb}</div>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 1 }}>{step.blurb}</div>
         )}
       </div>
       {!step.done && (

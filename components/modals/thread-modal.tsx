@@ -221,7 +221,7 @@ export function ThreadModalContent() {
     <div>
       <h2 style={{ marginBottom: 2 }}>{lead.name}</h2>
       {hasPhone(lead) ? (
-        <div className="muted" style={{ fontSize: 12 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
           {lead.phone} · texting from your <b>business number</b> — quote links and
           reminders land in this same thread, marked ✦
         </div>
@@ -254,7 +254,7 @@ export function ThreadModalContent() {
       </div>
 
       {sendError && (
-        <div className="muted" style={{ fontSize: 12, color: "var(--red, #c0392b)", padding: "4px 0" }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", padding: "4px 0" }}>
           {sendError}
         </div>
       )}

@@ -98,7 +98,7 @@ export function CallModalContent() {
       )}
 
       {logging && (
-        <div style={{ borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 12 }}>
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: "var(--space-3)" }}>
           <div className="field">
             <label>How did it go?</label>
             <div className="chips">
@@ -139,7 +139,7 @@ export function CallModalContent() {
               </select>
             </div>
           </div>
-          <div className="field" style={{ marginTop: 12 }}>
+          <div className="field" style={{ marginTop: "var(--space-3)" }}>
             <label>Notes</label>
             <textarea
               rows={2}
@@ -148,7 +148,7 @@ export function CallModalContent() {
               placeholder="what they said, what happens next…"
             />
           </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
             <button className="btn ghost" onClick={close}>
               Cancel
             </button>

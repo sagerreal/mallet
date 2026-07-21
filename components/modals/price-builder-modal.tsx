@@ -171,7 +171,7 @@ export function PriceBuilderModalContent() {
       <div
         className="muted"
         style={{
-          fontSize: 11,
+          fontSize: "var(--type-xs)",
           fontWeight: 800,
           letterSpacing: ".05em",
           textTransform: "uppercase",
@@ -200,7 +200,7 @@ export function PriceBuilderModalContent() {
               fontWeight: 800,
               fontSize: 16,
               borderTop: "1px solid var(--line)",
-              marginTop: 8,
+              marginTop: "var(--space-2)",
               paddingTop: 9,
             }}
           >
@@ -225,7 +225,7 @@ export function PriceBuilderModalContent() {
           onDone={() => setPicking(false)}
         />
       ) : (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
           <button
             className="btn"
             onClick={() => {

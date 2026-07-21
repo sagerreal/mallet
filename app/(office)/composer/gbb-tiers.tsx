@@ -21,7 +21,7 @@ import { LineTable } from "./line-table";
 
 const tierInputStyle: React.CSSProperties = {
   border: "1.5px solid var(--line)",
-  borderRadius: 9,
+  borderRadius: "var(--radius-sm)",
   padding: "6px 9px",
   fontFamily: "inherit",
   fontSize: "13px",
@@ -63,7 +63,7 @@ export function GbbTiers({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
       {g.opts.map((tier) => {
         const isRec = g.rec === tier.k;
         return (
@@ -118,7 +118,7 @@ export function GbbTiers({
                 />
                 ★ Recommended
               </label>
-              <b style={{ fontSize: 15, whiteSpace: "nowrap" }}>
+              <b style={{ fontSize: "var(--type-md)", whiteSpace: "nowrap" }}>
                 {fmt$(gbbTierTotal(tier))}
               </b>
             </div>
@@ -142,7 +142,7 @@ export function GbbTiers({
         );
       })}
 
-      <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+      <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
         Customers pick one of the options on their quote page — the recommended
         one is highlighted.
       </p>

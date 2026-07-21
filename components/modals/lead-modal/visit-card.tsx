@@ -51,11 +51,11 @@ function VisitRow({ visit, leadId, techName }: VisitRowProps) {
     <div className="stage-row">
       <span className={`pill ${statusPillCls(visit.status)}`}>{visit.status}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13 }}>
+        <div style={{ fontSize: "var(--type-base)" }}>
           {formatDay(visit)} · {techName}
         </div>
         {visit.scopeNotes && (
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
             {visit.scopeNotes}
           </div>
         )}
@@ -97,7 +97,7 @@ export function VisitCard({ lead }: VisitCardProps) {
     <div className="card">
       <h3>
         Site visit{evisits.length !== 1 ? "s" : ""}{" "}
-        <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>
+        <span className="muted" style={{ fontWeight: 400, fontSize: "var(--type-sm)" }}>
           — look-first, on this lead until a quote is accepted
         </span>
       </h3>

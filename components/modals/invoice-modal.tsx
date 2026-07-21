@@ -77,7 +77,7 @@ const LINE_INPUT: React.CSSProperties = {
   borderRadius: 8,
   padding: "7px 9px",
   fontFamily: "inherit",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
 };
 
 const QTY_INPUT: React.CSSProperties = {
@@ -108,7 +108,7 @@ const COST_INPUT: React.CSSProperties = {
 };
 
 const SEC_LABEL: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: "var(--type-xs)",
   fontWeight: 800,
   textTransform: "uppercase",
   letterSpacing: ".05em",
@@ -118,7 +118,7 @@ const SEC_LABEL: React.CSSProperties = {
 const ROLLUP_ROW: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
   color: "var(--ink-2)",
 };
 
@@ -194,7 +194,7 @@ function EditBlock({
   return (
     <div style={{ marginTop: 14 }}>
       {/* Bill-to + Phone */}
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
         <div className="field" style={{ margin: 0 }}>
           <label>Bill to</label>
           <input
@@ -222,7 +222,7 @@ function EditBlock({
       </div>
 
       {/* Email + Terms */}
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
         <div className="field" style={{ margin: 0 }}>
           <label>
             Email{" "}
@@ -331,25 +331,25 @@ function EditBlock({
           </div>
         ))
       ) : (
-        <div className="muted" style={{ fontSize: 12, padding: "2px 0 6px" }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "2px 0 6px" }}>
           No lines yet — add what you&rsquo;re billing for.
         </div>
       )}
 
       {/* + Add line · from pricebook */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 4 }}>
+      <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", marginTop: "var(--space-1)" }}>
         <button type="button" className="btn sm ghost" onClick={addLine}>
           + Add line
         </button>
         {services.length ? (
-          <span className="linklike" style={{ fontSize: 12 }} onClick={() => setPbOpen((v) => !v)}>
+          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={() => setPbOpen((v) => !v)}>
             {pbOpen ? "close" : "from pricebook"}
           </span>
         ) : null}
       </div>
 
       {pbOpen ? (
-        <div style={{ borderTop: "1px solid var(--line)", marginTop: 8, paddingTop: 8 }}>
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-2)", paddingTop: "var(--space-2)" }}>
           <input
             type="text"
             value={pbQuery}
@@ -365,12 +365,12 @@ function EditBlock({
                 style={{ cursor: "pointer", border: "none", padding: "4px 0" }}
                 onClick={() => addFromPricebook(svc)}
               >
-                <span style={{ flex: 1, fontSize: 13 }}>{svc.name}</span>
+                <span style={{ flex: 1, fontSize: "var(--type-base)" }}>{svc.name}</span>
                 <b className="fig">{fmt$(svc.unitPrice)}</b>
               </div>
             ))
           ) : (
-            <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>
+            <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "4px 0" }}>
               No matches — try a different search.
             </div>
           )}
@@ -378,7 +378,7 @@ function EditBlock({
       ) : null}
 
       {/* Subtotal / discount / tax / Total + margin */}
-      <div style={{ borderTop: "1px solid var(--line)", marginTop: 10, paddingTop: 8 }}>
+      <div style={{ borderTop: "1px solid var(--line)", marginTop: 10, paddingTop: "var(--space-2)" }}>
         {p.disc || p.tax ? (
           <div style={ROLLUP_ROW}>
             <span>Subtotal</span>
@@ -397,7 +397,7 @@ function EditBlock({
             <span>+{fmt$(m.taxed)}</span>
           </div>
         ) : null}
-        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 15 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "var(--type-md)" }}>
           <span>Total</span>
           <span className="fig">{fmt$(invoice.total || 0)}</span>
         </div>
@@ -426,12 +426,12 @@ function EditBlock({
         <div className="reveal-head" onClick={() => setPxOpen((v) => !v)}>
           <span className="caret">▸</span>{" "}
           <b style={{ fontSize: 12.5 }}>Pricing options</b>{" "}
-          <span className="muted" style={{ fontWeight: 500, fontSize: 12 }}>
+          <span className="muted" style={{ fontWeight: 500, fontSize: "var(--type-sm)" }}>
             — {pricingSummary(p, invoice.depPaid || 0) || "discount, tax, deposit"}
           </span>
         </div>
         <div className="reveal-body">
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
             <div className="field" style={{ flex: 1, minWidth: 90, margin: 0 }}>
               <label>Discount %</label>
               <input
@@ -521,14 +521,14 @@ function ReadOnlyView({ invoice }: ReadOnlyViewProps) {
             </tr>
           ) : null}
           <tr>
-            <td style={{ textAlign: "right", fontWeight: 900, fontSize: 15 }}>
+            <td style={{ textAlign: "right", fontWeight: 900, fontSize: "var(--type-md)" }}>
               {total <= 0 ? "No bill set yet" : due > 0 ? "Due now" : "Paid in full ✓"}
             </td>
             <td
               style={{
                 textAlign: "right",
                 fontWeight: 900,
-                fontSize: 15,
+                fontSize: "var(--type-md)",
                 color: due > 0 ? "var(--ink)" : "var(--green-700)",
               }}
             >
@@ -538,7 +538,7 @@ function ReadOnlyView({ invoice }: ReadOnlyViewProps) {
         </tbody>
       </table>
       {(invoice.payments ?? []).length ? (
-        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
           {(invoice.payments ?? [])
             .map((p) => `✓ ${fmt$(p.amt)} ${p.method || "card"} · ${p.when}`)
             .join("  ·  ")}
@@ -572,7 +572,7 @@ function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaid
   const [method, setMethod] = useState<RecordMethod>("cash");
 
   return (
-    <div className="card" style={{ marginTop: 12, background: "var(--paper)" }}>
+    <div className="card" style={{ marginTop: "var(--space-3)", background: "var(--paper)" }}>
       <div className="muted" style={{ ...SEC_LABEL, margin: "0 0 10px" }}>
         Get paid
       </div>
@@ -589,7 +589,7 @@ function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaid
           Send invoice{due > 0 ? " — " + fmt$(due) : ""}
         </button>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
           <button
             className="btn primary"
             style={{ minHeight: 46 }}
@@ -599,7 +599,7 @@ function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaid
             {busy ? "Opening…" : `Charge a card — ${fmt$(due)}`}
           </button>
           {recOpen ? (
-            <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, background: "var(--bg)" }}>
+            <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius-md)", padding: "var(--space-3)", background: "var(--bg)" }}>
               <div className="chips" style={{ marginBottom: 10 }}>
                 <button className={`chip ${method === "cash" ? "sel" : ""}`} onClick={() => setMethod("cash")}>
                   Cash
@@ -608,7 +608,7 @@ function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaid
                   Check
                 </button>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
                 <button
                   className="btn primary"
                   onClick={() => {
@@ -740,7 +740,7 @@ export function InvoiceModalContent() {
 
       {/* Payment-reminder trail — sent + open + reminders on (prototype fu line) */}
       {sent && invoice.fu?.on && due > 0 ? (
-        <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
           Payment reminders · 1st{" "}
           {invoice.fu.stage >= 1 ? <b>sent</b> : "in 3 days"} · 2nd{" "}
           {invoice.fu.stage >= 2 ? (
@@ -795,7 +795,7 @@ export function InvoiceModalContent() {
           gap: 10,
           marginTop: 14,
           borderTop: "1px solid var(--line)",
-          paddingTop: 12,
+          paddingTop: "var(--space-3)",
         }}
       >
         {invoice.archived ? (

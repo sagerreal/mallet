@@ -34,7 +34,7 @@ const INPUT_STYLE: React.CSSProperties = {
   borderRadius: 8,
   padding: "7px 9px",
   fontFamily: "inherit",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
 };
 
 // ---------------------------------------------------------------------------
@@ -248,7 +248,7 @@ function CopilotSectionFn({ job, addAddonField }: CopilotSectionProps) {
           title={attachedPhotos.length >= 3 ? "Maximum 3 photos" : "Attach photo"}
         >
           {uploading ? (
-            <span className="sk" style={{ display: "inline-block", width: 18, height: 18, borderRadius: 4 }} />
+            <span className="sk" style={{ display: "inline-block", width: 18, height: 18, borderRadius: "var(--radius-2xs)" }} />
           ) : (
             "📷"
           )}

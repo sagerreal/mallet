@@ -29,7 +29,7 @@ const fieldInputStyle: React.CSSProperties = {
   borderRadius: 8,
   padding: "7px 9px",
   fontFamily: "inherit",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
 };
 
 function marginPct(service: Service): number {
@@ -57,8 +57,8 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
 
       {open && (
         <div style={{ padding: "4px 6px 14px", display: "grid", gap: 11 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Category</label>
+          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Category</label>
             <select
               className="tsel"
               value={service.categoryId ?? ""}
@@ -73,7 +73,7 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
 
           {canSeeCost && (
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Your cost</label>
+              <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Your cost</label>
               <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <span className="muted">$</span>
                 <input
@@ -84,15 +84,15 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
                   style={{ ...fieldInputStyle, width: 78 }}
                 />
               </span>
-              <span className="muted" style={{ fontSize: 12 }}>
+              <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
                 {service.cost > 0 ? `${marginPct(service)}% margin` : "no cost set"}
               </span>
-              <span className="muted" style={{ fontSize: 11 }}>(owner-only)</span>
+              <span className="muted" style={{ fontSize: "var(--type-xs)" }}>(owner-only)</span>
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Labor</label>
+          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+            <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Labor</label>
             <input
               type="number"
               min={0}
@@ -105,11 +105,11 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
               }}
               style={{ ...fieldInputStyle, width: 68 }}
             />
-            <span className="muted" style={{ fontSize: 12 }}>hrs</span>
+            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>hrs</span>
           </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Taxable</span>
+            <span style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Taxable</span>
             <label className="switch">
               <input
                 type="checkbox"
@@ -128,7 +128,7 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
           </div>
 
           {canSeeCost && (
-            <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "grid", gap: "var(--space-2)" }}>
               <button
                 className="btn sm ghost"
                 style={{ justifySelf: "start" }}

@@ -57,10 +57,10 @@ export function PaymentsCard() {
       </p>
 
       {status.isLoading ? (
-        <p style={{ fontSize: 13, color: "var(--ink-3)" }}>Loading…</p>
+        <p style={{ fontSize: "var(--type-base)", color: "var(--ink-3)" }}>Loading…</p>
       ) : complete ? (
         <div style={{ fontSize: 13.5 }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Connected ✓</div>
+          <div style={{ fontWeight: 700, marginBottom: "var(--space-1)" }}>Connected ✓</div>
           <div style={{ color: "var(--ink-2)" }}>
             Card charges {s?.chargesEnabled ? "enabled" : "pending"} · Payouts{" "}
             {s?.payoutsEnabled ? "enabled" : "pending"}
@@ -69,7 +69,7 @@ export function PaymentsCard() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {started && (
-            <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
+            <div style={{ fontSize: "var(--type-base)", color: "var(--ink-2)" }}>
               Setup started but not finished — pick up where you left off.
             </div>
           )}

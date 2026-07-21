@@ -132,11 +132,11 @@ interface ClockCardProps {
 
 function ClockCard({ clockState, onClockStart, onClockStop }: ClockCardProps) {
   return (
-    <div className="card clockcard" style={{ marginBottom: 12 }}>
+    <div className="card clockcard" style={{ marginBottom: "var(--space-3)" }}>
       <div className="clock-head">
         <div className="clock-meta">
           <b style={{ fontWeight: 700 }}>Time clock</b>
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
             {clockState !== "idle" ? (
               <span style={{ color: "var(--green-700)", fontWeight: 600 }}>
                 {`● ${TS_KINDS[clockState] ?? clockState} running`}
@@ -220,11 +220,11 @@ export default function MyDayPage() {
     return (
       <>
         <h1>My day</h1>
-        <div className="card agenda" style={{ marginTop: 12 }}>
+        <div className="card agenda" style={{ marginTop: "var(--space-3)" }}>
           {[0, 1, 2].map((i) => (
             <div key={i} className="sk-row">
               <div className="sk" style={{ width: 64, height: 14, flexShrink: 0 }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-2)", justifyContent: "center" }}>
                 <div className="sk" style={{ width: "60%", height: 14 }} />
                 <div className="sk" style={{ width: "40%", height: 12 }} />
               </div>

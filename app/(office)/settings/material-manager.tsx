@@ -37,7 +37,7 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 8,
   padding: "7px 9px",
   fontFamily: "inherit",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
 };
 
 const MAX_SUGGESTIONS = 8;
@@ -145,8 +145,8 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
   }
 
   return (
-    <div style={{ marginTop: 2, paddingTop: 10, borderTop: "1px dashed var(--line)", display: "grid", gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-2)" }}>
+    <div style={{ marginTop: 2, paddingTop: 10, borderTop: "1px dashed var(--line)", display: "grid", gap: "var(--space-2)" }}>
+      <div style={{ fontSize: "var(--type-sm)", fontWeight: 700, color: "var(--ink-2)" }}>
         Parts — internal only, never shown to the customer
       </div>
 
@@ -168,7 +168,7 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
         <input
           type="text"
           placeholder="Search materials to add…"
@@ -201,13 +201,13 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
         </div>
       )}
       {q && suggestions.length === 0 && !creating && (
-        <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
           No match for “{search}” — create it with “+ New material”.
         </p>
       )}
 
       {creating && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}>
           <input
             type="text"
             placeholder="Material name"
@@ -244,9 +244,9 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
         </div>
       )}
 
-      {error && <p style={{ color: "var(--red)", fontSize: 12, margin: 0 }}>{error}</p>}
+      {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: 0 }}>{error}</p>}
 
-      <p className="muted" style={{ fontSize: 12, fontWeight: 600, margin: 0 }}>
+      <p className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 600, margin: 0 }}>
         {attached.length > 0
           ? `Parts cost ${fmt$2(partsCost)} → price basis`
           : "No parts added — the flat price above stays the source of truth."}

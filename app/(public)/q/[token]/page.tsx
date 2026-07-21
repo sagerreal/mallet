@@ -52,13 +52,13 @@ export async function generateMetadata({
 
 function TermsBlock({ text }: { text: string }) {
   return (
-    <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--line-2)" }}>
-      <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
+    <div style={{ marginTop: "var(--space-4)", paddingTop: "var(--space-3)", borderTop: "1px solid var(--line-2)" }}>
+      <div className="muted" style={{ fontSize: "var(--type-xs)", marginBottom: "var(--space-1)" }}>
         Terms
       </div>
       <p
         style={{
-          fontSize: 12,
+          fontSize: "var(--type-sm)",
           lineHeight: 1.55,
           margin: 0,
           whiteSpace: "pre-wrap",
@@ -109,8 +109,8 @@ export default async function PublicQuotePage({
         >
           <div
             style={{
-              fontSize: 32,
-              marginBottom: 16,
+              fontSize: "var(--type-3xl)",
+              marginBottom: "var(--space-4)",
               color: "var(--ink-3)",
             }}
           >
@@ -119,7 +119,7 @@ export default async function PublicQuotePage({
           <h1
             style={{
               fontFamily: "var(--font-display)",
-              fontSize: 20,
+              fontSize: "var(--type-xl)",
               fontWeight: 700,
               marginBottom: 10,
             }}
@@ -132,9 +132,9 @@ export default async function PublicQuotePage({
           </p>
           <p
             style={{
-              fontSize: 11,
+              fontSize: "var(--type-xs)",
               color: "var(--ink-3)",
-              marginTop: 32,
+              marginTop: "var(--space-8)",
             }}
           >
             Powered by Mallet
@@ -213,7 +213,7 @@ export default async function PublicQuotePage({
               <div className="deltabanner" style={{ textAlign: "center" }}>
                 Approved — thank you!
               </div>
-              <p className="muted" style={{ textAlign: "center", marginTop: 8, fontSize: 12.5 }}>
+              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: 12.5 }}>
                 We&rsquo;ll be in touch to schedule the work.
               </p>
             </>
@@ -222,7 +222,7 @@ export default async function PublicQuotePage({
               <div className="reqcard" style={{ textAlign: "center" }}>
                 You passed on this one — no hard feelings.
               </div>
-              <p className="muted" style={{ textAlign: "center", marginTop: 8, fontSize: 12.5 }}>
+              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: 12.5 }}>
                 Reach out any time if you change your mind.
               </p>
             </>
@@ -286,7 +286,7 @@ export default async function PublicQuotePage({
           )}
 
           {/* Footer */}
-          <p className="muted" style={{ fontSize: 10.5, textAlign: "center", marginTop: 16 }}>
+          <p className="muted" style={{ fontSize: 10.5, textAlign: "center", marginTop: "var(--space-4)" }}>
             Powered by Mallet &mdash; licensed &amp; insured
           </p>
         </div>
@@ -297,8 +297,8 @@ export default async function PublicQuotePage({
         <p
           className="muted"
           style={{
-            marginTop: 12,
-            fontSize: 12,
+            marginTop: "var(--space-3)",
+            fontSize: "var(--type-sm)",
             textAlign: "center",
             maxWidth: 320,
             padding: "0 16px",

@@ -86,7 +86,7 @@ export function MoneyToolbar({
 
 export function MoneyColumnsPanel({ visible, onToggle }: { visible: MoneyColKey[]; onToggle: (k: MoneyColKey) => void }) {
   return (
-    <div className="fpanel" style={{ gap: 8 }}>
+    <div className="fpanel" style={{ gap: "var(--space-2)" }}>
       {MONEY_COL_ORDER.map((c) => (
         <label key={c} className="colchk">
           <input type="checkbox" checked={visible.includes(c)} onChange={() => onToggle(c)} />

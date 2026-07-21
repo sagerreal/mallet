@@ -67,7 +67,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
   return (
     <>
       {/* More details reveal */}
-      <div className={`reveal${open ? " open" : ""}`} style={{ marginBottom: 20 }}>
+      <div className={`reveal${open ? " open" : ""}`} style={{ marginBottom: "var(--space-5)" }}>
         <div
           className="reveal-head"
           onClick={() => setOpen((o) => !o)}
@@ -124,7 +124,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
 
           {/* Add custom field */}
           {showAddField ? (
-            <div className="cfrow" style={{ marginTop: 4 }}>
+            <div className="cfrow" style={{ marginTop: "var(--space-1)" }}>
               <input
                 type="text"
                 placeholder="Field name"
@@ -150,7 +150,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
           ) : (
             <button
               className="btn ghost sm"
-              style={{ fontSize: 12, marginTop: 4 }}
+              style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}
               onClick={() => setShowAddField(true)}
             >
               + Add a custom field
@@ -163,7 +163,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
           bottom-right corner where the eye expects a confirm/primary action.
           "Clean up" opens the Lost/Archive picker; "Delete" is a de-emphasized red
           link that ARCHIVES (soft-delete, recoverable) after a two-step confirm. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 8, borderTop: "1px solid var(--line-2)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", paddingTop: "var(--space-2)", borderTop: "1px solid var(--line-2)" }}>
         <button
           className="btn ghost sm"
           onClick={() => openModal(MODAL.CLEAN_UP, { leadId: lead.id })}

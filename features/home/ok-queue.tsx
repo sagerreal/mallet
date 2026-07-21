@@ -61,7 +61,7 @@ function OkCard({
     <div className={`okwrap${leaving ? " leaving" : ""}`}>
       <div className="okinner">
         <div className="card okcard" style={{ padding: "14px 16px", marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
             <b style={{ fontSize: 14, whiteSpace: "nowrap" }}>{item.lead.name}</b>
             <span className="muted" style={{ fontSize: 12.5, flex: 1, minWidth: 0 }}>
               {item.situation}
@@ -90,7 +90,7 @@ function OkCard({
                 borderRadius: "18px 18px 18px 4px",
                 padding: "10px 14px",
                 fontFamily: "inherit",
-                fontSize: 13,
+                fontSize: "var(--type-base)",
                 lineHeight: 1.55,
                 background: "var(--card)",
                 color: "var(--ink)",
@@ -105,7 +105,7 @@ function OkCard({
           {/* Send/Call stay TAPPABLE: without a phone on file, PhoneGate expands
               an in-flow add-number row and auto-proceeds once saved (Send is a
               local draft-send; Call opens the call sheet). */}
-          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 10, flexWrap: "wrap" }}>
             <PhoneGate
               bearer={item.lead}
               addLabel="No phone number yet"
@@ -248,7 +248,7 @@ export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftConte
                 <button
                   type="button"
                   className="linklike"
-                  style={{ fontSize: 12, whiteSpace: "nowrap" }}
+                  style={{ fontSize: "var(--type-sm)", whiteSpace: "nowrap" }}
                   onClick={() => handleUndo(e)}
                 >
                   Undo · {Math.max(0, Math.ceil((e.expiresAt - Date.now()) / 1000))}s

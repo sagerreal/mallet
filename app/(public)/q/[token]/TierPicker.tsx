@@ -42,13 +42,13 @@ export function TierPicker({
 }: TierPickerProps) {
   return (
     <>
-      <div className="muted" style={{ fontSize: 11, marginTop: 4, marginBottom: 6 }}>
+      <div className="muted" style={{ fontSize: "var(--type-xs)", marginTop: "var(--space-1)", marginBottom: 6 }}>
         Choose an option
       </div>
       <div
         role="radiogroup"
         aria-label="Quote options"
-        style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 6 }}
+        style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", marginBottom: 6 }}
       >
         {options.map((opt) => {
           const selected = opt.tier === selectedTier;
@@ -70,7 +70,7 @@ export function TierPicker({
                 minHeight: 52, // ≥44px tap target — this is a phone surface
                 padding: "12px 14px",
                 boxSizing: "border-box",
-                borderRadius: 10,
+                borderRadius: "var(--radius-md)",
                 // Constant border WIDTH so selection never shifts layout.
                 border: `1.5px solid ${selected ? "var(--accent)" : "var(--line)"}`,
                 background: selected ? "var(--green-50)" : "var(--card)",
@@ -85,12 +85,12 @@ export function TierPicker({
               <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 <b style={{ fontSize: 14 }}>{opt.name}</b>
                 {recommended && (
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-2)" }}>
+                  <span style={{ fontSize: "var(--type-xs)", fontWeight: 600, color: "var(--ink-2)" }}>
                     Recommended
                   </span>
                 )}
               </span>
-              <b style={{ fontSize: 15 }}>{fmt$(opt.totalCents / 100)}</b>
+              <b style={{ fontSize: "var(--type-md)" }}>{fmt$(opt.totalCents / 100)}</b>
             </button>
           );
         })}
