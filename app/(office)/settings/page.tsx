@@ -19,6 +19,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
+import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { BrandingCard } from "./branding-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
@@ -85,16 +86,15 @@ function YourNameField() {
   const { data: me } = api.v1.identity.me.useQuery();
   const utils = api.useUtils();
   const [name, setName] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const { saved, flash, reset: resetSaved } = useSaveFlash();
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const updateMe = api.v1.identity.updateMe.useMutation({
     onSuccess: () => {
-      setSaved(true);
       setSaveError(null);
       utils.v1.identity.me.invalidate().catch(() => {});
       utils.v1.identity.members.invalidate().catch(() => {});
-      setTimeout(() => setSaved(false), 2000);
+      flash();
     },
     onError: (err) => {
       setSaveError(err.message);
@@ -106,7 +106,7 @@ function YourNameField() {
   function handleSave() {
     const trimmed = displayName.trim();
     if (!trimmed) return;
-    setSaved(false);
+    resetSaved();
     setSaveError(null);
     updateMe.mutate({ name: trimmed });
   }
@@ -121,7 +121,7 @@ function YourNameField() {
           type="text"
           placeholder="e.g. Mike Rivera"
           value={displayName}
-          onChange={(e) => { setName(e.target.value); setSaved(false); setSaveError(null); }}
+          onChange={(e) => { setName(e.target.value); resetSaved(); setSaveError(null); }}
           style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }}
         />
         <button
@@ -131,7 +131,7 @@ function YourNameField() {
         >
           {updateMe.isPending ? "Saving…" : "Save"}
         </button>
-        {saved && <span style={{ color: "var(--green-900)", fontSize: "var(--type-sm)", fontWeight: 600 }}>Saved ✓</span>}
+        <SavedFlash saved={saved} />
       </div>
       {saveError && (
         <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{saveError}</div>

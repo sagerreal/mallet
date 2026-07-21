@@ -12,6 +12,7 @@
 import { useState, useRef } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
+import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { HourSelect } from "./hour-select";
 import { Segmented } from "./segmented";
 
@@ -182,15 +183,14 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
   const seededRef = useRef<string>("");
   if (seededRef.current === "") seededRef.current = JSON.stringify(draft);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const { saved, flash, reset: resetSaved } = useSaveFlash();
 
   const save = api.v1.frontdesk.crewSchedules.save.useMutation({
     onSuccess: () => {
-      setSaved(true);
       setSaveError(null);
       seededRef.current = JSON.stringify(draft);
       utils.v1.frontdesk.crewSchedules.list.invalidate().catch(() => {});
-      setTimeout(() => setSaved(false), 2000);
+      flash();
     },
     onError: (err) => {
       setSaveError(err.message ?? "Save failed — check your connection and try again.");
@@ -203,7 +203,7 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
 
   function handleDayChange(weekday: number, next: DayDraft) {
     setDraft((prev) => ({ ...prev, [weekday]: next }));
-    setSaved(false);
+    resetSaved();
   }
 
   function handleSave() {
@@ -241,11 +241,7 @@ function CrewRow({ member, allEntries }: CrewRowProps) {
             >
               {save.isPending ? "Saving…" : "Save hours"}
             </button>
-            {saved && (
-              <span style={{ color: "var(--green-900)", fontSize: "var(--type-sm)", fontWeight: 600 }}>
-                Saved ✓
-              </span>
-            )}
+            <SavedFlash saved={saved} />
           </div>
           {saveError && (
             <div style={{ color: "var(--red-700, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>

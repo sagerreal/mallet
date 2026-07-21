@@ -18,6 +18,7 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { FoldCard } from "./fold-card";
+import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 
 // Fallback so the preview banner + chip are never invisible when a fresh org
 // has no brand colour yet. Matches the app's warm-theme accent (near-black).
@@ -39,7 +40,7 @@ export function BrandingCard() {
   const [site, setSite] = useState(brand.site);
   const [color, setColor] = useState(brand.color);
   const [initials, setInitials] = useState(brand.initials);
-  const [saved, setSaved] = useState(false);
+  const { saved, flash, reset: resetSaved } = useSaveFlash();
 
   // dirty: true once the user has made any edit; prevents BrandHydrator's
   // async resolution from clobbering an in-progress form.
@@ -58,7 +59,7 @@ export function BrandingCard() {
 
   function markDirty() {
     setDirty(true);
-    setSaved(false);
+    resetSaved();
   }
 
   function handleSave() {
@@ -72,8 +73,7 @@ export function BrandingCard() {
       initials: (initials.trim() || trimmed.slice(0, 2)).toUpperCase(),
     });
     setDirty(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    flash();
   }
 
   const previewColor = color || DEFAULT_BRAND_COLOR;
@@ -138,7 +138,7 @@ export function BrandingCard() {
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
         <button className="btn primary" onClick={handleSave} disabled={!name.trim()}>Save</button>
-        {saved && <span style={{ color: "var(--green-900)", fontSize: "var(--type-sm)", fontWeight: 600 }}>Saved ✓</span>}
+        <SavedFlash saved={saved} />
       </div>
     </FoldCard>
   );
