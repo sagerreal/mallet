@@ -105,6 +105,9 @@ Tailwind-free hand-rolled CSS (prototype-faithful).
 
 ## Where deeper context lives
 
+- `docs/design-system.md` — the UI single-source-of-truth: tokens, primitives, the 4 list
+  states, the a11y floor, the visual net, and design house rules. Read it before any UI work
+  (there is ONE styling system — `app/prototype.css`; Tailwind was fully removed).
 - `.superpowers/sdd/progress.md` — git-ignored per-branch build ledger (the 7-phase DB-backed
   build history + every review finding). Read it before large work.
 - `docs/superpowers/specs/` + `docs/superpowers/plans/` — feature specs/plans (source of truth
