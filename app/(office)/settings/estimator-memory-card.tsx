@@ -40,7 +40,7 @@ function RuleRow({
     <div className="stage-row">
       <span style={{ flex: 1, fontSize: "var(--type-base)" }}>
         {rule.rule}
-        <span className="muted" style={{ fontSize: 11.5 }}>
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
           {" "}
           — {SOURCE_LABEL[rule.source] ?? rule.source}
           {rule.source === "edit_delta" ? `, seen ${rule.timesConfirmed}×` : ""}
@@ -96,7 +96,7 @@ export function EstimatorMemoryCard() {
       summary={summaryFor(confirmed.length, proposed.length)}
       defaultOpen={proposed.length > 0}
     >
-      <p className="muted" style={{ margin: "0 0 10px", fontSize: "11.5px" }}>
+      <p className="muted" style={{ margin: "0 0 var(--space-3)", fontSize: "var(--type-sm)" }}>
         Rules the AI estimator follows when it drafts quotes for this shop. It proposes new ones
         from your corrections and repeated edits — nothing is used until you confirm it.
       </p>
@@ -109,8 +109,8 @@ export function EstimatorMemoryCard() {
       )}
 
       {proposed.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: "var(--space-1)" }}>To review</div>
+        <div style={{ marginBottom: "var(--space-4)" }}>
+          <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-1)" }}>To review</div>
           {proposed.map((r) => (
             <RuleRow
               key={r.id}
@@ -127,7 +127,7 @@ export function EstimatorMemoryCard() {
 
       {confirmed.length > 0 && (
         <div>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: "var(--space-1)" }}>Rules in use</div>
+          <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-1)" }}>Rules in use</div>
           {confirmed.map((r) => (
             <RuleRow
               key={r.id}
@@ -140,7 +140,7 @@ export function EstimatorMemoryCard() {
       )}
 
       {empty && (
-        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>
           Nothing learned yet. Correct an AI draft in the composer (&quot;Refine&quot;) or keep
           editing its quotes — repeated corrections show up here for review.
         </p>

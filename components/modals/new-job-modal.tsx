@@ -418,7 +418,7 @@ export function NewJobModalContent() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 14 }}>New job</h2>
+      <h2 style={{ marginBottom: "var(--space-4)" }}>New job</h2>
 
       <form onSubmit={handleSubmit}>
         {/* What's the job? */}
@@ -454,9 +454,9 @@ export function NewJobModalContent() {
                     display: "inline-block",
                     width: 8,
                     height: 8,
-                    borderRadius: 2,
+                    borderRadius: "var(--radius-2xs)",
                     background: TYPE_DOT[t],
-                    marginRight: 6,
+                    marginRight: "var(--space-2)",
                     verticalAlign: "middle",
                   }}
                 />
@@ -469,9 +469,9 @@ export function NewJobModalContent() {
         {/* Customer (datalist picker) + Phone */}
         <div
           className="row2"
-          style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginBottom: 14 }}
+          style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}
         >
-          <div className="field" style={{ marginBottom: 0 }}>
+          <div className="field" style={{ marginBottom: "0" }}>
             <label>Customer</label>
             <input
               type="text"
@@ -487,7 +487,7 @@ export function NewJobModalContent() {
               ))}
             </datalist>
           </div>
-          <div className="field" style={{ marginBottom: 0 }}>
+          <div className="field" style={{ marginBottom: "0" }}>
             <label>Phone</label>
             <input
               type="tel"
@@ -531,14 +531,14 @@ export function NewJobModalContent() {
             >
               ✦ Build the price →
             </button>
-            <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+            <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
               Same builder your crew uses — or price later.
             </div>
           </div>
         )}
 
         {/* Visits — unplaced hours rows */}
-        <div className="field" style={{ marginBottom: 0 }}>
+        <div className="field" style={{ marginBottom: "0" }}>
           <label>Visits</label>
           <div>
             {visits.map((v, i) => (
@@ -578,7 +578,7 @@ export function NewJobModalContent() {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              gap: 10,
+              gap: "var(--space-3)",
               marginTop: "var(--space-1)",
             }}
           >
@@ -589,7 +589,7 @@ export function NewJobModalContent() {
             >
               + Add a visit
             </span>
-            <span className="muted" style={{ fontSize: 11.5 }}>
+            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
               drag onto the Schedule to book
             </span>
           </div>
@@ -598,7 +598,7 @@ export function NewJobModalContent() {
         {/* Checklist picker — collapsed in-flow summary that expands. Jobs only:
             estimates attach to the lead, which carries no checklist. */}
         {njType === "service" && (
-        <div className="field" style={{ marginTop: 14, marginBottom: 0 }}>
+        <div className="field" style={{ marginTop: "var(--space-4)", marginBottom: "0" }}>
           <label>
             Before-you-leave checklist{" "}
             <span
@@ -695,7 +695,7 @@ export function NewJobModalContent() {
         )}
 
         {/* ▸ More reveal — Notes */}
-        <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginTop: 14 }}>
+        <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginTop: "var(--space-4)" }}>
           <div
             className="reveal-head"
             onClick={() => setMoreOpen((o) => !o)}
@@ -705,7 +705,7 @@ export function NewJobModalContent() {
             <span className="caret">▸</span> More
           </div>
           <div className="reveal-body">
-            <div className="field" style={{ marginBottom: 0 }}>
+            <div className="field" style={{ marginBottom: "0" }}>
               <label>Notes</label>
               <input
                 type="text"
@@ -718,11 +718,11 @@ export function NewJobModalContent() {
         </div>
 
         {error && (
-          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "12px 0 0" }}>{error}</p>
+          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
         )}
 
         {/* Footer */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, marginTop: 18 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
           <button type="button" className="btn ghost" onClick={close}>
             Cancel
           </button>

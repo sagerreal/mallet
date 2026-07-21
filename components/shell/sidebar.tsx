@@ -194,7 +194,7 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
       </div>
 
       {/* Nav */}
-      <div id="sidenav" style={{ flex: 1, overflowY: "auto", padding: "2px 10px 10px" }}>
+      <div id="sidenav" style={{ flex: 1, overflowY: "auto", padding: "var(--space-2xs) var(--space-3) var(--space-3)" }}>
         {/* Office-only items: gated on roleKnown so a tech never briefly sees them.
             The field items below are rendered immediately (no role-conditional risk). */}
         {roleKnown && !isTech && (

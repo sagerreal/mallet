@@ -10,10 +10,10 @@ import { TRADE_PLAYBOOKS, playbookFor } from "./trade-playbooks";
 import { routeOf } from "./booking-lanes";
 
 const CHIP: React.CSSProperties = {
-  fontSize: 11.5,
+  fontSize: "var(--type-sm)",
   fontWeight: 700,
-  padding: "3px 10px",
-  borderRadius: 999,
+  padding: "var(--space-1) var(--space-3)",
+  borderRadius: "var(--radius-xl)",
   border: "1px solid var(--line)",
   color: "var(--ink-2)",
   background: "var(--card)",
@@ -40,7 +40,7 @@ export function StarterPlaybookModal({
 
   return (
     <Modal open={open} onClose={onClose} maxWidth={520}>
-      <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>
+      <h3 style={{ margin: "0 0 var(--space-4)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
         Starter playbook
       </h3>
 
@@ -70,7 +70,7 @@ export function StarterPlaybookModal({
                 display: "flex",
                 alignItems: "center",
                 gap: "var(--space-2)",
-                padding: "9px 12px",
+                padding: "var(--space-2) var(--space-3)",
                 borderBottom: i === playbook.services.length - 1 ? "none" : "1px solid var(--line-2, var(--line))",
               }}
             >

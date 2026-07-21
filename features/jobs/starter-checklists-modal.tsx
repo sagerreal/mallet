@@ -8,10 +8,10 @@ import { Modal } from "@/components/modals/modal";
 import { CHECKLIST_STARTERS, type StarterChecklist } from "@/app/(office)/jobs/checklist-starters";
 
 const CHIP: React.CSSProperties = {
-  fontSize: 11.5,
+  fontSize: "var(--type-sm)",
   fontWeight: 700,
-  padding: "3px 10px",
-  borderRadius: 999,
+  padding: "var(--space-1) var(--space-3)",
+  borderRadius: "var(--radius-xl)",
   border: "1px solid var(--line)",
   color: "var(--ink-2)",
   background: "var(--card)",
@@ -53,7 +53,7 @@ export function StarterChecklistsModal({
 
   return (
     <Modal open={open} onClose={onClose} maxWidth={520}>
-      <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>
+      <h3 style={{ margin: "0 0 var(--space-4)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
         Starter checklists
       </h3>
 
@@ -86,7 +86,7 @@ export function StarterChecklistsModal({
                   display: "flex",
                   alignItems: "center",
                   gap: "var(--space-2)",
-                  padding: "9px 12px",
+                  padding: "var(--space-2) var(--space-3)",
                   borderBottom: isLast ? "none" : "1px solid var(--line-2, var(--line))",
                 }}
               >

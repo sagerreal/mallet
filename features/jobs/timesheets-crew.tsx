@@ -44,12 +44,12 @@ export function TsCrewChips({ techs, totals, selId, crewQ, onCrewQ, onSelect }: 
               className={`ts-chip${t.id === selId ? " sel" : ""}`}
               onClick={() => onSelect(t.id)}
             >
-              <span className="javatar" style={{ background: t.color, width: 22, height: 22, fontSize: 9 }}>
+              <span className="javatar" style={{ background: t.color, width: 22, height: 22, fontSize: "var(--type-xs)" }}>
                 {t.initials}
               </span>
               <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
-                <b style={{ fontSize: 12.5, color: "var(--ink)" }}>{t.name.split(" ")[0]}</b>
-                <span className="muted" style={{ fontSize: 10.5 }}>
+                <b style={{ fontSize: "var(--type-base)", color: "var(--ink)" }}>{t.name.split(" ")[0]}</b>
+                <span className="muted" style={{ fontSize: "var(--type-xs)" }}>
                   {r && r.count ? `${r.paid.toFixed(1)}h${r.approved ? " · ✓" : " · draft"}` : "—"}
                 </span>
               </span>
@@ -104,9 +104,9 @@ export function TsTechWeekCard({
   const locked = rollup.approved;
   return (
     <div className="card" style={{ marginTop: "var(--space-3)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "var(--space-1)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-1)", flexWrap: "wrap" }}>
         <b style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{tech.name} · this week</b>
-        <span className="muted" style={{ fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
+        <span className="muted" style={{ fontSize: "var(--type-base)", fontVariantNumeric: "tabular-nums" }}>
           {rollup.paid.toFixed(2)} h{rollup.ot ? ` · ${rollup.ot.toFixed(2)} OT` : ""}
         </span>
         <span style={{ flex: 1 }} />

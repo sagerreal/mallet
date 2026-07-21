@@ -83,7 +83,7 @@ export function MessageCard({
             {state.intro.length >= INTRO_COUNTER_FROM && (
               <div
                 className="muted"
-                style={{ fontSize: "var(--type-xs)", textAlign: "right", marginTop: 2 }}
+                style={{ fontSize: "var(--type-xs)", textAlign: "right", marginTop: "var(--space-2xs)" }}
               >
                 {state.intro.length}/{INTRO_MAX_CHARS}
                 {state.intro.length >= INTRO_MAX_CHARS ? " — at the limit" : ""}
@@ -116,7 +116,7 @@ export function MessageCard({
                 style={{
                   fontSize: "var(--type-sm)",
                   whiteSpace: "pre-wrap",
-                  margin: "6px 0 0",
+                  margin: "var(--space-2) 0 0",
                   maxHeight: 120,
                   overflowY: "auto",
                 }}
@@ -125,7 +125,7 @@ export function MessageCard({
               </p>
             )}
           </div>
-          <div className="field" style={{ maxWidth: 200, marginBottom: 0 }}>
+          <div className="field" style={{ maxWidth: 200, marginBottom: "0" }}>
             <label>Price valid (days)</label>
             <input
               type="number"

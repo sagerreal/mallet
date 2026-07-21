@@ -63,8 +63,8 @@ function CustHead({ brand }: { brand: Brand }) {
         {brand.initials}
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 800, fontSize: 16 }}>{brand.name}</div>
-        <div style={{ fontSize: 11.5, opacity: 0.8 }}>{brand.tagline}</div>
+        <div style={{ fontWeight: 800, fontSize: "var(--type-lg)" }}>{brand.name}</div>
+        <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>{brand.tagline}</div>
       </div>
       {/* ModalHost provides close — no duplicate custCloseBtn() ✕ here. */}
     </div>
@@ -99,20 +99,20 @@ function CustTotals({ invoice, due, paid }: { invoice: Invoice; due: number; pai
         flexDirection: "column",
         alignItems: "flex-end",
         gap: "var(--space-1)",
-        padding: "12px 0 4px",
+        padding: "var(--space-3) 0 var(--space-1)",
       }}
     >
       {invoice.depPaid ? (
-        <div className="muted" style={{ fontSize: 12.5, color: "var(--green-700)" }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)", color: "var(--green-700)" }}>
           − deposit you already paid &nbsp; −{fmt$(invoice.depPaid)}
         </div>
       ) : null}
       {paid ? (
-        <div className="muted" style={{ fontSize: 12.5, color: "var(--green-700)" }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)", color: "var(--green-700)" }}>
           − paid so far &nbsp; −{fmt$(paid)}
         </div>
       ) : null}
-      <div style={{ fontWeight: 900, fontSize: 19 }}>
+      <div style={{ fontWeight: 900, fontSize: "var(--type-xl)" }}>
         {due > 0 ? <>Due &nbsp; {fmt$(due)}</> : "Paid in full ✓"}
       </div>
     </div>
@@ -147,7 +147,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
   return (
     <>
       {/* method chips — Card / Apple Pay (default) · Bank transfer */}
-      <div className="chips" style={{ margin: "10px 0 9px", justifyContent: "center" }}>
+      <div className="chips" style={{ margin: "var(--space-3) 0 var(--space-2)", justifyContent: "center" }}>
         <button
           className={`chip ${method === "card" ? "sel" : ""}`}
           onClick={() => setMethod("card")}
@@ -173,7 +173,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
             flex: "0 0 110px",
             border: "1.5px solid var(--line)",
             borderRadius: "var(--radius-md)",
-            padding: 10,
+            padding: "var(--space-3)",
             fontFamily: "inherit",
             fontWeight: 800,
             fontSize: "var(--type-md)",
@@ -181,7 +181,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
         />
         <button
           className="btn primary"
-          style={{ flex: 1, padding: 13, fontSize: 14.5 }}
+          style={{ flex: 1, padding: "var(--space-3)", fontSize: "var(--type-md)" }}
           onClick={pay}
         >
           {" "}
@@ -198,7 +198,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
             alignItems: "flex-start",
             fontSize: "var(--type-sm)",
             color: "var(--ink-2)",
-            marginTop: 9,
+            marginTop: "var(--space-2)",
             cursor: "pointer",
           }}
         >
@@ -206,7 +206,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
             type="checkbox"
             checked={save}
             onChange={() => setSave((v) => !v)}
-            style={{ marginTop: 2 }}
+            style={{ marginTop: "var(--space-2xs)" }}
           />{" "}
           <span>
             Save my card so {brand.name} can settle any remaining balance — you&rsquo;ll get a
@@ -216,7 +216,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
       ) : null}
 
       {/* footer copy — method-aware */}
-      <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: 6 }}>
+      <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-2)" }}>
         {method === "ach" ? "Bank transfer (ACH) · no card fee" : "Card or Apple Pay"} · pay part
         now if you need to — the amount is yours to edit.
       </p>
@@ -265,7 +265,7 @@ export function CustInvoiceModalContent() {
       <CustHead brand={brand} />
       <div className="custbody">
         {/* intro + invoice number */}
-        <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 6 }}>
+        <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
           Thanks for having us out
           {job ? (
             <>
@@ -299,7 +299,7 @@ export function CustInvoiceModalContent() {
 
         <p
           className="muted"
-          style={{ fontSize: 10.5, textAlign: "center", marginTop: "var(--space-3)" }}
+          style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-3)" }}
         >
           Powered by Mallet — licensed &amp; insured
         </p>

@@ -110,15 +110,15 @@ export function PricebookPane() {
       </div>
 
       {services.length === 0 ? (
-        <div className="card" style={{ padding: "28px 16px", textAlign: "center" }}>
-          <p style={{ margin: "0 0 10px", fontWeight: 700 }}>
+        <div className="card" style={{ padding: "var(--space-8) var(--space-4)", textAlign: "center" }}>
+          <p style={{ margin: "0 0 var(--space-3)", fontWeight: 700 }}>
             Add your common jobs — e.g. “Replace 40gal water heater”.
           </p>
           <button className="btn" onClick={() => void handleSeed()} disabled={seeding}>
             {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
           </button>
           {seedError && (
-            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "8px 0 0" }}>{seedError}</p>
+            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{seedError}</p>
           )}
         </div>
       ) : (
@@ -145,7 +145,7 @@ export function PricebookPane() {
       <EstimatorMemoryCard />
 
       {/* Quiet defaults — rarely changed, at the bottom of the surface. */}
-      <div className="tsec" style={{ padding: "16px 2px 6px" }}>Defaults</div>
+      <div className="tsec" style={{ padding: "var(--space-4) var(--space-2xs) var(--space-2)" }}>Defaults</div>
 
       <FoldCard title="Labor rates" summary={`${laborRates.length} rate${laborRates.length === 1 ? "" : "s"}`}>
         <div>
@@ -153,17 +153,17 @@ export function PricebookPane() {
             <div key={lr.id} className="stage-row">
               <input type="text" defaultValue={lr.name}
                 onChange={(e) => updateLaborRate(lr.id, "name", e.target.value)}
-                style={{ flex: 1, minWidth: 120, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
-              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                style={{ flex: 1, minWidth: 120, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+              <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                 <span className="muted">$</span>
                 <input type="number" defaultValue={lr.rate}
                   onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
-                  style={{ width: 80, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+                  style={{ width: 80, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
                 <select
                   aria-label={`Unit for ${lr.name}`}
                   value={lr.kind}
                   onChange={(e) => updateLaborRate(lr.id, "kind", e.target.value)}
-                  style={{ border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 6px", fontFamily: "inherit", fontSize: "var(--type-sm)", color: "var(--ink-2)", background: "var(--card)" }}
+                  style={{ border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-2)", fontFamily: "inherit", fontSize: "var(--type-sm)", color: "var(--ink-2)", background: "var(--card)" }}
                 >
                   <option value="hourly">/hr</option>
                   <option value="flat_fee">flat</option>
@@ -186,20 +186,20 @@ export function PricebookPane() {
           </div>
           <div style={{ display: "flex", gap: "var(--space-2)" }}>
             <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
-              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
             <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
-              style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+              style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
             <button className="btn" onClick={handleAddLabor}>+ Add</button>
           </div>
         </div>
       </FoldCard>
 
       <FoldCard title="Default parts markup" summary={`${markup}%`}>
-        <div className="field" style={{ maxWidth: 200, margin: 0 }}>
+        <div className="field" style={{ maxWidth: 200, margin: "0" }}>
           <label>Markup on new parts (%)</label>
           <input type="number" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
         </div>
-        <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "11.5px" }}>
+        <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "var(--type-sm)" }}>
           Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
         </p>
       </FoldCard>
@@ -216,9 +216,9 @@ export function PricebookPane() {
         </div>
         <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
           <input type="text" id="tlName" placeholder="name (e.g. Repipe terms)" value={tlName} onChange={(e) => setTlName(e.target.value)}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
           <input type="text" id="tlBody" placeholder="the fine print…" value={tlBody} onChange={(e) => setTlBody(e.target.value)}
-            style={{ flex: 2, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+            style={{ flex: 2, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
           <button className="btn" onClick={handleAddTerm}>+ Add</button>
         </div>
       </FoldCard>

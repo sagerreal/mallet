@@ -143,7 +143,7 @@ export default function PipelinePage() {
           {intake.map((row) => (
             <IntakeCard key={row.lead.id} row={row} snap={snap} />
           ))}
-          {intake.length === 0 && <div className="empty-att" style={{ padding: "20px 0" }}>—</div>}
+          {intake.length === 0 && <div className="empty-att" style={{ padding: "var(--space-5) 0" }}>—</div>}
         </div>
 
         <div className="col">
@@ -154,7 +154,7 @@ export default function PipelinePage() {
           {getting.map((row) => (
             <GettingCard key={`${row.kind}-${row.est?.id ?? row.lead.id}`} row={row} />
           ))}
-          {getting.length === 0 && <div className="empty-att" style={{ padding: "20px 0" }}>—</div>}
+          {getting.length === 0 && <div className="empty-att" style={{ padding: "var(--space-5) 0" }}>—</div>}
         </div>
 
         <div className="col">
@@ -167,7 +167,7 @@ export default function PipelinePage() {
           {rail.out.map((row) => (
             <OutCard key={row.est.id} row={row} snap={snap} />
           ))}
-          {rail.out.length === 0 && <div className="empty-att" style={{ padding: "20px 0" }}>—</div>}
+          {rail.out.length === 0 && <div className="empty-att" style={{ padding: "var(--space-5) 0" }}>—</div>}
         </div>
 
         <div className="col">
@@ -178,7 +178,7 @@ export default function PipelinePage() {
           {rail.won.map((row) => (
             <WonCard key={row.est.id} row={row} />
           ))}
-          {rail.won.length === 0 && <div className="empty-att" style={{ padding: "20px 0" }}>—</div>}
+          {rail.won.length === 0 && <div className="empty-att" style={{ padding: "var(--space-5) 0" }}>—</div>}
         </div>
       </div>
 

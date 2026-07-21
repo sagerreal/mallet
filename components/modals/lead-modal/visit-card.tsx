@@ -55,17 +55,17 @@ function VisitRow({ visit, leadId, techName }: VisitRowProps) {
           {formatDay(visit)} · {techName}
         </div>
         {visit.scopeNotes && (
-          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
             {visit.scopeNotes}
           </div>
         )}
         {visit.photos && visit.photos.length > 0 && (
-          <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
             {visit.photos.length} photo{visit.photos.length !== 1 ? "s" : ""}
           </div>
         )}
       </div>
-      <div className="trig" style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+      <div className="trig" style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }}>
         <button
           className="btn sm ghost"
           onClick={() => openModal(MODAL.EVISIT, { leadId, visitId: visit.id })}

@@ -85,7 +85,7 @@ export function SweepModalContent() {
   return (
     <div>
       <h2>Clean up leads</h2>
-      <p className="muted" style={{ marginBottom: 10 }}>
+      <p className="muted" style={{ marginBottom: "var(--space-3)" }}>
         Check anything you want out of the way.{" "}
         <span className="linklike" onClick={selectAll}>
           Select all
@@ -95,7 +95,7 @@ export function SweepModalContent() {
       <div style={{ maxHeight: 320, overflowY: "auto" }}>
         {stale.length > 0 && (
           <>
-            <div className="navlabel" style={{ padding: "2px 0 6px" }}>
+            <div className="navlabel" style={{ padding: "var(--space-2xs) 0 var(--space-2)" }}>
               ⚠ Going stale — {stale.length}
             </div>
             {stale.map(row)}
@@ -118,7 +118,7 @@ export function SweepModalContent() {
         style={{
           display: "flex",
           justifyContent: "flex-end",
-          gap: 9,
+          gap: "var(--space-2)",
           marginTop: "var(--space-4)",
           flexWrap: "wrap",
         }}

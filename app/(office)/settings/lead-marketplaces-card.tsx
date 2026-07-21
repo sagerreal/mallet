@@ -40,7 +40,7 @@ function ConnectRow({ channel, label, steps }: { channel: "angi" | "thumbtack"; 
 
   return (
     <div className="stage-row" style={{ display: "block" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
         <b style={{ flex: 1 }}>{label}</b>
         <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{state}</span>
         {!ep && (
@@ -50,12 +50,12 @@ function ConnectRow({ channel, label, steps }: { channel: "angi" | "thumbtack"; 
         )}
       </div>
       {ep && (
-        <div style={{ marginTop: "var(--space-2)", display: "grid", gap: 6 }}>
+        <div style={{ marginTop: "var(--space-2)", display: "grid", gap: "var(--space-2)" }}>
           <div style={{ display: "flex", gap: "var(--space-2)" }}>
-            <input readOnly value={url} style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 9px", fontFamily: "var(--font-mono, monospace)", fontSize: "var(--type-sm)" }} />
+            <input readOnly value={url} style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-2)", fontFamily: "var(--font-mono, monospace)", fontSize: "var(--type-sm)" }} />
             <button className="btn sm" onClick={() => { void navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy"}</button>
           </div>
-          <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>{steps}</p>
+          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>{steps}</p>
         </div>
       )}
     </div>

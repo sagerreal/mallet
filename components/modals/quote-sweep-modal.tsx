@@ -112,7 +112,7 @@ export function QuoteSweepModalContent() {
   return (
     <div>
       <h2>Clean up quotes</h2>
-      <p className="muted" style={{ marginBottom: 10 }}>
+      <p className="muted" style={{ marginBottom: "var(--space-3)" }}>
         Check anything you want out of the way.{" "}
         <button type="button" className="linklike" onClick={selectAll}>
           Select all
@@ -122,7 +122,7 @@ export function QuoteSweepModalContent() {
       <div style={{ maxHeight: 320, overflowY: "auto" }}>
         {clutter.length > 0 && (
           <>
-            <div className="navlabel" style={{ padding: "2px 0 6px" }}>
+            <div className="navlabel" style={{ padding: "var(--space-2xs) 0 var(--space-2)" }}>
               Paper pile — drafts, declined, superseded, expired
             </div>
             {clutter.map(row)}
@@ -169,7 +169,7 @@ export function QuoteSweepModalContent() {
         style={{
           display: "flex",
           justifyContent: "flex-end",
-          gap: 9,
+          gap: "var(--space-2)",
           marginTop: "var(--space-4)",
           flexWrap: "wrap",
         }}

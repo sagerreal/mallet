@@ -36,9 +36,9 @@ export function CategoryManager({ categories, onAdd }: CategoryManagerProps) {
   }
 
   return (
-    <div style={{ marginTop: 14, paddingTop: "var(--space-3)", borderTop: "1px solid var(--line)" }}>
+    <div style={{ marginTop: "var(--space-4)", paddingTop: "var(--space-3)", borderTop: "1px solid var(--line)" }}>
       <div
-        style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "var(--ink-2)" }}
+        style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer", fontSize: "var(--type-base)", fontWeight: 700, color: "var(--ink-2)" }}
         onClick={() => setOpen((v) => !v)}
         role="button"
         aria-expanded={open}
@@ -49,7 +49,7 @@ export function CategoryManager({ categories, onAdd }: CategoryManagerProps) {
       {open && (
         <div style={{ marginTop: "var(--space-2)" }}>
           {categories.map((c) => (
-            <div key={c.id} className="stage-row" style={{ padding: "6px 0" }}>
+            <div key={c.id} className="stage-row" style={{ padding: "var(--space-2) 0" }}>
               <span style={{ flex: 1 }}>{c.name}</span>
             </div>
           ))}
@@ -60,11 +60,11 @@ export function CategoryManager({ categories, onAdd }: CategoryManagerProps) {
               value={name}
               onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
               onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
-              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 9px", fontFamily: "inherit", fontSize: "var(--type-base)" }}
+              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-2)", fontFamily: "inherit", fontSize: "var(--type-base)" }}
             />
             <button className="btn sm" onClick={() => void handleAdd()}>+ Add category</button>
           </div>
-          {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "6px 0 0" }}>{error}</p>}
+          {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{error}</p>}
         </div>
       )}
     </div>

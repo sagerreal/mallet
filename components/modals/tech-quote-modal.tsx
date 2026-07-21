@@ -404,7 +404,7 @@ export function TechQuoteModalContent() {
           {signLines.map((l, i) => (
             <div
               key={i}
-              style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "3px 0" }}
+              style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}
             >
               <span>{l.d || "Repair"}</span>
               <b className="fig">{fmt$(lineAmt(l))}</b>
@@ -417,8 +417,8 @@ export function TechQuoteModalContent() {
               fontWeight: 800,
               fontSize: "var(--type-lg)",
               borderTop: "1px solid var(--manila-line)",
-              marginTop: 6,
-              paddingTop: 6,
+              marginTop: "var(--space-2)",
+              paddingTop: "var(--space-2)",
             }}
           >
             <span>Total</span>
@@ -431,7 +431,7 @@ export function TechQuoteModalContent() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "baseline",
-            margin: "15px 0 5px",
+            margin: "var(--space-4) 0 var(--space-1)",
           }}
         >
           <span style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>Customer signature</span>
@@ -442,16 +442,16 @@ export function TechQuoteModalContent() {
 
         <SignaturePad onClearRef={setSigClear} />
 
-        <div className="muted" style={{ fontSize: 11.5, marginTop: "var(--space-2)", lineHeight: 1.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)", lineHeight: 1.5 }}>
           <b>{custName}</b> — by signing, you approve the work above and authorize{" "}
           <b className="fig">{fmt$(total)}</b> on this visit. A copy is texted to you on the spot.
         </div>
 
         {signError ? (
-          <p style={{ color: "var(--red)", fontSize: 12.5, margin: "10px 0 0" }}>{signError}</p>
+          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{signError}</p>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 14, gap: "var(--space-2)" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "var(--space-4)", gap: "var(--space-2)" }}>
           <button className="btn" onClick={() => setMode(offered.length > 1 ? "present" : "edit")} disabled={signing}>
             ← Back
           </button>
@@ -470,7 +470,7 @@ export function TechQuoteModalContent() {
       <div>
         <Eyebrow custName={custName} />
         <h2>Present — on glass</h2>
-        <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}>
           Hand {firstName} the tablet — they pick:
         </div>
 
@@ -493,7 +493,7 @@ export function TechQuoteModalContent() {
                 </b>
                 <b>{fmt$(tierTotal(k))}</b>
               </div>
-              <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
+              <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
                 {tiers[k].map((l) => l.d || "Repair").join(" · ") || "—"}
               </div>
             </div>
@@ -502,7 +502,7 @@ export function TechQuoteModalContent() {
           <div className="muted">Nothing priced yet.</div>
         )}
 
-        <div style={{ textAlign: "right", marginTop: 6 }}>
+        <div style={{ textAlign: "right", marginTop: "var(--space-2)" }}>
           <button className="btn" onClick={() => setMode("edit")}>
             ← Back to edit
           </button>
@@ -521,11 +521,11 @@ export function TechQuoteModalContent() {
   return (
     <div>
       <Eyebrow custName={custName} />
-      <h2 style={{ marginBottom: 14 }}>Build the price</h2>
+      <h2 style={{ marginBottom: "var(--space-4)" }}>Build the price</h2>
 
       {/* tier chips (only better + opted-in tiers; each shows label · $total) */}
       {multi ? (
-        <div className="chips" style={{ marginBottom: 10 }}>
+        <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
           {tierChips.map(([k, lbl]) => {
             const t = tierTotal(k);
             return (
@@ -544,7 +544,7 @@ export function TechQuoteModalContent() {
 
       {/* the current tier's line list + a per-tier Total */}
       {lines.length ? (
-        <div className="card" style={{ marginBottom: 14 }}>
+        <div className="card" style={{ marginBottom: "var(--space-4)" }}>
           {lines.map((l, i) => (
             <LineRow
               key={i}
@@ -558,10 +558,10 @@ export function TechQuoteModalContent() {
               display: "flex",
               justifyContent: "space-between",
               fontWeight: 800,
-              fontSize: 16,
+              fontSize: "var(--type-lg)",
               borderTop: "1px solid var(--line)",
               marginTop: "var(--space-2)",
-              paddingTop: 9,
+              paddingTop: "var(--space-2)",
             }}
           >
             <span>{multi ? `${tierLabel(tier)} total` : "Total"}</span>
@@ -618,7 +618,7 @@ export function TechQuoteModalContent() {
       ) : null}
 
       {/* Footer — present to customer (single) / present options (multi) */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--space-5)" }}>
         <button
           className="btn primary"
           onClick={present}

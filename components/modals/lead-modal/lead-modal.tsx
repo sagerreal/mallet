@@ -65,17 +65,17 @@ function QuotesCard({ estimates }: QuotesCardProps) {
             onClick={() => openModal(MODAL.EST, { estId: e.id })}
           >
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+              <div style={{ fontSize: "var(--type-base)", fontWeight: 600 }}>
                 {e.num} — {e.title}
               </div>
-              <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
+              <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
                 {isSigned
                   ? `Signed — $${total.toLocaleString()}`
                   : "Tap to open…"}
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 700 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+              <span style={{ fontSize: "var(--type-base)", fontWeight: 700 }}>
                 ${total.toLocaleString()}
               </span>
               <SoftPill tone={statusStampCls(e.status) as PillTone}>

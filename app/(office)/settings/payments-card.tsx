@@ -51,7 +51,7 @@ export function PaymentsCard() {
 
   return (
     <FoldCard title="Payments" summary={complete ? "Connected" : "Not connected"} defaultOpen>
-      <p style={{ fontSize: 13.5, color: "var(--ink-2)", margin: "0 0 14px" }}>
+      <p style={{ fontSize: "var(--type-base)", color: "var(--ink-2)", margin: "0 0 var(--space-4)" }}>
         Connect your bank through Stripe so customers can pay you by card. Stripe verifies your
         details and deposits payouts to your account.
       </p>
@@ -59,7 +59,7 @@ export function PaymentsCard() {
       {status.isLoading ? (
         <p style={{ fontSize: "var(--type-base)", color: "var(--ink-3)" }}>Loading…</p>
       ) : complete ? (
-        <div style={{ fontSize: 13.5 }}>
+        <div style={{ fontSize: "var(--type-base)" }}>
           <div style={{ fontWeight: 700, marginBottom: "var(--space-1)" }}>Connected ✓</div>
           <div style={{ color: "var(--ink-2)" }}>
             Card charges {s?.chargesEnabled ? "enabled" : "pending"} · Payouts{" "}
@@ -67,7 +67,7 @@ export function PaymentsCard() {
           </div>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
           {started && (
             <div style={{ fontSize: "var(--type-base)", color: "var(--ink-2)" }}>
               Setup started but not finished — pick up where you left off.
@@ -89,7 +89,7 @@ export function PaymentsCard() {
       )}
 
       {error && (
-        <p style={{ color: "var(--red)", fontSize: 12.5, margin: "10px 0 0" }} role="alert">
+        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }} role="alert">
           {error}
         </p>
       )}

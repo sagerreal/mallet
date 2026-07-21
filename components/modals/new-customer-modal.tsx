@@ -454,7 +454,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 </button>
               ))}
               {showAddSource ? (
-                <div className="cfrow" style={{ padding: "6px 12px" }}>
+                <div className="cfrow" style={{ padding: "var(--space-2) var(--space-3)" }}>
                   <input
                     type="text"
                     placeholder="Source name"
@@ -486,7 +486,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
 
         {/* 7. Book a visit reveal */}
-        <div className={`reveal${bookOpen ? " open" : ""}`} style={{ marginBottom: 14 }}>
+        <div className={`reveal${bookOpen ? " open" : ""}`} style={{ marginBottom: "var(--space-4)" }}>
           <div
             className="reveal-head"
             onClick={() => setBookOpen((o) => !o)}
@@ -509,7 +509,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             </div>
 
             {/* Purpose toggle: Job / Estimate visit */}
-            <div className="chips" style={{ marginBottom: 14 }}>
+            <div className="chips" style={{ marginBottom: "var(--space-4)" }}>
               <button
                 type="button"
                 className={`chip${visitPurpose === "job" ? " sel" : ""}`}
@@ -552,7 +552,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 >
                   ✦ Build the price →
                 </button>
-                <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+                <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
                   Same builder your crew uses — or price later.
                 </div>
               </div>
@@ -643,7 +643,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         </div>
 
         {error && (
-          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "0 0 12px" }}>{error}</p>
+          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "0 0 var(--space-3)" }}>{error}</p>
         )}
 
         {/* Dedup notice — shown when the submitted phone already belongs to an existing customer */}
@@ -651,12 +651,12 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           <div style={{
             background: "var(--surface-2, #f5f5f5)",
             border: "1px solid var(--border, #e0e0e0)",
-            borderRadius: 8,
-            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            padding: "var(--space-3) var(--space-4)",
             marginBottom: "var(--space-3)",
             fontSize: "var(--type-base)",
           }}>
-            <p style={{ margin: "0 0 8px", color: "var(--text-1, #111)" }}>
+            <p style={{ margin: "0 0 var(--space-2)", color: "var(--text-1, #111)" }}>
               A customer with that phone already exists.
             </p>
             <button
@@ -670,7 +670,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         )}
 
         {/* 9. Footer */}
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: "var(--space-3)", justifyContent: "flex-end" }}>
           <button type="button" className="btn ghost" onClick={handleClose} disabled={createMutation.isPending}>
             Cancel
           </button>

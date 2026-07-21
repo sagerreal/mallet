@@ -66,7 +66,7 @@ export default function FieldAccountPage() {
 
       {isOffice && <MenuGroup label="Office" links={OFFICE_LINKS} />}
 
-      <div style={{ marginTop: 18 }}>
+      <div style={{ marginTop: "var(--space-5)" }}>
         <SignOutButton />
       </div>
     </div>

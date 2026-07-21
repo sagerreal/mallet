@@ -179,7 +179,7 @@ export function TimesheetsPanel() {
   return (
     <>
       <h1>Timesheets</h1>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", margin: "var(--space-3) 0", flexWrap: "wrap" }}>
         <button className="btn sm" onClick={() => weekNav(-1)}>
           ‹ Prev
         </button>

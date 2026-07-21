@@ -153,8 +153,8 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
       <div
         style={{
           border: "1px dashed var(--line)",
-          borderRadius: 11,
-          padding: 11,
+          borderRadius: "var(--radius)",
+          padding: "var(--space-3)",
           marginBottom: "var(--space-2)",
           display: "flex",
           gap: "var(--space-3)",
@@ -168,14 +168,14 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
         <DurField dur={visit.dur} onChange={(dur) => onUpdate({ dur })} />
         <span
           className="muted"
-          style={{ fontSize: 11.5, flex: 1, minWidth: 140, alignSelf: "center" }}
+          style={{ fontSize: "var(--type-sm)", flex: 1, minWidth: 140, alignSelf: "center" }}
         >
           Set the hours, then place it on the Schedule board for the crew, day &amp; time.
         </span>
         <button
           type="button"
           className="linklike"
-          style={{ fontSize: 11.5, alignSelf: "center" }}
+          style={{ fontSize: "var(--type-sm)", alignSelf: "center" }}
           onClick={onGoToSchedule}
         >
           Open the Schedule board →
@@ -199,13 +199,13 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
     <div
       style={{
         border: `1px solid ${conflict ? "var(--red)" : "var(--line)"}`,
-        borderRadius: 11,
-        padding: 11,
+        borderRadius: "var(--radius)",
+        padding: "var(--space-3)",
         marginBottom: "var(--space-2)",
       }}
     >
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div className="field" style={{ margin: 0 }}>
+      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Day</label>
           <input
             type="date"
@@ -214,7 +214,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
             onChange={(e) => onUpdate({ date: e.target.value })}
           />
         </div>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Crew</label>
           <select
             value={visit.techId ?? ""}
@@ -261,9 +261,9 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
 
       <div
         className="row2"
-        style={{ gridTemplateColumns: "1fr auto", gap: 10, marginTop: "var(--space-2)", alignItems: "end" }}
+        style={{ gridTemplateColumns: "1fr auto", gap: "var(--space-3)", marginTop: "var(--space-2)", alignItems: "end" }}
       >
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Start</label>
           <input
             type="time"
@@ -323,9 +323,9 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
       <div
         style={{
           display: "flex",
-          gap: 6,
+          gap: "var(--space-2)",
           alignItems: "center",
-          marginTop: 9,
+          marginTop: "var(--space-2)",
           flexWrap: "wrap",
         }}
       >
@@ -384,7 +384,7 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
         ? `Priced from quote ${est.num} — ${fmt$(total)}`
         : "Priced from its quote";
     return (
-      <div style={{ margin: "14px 0 0", display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
+      <div style={{ margin: "var(--space-4) 0 0", display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
         <span style={{ fontSize: "var(--type-base)" }}>{label}</span>
         {est && (
           <span
@@ -401,7 +401,7 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
 
   if (!hasLines) {
     return (
-      <div style={{ margin: "14px 0 0" }}>
+      <div style={{ margin: "var(--space-4) 0 0" }}>
         <span
           className="linklike"
           style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
@@ -409,7 +409,7 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
         >
           ✦ Build the price →
         </span>{" "}
-        <span className="muted" style={{ fontSize: 11.5 }}>
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
           or price it later
         </span>
       </div>
@@ -417,9 +417,9 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
   }
 
   return (
-    <div className="card" style={{ margin: "14px 0 0", background: "var(--paper)" }}>
+    <div className="card" style={{ margin: "var(--space-4) 0 0", background: "var(--paper)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 style={{ fontSize: "var(--type-base)", margin: 0 }}>Price</h3>
+        <h3 style={{ fontSize: "var(--type-base)", margin: "0" }}>Price</h3>
         <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
           Edit
         </span>
@@ -427,7 +427,7 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
       {(job.lines ?? []).map((x, i) => (
         <div
           key={i}
-          style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "3px 0" }}
+          style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}
         >
           <span>
             {x.d}
@@ -443,8 +443,8 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
           fontWeight: 800,
           fontSize: "var(--type-md)",
           borderTop: "1px solid var(--line)",
-          marginTop: 5,
-          paddingTop: 5,
+          marginTop: "var(--space-1)",
+          paddingTop: "var(--space-1)",
         }}
       >
         <span>Total</span>
@@ -546,7 +546,7 @@ function NoteFeed({ job }: { job: Job }) {
   if (entries.length === 0) return null;
 
   return (
-    <div className="card" style={{ marginTop: 14 }}>
+    <div className="card" style={{ marginTop: "var(--space-4)" }}>
       <h3 style={{ fontSize: "var(--type-base)" }}>Notes</h3>
       <div className="nfeed">
         {entries.map((n) => (
@@ -643,9 +643,9 @@ function TypeField({ job, onSetSvc }: TypeFieldProps) {
                   display: "inline-block",
                   width: 8,
                   height: 8,
-                  borderRadius: 2,
+                  borderRadius: "var(--radius-2xs)",
                   background: svcEdge(t),
-                  marginRight: 6,
+                  marginRight: "var(--space-2)",
                   verticalAlign: "middle",
                 }}
               />
@@ -735,7 +735,7 @@ export function JobModalContent() {
   return (
     <div>
       {/* 1. Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-2)" }}>
         <div
           className="avatar"
           style={{
@@ -743,14 +743,14 @@ export function JobModalContent() {
             height: 42,
             background: "var(--green-100)",
             color: "var(--green-900)",
-            fontSize: 14,
+            fontSize: "var(--type-md)",
           }}
         >
           {initialsOf(custName)}
         </div>
         <div style={{ flex: 1 }}>
-          <h2 style={{ marginBottom: 2 }}>{custName}</h2>
-          <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+          <h2 style={{ marginBottom: "var(--space-2xs)" }}>{custName}</h2>
+          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
             <span className="stpill" style={{ color: status.c, background: status.bg }}>
               {status.l}
             </span>
@@ -779,7 +779,7 @@ export function JobModalContent() {
           linked; the call sheet / thread each prompt to add a number in-flow
           when none is on file. They disable only with NO linked customer (there
           is nobody to call). */}
-      <div style={{ margin: "12px 0" }}>
+      <div style={{ margin: "var(--space-3) 0" }}>
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button
             className="btn"
@@ -802,7 +802,7 @@ export function JobModalContent() {
             Text
           </button>
           {phone && (
-            <span className="muted" style={{ fontSize: 11.5, alignSelf: "center" }}>
+            <span className="muted" style={{ fontSize: "var(--type-sm)", alignSelf: "center" }}>
               {phone}
             </span>
           )}
@@ -811,7 +811,7 @@ export function JobModalContent() {
 
       {/* 3. Customer phone (only when there's no linked lead) */}
       {!lead && (
-        <div className="field" style={{ margin: "0 0 10px" }}>
+        <div className="field" style={{ margin: "0 0 var(--space-3)" }}>
           <label>Customer phone</label>
           <input
             type="tel"
@@ -823,7 +823,7 @@ export function JobModalContent() {
       )}
 
       {/* 4. Job title */}
-      <div className="field" style={{ margin: 0 }}>
+      <div className="field" style={{ margin: "0" }}>
         <label>Job</label>
         <input
           type="text"
@@ -861,10 +861,10 @@ export function JobModalContent() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          margin: "16px 0 8px",
+          margin: "var(--space-4) 0 var(--space-2)",
         }}
       >
-        <h3 style={{ fontSize: 14, fontWeight: 800 }}>Schedule</h3>
+        <h3 style={{ fontSize: "var(--type-md)", fontWeight: 800 }}>Schedule</h3>
       </div>
 
       {visits.length ? (
@@ -913,9 +913,9 @@ export function JobModalContent() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginTop: 18,
+          marginTop: "var(--space-5)",
           borderTop: "1px solid var(--line)",
-          paddingTop: 14,
+          paddingTop: "var(--space-4)",
         }}
       >
         <button

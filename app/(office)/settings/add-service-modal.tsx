@@ -54,7 +54,7 @@ export function AddServiceModal({
 
   return (
     <Modal open={open} onClose={() => { reset(); onClose(); }} maxWidth={480}>
-      <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>
+      <h3 style={{ margin: "0 0 var(--space-4)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
         Add service
       </h3>
 
@@ -76,8 +76,8 @@ export function AddServiceModal({
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <Segmented value={route} onChange={setRoute} options={ROUTE_OPTIONS} aria-label="Job type" />
           {route === "book" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>$</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+              <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
               <input
                 type="number"
                 min={0}
@@ -103,7 +103,7 @@ export function AddServiceModal({
         />
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: 18 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
         <button className="btn ghost" onClick={() => { reset(); onClose(); }}>Cancel</button>
         <button className="btn primary" disabled={!name.trim()} onClick={handleAdd}>
           Add service

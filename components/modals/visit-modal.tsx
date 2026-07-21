@@ -145,8 +145,8 @@ export function VisitModalContent() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 2 }}>Book a visit</h2>
-      <p className="muted" style={{ marginBottom: 14, fontSize: 12.5 }}>
+      <h2 style={{ marginBottom: "var(--space-2xs)" }}>Book a visit</h2>
+      <p className="muted" style={{ marginBottom: "var(--space-4)", fontSize: "var(--type-base)" }}>
         {lead.name}
       </p>
 
@@ -178,7 +178,7 @@ export function VisitModalContent() {
           Estimate visit
         </button>
       </div>
-      <p className="muted" style={{ fontSize: 11.5, marginBottom: 14 }}>
+      <p className="muted" style={{ fontSize: "var(--type-sm)", marginBottom: "var(--space-4)" }}>
         {purpose === "job"
           ? "Diagnosed & priced on the visit."
           : "Scoped on site, then quoted — no job until they say yes."}
@@ -201,7 +201,7 @@ export function VisitModalContent() {
           >
             ✦ Build the price →
           </button>
-          <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
             Same builder your crew uses — or price later.
           </div>
         </div>
@@ -219,7 +219,7 @@ export function VisitModalContent() {
       </div>
 
       {error && (
-        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "12px 0 0" }}>{error}</p>
+        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
       )}
 
       {/* Footer */}

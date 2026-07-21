@@ -72,7 +72,7 @@ function LinkedLeadsCard({ contacts, onOpenLead }: LinkedLeadsCardProps) {
 
 function WorkHistoryCard({ contacts }: { contacts: Lead[] }) {
   return (
-    <div className="card" style={{ marginBottom: 0 }}>
+    <div className="card" style={{ marginBottom: "0" }}>
       <h3>Work history</h3>
       {contacts.length > 0 ? (
         contacts.map((l) => (
@@ -104,7 +104,7 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
     <div className="card">
       <h3>Details</h3>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-        <div className="field" style={{ marginBottom: 0 }}>
+        <div className="field" style={{ marginBottom: "0" }}>
           <label>Phone</label>
           <input
             type="text"
@@ -113,7 +113,7 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
             onBlur={(e) => onSave({ phone: e.target.value.trim() })}
           />
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
+        <div className="field" style={{ marginBottom: "0" }}>
           <label>Email</label>
           <input
             type="text"
@@ -131,7 +131,7 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
           marginTop: "var(--space-3)",
         }}
       >
-        <div className="field" style={{ marginBottom: 0 }}>
+        <div className="field" style={{ marginBottom: "0" }}>
           <label>Website</label>
           <input
             type="text"
@@ -140,7 +140,7 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
             onBlur={(e) => onSave({ website: e.target.value.trim() })}
           />
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
+        <div className="field" style={{ marginBottom: "0" }}>
           <label>Office address</label>
           <input
             type="text"
@@ -150,7 +150,7 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
           />
         </div>
       </div>
-      <div className="field" style={{ marginTop: "var(--space-3)", marginBottom: 0 }}>
+      <div className="field" style={{ marginTop: "var(--space-3)", marginBottom: "0" }}>
         <label>About this account</label>
         <textarea
           rows={2}
@@ -194,9 +194,9 @@ export function CompanyViewModalContent() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 10,
-          marginBottom: 2,
-          paddingRight: 30,
+          gap: "var(--space-3)",
+          marginBottom: "var(--space-2xs)",
+          paddingRight: "var(--space-8)",
         }}
       >
         <h2>{company.name}</h2>
@@ -238,7 +238,7 @@ export function CompanyViewModalContent() {
         style={{
           gridTemplateColumns: "repeat(2,1fr)",
           maxWidth: 480,
-          marginBottom: 14,
+          marginBottom: "var(--space-4)",
         }}
       >
         <div className="kpi">

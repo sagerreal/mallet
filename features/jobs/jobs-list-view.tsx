@@ -203,7 +203,7 @@ export function JobsListView({ bands, sort, onSort, onOpenJob, visibleCols }: Jo
   const show = (c: JobColKey) => visibleCols.includes(c);
 
   if (rows.length === 0) {
-    return <div className="empty-att" style={{ padding: "24px 0" }}>Nothing matches.</div>;
+    return <div className="empty-att" style={{ padding: "var(--space-6) 0" }}>Nothing matches.</div>;
   }
 
   return (

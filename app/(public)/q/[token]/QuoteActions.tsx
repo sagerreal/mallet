@@ -134,7 +134,7 @@ export function QuoteActions({
   return (
     <>
       {showChangeBanner && (
-        <div className="reqcard" style={{ marginTop: "var(--space-2)", marginBottom: 10 }}>
+        <div className="reqcard" style={{ marginTop: "var(--space-2)", marginBottom: "var(--space-3)" }}>
           Request sent — they&rsquo;ll get back to you.
         </div>
       )}
@@ -146,10 +146,10 @@ export function QuoteActions({
             background: "var(--red-bg)",
             border: "1px solid var(--red)",
             borderRadius: "var(--radius-sm)",
-            padding: "8px 12px",
-            fontSize: 12.5,
+            padding: "var(--space-2) var(--space-3)",
+            fontSize: "var(--type-base)",
             color: "var(--red)",
-            marginBottom: 10,
+            marginBottom: "var(--space-3)",
           }}
         >
           {error}
@@ -161,9 +161,9 @@ export function QuoteActions({
         className="btn primary"
         style={{
           width: "100%",
-          padding: 13,
-          fontSize: 14.5,
-          marginTop: 6,
+          padding: "var(--space-3)",
+          fontSize: "var(--type-md)",
+          marginTop: "var(--space-2)",
           opacity: phase === "busy" ? 0.6 : 1,
           cursor: phase === "busy" ? "not-allowed" : "pointer",
         }}
@@ -191,9 +191,9 @@ export function QuoteActions({
               width: "100%",
               border: "1.5px solid var(--line)",
               borderRadius: "var(--radius-sm, 9px)",
-              padding: "8px 11px",
+              padding: "var(--space-2) var(--space-3)",
               fontFamily: "inherit",
-              fontSize: 13.5,
+              fontSize: "var(--type-base)",
               background: "var(--card)",
               color: "var(--ink)",
               resize: "vertical",
@@ -220,7 +220,7 @@ export function QuoteActions({
         phase === "declining" ? (
           <div
             className="chips"
-            style={{ justifyContent: "center", marginTop: 10 }}
+            style={{ justifyContent: "center", marginTop: "var(--space-3)" }}
             role="group"
             aria-label="Reason for declining"
           >

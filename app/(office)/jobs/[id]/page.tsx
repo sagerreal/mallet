@@ -19,14 +19,14 @@ function JobCardSkeleton() {
     <>
       {/* Card block 1 */}
       <div className="sk-row">
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
           <div className="sk" style={{ width: "70%", height: 14 }} />
           <div className="sk" style={{ width: "50%", height: 12 }} />
         </div>
       </div>
       {/* Card block 2 */}
       <div className="sk-row">
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
           <div className="sk" style={{ width: "60%", height: 14 }} />
           <div className="sk" style={{ width: "45%", height: 12 }} />
         </div>
@@ -56,7 +56,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
   if (job.isError) return <p className="text-sm text-red">{userMessage(job.error)}</p>;
   if (job.isLoading) return (
-    <div style={{ padding: "0 0 24px" }}>
+    <div style={{ padding: "0 0 var(--space-6)" }}>
       {/* Paint the title instantly when the store already has the job (warm nav);
           fall back to a title-bar skeleton for a cold deep-link. */}
       {storeTitle !== null ? (

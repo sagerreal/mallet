@@ -102,7 +102,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
 
           {/* Membership pill (if applicable) */}
           {lead.card && (
-            <div style={{ marginBottom: 10 }}>
+            <div style={{ marginBottom: "var(--space-3)" }}>
               <span className="pill green">
                 {lead.card.brand} ···{lead.card.last4} — on file via {lead.card.via}
               </span>
@@ -175,7 +175,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
           role="button"
           tabIndex={0}
           aria-label={deleteArmed ? `Confirm — archive ${lead.name}` : `Delete ${lead.name}`}
-          style={{ color: "var(--red)", fontSize: 12.5, cursor: "pointer", fontWeight: deleteArmed ? 700 : undefined }}
+          style={{ color: "var(--red)", fontSize: "var(--type-base)", cursor: "pointer", fontWeight: deleteArmed ? 700 : undefined }}
           onClick={handleDelete}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {

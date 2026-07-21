@@ -108,8 +108,8 @@ function CustHead({ brand }: { brand: Brand }) {
         {brand.initials}
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 800, fontSize: 16 }}>{brand.name}</div>
-        <div style={{ fontSize: 11.5, opacity: 0.8 }}>{brand.tagline}</div>
+        <div style={{ fontWeight: 800, fontSize: "var(--type-lg)" }}>{brand.name}</div>
+        <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>{brand.tagline}</div>
       </div>
       {/* ModalHost provides close — no duplicate custCloseBtn() ✕ here. */}
     </div>
@@ -122,7 +122,7 @@ function CustHead({ brand }: { brand: Brand }) {
 
 function CustFooter() {
   return (
-    <p className="muted" style={{ fontSize: 10.5, textAlign: "center", marginTop: "var(--space-3)" }}>
+    <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-3)" }}>
       Powered by Mallet — licensed &amp; insured
     </p>
   );
@@ -158,7 +158,7 @@ function DeclineBlock({ onDecline }: { onDecline: (reason: string) => void }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div style={{ textAlign: "center", marginTop: 10 }}>
+    <div style={{ textAlign: "center", marginTop: "var(--space-3)" }}>
       {open ? (
         <div className="chips" style={{ justifyContent: "center" }}>
           {DECLINE_REASONS.map((r) => (
@@ -254,25 +254,25 @@ function CustTotals({
         flexDirection: "column",
         alignItems: "flex-end",
         gap: "var(--space-1)",
-        padding: "14px 0 4px",
+        padding: "var(--space-4) 0 var(--space-1)",
       }}
     >
       {pricing.disc || pricing.tax ? (
-        <div className="muted" style={{ fontSize: 12.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)" }}>
           Subtotal {fmt$(m.sub)}
         </div>
       ) : null}
       {pricing.disc ? (
-        <div className="muted" style={{ fontSize: 12.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)" }}>
           Discount {pricing.disc}% −{fmt$(m.disc)}
         </div>
       ) : null}
       {pricing.tax ? (
-        <div className="muted" style={{ fontSize: 12.5 }}>
+        <div className="muted" style={{ fontSize: "var(--type-base)" }}>
           Tax {pricing.tax}% +{fmt$(m.taxed)}
         </div>
       ) : null}
-      <div style={{ fontWeight: 900, fontSize: 19 }}>Total {fmt$(m.total)}</div>
+      <div style={{ fontWeight: 900, fontSize: "var(--type-xl)" }}>Total {fmt$(m.total)}</div>
       {pricing.dep ? (
         <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
           {fmt$(m.dep)} deposit due today · the rest when the job&rsquo;s done
@@ -315,7 +315,7 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
 
   return (
     <>
-      <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 6 }}>
+      <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
         Here&rsquo;s your quote from <b>{brand.name}</b> — take a look.
       </p>
       <p className="muted" style={{ marginBottom: "var(--space-2)" }}>
@@ -336,7 +336,7 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
       {/* Approve — prominent primary button. deferred: on-glass signature. */}
       <button
         className="btn primary"
-        style={{ width: "100%", padding: 13, fontSize: 14.5, marginTop: 6 }}
+        style={{ width: "100%", padding: "var(--space-3)", fontSize: "var(--type-md)", marginTop: "var(--space-2)" }}
         onClick={() => onApprove(m.total, selectedOptLines)}
       >
         Approve — {fmt$(m.total)}
@@ -389,7 +389,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
 
   return (
     <>
-      <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 6 }}>
+      <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
         Here&rsquo;s your quote from <b>{brand.name}</b>
         {tiers.length > 1 ? (
           <>
@@ -400,7 +400,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
           <> — take a look.</>
         )}
       </p>
-      <p className="muted" style={{ marginBottom: 10 }}>
+      <p className="muted" style={{ marginBottom: "var(--space-3)" }}>
         Quote {estimate.num}
       </p>
 
@@ -422,7 +422,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
                   cursor: "pointer",
                   border: `2px solid ${isSel ? brand.color : "var(--line)"}`,
                   borderRadius: "var(--radius)",
-                  padding: 11,
+                  padding: "var(--space-3)",
                   textAlign: "center",
                   background: isSel ? "var(--green-50)" : "var(--card)",
                   color: "var(--ink)",
@@ -432,7 +432,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
                 {isRec ? (
                   <div
                     style={{
-                      fontSize: 9.5,
+                      fontSize: "var(--type-xs)",
                       fontWeight: 800,
                       letterSpacing: 0.6,
                       color: brand.color,
@@ -442,8 +442,8 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
                     recommended
                   </div>
                 ) : null}
-                <div style={{ fontWeight: 800, fontSize: 14 }}>{t.name}</div>
-                <div style={{ fontWeight: 900, fontSize: 16.5, marginTop: 3 }}>
+                <div style={{ fontWeight: 800, fontSize: "var(--type-md)" }}>{t.name}</div>
+                <div style={{ fontWeight: 900, fontSize: "var(--type-lg)", marginTop: "var(--space-1)" }}>
                   {fmt$(calcQuote(t.lines, pricing).total)}
                 </div>
                 {/* deferred: financing "from $X/mo" hint */}
@@ -460,7 +460,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
       {/* totals for the selected tier (+ toggled add-ons) */}
       <CustTotals m={m} pricing={pricing} />
       {tiers.length > 1 && (
-        <div className="muted" style={{ fontSize: 11.5, textAlign: "right" }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", textAlign: "right" }}>
           {selTier.name} option
         </div>
       )}
@@ -468,7 +468,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
       {/* Approve THE SELECTED TIER. deferred: on-glass signature. */}
       <button
         className="btn primary"
-        style={{ width: "100%", padding: 13, fontSize: 14.5, marginTop: 6 }}
+        style={{ width: "100%", padding: "var(--space-3)", fontSize: "var(--type-md)", marginTop: "var(--space-2)" }}
         onClick={() => onApprove(selTier.k, finalLines)}
       >
         ✓ Approve {selTier.name} — {fmt$(m.total)}

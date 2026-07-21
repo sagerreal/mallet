@@ -9,7 +9,7 @@ import { Modal } from "@/components/modals/modal";
 import { useAppStore } from "@/lib/store/app-store";
 import { HourSelect } from "@/app/(office)/settings/hour-select";
 
-const INPUT: React.CSSProperties = { fontSize: 13.5, padding: "8px 10px", borderRadius: 8 };
+const INPUT: React.CSSProperties = { fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" };
 
 // ── Office & hours ───────────────────────────────────────────────────────────
 
@@ -25,10 +25,10 @@ export function OfficeHoursModal({ open, onClose }: { open: boolean; onClose: ()
 
   return (
     <Modal open={open} onClose={onClose} maxWidth={480}>
-      <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>
+      <h3 style={{ margin: "0 0 var(--space-1)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
         Your office &amp; hours
       </h3>
-      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 16px" }}>
+      <p className="muted" style={{ fontSize: "var(--type-base)", margin: "0 0 var(--space-4)" }}>
         The AI only books jobs within range of your office, during your hours.
       </p>
 
@@ -54,9 +54,9 @@ export function OfficeHoursModal({ open, onClose }: { open: boolean; onClose: ()
         />
       </div>
 
-      <div className="field" style={{ marginBottom: 0 }}>
+      <div className="field" style={{ marginBottom: "0" }}>
         <label>Weekday hours</label>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <label className="switch" style={{ flexShrink: 0 }}>
             <input
               type="checkbox"
@@ -78,7 +78,7 @@ export function OfficeHoursModal({ open, onClose }: { open: boolean; onClose: ()
               <HourSelect value={wdClose} min={wdOpen + 1} max={24} onChange={(h) => setBookingHours("wdClose", h)} />
             </>
           ) : (
-            <span className="muted" style={{ fontSize: 12.5 }}>Closed</span>
+            <span className="muted" style={{ fontSize: "var(--type-base)" }}>Closed</span>
           )}
         </div>
       </div>
@@ -105,16 +105,16 @@ export function ConnectPhoneModal({
 }) {
   return (
     <Modal open={open} onClose={onClose} maxWidth={480}>
-      <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>
+      <h3 style={{ margin: "0 0 var(--space-1)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
         Connect your phone
       </h3>
-      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 16px" }}>
+      <p className="muted" style={{ fontSize: "var(--type-base)", margin: "0 0 var(--space-4)" }}>
         Forward your business line to your Mallet number — the AI answers every call,
         day or night. Your existing number stays yours; nothing to port.
       </p>
 
       <div style={{
-        border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: "14px 16px",
+        border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: "var(--space-4) var(--space-4)",
         marginBottom: "var(--space-4)", background: "var(--card)",
       }}>
         <div className="muted" style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "var(--space-1)" }}>
@@ -125,7 +125,7 @@ export function ConnectPhoneModal({
         </div>
       </div>
 
-      <ol style={{ margin: "0 0 20px", paddingLeft: 18, fontSize: "var(--type-base)", lineHeight: 1.7, color: "var(--ink-2)" }}>
+      <ol style={{ margin: "0 0 var(--space-5)", paddingLeft: "var(--space-5)", fontSize: "var(--type-base)", lineHeight: 1.7, color: "var(--ink-2)" }}>
         <li>Open your phone carrier&apos;s call-forwarding settings.</li>
         <li>Forward calls {twilioNumber ? `to ${twilioNumber}` : "to your Mallet number"} — all calls, or just when unanswered.</li>
         <li>Come back and make a test call.</li>
@@ -156,33 +156,33 @@ export function TestCallModal({
 }) {
   return (
     <Modal open={open} onClose={onClose} maxWidth={480}>
-      <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>
+      <h3 style={{ margin: "0 0 var(--space-1)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
         Make a test call
       </h3>
-      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 16px" }}>
+      <p className="muted" style={{ fontSize: "var(--type-base)", margin: "0 0 var(--space-4)" }}>
         Call your number and act like a customer — describe a job and ask to book.
         Watch it land in your pipeline.
       </p>
 
       <div style={{
-        border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: "14px 16px",
+        border: "1px solid var(--line)", borderRadius: "var(--radius)", padding: "var(--space-4) var(--space-4)",
         marginBottom: "var(--space-4)", textAlign: "center", background: "var(--card)",
       }}>
-        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em" }}>
+        <div style={{ fontSize: "var(--type-2xl)", fontWeight: 800, letterSpacing: "-.01em" }}>
           {twilioNumber ?? "Your Mallet number is on its way"}
         </div>
       </div>
 
       {done ? (
         <div style={{
-          borderRadius: "var(--radius)", padding: "12px 16px", marginBottom: "var(--space-4)",
+          borderRadius: "var(--radius)", padding: "var(--space-3) var(--space-4)", marginBottom: "var(--space-4)",
           background: "var(--green-50, #edf7ee)", border: "1px solid var(--green-600, #2e7d32)",
           fontSize: "var(--type-base)", fontWeight: 700, color: "var(--green-900, #1b5e20)",
         }}>
           ✓ Your AI Front Desk answered a call — you&apos;re live.
         </div>
       ) : (
-        <p style={{ fontSize: 12.5, color: "var(--ink-3)", margin: "0 0 16px" }}>
+        <p style={{ fontSize: "var(--type-base)", color: "var(--ink-3)", margin: "0 0 var(--space-4)" }}>
           This step completes on its own once your first call comes through.
         </p>
       )}
@@ -215,9 +215,9 @@ export function GrowStepModal({
 }) {
   return (
     <Modal open={open} onClose={onClose} maxWidth={460}>
-      <h3 style={{ margin: "0 0 4px", fontSize: 16, fontWeight: 800, letterSpacing: "-.01em" }}>{title}</h3>
-      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 14px" }}>{blurb}</p>
-      <ul style={{ margin: "0 0 20px", paddingLeft: 18, fontSize: "var(--type-base)", lineHeight: 1.7, color: "var(--ink-2)" }}>
+      <h3 style={{ margin: "0 0 var(--space-1)", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>{title}</h3>
+      <p className="muted" style={{ fontSize: "var(--type-base)", margin: "0 0 var(--space-4)" }}>{blurb}</p>
+      <ul style={{ margin: "0 0 var(--space-5)", paddingLeft: "var(--space-5)", fontSize: "var(--type-base)", lineHeight: 1.7, color: "var(--ink-2)" }}>
         {points.map((p) => <li key={p}>{p}</li>)}
       </ul>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>

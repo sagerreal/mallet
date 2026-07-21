@@ -60,7 +60,7 @@ function TermsBlock({ text }: { text: string }) {
         style={{
           fontSize: "var(--type-sm)",
           lineHeight: 1.55,
-          margin: 0,
+          margin: "0",
           whiteSpace: "pre-wrap",
           color: "var(--ink-2)",
         }}
@@ -98,7 +98,7 @@ export default async function PublicQuotePage({
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          padding: "24px 20px",
+          padding: "var(--space-6) var(--space-5)",
         }}
       >
         <div
@@ -121,12 +121,12 @@ export default async function PublicQuotePage({
               fontFamily: "var(--font-display)",
               fontSize: "var(--type-xl)",
               fontWeight: 700,
-              marginBottom: 10,
+              marginBottom: "var(--space-3)",
             }}
           >
             This quote link is no longer valid
           </h1>
-          <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+          <p className="muted" style={{ fontSize: "var(--type-base)", lineHeight: 1.6 }}>
             The link may have expired or been revoked. Contact the business
             directly for a fresh quote.
           </p>
@@ -180,7 +180,7 @@ export default async function PublicQuotePage({
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        padding: "0 0 40px",
+        padding: "0 0 var(--space-10)",
       }}
     >
       {/* Quote card — max 520px, full-width on mobile */}
@@ -199,8 +199,8 @@ export default async function PublicQuotePage({
         <div className="custhead">
           <div className="custlogo">{initials}</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>{orgName}</div>
-            <div style={{ fontSize: 11.5, opacity: 0.8 }}>
+            <div style={{ fontWeight: 800, fontSize: "var(--type-lg)" }}>{orgName}</div>
+            <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>
               Quote {p.num}
             </div>
           </div>
@@ -213,7 +213,7 @@ export default async function PublicQuotePage({
               <div className="deltabanner" style={{ textAlign: "center" }}>
                 Approved — thank you!
               </div>
-              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: 12.5 }}>
+              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: "var(--type-base)" }}>
                 We&rsquo;ll be in touch to schedule the work.
               </p>
             </>
@@ -222,13 +222,13 @@ export default async function PublicQuotePage({
               <div className="reqcard" style={{ textAlign: "center" }}>
                 You passed on this one — no hard feelings.
               </div>
-              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: 12.5 }}>
+              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: "var(--type-base)" }}>
                 Reach out any time if you change your mind.
               </p>
             </>
           ) : (
             <>
-              <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 6 }}>
+              <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
                 Here&rsquo;s your quote from <b>{orgName}</b>
                 {customerFirstName ? `, ${customerFirstName}` : ""} — take a look.
               </p>
@@ -286,7 +286,7 @@ export default async function PublicQuotePage({
           )}
 
           {/* Footer */}
-          <p className="muted" style={{ fontSize: 10.5, textAlign: "center", marginTop: "var(--space-4)" }}>
+          <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-4)" }}>
             Powered by Mallet &mdash; licensed &amp; insured
           </p>
         </div>
@@ -301,7 +301,7 @@ export default async function PublicQuotePage({
             fontSize: "var(--type-sm)",
             textAlign: "center",
             maxWidth: 320,
-            padding: "0 16px",
+            padding: "0 var(--space-4)",
           }}
         >
           This quote is valid for {p.validDays} days from the date it was sent.

@@ -99,8 +99,8 @@ export function FrontDeskPane() {
     const cv = bk.hours[cKey];
     const isOpen = !(ov === 0 && cv === 0);
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
-        <span style={{ minWidth: 84, fontWeight: 700, fontSize: 13.5 }}>{lbl}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-2) 0" }}>
+        <span style={{ minWidth: 84, fontWeight: 700, fontSize: "var(--type-base)" }}>{lbl}</span>
         <label className="switch">
           <input
             type="checkbox"
@@ -129,7 +129,7 @@ export function FrontDeskPane() {
             <HourSelect value={cv} onChange={(h) => setBookingHours(cKey, h)} min={ov + 1} max={24} />
           </>
         ) : (
-          <span className="muted" style={{ fontSize: "11.5px" }}>Closed</span>
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>Closed</span>
         )}
       </div>
     );
@@ -171,13 +171,13 @@ export function FrontDeskPane() {
 
       {aboutOpen && (
         <div className="fdabout">
-          <p className="muted" style={{ fontSize: "11.5px", margin: 0 }}>
+          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>
             Your business line. Customers call &amp; text this; it rings your crew and every reply goes
             out as this number — personal cells stay private. Unknown number → Front Desk, handled as a
             lead. A <b>verified crew phone</b> → your assistant — never the Front Desk. Off — missed
             calls go to voicemail. On — they text back, parsed and held for your yes.
           </p>
-          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 11, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
             {/* deferred: external integration (forward existing number) */}
             <button className="btn sm" onClick={() => {}}>Forward your existing number</button>
             {/* deferred: external integration (port number in) */}
@@ -211,8 +211,8 @@ export function FrontDeskPane() {
               />
             ))}
             {bk.services.length === 0 && (
-              <div style={{ padding: "22px 14px", textAlign: "center" }}>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
+              <div style={{ padding: "var(--space-6) var(--space-4)", textAlign: "center" }}>
+                <div style={{ fontWeight: 700, fontSize: "var(--type-md)", marginBottom: "var(--space-3)" }}>
                   Pick your trade to load starter services
                 </div>
                 <button className="btn primary" onClick={() => setStarterOpen(true)}>
@@ -236,7 +236,7 @@ export function FrontDeskPane() {
                 placeholder="Type a service and press Enter — e.g. new construction"
               />
             </div>
-            <div className="field" style={{ marginBottom: 0 }}>
+            <div className="field" style={{ marginBottom: "0" }}>
               <label>Hand off to a person</label>
               <TagInput
                 value={bk.deferKeywords ?? ""}
@@ -251,13 +251,13 @@ export function FrontDeskPane() {
               <span className="muted">$</span>
               <input type="number" min={0} defaultValue={bk.serviceFee}
                 onChange={(e) => setServiceFee(Number(e.target.value))}
-                style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: "var(--radius-md)", padding: "10px 12px", fontFamily: "inherit", fontSize: 14, background: "var(--card)" }} />
+                style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: "var(--radius-md)", padding: "var(--space-3) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-md)", background: "var(--card)" }} />
               <span className="muted" style={{ fontSize: "var(--type-sm)" }}>to come diagnose a repair</span>
             </div>
-            <div className="stage-row" style={{ marginTop: 10 }}>
+            <div className="stage-row" style={{ marginTop: "var(--space-3)" }}>
               <div style={{ flex: 1 }}>
-                <b style={{ fontWeight: 700, fontSize: "13.5px" }}>Credited toward the work</b>
-                <div className="muted" style={{ fontSize: "11.5px" }}>Comes off the price if they approve the repair.</div>
+                <b style={{ fontWeight: 700, fontSize: "var(--type-base)" }}>Credited toward the work</b>
+                <div className="muted" style={{ fontSize: "var(--type-sm)" }}>Comes off the price if they approve the repair.</div>
               </div>
               <label className="switch">
                 <input type="checkbox" checked={bk.feeCredited} onChange={(e) => setFeeCredited(e.target.checked)} />
@@ -273,18 +273,18 @@ export function FrontDeskPane() {
           </RuleRow>
 
           <RuleRow k="area" label="Service area" value={<span className="mono">{bk.area.radiusMi} mi</span>}>
-            <div className="field" style={{ margin: 0 }}>
+            <div className="field" style={{ margin: "0" }}>
               <label>Office address</label>
               <input type="text" defaultValue={bk.area.originAddress}
                 onChange={(e) => setBookingArea("originAddress", e.target.value)}
                 placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
-                style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8 }} />
+                style={{ fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" }} />
             </div>
-            <div className="field" style={{ margin: "10px 0 0" }}>
+            <div className="field" style={{ margin: "var(--space-3) 0 0" }}>
               <label>Radius (miles)</label>
               <input type="number" min={0} defaultValue={bk.area.radiusMi}
                 onChange={(e) => setBookingArea("radiusMi", e.target.value)}
-                style={{ fontSize: 13.5, padding: "8px 10px", borderRadius: 8, maxWidth: 120 }} />
+                style={{ fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)", maxWidth: 120 }} />
             </div>
           </RuleRow>
         </div>

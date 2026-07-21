@@ -34,7 +34,7 @@ export function CustomerSelector({
         {lead.job ? " — " + lead.job : ""}{" "}
         <span
           className="linklike"
-          style={{ marginLeft: 6 }}
+          style={{ marginLeft: "var(--space-2)" }}
           onClick={() => onUpdate({ leadId: null, custQuery: "" })}
         >
           change
@@ -58,8 +58,8 @@ export function CustomerSelector({
     : [];
 
   return (
-    <div style={{ margin: "6px 0 16px", maxWidth: 520 }}>
-      <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: 6 }}>
+    <div style={{ margin: "var(--space-2) 0 var(--space-4)", maxWidth: 520 }}>
+      <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>
         Customer
       </div>
       <input
@@ -79,9 +79,9 @@ export function CustomerSelector({
           width: "100%",
           border: "1.5px solid var(--line)",
           borderRadius: q ? "9px 9px 0 0" : 9,
-          padding: "9px 11px",
+          padding: "var(--space-2) var(--space-3)",
           fontFamily: "inherit",
-          fontSize: "13.5px",
+          fontSize: "var(--type-base)",
         }}
       />
       {q && (

@@ -24,8 +24,8 @@ import { FoldCard } from "./fold-card";
 const DEFAULT_BRAND_COLOR = "#1A1510";
 
 const inputStyle = {
-  flex: 1, minWidth: 160, border: "1.5px solid var(--line)", borderRadius: 8,
-  padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)",
+  flex: 1, minWidth: 160, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)",
 } as const;
 
 export function BrandingCard() {
@@ -86,57 +86,57 @@ export function BrandingCard() {
       {/* Live WYSIWYG preview — the exact header a customer sees atop a quote or
           invoice (mirrors CustHead in cust-quote-modal). */}
       <div style={{ marginBottom: "var(--space-4)" }}>
-        <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 7 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 600, marginBottom: "var(--space-2)" }}>
           How you appear on quotes &amp; invoices
         </div>
         <div style={{ borderRadius: "var(--radius)", overflow: "hidden", border: "1px solid var(--line)" }}>
           <div className="custhead" style={{ background: previewColor }}>
             <div className="custlogo" style={{ color: previewColor }}>{previewInitials}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>{previewName}</div>
+              <div style={{ fontWeight: 800, fontSize: "var(--type-lg)", lineHeight: 1.2 }}>{previewName}</div>
               {previewSub && (
-                <div style={{ fontSize: 11.5, opacity: 0.85, marginTop: 2 }}>{previewSub}</div>
+                <div style={{ fontSize: "var(--type-sm)", opacity: 0.85, marginTop: "var(--space-2xs)" }}>{previewSub}</div>
               )}
             </div>
           </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: 10 }}>
-        <div className="field" style={{ margin: 0 }}>
+      <div style={{ display: "grid", gap: "var(--space-3)" }}>
+        <div className="field" style={{ margin: "0" }}>
           <label htmlFor="brandName">Business name</label>
           <input id="brandName" type="text" value={name}
             onChange={(e) => { setName(e.target.value); markDirty(); }} style={inputStyle} />
         </div>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label htmlFor="brandTagline">Tagline</label>
           <input id="brandTagline" type="text" value={tagline}
             onChange={(e) => { setTagline(e.target.value); markDirty(); }}
             placeholder="Licensed & insured · Your city" style={inputStyle} />
         </div>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label htmlFor="brandSite">Website</label>
           <input id="brandSite" type="text" value={site}
             onChange={(e) => { setSite(e.target.value); markDirty(); }}
             placeholder="yourbusiness.com" style={inputStyle} />
         </div>
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-          <div className="field" style={{ margin: 0 }}>
+        <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap" }}>
+          <div className="field" style={{ margin: "0" }}>
             <label htmlFor="brandColor">Brand colour</label>
             <input id="brandColor" type="color" value={color || DEFAULT_BRAND_COLOR}
               onChange={(e) => { setColor(e.target.value); markDirty(); }}
-              style={{ width: 56, height: 34, border: "1.5px solid var(--line)", borderRadius: 8, padding: 2 }} />
+              style={{ width: 56, height: 34, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2xs)" }} />
           </div>
-          <div className="field" style={{ margin: 0 }}>
+          <div className="field" style={{ margin: "0" }}>
             <label htmlFor="brandInitials">Initials</label>
             <input id="brandInitials" type="text" maxLength={3} value={initials}
               onChange={(e) => { setInitials(e.target.value); markDirty(); }}
-              style={{ width: 72, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+              style={{ width: 72, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
           </div>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: "var(--space-3)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
         <button className="btn primary" onClick={handleSave} disabled={!name.trim()}>Save</button>
         {saved && <span style={{ color: "var(--green-900)", fontSize: "var(--type-sm)", fontWeight: 600 }}>Saved ✓</span>}
       </div>

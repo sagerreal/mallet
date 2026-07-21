@@ -74,8 +74,8 @@ const LINE_INPUT: React.CSSProperties = {
   flex: 1,
   minWidth: 140,
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "7px 9px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
   fontSize: "var(--type-base)",
 };
@@ -83,8 +83,8 @@ const LINE_INPUT: React.CSSProperties = {
 const QTY_INPUT: React.CSSProperties = {
   width: 44,
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "7px 4px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-1)",
   fontFamily: "inherit",
   textAlign: "center",
 };
@@ -92,8 +92,8 @@ const QTY_INPUT: React.CSSProperties = {
 const PRICE_INPUT: React.CSSProperties = {
   width: 78,
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "7px 8px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
   fontWeight: 700,
 };
@@ -101,8 +101,8 @@ const PRICE_INPUT: React.CSSProperties = {
 const COST_INPUT: React.CSSProperties = {
   width: 64,
   border: "1.5px dashed var(--line)",
-  borderRadius: 8,
-  padding: "7px 6px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
   fontFamily: "inherit",
   color: "var(--ink-2)",
 };
@@ -112,7 +112,7 @@ const SEC_LABEL: React.CSSProperties = {
   fontWeight: 800,
   textTransform: "uppercase",
   letterSpacing: ".05em",
-  margin: "16px 0 6px",
+  margin: "var(--space-4) 0 var(--space-2)",
 };
 
 const ROLLUP_ROW: React.CSSProperties = {
@@ -192,10 +192,10 @@ function EditBlock({
   }
 
   return (
-    <div style={{ marginTop: 14 }}>
+    <div style={{ marginTop: "var(--space-4)" }}>
       {/* Bill-to + Phone */}
       <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Bill to</label>
           <input
             type="text"
@@ -210,7 +210,7 @@ function EditBlock({
             ))}
           </datalist>
         </div>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Phone</label>
           <input
             type="tel"
@@ -223,7 +223,7 @@ function EditBlock({
 
       {/* Email + Terms */}
       <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>
             Email{" "}
             <span
@@ -241,7 +241,7 @@ function EditBlock({
             onChange={(e) => onSetField({ email: e.target.value.trim() })}
           />
         </div>
-        <div className="field" style={{ margin: 0 }}>
+        <div className="field" style={{ margin: "0" }}>
           <label>Due</label>
           <div className="chips">
             <button
@@ -279,9 +279,9 @@ function EditBlock({
             key={ix}
             style={{
               display: "flex",
-              gap: 6,
+              gap: "var(--space-2)",
               alignItems: "center",
-              marginBottom: 6,
+              marginBottom: "var(--space-2)",
               flexWrap: "wrap",
             }}
           >
@@ -331,7 +331,7 @@ function EditBlock({
           </div>
         ))
       ) : (
-        <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "2px 0 6px" }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "var(--space-2xs) 0 var(--space-2)" }}>
           No lines yet — add what you&rsquo;re billing for.
         </div>
       )}
@@ -355,14 +355,14 @@ function EditBlock({
             value={pbQuery}
             onChange={(e) => setPbQuery(e.target.value)}
             placeholder="Search your pricebook…"
-            style={{ ...LINE_INPUT, flex: "none", width: "100%", marginBottom: 6 }}
+            style={{ ...LINE_INPUT, flex: "none", width: "100%", marginBottom: "var(--space-2)" }}
           />
           {pbMatches.length ? (
             pbMatches.map((svc) => (
               <div
                 key={svc.id}
                 className="stage-row clickable"
-                style={{ cursor: "pointer", border: "none", padding: "4px 0" }}
+                style={{ cursor: "pointer", border: "none", padding: "var(--space-1) 0" }}
                 onClick={() => addFromPricebook(svc)}
               >
                 <span style={{ flex: 1, fontSize: "var(--type-base)" }}>{svc.name}</span>
@@ -370,7 +370,7 @@ function EditBlock({
               </div>
             ))
           ) : (
-            <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "4px 0" }}>
+            <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "var(--space-1) 0" }}>
               No matches — try a different search.
             </div>
           )}
@@ -378,7 +378,7 @@ function EditBlock({
       ) : null}
 
       {/* Subtotal / discount / tax / Total + margin */}
-      <div style={{ borderTop: "1px solid var(--line)", marginTop: 10, paddingTop: "var(--space-2)" }}>
+      <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-3)", paddingTop: "var(--space-2)" }}>
         {p.disc || p.tax ? (
           <div style={ROLLUP_ROW}>
             <span>Subtotal</span>
@@ -406,9 +406,9 @@ function EditBlock({
             style={{
               display: "flex",
               justifyContent: "space-between",
-              fontSize: 11.5,
+              fontSize: "var(--type-sm)",
               color: "var(--ink-3)",
-              marginTop: 3,
+              marginTop: "var(--space-1)",
             }}
           >
             <span>
@@ -422,17 +422,17 @@ function EditBlock({
       </div>
 
       {/* Pricing options reveal */}
-      <div className={`reveal ${pxOpen ? "open" : ""}`} style={{ marginTop: 10 }}>
+      <div className={`reveal ${pxOpen ? "open" : ""}`} style={{ marginTop: "var(--space-3)" }}>
         <div className="reveal-head" onClick={() => setPxOpen((v) => !v)}>
           <span className="caret">▸</span>{" "}
-          <b style={{ fontSize: 12.5 }}>Pricing options</b>{" "}
+          <b style={{ fontSize: "var(--type-base)" }}>Pricing options</b>{" "}
           <span className="muted" style={{ fontWeight: 500, fontSize: "var(--type-sm)" }}>
             — {pricingSummary(p, invoice.depPaid || 0) || "discount, tax, deposit"}
           </span>
         </div>
         <div className="reveal-body">
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
-            <div className="field" style={{ flex: 1, minWidth: 90, margin: 0 }}>
+            <div className="field" style={{ flex: 1, minWidth: 90, margin: "0" }}>
               <label>Discount %</label>
               <input
                 type="number"
@@ -442,7 +442,7 @@ function EditBlock({
                 onChange={(e) => onSetPricing({ disc: Math.max(0, Number(e.target.value) || 0) })}
               />
             </div>
-            <div className="field" style={{ flex: 1, minWidth: 90, margin: 0 }}>
+            <div className="field" style={{ flex: 1, minWidth: 90, margin: "0" }}>
               <label>Tax %</label>
               <input
                 type="number"
@@ -453,7 +453,7 @@ function EditBlock({
                 onChange={(e) => onSetPricing({ tax: Math.max(0, Number(e.target.value) || 0) })}
               />
             </div>
-            <div className="field" style={{ flex: 1, minWidth: 110, margin: 0 }}>
+            <div className="field" style={{ flex: 1, minWidth: 110, margin: "0" }}>
               <label>Deposit paid $</label>
               <input
                 type="number"
@@ -484,7 +484,7 @@ function ReadOnlyView({ invoice }: ReadOnlyViewProps) {
   const total = invoice.total ?? 0;
 
   return (
-    <div className="card" style={{ marginTop: 14 }}>
+    <div className="card" style={{ marginTop: "var(--space-4)" }}>
       <table>
         <tbody>
           {(invoice.lines ?? []).map((x, i) => (
@@ -573,11 +573,11 @@ function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaid
 
   return (
     <div className="card" style={{ marginTop: "var(--space-3)", background: "var(--paper)" }}>
-      <div className="muted" style={{ ...SEC_LABEL, margin: "0 0 10px" }}>
+      <div className="muted" style={{ ...SEC_LABEL, margin: "0 0 var(--space-3)" }}>
         Get paid
       </div>
       {error ? (
-        <div style={{ color: "var(--red)", fontSize: 12.5, marginBottom: 10 }}>{error}</div>
+        <div style={{ color: "var(--red)", fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}>{error}</div>
       ) : null}
       {!sent ? (
         <button
@@ -600,7 +600,7 @@ function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaid
           </button>
           {recOpen ? (
             <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius-md)", padding: "var(--space-3)", background: "var(--bg)" }}>
-              <div className="chips" style={{ marginBottom: 10 }}>
+              <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
                 <button className={`chip ${method === "cash" ? "sel" : ""}`} onClick={() => setMethod("cash")}>
                   Cash
                 </button>
@@ -724,7 +724,7 @@ export function InvoiceModalContent() {
   return (
     <div>
       {/* Header — num · customer · title + phone · status pill. paddingRight clears the shell ✕. */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, paddingRight: 34 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)", paddingRight: "var(--space-8)" }}>
         <div>
           <div className="muted">{invoice.num}</div>
           <h2>{custName}</h2>
@@ -792,8 +792,8 @@ export function InvoiceModalContent() {
         style={{
           display: "flex",
           justifyContent: "flex-end",
-          gap: 10,
-          marginTop: 14,
+          gap: "var(--space-3)",
+          marginTop: "var(--space-4)",
           borderTop: "1px solid var(--line)",
           paddingTop: "var(--space-3)",
         }}

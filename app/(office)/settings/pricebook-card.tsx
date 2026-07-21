@@ -72,7 +72,7 @@ export function PricebookCard() {
   return (
     <FoldCard title="Pricebook" defaultOpen summary={`${services.length} service${services.length === 1 ? "" : "s"}`}>
       {canSeeCost && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--space-3)" }}>
           <button className="btn sm ghost" onClick={() => openModal(MODAL.IMPORT_SERVICES)}>
             Import from CSV
           </button>
@@ -85,20 +85,20 @@ export function PricebookCard() {
           placeholder="Search services…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)", marginBottom: 10 }}
+          style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}
         />
       )}
 
       {services.length === 0 ? (
         <div className="empty-att">
-          <p style={{ margin: "0 0 10px" }}>
+          <p style={{ margin: "0 0 var(--space-3)" }}>
             Add your common jobs — e.g. “Replace 40gal water heater”.
           </p>
           <button className="btn" onClick={() => void handleSeed()} disabled={seeding}>
             {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
           </button>
           {seedError && (
-            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "8px 0 0" }}>{seedError}</p>
+            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{seedError}</p>
           )}
         </div>
       ) : (

@@ -15,8 +15,8 @@ export interface AddServiceRowProps {
 
 const inputStyle: React.CSSProperties = {
   border: "1.5px solid var(--line)",
-  borderRadius: 8,
-  padding: "8px 10px",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-3)",
   fontFamily: "inherit",
   fontSize: "var(--type-base)",
 };
@@ -62,7 +62,7 @@ export function AddServiceRow({ onAdd }: AddServiceRowProps) {
         />
         <button className="btn" onClick={() => void handleAdd()}>+ Add</button>
       </div>
-      {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "8px 0 0" }}>{error}</p>}
+      {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{error}</p>}
     </div>
   );
 }

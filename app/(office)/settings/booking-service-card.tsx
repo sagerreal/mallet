@@ -35,18 +35,18 @@ function routeChipLabel(service: BookingService): string {
 // Compact field sizing for this tab — overrides the roomier global .field input so booking
 // fields read as crisp single-line inputs, not paragraph boxes. Width-capped for the same reason.
 export const COMPACT_INPUT: React.CSSProperties = {
-  fontSize: 13.5,
-  padding: "8px 10px",
-  borderRadius: 8,
+  fontSize: "var(--type-base)",
+  padding: "var(--space-2) var(--space-3)",
+  borderRadius: "var(--radius-sm)",
 };
 export const FIELD_MAX_WIDTH = 560;
 
 // Small status chip on the collapsed row (lane / emergency / ballpark markers).
 const CHIP_STYLE: React.CSSProperties = {
-  fontSize: 11.5,
+  fontSize: "var(--type-sm)",
   fontWeight: 700,
-  padding: "3px 10px",
-  borderRadius: 999,
+  padding: "var(--space-1) var(--space-3)",
+  borderRadius: "var(--radius-xl)",
   border: "1px solid var(--line)",
   color: "var(--ink-2)",
   background: "var(--card)",
@@ -89,18 +89,18 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
   return (
     <div className="field">
       <label>Certifications required</label>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: certs.length > 0 ? 8 : 0 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "var(--space-2)", marginBottom: certs.length > 0 ? 8 : 0 }}>
         {certs.map((cert, i) => (
           <span
             key={`${cert}-${i}`}
             style={{
               display: "inline-flex",
               alignItems: "center",
-              gap: 5,
-              fontSize: 12.5,
+              gap: "var(--space-1)",
+              fontSize: "var(--type-base)",
               fontWeight: 600,
-              padding: "3px 5px 3px 10px",
-              borderRadius: 999,
+              padding: "var(--space-1) var(--space-1) var(--space-1) var(--space-3)",
+              borderRadius: "var(--radius-xl)",
               border: "1px solid var(--line)",
               background: "var(--manila, var(--bg))",
               color: "var(--ink)",
@@ -119,7 +119,7 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
                 color: "var(--ink-3)",
                 fontSize: "var(--type-sm)",
                 lineHeight: 1,
-                padding: "2px 4px",
+                padding: "var(--space-2xs) var(--space-1)",
                 fontFamily: "inherit",
               }}
             >
@@ -128,7 +128,7 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
           </span>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
         <input
           type="text"
           value={draft}
@@ -139,8 +139,8 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
           style={{
             flex: "0 0 160px",
             border: "1.5px solid var(--line)",
-            borderRadius: 8,
-            padding: "6px 8px",
+            borderRadius: "var(--radius-sm)",
+            padding: "var(--space-2) var(--space-2)",
             fontFamily: "inherit",
             fontSize: "var(--type-base)",
             background: atCap ? "var(--bg)" : "var(--card)",
@@ -188,9 +188,9 @@ function CollapsedRow({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: "var(--space-3)",
         width: "100%",
-        padding: "10px 14px",
+        padding: "var(--space-3) var(--space-4)",
         background: "none",
         border: "none",
         borderBottom: isLast && !isExpanded ? "none" : "1px solid var(--line-2, var(--line))",
@@ -206,7 +206,7 @@ function CollapsedRow({
       <span
         style={{
           fontWeight: 700,
-          fontSize: 14,
+          fontSize: "var(--type-md)",
           flex: 1,
           color: "var(--ink)",
           minWidth: 0,
@@ -272,7 +272,7 @@ function ExpandedEditor({
   return (
     <div
       style={{
-        padding: "16px 14px 14px 36px",
+        padding: "var(--space-4) var(--space-4) var(--space-4) var(--space-10)",
         borderBottom: isLast ? "none" : "1px solid var(--line-2, var(--line))",
       }}
     >
@@ -292,8 +292,8 @@ function ExpandedEditor({
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <Segmented value={route} onChange={handleRouteChange} options={ROUTE_OPTIONS} aria-label="Job type" />
           {route === "book" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>$</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+              <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
               <input
                 type="number"
                 min={0}
@@ -371,7 +371,7 @@ function ExpandedEditor({
           alignItems: "center",
           justifyContent: "space-between",
           gap: "var(--space-2)",
-          marginTop: 2,
+          marginTop: "var(--space-2xs)",
           maxWidth: FIELD_MAX_WIDTH,
         }}
       >

@@ -140,7 +140,7 @@ export function CustomersView() {
           <button className="btn ghost" onClick={() => openModal(MODAL.SWEEP)}>
             Clean up
             {staleCount > 0 && (
-              <span className="pill amber" style={{ marginLeft: 2 }}>
+              <span className="pill amber" style={{ marginLeft: "var(--space-2xs)" }}>
                 {staleCount}
               </span>
             )}
@@ -229,7 +229,7 @@ export function CustomersView() {
       )}
 
       {/* Table */}
-      <div className="card" style={{ padding: "6px 14px" }}>
+      <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
         <table className="list-tbl">
           <thead>
             <tr>

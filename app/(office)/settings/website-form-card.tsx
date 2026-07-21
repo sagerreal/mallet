@@ -18,8 +18,8 @@ function origin(): string {
 }
 
 const inputStyle: React.CSSProperties = {
-  flex: 1, minWidth: 0, border: "1.5px solid var(--line)", borderRadius: 8,
-  padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)", background: "var(--card)", color: "var(--ink)",
+  flex: 1, minWidth: 0, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)", background: "var(--card)", color: "var(--ink)",
 };
 
 export function WebsiteFormCard() {
@@ -43,7 +43,7 @@ export function WebsiteFormCard() {
   return (
     <FoldCard title="Website form" summary={form ? "Live" : "Not set up"}>
       {!form ? (
-        <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+        <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-start" }}>
           <IconWell>
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="9" />
@@ -52,7 +52,7 @@ export function WebsiteFormCard() {
             </svg>
           </IconWell>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="muted" style={{ fontSize: "var(--type-base)", margin: "1px 0 11px", lineHeight: 1.45 }}>
+            <p className="muted" style={{ fontSize: "var(--type-base)", margin: "var(--space-2xs) 0 var(--space-3)", lineHeight: 1.45 }}>
               A “request service” form for your website — share the link or embed it. Every submission lands in your pipeline.
             </p>
             <button className="btn primary" disabled={generate.isPending} onClick={() => generate.mutate({ channel: "form" })}>
@@ -62,7 +62,7 @@ export function WebsiteFormCard() {
         </div>
       ) : (
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
-          <div className="field" style={{ margin: 0 }}>
+          <div className="field" style={{ margin: "0" }}>
             <label>Share this link</label>
             <div style={{ display: "flex", gap: "var(--space-2)" }}>
               <input readOnly value={link} style={inputStyle} />
@@ -70,7 +70,7 @@ export function WebsiteFormCard() {
               <a className="btn ghost" href={link} target="_blank" rel="noopener noreferrer">Preview</a>
             </div>
           </div>
-          <div className="field" style={{ margin: 0 }}>
+          <div className="field" style={{ margin: "0" }}>
             <label>Or embed on your site</label>
             <div style={{ display: "flex", gap: "var(--space-2)" }}>
               <input readOnly value={iframe} style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: "var(--type-sm)" }} />
