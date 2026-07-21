@@ -71,7 +71,7 @@ export function TagInput({
             fontSize: "var(--type-base)",
             fontWeight: 600,
             padding: "var(--space-1) var(--space-1) var(--space-1) var(--space-3)",
-            borderRadius: "var(--radius-xl)",
+            borderRadius: "var(--radius-pill)",
             border: "1px solid var(--line)",
             background: "var(--manila, var(--bg))",
             color: "var(--ink)",

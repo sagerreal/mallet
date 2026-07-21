@@ -13,7 +13,7 @@ const CHIP: React.CSSProperties = {
   fontSize: "var(--type-sm)",
   fontWeight: 700,
   padding: "var(--space-1) var(--space-3)",
-  borderRadius: "var(--radius-xl)",
+  borderRadius: "var(--radius-pill)",
   border: "1px solid var(--line)",
   color: "var(--ink-2)",
   background: "var(--card)",
