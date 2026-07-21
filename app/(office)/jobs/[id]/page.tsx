@@ -54,7 +54,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   // card and actions wait for the DTO (they're below the fold of perception).
   const storeTitle = useAppStore((s) => s.jobs.find((j) => j.id === id)?.title ?? null);
 
-  if (job.isError) return <p className="text-sm text-red">{userMessage(job.error)}</p>;
+  if (job.isError) return <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{userMessage(job.error)}</p>;
   if (job.isLoading) return (
     <div style={{ padding: "0 0 var(--space-6)" }}>
       {/* Paint the title instantly when the store already has the job (warm nav);
@@ -69,22 +69,22 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       <JobCardSkeleton />
     </div>
   );
-  if (!job.data) return <p className="text-sm text-ink-muted">Job not found.</p>;
+  if (!job.data) return <p style={{ fontSize: "var(--type-sm)", color: "var(--ink-2)" }}>Job not found.</p>;
   const j = job.data;
 
   const candidate = candidates.data?.find((c) => c.jobId === id) ?? null;
 
   return (
-    <div className="space-y-4">
+    <div className="stack-4">
       <PageHeader title={`${j.num} — ${j.title ?? "untitled"}`} />
       {candidate && j.callbackReason === null ? (
-        <Card className="space-y-2 text-sm">
-          <p className="font-medium">
+        <Card className="stack-2" style={{ fontSize: "var(--type-sm)" }}>
+          <p style={{ fontWeight: 500 }}>
             Looks like a callback of {candidate.original.num}
             {candidate.original.svc ? ` · ${candidate.original.svc}` : ""} — this {j.num} was booked for the same customer and service within 45 days.
           </p>
-          {cbError ? <p className="text-red">{cbError}</p> : null}
-          <div className="flex gap-2">
+          {cbError ? <p style={{ color: "var(--red)" }}>{cbError}</p> : null}
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
             <Button
               disabled={confirmCallback.isPending || dismissCallback.isPending}
               onClick={() => confirmCallback.mutate({ jobId: id, originalJobId: candidate.original.jobId, reason: "callback" }, { onError: onCbError })}
@@ -100,17 +100,17 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
           </div>
         </Card>
       ) : null}
-      <Card className="space-y-2 text-sm">
-        <div className="flex items-center gap-2">
+      <Card className="stack-2" style={{ fontSize: "var(--type-sm)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <Badge tone={JOB_STATUS_TONE[j.status] ?? "neutral"}>{j.status.replace("_", " ")}</Badge>
-          <span className="font-medium">{formatMoney(j.total?.cents ?? 0)}</span>
+          <span style={{ fontWeight: 500 }}>{formatMoney(j.total?.cents ?? 0)}</span>
         </div>
-        <p className="text-ink-muted">
+        <p style={{ color: "var(--ink-2)" }}>
           Scheduled {formatDateTime(j.scheduledStart)} → {formatDateTime(j.scheduledEnd)}
         </p>
-        {j.cancelReason ? <p className="text-red">Canceled: {j.cancelReason}</p> : null}
+        {j.cancelReason ? <p style={{ color: "var(--red)" }}>Canceled: {j.cancelReason}</p> : null}
       </Card>
-      {error ? <p className="text-sm text-red">{error}</p> : null}
+      {error ? <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{error}</p> : null}
       <Card>
         {j.status === "complete" ? (
           <Button

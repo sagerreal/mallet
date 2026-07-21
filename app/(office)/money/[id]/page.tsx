@@ -21,18 +21,18 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [error, setError] = useState<string | null>(null);
   const onError = (err: unknown) => setError(userMessage(err));
 
-  if (invoice.isError) return <p className="text-sm text-red">{userMessage(invoice.error)}</p>;
-  if (invoice.isLoading) return <p className="text-sm text-ink-muted">Loading…</p>;
-  if (!invoice.data) return <p className="text-sm text-ink-muted">Invoice not found.</p>;
+  if (invoice.isError) return <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{userMessage(invoice.error)}</p>;
+  if (invoice.isLoading) return <p style={{ fontSize: "var(--type-sm)", color: "var(--ink-2)" }}>Loading…</p>;
+  if (!invoice.data) return <p style={{ fontSize: "var(--type-sm)", color: "var(--ink-2)" }}>Invoice not found.</p>;
   const inv = invoice.data;
   const payable = inv.status === "sent" || inv.status === "partial";
 
   return (
-    <div className="space-y-4">
+    <div className="stack-4">
       <PageHeader
         title={`${inv.num} — ${inv.title ?? "untitled"}`}
         action={
-          <span className="flex flex-wrap gap-2">
+          <span style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
             {inv.status === "draft" ? <Button disabled={send.isPending} onClick={() => send.mutate({ invoiceId: id }, { onError })}>Send invoice</Button> : null}
             {payable ? <Button onClick={() => setRecording(true)}>Record payment</Button> : null}
             {payable ? (
@@ -48,34 +48,38 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </span>
         }
       />
-      <div className="flex items-center gap-3">
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
         <Badge tone={INVOICE_STATUS_TONE[inv.status] ?? "neutral"}>{inv.status}</Badge>
-        <span className="text-sm text-ink-muted">Due {formatDate(inv.dueAt)}</span>
+        <span style={{ fontSize: "var(--type-sm)", color: "var(--ink-2)" }}>Due {formatDate(inv.dueAt)}</span>
       </div>
-      {error ? <p className="text-sm text-red">{error}</p> : null}
+      {error ? <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{error}</p> : null}
       {cardLink.data ? (
-        <Card className="text-sm">
-          <p className="font-medium">Card payment link (send to the customer):</p>
-          <a className="break-all text-blue underline" href={cardLink.data.url} target="_blank" rel="noreferrer">{cardLink.data.url}</a>
+        <Card style={{ fontSize: "var(--type-sm)" }}>
+          <p style={{ fontWeight: 500 }}>Card payment link (send to the customer):</p>
+          <a style={{ wordBreak: "break-all", color: "var(--blue)", textDecoration: "underline" }} href={cardLink.data.url} target="_blank" rel="noreferrer">{cardLink.data.url}</a>
         </Card>
       ) : null}
       <RecordPaymentSheet invoiceId={id} dueCents={inv.due.cents} open={recording} onClose={() => setRecording(false)} />
       <Card>
-        <ul className="divide-y divide-line text-sm">
-          {inv.lines.map((l, i) => <li key={i} className="flex justify-between py-2"><span>{l.description}</span><span className="text-ink-muted">×{l.quantity}</span></li>)}
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, fontSize: "var(--type-sm)" }}>
+          {inv.lines.map((l, i) => (
+            <li key={i} style={{ display: "flex", justifyContent: "space-between", padding: "var(--space-2) 0", borderTop: i > 0 ? "1px solid var(--line)" : undefined }}>
+              <span>{l.description}</span><span style={{ color: "var(--ink-2)" }}>×{l.quantity}</span>
+            </li>
+          ))}
         </ul>
-        <dl className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
-          <div className="flex justify-between font-medium"><dt>Total</dt><dd>{formatMoney(inv.total.cents)}</dd></div>
-          <div className="flex justify-between"><dt className="text-ink-muted">Paid</dt><dd>{formatMoney(inv.amountPaid.cents)}</dd></div>
-          <div className="flex justify-between"><dt className="text-ink-muted">Balance due</dt><dd>{formatMoney(inv.due.cents)}</dd></div>
+        <dl className="stack-1" style={{ margin: "var(--space-3) 0 0", borderTop: "1px solid var(--line)", paddingTop: "var(--space-3)", fontSize: "var(--type-sm)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 500 }}><dt>Total</dt><dd>{formatMoney(inv.total.cents)}</dd></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--ink-2)" }}>Paid</dt><dd>{formatMoney(inv.amountPaid.cents)}</dd></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--ink-2)" }}>Balance due</dt><dd>{formatMoney(inv.due.cents)}</dd></div>
         </dl>
       </Card>
       {inv.payments.length > 0 ? (
         <Card>
-          <h2 className="mb-2 font-display font-semibold">Payments</h2>
-          <ul className="divide-y divide-line text-sm">
+          <h2 style={{ margin: "0 0 var(--space-2)", fontSize: "inherit", fontFamily: "var(--font-space-grotesk)", fontWeight: 600 }}>Payments</h2>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0, fontSize: "var(--type-sm)" }}>
             {inv.payments.map((p, i) => (
-              <li key={i} className="flex justify-between py-2"><span>{p.method.replace("_", " ")}</span><span>{formatMoney(p.amount.cents)}</span></li>
+              <li key={i} style={{ display: "flex", justifyContent: "space-between", padding: "var(--space-2) 0", borderTop: i > 0 ? "1px solid var(--line)" : undefined }}><span>{p.method.replace("_", " ")}</span><span>{formatMoney(p.amount.cents)}</span></li>
             ))}
           </ul>
         </Card>

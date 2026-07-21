@@ -30,6 +30,10 @@ for other open UI branches before starting a batch.
 | P4d/1 modal net | #154 | `e2e/visual-modals.spec.ts` — 9 dialog panels driven via dev-only `window.__appStore.openModal(id, params)`; reads seeded ids from the hydrated store (modals were NOT in the route net — the modal-heavy snap below is now verifiable) |
 | P4d/2a CSS snap | #156 | `prototype.css` padding/margin snapped to `--space-*` (ties round UP); stylelint `declaration-property-value-allowed-list` extended to padding/margin (0/auto/negatives/calc/env legal); CSS drift 0 |
 | P4d/2b inline snap | #157 | 1,022 raw-px inline-style values → `--space-*`/`--type-*`/`--radius-*` across 91 tsx files (single-value only; `--space-*` shorthands per-value; asymmetric radius/`50%`/`em` left intact by design); 65 visual baselines re-generated; codemod greedy-quote bug caught+fixed (mangled shorthands/percents) |
+| P4d/2b hotfix | #158 | `borderRadius: 999` pill/circle sentinel wrongly snapped to `--radius-xl` (flattened 46×46 avatar circles to rounded-squares) → mapped to `--radius-pill`; 12 sites / 8 files |
+| P4e/1 import chrome | #159 | extracted shared `import-shared.tsx` (ImportPill, CsvDropzone, ImportingLine, ImportDoneCard, IMPORT_SELECT_STYLE) — ~100 byte-identical lines each removed from the 2 import modals; pure no-op (net 0-diff) |
+| P4e/2 compact input | #160 | 4 duplicate `COMPACT_INPUT`/`INPUT` style constants → one in `components/ui/input.tsx`; kept inline (not a class) to preserve the `.field input` override specificity; no-op |
+| P4f/1 detail pages | (open) | ported `money/[id]` + `jobs/[id]` + `job-actions` off Tailwind → prototype tokens + new `.stack-*` vertical-rhythm utility; extended `visual-modals` net to baseline the 2 dynamic detail routes (were unbaselined); Tailwind still installed (P4f/2 deletes it) |
 
 **Current scores:** a11y ~9 (automated-clean, locked) · states ~8 · tokens ~7 ·
 DRY ~5 · consistency ~5 · disclosure 4.
