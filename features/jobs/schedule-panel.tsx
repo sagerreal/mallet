@@ -17,7 +17,7 @@ import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Visit } from "@/lib/store/types";
@@ -49,6 +49,7 @@ import {
   TRAY_CARD_MIN_WIDTH_PX,
 } from "./schedule-constants";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
 
 type SchedView = "day" | "week";
 
@@ -474,9 +475,13 @@ export function SchedulePanel() {
   );
   const firstRun = shouldShowFirstRun({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
   const loadFailed = shouldShowLoadFailed({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
+  const loading = isFirstLoad({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
 
   if (loadFailed) {
     return <LoadFailed noun="schedule" onRetry={() => void jobsQuery.refetch()} retrying={jobsQuery.isRefetching} />;
+  }
+  if (loading) {
+    return <ListLoading />;
   }
   if (firstRun) {
     return (

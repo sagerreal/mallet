@@ -14,7 +14,7 @@ import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import type { TimeEntry } from "@/lib/store/types";
 import { techById } from "./jobs-helpers";
@@ -29,6 +29,7 @@ import {
 import { type TsPick } from "./timesheets-entries";
 import { TsCrewChips, TsTechWeekCard } from "./timesheets-crew";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
 
 // Fields the office is allowed to edit (mirrors prototype tsSetField whitelist).
 // crew reassignment not supported here — techId is intentionally excluded.
@@ -150,9 +151,13 @@ export function TimesheetsPanel() {
   );
   const firstRun = shouldShowFirstRun({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
   const loadFailed = shouldShowLoadFailed({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
+  const loading = isFirstLoad({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
 
   if (loadFailed) {
     return <LoadFailed noun="hours" onRetry={() => void tsQuery.refetch()} retrying={tsQuery.isRefetching} />;
+  }
+  if (loading) {
+    return <ListLoading />;
   }
   if (firstRun) {
     return (

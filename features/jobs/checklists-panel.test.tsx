@@ -33,10 +33,11 @@ describe("ChecklistsPanel — first-run empty state", () => {
     expect(screen.queryByText("No checklists yet")).toBeNull();
   });
 
-  it("shows neither while the list is still loading (no flash)", () => {
+  it("shows the quiet loading state on cold load — no first-run flash", () => {
     q = { isFetched: false, isError: false };
     render(<ChecklistsPanel />);
     expect(screen.queryByText("No checklists yet")).toBeNull();
     expect(screen.queryByTestId("cl-card")).toBeNull();
+    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 });

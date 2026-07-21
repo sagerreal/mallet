@@ -42,11 +42,11 @@ describe("TasksPage — first-run vs caught-up empty states", () => {
     expect(screen.queryByText("No tasks yet")).toBeNull();
   });
 
-  it("does not flash the first-run message while tasks are still loading", () => {
+  it("shows the quiet loading state on cold load — not the first-run flash", () => {
     queryState = { isFetched: false, isError: false };
     render(<TasksPage />);
     expect(screen.queryByText("No tasks yet")).toBeNull();
-    expect(screen.getByText("You're all caught up")).toBeTruthy();
+    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
   it("shows the list (neither empty message) when there are open tasks", () => {

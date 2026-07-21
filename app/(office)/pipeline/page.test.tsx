@@ -59,11 +59,11 @@ describe("PipelinePage — first-run empty state", () => {
     expect(screen.getByText("New leads")).toBeTruthy();
   });
 
-  it("does not flash the first-run screen while the pipeline is still loading", () => {
+  it("shows the quiet loading state on cold load — not the first-run flash", () => {
     queryState = { isFetched: false, isError: false };
     render(<PipelinePage />);
     expect(screen.queryByText("Your pipeline is empty")).toBeNull();
-    expect(screen.getByText("New leads")).toBeTruthy();
+    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
   it("wires the two paths to the New-customer modal and the composer", () => {

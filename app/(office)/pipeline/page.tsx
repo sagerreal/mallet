@@ -16,7 +16,7 @@ import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
 import { deriveRail } from "@/features/quotes/derive";
@@ -24,6 +24,7 @@ import { deriveIntake, deriveGetting } from "@/features/pipeline/working";
 import { IntakeCard, GettingCard, OutCard, WonCard } from "@/features/pipeline/board-cards";
 import type { Snap } from "@/features/counter/types";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
 
 // First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens Pipeline
 // with zero leads (see shouldShowFirstRun) — the board would otherwise be four empty columns.
@@ -76,6 +77,7 @@ export default function PipelinePage() {
   );
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: leads.length });
   const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: leads.length });
+  const loading = isFirstLoad({ isFetched, isError, count: leads.length });
 
   return (
     <div>
@@ -101,7 +103,9 @@ export default function PipelinePage() {
         </button>
       </div>
 
-      {loadFailed ? (
+      {loading ? (
+        <ListLoading />
+      ) : loadFailed ? (
         <LoadFailed noun="pipeline" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : firstRun ? (
         <FirstRunEmptyState

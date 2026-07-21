@@ -45,10 +45,10 @@ describe("SchedulePanel — first-run empty state (board untouched)", () => {
     expect(screen.queryByText("Nothing to schedule yet")).toBeNull();
   });
 
-  it("does not flash the first-run screen while loading (board renders instead)", () => {
+  it("shows the quiet loading state on cold load — not the first-run flash", () => {
     q = { isFetched: false, isError: false };
     render(<SchedulePanel />);
     expect(screen.queryByText("Nothing to schedule yet")).toBeNull();
-    expect(screen.getByText("Schedule")).toBeTruthy();
+    expect(screen.getByText("Loading…")).toBeTruthy();
   });
 });

@@ -31,6 +31,7 @@ import { JobsFilters } from "./jobs-filters";
 import { JobsColumns } from "./jobs-columns";
 import { JOB_STATUS_FILTERS, DEFAULT_JOB_COLS, JOB_COL_ORDER, type JobColKey, type JobsArchiveSet } from "./jobs-list-config";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
 
 export interface JobsHomeProps {
   onOpenJob: (id: string) => void;
@@ -195,9 +196,7 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
           ]}
         />
       ) : loading ? (
-        <div className="empty-att" style={{ padding: "24px 0" }} aria-busy="true">
-          Loading…
-        </div>
+        <ListLoading />
       ) : (
         <>
           <JobsToolbar

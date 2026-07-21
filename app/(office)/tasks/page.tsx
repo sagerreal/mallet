@@ -16,9 +16,10 @@ import { pressable } from "@/lib/a11y";
 import { isOverdue, tomorrowISO } from "@/lib/task-dates";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { EditableTaskRow, type TaskPatch } from "@/features/tasks/editable-task-row";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
 
 // ---- Section ---------------------------------------------------------------
 
@@ -106,6 +107,7 @@ export default function TasksPage() {
   // A brand-new shop has never created a task; distinguish that from "cleared the list" (all done).
   const firstRun = shouldShowFirstRun({ isFetched, isError, count: tasks.length });
   const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: tasks.length });
+  const loading = isFirstLoad({ isFetched, isError, count: tasks.length });
 
   return (
     <div>
@@ -157,6 +159,8 @@ export default function TasksPage() {
             <TaskSection label="No due date" tasks={noDue} leads={leads} editingId={editingId} onStartEdit={setEditingId} onStopEdit={stopEdit} onToggle={toggleTask} onUpdate={updateTask} onRemove={removeTask} onOpenLead={openLead} />
           </div>
         </div>
+      ) : loading ? (
+        <ListLoading />
       ) : loadFailed ? (
         <LoadFailed noun="tasks" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : firstRun ? (
