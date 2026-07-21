@@ -28,8 +28,8 @@ export function JobActions({ job }: { job: JobLike }) {
   const active = job.status === "scheduled" || job.status === "in_progress";
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
+    <div className="stack-3">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
         {job.status === "scheduled" ? (
           <Button disabled={start.isPending} onClick={() => start.mutate({ jobId: job.id }, { onError })}>
             Start
@@ -72,10 +72,10 @@ export function JobActions({ job }: { job: JobLike }) {
           </Select>
         </Field>
       ) : null}
-      {error ? <p className="text-sm" style={{ color: "var(--red)" }}>{error}</p> : null}
+      {error ? <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{error}</p> : null}
       <Sheet open={panel === "reschedule"} title="Reschedule" onClose={() => setPanel("none")}>
         <form
-          className="space-y-3"
+          className="stack-3"
           onSubmit={(e) => {
             e.preventDefault();
             const f = new FormData(e.currentTarget);
@@ -102,7 +102,7 @@ export function JobActions({ job }: { job: JobLike }) {
       </Sheet>
       <Sheet open={panel === "cancel"} title="Cancel job" onClose={() => setPanel("none")}>
         <form
-          className="space-y-3"
+          className="stack-3"
           onSubmit={(e) => {
             e.preventDefault();
             cancel.mutate(

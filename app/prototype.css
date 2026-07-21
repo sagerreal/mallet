@@ -264,6 +264,15 @@
   .kpi.warn{border-color:color-mix(in srgb,var(--amber) 40%,var(--line));background:color-mix(in srgb,var(--amber) 7%,var(--card))}
   .kpi.warn .val{color:var(--amber)}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-5);margin-bottom:var(--space-4);position:relative;box-shadow:var(--shadow-sm)}
+  /* Vertical rhythm — faithful prototype replacement for Tailwind's `space-y-*`:
+     margin-top on subsequent siblings AND margin-bottom:0 (space-y zeroes the
+     child's own bottom margin, e.g. .card/.pagehead, so the gap is exactly N).
+     Block flow so adjacent margins still collapse. Used by pages ported off
+     Tailwind in P4f. */
+  .stack-1>*+*{margin-top:var(--space-1);margin-bottom:0}
+  .stack-2>*+*{margin-top:var(--space-2);margin-bottom:0}
+  .stack-3>*+*{margin-top:var(--space-3);margin-bottom:0}
+  .stack-4>*+*{margin-top:var(--space-4);margin-bottom:0}
   .setsec-h{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3)}
   .setsec-h h3{margin:0}
   /* collapsible settings card — header always visible, body folds (progressive disclosure) */

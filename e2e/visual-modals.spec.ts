@@ -55,6 +55,21 @@ async function closeModal(page: Page): Promise<void> {
   await page.getByRole("dialog").waitFor({ state: "hidden" }).catch(() => {});
 }
 
+/** Navigate to a dynamic detail route and screenshot the full page. These routes
+ *  (/money/[id], /jobs/[id]) are absent from the route net because they need a
+ *  seeded record id; we take it from the hydrated store. */
+async function shootDetailPage(page: Page, name: string, path: string): Promise<void> {
+  await page.goto(path);
+  await settle(page);
+  await expect(page).toHaveScreenshot(`page-${name}.png`, {
+    animations: "disabled",
+    mask: dynamicRegions(page),
+    maxDiffPixels: 150,
+    fullPage: true,
+    timeout: 15_000,
+  });
+}
+
 /** Open a modal, wait for it, screenshot the dialog panel, close. */
 async function shootModal(page: Page, name: string, id: string, params?: Record<string, string>): Promise<void> {
   await openModal(page, id, params);
@@ -93,5 +108,10 @@ test.describe("modal visual baselines", () => {
     if (ids.jobId) await shootModal(page, "tech-job", "tech-job", { jobId: ids.jobId });
     if (ids.estId) await shootModal(page, "estimate", "est", { estId: ids.estId });
     if (ids.invoiceId) await shootModal(page, "invoice", "invoice", { invoiceId: ids.invoiceId });
+
+    // Dynamic detail routes — the last heavy Tailwind pages; baseline them so the
+    // P4f port off Tailwind is provably pixel-identical (0-diff without --update).
+    if (ids.invoiceId) await shootDetailPage(page, "money-detail", `/money/${ids.invoiceId}`);
+    if (ids.jobId) await shootDetailPage(page, "jobs-detail", `/jobs/${ids.jobId}`);
   });
 });
