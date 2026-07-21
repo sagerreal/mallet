@@ -304,6 +304,7 @@ function MemberRow({ member }: { member: MemberItem }) {
         </div>
         <select
           className="tsel"
+          aria-label={`Role for ${member.name ?? member.email}`}
           value={member.role}
           disabled={setRole.isPending}
           onChange={(e) => {
@@ -416,6 +417,7 @@ function InviteForm() {
         />
         <select
           className="tsel"
+          aria-label="Role for the new teammate"
           value={role}
           onChange={(e) => setRole(e.target.value as "owner" | "office" | "tech")}
         >

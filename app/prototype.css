@@ -11,7 +11,7 @@
     --ink:#15110B; --ink-2:#585D66; --ink-3:#636870;
     /* warm "software white" — content stays WHITE (just a warm one, not stark #FFF); only the chrome (sidebar/command line) is manila. bg is a soft warm white LIGHTER than the manila chrome, so content reads as the white work-surface, not cream. */
     --bg:#EFEAE0; --card:#FDFCF9; --paper:#F6F1E7; --line:#E3DDD1; --line-2:#EFEAE0;
-    --amber:#9A6700; --amber-bg:#F2EAD9; --red:#B23A2A; --red-bg:#F4E7E1;
+    --amber:#8A5A00; --amber-bg:#F2EAD9; --red:#B23A2A; --red-bg:#F4E7E1;
     --blue:#4A639E; --blue-bg:#E9ECF3; --purple:#7A6BA6; --purple-bg:#F2EAD9;
     --radius:12px; --radius-sm:9px; --aiw:0px; /* AI is the command bar, not a side drawer — no reserved right column (overlays cover full width) */
     --shadow-sm:0 1px 2px rgba(43,39,32,.05);
@@ -108,12 +108,12 @@
   .navsub{display:flex;align-items:center;gap:var(--space-2);padding:6px 10px 6px 40px;border-radius:var(--radius-sm);font-size:var(--type-base);font-weight:500;color:var(--ink-2);cursor:pointer;margin-bottom:1px}
   .navsub:hover{background:rgba(43,39,32,.05)}
   .navsub.active{background:rgba(43,39,32,.10);color:var(--ink);font-weight:600}
-  .navsub .cnt{margin-left:auto;background:rgba(43,39,32,.06);color:var(--ink-2);border:1px solid var(--manila-line);border-radius:var(--radius-xl);font-size:var(--type-xs);padding:0 7px;font-weight:700;min-width:18px;text-align:center}
+  .navsub .cnt{margin-left:auto;background:rgba(43,39,32,.06);color:var(--ink);border:1px solid var(--manila-line);border-radius:var(--radius-xl);font-size:var(--type-xs);padding:0 7px;font-weight:700;min-width:18px;text-align:center}
   .navitem{display:flex;align-items:center;gap:var(--space-3);padding:7px 10px;border-radius:var(--radius-sm);color:var(--ink-2);font-weight:500;font-size:var(--type-base);cursor:pointer;margin-bottom:1px;position:relative}
   .navitem svg{width:17px;height:17px;flex-shrink:0;stroke:currentColor;opacity:.9}
   .navitem:hover{background:rgba(43,39,32,.05);color:var(--ink)}
   .navitem.active{background:rgba(43,39,32,.10);color:var(--ink);font-weight:600}
-  .navitem .cnt{margin-left:auto;background:rgba(43,39,32,.06);color:var(--ink-2);border:1px solid var(--manila-line);border-radius:var(--radius-xl);font-size:var(--type-xs);padding:0 7px;font-weight:700;min-width:18px;text-align:center}
+  .navitem .cnt{margin-left:auto;background:rgba(43,39,32,.06);color:var(--ink);border:1px solid var(--manila-line);border-radius:var(--radius-xl);font-size:var(--type-xs);padding:0 7px;font-weight:700;min-width:18px;text-align:center}
   @keyframes navpulse{0%{background:rgba(43,39,32,.02)}100%{background:rgba(43,39,32,.10)}}
   .navitem.newitem{animation:navpulse .9s ease 3;background:rgba(43,39,32,.10);color:var(--ink)}
   .nav-more{color:var(--ink-3);font-size:var(--type-base)}
@@ -507,7 +507,7 @@
   .auth-brand-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-3)}
   .auth-brand-list li{font-size:var(--type-base);color:var(--bg);opacity:.52;display:flex;align-items:flex-start;gap:var(--space-2);line-height:1.4}
   .auth-brand-list li::before{content:"✓";font-weight:800;opacity:1;color:var(--bg);flex-shrink:0;margin-top:1px}
-  .auth-brand-foot{margin-top:auto;padding-top:48px;font-size:var(--type-sm);color:var(--bg);opacity:.28;font-family:var(--font-mono);letter-spacing:.04em}
+  .auth-brand-foot{margin-top:auto;padding-top:48px;font-size:var(--type-sm);color:var(--bg);opacity:.55;font-family:var(--font-mono);letter-spacing:.04em}
   .auth-panel{flex:1;display:flex;align-items:center;justify-content:center;padding:48px 40px;background:var(--bg)}
   .auth-box{width:100%;max-width:380px}
   .auth-mob-logo{display:none;font-family:var(--font-display);font-size:var(--type-2xl);font-weight:700;letter-spacing:-.03em;color:var(--ink);margin-bottom:36px}
@@ -528,7 +528,7 @@
   /* the hero ticket — the day, framed as a work order on manila stock */
   .ticket{background:var(--manila);border:1px solid var(--manila-line);border-radius:var(--radius);padding:18px 20px 6px;margin-bottom:16px;position:relative;overflow:hidden}
   .ticket::after{content:"";position:absolute;top:0;bottom:0;left:0;width:4px;background:repeating-linear-gradient(var(--manila-ink) 0 5px,transparent 5px 11px);opacity:.16}
-  .ticket .eyebrow{font-family:var(--font-mono);font-size:var(--type-xs);letter-spacing:.13em;text-transform:uppercase;color:var(--manila-ink);opacity:.62;font-weight:700}
+  .ticket .eyebrow{font-family:var(--font-mono);font-size:var(--type-xs);letter-spacing:.13em;text-transform:uppercase;color:var(--manila-ink);opacity:.8;font-weight:700}
   .ticket h1{font-family:var(--font-display);font-size:var(--type-3xl);font-weight:600;color:var(--manila-ink);margin:5px 0 0;letter-spacing:-.025em}
   .ticket .thesis{font-family:var(--font-display);font-size:var(--type-lg);font-weight:500;color:var(--manila-ink);margin-top:7px;opacity:.92}
   .ticket .thesis b{font-weight:700}
@@ -628,9 +628,9 @@
      column; the signature aging rail (sand→amber→rust) on time-sensitive rows. */
   .jh-wrap{
     position:relative;
-    --jink:#15110B; --jink2:#6B6152; --jink3:#A79E8C;
+    --jink:#15110B; --jink2:#6B6152; --jink3:#78705F;
     --jrow:#FFFEFB; --jpaper:#F1EDE4; --jhover:#F6F2E9; --jline:#EAE4D7;
-    --jamber:#9A6700; --jrust:#A03C28; --jsand:#D9CBB0;
+    --jamber:#8A5A00; --jrust:#A03C28; --jsand:#D9CBB0;
   }
   /* 2.5% grain — the printed-manila desk, fixed, jobs-page only, behind content */
   .jh-grain{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.025;
@@ -690,7 +690,9 @@
   .jl{width:100%;border-collapse:collapse;table-layout:fixed}
   .jl th{font-size:var(--type-xs);text-transform:uppercase;letter-spacing:.5px;color:var(--jink3);font-weight:700;text-align:left;padding:12px 10px;border-bottom:1px solid var(--jline);cursor:pointer;user-select:none;white-space:nowrap}
   .jl th.r,.jl td.r{text-align:right}
-  .jl th:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .th-sort{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;
+    text-transform:inherit;letter-spacing:inherit;text-align:inherit;display:inline-flex;align-items:center;gap:3px}
+  .th-sort:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-2xs)}
   .jl th .caret{margin-left:3px;color:var(--jink)}
   .jl td{padding:11px 10px;border-bottom:1px solid #F4F1E9;font-size:var(--type-base);vertical-align:middle;color:var(--jink)}
   .jl tr:last-child td{border-bottom:none}
