@@ -154,18 +154,17 @@ export function IntakeCard({ row, snap }: { row: IntakeRow; snap: Snap }) {
   const openModal = useOpenModal();
   const item = okItemFor(row.lead, snap);
   return (
-    <div
-      className="kcard"
-      role="button"
-      tabIndex={0}
-      onClick={() => openModal(MODAL.LEAD, { leadId: row.lead.id })}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") openModal(MODAL.LEAD, { leadId: row.lead.id });
-      }}
-    >
+    <div className="kcard" onClick={() => openModal(MODAL.LEAD, { leadId: row.lead.id })}>
       <div className="crow">
         <Dot size={11} halo={row.stalled} />
-        <span className="cname">{row.lead.name}</span>
+        <button
+          type="button"
+          className="cname rowopen"
+          aria-label={`Open ${row.lead.name}`}
+          onClick={(e) => { e.stopPropagation(); openModal(MODAL.LEAD, { leadId: row.lead.id }); }}
+        >
+          {row.lead.name}
+        </button>
       </div>
       <div className="cjob">{row.lead.job}</div>
       <div className="cstamp fig">{row.stamp}</div>
@@ -197,18 +196,17 @@ export function GettingCard({ row }: { row: GettingRow }) {
   }
 
   return (
-    <div
-      className="kcard"
-      role="button"
-      tabIndex={0}
-      onClick={openIt}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") openIt();
-      }}
-    >
+    <div className="kcard" onClick={openIt}>
       <div className="crow">
         <Dot size={10} hollow={row.kind === "shop"} halo={row.kind === "scoped"} />
-        <span className="cname">{row.lead.name}</span>
+        <button
+          type="button"
+          className="cname rowopen"
+          aria-label={`Open ${row.lead.name}`}
+          onClick={(e) => { e.stopPropagation(); openIt(); }}
+        >
+          {row.lead.name}
+        </button>
         {row.est && <span className="camt fig" style={{ opacity: 0.6 }}>{fmt$(estTotal(row.est))}</span>}
       </div>
       <div className="cjob">{row.lead.job}</div>
@@ -245,19 +243,17 @@ export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
     : null;
 
   return (
-    <div
-      className="kcard"
-      style={{ opacity: row.cool }}
-      role="button"
-      tabIndex={0}
-      onClick={() => openModal(MODAL.EST, { estId: row.est.id })}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") openModal(MODAL.EST, { estId: row.est.id });
-      }}
-    >
+    <div className="kcard" style={{ opacity: row.cool }} onClick={() => openModal(MODAL.EST, { estId: row.est.id })}>
       <div className="crow">
         <Dot size={dotSize(row.total) - 3} live={row.live} />
-        <span className="cname">{row.lead?.name ?? "—"}</span>
+        <button
+          type="button"
+          className="cname rowopen"
+          aria-label={`Open quote for ${row.lead?.name ?? "customer"}`}
+          onClick={(e) => { e.stopPropagation(); openModal(MODAL.EST, { estId: row.est.id }); }}
+        >
+          {row.lead?.name ?? "—"}
+        </button>
         <span className="camt fig">{fmt$(row.total)}</span>
       </div>
       <div className="cjob">{row.est.title}</div>
@@ -285,18 +281,17 @@ export function WonCard({ row }: { row: WonRow }) {
   const openModal = useOpenModal();
   const router = useRouter();
   return (
-    <div
-      className="kcard"
-      role="button"
-      tabIndex={0}
-      onClick={() => openModal(MODAL.EST, { estId: row.est.id })}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") openModal(MODAL.EST, { estId: row.est.id });
-      }}
-    >
+    <div className="kcard" onClick={() => openModal(MODAL.EST, { estId: row.est.id })}>
       <div className="crow">
         <Dot size={dotSize(row.total) - 3} halo={row.unscheduled} />
-        <span className="cname">{row.lead?.name ?? "—"}</span>
+        <button
+          type="button"
+          className="cname rowopen"
+          aria-label={`Open quote for ${row.lead?.name ?? "customer"}`}
+          onClick={(e) => { e.stopPropagation(); openModal(MODAL.EST, { estId: row.est.id }); }}
+        >
+          {row.lead?.name ?? "—"}
+        </button>
         <span className="camt fig">{fmt$(row.total)}</span>
       </div>
       <div className="cjob">{row.est.title}</div>

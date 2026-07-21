@@ -165,21 +165,20 @@ function RowCell({ col, row }: { col: JobColKey; row: ListRow }) {
 
 function JobsListRow({ row, visibleCols, onOpenJob }: { row: ListRow; visibleCols: JobColKey[]; onOpenJob: (id: string) => void }) {
   return (
-    <tr
-      role="button"
-      tabIndex={0}
-      aria-label={`Open ${row.cust} · ${row.title}`}
-      onClick={() => onOpenJob(row.id)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpenJob(row.id);
-        }
-      }}
-    >
+    <tr className="clickable" onClick={() => onOpenJob(row.id)}>
       <td className="jl-cust">
-        <b>{row.cust}</b>
-        <span className="job">{row.title}</span>
+        {/* Focusable open control — keyboard access without the <tr> being a button
+            (the status cell can be a Link, which would nest inside a button-row). */}
+        <button
+          type="button"
+          className="rowopen"
+          style={{ display: "block", width: "100%" }}
+          aria-label={`Open ${row.cust} · ${row.title}`}
+          onClick={(e) => { e.stopPropagation(); onOpenJob(row.id); }}
+        >
+          <b>{row.cust}</b>
+          <span className="job">{row.title}</span>
+        </button>
       </td>
       {visibleCols.map((col) => (
         <RowCell key={col} col={col} row={row} />

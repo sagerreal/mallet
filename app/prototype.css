@@ -418,6 +418,13 @@
   .uirow-value{font-family:var(--font-mono);font-size:var(--type-base);color:var(--ink-2);font-variant-numeric:tabular-nums}
   .uirow-trailing{color:var(--ink-3);display:inline-flex;align-items:center}
 
+  /* Row-open control: a real, focusable button styled as plain row text. Lets a
+     clickable row stay mouse-click-anywhere WITHOUT the row being role=button
+     (which would nest the row's action buttons/links — WCAG nested-interactive). */
+  .rowopen{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;
+    text-align:left;cursor:pointer}
+  .rowopen:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-2xs)}
+
   /* ===== Focus (WCAG 2.4.7) ==================================================
      One rule covers every interactive element. Previously 11 :focus-visible
      rules served 104 interactive selectors, so most controls showed nothing on

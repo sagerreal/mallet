@@ -149,20 +149,20 @@ export function MoneyTable({ rows, visibleCols, armedCharge, cb, emptyState }: M
               <tr
                 key={row.key}
                 className="clickable"
-                role="button"
-                tabIndex={0}
-                aria-label={`Open ${row.cust} · ${row.jobTitle}`}
                 onClick={() => cb.onOpenRow(row)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    cb.onOpenRow(row);
-                  }
-                }}
               >
                 <td className="muted mono-num" data-label="Invoice">{row.num ?? "—"}</td>
                 <td data-primary>
-                  <b>{row.cust}</b>
+                  {/* The focusable "open" control — keeps keyboard access without making
+                      the whole <tr> a button (which nests the row's action buttons). */}
+                  <button
+                    type="button"
+                    className="rowopen"
+                    aria-label={`Open ${row.cust} · ${row.jobTitle}`}
+                    onClick={(e) => { e.stopPropagation(); cb.onOpenRow(row); }}
+                  >
+                    <b>{row.cust}</b>
+                  </button>
                 </td>
                 {cols.map((c) => (
                   <MoneyCell key={c} row={row} col={c} />

@@ -132,6 +132,10 @@ export default function TasksPage() {
           value={newDue}
           min={todayISO()}
           onChange={(e) => setNewDue(e.target.value)}
+          // data-dynamic: a native date input renders its min/today from the wall
+          // clock, which the browser-side E2E Date freeze can't reach — mask it so
+          // a rolled-over date isn't a visual flake.
+          data-dynamic
         />
         <button
           className="btn sm primary"

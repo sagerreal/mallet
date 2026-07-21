@@ -79,23 +79,20 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
   return (
     // Card tap opens the tech job view (checklist, found work). The action
     // buttons stopPropagation below so Start/Complete don't also open it.
-    <div
-      className="md-stop"
-      role="button"
-      tabIndex={0}
-      style={{ cursor: "pointer" }}
-      onClick={() => onOpen(job.id)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen(job.id);
-        }
-      }}
-    >
+    <div className="md-stop" style={{ cursor: "pointer" }} onClick={() => onOpen(job.id)}>
       <div className="md-time">{timeLabel(job.scheduledStart)}</div>
       <div className="md-body">
         <div className="md-line1">
-          <b>{job.title ?? `Job #${job.num}`}</b>
+          {/* Focusable open control — keyboard access without the row being a button
+              (it contains the Start/Complete action buttons below). */}
+          <button
+            type="button"
+            className="rowopen"
+            aria-label={`Open ${job.title ?? `Job #${job.num}`}`}
+            onClick={(e) => { e.stopPropagation(); onOpen(job.id); }}
+          >
+            <b>{job.title ?? `Job #${job.num}`}</b>
+          </button>
           <span className="stpill" style={{ color: s.c, background: s.bg }}>
             {s.l}
           </span>
