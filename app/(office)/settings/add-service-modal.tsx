@@ -8,7 +8,7 @@ import { useState } from "react";
 import { Modal } from "@/components/modals/modal";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { Segmented } from "./segmented";
-import { COMPACT_INPUT } from "./booking-service-card";
+import { COMPACT_INPUT } from "@/components/ui/input";
 import { laneFor, type BookingRoute } from "./booking-lanes";
 
 const ROUTE_OPTIONS = [

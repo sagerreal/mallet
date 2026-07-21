@@ -10,8 +10,7 @@ import { useState } from "react";
 import { Modal } from "@/components/modals/modal";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { userMessage } from "@/lib/trpc/error-map";
-
-const COMPACT_INPUT: React.CSSProperties = { fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" };
+import { COMPACT_INPUT } from "@/components/ui/input";
 
 type DraftItem = { text: string; type: "check" | "photo" };
 

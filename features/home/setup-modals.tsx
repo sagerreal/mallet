@@ -8,8 +8,7 @@ import Link from "next/link";
 import { Modal } from "@/components/modals/modal";
 import { useAppStore } from "@/lib/store/app-store";
 import { HourSelect } from "@/app/(office)/settings/hour-select";
-
-const INPUT: React.CSSProperties = { fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" };
+import { COMPACT_INPUT } from "@/components/ui/input";
 
 // ── Office & hours ───────────────────────────────────────────────────────────
 
@@ -39,7 +38,7 @@ export function OfficeHoursModal({ open, onClose }: { open: boolean; onClose: ()
           defaultValue={area.originAddress}
           onChange={(e) => setBookingArea("originAddress", e.target.value)}
           placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
-          style={INPUT}
+          style={COMPACT_INPUT}
         />
       </div>
 
@@ -50,7 +49,7 @@ export function OfficeHoursModal({ open, onClose }: { open: boolean; onClose: ()
           min={0}
           defaultValue={area.radiusMi}
           onChange={(e) => setBookingArea("radiusMi", e.target.value)}
-          style={INPUT}
+          style={COMPACT_INPUT}
         />
       </div>
 

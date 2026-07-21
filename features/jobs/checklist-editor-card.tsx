@@ -9,8 +9,7 @@ import type { Checklist } from "@/lib/store/types";
 import type { NewChecklistItem } from "@/lib/store/slices/checklists-slice";
 import { useAppStore } from "@/lib/store/app-store";
 import { Segmented } from "@/app/(office)/settings/segmented";
-
-const COMPACT_INPUT: React.CSSProperties = { fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" };
+import { COMPACT_INPUT } from "@/components/ui/input";
 const FIELD_MAX_WIDTH = 560;
 const CHIP_STYLE: React.CSSProperties = {
   fontSize: "var(--type-sm)",
