@@ -212,7 +212,7 @@ function CertChipsEditor({ memberId, skillTags }: { memberId: string; skillTags:
               fontSize: "var(--type-base)",
               fontWeight: 600,
               padding: "var(--space-1) var(--space-1) var(--space-1) var(--space-3)",
-              borderRadius: "var(--radius-xl)",
+              borderRadius: "var(--radius-pill)",
               border: "1px solid var(--line)",
               background: "var(--manila, var(--bg))",
               color: "var(--ink)",
@@ -608,7 +608,7 @@ function SecChannels() {
               <div key={label} className="stage-row">
                 <span style={{ fontWeight: 600, flex: 1 }}>{label}</span>
                 <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
-                <span style={{ fontSize: "var(--type-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-3)", background: "var(--manila)", border: "1px solid var(--manila-line)", borderRadius: "var(--radius-xl)", padding: "var(--space-2xs) var(--space-2)" }}>
+                <span style={{ fontSize: "var(--type-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-3)", background: "var(--manila)", border: "1px solid var(--manila-line)", borderRadius: "var(--radius-pill)", padding: "var(--space-2xs) var(--space-2)" }}>
                   Built-in
                 </span>
               </div>

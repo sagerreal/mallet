@@ -53,7 +53,7 @@ function Pill({ label, tone }: { label: string; tone: "ready" | "skipped" | "war
     warn: { background: "var(--amber-bg)", color: "var(--amber)" },
   };
   return (
-    <span style={{ ...tones[tone], borderRadius: "var(--radius-xl)", padding: "var(--space-1) var(--space-3)", fontSize: "var(--type-sm)", fontWeight: 700 }}>
+    <span style={{ ...tones[tone], borderRadius: "var(--radius-pill)", padding: "var(--space-1) var(--space-3)", fontSize: "var(--type-sm)", fontWeight: 700 }}>
       {label}
     </span>
   );
@@ -247,7 +247,7 @@ export function ImportServicesModalContent() {
       {phase === "done" && summary && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "var(--space-4) 0 var(--space-1)" }}>
           <div style={{
-            width: 46, height: 46, borderRadius: "var(--radius-xl)", background: "var(--green-100)",
+            width: 46, height: 46, borderRadius: "var(--radius-pill)", background: "var(--green-100)",
             display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "var(--space-3)",
           }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--ink)"
