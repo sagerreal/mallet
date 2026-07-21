@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { Segmented } from "./segmented";
+import { COMPACT_INPUT } from "@/components/ui/input";
 import {
   routeOf,
   laneFor,
@@ -32,13 +33,8 @@ function routeChipLabel(service: BookingService): string {
   return routeOf(service.lane) === "quote" ? "Quote first" : "Book it";
 }
 
-// Compact field sizing for this tab — overrides the roomier global .field input so booking
-// fields read as crisp single-line inputs, not paragraph boxes. Width-capped for the same reason.
-export const COMPACT_INPUT: React.CSSProperties = {
-  fontSize: "var(--type-base)",
-  padding: "var(--space-2) var(--space-3)",
-  borderRadius: "var(--radius-sm)",
-};
+// Booking fields use the shared COMPACT_INPUT treatment (imported above) so they
+// read as crisp single-line inputs, not the roomier global .field boxes. Width-capped.
 export const FIELD_MAX_WIDTH = 560;
 
 // Small status chip on the collapsed row (lane / emergency / ballpark markers).
