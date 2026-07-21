@@ -12,6 +12,7 @@ import { api } from "@/lib/trpc/client";
 import { useCloseModal } from "@/lib/store/app-store";
 import { parseCsv } from "@/lib/import/parse-csv";
 import { autoMap, buildImportRows, type MappingConfig, type BuildResult } from "@/lib/import/map-rows";
+import { ImportPill, IMPORT_SELECT_STYLE, CsvDropzone, ImportingLine, ImportDoneCard } from "./import-shared";
 
 const CHUNK = 500;
 const TARGETS: { key: keyof Omit<MappingConfig, "sourceTag">; label: string }[] = [
@@ -31,24 +32,6 @@ interface Summary { created: number; deduped: number; failed: number; }
 // phone-only, so a phoneless row re-sent would be created AGAIN as a duplicate). Reset to ZERO
 // whenever the file or mapping changes, since `done` only ever indexes into the CURRENT rows.
 const ZERO = { done: 0, created: 0, deduped: 0, failed: 0 };
-
-const selectStyle: React.CSSProperties = {
-  flex: 1, minWidth: 0, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)",
-  padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)", background: "var(--card)", color: "var(--ink)",
-};
-
-function Pill({ label, tone }: { label: string; tone: "ready" | "skipped" | "warn" }) {
-  const tones: Record<string, React.CSSProperties> = {
-    ready: { background: "var(--green-100)", color: "var(--ink)" },
-    skipped: { background: "var(--manila-2)", color: "var(--ink-2)" },
-    warn: { background: "var(--amber-bg)", color: "var(--amber)" },
-  };
-  return (
-    <span style={{ ...tones[tone], borderRadius: "var(--radius-pill)", padding: "var(--space-1) var(--space-3)", fontSize: "var(--type-sm)", fontWeight: 700 }}>
-      {label}
-    </span>
-  );
-}
 
 export function ImportCustomersModalContent() {
   const utils = api.useUtils();
@@ -143,31 +126,7 @@ export function ImportCustomersModalContent() {
             CSV from that tool and drop it here.
           </p>
 
-          <label
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            style={{
-              display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-2)",
-              padding: "var(--space-8) var(--space-5)", textAlign: "center", cursor: "pointer",
-              border: `2px dashed ${dragging ? "var(--ink)" : "var(--manila-line)"}`,
-              borderRadius: "var(--radius-lg)", background: dragging ? "var(--green-100)" : "var(--manila)",
-              transition: "border-color .12s, background .12s",
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="var(--ink-3)"
-              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <div style={{ fontWeight: 700, fontSize: "var(--type-md)", color: "var(--ink)" }}>
-              Drag a CSV here, or click to browse
-            </div>
-            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>.csv files only · up to a few thousand rows</div>
-            <input type="file" accept=".csv,text/csv" onChange={onFile} aria-label="Upload a CSV file"
-              style={{ position: "absolute", width: 1, height: 1, padding: "0", margin: -1, overflow: "hidden", clip: "rect(0 0 0 0)", border: 0 }} />
-          </label>
+          <CsvDropzone dragging={dragging} setDragging={setDragging} onDrop={onDrop} onFile={onFile} />
 
           {error && <p className="auth-error" style={{ marginTop: "var(--space-4)", marginBottom: "0" }}>{error}</p>}
         </>
@@ -180,9 +139,9 @@ export function ImportCustomersModalContent() {
           </p>
 
           <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", margin: "var(--space-3) 0 var(--space-4)" }}>
-            <Pill tone="ready" label={`${built.rows.length} ready`} />
-            {built.skipped.length > 0 && <Pill tone="skipped" label={`${built.skipped.length} skipped — no name`} />}
-            {built.warnings.length > 0 && <Pill tone="warn" label={`${built.warnings.length} to import without a bad field`} />}
+            <ImportPill tone="ready" label={`${built.rows.length} ready`} />
+            {built.skipped.length > 0 && <ImportPill tone="skipped" label={`${built.skipped.length} skipped — no name`} />}
+            {built.warnings.length > 0 && <ImportPill tone="warn" label={`${built.warnings.length} to import without a bad field`} />}
           </div>
 
           <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius)", overflow: "hidden" }}>
@@ -192,7 +151,7 @@ export function ImportCustomersModalContent() {
                 borderTop: i === 0 ? "none" : "1px solid var(--manila-line)",
               }}>
                 <span style={{ width: 96, fontSize: "var(--type-base)", fontWeight: 700, color: "var(--ink-2)" }}>{t.label}</span>
-                <select value={map[t.key] ?? ""} onChange={(e) => setField(t.key, e.target.value)} style={selectStyle}>
+                <select value={map[t.key] ?? ""} onChange={(e) => setField(t.key, e.target.value)} style={IMPORT_SELECT_STYLE}>
                   <option value="">— skip —</option>
                   {headers.map((h) => <option key={h} value={h}>{h}</option>)}
                 </select>
@@ -205,7 +164,7 @@ export function ImportCustomersModalContent() {
               <span style={{ width: 96, fontSize: "var(--type-base)", fontWeight: 700, color: "var(--ink-2)" }}>Tag source</span>
               <input value={map.sourceTag} maxLength={255}
                 onChange={(e) => { setMap((m) => m ? { ...m, sourceTag: e.target.value } : m); setProgress(ZERO); }}
-                style={{ ...selectStyle }} />
+                style={{ ...IMPORT_SELECT_STYLE }} />
             </label>
           </div>
 
@@ -225,34 +184,23 @@ export function ImportCustomersModalContent() {
       )}
 
       {phase === "importing" && (
-        <p className="muted" style={{ fontSize: "var(--type-md)", padding: "var(--space-6) 0" }}>
-          Importing… {progress.done > 0 ? `${progress.done} of ${built?.rows.length ?? 0}` : "hang tight"}
-        </p>
+        <ImportingLine done={progress.done} total={built?.rows.length ?? 0} />
       )}
 
       {phase === "done" && summary && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "var(--space-4) 0 var(--space-1)" }}>
-          <div style={{
-            width: 46, height: 46, borderRadius: "var(--radius-pill)", background: "var(--green-100)",
-            display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "var(--space-3)",
-          }}>
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--ink)"
-              strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </div>
-          <div style={{ fontWeight: 800, fontSize: "var(--type-lg)" }}>
-            {summary.created} customer{summary.created === 1 ? "" : "s"} added
-          </div>
-          {(summary.deduped > 0 || summary.failed > 0) && (
-            <div className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-1)" }}>
-              {summary.deduped > 0 && `${summary.deduped} already on file`}
-              {summary.deduped > 0 && summary.failed > 0 && " · "}
-              {summary.failed > 0 && `${summary.failed} couldn’t be read`}
-            </div>
-          )}
-          <button type="button" className="btn primary" style={{ marginTop: "var(--space-5)" }} onClick={close}>Done</button>
-        </div>
+        <ImportDoneCard
+          headline={`${summary.created} customer${summary.created === 1 ? "" : "s"} added`}
+          sub={
+            summary.deduped > 0 || summary.failed > 0 ? (
+              <>
+                {summary.deduped > 0 && `${summary.deduped} already on file`}
+                {summary.deduped > 0 && summary.failed > 0 && " · "}
+                {summary.failed > 0 && `${summary.failed} couldn’t be read`}
+              </>
+            ) : undefined
+          }
+          onClose={close}
+        />
       )}
     </div>
   );
