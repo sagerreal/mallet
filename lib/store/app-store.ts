@@ -45,6 +45,13 @@ export const useAppStore = create<AppStore>()((...args) => ({
   ...createPricebookSlice(...args),
 }));
 
+// Dev/test-only handle so the E2E visual harness can open any store-driven modal
+// (and read seeded record ids) deterministically, without depending on fragile UI
+// click paths. NEVER exposed in production. See e2e/visual-modals.spec.ts.
+if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+  (window as unknown as { __appStore?: typeof useAppStore }).__appStore = useAppStore;
+}
+
 // Convenience selectors — import these instead of reaching into the store directly
 export const useActiveModal = () => useAppStore((s) => s.activeModal);
 export const useOpenModal = () => useAppStore((s) => s.openModal);

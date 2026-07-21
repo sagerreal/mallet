@@ -27,6 +27,8 @@
     "test:e2e": "playwright test",
     "test:visual": "E2E_VISUAL=1 playwright test e2e/visual.spec.ts",
     "test:visual:update": "E2E_VISUAL=1 playwright test e2e/visual.spec.ts --update-snapshots",
+    "test:modals": "E2E_VISUAL=1 playwright test e2e/visual-modals.spec.ts",
+    "test:modals:update": "E2E_VISUAL=1 playwright test e2e/visual-modals.spec.ts --update-snapshots",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
     "test:keyboard": "playwright test e2e/keyboard.spec.ts"
   },
