@@ -59,7 +59,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
     <div style={{ marginBottom: 18 }}>
       {/* Header: avatar beside a column of name + metadata, both left-aligned
           to each other; right padding keeps the editable name clear of the ✕. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
         <div
           className="avatar"
           style={{
@@ -68,7 +68,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
             borderRadius: "50%",
             background: "var(--green-100)",
             color: "var(--green-900)",
-            fontSize: 15,
+            fontSize: "var(--type-md)",
             fontWeight: 700,
             display: "flex",
             alignItems: "center",
@@ -131,10 +131,10 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: "var(--space-2)",
           marginBottom: 14,
           border: "1.5px solid var(--line)",
-          borderRadius: 10,
+          borderRadius: "var(--radius-md)",
           padding: "8px 11px",
         }}
       >
@@ -177,7 +177,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           CONTACT (Call / Text — quiet utilities) on the left, ADVANCE THE DEAL
           (Book site visit / New quote — the workflow) on the right. One clear
           stage-aware primary: Call for a brand-new lead, else New quote. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
         {/* Contact cluster — Call/Text stay TAPPABLE. Without a number on file
             the call sheet / thread each prompt to add one in-flow (and the header
             input above also adds it), so no dead button and no blank sheet. */}

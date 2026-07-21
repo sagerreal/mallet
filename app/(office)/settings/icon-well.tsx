@@ -10,7 +10,7 @@ export function IconWell({ children }: { children: React.ReactNode }) {
       style={{
         width: 40,
         height: 40,
-        borderRadius: 10,
+        borderRadius: "var(--radius-md)",
         background: "var(--manila)",
         border: "1px solid var(--manila-line)",
         display: "flex",

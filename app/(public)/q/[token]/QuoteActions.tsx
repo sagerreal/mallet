@@ -117,7 +117,7 @@ export function QuoteActions({
 
   if (phase === "approved") {
     return (
-      <div className="deltabanner" style={{ textAlign: "center", marginTop: 8 }}>
+      <div className="deltabanner" style={{ textAlign: "center", marginTop: "var(--space-2)" }}>
         Approved — thank you! We&rsquo;ll be in touch soon.
       </div>
     );
@@ -125,7 +125,7 @@ export function QuoteActions({
 
   if (phase === "declined") {
     return (
-      <div className="reqcard" style={{ textAlign: "center", marginTop: 8 }}>
+      <div className="reqcard" style={{ textAlign: "center", marginTop: "var(--space-2)" }}>
         No problem — you passed on this one. Reach out if anything changes.
       </div>
     );
@@ -134,7 +134,7 @@ export function QuoteActions({
   return (
     <>
       {showChangeBanner && (
-        <div className="reqcard" style={{ marginTop: 8, marginBottom: 10 }}>
+        <div className="reqcard" style={{ marginTop: "var(--space-2)", marginBottom: 10 }}>
           Request sent — they&rsquo;ll get back to you.
         </div>
       )}
@@ -145,7 +145,7 @@ export function QuoteActions({
           style={{
             background: "var(--red-bg)",
             border: "1px solid var(--red)",
-            borderRadius: 9,
+            borderRadius: "var(--radius-sm)",
             padding: "8px 12px",
             fontSize: 12.5,
             color: "var(--red)",
@@ -176,7 +176,7 @@ export function QuoteActions({
 
       {/* "Request a change" in-flow reveal */}
       {phase === "requesting_change" ? (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: "var(--space-3)" }}>
           <textarea
             rows={3}
             maxLength={MAX_CHANGE_MESSAGE}
@@ -200,7 +200,7 @@ export function QuoteActions({
               boxSizing: "border-box",
             }}
           />
-          <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", justifyContent: "flex-end" }}>
             <button
               className="btn sm ghost"
               onClick={() => { onPhaseChange("idle"); setError(null); setChangeMessage(""); }}
@@ -236,7 +236,7 @@ export function QuoteActions({
             ))}
           </div>
         ) : (
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16, marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "var(--space-4)", marginTop: "var(--space-3)" }}>
             <button
               className="linklike"
               style={{ color: "var(--ink-3)", background: "none", border: 0, cursor: "pointer" }}

@@ -157,15 +157,15 @@ export default function TasksPage() {
         <LoadFailed noun="tasks" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : firstRun ? (
         <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>No tasks yet</div>
-          <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
+          <div style={{ fontSize: "var(--type-md)", fontWeight: 700 }}>No tasks yet</div>
+          <p className="muted" style={{ fontSize: "var(--type-base)", margin: "4px 0 0" }}>
             Add your first above — reminders like &ldquo;Call Rob back&rdquo; or &ldquo;Send the quote.&rdquo;
           </p>
         </div>
       ) : (
         <div className="card" style={{ padding: "34px 16px", textAlign: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>You&apos;re all caught up</div>
-          <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
+          <div style={{ fontSize: "var(--type-md)", fontWeight: 700 }}>You&apos;re all caught up</div>
+          <p className="muted" style={{ fontSize: "var(--type-base)", margin: "4px 0 0" }}>
             No open tasks. Add one above when something needs doing.
           </p>
         </div>
@@ -173,7 +173,7 @@ export default function TasksPage() {
 
       {/* Done — collapsed */}
       {done.length > 0 && (
-        <div className={`reveal${doneOpen ? " open" : ""}`} style={{ marginTop: 4 }}>
+        <div className={`reveal${doneOpen ? " open" : ""}`} style={{ marginTop: "var(--space-1)" }}>
           <div
             className="reveal-head"
             aria-expanded={doneOpen}

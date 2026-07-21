@@ -80,16 +80,16 @@ export function ChecklistsPanel() {
   return (
     <div style={{ padding: "20px 24px" }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-4)" }}>
         <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>Checklists</h2>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <input
             type="text"
             placeholder="Search checklists…"
             aria-label="Search checklists"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            style={{ border: "1.4px solid var(--line)", borderRadius: 9, padding: "8px 11px", fontSize: 12.5, fontFamily: "inherit", background: "var(--card)", color: "var(--ink)" }}
+            style={{ border: "1.4px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "8px 11px", fontSize: 12.5, fontFamily: "inherit", background: "var(--card)", color: "var(--ink)" }}
           />
           <button className="btn ghost" onClick={() => setStarterOpen(true)}>Starter checklists</button>
           <button className="btn primary" onClick={() => setAddOpen(true)}>+ New checklist</button>

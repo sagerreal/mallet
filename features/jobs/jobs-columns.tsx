@@ -15,7 +15,7 @@ interface JobsColumnsProps {
 
 export function JobsColumns({ visible, onToggle }: JobsColumnsProps) {
   return (
-    <div className="fpanel" style={{ gap: 8 }}>
+    <div className="fpanel" style={{ gap: "var(--space-2)" }}>
       {JOB_COL_ORDER.map((k) => (
         <label key={k} className="colchk">
           <input type="checkbox" checked={visible.includes(k)} onChange={() => onToggle(k)} />

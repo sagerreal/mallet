@@ -113,16 +113,16 @@ function YourNameField() {
 
   return (
     <FoldCard title="Your name" defaultOpen summary={me?.name ?? me?.email ?? ""}>
-      <div className="muted" style={{ fontSize: "11.5px", marginBottom: 8 }}>
+      <div className="muted" style={{ fontSize: "11.5px", marginBottom: "var(--space-2)" }}>
         Shown in greetings and on the dispatch board. Your login email stays unchanged.
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
         <input
           type="text"
           placeholder="e.g. Mike Rivera"
           value={displayName}
           onChange={(e) => { setName(e.target.value); setSaved(false); setSaveError(null); }}
-          style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }}
+          style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }}
         />
         <button
           className="btn primary"
@@ -131,10 +131,10 @@ function YourNameField() {
         >
           {updateMe.isPending ? "Saving…" : "Save"}
         </button>
-        {saved && <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>Saved ✓</span>}
+        {saved && <span style={{ color: "var(--green-900)", fontSize: "var(--type-sm)", fontWeight: 600 }}>Saved ✓</span>}
       </div>
       {saveError && (
-        <div style={{ color: "var(--red-700)", fontSize: 12, marginTop: 6 }}>{saveError}</div>
+        <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", marginTop: 6 }}>{saveError}</div>
       )}
     </FoldCard>
   );
@@ -197,8 +197,8 @@ function CertChipsEditor({ memberId, skillTags }: { memberId: string; skillTags:
   const atCap = skillTags.length >= CERT_MAX;
 
   return (
-    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line)" }}>
-      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700, color: "var(--ink-2)", marginBottom: 6 }}>
+    <div style={{ marginTop: "var(--space-2)", paddingTop: "var(--space-2)", borderTop: "1px solid var(--line)" }}>
+      <div style={{ fontSize: "var(--type-xs)", textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700, color: "var(--ink-2)", marginBottom: 6 }}>
         Certifications
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: skillTags.length > 0 ? 8 : 0 }}>
@@ -230,7 +230,7 @@ function CertChipsEditor({ memberId, skillTags }: { memberId: string; skillTags:
                 background: "transparent",
                 cursor: "pointer",
                 color: "var(--ink-3)",
-                fontSize: 12,
+                fontSize: "var(--type-sm)",
                 lineHeight: 1,
                 padding: "2px 4px",
                 fontFamily: "inherit",
@@ -255,7 +255,7 @@ function CertChipsEditor({ memberId, skillTags }: { memberId: string; skillTags:
             borderRadius: 8,
             padding: "6px 8px",
             fontFamily: "inherit",
-            fontSize: 13,
+            fontSize: "var(--type-base)",
             background: atCap ? "var(--bg)" : "var(--card)",
           }}
         />
@@ -269,7 +269,7 @@ function CertChipsEditor({ memberId, skillTags }: { memberId: string; skillTags:
         </button>
       </div>
       {saveError && (
-        <div style={{ color: "var(--red-700)", fontSize: 12, marginTop: 4 }}>{saveError}</div>
+        <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>{saveError}</div>
       )}
     </div>
   );
@@ -294,8 +294,8 @@ function MemberRow({ member }: { member: MemberItem }) {
   });
 
   return (
-    <div className="stage-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div className="stage-row" style={{ flexDirection: "column", alignItems: "stretch", gap: "var(--space-1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
         <div style={{ flex: 1 }}>
           <b style={{ fontWeight: 700 }}>{member.name ?? member.email}</b>
           <div className="muted" style={{ fontSize: "11.5px", marginTop: 2 }}>
@@ -327,7 +327,7 @@ function MemberRow({ member }: { member: MemberItem }) {
         </label>
       </div>
       {roleError && (
-        <div style={{ color: "var(--red-700)", fontSize: 12, paddingLeft: 2 }}>{roleError}</div>
+        <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", paddingLeft: 2 }}>{roleError}</div>
       )}
       {member.isFieldCrew && (
         <CertChipsEditor memberId={member.id} skillTags={member.skillTags} />
@@ -388,14 +388,14 @@ function InviteForm() {
   function InviteConfirmation() {
     if (inviteStatus.kind === "email_sent") {
       return (
-        <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>
+        <span style={{ color: "var(--green-900)", fontSize: "var(--type-sm)", fontWeight: 600 }}>
           Invite email sent ✓
         </span>
       );
     }
     if (inviteStatus.kind === "no_email") {
       return (
-        <span style={{ color: "var(--amber-700, #b45309)", fontSize: 12, fontWeight: 600 }}>
+        <span style={{ color: "var(--amber-700, #b45309)", fontSize: "var(--type-sm)", fontWeight: 600 }}>
           Invite created — ask them to sign up with this email
         </span>
       );
@@ -405,14 +405,14 @@ function InviteForm() {
 
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
         <input
           type="email"
           placeholder="teammate@email.com"
           value={email}
           onChange={(e) => { setEmail(e.target.value); setInviteError(null); setInviteStatus({ kind: "idle" }); }}
           onKeyDown={(e) => { if (e.key === "Enter") handleInvite(); }}
-          style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }}
+          style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }}
         />
         <select
           className="tsel"
@@ -433,7 +433,7 @@ function InviteForm() {
         <InviteConfirmation />
       </div>
       {inviteError && (
-        <div style={{ color: "var(--red-700)", fontSize: 12, marginTop: 6 }}>{inviteError}</div>
+        <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", marginTop: 6 }}>{inviteError}</div>
       )}
       <div className="muted" style={{ fontSize: "11.5px", marginTop: 6 }}>
         They&apos;ll receive an invite link. If they already have an account, ask them to sign in.
@@ -467,11 +467,11 @@ function PendingInviteRow({ invite }: { invite: InviteItem }) {
   });
 
   return (
-    <div className="stage-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div className="stage-row" style={{ flexDirection: "column", alignItems: "stretch", gap: "var(--space-1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
         <div style={{ flex: 1 }}>
           <span style={{ fontWeight: 600 }}>{invite.email}</span>
-          <span className="muted" style={{ fontSize: "11.5px", marginLeft: 8 }}>{cap(invite.role)} · pending</span>
+          <span className="muted" style={{ fontSize: "11.5px", marginLeft: "var(--space-2)" }}>{cap(invite.role)} · pending</span>
         </div>
         <button
           className="btn sm ghost"
@@ -482,7 +482,7 @@ function PendingInviteRow({ invite }: { invite: InviteItem }) {
         </button>
       </div>
       {revokeError && (
-        <div style={{ color: "var(--red-700)", fontSize: 12, paddingLeft: 2 }}>{revokeError}</div>
+        <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", paddingLeft: 2 }}>{revokeError}</div>
       )}
     </div>
   );
@@ -492,7 +492,7 @@ function PendingInvitesList() {
   const { data, isLoading } = api.v1.identity.listInvites.useQuery();
 
   if (isLoading) {
-    return <div className="muted" style={{ fontSize: 12, padding: "4px 0" }}>Loading invites…</div>;
+    return <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "4px 0" }}>Loading invites…</div>;
   }
 
   const items = data?.items ?? [];
@@ -506,7 +506,7 @@ function PendingInvitesList() {
   }
 
   return (
-    <div style={{ marginTop: 4 }}>
+    <div style={{ marginTop: "var(--space-1)" }}>
       {items.map((invite) => (
         <PendingInviteRow key={invite.id} invite={invite} />
       ))}
@@ -528,20 +528,20 @@ function TeamRolesBlock() {
     <>
       <FoldCard title="Your team" defaultOpen summary={isLoading ? "…" : `${memberCount} ${memberCount === 1 ? "person" : "people"}`}>
         {isLoading && (
-          <div className="muted" style={{ fontSize: 12, padding: "8px 0" }}>Loading members…</div>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "8px 0" }}>Loading members…</div>
         )}
         {isError && (
-          <div className="muted" style={{ fontSize: 12, padding: "8px 0" }}>Could not load members.</div>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "8px 0" }}>Could not load members.</div>
         )}
         {data?.items.map((member) => (
           <MemberRow key={member.id} member={member} />
         ))}
         <InviteForm />
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
-          <div className="muted" style={{ fontSize: "11.5px", fontWeight: 600, marginBottom: 4 }}>Pending invites</div>
+        <div style={{ marginTop: "var(--space-3)", paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+          <div className="muted" style={{ fontSize: "11.5px", fontWeight: 600, marginBottom: "var(--space-1)" }}>Pending invites</div>
           <PendingInvitesList />
         </div>
-        <div className="muted" style={{ fontSize: "11.5px", marginTop: 8 }}>
+        <div className="muted" style={{ fontSize: "11.5px", marginTop: "var(--space-2)" }}>
           The toggle makes a member schedulable on the dispatch board ({fieldCrewCount} on now).
         </div>
       </FoldCard>
@@ -550,7 +550,7 @@ function TeamRolesBlock() {
         <div className="stage-row" style={{ borderTop: "none", marginTop: 0 }}>
           <div style={{ flex: 1 }}>
             <b>Techs can see job prices</b>
-            <div className="muted" style={{ fontSize: 12 }}>The job total only — your cost and margin stay office-only.</div>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>The job total only — your cost and margin stay office-only.</div>
           </div>
           <label className="switch">
             <input type="checkbox" checked={techSeesPrice} onChange={(e) => setToggle("techSeesPrice", e.target.checked)} />
@@ -596,7 +596,7 @@ function SecChannels() {
       <WebsiteFormCard />
 
       <FoldCard title="Source list" summary={`${DEFAULT_SOURCES.length + sources.length} sources`}>
-        <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 4px" }}>
           Where your leads come from — tag each lead with one. Built-in sources are always available; add your own below.
         </p>
         <div>
@@ -605,7 +605,7 @@ function SecChannels() {
             return (
               <div key={label} className="stage-row">
                 <span style={{ fontWeight: 600, flex: 1 }}>{label}</span>
-                <span className="muted" style={{ fontSize: 12, minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
+                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-3)", background: "var(--manila)", border: "1px solid var(--manila-line)", borderRadius: 999, padding: "2px 8px" }}>
                   Built-in
                 </span>
@@ -617,21 +617,21 @@ function SecChannels() {
             return (
               <div key={s.id} className="stage-row">
                 <span style={{ fontWeight: 700, flex: 1 }}>{s.label}</span>
-                <span className="muted" style={{ fontSize: 12, minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
+                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
                 <button className="btn sm ghost" aria-label={`Remove ${s.label}`} onClick={() => removeSource(s.id)}>✕</button>
               </div>
             );
           })}
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 14 }}>
           <input type="text" id="setSrcName" placeholder="Add a source — e.g. Home show, Truck wrap" value={srcName}
             onChange={(e) => { setSrcName(e.target.value); if (srcError) setSrcError(null); }}
             onKeyDown={(e) => { if (e.key === "Enter") void handleAddSource(); }}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
           <button className="btn" onClick={() => void handleAddSource()}>+ Add</button>
         </div>
         {srcError && (
-          <p style={{ color: "var(--red)", fontSize: 12, margin: "8px 0 0" }}>{srcError}</p>
+          <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "8px 0 0" }}>{srcError}</p>
         )}
       </FoldCard>
     </>

@@ -149,7 +149,7 @@ export function EstimateModalContent() {
             <h2>{e.title}</h2>
           </div>
         </div>
-        <div className="card" style={{ marginTop: 14, color: "var(--ink-2)", fontSize: 13 }}>
+        <div className="card" style={{ marginTop: 14, color: "var(--ink-2)", fontSize: "var(--type-base)" }}>
           Couldn&apos;t load the quote details — close and reopen to retry.
         </div>
       </div>
@@ -367,7 +367,7 @@ export function EstimateModalContent() {
             </tr>
             {p.dep ? (
               <tr>
-                <td colSpan={4} style={{ textAlign: "right", paddingTop: 8 }}>
+                <td colSpan={4} style={{ textAlign: "right", paddingTop: "var(--space-2)" }}>
                   <span className="pill green">
                     Deposit due on acceptance: {fmt$(m.dep)} ({p.dep}%)
                   </span>
@@ -386,7 +386,7 @@ export function EstimateModalContent() {
 
       {e.status === "sent" && e.changeRequestedAt && (
         <div className="reqcard" style={{ marginTop: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-2)" }}>
             <div>
               <span className="muted" style={{ fontSize: 11.5, display: "block", marginBottom: 3 }}>Change requested</span>
               {e.changeRequest
@@ -419,7 +419,7 @@ export function EstimateModalContent() {
       {e.status === "sent" && <FollowUpTrail e={e} />}
 
       {(e.status === "draft" || e.status === "sent") && (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: "var(--space-3)" }}>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <button className="btn ghost" onClick={() => openModal(MODAL.CUST_QUOTE, { estId: e.id })}>
               Preview as customer
@@ -435,7 +435,7 @@ export function EstimateModalContent() {
           {e.status === "draft" && sendOpen && (
             <div
               style={{
-                marginTop: 12,
+                marginTop: "var(--space-3)",
                 padding: "14px 16px",
                 border: "1.5px solid var(--line)",
                 borderRadius: "var(--radius-sm, 9px)",
@@ -443,7 +443,7 @@ export function EstimateModalContent() {
               }}
             >
               {/* Channel toggle */}
-              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: "var(--space-3)" }}>
                 {(["text", "email"] as const).map((ch) => (
                   <button
                     key={ch}
@@ -499,7 +499,7 @@ export function EstimateModalContent() {
                   }}
                 />
                 {destError && (
-                  <div style={{ marginTop: 4, fontSize: 12, color: "var(--red)" }}>
+                  <div style={{ marginTop: "var(--space-1)", fontSize: "var(--type-sm)", color: "var(--red)" }}>
                     {destError}
                   </div>
                 )}
@@ -507,13 +507,13 @@ export function EstimateModalContent() {
 
               {/* Inline delivery error */}
               {sendError && (
-                <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--red)" }}>
+                <div style={{ marginTop: "var(--space-2)", fontSize: 12.5, color: "var(--red)" }}>
                   {sendError}
                 </div>
               )}
 
               {/* Panel actions */}
-              <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 14, justifyContent: "flex-end" }}>
                 <button
                   className="btn sm ghost"
                   onClick={closeSendPanel}
@@ -545,12 +545,12 @@ export function EstimateModalContent() {
           alignItems: "center",
           marginTop: 14,
           borderTop: "1px solid var(--line)",
-          paddingTop: 12,
-          gap: 8,
+          paddingTop: "var(--space-3)",
+          gap: "var(--space-2)",
         }}
       >
         {deleteArmed && (
-          <span className="muted" style={{ fontSize: 12 }}>
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
             {e.status === "accepted"
               ? "This is a WON quote — trashing it removes the revenue from your numbers. "
               : "30 days in the trash, then gone. "}

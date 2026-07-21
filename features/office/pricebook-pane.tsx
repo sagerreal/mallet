@@ -118,7 +118,7 @@ export function PricebookPane() {
             {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
           </button>
           {seedError && (
-            <p style={{ color: "var(--red)", fontSize: 12, margin: "8px 0 0" }}>{seedError}</p>
+            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "8px 0 0" }}>{seedError}</p>
           )}
         </div>
       ) : (
@@ -153,17 +153,17 @@ export function PricebookPane() {
             <div key={lr.id} className="stage-row">
               <input type="text" defaultValue={lr.name}
                 onChange={(e) => updateLaborRate(lr.id, "name", e.target.value)}
-                style={{ flex: 1, minWidth: 120, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+                style={{ flex: 1, minWidth: 120, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
               <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <span className="muted">$</span>
                 <input type="number" defaultValue={lr.rate}
                   onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
-                  style={{ width: 80, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+                  style={{ width: 80, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
                 <select
                   aria-label={`Unit for ${lr.name}`}
                   value={lr.kind}
                   onChange={(e) => updateLaborRate(lr.id, "kind", e.target.value)}
-                  style={{ border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 6px", fontFamily: "inherit", fontSize: 12, color: "var(--ink-2)", background: "var(--card)" }}
+                  style={{ border: "1.5px solid var(--line)", borderRadius: 8, padding: "7px 6px", fontFamily: "inherit", fontSize: "var(--type-sm)", color: "var(--ink-2)", background: "var(--card)" }}
                 >
                   <option value="hourly">/hr</option>
                   <option value="flat_fee">flat</option>
@@ -175,8 +175,8 @@ export function PricebookPane() {
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 12 }}>
-          <div className="chips" style={{ marginBottom: 8 }}>
+        <div style={{ marginTop: "var(--space-3)" }}>
+          <div className="chips" style={{ marginBottom: "var(--space-2)" }}>
             <button type="button" className={`chip${lrKind === "hourly" ? " sel" : ""}`} onClick={() => setLrKind("hourly")}>
               Hourly
             </button>
@@ -184,11 +184,11 @@ export function PricebookPane() {
               Flat fee
             </button>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
             <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
-              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
             <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
-              style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+              style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
             <button className="btn" onClick={handleAddLabor}>+ Add</button>
           </div>
         </div>
@@ -199,7 +199,7 @@ export function PricebookPane() {
           <label>Markup on new parts (%)</label>
           <input type="number" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
         </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: "11.5px" }}>
+        <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "11.5px" }}>
           Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
         </p>
       </FoldCard>
@@ -214,11 +214,11 @@ export function PricebookPane() {
             </div>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
           <input type="text" id="tlName" placeholder="name (e.g. Repipe terms)" value={tlName} onChange={(e) => setTlName(e.target.value)}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
           <input type="text" id="tlBody" placeholder="the fine print…" value={tlBody} onChange={(e) => setTlBody(e.target.value)}
-            style={{ flex: 2, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+            style={{ flex: 2, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
           <button className="btn" onClick={handleAddTerm}>+ Add</button>
         </div>
       </FoldCard>

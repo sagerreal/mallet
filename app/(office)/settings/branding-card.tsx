@@ -25,7 +25,7 @@ const DEFAULT_BRAND_COLOR = "#1A1510";
 
 const inputStyle = {
   flex: 1, minWidth: 160, border: "1.5px solid var(--line)", borderRadius: 8,
-  padding: "8px 10px", fontFamily: "inherit", fontSize: 13,
+  padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)",
 } as const;
 
 export function BrandingCard() {
@@ -85,11 +85,11 @@ export function BrandingCard() {
     <FoldCard title="Branding" summary={name} defaultOpen>
       {/* Live WYSIWYG preview — the exact header a customer sees atop a quote or
           invoice (mirrors CustHead in cust-quote-modal). */}
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: "var(--space-4)" }}>
         <div className="muted" style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 7 }}>
           How you appear on quotes &amp; invoices
         </div>
-        <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid var(--line)" }}>
+        <div style={{ borderRadius: "var(--radius)", overflow: "hidden", border: "1px solid var(--line)" }}>
           <div className="custhead" style={{ background: previewColor }}>
             <div className="custlogo" style={{ color: previewColor }}>{previewInitials}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -131,14 +131,14 @@ export function BrandingCard() {
             <label htmlFor="brandInitials">Initials</label>
             <input id="brandInitials" type="text" maxLength={3} value={initials}
               onChange={(e) => { setInitials(e.target.value); markDirty(); }}
-              style={{ width: 72, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13 }} />
+              style={{ width: 72, border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
           </div>
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: "var(--space-3)" }}>
         <button className="btn primary" onClick={handleSave} disabled={!name.trim()}>Save</button>
-        {saved && <span style={{ color: "var(--green-900)", fontSize: 12, fontWeight: 600 }}>Saved ✓</span>}
+        {saved && <span style={{ color: "var(--green-900)", fontSize: "var(--type-sm)", fontWeight: 600 }}>Saved ✓</span>}
       </div>
     </FoldCard>
   );

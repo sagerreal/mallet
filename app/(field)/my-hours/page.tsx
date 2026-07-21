@@ -201,11 +201,11 @@ export default function MyHoursPage() {
     return (
       <>
         <h1>My hours</h1>
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: "var(--space-3)" }}>
           {[0, 1, 2].map((i) => (
             <div key={i} className="sk-row">
               <div className="sk" style={{ width: 64, height: 14, flexShrink: 0 }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, justifyContent: "center" }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-2)", justifyContent: "center" }}>
                 <div className="sk" style={{ width: "60%", height: 14 }} />
                 <div className="sk" style={{ width: "40%", height: 12 }} />
               </div>
@@ -252,7 +252,7 @@ export default function MyHoursPage() {
         <span style={{ flex: 1 }} />
         <span
           className="muted"
-          style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}
+          style={{ fontSize: "var(--type-sm)", fontVariantNumeric: "tabular-nums" }}
         >
           {r.paid.toFixed(2)} paid h
           {r.ot ? ` · ${r.ot.toFixed(2)} OT` : ""}
@@ -271,7 +271,7 @@ export default function MyHoursPage() {
             color: "var(--green-700)",
             border: "1px solid var(--green-100)",
             display: "inline-block",
-            marginTop: 8,
+            marginTop: "var(--space-2)",
           }}
         >
           ✓ Approved — locked

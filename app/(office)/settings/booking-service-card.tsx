@@ -117,7 +117,7 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
                 background: "transparent",
                 cursor: "pointer",
                 color: "var(--ink-3)",
-                fontSize: 12,
+                fontSize: "var(--type-sm)",
                 lineHeight: 1,
                 padding: "2px 4px",
                 fontFamily: "inherit",
@@ -142,7 +142,7 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
             borderRadius: 8,
             padding: "6px 8px",
             fontFamily: "inherit",
-            fontSize: 13,
+            fontSize: "var(--type-base)",
             background: atCap ? "var(--bg)" : "var(--card)",
             ...COMPACT_INPUT,
           }}
@@ -200,7 +200,7 @@ function CollapsedRow({
         minHeight: 48,
       }}
     >
-      <span style={{ fontSize: 12, color: "var(--ink-3)", flexShrink: 0 }}>
+      <span style={{ fontSize: "var(--type-sm)", color: "var(--ink-3)", flexShrink: 0 }}>
         {isExpanded ? "▾" : "▸"}
       </span>
       <span
@@ -289,7 +289,7 @@ function ExpandedEditor({
 
       <div className="field">
         <label>Job type</label>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <Segmented value={route} onChange={handleRouteChange} options={ROUTE_OPTIONS} aria-label="Job type" />
           {route === "book" && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -334,7 +334,7 @@ function ExpandedEditor({
       {route === "quote" && showBallpark && (
         <div className="field">
           <label>Ballpark range ($)</label>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
             <input
               type="number"
               min={0}
@@ -370,12 +370,12 @@ function ExpandedEditor({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 8,
+          gap: "var(--space-2)",
           marginTop: 2,
           maxWidth: FIELD_MAX_WIDTH,
         }}
       >
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
           {route === "book" && !showEmergency && (
             <button type="button" className="btn sm ghost" onClick={() => setShowEmergency(true)}>
               + Emergency words

@@ -68,7 +68,7 @@ function QuotesCard({ estimates }: QuotesCardProps) {
               <div style={{ fontSize: 13.5, fontWeight: 600 }}>
                 {e.num} — {e.title}
               </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
                 {isSigned
                   ? `Signed — $${total.toLocaleString()}`
                   : "Tap to open…"}

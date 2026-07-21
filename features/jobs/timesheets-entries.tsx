@@ -291,7 +291,7 @@ function TsEntryRow({
           {appr ? (
             <span className="muted">✓</span>
           ) : entry.running ? (
-            <span className="muted" style={{ fontSize: 11 }}>
+            <span className="muted" style={{ fontSize: "var(--type-xs)" }}>
               live
             </span>
           ) : (

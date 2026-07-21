@@ -88,7 +88,7 @@ export function TagInput({
               background: "transparent",
               cursor: "pointer",
               color: "var(--ink-3)",
-              fontSize: 12,
+              fontSize: "var(--type-sm)",
               lineHeight: 1,
               padding: "2px 4px",
               fontFamily: "inherit",

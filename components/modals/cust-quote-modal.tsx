@@ -122,7 +122,7 @@ function CustHead({ brand }: { brand: Brand }) {
 
 function CustFooter() {
   return (
-    <p className="muted" style={{ fontSize: 10.5, textAlign: "center", marginTop: 12 }}>
+    <p className="muted" style={{ fontSize: 10.5, textAlign: "center", marginTop: "var(--space-3)" }}>
       Powered by Mallet — licensed &amp; insured
     </p>
   );
@@ -253,7 +253,7 @@ function CustTotals({
         display: "flex",
         flexDirection: "column",
         alignItems: "flex-end",
-        gap: 4,
+        gap: "var(--space-1)",
         padding: "14px 0 4px",
       }}
     >
@@ -274,7 +274,7 @@ function CustTotals({
       ) : null}
       <div style={{ fontWeight: 900, fontSize: 19 }}>Total {fmt$(m.total)}</div>
       {pricing.dep ? (
-        <div className="muted" style={{ fontSize: 12 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
           {fmt$(m.dep)} deposit due today · the rest when the job&rsquo;s done
         </div>
       ) : null}
@@ -318,7 +318,7 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
       <p style={{ fontSize: 13.5, lineHeight: 1.55, marginBottom: 6 }}>
         Here&rsquo;s your quote from <b>{brand.name}</b> — take a look.
       </p>
-      <p className="muted" style={{ marginBottom: 8 }}>
+      <p className="muted" style={{ marginBottom: "var(--space-2)" }}>
         Quote {estimate.num}
       </p>
 
@@ -406,7 +406,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
 
       {/* tier cards — hidden when only one real option remains */}
       {tiers.length > 1 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
           {tiers.map((t) => {
             const isSel = t.k === sel;
             const isRec = t.k === rec;
@@ -421,7 +421,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
                   minWidth: 110,
                   cursor: "pointer",
                   border: `2px solid ${isSel ? brand.color : "var(--line)"}`,
-                  borderRadius: 12,
+                  borderRadius: "var(--radius)",
                   padding: 11,
                   textAlign: "center",
                   background: isSel ? "var(--green-50)" : "var(--card)",

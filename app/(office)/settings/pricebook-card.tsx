@@ -85,7 +85,7 @@ export function PricebookCard() {
           placeholder="Search services…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: 13, marginBottom: 10 }}
+          style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)", marginBottom: 10 }}
         />
       )}
 
@@ -98,7 +98,7 @@ export function PricebookCard() {
             {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
           </button>
           {seedError && (
-            <p style={{ color: "var(--red)", fontSize: 12, margin: "8px 0 0" }}>{seedError}</p>
+            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "8px 0 0" }}>{seedError}</p>
           )}
         </div>
       ) : (

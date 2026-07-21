@@ -73,7 +73,7 @@ export function AddServiceModal({
 
       <div className="field">
         <label>Job type</label>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <Segmented value={route} onChange={setRoute} options={ROUTE_OPTIONS} aria-label="Job type" />
           {route === "book" && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -103,7 +103,7 @@ export function AddServiceModal({
         />
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: 18 }}>
         <button className="btn ghost" onClick={() => { reset(); onClose(); }}>Cancel</button>
         <button className="btn primary" disabled={!name.trim()} onClick={handleAdd}>
           Add service

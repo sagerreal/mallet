@@ -167,7 +167,7 @@ function SchedFields({
 
       <div
         className="row2"
-        style={{ gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}
+        style={{ gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: "var(--space-2)" }}
       >
         <div className="field" style={{ margin: 0 }}>
           <label>Start</label>
@@ -191,11 +191,11 @@ function SchedFields({
       </div>
 
       {!placed ? (
-        <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: "var(--space-2)" }}>
           Set a crew, day &amp; time — or drag it onto the board.
         </div>
       ) : conflict ? (
-        <div className="banner" style={{ marginTop: 8 }}>
+        <div className="banner" style={{ marginTop: "var(--space-2)" }}>
           ⚠ Overlaps another visit for {techFirstName} — nudge the time.
         </div>
       ) : null}
@@ -212,7 +212,7 @@ function ScopePreview({ visit }: { visit: Visit }) {
   // Nothing captured yet → the office builds the quote after the tech scopes.
   if (!hasScope) {
     return (
-      <div className="muted" style={{ fontSize: 12, marginTop: 14 }}>
+      <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 14 }}>
         The tech scopes this on site → you build the quote after.
       </div>
     );
@@ -220,9 +220,9 @@ function ScopePreview({ visit }: { visit: Visit }) {
 
   return (
     <div className="card" style={{ marginTop: 14, background: "var(--paper)" }}>
-      <h3 style={{ fontSize: 13 }}>What the tech captured</h3>
+      <h3 style={{ fontSize: "var(--type-base)" }}>What the tech captured</h3>
       {visit.scopeNotes && (
-        <div style={{ fontSize: 13, marginTop: 6 }}>{visit.scopeNotes}</div>
+        <div style={{ fontSize: "var(--type-base)", marginTop: 6 }}>{visit.scopeNotes}</div>
       )}
       {photoCount > 0 && (
         <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
@@ -295,7 +295,7 @@ export function EvisitModalContent() {
   return (
     <div>
       {/* 1. Header — avatar, name, Estimate-visit label, status, conflict, See customer */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: 6 }}>
         <div
           className="avatar"
           style={{
@@ -326,7 +326,7 @@ export function EvisitModalContent() {
               {stpillLabel(visit.status)}
             </span>
             {conflict && <span className="pill red">⚠ double-booked</span>}
-            <span className="linklike" style={{ fontSize: 12 }} onClick={seeCustomer}>
+            <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={seeCustomer}>
               See customer →
             </span>
           </div>
@@ -336,7 +336,7 @@ export function EvisitModalContent() {
       {/* 2. Call / Text + phone — Call/Text stay TAPPABLE; the call sheet /
           thread each prompt to add a number in-flow when none is on file. */}
       <div style={{ margin: "12px 0" }}>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button
             className="btn"
             onClick={() => openModal(MODAL.CALL, { leadId: lead.id })}
@@ -358,7 +358,7 @@ export function EvisitModalContent() {
       </div>
 
       {/* 3. Job · address */}
-      <div className="muted" style={{ fontSize: 12.5, marginBottom: 12 }}>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: "var(--space-3)" }}>
         {lead.job || "Estimate visit"}
         {lead.address ? " · " + lead.address : ""}
       </div>

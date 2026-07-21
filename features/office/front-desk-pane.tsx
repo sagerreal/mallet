@@ -177,7 +177,7 @@ export function FrontDeskPane() {
             lead. A <b>verified crew phone</b> → your assistant — never the Front Desk. Off — missed
             calls go to voicemail. On — they text back, parsed and held for your yes.
           </p>
-          <div style={{ display: "flex", gap: 8, marginTop: 11, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: 11, flexWrap: "wrap" }}>
             {/* deferred: external integration (forward existing number) */}
             <button className="btn sm" onClick={() => {}}>Forward your existing number</button>
             {/* deferred: external integration (port number in) */}
@@ -247,12 +247,12 @@ export function FrontDeskPane() {
           </RuleRow>
 
           <RuleRow k="fee" label="Service call fee" value={<><span className="mono">${bk.serviceFee}</span>{bk.feeCredited ? " · credited" : ""}</>}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
               <span className="muted">$</span>
               <input type="number" min={0} defaultValue={bk.serviceFee}
                 onChange={(e) => setServiceFee(Number(e.target.value))}
-                style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: 10, padding: "10px 12px", fontFamily: "inherit", fontSize: 14, background: "var(--card)" }} />
-              <span className="muted" style={{ fontSize: 12 }}>to come diagnose a repair</span>
+                style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: "var(--radius-md)", padding: "10px 12px", fontFamily: "inherit", fontSize: 14, background: "var(--card)" }} />
+              <span className="muted" style={{ fontSize: "var(--type-sm)" }}>to come diagnose a repair</span>
             </div>
             <div className="stage-row" style={{ marginTop: 10 }}>
               <div style={{ flex: 1 }}>

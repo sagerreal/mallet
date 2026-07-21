@@ -103,7 +103,7 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
   return (
     <div className="card">
       <h3>Details</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
         <div className="field" style={{ marginBottom: 0 }}>
           <label>Phone</label>
           <input
@@ -127,8 +127,8 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          gap: 12,
-          marginTop: 12,
+          gap: "var(--space-3)",
+          marginTop: "var(--space-3)",
         }}
       >
         <div className="field" style={{ marginBottom: 0 }}>
@@ -150,7 +150,7 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
           />
         </div>
       </div>
-      <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
+      <div className="field" style={{ marginTop: "var(--space-3)", marginBottom: 0 }}>
         <label>About this account</label>
         <textarea
           rows={2}
@@ -200,7 +200,7 @@ export function CompanyViewModalContent() {
         }}
       >
         <h2>{company.name}</h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
           {company.archived ? (
             <button className="btn ghost" onClick={() => updateCompany(company.id, { archived: false })}>
               Restore
@@ -228,7 +228,7 @@ export function CompanyViewModalContent() {
       </div>
 
       {contactLine ? (
-        <div className="muted" style={{ marginBottom: 12 }}>
+        <div className="muted" style={{ marginBottom: "var(--space-3)" }}>
           {contactLine}
         </div>
       ) : null}

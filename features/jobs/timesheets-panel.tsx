@@ -199,7 +199,7 @@ export function TimesheetsPanel() {
         {anyEntries && (
           <>
             <span style={{ flex: 1 }} />
-            <span className="muted" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+            <span className="muted" style={{ fontSize: "var(--type-sm)", fontVariantNumeric: "tabular-nums" }}>
               {totPaid.toFixed(2)} paid h{totOt ? ` · ${totOt.toFixed(2)} OT` : ""}
             </span>
           </>

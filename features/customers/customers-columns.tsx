@@ -28,7 +28,7 @@ interface ColumnsProps {
 
 export function CustomersColumns({ visible, onToggle }: ColumnsProps) {
   return (
-    <div className="fpanel" style={{ gap: 8 }}>
+    <div className="fpanel" style={{ gap: "var(--space-2)" }}>
       {Object.entries(ALL_COL_DEFS).map(([k, def]) => (
         <label key={k} className="colchk">
           <input

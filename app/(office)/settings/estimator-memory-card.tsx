@@ -38,7 +38,7 @@ function RuleRow({
 }) {
   return (
     <div className="stage-row">
-      <span style={{ flex: 1, fontSize: 13 }}>
+      <span style={{ flex: 1, fontSize: "var(--type-base)" }}>
         {rule.rule}
         <span className="muted" style={{ fontSize: 11.5 }}>
           {" "}
@@ -101,16 +101,16 @@ export function EstimatorMemoryCard() {
         from your corrections and repeated edits — nothing is used until you confirm it.
       </p>
 
-      {list.isLoading && <p className="muted" style={{ fontSize: 12 }}>Loading…</p>}
+      {list.isLoading && <p className="muted" style={{ fontSize: "var(--type-sm)" }}>Loading…</p>}
       {list.isError && (
-        <p style={{ color: "var(--red, #b42318)", fontSize: 12 }}>
+        <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-sm)" }}>
           Couldn&apos;t load the rules — refresh to try again.
         </p>
       )}
 
       {proposed.length > 0 && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 4 }}>To review</div>
+          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: "var(--space-1)" }}>To review</div>
           {proposed.map((r) => (
             <RuleRow
               key={r.id}
@@ -127,7 +127,7 @@ export function EstimatorMemoryCard() {
 
       {confirmed.length > 0 && (
         <div>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 4 }}>Rules in use</div>
+          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: "var(--space-1)" }}>Rules in use</div>
           {confirmed.map((r) => (
             <RuleRow
               key={r.id}
@@ -140,14 +140,14 @@ export function EstimatorMemoryCard() {
       )}
 
       {empty && (
-        <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
           Nothing learned yet. Correct an AI draft in the composer (&quot;Refine&quot;) or keep
           editing its quotes — repeated corrections show up here for review.
         </p>
       )}
 
       {error && (
-        <p style={{ color: "var(--red, #b42318)", fontSize: 12, marginTop: 8 }}>{error}</p>
+        <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{error}</p>
       )}
     </FoldCard>
   );

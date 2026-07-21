@@ -137,7 +137,7 @@ export function CompaniesView() {
       </div>
 
       {/* Segment tabs — toggling back to People must still work */}
-      <div className="segsw" style={{ marginBottom: 12, marginTop: 12 }}>
+      <div className="segsw" style={{ marginBottom: "var(--space-3)", marginTop: "var(--space-3)" }}>
         <button
           className={`btn sm${custSeg === "people" ? " primary" : " ghost"}`}
           onClick={() => setCustSeg("people")}

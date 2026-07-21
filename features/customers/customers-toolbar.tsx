@@ -74,7 +74,7 @@ export function CustomersToolbar({
           >
             Filters
             {activeFilterCount > 0 && (
-              <span className="pill amber" style={{ marginLeft: 4 }}>
+              <span className="pill amber" style={{ marginLeft: "var(--space-1)" }}>
                 {activeFilterCount}
               </span>
             )}

@@ -117,7 +117,7 @@ export function custLabel(
 // ---- add-a-line builder menu (prototype tq.picking / tq.add) ---------------
 
 export const SEC_LABEL: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: "var(--type-xs)",
   fontWeight: 800,
   letterSpacing: ".05em",
   textTransform: "uppercase",
@@ -325,7 +325,7 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
         <input
           value={line.d}
           onChange={(e) => onSet({ d: e.target.value })}
-          style={{ flex: 1, minWidth: 120, ...INP, padding: "6px 8px", fontSize: 13 }}
+          style={{ flex: 1, minWidth: 120, ...INP, padding: "6px 8px", fontSize: "var(--type-base)" }}
         />
         <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
           <input
@@ -338,7 +338,7 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
             }
             style={{ width: 52, ...INP }}
           />
-          <span className="muted" style={{ fontSize: 11 }}>
+          <span className="muted" style={{ fontSize: "var(--type-xs)" }}>
             h × $
           </span>
           <input
@@ -364,7 +364,7 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
         value={line.d}
         placeholder={line.kind === "custom" ? "part, material, or flat fee" : ""}
         onChange={(e) => onSet({ d: e.target.value })}
-        style={{ flex: 1, minWidth: 140, ...INP, padding: "6px 8px", fontSize: 13 }}
+        style={{ flex: 1, minWidth: 140, ...INP, padding: "6px 8px", fontSize: "var(--type-base)" }}
       />
       <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
         <span className="muted">$</span>

@@ -118,7 +118,7 @@ function TotalsBlock({
         display: "flex",
         flexDirection: "column",
         alignItems: "flex-end",
-        gap: 4,
+        gap: "var(--space-1)",
         padding: "14px 0 4px",
       }}
     >
@@ -141,7 +141,7 @@ function TotalsBlock({
         Total {centsToDisplay(totalCents)}
       </div>
       {dep > 0 && (
-        <div className="muted" style={{ fontSize: 12 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
           {centsToDisplay(depositCents)} deposit due today &middot; the rest when the job&rsquo;s done
         </div>
       )}
@@ -165,7 +165,7 @@ function AddonToggles({
   if (lines.length === 0) return null;
   return (
     <>
-      <div className="muted" style={{ fontSize: 11, marginTop: 12, marginBottom: 4 }}>
+      <div className="muted" style={{ fontSize: "var(--type-xs)", marginTop: "var(--space-3)", marginBottom: "var(--space-1)" }}>
         Optional add-ons &mdash; tap to include
       </div>
       {lines.map((line) => {

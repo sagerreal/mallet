@@ -27,12 +27,12 @@ export function CleanUpModalContent() {
   return (
     <div>
       <h2 className="modal-title">Clean up{lead ? ` · ${lead.name}` : ""}</h2>
-      <p className="muted" style={{ marginTop: 8 }}>
+      <p className="muted" style={{ marginTop: "var(--space-2)" }}>
         {lead
           ? "Mark as lost or archive this customer."
           : "No customer selected — close and pick one to clean up."}
       </p>
-      <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+      <div style={{ marginTop: "var(--space-5)", display: "flex", gap: 10 }}>
         <button
           className="btn ghost bad"
           onClick={handleArchive}

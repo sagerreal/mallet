@@ -14,7 +14,7 @@ const qtyInputStyle: React.CSSProperties = {
   borderRadius: 8,
   padding: "7px 9px",
   fontFamily: "inherit",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
   width: 56,
   textAlign: "right",
 };
@@ -28,7 +28,7 @@ export interface PartRowProps {
 
 export function PartRow({ material, quantity, onQuantityChange, onRemove }: PartRowProps) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
       <span style={{ flex: 1 }}>{material.name}</span>
       <input
         type="number"

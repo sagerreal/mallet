@@ -177,7 +177,7 @@ function SignaturePad({ onClearRef }: SignaturePadProps) {
         display: "block",
         width: "100%",
         border: "1.5px solid var(--line)",
-        borderRadius: 12,
+        borderRadius: "var(--radius)",
         background: "#fff",
         touchAction: "none",
         cursor: "crosshair",
@@ -198,7 +198,7 @@ function Eyebrow({ custName }: EyebrowProps) {
       <div
         className="muted"
         style={{
-          fontSize: 11,
+          fontSize: "var(--type-xs)",
           fontWeight: 800,
           letterSpacing: ".05em",
           textTransform: "uppercase",
@@ -404,7 +404,7 @@ export function TechQuoteModalContent() {
           {signLines.map((l, i) => (
             <div
               key={i}
-              style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}
+              style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "3px 0" }}
             >
               <span>{l.d || "Repair"}</span>
               <b className="fig">{fmt$(lineAmt(l))}</b>
@@ -415,7 +415,7 @@ export function TechQuoteModalContent() {
               display: "flex",
               justifyContent: "space-between",
               fontWeight: 800,
-              fontSize: 17,
+              fontSize: "var(--type-lg)",
               borderTop: "1px solid var(--manila-line)",
               marginTop: 6,
               paddingTop: 6,
@@ -434,15 +434,15 @@ export function TechQuoteModalContent() {
             margin: "15px 0 5px",
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 700 }}>Customer signature</span>
-          <span className="linklike" style={{ fontSize: 12 }} onClick={() => sigClearRef.current()}>
+          <span style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>Customer signature</span>
+          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={() => sigClearRef.current()}>
             Clear
           </span>
         </div>
 
         <SignaturePad onClearRef={setSigClear} />
 
-        <div className="muted" style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.5 }}>
+        <div className="muted" style={{ fontSize: 11.5, marginTop: "var(--space-2)", lineHeight: 1.5 }}>
           <b>{custName}</b> — by signing, you approve the work above and authorize{" "}
           <b className="fig">{fmt$(total)}</b> on this visit. A copy is texted to you on the spot.
         </div>
@@ -451,7 +451,7 @@ export function TechQuoteModalContent() {
           <p style={{ color: "var(--red)", fontSize: 12.5, margin: "10px 0 0" }}>{signError}</p>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 14, gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 14, gap: "var(--space-2)" }}>
           <button className="btn" onClick={() => setMode(offered.length > 1 ? "present" : "edit")} disabled={signing}>
             ← Back
           </button>
@@ -481,7 +481,7 @@ export function TechQuoteModalContent() {
               className="card clickable"
               onClick={() => choose(k)}
               style={{
-                marginBottom: 8,
+                marginBottom: "var(--space-2)",
                 cursor: "pointer",
                 ...(k === "better" ? { borderColor: "var(--green-600)" } : {}),
               }}
@@ -493,7 +493,7 @@ export function TechQuoteModalContent() {
                 </b>
                 <b>{fmt$(tierTotal(k))}</b>
               </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: 2 }}>
                 {tiers[k].map((l) => l.d || "Repair").join(" · ") || "—"}
               </div>
             </div>
@@ -560,7 +560,7 @@ export function TechQuoteModalContent() {
               fontWeight: 800,
               fontSize: 16,
               borderTop: "1px solid var(--line)",
-              marginTop: 8,
+              marginTop: "var(--space-2)",
               paddingTop: 9,
             }}
           >
@@ -585,7 +585,7 @@ export function TechQuoteModalContent() {
           onDone={() => setPicking(false)}
         />
       ) : (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
           <button
             className="btn"
             onClick={() => {
@@ -600,8 +600,8 @@ export function TechQuoteModalContent() {
 
       {/* "Give the customer choices?" — once anything is priced and not all opted */}
       {anyPriced && (showGoodOpt || showBestOpt) ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-          <span className="muted" style={{ fontSize: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-4)", flexWrap: "wrap" }}>
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
             Give the customer choices?
           </span>
           {showGoodOpt ? (

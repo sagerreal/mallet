@@ -19,7 +19,7 @@ function origin(): string {
 
 const inputStyle: React.CSSProperties = {
   flex: 1, minWidth: 0, border: "1.5px solid var(--line)", borderRadius: 8,
-  padding: "8px 10px", fontFamily: "inherit", fontSize: 13, background: "var(--card)", color: "var(--ink)",
+  padding: "8px 10px", fontFamily: "inherit", fontSize: "var(--type-base)", background: "var(--card)", color: "var(--ink)",
 };
 
 export function WebsiteFormCard() {
@@ -52,7 +52,7 @@ export function WebsiteFormCard() {
             </svg>
           </IconWell>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p className="muted" style={{ fontSize: 13, margin: "1px 0 11px", lineHeight: 1.45 }}>
+            <p className="muted" style={{ fontSize: "var(--type-base)", margin: "1px 0 11px", lineHeight: 1.45 }}>
               A “request service” form for your website — share the link or embed it. Every submission lands in your pipeline.
             </p>
             <button className="btn primary" disabled={generate.isPending} onClick={() => generate.mutate({ channel: "form" })}>
@@ -61,10 +61,10 @@ export function WebsiteFormCard() {
           </div>
         </div>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: "var(--space-3)" }}>
           <div className="field" style={{ margin: 0 }}>
             <label>Share this link</label>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
               <input readOnly value={link} style={inputStyle} />
               <button className="btn" onClick={() => copy("link", link)}>{copied === "link" ? "Copied" : "Copy"}</button>
               <a className="btn ghost" href={link} target="_blank" rel="noopener noreferrer">Preview</a>
@@ -72,8 +72,8 @@ export function WebsiteFormCard() {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Or embed on your site</label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input readOnly value={iframe} style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: 12 }} />
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <input readOnly value={iframe} style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: "var(--type-sm)" }} />
               <button className="btn" onClick={() => copy("iframe", iframe)}>{copied === "iframe" ? "Copied" : "Copy"}</button>
             </div>
           </div>

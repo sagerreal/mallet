@@ -62,7 +62,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       {storeTitle !== null ? (
         <PageHeader title={storeTitle} />
       ) : (
-        <div className="sk-row" style={{ borderBottom: "none", paddingBottom: 20 }}>
+        <div className="sk-row" style={{ borderBottom: "none", paddingBottom: "var(--space-5)" }}>
           <div className="sk" style={{ width: "40%", height: 24 }} />
         </div>
       )}

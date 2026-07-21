@@ -71,8 +71,8 @@ export function StarterChecklistsModal({
         <div
           style={{
             border: "1px solid var(--line-2, var(--line))",
-            borderRadius: 10,
-            marginBottom: 16,
+            borderRadius: "var(--radius-md)",
+            marginBottom: "var(--space-4)",
             overflow: "hidden",
           }}
         >
@@ -85,12 +85,12 @@ export function StarterChecklistsModal({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
+                  gap: "var(--space-2)",
                   padding: "9px 12px",
                   borderBottom: isLast ? "none" : "1px solid var(--line-2, var(--line))",
                 }}
               >
-                <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{cl.name}</span>
+                <span style={{ flex: 1, fontWeight: 600, fontSize: "var(--type-base)" }}>{cl.name}</span>
                 <span style={CHIP}>{cl.items.length} steps</span>
                 {hasPhoto && <span style={CHIP}>⚡ photo</span>}
               </div>
@@ -99,7 +99,7 @@ export function StarterChecklistsModal({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn primary" disabled={newCount === 0} onClick={handleSeed}>
           Add {newCount} {newCount === 1 ? "checklist" : "checklists"}

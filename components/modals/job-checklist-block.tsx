@@ -167,21 +167,21 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
   }
 
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <h3 style={{ margin: "0 0 6px", fontSize: 13 }}>Add a checklist</h3>
+    <div className="card" style={{ marginTop: "var(--space-4)" }}>
+      <h3 style={{ margin: "0 0 6px", fontSize: "var(--type-base)" }}>Add a checklist</h3>
 
       {saved.map((c) => (
-        <div key={c.id} className="stage-row clickable" style={{ gap: 8 }}>
+        <div key={c.id} className="stage-row clickable" style={{ gap: "var(--space-2)" }}>
           <span
-            style={{ flex: 1, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            style={{ flex: 1, fontSize: "var(--type-base)", fontWeight: 600, cursor: "pointer" }}
             onClick={() => void attachSaved(c)}
           >
             {c.name}
           </span>
-          <span className="muted" style={{ fontSize: 12 }}>{c.items.length} items</span>
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
           <span
             className="linklike"
-            style={{ color: "var(--ink-3)", fontSize: 12 }}
+            style={{ color: "var(--ink-3)", fontSize: "var(--type-sm)" }}
             title="Delete this checklist"
             onClick={() => deleteChecklist(c.id)}
           >
@@ -190,7 +190,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
         </div>
       ))}
       {saved.length === 0 && (
-        <div className="stage-row" style={{ gap: 8 }}>
+        <div className="stage-row" style={{ gap: "var(--space-2)" }}>
           <span
             className="linklike"
             style={{ fontSize: 12.5, fontWeight: 700 }}
@@ -198,7 +198,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
           >
             Start with plumbing basics
           </span>
-          <span className="muted" style={{ fontSize: 12 }}>
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
             {PLUMBING_STARTER_CHECKLISTS.length} checklists
           </span>
         </div>
@@ -222,12 +222,12 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
         maxLength={200}
         value={name}
         onChange={(e) => setName(e.target.value)}
-        style={{ width: "100%", marginTop: 8 }}
+        style={{ width: "100%", marginTop: "var(--space-2)" }}
       />
       {error && (
-        <div style={{ color: "var(--red)", fontSize: 12, marginTop: 6 }}>{error}</div>
+        <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: 6 }}>{error}</div>
       )}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 8 }}>
+      <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", marginTop: "var(--space-2)" }}>
         <button
           type="button"
           className="btn sm primary"
@@ -236,7 +236,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
         >
           {busy ? "Saving…" : "Add to job"}
         </button>
-        <span className="linklike" style={{ fontSize: 12 }} onClick={onCancel}>
+        <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onCancel}>
           Cancel
         </span>
       </div>
@@ -268,12 +268,12 @@ export function JobChecklistBlock({ job }: { job: Job }) {
   // Already attached → show it (+ Remove; persists the detach as checklist: null).
   if (job.checklist) {
     return (
-      <div className="card" style={{ marginTop: 16 }}>
+      <div className="card" style={{ marginTop: "var(--space-4)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <h3 style={{ margin: 0, fontSize: 13 }}>Before you leave</h3>
+          <h3 style={{ margin: 0, fontSize: "var(--type-base)" }}>Before you leave</h3>
           <span
             className="linklike"
-            style={{ fontSize: 12 }}
+            style={{ fontSize: "var(--type-sm)" }}
             onClick={() => void removeChecklist()}
           >
             Remove
@@ -281,15 +281,15 @@ export function JobChecklistBlock({ job }: { job: Job }) {
         </div>
         <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>{job.checklist.name}</div>
         {removeError && (
-          <div style={{ color: "var(--red)", fontSize: 12, marginBottom: 6 }}>{removeError}</div>
+          <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginBottom: 6 }}>{removeError}</div>
         )}
         {job.checklist.items.map((it) => (
-          <div key={it.id} className="stage-row" style={{ gap: 8, padding: "4px 0" }}>
+          <div key={it.id} className="stage-row" style={{ gap: "var(--space-2)", padding: "4px 0" }}>
             <span style={{ color: it.required ? "var(--amber)" : "var(--ink-3)" }}>
               {it.type === "photo" ? "📷" : "○"}
             </span>
-            <span style={{ flex: 1, fontSize: 13 }}>{it.text}</span>
-            {it.required && <span className="muted" style={{ fontSize: 11 }}>required</span>}
+            <span style={{ flex: 1, fontSize: "var(--type-base)" }}>{it.text}</span>
+            {it.required && <span className="muted" style={{ fontSize: "var(--type-xs)" }}>required</span>}
           </div>
         ))}
       </div>
@@ -302,10 +302,10 @@ export function JobChecklistBlock({ job }: { job: Job }) {
 
   // Entry point.
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: "var(--space-4)" }}>
       <span
         className="linklike"
-        style={{ fontSize: 13, fontWeight: 700 }}
+        style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
         onClick={() => setOpen(true)}
       >
         + Add a checklist

@@ -469,7 +469,7 @@ export function NewJobModalContent() {
         {/* Customer (datalist picker) + Phone */}
         <div
           className="row2"
-          style={{ gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}
+          style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginBottom: 14 }}
         >
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Customer</label>
@@ -579,12 +579,12 @@ export function NewJobModalContent() {
               alignItems: "center",
               justifyContent: "space-between",
               gap: 10,
-              marginTop: 4,
+              marginTop: "var(--space-1)",
             }}
           >
             <span
               className="linklike"
-              style={{ fontSize: 13, fontWeight: 700 }}
+              style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
               onClick={addVisitRow}
             >
               + Add a visit
@@ -621,7 +621,7 @@ export function NewJobModalContent() {
 
             {chkExpanded && (
               <>
-                <div className="njchklist" style={{ marginTop: 8 }}>
+                <div className="njchklist" style={{ marginTop: "var(--space-2)" }}>
                   <button
                     type="button"
                     className={`njchk-row${!chkTpl ? " sel" : ""}`}
@@ -639,7 +639,7 @@ export function NewJobModalContent() {
                     >
                       <span className="njchk-dot">✓</span>
                       <span style={{ flex: 1 }}>{c.name}</span>
-                      <span className="muted" style={{ fontSize: 12 }}>{c.items.length} items</span>
+                      <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
                     </button>
                   ))}
                 </div>
@@ -718,7 +718,7 @@ export function NewJobModalContent() {
         </div>
 
         {error && (
-          <p style={{ color: "var(--red)", fontSize: 13, margin: "12px 0 0" }}>{error}</p>
+          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "12px 0 0" }}>{error}</p>
         )}
 
         {/* Footer */}

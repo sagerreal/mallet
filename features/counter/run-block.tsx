@@ -81,7 +81,7 @@ export function RunBlock({
                   <button
                     type="button"
                     className="linklike"
-                    style={{ fontSize: 12 }}
+                    style={{ fontSize: "var(--type-sm)" }}
                     onClick={() => h.onOpen(st.open as OpenRef)}
                   >
                     {st.open.label} ›
@@ -109,7 +109,7 @@ export function RunBlock({
                   <button
                     type="button"
                     className="linklike"
-                    style={{ fontSize: 12 }}
+                    style={{ fontSize: "var(--type-sm)" }}
                     onClick={() => h.onRun(a.verb?.input ?? "")}
                   >
                     {a.verb.label}
@@ -118,7 +118,7 @@ export function RunBlock({
                   <button
                     type="button"
                     className="linklike"
-                    style={{ fontSize: 12 }}
+                    style={{ fontSize: "var(--type-sm)" }}
                     onClick={() => h.onOpen(a.open)}
                   >
                     {a.open.label} ›
@@ -132,7 +132,7 @@ export function RunBlock({
 
       {done && artifact.steps.length > 0 && !artifact.sent && (
         <div className="ct-runfoot">
-          <div className="ct-confirm" style={{ marginBottom: 8 }}>
+          <div className="ct-confirm" style={{ marginBottom: "var(--space-2)" }}>
             <b>
               {artifact.mode === "estimates"
                 ? `${artifact.steps.length} ${artifact.steps.length === 1 ? "quote" : "quotes"} drafted · ${fmt(artifact.totalChased)} on the table · nothing sent yet`
@@ -146,7 +146,7 @@ export function RunBlock({
             <button className="btn sm ghost" onClick={() => setExpanded((v) => !v)}>
               {expanded ? "fold them up" : "look at each"}
             </button>
-            <span className="ct-dim" style={{ fontSize: 12 }}>
+            <span className="ct-dim" style={{ fontSize: "var(--type-sm)" }}>
               {artifact.mode === "estimates"
                 ? "or leave it — they're in your Quotes"
                 : "or leave it — they're on Home"}

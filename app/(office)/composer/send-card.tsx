@@ -153,10 +153,10 @@ export function SendCard({
 
       {state.sendChannel === "text" ? (
         <>
-          <b style={{ fontSize: 13 }}>Send by text</b>
+          <b style={{ fontSize: "var(--type-base)" }}>Send by text</b>
           <p
             className="muted"
-            style={{ fontSize: 12, margin: "3px 0 0" }}
+            style={{ fontSize: "var(--type-sm)", margin: "3px 0 0" }}
           >
             They tap the link, see it, approve it — no inbox to dig
             through, nothing blocks the send.
@@ -169,10 +169,10 @@ export function SendCard({
         </>
       ) : (
         <>
-          <b style={{ fontSize: 13 }}>Send by email</b>
+          <b style={{ fontSize: "var(--type-base)" }}>Send by email</b>
           <p
             className="muted"
-            style={{ fontSize: 12, margin: "3px 0 0" }}
+            style={{ fontSize: "var(--type-sm)", margin: "3px 0 0" }}
           >
             They click the link in the email, see the quote, and approve
             right there.
@@ -194,7 +194,7 @@ export function SendCard({
           <b>
             Automatic follow-ups: {state.fuOn ? "on" : "off"}
           </b>{" "}
-          <span className="muted" style={{ fontSize: 12 }}>
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
             {state.fuOn
               ? "— 2 reminders, then it flags you to call"
               : "— you'll remind them yourself"}
@@ -209,11 +209,11 @@ export function SendCard({
           style={{
             background: "var(--amber-bg)",
             border: "1px solid var(--amber)",
-            borderRadius: 9,
+            borderRadius: "var(--radius-sm)",
             padding: "8px 12px",
             fontSize: 12.5,
             color: "var(--amber)",
-            marginTop: 12,
+            marginTop: "var(--space-3)",
           }}
         >
           {sendError}
@@ -227,7 +227,7 @@ export function SendCard({
           justifyContent: "flex-end",
           alignItems: "center",
           gap: 10,
-          marginTop: 12,
+          marginTop: "var(--space-3)",
         }}
       >
         {shownReason && (

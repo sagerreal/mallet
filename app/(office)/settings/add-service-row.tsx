@@ -18,7 +18,7 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 8,
   padding: "8px 10px",
   fontFamily: "inherit",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
 };
 
 export function AddServiceRow({ onAdd }: AddServiceRowProps) {
@@ -43,7 +43,7 @@ export function AddServiceRow({ onAdd }: AddServiceRowProps) {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+      <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
         <input
           type="text"
           placeholder="e.g. Hydro-jet kitchen drain"
@@ -62,7 +62,7 @@ export function AddServiceRow({ onAdd }: AddServiceRowProps) {
         />
         <button className="btn" onClick={() => void handleAdd()}>+ Add</button>
       </div>
-      {error && <p style={{ color: "var(--red)", fontSize: 12, margin: "8px 0 0" }}>{error}</p>}
+      {error && <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "8px 0 0" }}>{error}</p>}
     </div>
   );
 }

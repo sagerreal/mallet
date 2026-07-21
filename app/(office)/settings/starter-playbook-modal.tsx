@@ -58,8 +58,8 @@ export function StarterPlaybookModal({
         <div
           style={{
             border: "1px solid var(--line-2, var(--line))",
-            borderRadius: 10,
-            marginBottom: 16,
+            borderRadius: "var(--radius-md)",
+            marginBottom: "var(--space-4)",
             overflow: "hidden",
           }}
         >
@@ -69,12 +69,12 @@ export function StarterPlaybookModal({
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
+                gap: "var(--space-2)",
                 padding: "9px 12px",
                 borderBottom: i === playbook.services.length - 1 ? "none" : "1px solid var(--line-2, var(--line))",
               }}
             >
-              <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{s.name}</span>
+              <span style={{ flex: 1, fontWeight: 600, fontSize: "var(--type-base)" }}>{s.name}</span>
               {(s.emergencyTriggers ?? "").length > 0 && <span style={CHIP}>⚡ emergency</span>}
               <span style={CHIP}>{routeOf(s.lane) === "quote" ? "Quote first" : "Book it"}</span>
             </div>
@@ -82,7 +82,7 @@ export function StarterPlaybookModal({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
         <button className="btn ghost" onClick={onClose}>Cancel</button>
         <button className="btn primary" onClick={handleSeed}>
           Add {playbook?.services.length ?? 0} services

@@ -162,7 +162,7 @@ export function VisitModalContent() {
       </div>
 
       {/* Purpose — Job (priced on the visit) vs Estimate visit (scope, then quote) */}
-      <div className="chips" style={{ marginBottom: 4 }}>
+      <div className="chips" style={{ marginBottom: "var(--space-1)" }}>
         <button
           type="button"
           className={`chip${purpose === "job" ? " sel" : ""}`}
@@ -219,11 +219,11 @@ export function VisitModalContent() {
       </div>
 
       {error && (
-        <p style={{ color: "var(--red)", fontSize: 13, margin: "12px 0 0" }}>{error}</p>
+        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "12px 0 0" }}>{error}</p>
       )}
 
       {/* Footer */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
         <button className="btn ghost" onClick={cancel}>
           Cancel
         </button>

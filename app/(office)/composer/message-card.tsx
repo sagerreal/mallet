@@ -83,7 +83,7 @@ export function MessageCard({
             {state.intro.length >= INTRO_COUNTER_FROM && (
               <div
                 className="muted"
-                style={{ fontSize: 11, textAlign: "right", marginTop: 2 }}
+                style={{ fontSize: "var(--type-xs)", textAlign: "right", marginTop: 2 }}
               >
                 {state.intro.length}/{INTRO_MAX_CHARS}
                 {state.intro.length >= INTRO_MAX_CHARS ? " — at the limit" : ""}
@@ -114,7 +114,7 @@ export function MessageCard({
               <p
                 className="muted"
                 style={{
-                  fontSize: 12,
+                  fontSize: "var(--type-sm)",
                   whiteSpace: "pre-wrap",
                   margin: "6px 0 0",
                   maxHeight: 120,

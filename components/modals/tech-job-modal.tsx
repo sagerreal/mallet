@@ -171,7 +171,7 @@ function TechHeader({ job, custName }: { job: Job; custName: string }) {
   const showTitle = custName !== job.title;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 11 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: 11 }}>
       <div
         className="avatar"
         style={{
@@ -186,7 +186,7 @@ function TechHeader({ job, custName }: { job: Job; custName: string }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <h2 style={{ marginBottom: 3 }}>{custName}</h2>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
           <span
             style={{
               fontSize: 10.5,
@@ -345,14 +345,14 @@ function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
           display: "flex",
           alignItems: "baseline",
           justifyContent: "space-between",
-          gap: 12,
+          gap: "var(--space-3)",
           marginBottom: 13,
         }}
       >
         <div>
           <div
             style={{
-              fontSize: 11,
+              fontSize: "var(--type-xs)",
               fontWeight: 700,
               letterSpacing: ".05em",
               textTransform: "uppercase",
@@ -369,7 +369,7 @@ function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
         <div style={{ textAlign: "right" }}>
           <div
             style={{
-              fontSize: 11,
+              fontSize: "var(--type-xs)",
               fontWeight: 700,
               letterSpacing: ".05em",
               textTransform: "uppercase",
@@ -385,7 +385,7 @@ function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
         </div>
       </div>
       {!readOnly && (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
           {step}
           {doneB}
         </div>
@@ -419,7 +419,7 @@ function PricingSec({ job, quoted, onPriceOnSite }: PricingSecProps) {
           </span>
         </div>
       ) : quoted ? (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
           <b style={{ fontSize: 14 }}>✓ Priced — {fmt$(jobTotal(job))}</b>
           <button className="btn sm ghost" onClick={onPriceOnSite}>
             re-price
@@ -428,7 +428,7 @@ function PricingSec({ job, quoted, onPriceOnSite }: PricingSecProps) {
       ) : (
         <button
           className="btn primary"
-          style={{ width: "100%", fontSize: 14.5, padding: 12 }}
+          style={{ width: "100%", fontSize: 14.5, padding: "var(--space-3)" }}
           onClick={onPriceOnSite}
         >
           Price it on site →
@@ -482,7 +482,7 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
         <span>Work order</span>
         <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>office-sold</span>
       </div>
-      <div style={{ fontWeight: 700, fontSize: 15 }}>{job.title}</div>
+      <div style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{job.title}</div>
 
       {scope.length ? (
         <>
@@ -492,7 +492,7 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
           {scope.map((x, i) => (
             <div
               key={i}
-              style={{ fontSize: 13.5, padding: "3px 0", display: "flex", gap: 8, alignItems: "baseline" }}
+              style={{ fontSize: 13.5, padding: "3px 0", display: "flex", gap: "var(--space-2)", alignItems: "baseline" }}
             >
               <span style={{ color: "var(--green-700)" }}>✓</span>
               <span style={{ flex: 1 }}>
@@ -501,7 +501,7 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
               </span>
               {/* x.r === null = server-redacted (techSeesPrice off) — show nothing, never $0. */}
               {seesPrice && x.r != null && (
-                <span className="muted fig" style={{ fontSize: 12 }}>
+                <span className="muted fig" style={{ fontSize: "var(--type-sm)" }}>
                   {fmt$((x.q ?? 1) * x.r)}
                 </span>
               )}
@@ -516,11 +516,11 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
             marginTop: 11,
             background: "#FFFBEF",
             border: "1px solid var(--manila-line)",
-            borderRadius: 9,
+            borderRadius: "var(--radius-sm)",
             padding: "9px 11px",
           }}
         >
-          <b style={{ fontSize: 12, color: "#b45309" }}>★ Homeowner&rsquo;s requests</b>
+          <b style={{ fontSize: "var(--type-sm)", color: "#b45309" }}>★ Homeowner&rsquo;s requests</b>
           <div style={{ fontSize: 12.5, marginTop: 2 }}>{job.special}</div>
         </div>
       ) : null}
@@ -567,7 +567,7 @@ const AO_INPUT: React.CSSProperties = {
   borderRadius: 8,
   padding: "7px 9px",
   fontFamily: "inherit",
-  fontSize: 13,
+  fontSize: "var(--type-base)",
 };
 
 interface AddonStatusPillProps {
@@ -671,7 +671,7 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
       ))}
 
       {!readOnly && (
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
           <input
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
@@ -793,7 +793,7 @@ function ChecklistItemRow({
         </span>
         <span
           className="linklike"
-          style={{ fontSize: 11, flex: "none", color: "var(--ink-3)" }}
+          style={{ fontSize: "var(--type-xs)", flex: "none", color: "var(--ink-3)" }}
           onClick={onUndo}
         >
           undo
@@ -845,7 +845,7 @@ function ChecklistItemRow({
   const kebab = (
     <span
       className="linklike"
-      style={{ flex: "none", color: "var(--ink-3)", fontSize: 17, lineHeight: 1, padding: "0 5px", fontWeight: 800 }}
+      style={{ flex: "none", color: "var(--ink-3)", fontSize: "var(--type-lg)", lineHeight: 1, padding: "0 5px", fontWeight: 800 }}
       title="N/A or customer declined"
       onClick={(e) => {
         e.stopPropagation();
@@ -857,7 +857,7 @@ function ChecklistItemRow({
   );
 
   const expRow = expanded ? (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 11px 27px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", padding: "0 0 11px 27px" }}>
       {OVERRIDE_REASONS.map((r) => (
         <button
           key={r}
@@ -1075,7 +1075,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
       ) : null}
       {canCompose && (
         <>
-          <div style={{ display: "flex", gap: 8, marginTop: entries.length > 0 ? 8 : 0 }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: entries.length > 0 ? 8 : 0 }}>
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -1096,7 +1096,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
             </button>
           </div>
           {error && (
-            <div style={{ color: "var(--red)", fontSize: 12, marginTop: 6 }}>{error}</div>
+            <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: 6 }}>{error}</div>
           )}
         </>
       )}
@@ -1254,7 +1254,7 @@ function DoneBlockFn({
         <div className="tjpaid-top">
           <b>✓ Job done</b>
         </div>
-        <div className="tjpaid-sub" style={{ marginBottom: 8 }}>
+        <div className="tjpaid-sub" style={{ marginBottom: "var(--space-2)" }}>
           No price set — the office invoices it.
         </div>
         <button className="tjpaid-btn" onClick={onSendToOffice}>
@@ -1392,7 +1392,7 @@ export function TechJobModalContent() {
           only with NO linked customer (nobody to call). */}
       {isOffice && (
         <div style={{ marginBottom: 0 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
             <button
               className="btn"
               disabled={!lead}
@@ -1478,7 +1478,7 @@ export function TechJobModalContent() {
           )}
         </div>
         {done ? (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
             <span className="muted" style={{ fontSize: 12.5 }}>
               {curVisit
                 ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site`

@@ -178,7 +178,7 @@ export function AnswerBlock({
                 <button
                   type="button"
                   className="linklike"
-                  style={{ fontSize: 12 }}
+                  style={{ fontSize: "var(--type-sm)" }}
                   onClick={() => h.onOpen(r.open as OpenRef)}
                 >
                   {r.open.label} ›
@@ -222,7 +222,7 @@ export function ConfirmBlock({
               <button
                 type="button"
                 className="linklike"
-                style={{ fontSize: 12 }}
+                style={{ fontSize: "var(--type-sm)" }}
                 onClick={() => h.onOpen(artifact.open as OpenRef)}
               >
                 {artifact.open.label} ›
@@ -462,7 +462,7 @@ export function AiApprovalBlock({
   return (
     <div className="ct-block">
       {artifact.assistantText && (
-        <div className="ct-confirm ct-dim" style={{ marginBottom: 8 }}>
+        <div className="ct-confirm ct-dim" style={{ marginBottom: "var(--space-2)" }}>
           {artifact.assistantText}
         </div>
       )}

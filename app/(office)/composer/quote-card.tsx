@@ -204,7 +204,7 @@ export function QuoteCard({
           {state.aiDrafted && (
             <span
               className="pill"
-              style={{ background: "var(--purple-bg)", color: "var(--purple)", marginLeft: 8 }}
+              style={{ background: "var(--purple-bg)", color: "var(--purple)", marginLeft: "var(--space-2)" }}
             >
               {isGbb
                 ? rec?.k === "good"
@@ -234,7 +234,7 @@ export function QuoteCard({
 
       {/* One-line note describing what the last format switch did */}
       {state.switchNote && (
-        <p className="muted" style={{ fontSize: 12, margin: "8px 0 0" }}>
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "8px 0 0" }}>
           {state.switchNote}
         </p>
       )}
@@ -258,7 +258,7 @@ export function QuoteCard({
             </button>
           ) : (
             <>
-              <span style={{ fontSize: 12, fontWeight: 600 }}>
+              <span style={{ fontSize: "var(--type-sm)", fontWeight: 600 }}>
                 Replaces Better &amp; Best — sure?
               </span>
               <button
@@ -359,14 +359,14 @@ export function QuoteCard({
                 style={{
                   flexBasis: "100%",
                   border: "1.5px solid var(--line)",
-                  borderRadius: 9,
+                  borderRadius: "var(--radius-sm)",
                   padding: "7px 10px",
                   fontFamily: "inherit",
-                  fontSize: 13,
+                  fontSize: "var(--type-base)",
                 }}
               />
               {pbMatches.length === 0 ? (
-                <span className="muted" style={{ fontSize: 12 }}>
+                <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
                   {services.length === 0
                     ? "Your pricebook is empty — add services in Settings → Pricebook."
                     : "No matches — try a different search."}
@@ -429,7 +429,7 @@ export function QuoteCard({
             </button>
           </div>
           {confirmRebuild && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: 7 }}>
               <span style={{ fontSize: 12.5, fontWeight: 600 }}>
                 Replaces the lines you typed — sure?
               </span>
@@ -452,7 +452,7 @@ export function QuoteCard({
             </p>
           )}
           {aiDraftError && (
-            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 6 }}>
+            <div style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", marginTop: 6 }}>
               {aiDraftError}
             </div>
           )}
@@ -480,7 +480,7 @@ export function QuoteCard({
             return (
               <div
                 key={p.id}
-                style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}
+                style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-2)" }}
               >
                 <span style={{ fontSize: 12.5 }}>{label}</span>
                 <button
@@ -501,7 +501,7 @@ export function QuoteCard({
             );
           })}
           {proposalError && (
-            <div style={{ fontSize: 12, color: "var(--red, #c0392b)", marginTop: 6 }}>{proposalError}</div>
+            <div style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", marginTop: 6 }}>{proposalError}</div>
           )}
         </div>
       )}
@@ -518,24 +518,24 @@ export function QuoteCard({
           }}
         >
           {isGbb && rec && (
-            <div className="muted" style={{ fontSize: 12 }}>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
               {tierDisplayName(rec)} option — what the customer receives
             </div>
           )}
           {(state.pricing.disc || state.pricing.tax) ? (
-            <div className="muted" style={{ fontSize: 13 }}>
+            <div className="muted" style={{ fontSize: "var(--type-base)" }}>
               Subtotal &nbsp;{" "}
               <b style={{ color: "var(--ink)" }}>{fmt$(m.sub)}</b>
             </div>
           ) : null}
           {state.pricing.disc ? (
-            <div className="muted" style={{ fontSize: 13 }}>
+            <div className="muted" style={{ fontSize: "var(--type-base)" }}>
               Discount {state.pricing.disc}% &nbsp;{" "}
               <b style={{ color: "var(--red)" }}>−{fmt$(m.disc)}</b>
             </div>
           ) : null}
           {state.pricing.tax ? (
-            <div className="muted" style={{ fontSize: 13 }}>
+            <div className="muted" style={{ fontSize: "var(--type-base)" }}>
               Tax {state.pricing.tax}% &nbsp;{" "}
               <b style={{ color: "var(--ink)" }}>+{fmt$(m.taxed)}</b>
             </div>
