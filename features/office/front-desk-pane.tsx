@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
+import { useMe } from "@/features/identity/hooks";
 import { ServiceRow } from "@/app/(office)/settings/booking-service-card";
 import { AddServiceModal, type NewServiceInput } from "@/app/(office)/settings/add-service-modal";
 import { StarterPlaybookModal } from "@/app/(office)/settings/starter-playbook-modal";
@@ -21,8 +22,15 @@ import { playbookFor } from "@/app/(office)/settings/trade-playbooks";
 import { TagInput } from "@/app/(office)/settings/tag-input";
 import { HourSelect } from "@/app/(office)/settings/hour-select";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
+import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
+import { fmtPhone } from "@/lib/format";
 
-const MALLET_NUMBER = "(925) 555-0100";
+/** Loose client-side gate for the transfer number — the server re-validates with the Phone VO. */
+function isUsPhone(raw: string): boolean {
+  const digits = raw.replace(/\D/g, "");
+  const local = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  return local.length === 10;
+}
 
 function ruleCount(notServices: string, deferKeywords: string): number {
   return [notServices, deferKeywords]
@@ -38,7 +46,7 @@ function timeLabel(h: number): string {
   return `${dh}${period}`;
 }
 
-type RuleKey = "rules" | "fee" | "hours" | "area";
+type RuleKey = "rules" | "fee" | "hours" | "area" | "transfer";
 
 export function FrontDeskPane() {
   const setToggle = useAppStore((s) => s.setToggle);
@@ -61,6 +69,30 @@ export function FrontDeskPane() {
   // Which rules-rail row is open for editing (one at a time), + the number/about reveal.
   const [openRule, setOpenRule] = useState<RuleKey | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
+
+  // The org's REAL provisioned number (E.164, null until provisioning lands).
+  const me = useMe();
+  const bizNumber = me.data?.twilioNumber ?? null;
+
+  // Emergency transfer draft — commit-on-Save (never persist per keystroke: the
+  // server rejects partial numbers and every reject would toast + roll back).
+  const savedTransfer = bk.emergencyTransferNumber ?? "";
+  const [transferDraft, setTransferDraft] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const transferFlash = useSaveFlash();
+
+  function saveTransfer() {
+    const draft = (transferDraft ?? savedTransfer).trim();
+    if (draft !== "" && !isUsPhone(draft)) {
+      setTransferError("Enter a real phone number — e.g. (925) 555-0123.");
+      return;
+    }
+    setTransferError(null);
+    setBookingField("emergencyTransferNumber", draft);
+    setTransferDraft(null);
+    transferFlash.flash();
+  }
   const seedBookingServices = useAppStore((st) => st.seedBookingServices);
   const setTrade = useAppStore((st) => st.setTrade);
 
@@ -149,15 +181,23 @@ export function FrontDeskPane() {
 
   return (
     <div style={{ maxWidth: 980 }}>
-      {/* slim status header */}
+      {/* slim status header — the org's REAL number; a quiet provisioning line until it lands */}
       <div className="fdstatus">
         <span className={frontDesk ? "odot" : "odot off"} aria-hidden="true" />
         <span className="fds">{frontDesk ? "Answering" : "Off — calls go to voicemail"}</span>
-        <span className="fdnum">{MALLET_NUMBER}</span>
-        <span className="fdsep" aria-hidden="true">·</span>
-        <a className="tedit" href={`tel:${MALLET_NUMBER.replace(/[^\d]/g, "")}`}>Test call</a>
-        <span className="fdsep" aria-hidden="true">·</span>
-        <button className="tedit" onClick={() => navigator.clipboard.writeText(MALLET_NUMBER)}>Copy</button>
+        {bizNumber ? (
+          <>
+            <span className="fdnum">{fmtPhone(bizNumber)}</span>
+            <span className="fdsep" aria-hidden="true">·</span>
+            <a className="tedit" href={`tel:${bizNumber.replace(/[^\d]/g, "")}`}>Test call</a>
+            <span className="fdsep" aria-hidden="true">·</span>
+            <button className="tedit" onClick={() => navigator.clipboard.writeText(fmtPhone(bizNumber))}>Copy</button>
+          </>
+        ) : (
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+            Getting your number — we&rsquo;ll email you when it&rsquo;s live.
+          </span>
+        )}
         <span className="fdsep" aria-hidden="true">·</span>
         <button className="tedit" onClick={() => setAboutOpen((v) => !v)}>{aboutOpen ? "close" : "about your number"}</button>
         <span className="sp" />
@@ -175,12 +215,28 @@ export function FrontDeskPane() {
             lead. A <b>verified crew phone</b> → your assistant — never the Front Desk. Off — missed
             calls go to voicemail. On — they text back, parsed and held for your yes.
           </p>
-          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
-            {/* deferred: external integration (forward existing number) */}
-            <button className="btn sm" onClick={() => {}}>Forward your existing number</button>
-            {/* deferred: external integration (port number in) */}
-            <button className="btn sm ghost" onClick={() => {}}>Port your number in</button>
+          <div style={{ marginTop: "var(--space-3)" }}>
+            <button className="btn sm" onClick={() => setForwardOpen((v) => !v)} aria-expanded={forwardOpen}>
+              {forwardOpen ? "Hide forwarding steps" : "Forward your existing number"}
+            </button>
+            {/* Port-in is a roadmap item — no dead button for it (house rule). */}
           </div>
+          {forwardOpen && (
+            <div style={{ marginTop: "var(--space-3)", borderTop: "1px dashed var(--line)", paddingTop: "var(--space-3)" }}>
+              <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-2)" }}>
+                Keep the number your customers already know — forward it here and the Front Desk
+                answers it.
+              </p>
+              <ol style={{ margin: "0", paddingLeft: "var(--space-5)", fontSize: "var(--type-sm)", color: "var(--ink-2)" }}>
+                <li>From the phone that has your business number, dial your carrier&rsquo;s forwarding code
+                  {" "}(most: <span className="mono">*72</span>, then{" "}
+                  <span className="mono">{bizNumber ? fmtPhone(bizNumber) : "your Mallet number"}</span>).</li>
+                <li>Or forward only unanswered calls (<span className="mono">*71</span> on most carriers) — you
+                  pick up when you can, the Front Desk catches the rest.</li>
+                <li>To stop forwarding, dial <span className="mono">*73</span>.</li>
+              </ol>
+            </div>
+          )}
         </div>
       )}
 
@@ -268,6 +324,40 @@ export function FrontDeskPane() {
             <HrRow lbl="Weekdays" oKey="wdOpen" cKey="wdClose" />
             <HrRow lbl="Saturday" oKey="satOpen" cKey="satClose" />
             <HrRow lbl="Sunday"   oKey="sunOpen" cKey="sunClose" />
+          </RuleRow>
+
+          <RuleRow
+            k="transfer"
+            label="Emergency transfer"
+            value={savedTransfer ? <span className="mono">{fmtPhone(savedTransfer)}</span> : "Off"}
+          >
+            <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-3)" }}>
+              A true emergency on the line transfers live to this number — usually the owner&rsquo;s or
+              the on-call cell. Empty = off; emergencies become an urgent callback instead.
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+              <input
+                type="tel"
+                inputMode="tel"
+                aria-label="Emergency transfer number"
+                placeholder="(925) 555-0123"
+                value={transferDraft ?? savedTransfer}
+                onChange={(e) => {
+                  setTransferDraft(e.target.value);
+                  if (transferError) setTransferError(null);
+                  transferFlash.reset();
+                }}
+                className="field-compact"
+                style={{ width: 180 }}
+              />
+              <button className="btn sm primary" onClick={saveTransfer} disabled={transferDraft === null}>
+                Save
+              </button>
+              <SavedFlash saved={transferFlash.saved} />
+            </div>
+            {transferError && (
+              <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{transferError}</p>
+            )}
           </RuleRow>
 
           <RuleRow k="area" label="Service area" value={<span className="mono">{bk.area.radiusMi} mi</span>}>

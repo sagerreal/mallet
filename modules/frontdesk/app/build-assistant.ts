@@ -8,6 +8,8 @@ import type {
   CallerContext,
   VapiAssistantDTO,
   VoiceToolSpec,
+  VoiceTool,
+  TransferCallToolSpec,
 } from "../domain/assistant";
 import { VOICE_MODEL, VOICE, MAX_CALL_MINUTES } from "../infra/vapi-defaults";
 import { buildSystemPrompt, buildFirstMessage, type PromptFacts } from "./prompt";
@@ -51,6 +53,7 @@ const toPromptFacts = (s: OrgSettings): PromptFacts => {
     feeCredited: p.booking.feeCredited,
     services: p.booking.services,
     deferKeywords: p.booking.deferKeywords,
+    emergencyTransfer: Boolean(p.booking.emergencyTransferNumber),
   };
 };
 
@@ -100,6 +103,12 @@ export class BuildAssistantUseCase {
 
   private fullAssistant(settings: OrgSettings, caller: CallerContext): VapiAssistantDTO {
     const facts = toPromptFacts(settings);
+    // The transfer tool is PER-ORG (its destination is the org's on-call number),
+    // so it can't live in the injected static list — appended here when configured.
+    const transferNumber = settings.props.booking.emergencyTransferNumber;
+    const tools: readonly VoiceTool[] = transferNumber
+      ? [...this.tools, emergencyTransferTool(transferNumber)]
+      : this.tools;
     return {
       firstMessage: buildFirstMessage(facts.brandName),
       model: {
@@ -107,7 +116,7 @@ export class BuildAssistantUseCase {
         model: VOICE_MODEL.model,
         temperature: VOICE_MODEL.temperature,
         messages: [{ role: "system", content: buildSystemPrompt({ facts, caller }) }],
-        tools: this.tools,
+        tools,
       },
       voice: { provider: VOICE.provider, voiceId: VOICE.voiceId },
       maxDurationSeconds: MAX_CALL_MINUTES * SECONDS_PER_MINUTE,
@@ -135,3 +144,12 @@ export class BuildAssistantUseCase {
 }
 
 const unknownCaller = (): CallerContext => ({ known: false, name: null, openWork: null });
+
+// Vapi executes this itself mid-call — the number never passes through the model
+// or our webhook. Message is spoken to the caller as the bridge starts.
+const emergencyTransferTool = (number: string): TransferCallToolSpec => ({
+  type: "transferCall",
+  destinations: [
+    { type: "number", number, message: "Connecting you to the on-call line now — one moment." },
+  ],
+});

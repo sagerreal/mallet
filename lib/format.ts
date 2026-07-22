@@ -49,3 +49,13 @@ export const fmt$ = (dollars: number): string =>
 // show "$0" and under-count a parts-cost rollup). Same en-US pinning as fmt$.
 export const fmt$2 = (dollars: number): string =>
   dollars.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+// US phone pretty-printer for display surfaces: E.164 (or any 10/11-digit US
+// string) → "(925) 555-0100". Anything unrecognizable passes through untouched —
+// display must never eat a number it can't parse.
+export const fmtPhone = (raw: string): string => {
+  const digits = raw.replace(/\D/g, "");
+  const local = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (local.length !== 10) return raw;
+  return `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}`;
+};

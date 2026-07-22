@@ -63,6 +63,7 @@ export function SettingsHydrator() {
         serviceFee: dto.config.booking.serviceFee,
         feeCredited: dto.config.booking.feeCredited,
         deferKeywords: dto.config.booking.deferKeywords,
+        emergencyTransferNumber: dto.config.booking.emergencyTransferNumber,
         hours: {
           wdOpen: dto.config.hoursWdOpen,
           wdClose: dto.config.hoursWdClose,
