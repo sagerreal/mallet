@@ -153,12 +153,12 @@ export function PricebookPane() {
             <div key={lr.id} className="stage-row">
               <input type="text" defaultValue={lr.name}
                 onChange={(e) => updateLaborRate(lr.id, "name", e.target.value)}
-                style={{ flex: 1, minWidth: 120, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+                className="field-compact" style={{ flex: 1, minWidth: 120 }} />
               <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                 <span className="muted">$</span>
                 <input type="number" defaultValue={lr.rate}
                   onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
-                  style={{ width: 80, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+                  className="field-compact" style={{ width: 80 }} />
                 <select
                   aria-label={`Unit for ${lr.name}`}
                   value={lr.kind}
@@ -186,9 +186,9 @@ export function PricebookPane() {
           </div>
           <div style={{ display: "flex", gap: "var(--space-2)" }}>
             <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
-              style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+              className="field-compact" style={{ flex: 1 }} />
             <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
-              style={{ flex: "0 0 100px", border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+              className="field-compact" style={{ flex: "0 0 100px" }} />
             <button className="btn" onClick={handleAddLabor}>+ Add</button>
           </div>
         </div>
@@ -216,9 +216,9 @@ export function PricebookPane() {
         </div>
         <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
           <input type="text" id="tlName" placeholder="name (e.g. Repipe terms)" value={tlName} onChange={(e) => setTlName(e.target.value)}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+            className="field-compact" style={{ flex: 1 }} />
           <input type="text" id="tlBody" placeholder="the fine print…" value={tlBody} onChange={(e) => setTlBody(e.target.value)}
-            style={{ flex: 2, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
+            className="field-compact" style={{ flex: 2 }} />
           <button className="btn" onClick={handleAddTerm}>+ Add</button>
         </div>
       </FoldCard>
