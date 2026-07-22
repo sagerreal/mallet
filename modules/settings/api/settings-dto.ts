@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Phone } from "@mallet/shared/types";
 import type { SettingsSnapshot } from "../app/get-settings";
 import type { PricebookItem, LaborRate, JobTerm, LeadSource } from "../domain/settings-repository";
 import type { OrgSettings } from "../domain/org-settings";
@@ -35,6 +36,23 @@ export const bookingCfgDTO = z.object({
   serviceFee: z.number().min(0), // dollars, not cents
   feeCredited: z.boolean(),
   deferKeywords: z.string().optional(),
+  // Live emergency-transfer destination. ""/absent = off. VALIDATED here with the
+  // shared Phone VO (fail fast at the boundary with a usable message); NORMALIZED
+  // to E.164 in UpdateConfigUseCase (a zod transform would break the key's
+  // optionality in the output type).
+  emergencyTransferNumber: z
+    .string()
+    .max(24)
+    .optional()
+    .superRefine((v, ctx) => {
+      if (v === undefined || v.trim() === "") return;
+      if (!Phone.parse(v).ok) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Enter a real phone number — e.g. (925) 555-0123.",
+        });
+      }
+    }),
 });
 
 // --- Org config DTO --------------------------------------------------------

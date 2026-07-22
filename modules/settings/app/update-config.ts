@@ -1,5 +1,5 @@
 import type { Result, AppError, Clock } from "@mallet/shared/types";
-import { ok } from "@mallet/shared/types";
+import { ok, Phone } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { Geocoder } from "@mallet/frontdesk";
 import type { OrgSettings, OrgSettingsProps } from "../domain/org-settings";
@@ -12,6 +12,28 @@ import { defaultBooking } from "./default-booking";
 export type UpdateConfigCommand = Partial<
   Omit<OrgSettingsProps, "orgId" | "createdAt" | "updatedAt" | "originLat" | "originLng">
 >;
+
+/**
+ * Normalizes the booking blob before it is patched in:
+ * emergencyTransferNumber → canonical E.164 (the DTO already validated it), and
+ * ""/whitespace → the field is dropped entirely (transfer off — never store "").
+ * Everything else passes through untouched.
+ */
+function normalizeBooking(cmd: UpdateConfigCommand): UpdateConfigCommand {
+  if (!cmd.booking) return cmd;
+  const raw = cmd.booking.emergencyTransferNumber;
+  if (raw === undefined) return cmd;
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    const { emergencyTransferNumber: _off, ...rest } = cmd.booking;
+    return { ...cmd, booking: rest };
+  }
+  const parsed = Phone.parse(trimmed);
+  return {
+    ...cmd,
+    booking: { ...cmd.booking, emergencyTransferNumber: parsed.ok ? parsed.value : trimmed },
+  };
+}
 
 /**
  * Patch the scalar/jsonb config for an org. Lazily materialises the row first so an org that has
@@ -38,7 +60,7 @@ export class UpdateConfigUseCase {
     // whitespace-only change doesn't re-geocode; compare against the stored value to skip no-ops.
     const originPatch = await this.resolveOriginPatch(cmd, current.props.serviceOriginAddress);
 
-    const patched = current.patch({ ...cmd, ...originPatch }, this.clock.now());
+    const patched = current.patch({ ...normalizeBooking(cmd), ...originPatch }, this.clock.now());
     if (!patched.ok) return patched;
     await this.repo.saveConfig(patched.value);
     logger.info({ orgId }, "settings.config.updated");

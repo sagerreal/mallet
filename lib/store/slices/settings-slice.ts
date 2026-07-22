@@ -84,6 +84,8 @@ export interface BookingCfg {
   serviceFee: number; // dollars (not cents) — matches the server bookingCfgDTO
   feeCredited: boolean;
   deferKeywords?: string;
+  /** E.164; ""/absent = live emergency transfer off (falls back to urgent callback). */
+  emergencyTransferNumber?: string;
   hours: BookingHours;
   area: BookingArea;
 }
@@ -142,6 +144,7 @@ export interface BookingPayload {
     serviceFee: number;
     feeCredited: boolean;
     deferKeywords?: string;
+    emergencyTransferNumber?: string;
   };
   hoursWdOpen: number;
   hoursWdClose: number;
@@ -168,6 +171,7 @@ export function buildBookingPayload(b: BookingCfg): BookingPayload {
       serviceFee: b.serviceFee,
       feeCredited: b.feeCredited,
       deferKeywords: b.deferKeywords,
+      emergencyTransferNumber: b.emergencyTransferNumber,
     },
     hoursWdOpen: b.hours.wdOpen,
     hoursWdClose: b.hours.wdClose,
@@ -237,7 +241,7 @@ export interface SettingsSlice {
   removeBookingService: (index: number) => void;
   setServiceFee: (n: number) => void;
   setFeeCredited: (b: boolean) => void;
-  setBookingField: (field: "notServices" | "deferKeywords", value: string) => void;
+  setBookingField: (field: "notServices" | "deferKeywords" | "emergencyTransferNumber", value: string) => void;
   setBookingHours: (key: keyof BookingHours, value: number) => void;
   /**
    * Set a single day's open AND close in ONE persisted write. The Closed↔Open toggle (and any

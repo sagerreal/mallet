@@ -28,6 +28,10 @@ export interface PromptFacts {
   readonly feeCredited: boolean;
   readonly services: readonly PromptService[];
   readonly deferKeywords?: string;
+  /** True when the org configured a live emergency-transfer number — flips the
+   *  emergency case rules from callback-escalation to live transfer. The number
+   *  itself never enters the prompt (it's baked into the transferCall tool). */
+  readonly emergencyTransfer: boolean;
 }
 
 // --- Fixed script fragments (no magic strings scattered) -----------------
@@ -54,6 +58,8 @@ export const TOOL_NAMES = {
   requestQuote: "request_quote",
   takeMessage: "take_message",
   escalateCallback: "escalate_callback",
+  /** Vapi's built-in live-transfer tool (executed by Vapi, not our webhook). */
+  transferCall: "transferCall",
 } as const;
 
 // The tools-and-flow rules, named by exact tool name so the model actually CALLS them. Each line is
@@ -141,9 +147,6 @@ const CASE_RULES: readonly string[] = [
     `handle: insurance, claims, adjusters, warranties, a service we don't do, a caller who keeps ` +
     `getting confused, or a caller who asks to speak to a person (plus any hand-off words in ` +
     `BUSINESS FACTS). Don't try to book or price these — file the callback with a short reason.`,
-  `Emergency with no same-day opening: if ${TOOL_NAMES.checkAvailability} returns no slot TODAY ` +
-    `for an emergency, do NOT book tomorrow — CALL ${TOOL_NAMES.escalateCallback} (reason: ` +
-    `same-day emergency, no slot) so the office calls back within the hour.`,
   "Existing customer wants to reschedule, cancel, ask where their tech is, or asks about " +
     "billing: use take_message so the office handles it. Never discuss billing amounts.",
   "Vendor, spam, or wrong number: end the call politely.",
@@ -290,8 +293,27 @@ const buildToolsSection = (): string =>
 const buildConfirmSection = (): string =>
   [`## ${SECTIONS.confirm}`, ...CONFIRM_RULES.map((r) => `- ${r}`)].join("\n");
 
-const buildCaseRules = (): string =>
-  [`## ${SECTIONS.cases}`, ...CASE_RULES.map((r) => `- ${r}`)].join("\n");
+// The emergency tail branches on whether the org configured a live transfer
+// number: with one, a true emergency that can't wait is CONNECTED now (Vapi's
+// transferCall — the destination is baked into the tool, never spoken); without
+// one, it falls back to the urgent office callback.
+const EMERGENCY_TAIL_TRANSFER =
+  `A TRUE emergency that can't wait — the caller is in distress, or ` +
+  `${TOOL_NAMES.checkAvailability} returns no slot TODAY: say "I'm connecting you to our ` +
+  `on-call line now — one moment" and CALL ${TOOL_NAMES.transferCall}. Never book tomorrow ` +
+  `for an emergency, and never read out the transfer number.`;
+
+const EMERGENCY_TAIL_CALLBACK =
+  `Emergency with no same-day opening: if ${TOOL_NAMES.checkAvailability} returns no slot TODAY ` +
+  `for an emergency, do NOT book tomorrow — CALL ${TOOL_NAMES.escalateCallback} (reason: ` +
+  `same-day emergency, no slot) so the office calls back within the hour.`;
+
+const buildCaseRules = (emergencyTransfer: boolean): string =>
+  [
+    `## ${SECTIONS.cases}`,
+    ...CASE_RULES.map((r) => `- ${r}`),
+    `- ${emergencyTransfer ? EMERGENCY_TAIL_TRANSFER : EMERGENCY_TAIL_CALLBACK}`,
+  ].join("\n");
 
 const buildGuardrails = (): string =>
   [`## ${SECTIONS.guardrails}`, ...GUARDRAILS.map((g) => `- ${g}`)].join("\n");
@@ -330,7 +352,7 @@ export const buildSystemPrompt = ({ facts, caller }: BuildSystemPromptInput): st
     buildServicesSection(facts.services),
     buildToolsSection(),
     buildConfirmSection(),
-    buildCaseRules(),
+    buildCaseRules(facts.emergencyTransfer),
     buildGuardrails(),
   ];
   if (caller.known && caller.name) sections.push(buildCallerSection(caller));

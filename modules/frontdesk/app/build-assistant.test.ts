@@ -208,3 +208,53 @@ describe("BuildAssistantUseCase — assembly", () => {
     );
   });
 });
+
+describe("BuildAssistantUseCase — emergency transfer tool", () => {
+  const bookingWithTransfer = {
+    services: [{ name: "Drain cleaning", lane: "flat" as const, price: 99, triggers: "clogged" }],
+    notServices: "septic",
+    serviceFee: 89,
+    feeCredited: true,
+    emergencyTransferNumber: "+19255550111",
+  };
+
+  it("appends Vapi's transferCall tool with the org's number when configured", async () => {
+    const settings = new FakeSettingsReader(settingsFor({ booking: bookingWithTransfer }));
+    const uc = makeUseCase({
+      settings,
+      leadByPhone: new FakeLeadByPhone(null),
+      leadSummary: new FakeLeadSummary(null),
+    });
+    const r = await uc.exec({ orgId: ORG, fromNumber: null });
+    if (!r.ok) throw new Error("expected ok");
+    const transfer = r.value.model.tools.find((t) => t.type === "transferCall");
+    expect(transfer).toBeDefined();
+    if (transfer?.type !== "transferCall") throw new Error("narrow failed");
+    expect(transfer.destinations).toEqual([
+      {
+        type: "number",
+        number: "+19255550111",
+        message: "Connecting you to the on-call line now — one moment.",
+      },
+    ]);
+    // The prompt flips to the live-transfer emergency tail — and the raw number
+    // must NEVER appear in the prompt text.
+    const prompt = r.value.model.messages[0]?.content ?? "";
+    expect(prompt).toContain("transferCall");
+    expect(prompt).not.toContain("9255550111");
+  });
+
+  it("no transfer number → no transferCall tool, callback escalation tail stays", async () => {
+    const settings = new FakeSettingsReader(settingsFor());
+    const uc = makeUseCase({
+      settings,
+      leadByPhone: new FakeLeadByPhone(null),
+      leadSummary: new FakeLeadSummary(null),
+    });
+    const r = await uc.exec({ orgId: ORG, fromNumber: null });
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.value.model.tools.some((t) => t.type === "transferCall")).toBe(false);
+    const prompt = r.value.model.messages[0]?.content ?? "";
+    expect(prompt).toContain("same-day emergency, no slot");
+  });
+});

@@ -22,6 +22,7 @@ const baseFacts = (o: Partial<PromptFacts> = {}): PromptFacts => ({
   notServices: "septic tanks, well pumps",
   serviceFee: 89,
   feeCredited: true,
+  emergencyTransfer: false,
   services: [
     { name: "Drain cleaning", lane: "flat", price: 149, triggers: "clogged drain, slow drain" },
     { name: "Faucet repair", lane: "repair", triggers: "leaky faucet, dripping" },

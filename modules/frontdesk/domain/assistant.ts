@@ -18,6 +18,24 @@ export interface VoiceToolSpec {
   };
 }
 
+// Vapi's built-in live-transfer tool: destinations are baked into the assistant
+// config, so the number NEVER passes through the model. Executed by Vapi itself —
+// our webhook tool runner never sees it (nothing to whitelist in run-tool-calls).
+export interface TransferDestinationNumber {
+  readonly type: "number";
+  readonly number: string;
+  /** Spoken to the caller as the transfer starts. */
+  readonly message?: string;
+}
+
+export interface TransferCallToolSpec {
+  readonly type: "transferCall";
+  readonly destinations: readonly TransferDestinationNumber[];
+}
+
+/** Any entry in model.tools — our function tools or Vapi's built-in transfer. */
+export type VoiceTool = VoiceToolSpec | TransferCallToolSpec;
+
 // One chat message in the model context. Only the system prompt is set at build time; the
 // live turns are appended by Vapi during the call.
 export interface VoiceModelMessage {
@@ -31,7 +49,7 @@ export interface VoiceModelConfig {
   readonly model: string;
   readonly temperature: number;
   readonly messages: readonly VoiceModelMessage[];
-  readonly tools: readonly VoiceToolSpec[];
+  readonly tools: readonly VoiceTool[];
 }
 
 // The spoken-voice block.

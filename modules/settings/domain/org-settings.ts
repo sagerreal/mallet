@@ -42,6 +42,12 @@ export interface BookingCfg {
   readonly feeCredited: boolean;
   /** Words that mean the AI should hand off to a human callback (insurance/claim/warranty/etc.). */
   readonly deferKeywords?: string;
+  /**
+   * E.164 number a TRUE-emergency call is transferred to live (the owner's or
+   * on-call cell). Absent/empty = no live transfer — emergencies fall back to
+   * the urgent-callback escalation. Normalized+validated at the API boundary.
+   */
+  readonly emergencyTransferNumber?: string;
 }
 
 // --- Props ---------------------------------------------------------------
