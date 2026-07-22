@@ -1841,6 +1841,25 @@
   .tjpaid-btn:active{transform:scale(.97);opacity:.88}
   .tjpaid-btn2:active{transform:scale(.98)}
 
+  /* List rows + queue cards — the surfaces clicked most all day (customer/job/money/
+     message tables, pipeline, the home OK-queue, the New menu). The click now presses
+     IN: the background deepens one shade past the hover tint, and div rows compress a
+     hair (a <tr> can't transform cleanly). These carried no transition, so this also
+     eases their hover highlight in instead of snapping. :active is transient (mouse-
+     down only), so the visual baselines — which capture the resting state — don't move. */
+  .trow.clickable,tr.clickable,.msg-row,.cg-row,.notif-row,.ts-trow,.uirow-clickable,
+  .njchk-row,.okcard,.att-item.clickable,.otab,th.sortable,.newitem{transition:background .1s ease,transform .09s ease}
+  .trow.clickable:active,tr.clickable:active,.msg-row:active,.cg-row:active,.notif-row:active,
+  .ts-trow:active,.uirow-clickable:active,.njchk-row:active,.otab:active,th.sortable:active{
+    background:color-mix(in srgb,var(--ink) 9%,transparent)}
+  .okcard:active,.att-item.clickable:active{background:color-mix(in srgb,var(--green-600) 9%,transparent)}
+  .newitem:active{background:var(--green-100)}
+  .msg-row:active,.cg-row:active,.notif-row:active,.ts-trow:active,.njchk-row:active,
+  .okcard:active,.att-item.clickable:active{transform:scale(.996)}
+
+  /* Chips / filter pills: a quick squish on tap. */
+  .chip:active,.cbar .chip:active,.iph-chip:active,.cp-chip-remove:active{transform:scale(.94)}
+
   /* Scrim fade: modal.tsx mounts the overlay fresh with .open, so a transition would never
      fire — an entry ANIMATION (like .modal's existing modalin) fades the scrim in step with
      the card instead of popping. */

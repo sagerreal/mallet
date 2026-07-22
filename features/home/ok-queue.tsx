@@ -63,7 +63,14 @@ function OkCard({
         <div className="card okcard" style={{ padding: "var(--space-4) var(--space-4)", marginBottom: "var(--space-3)" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
             <b style={{ fontSize: "var(--type-md)", whiteSpace: "nowrap" }}>{item.lead.name}</b>
-            <span className="muted" style={{ fontSize: "var(--type-base)", flex: 1, minWidth: 0 }}>
+            {/* invoice-overdue situations carry a server-derived "N days" age that
+                drifts past the browser Date-freeze (see handoff-note) — mask it so
+                the visual net doesn't flake by one day. */}
+            <span
+              className="muted"
+              data-dynamic={item.kind === "invoice-overdue" ? "" : undefined}
+              style={{ fontSize: "var(--type-base)", flex: 1, minWidth: 0 }}
+            >
               {item.situation}
             </span>
             <button
