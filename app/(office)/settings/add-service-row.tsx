@@ -11,6 +11,8 @@ import type { AddResult } from "@/lib/store/slices/pricebook-slice";
 
 export interface AddServiceRowProps {
   onAdd: (fields: AddServiceFields) => Promise<AddResult>;
+  /** Focus the name input on mount — the first-run "Build your own" landing. */
+  autoFocus?: boolean;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -21,7 +23,7 @@ const inputStyle: React.CSSProperties = {
   fontSize: "var(--type-base)",
 };
 
-export function AddServiceRow({ onAdd }: AddServiceRowProps) {
+export function AddServiceRow({ onAdd, autoFocus = false }: AddServiceRowProps) {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function AddServiceRow({ onAdd }: AddServiceRowProps) {
         <input
           type="text"
           placeholder="e.g. Hydro-jet kitchen drain"
+          autoFocus={autoFocus}
           value={name}
           onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
           onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}

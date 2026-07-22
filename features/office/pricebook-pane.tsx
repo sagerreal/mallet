@@ -14,6 +14,12 @@
 import { useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { isFirstLoad, shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
+import { ListLoading } from "@/components/shared/list-loading";
+import { LoadFailed } from "@/components/shared/load-failed";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Service } from "@/lib/store/types";
 import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
@@ -59,6 +65,9 @@ export function PricebookPane() {
   const [seedError, setSeedError] = useState<string | null>(null);
   const [openRail, setOpenRail] = useState<RailKey | null>(null);
   const toggleRail = (k: RailKey) => setOpenRail((prev) => (prev === k ? null : k));
+  // "Build your own" dismisses first-run into the (empty) register so the inline
+  // add-row is right there; the first added service makes it permanent.
+  const [building, setBuilding] = useState(false);
   const [lrName, setLrName] = useState("");
   const [lrRate, setLrRate] = useState("");
   const [lrKind, setLrKind] = useState<LaborRateKind>("hourly");
@@ -92,6 +101,70 @@ export function PricebookPane() {
   const q = query.trim().toLowerCase();
   const visible = q ? sorted.filter((s) => s.name.toLowerCase().includes(q)) : sorted;
 
+  // Dedupe the pricebook hydrator's query (same key + options → one network
+  // fetch) purely for load-state flags — the four-state gate every list
+  // surface carries: loading / load-failed / first-run / populated.
+  const svcQuery = api.v1.pricebook.service.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const gate = { isFetched: svcQuery.isFetched, isError: svcQuery.isError, count: services.length };
+
+  if (isFirstLoad(gate)) {
+    return (
+      <div style={{ maxWidth: 980 }}>
+        <ListLoading label="Loading pricebook…" />
+      </div>
+    );
+  }
+
+  if (shouldShowLoadFailed(gate)) {
+    return (
+      <div style={{ maxWidth: 980 }}>
+        <LoadFailed noun="pricebook" onRetry={() => void svcQuery.refetch()} retrying={svcQuery.isRefetching} />
+      </div>
+    );
+  }
+
+  if (shouldShowFirstRun(gate) && !building) {
+    return (
+      <div style={{ maxWidth: 980 }}>
+        <FirstRunEmptyState
+          heading="No services yet"
+          subtext="Your pricebook is the jobs you sell and what they cost — quotes, invoices, and the Front Desk all price from it. Load a ready-made set for your trade, or build your own."
+          paths={[
+            {
+              title: "Start from your trade",
+              description: "Load a proven plumbing pricebook — edit names and prices to match how you work.",
+              actionLabel: seeding ? "Adding starter pack…" : "Start with plumbing basics",
+              onAction: () => void handleSeed(),
+              variant: "primary",
+            },
+            {
+              title: "Build your own",
+              description: "Add your common jobs one at a time — e.g. “Replace 40gal water heater”.",
+              actionLabel: "+ Add a service",
+              onAction: () => setBuilding(true),
+            },
+          ]}
+        />
+        {seedError && (
+          <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", textAlign: "center", margin: "var(--space-3) 0 0" }}>
+            {seedError}
+          </p>
+        )}
+        {canSeeCost && (
+          <p className="muted" style={{ textAlign: "center", fontSize: "var(--type-sm)", margin: "var(--space-4) 0 0" }}>
+            Have a spreadsheet?{" "}
+            <span className="linklike" onClick={() => openModal(MODAL.IMPORT_SERVICES)}>
+              Import CSV
+            </span>
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 980 }}>
       <div className="fdcols">
@@ -123,19 +196,7 @@ export function PricebookPane() {
               </div>
             )}
 
-            {services.length === 0 ? (
-              <div style={{ padding: "var(--space-6) var(--space-4)", textAlign: "center" }}>
-                <p style={{ margin: "0 0 var(--space-3)", fontWeight: 700 }}>
-                  Add your common jobs — e.g. “Replace 40gal water heater”.
-                </p>
-                <button className="btn" onClick={() => void handleSeed()} disabled={seeding}>
-                  {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
-                </button>
-                {seedError && (
-                  <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{seedError}</p>
-                )}
-              </div>
-            ) : (
+            {services.length > 0 && (
               <div style={{ padding: "0 var(--space-4)" }}>
                 {visible.map((s) => (
                   <ServiceRow
@@ -153,9 +214,10 @@ export function PricebookPane() {
               </div>
             )}
 
-            {/* Inline add — anchored at the card's foot, never a stray row on the page. */}
+            {/* Inline add — anchored at the card's foot, never a stray row on the page.
+                Autofocused when arriving via first-run's "Build your own". */}
             <div style={{ padding: "0 var(--space-4) var(--space-3)" }}>
-              <AddServiceRow onAdd={addService} />
+              <AddServiceRow onAdd={addService} autoFocus={building && services.length === 0} />
             </div>
           </div>
         </div>
