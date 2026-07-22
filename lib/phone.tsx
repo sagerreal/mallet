@@ -139,7 +139,7 @@ export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel }: Ph
       <button
         type="button"
         className="linklike"
-        style={{ display: "block", margin: "10px auto 0", fontSize: "var(--type-md)", color: "var(--ink-2)" }}
+        style={{ display: "block", margin: "var(--space-3) auto 0", fontSize: "var(--type-md)", color: "var(--ink-2)" }}
         onClick={onCancel}
       >
         Cancel

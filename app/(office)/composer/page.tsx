@@ -636,7 +636,7 @@ export default function ComposerPage() {
         isAddingCust={createCustomerMutation.isPending}
       />
       {custError && (
-        <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-base)", margin: "-8px 0 12px" }}>
+        <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-base)", margin: "-8px 0 var(--space-3)" }}>
           {custError}
         </p>
       )}

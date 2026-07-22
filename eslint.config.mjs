@@ -43,8 +43,10 @@ export default [
       "max-lines": ["warn", { max: 800, skipBlankLines: true, skipComments: true }],
       "max-lines-per-function": ["warn", { max: 80, skipBlankLines: true, skipComments: true }],
       complexity: ["warn", 15],
-      // Design-system locks (eslint-rules/) — WARN now, flip to error in P7.
-      "ui/no-raw-style": "warn",
+      // Design-system locks (eslint-rules/). no-raw-style is at 0 → ERROR (a stray
+      // `fontSize: 13` now fails CI, locking the token discipline). The other two
+      // still carry adoption debt (bare fields, ad-hoc cards) → WARN until cleared.
+      "ui/no-raw-style": "error",
       "ui/no-adhoc-card": "warn",
       "ui/no-bare-field": "warn",
     },
