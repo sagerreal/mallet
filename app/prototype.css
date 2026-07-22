@@ -715,7 +715,7 @@
   .jl th{font-size:var(--type-xs);text-transform:uppercase;letter-spacing:.5px;color:var(--jink3);font-weight:700;text-align:left;padding:var(--space-3) var(--space-3);border-bottom:1px solid var(--jline);cursor:pointer;user-select:none;white-space:nowrap}
   .jl th.r,.jl td.r{text-align:right}
   .th-sort{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;
-    text-transform:inherit;letter-spacing:inherit;text-align:inherit;display:inline-flex;align-items:center;gap:3px}
+    text-transform:inherit;letter-spacing:inherit;text-align:inherit;display:inline-flex;align-items:center;gap:var(--space-1)}
   .th-sort:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-2xs)}
   .jl th .caret{margin-left:var(--space-1);color:var(--jink)}
   .jl td{padding:var(--space-3) var(--space-3);border-bottom:1px solid #F4F1E9;font-size:var(--type-base);vertical-align:middle;color:var(--jink)}
