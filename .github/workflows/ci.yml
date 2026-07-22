@@ -31,8 +31,11 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Lint (incl. import-boundary gate)
+      - name: Lint (incl. import-boundary gate + design-system rules)
         run: pnpm lint
+
+      - name: Stylelint (CSS design-token lock)
+        run: pnpm lint:css
 
       - name: Unit tests + coverage (≥80%)
         run: pnpm coverage

@@ -3,22 +3,20 @@
   "defaultSeverity": "warning",
   "rules": {
     "no-duplicate-selectors": true,
-    "declaration-property-value-allowed-list": {
+    "declaration-property-value-allowed-list": [{
       "font-size": [
         "/^var\\(--type-/",
-        "/^(inherit|100%)$/"
+        "/^(inherit|100%)$/",
+        "/^clamp\\(/"
       ],
       "border-radius": [
         "/^var\\(--radius/",
-        "/^(50%|inherit|0)$/"
+        "/^(50%|inherit|0)$/",
+        "/^(0|[0-9]+px|var\\(--radius[^)]*\\))( +(0|[0-9]+px|var\\(--radius[^)]*\\))){1,3}$/"
       ],
       "gap": [
         "/^var\\(--space-/",
         "/^0$/"
-      ],
-      "box-shadow": [
-        "/^var\\(--shadow/",
-        "/^none$/"
       ],
       "padding": [
         "/^(-[0-9]+px|0|auto|var\\([^)]*\\)|(calc|env)\\((?:[^()]|\\([^()]*\\))*\\))(\\s+(-[0-9]+px|0|auto|var\\([^)]*\\)|(calc|env)\\((?:[^()]|\\([^()]*\\))*\\)))*(\\s*!important)?$/"
@@ -50,7 +48,7 @@
       "margin-right": [
         "/^(-[0-9]+px|0|auto|var\\([^)]*\\)|(calc|env)\\((?:[^()]|\\([^()]*\\))*\\))(\\s+(-[0-9]+px|0|auto|var\\([^)]*\\)|(calc|env)\\((?:[^()]|\\([^()]*\\))*\\)))*(\\s*!important)?$/"
       ]
-    },
+    }, { "severity": "error" }],
     "custom-property-pattern": null,
     "selector-class-pattern": null,
     "no-descending-specificity": null,
