@@ -83,7 +83,7 @@ const InvoiceModalContent = dynamic(
 );
 
 const TechJobModalContent = dynamic(
-  () => import("./tech-job-modal").then((m) => ({ default: m.TechJobModalContent })),
+  () => import("./tech-job-modal/tech-job-modal").then((m) => ({ default: m.TechJobModalContent })),
   { ssr: false },
 );
 

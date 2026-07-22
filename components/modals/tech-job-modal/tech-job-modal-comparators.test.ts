@@ -11,12 +11,10 @@
  * comparator AND to this matrix.
  */
 import { describe, it, expect } from "vitest";
-import {
-  workOrderPropsEqual,
-  foundWorkPropsEqual,
-  noteFeedPropsEqual,
-  doneBlockPropsEqual,
-} from "./tech-job-modal";
+import { workOrderPropsEqual } from "./work-order-sec";
+import { foundWorkPropsEqual } from "./found-work-sec";
+import { noteFeedPropsEqual } from "./note-feed";
+import { doneBlockPropsEqual } from "./done-block";
 import type { Job } from "@/lib/store/types";
 
 // A minimal store-shaped job; the comparators only touch the listed fields.
