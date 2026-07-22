@@ -15,6 +15,7 @@ import {
   useActiveModal,
   useCloseModal,
   useOpenModal,
+  usePushModal,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead } from "@/lib/store/types";
@@ -35,6 +36,7 @@ export function VisitModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
   const openModal = useOpenModal();
+  const pushModal = usePushModal();
 
   const leads = useAppStore((s) => s.leads);
   const addEvisit = useAppStore((s) => s.addEvisit);
@@ -118,7 +120,9 @@ export function VisitModalContent() {
     const job = await createJobForLead();
     if (!job) return; // error already set; modal stays open
     close();
-    openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+    // Land the builder ON the new job: ✕ / Done pop back to the job modal.
+    openModal(MODAL.JOB, { jobId: job.id });
+    pushModal(MODAL.PRICE_BUILDER, { jobId: job.id });
   }
 
   async function submit() {

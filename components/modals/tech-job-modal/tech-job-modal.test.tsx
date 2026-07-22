@@ -31,6 +31,7 @@ const mockUpdateJob = vi.fn();
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
   useOpenModal: () => mockOpenModal,
+  usePushModal: () => mockOpenModal,
   useCloseModal: () => noop,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({

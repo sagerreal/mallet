@@ -32,7 +32,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, JobLine, Service } from "@/lib/store/types";
 import type { LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
@@ -55,7 +55,6 @@ import { fmt$ } from "@/lib/format";
 export function PriceBuilderModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
-  const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const setJobLines = useAppStore((s) => s.setJobLines);
@@ -139,11 +138,10 @@ export function PriceBuilderModalContent() {
   // Commit the built lines straight to the job — no signature, no on-site
   // approval (the office set the price). Map to JobLine[] and drop zero lines.
 
-  // Close back to the job it came from (prototype tqClose re-opens openJob) —
-  // so ✕ / Back land on the job, never a dead-end blank list.
+  // Close back to the job that PUSHED this builder — the modal back-stack owns
+  // the return (closeModal pops), so ✕ / Back land on the job, never a dead end.
   function returnToJob() {
-    if (job) openModal(MODAL.JOB, { jobId: job.id });
-    else close();
+    close();
   }
 
   // Persist the built lines to the job (v1.jobs.setLines) BEFORE closing so the

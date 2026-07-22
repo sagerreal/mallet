@@ -39,6 +39,7 @@ let openModalMock = vi.fn();
 vi.mock("@/lib/store/app-store", () => ({
   useCloseModal: () => closeMock,
   useOpenModal: () => openModalMock,
+  usePushModal: () => openModalMock,
   useActiveModal: () => null,
   useAppStore: Object.assign(
     (selector: (s: typeof storeState) => unknown) => selector(storeState),
@@ -208,7 +209,10 @@ describe("NewCustomerModal — Build the price", () => {
     fireEvent.click(build);
     fireEvent.click(build);
 
-    await waitFor(() => expect(openModalMock).toHaveBeenCalledTimes(1));
+    // The flow now opens the job then pushes the builder over it (one flow,
+    // two modal writes through the same mocked hook).
+    await waitFor(() => expect(openModalMock).toHaveBeenCalledTimes(2));
+    expect(openModalMock).toHaveBeenCalledWith("job", { jobId: "job-9" });
     expect(openModalMock).toHaveBeenCalledWith("price-builder", { jobId: "job-9" });
     expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
     expect(addJob).toHaveBeenCalledTimes(1);

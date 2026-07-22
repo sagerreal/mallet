@@ -19,6 +19,7 @@ let closeMock = vi.fn();
 vi.mock("@/lib/store/app-store", () => ({
   useCloseModal: () => closeMock,
   useOpenModal: () => vi.fn(),
+  usePushModal: () => vi.fn(),
   useLeads: () => [],
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ addLead, updateLead, addJob, addVisit, updateJob, checklists: storeChecklists }),

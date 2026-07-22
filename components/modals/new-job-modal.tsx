@@ -27,7 +27,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { useCloseModal, useOpenModal, useLeads, useAppStore } from "@/lib/store/app-store";
+import { useCloseModal, useOpenModal, usePushModal, useLeads, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead, Visit } from "@/lib/store/types";
@@ -79,6 +79,7 @@ function clampHours(h: number): number {
 export function NewJobModalContent() {
   const close = useCloseModal();
   const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const leads = useLeads();
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
@@ -412,7 +413,11 @@ export function NewJobModalContent() {
     const { ok, job } = await commit();
     if (!ok) return;
     close();
-    if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+    if (job) {
+      // Land the builder ON the new job: ✕ / Done pop back to the job modal.
+      openModal(MODAL.JOB, { jobId: job.id });
+      pushModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+    }
   }
 
   // ---- collapsed row summaries (the value IS the state) ---------------------

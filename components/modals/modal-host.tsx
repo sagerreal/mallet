@@ -11,8 +11,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
-import { MODAL, type ModalId } from "@/lib/store/modal-ids";
+import { useActiveModal, useCloseModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import { Modal } from "./modal";
 
 // ----- dynamic modal content imports (all named exports → { default: X } -----
@@ -132,20 +132,11 @@ const ImportServicesModalContent = dynamic(
 export function ModalHost() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
-  const openModal = useOpenModal();
   const id = activeModal?.id;
 
-  // The price / tech-quote builders return to the job they were opened from on
-  // ✕ / backdrop / Escape (prototype tqClose re-opens the job), never a dead end.
-  const backToJob = (jobModalId: ModalId) => () => {
-    const jobId = activeModal?.params?.jobId;
-    if (typeof jobId === "string" && jobId.length > 0) openModal(jobModalId, { jobId });
-    else close();
-  };
-
-  // Contact/booking sub-modals (Call / Text / Book-a-visit) are PUSHED from their
-  // opener, so plain close pops back to it via the ui-slice modal back-stack —
-  // never a dead-end blank list, no returnTo params.
+  // Every drill-in (Call / Text / Book-a-visit / builders / previews) is PUSHED
+  // from its opener, so plain close pops back to it via the ui-slice modal
+  // back-stack — never a dead-end blank list, no returnTo/backTo helpers.
 
   return (
     <>
@@ -201,11 +192,11 @@ export function ModalHost() {
       </Modal>
 
       {/* 560px — the prototype's tq sheet width; keeps the add-a-line tiles a 2×2 grid */}
-      <Modal open={id === MODAL.PRICE_BUILDER} onClose={backToJob(MODAL.JOB)} maxWidth={560}>
+      <Modal open={id === MODAL.PRICE_BUILDER} onClose={close} maxWidth={560}>
         <PriceBuilderModalContent />
       </Modal>
 
-      <Modal open={id === MODAL.TECH_QUOTE} onClose={backToJob(MODAL.TECH_JOB)} maxWidth={560}>
+      <Modal open={id === MODAL.TECH_QUOTE} onClose={close} maxWidth={560}>
         <TechQuoteModalContent />
       </Modal>
 

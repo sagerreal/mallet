@@ -36,8 +36,26 @@ for other open UI branches before starting a batch.
 | P4f/1 detail pages | #161 | ported `money/[id]` + `jobs/[id]` + `job-actions` off Tailwind → prototype tokens + new `.stack-*` vertical-rhythm utility; extended `visual-modals` net to baseline the 2 dynamic detail routes (were unbaselined); Tailwind still installed (P4f/2 deletes it) |
 | P4f/2 delete Tailwind | (open) | ported the last 8 light files (auth ×3, error ×2, record-payment-sheet, sign-out-button, new-customer-modal) off Tailwind utilities; removed `@import "tailwindcss"` + `@theme` from globals.css, deleted `postcss.config.mjs` + both tailwind deps. **THIRD STYLING SYSTEM GONE.** Preflight removal made prototype.css self-sufficient (body `line-height:1.5` + `var(--font-*)` on font tokens); residual sub-pixel text-metric shift re-baselined the net (82/87 shots) — Owen-approved app-wide change (`text-sm` 14px→`--type-sm` 12px etc. aren't 1:1) |
 
+### P6 — shipped (PRs #177–#183, Jul 22; Owen waived the per-surface mockup approvals)
+
+| Pass | PR | What landed |
+|---|---|---|
+| P6/1 tech-job split | #177 | 1,561-line monolith → `components/modals/tech-job-modal/` (lead-modal convention): helpers + 8 sections + 334-line composition; comparators travel with their sections; pixel-identical |
+| P6/2 intake list-first | #178 | **`DisclosureRow` primitive** (the front-desk RuleRow, extracted; front-desk adopts it); new-customer keeps Name/Phone/Address open + 4 rows, new-job keeps Title/Type/Customer/Address + 3 rows; Build-the-price moved to the footer (terminal action, not a field); both baselines re-shot deliberately |
+| P6/3 invoice staging | #179 | draft EditBlock: Bill-to + Line items + rollup stay open; Send-to / Due / Discount-tax-deposit become disclosure rows (Get-Paid Send·Charge·Record had already landed in live testing) |
+| P6/4 pricebook flatten | #180 | "Break into parts" third level deleted — Parts (MaterialManager) is a peer COLUMN of the expanded service row (auto-fit grid stacks narrow); collapsed rows untouched |
+| P6/5 office lazy + mobile contract | #181 | non-default panes code-split via next/dynamic (+ ListLoading fallback); mobile `.pagehead` hide DECIDED: keep SectionTabs-as-mobile-identity, hide documented as a contract (prototype.css annotation + PageHeader + design-system.md) |
+| P6/6 modal back-stack | #182 | ui-slice `modalStack`: `openModal`=root (replace+clear), `pushModal`=drill-in, `closeModal`=pop — ✕/Escape/backdrop are "back", never a dead end; lead/job/estimate/invoice/company/evisit drill-ins converted; `returnTo` + `backToOpener` deleted; laterals keep replace |
+| P6/6b tech flows | #183 | tech-job pushes CLOSE_OUT/TECH_QUOTE/INVOICE/CALL/THREAD; tech-quote + price-builder returns are pops; create-flows land the builder ON the job (open JOB, push builder); `backToJob` deleted — the stack owns every return |
+
+**Still open after P6:** flip `ui/no-adhoc-card` + `ui/no-bare-field` warn→error once
+residue = 0 (the last P4e sweep); axe/keyboard stay local-only (CI runs the static
+gates — adding axe-in-CI is a separate decision); Owen-owned: 5-user usability test +
+human screen-reader pass.
+
 **Current scores:** a11y ~9 (automated-clean, locked) · states ~8 · tokens ~7 ·
-DRY ~5 · consistency ~5 · disclosure 4.
+DRY ~5 · consistency ~5 · disclosure 4 *(pre-P6 measurements — re-run the audit
+workflow for post-P6 numbers)*.
 
 ---
 

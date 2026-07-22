@@ -20,7 +20,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { JobLine, Service } from "@/lib/store/types";
 import type { LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
@@ -216,7 +216,6 @@ function Eyebrow({ custName }: EyebrowProps) {
 export function TechQuoteModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
-  const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const setJobLines = useAppStore((s) => s.setJobLines);
@@ -363,10 +362,10 @@ export function TechQuoteModalContent() {
 
   const chosenTier: Tier = chosen ?? "better";
 
-  // Close back to the tech job view it was opened from (prototype tqClose → openJob).
+  // Close back to the tech job view that PUSHED this builder — the modal
+  // back-stack owns the return (closeModal pops).
   function returnToJob() {
-    if (job) openModal(MODAL.TECH_JOB, { jobId: job.id });
-    else close();
+    close();
   }
 
   // Persist the chosen tier's lines to the job (v1.jobs.setLines) BEFORE closing.
