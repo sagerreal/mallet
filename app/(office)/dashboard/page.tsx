@@ -18,10 +18,25 @@ import { HandoffNote } from "@/features/home/handoff-note";
 import { HomePipe } from "@/features/home/home-pipe";
 import { OkQueue } from "@/features/home/ok-queue";
 import { SetupChecklist } from "@/features/home/setup-checklist";
+import dynamic from "next/dynamic";
 import { useMe } from "@/features/identity/hooks";
-import { FrontDeskPane } from "@/features/office/front-desk-pane";
-import { PricebookPane } from "@/features/office/pricebook-pane";
-import { ChecklistsPanel } from "@/features/jobs/checklists-panel";
+import { ListLoading } from "@/components/shared/list-loading";
+
+// Non-default panes are code-split (modal-host precedent): Today is the landing
+// tab and stays static; the other three load their chunk on first visit, with
+// the shared shimmer while it arrives. Each pane still mounts only when active.
+const FrontDeskPane = dynamic(
+  () => import("@/features/office/front-desk-pane").then((m) => ({ default: m.FrontDeskPane })),
+  { ssr: false, loading: () => <ListLoading /> },
+);
+const PricebookPane = dynamic(
+  () => import("@/features/office/pricebook-pane").then((m) => ({ default: m.PricebookPane })),
+  { ssr: false, loading: () => <ListLoading /> },
+);
+const ChecklistsPanel = dynamic(
+  () => import("@/features/jobs/checklists-panel").then((m) => ({ default: m.ChecklistsPanel })),
+  { ssr: false, loading: () => <ListLoading /> },
+);
 
 type OfficeTab = "today" | "frontdesk" | "pricebook" | "checklists";
 const OFFICE_TABS: readonly OfficeTab[] = ["today", "frontdesk", "pricebook", "checklists"];

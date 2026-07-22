@@ -43,21 +43,22 @@ describe("Office page — one tab bar, four panes", () => {
     expect(screen.getByRole("tab", { name: "Checklists" })).toBeTruthy();
   });
 
-  it("tabbing over swaps the pane in place — no navigation", () => {
+  it("tabbing over swaps the pane in place — no navigation", async () => {
     render(<OfficePage />);
     fireEvent.click(screen.getByRole("tab", { name: /Front Desk/ }));
-    expect(screen.getByTestId("fd-pane")).toBeTruthy();
+    // Panes are code-split (next/dynamic) — resolution is async, so find*.
+    expect(await screen.findByTestId("fd-pane")).toBeTruthy();
     expect(screen.queryByTestId("handoff")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: /Pricebook/ }));
-    expect(screen.getByTestId("pb-pane")).toBeTruthy();
+    expect(await screen.findByTestId("pb-pane")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Checklists" }));
-    expect(screen.getByTestId("cl-pane")).toBeTruthy();
+    expect(await screen.findByTestId("cl-pane")).toBeTruthy();
   });
 
-  it("deep-links: ?tab=pricebook opens the Pricebook pane directly", () => {
+  it("deep-links: ?tab=pricebook opens the Pricebook pane directly", async () => {
     window.history.replaceState(null, "", "/dashboard?tab=pricebook");
     render(<OfficePage />);
-    expect(screen.getByTestId("pb-pane")).toBeTruthy();
+    expect(await screen.findByTestId("pb-pane")).toBeTruthy();
     expect(screen.queryByTestId("handoff")).toBeNull();
   });
 });

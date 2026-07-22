@@ -1788,7 +1788,9 @@
     /* Jobs page header stacks cleanly on mobile */
     .jh-head{display:none}
     .money-head{display:none}
-    /* Customers/list pages: hide desktop header chrome entirely — mob-ctrl replaces it */
+    /* MOBILE CONTRACT (decided, P6): SectionTabs is the page identity on mobile,
+       so desktop header chrome hides here app-wide — deliberate, not a bug.
+       See components/ui/page-header.tsx. mob-ctrl/mob-new replace the actions. */
     .pagehead{display:none}
     .sub{display:none}
     .segsw{display:none}

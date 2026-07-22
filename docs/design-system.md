@@ -75,9 +75,10 @@ Every one renders a `prototype.css` class; none carry per-surface style hacks.
 | `Badge` | `.pill` (+ tone) | flat status/label pills |
 | `Field` / `Input` / `Select` | `.field` wrapper + descendant-styled controls | labelled form fields |
 | `COMPACT_INPUT` (const) | inline compact treatment | dense inputs that must override `.field input` sizing |
-| `PageHeader` | `.pagehead` (title + actions + optional subtitle) | the one page/section header |
+| `PageHeader` | `.pagehead` (title + actions + optional subtitle) | the one page/section header — hidden on mobile BY CONTRACT (SectionTabs is the mobile page identity; actions need a `.mob-new` home) |
 | `Sheet` | in-flow titled card (not a modal) | expand-below-trigger panels |
 | `Row` | `.uirow` (renders `<button>` when interactive) | list rows that are clickable |
+| `DisclosureRow` | `.fdd` (label over live value, editor expands in-flow) | staged/optional form inputs — the collapsed value IS the summary; never for a form's 2-3 essentials (open `.field`s) or a single action (a button) |
 
 Shared behaviour: `FirstRunEmptyState`, `ListLoading`, `LoadFailed`, `SavedFlash` +
 `useSaveFlash`, `StagePill`, `WriteErrorToast`, `ViewToggle`.
