@@ -247,6 +247,7 @@ function ExpandedEditor({
     (service.emergencyTriggers ?? "").length > 0,
   );
   const [showBallpark, setShowBallpark] = useState((service.ballpark ?? "").length > 0);
+  const [showCerts, setShowCerts] = useState((service.requiredCerts ?? []).length > 0);
 
   // Route + price DERIVE the stored lane (book+price=flat, book alone=repair, quote=estimate).
   function handleRouteChange(next: BookingRoute) {
@@ -352,11 +353,16 @@ function ExpandedEditor({
         </div>
       )}
 
-      <ServiceCertChipsEditor
-        index={index}
-        certs={service.requiredCerts ?? []}
-        updateBookingService={updateBookingService}
-      />
+      {/* Certifications feed crew dispatch when the job (booked now, or quoted
+          then created later) gets scheduled — but most services don't need them,
+          so the editor stages behind the add-button below. */}
+      {showCerts && (
+        <ServiceCertChipsEditor
+          index={index}
+          certs={service.requiredCerts ?? []}
+          updateBookingService={updateBookingService}
+        />
+      )}
 
       </div>
 
@@ -380,6 +386,11 @@ function ExpandedEditor({
           {route === "quote" && !showBallpark && (
             <button type="button" className="btn sm ghost" onClick={() => setShowBallpark(true)}>
               + Ballpark range
+            </button>
+          )}
+          {!showCerts && (
+            <button type="button" className="btn sm ghost" onClick={() => setShowCerts(true)}>
+              + Certifications
             </button>
           )}
         </div>
