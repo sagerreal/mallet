@@ -22,6 +22,7 @@ import {
   useActiveModal,
   useCloseModal,
   useOpenModal,
+  usePushModal,
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -252,6 +253,7 @@ export function EvisitModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
   const openModal = useOpenModal();
+  const pushModal = usePushModal();
 
   const leads = useAppStore((s) => s.leads);
   const jobs = useAppStore((s) => s.jobs);
@@ -339,13 +341,13 @@ export function EvisitModalContent() {
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button
             className="btn"
-            onClick={() => openModal(MODAL.CALL, { leadId: lead.id })}
+            onClick={() => pushModal(MODAL.CALL, { leadId: lead.id })}
           >
             Call
           </button>
           <button
             className="btn"
-            onClick={() => openModal(MODAL.THREAD, { leadId: lead.id })}
+            onClick={() => pushModal(MODAL.THREAD, { leadId: lead.id })}
           >
             Text
           </button>

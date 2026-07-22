@@ -143,32 +143,24 @@ export function ModalHost() {
     else close();
   };
 
-  // Contact/booking sub-modals (Call / Text / Book-a-visit) return to the modal
-  // they were opened from (params.returnTo) — never a dead-end blank list.
-  const backToOpener = () => {
-    const returnTo = activeModal?.params?.returnTo as ModalId | undefined;
-    const leadId = activeModal?.params?.leadId;
-    if (returnTo === MODAL.LEAD && typeof leadId === "string" && leadId.length > 0) {
-      openModal(MODAL.LEAD, { leadId });
-    } else {
-      close();
-    }
-  };
+  // Contact/booking sub-modals (Call / Text / Book-a-visit) are PUSHED from their
+  // opener, so plain close pops back to it via the ui-slice modal back-stack —
+  // never a dead-end blank list, no returnTo params.
 
   return (
     <>
       <LeadModal open={id === MODAL.LEAD} />
       <NewCustomerModal open={id === MODAL.NEW_CUSTOMER} />
 
-      <Modal open={id === MODAL.CALL} onClose={backToOpener}>
+      <Modal open={id === MODAL.CALL} onClose={close}>
         <CallModalContent />
       </Modal>
 
-      <Modal open={id === MODAL.THREAD} onClose={backToOpener}>
+      <Modal open={id === MODAL.THREAD} onClose={close}>
         <ThreadModalContent />
       </Modal>
 
-      <Modal open={id === MODAL.VISIT} onClose={backToOpener}>
+      <Modal open={id === MODAL.VISIT} onClose={close}>
         <VisitModalContent />
       </Modal>
 

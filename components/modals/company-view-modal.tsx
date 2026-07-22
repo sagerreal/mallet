@@ -16,7 +16,7 @@ import {
   useCompanies,
   useLeads,
   useEstimates,
-  useOpenModal,
+  usePushModal,
   useCloseModal,
   useAppStore,
 } from "@/lib/store/app-store";
@@ -168,7 +168,7 @@ export function CompanyViewModalContent() {
   const companies = useCompanies();
   const leads = useLeads();
   const estimates = useEstimates();
-  const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const closeModal = useCloseModal();
   const updateCompany = useAppStore((s) => s.updateCompany);
 
@@ -220,7 +220,7 @@ export function CompanyViewModalContent() {
             className="btn primary"
             // Pre-links the company: the New-customer modal seeds Business + the
             // company name from this param, so the lead lands in Linked leads.
-            onClick={() => openModal(MODAL.NEW_CUSTOMER, { companyId: company.id })}
+            onClick={() => pushModal(MODAL.NEW_CUSTOMER, { companyId: company.id })}
           >
             + New customer for {firstName(company.name)}
           </button>
@@ -257,7 +257,7 @@ export function CompanyViewModalContent() {
         <div>
           <LinkedLeadsCard
             contacts={contacts}
-            onOpenLead={(id) => openModal(MODAL.LEAD, { leadId: id })}
+            onOpenLead={(id) => pushModal(MODAL.LEAD, { leadId: id })}
           />
           <WorkHistoryCard contacts={contacts} />
         </div>

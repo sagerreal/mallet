@@ -407,6 +407,8 @@ export interface ActiveModal {
 
 export interface UIState {
   activeModal: ActiveModal | null;
+  /** Parents of the active modal (drill-ins via pushModal) — closeModal pops. */
+  modalStack: ActiveModal[];
   custSeg: "people" | "biz";
   /** Home "Needs your OK" items the owner skipped — never lead again this session. */
   dismissedAttention: string[];

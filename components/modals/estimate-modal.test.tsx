@@ -34,6 +34,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "est", params: { estId: "est-1" } }),
   useCloseModal: () => vi.fn(),
   useOpenModal: () => vi.fn(),
+  usePushModal: () => vi.fn(),
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) => selector(storeState()),
 }));
 

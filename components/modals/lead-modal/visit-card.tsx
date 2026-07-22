@@ -9,7 +9,7 @@
 
 import { useRouter } from "next/navigation";
 import type { Lead, Visit } from "@/lib/store/types";
-import { useAppStore, useOpenModal, useCloseModal } from "@/lib/store/app-store";
+import { useAppStore, usePushModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 
 interface VisitCardProps {
@@ -37,7 +37,7 @@ interface VisitRowProps {
 }
 
 function VisitRow({ visit, leadId, techName }: VisitRowProps) {
-  const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const closeModal = useCloseModal();
   const router = useRouter();
 
@@ -68,7 +68,7 @@ function VisitRow({ visit, leadId, techName }: VisitRowProps) {
       <div className="trig" style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }}>
         <button
           className="btn sm ghost"
-          onClick={() => openModal(MODAL.EVISIT, { leadId, visitId: visit.id })}
+          onClick={() => pushModal(MODAL.EVISIT, { leadId, visitId: visit.id })}
         >
           Open
         </button>

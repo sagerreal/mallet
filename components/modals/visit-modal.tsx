@@ -53,11 +53,10 @@ export function VisitModalContent() {
 
   if (!lead) return null;
 
-  // Cancel / ✕ returns to the modal it was opened from (the lead), not a dead end.
+  // Cancel / ✕ pops back to the modal that pushed this one (the lead) — the
+  // back-stack owns the return, no returnTo params needed.
   function cancel() {
-    const returnTo = activeModal?.params?.returnTo as string | undefined;
-    if (returnTo === MODAL.LEAD && lead) openModal(MODAL.LEAD, { leadId: lead.id });
-    else close();
+    close();
   }
 
   /** Persist the edited job wording + address back onto the lead. */
@@ -119,7 +118,7 @@ export function VisitModalContent() {
     const job = await createJobForLead();
     if (!job) return; // error already set; modal stays open
     close();
-    openModal(MODAL.PRICE_BUILDER, { jobId: job.id, returnTo: MODAL.JOB });
+    openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
   }
 
   async function submit() {
@@ -134,7 +133,7 @@ export function VisitModalContent() {
         status: "scheduled",
         scopeNotes: jobDesc.trim(),
       });
-      openModal(MODAL.LEAD, { leadId: lead!.id });
+      close(); // pop back to the lead that pushed this sheet
       return;
     }
     const job = await createJobForLead();

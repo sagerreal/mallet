@@ -36,6 +36,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ params: { leadId: LEAD_ID } }),
   useCloseModal: () => closeMock,
   useOpenModal: () => openModalMock,
+  usePushModal: () => openModalMock,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       leads: [LEAD],

@@ -29,6 +29,7 @@ import {
   useActiveModal,
   useCloseModal,
   useOpenModal,
+  usePushModal,
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -664,6 +665,7 @@ export function JobModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
   const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const router = useRouter();
 
   const jobs = useAppStore((s) => s.jobs);
@@ -786,7 +788,7 @@ export function JobModalContent() {
             disabled={!lead}
             title={!lead ? "No linked customer" : undefined}
             onClick={() => {
-              if (lead) openModal(MODAL.CALL, { leadId: lead.id });
+              if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
             }}
           >
             Call
@@ -796,7 +798,7 @@ export function JobModalContent() {
             disabled={!lead}
             title={!lead ? "No linked customer" : undefined}
             onClick={() => {
-              if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
+              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
             }}
           >
             Text
@@ -849,7 +851,7 @@ export function JobModalContent() {
       {/* 7. Price summary — PRICE + Total only, never cost/margin/profit */}
       <PriceSummary
         job={job}
-        onBuildPrice={() => openModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
+        onBuildPrice={() => pushModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
         onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
       />
 
