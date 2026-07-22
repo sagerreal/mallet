@@ -789,6 +789,13 @@
   .field label{display:block;font-size:var(--type-sm);font-weight:700;color:var(--ink-2);margin-bottom:var(--space-1)}
   .field input[type=text],.field input[type=number],.field input[type=tel],.field input[type=email],.field input[type=password],.field input[type=search],.field input[type=url],.field input[type=date],.field input[type=time],.field textarea,.field select{width:100%;border:1.5px solid var(--line);border-radius:var(--radius-md);padding:var(--space-3) var(--space-3);font-size:var(--type-md);font-family:inherit;background:var(--card);color:var(--ink);transition:border-color .12s,box-shadow .12s}
   .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+  /* The compact control treatment — the dense single-line input used across
+     settings/composer/modal rows (radius-sm, tighter padding, base type). One
+     class replaces the per-surface hand-rolled input chrome; layout (flex/width/
+     minWidth) stays inline. Placed after `.field input` so it wins for a compact
+     control that happens to sit inside a .field container (same specificity). */
+  input.field-compact,select.field-compact,textarea.field-compact{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-family:inherit;font-size:var(--type-base);transition:border-color .12s,box-shadow .12s}
+  input.field-compact:focus,select.field-compact:focus,textarea.field-compact:focus{outline:none;border-color:var(--accent);box-shadow:var(--shadow-focus)}
   /* compact app-styled select (kills raw native chrome + blue focus ring) */
   .tsel{appearance:none;-webkit-appearance:none;border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-8) var(--space-2) var(--space-3);font-family:inherit;font-size:var(--type-base);font-weight:600;color:var(--ink);background-color:var(--card);background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%23999" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>');background-repeat:no-repeat;background-position:right 10px center;cursor:pointer;transition:border-color .12s,box-shadow .12s}
   .tsel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
