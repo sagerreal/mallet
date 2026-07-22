@@ -7,6 +7,7 @@ import { Badge } from "./badge";
 import { Field, Input, Select } from "./input";
 import { PageHeader } from "./page-header";
 import { Row } from "./row";
+import { DisclosureRow } from "./disclosure-row";
 
 describe("ui primitives render prototype classes (one house style, no Tailwind)", () => {
   it("Button maps variant/size to prototype .btn modifiers", () => {
@@ -61,5 +62,30 @@ describe("ui primitives render prototype classes (one house style, no Tailwind)"
     const btn = screen.getByRole("button", { name: "Edit fee" });
     fireEvent.click(btn);
     expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("DisclosureRow: closed shows label+value only; open reveals the body; head never submits", () => {
+    const onToggle = vi.fn();
+    const { rerender } = render(
+      <DisclosureRow label="Lead source" value="Google" open={false} onToggle={onToggle}>
+        <input aria-label="editor" />
+      </DisclosureRow>,
+    );
+    const head = screen.getByRole("button", { name: /Lead source/ });
+    expect((head as HTMLButtonElement).type).toBe("button");
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Google")).toBeTruthy();
+    expect(screen.queryByLabelText("editor")).toBeNull();
+
+    fireEvent.click(head);
+    expect(onToggle).toHaveBeenCalledOnce();
+
+    rerender(
+      <DisclosureRow label="Lead source" value="Google" open={true} onToggle={onToggle}>
+        <input aria-label="editor" />
+      </DisclosureRow>,
+    );
+    expect(screen.getByRole("button", { name: /Lead source/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("editor")).toBeTruthy();
   });
 });

@@ -29,6 +29,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useCloseModal, useOpenModal, useLeads, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead, Visit } from "@/lib/store/types";
 
 // A custom-checklist line mentioning a photo becomes a photo step (shared heuristic).
@@ -53,9 +54,18 @@ const TYPE_DOT: Record<NjType, string> = {
 
 type NjType = "estimate" | "service";
 
+/** The staged (below-the-essentials) disclosure rows — one open at a time. */
+type RowKey = "visits" | "chk" | "notes";
+
 /** A visit row while composing — hours only, placed later on the Schedule. */
 interface VisitRow {
   h: number;
+}
+
+/** Clip a collapsed-row summary to the row word budget. */
+function clip(s: string, max = 28): string {
+  const t = s.trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
 
@@ -94,14 +104,15 @@ export function NewJobModalContent() {
   // Visits (unplaced hours rows) — default one row at the type's NJ_HOURS.
   const [visits, setVisits] = useState<VisitRow[]>([{ h: NJ_HOURS.service }]);
 
-  // Checklist picker (collapsed in-flow summary that expands).
+  // The staged rows (list-first accordion): one open at a time, front-desk
+  // RuleRow precedent. The collapsed value is the summary.
+  const [openRow, setOpenRow] = useState<RowKey | null>(null);
+  const toggleRow = (k: RowKey) => setOpenRow((prev) => (prev === k ? null : k));
+
+  // Checklist picker (lives in the checklist row).
   const [chkTpl, setChkTpl] = useState<string | null>(null);
   const [chkItems, setChkItems] = useState<string[]>([]);
-  const [chkOpen, setChkOpen] = useState(false);
   const [chkDraft, setChkDraft] = useState("");
-
-  // ▸ More reveal
-  const [moreOpen, setMoreOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -115,10 +126,11 @@ export function NewJobModalContent() {
 
   function selectType(t: NjType) {
     setNjType(t);
-    // Reset the checklist pick + collapse it (templates differ by type).
+    // Reset the checklist pick + collapse its row (templates differ by type;
+    // for estimates the row unmounts entirely).
     setChkTpl(null);
     setChkItems([]);
-    setChkOpen(false);
+    setOpenRow((prev) => (prev === "chk" ? null : prev));
     // If the visits are still a single untouched default, retune to the new type.
     setVisits((prev) =>
       prev.length === 1 && prev[0] !== undefined && NJ_HOURS_VALUES.includes(prev[0].h)
@@ -170,11 +182,11 @@ export function NewJobModalContent() {
     const next = tpl === "" ? null : tpl;
     setChkTpl(next);
     if (next !== "blank") {
+      // Picking a template (or none) completes the row — collapse to summary.
       setChkItems([]);
-      setChkOpen(false);
-    } else {
-      setChkOpen(true);
+      setOpenRow(null);
     }
+    // "blank" keeps the row open: the from-scratch builder needs the space.
   }
 
   function addChkItem() {
@@ -403,16 +415,19 @@ export function NewJobModalContent() {
     if (job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
   }
 
-  // ---- checklist summary label ----------------------------------------------
+  // ---- collapsed row summaries (the value IS the state) ---------------------
 
   const chkIsBlank = chkTpl === "blank";
-  const chkExpanded = chkOpen || chkIsBlank;
   const chkPicked = jobChecklists.find((c) => c.id === chkTpl);
   const chkCurName = !chkTpl
     ? "No checklist"
     : chkIsBlank
       ? "Custom checklist"
       : (chkPicked?.name ?? "No checklist");
+
+  const visitsTotalH = visits.reduce((s, v) => s + v.h, 0);
+  const visitsSummary = `${visits.length} visit${visits.length > 1 ? "s" : ""} · ${visitsTotalH}h`;
+  const notesSummary = notes.trim() ? clip(notes) : "—";
 
   // ---- render ---------------------------------------------------------------
 
@@ -511,200 +526,157 @@ export function NewJobModalContent() {
           />
         </div>
 
-        {/* Price (optional) — Job only (estimates are quoted by the office after the visit) */}
-        {njType !== "estimate" && (
-          <div className="field">
-            <label>
-              Price{" "}
-              <span
-                className="muted"
-                style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
-              >
-                (optional)
-              </span>
-            </label>
-            <button
-              type="button"
-              className="btn"
-              style={{ width: "100%", justifyContent: "center" }}
-              onClick={handleBuildPrice}
-            >
-              ✦ Build the price →
-            </button>
-            <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
-              Same builder your crew uses — or price later.
-            </div>
-          </div>
-        )}
-
-        {/* Visits — unplaced hours rows */}
-        <div className="field" style={{ marginBottom: "0" }}>
-          <label>Visits</label>
-          <div>
-            {visits.map((v, i) => (
-              <div className="njvisit" key={i}>
-                <span className="njvisit-t">Visit {i + 1}</span>
-                <div className="njstepper">
-                  <button type="button" onClick={() => nudgeVisit(i, -0.5)} aria-label="less time">
-                    −
-                  </button>
-                  <input
-                    type="number"
-                    min={0.25}
-                    step={0.25}
-                    value={v.h}
-                    onChange={(e) => setVisitHours(i, e.target.value)}
-                  />
-                  <span className="u">h</span>
-                  <button type="button" onClick={() => nudgeVisit(i, 0.5)} aria-label="more time">
-                    +
-                  </button>
-                </div>
-                {visits.length > 1 && (
-                  <button
-                    type="button"
-                    className="njvisit-x"
-                    onClick={() => removeVisitRow(i)}
-                    aria-label="remove visit"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "var(--space-3)",
-              marginTop: "var(--space-1)",
-            }}
+        {/* The staged details — a definition list of disclosure rows (front-desk
+            RuleRow pattern): label · current value, one editor open at a time,
+            everything in-flow. Title/type/customer/address above are the whole
+            90% intake; these rows are the "one level down". Price is a terminal
+            action, so it lives in the footer, not here. */}
+        <div style={{ borderTop: "1px solid var(--line-2)", margin: "var(--space-2) 0 0" }}>
+          <DisclosureRow
+            label="Visits"
+            value={visitsSummary}
+            open={openRow === "visits"}
+            onToggle={() => toggleRow("visits")}
           >
-            <span
-              className="linklike"
-              style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
-              onClick={addVisitRow}
-            >
-              + Add a visit
-            </span>
-            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              drag onto the Schedule to book
-            </span>
-          </div>
-        </div>
-
-        {/* Checklist picker — collapsed in-flow summary that expands. Jobs only:
-            estimates attach to the lead, which carries no checklist. */}
-        {njType === "service" && (
-        <div className="field" style={{ marginTop: "var(--space-4)", marginBottom: "0" }}>
-          <label>
-            Before-you-leave checklist{" "}
-            <span
-              className="muted"
-              style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
-            >
-              (optional)
-            </span>
-          </label>
-          <div>
-            <button
-              type="button"
-              className={`njchk-toggle${chkExpanded ? " open" : ""}`}
-              onClick={() => setChkOpen((o) => !o)}
-            >
-              <span className="caret">▸</span>
-              <span style={{ flex: 1, fontWeight: chkTpl ? 700 : 500 }}>{chkCurName}</span>
-              <span className="chg">{chkExpanded ? "" : "change"}</span>
-            </button>
-
-            {chkExpanded && (
-              <>
-                <div className="njchklist" style={{ marginTop: "var(--space-2)" }}>
-                  <button
-                    type="button"
-                    className={`njchk-row${!chkTpl ? " sel" : ""}`}
-                    onClick={() => pickChecklist("")}
-                  >
-                    <span className="njchk-dot">✓</span>
-                    <span style={{ flex: 1 }}>No checklist</span>
-                  </button>
-                  {jobChecklists.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className={`njchk-row${chkTpl === c.id ? " sel" : ""}`}
-                      onClick={() => pickChecklist(c.id)}
-                    >
-                      <span className="njchk-dot">✓</span>
-                      <span style={{ flex: 1 }}>{c.name}</span>
-                      <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
+            <div>
+              {visits.map((v, i) => (
+                <div className="njvisit" key={i}>
+                  <span className="njvisit-t">Visit {i + 1}</span>
+                  <div className="njstepper">
+                    <button type="button" onClick={() => nudgeVisit(i, -0.5)} aria-label="less time">
+                      −
                     </button>
-                  ))}
+                    <input
+                      type="number"
+                      min={0.25}
+                      step={0.25}
+                      value={v.h}
+                      onChange={(e) => setVisitHours(i, e.target.value)}
+                    />
+                    <span className="u">h</span>
+                    <button type="button" onClick={() => nudgeVisit(i, 0.5)} aria-label="more time">
+                      +
+                    </button>
+                  </div>
+                  {visits.length > 1 && (
+                    <button
+                      type="button"
+                      className="njvisit-x"
+                      onClick={() => removeVisitRow(i)}
+                      aria-label="remove visit"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
+              ))}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "var(--space-3)",
+                marginTop: "var(--space-1)",
+              }}
+            >
+              <span
+                className="linklike"
+                style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
+                onClick={addVisitRow}
+              >
+                + Add a visit
+              </span>
+              <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+                drag onto the Schedule to book
+              </span>
+            </div>
+          </DisclosureRow>
 
+          {/* Jobs only: estimates attach to the lead, which carries no checklist. */}
+          {njType === "service" && (
+            <DisclosureRow
+              label="Before-you-leave checklist"
+              value={chkCurName}
+              open={openRow === "chk" || chkIsBlank}
+              onToggle={() => toggleRow("chk")}
+            >
+              <div className="njchklist">
                 <button
                   type="button"
-                  className={`njchk-build${chkIsBlank ? " sel" : ""}`}
-                  onClick={() => pickChecklist("blank")}
+                  className={`njchk-row${!chkTpl ? " sel" : ""}`}
+                  onClick={() => pickChecklist("")}
                 >
-                  <span className="plus">+</span>Build from scratch
+                  <span className="njchk-dot">✓</span>
+                  <span style={{ flex: 1 }}>No checklist</span>
                 </button>
+                {jobChecklists.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`njchk-row${chkTpl === c.id ? " sel" : ""}`}
+                    onClick={() => pickChecklist(c.id)}
+                  >
+                    <span className="njchk-dot">✓</span>
+                    <span style={{ flex: 1 }}>{c.name}</span>
+                    <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
+                  </button>
+                ))}
+              </div>
 
-                {chkIsBlank && (
-                  <div className="njbuilder">
-                    {chkItems.map((t, i) => (
-                      <div className="njbi" key={i}>
-                        <span style={{ flex: 1 }}>{t}</span>
-                        <span
-                          className="linklike"
-                          style={{ color: "var(--ink-3)", fontWeight: 800 }}
-                          onClick={() => removeChkItem(i)}
-                        >
-                          ✕
-                        </span>
-                      </div>
-                    ))}
-                    <div
-                      className="cfrow"
-                      style={{ marginTop: chkItems.length ? 8 : 0 }}
-                    >
-                      <input
-                        placeholder="e.g. Photo: dry under the sink"
-                        style={{ flex: 2 }}
-                        value={chkDraft}
-                        onChange={(e) => setChkDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addChkItem();
-                          }
-                        }}
-                      />
-                      <button type="button" className="btn sm primary" onClick={addChkItem}>
-                        Add item
-                      </button>
+              <button
+                type="button"
+                className={`njchk-build${chkIsBlank ? " sel" : ""}`}
+                onClick={() => pickChecklist("blank")}
+              >
+                <span className="plus">+</span>Build from scratch
+              </button>
+
+              {chkIsBlank && (
+                <div className="njbuilder">
+                  {chkItems.map((t, i) => (
+                    <div className="njbi" key={i}>
+                      <span style={{ flex: 1 }}>{t}</span>
+                      <span
+                        className="linklike"
+                        style={{ color: "var(--ink-3)", fontWeight: 800 }}
+                        onClick={() => removeChkItem(i)}
+                      >
+                        ✕
+                      </span>
                     </div>
+                  ))}
+                  <div
+                    className="cfrow"
+                    style={{ marginTop: chkItems.length ? 8 : 0 }}
+                  >
+                    <input
+                      placeholder="e.g. Photo: dry under the sink"
+                      style={{ flex: 2 }}
+                      value={chkDraft}
+                      onChange={(e) => setChkDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addChkItem();
+                        }
+                      }}
+                    />
+                    <button type="button" className="btn sm primary" onClick={addChkItem}>
+                      Add item
+                    </button>
                   </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-        )}
+                </div>
+              )}
+            </DisclosureRow>
+          )}
 
-        {/* ▸ More reveal — Notes */}
-        <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginTop: "var(--space-4)" }}>
-          <div
-            className="reveal-head"
-            onClick={() => setMoreOpen((o) => !o)}
-            role="button"
-            aria-expanded={moreOpen}
+          <DisclosureRow
+            label="Notes"
+            value={notesSummary}
+            open={openRow === "notes"}
+            onToggle={() => toggleRow("notes")}
           >
-            <span className="caret">▸</span> More
-          </div>
-          <div className="reveal-body">
             <div className="field" style={{ marginBottom: "0" }}>
               <label>Notes</label>
               <input
@@ -714,18 +686,25 @@ export function NewJobModalContent() {
                 onChange={(e) => setNotes(e.target.value)}
               />
             </div>
-          </div>
+          </DisclosureRow>
         </div>
 
         {error && (
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
         )}
 
-        {/* Footer */}
+        {/* Footer — Build-the-price is a terminal action (creates the job, then
+            opens the builder), so it belongs here beside Create, not as a form
+            field. Jobs only: estimates are quoted by the office after the visit. */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
           <button type="button" className="btn ghost" onClick={close}>
             Cancel
           </button>
+          {njType !== "estimate" && (
+            <button type="button" className="btn" onClick={handleBuildPrice}>
+              ✦ Build the price →
+            </button>
+          )}
           <button type="submit" className="btn primary">
             Create job
           </button>
