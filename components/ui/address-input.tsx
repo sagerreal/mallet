@@ -17,7 +17,7 @@
 
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useId } from "react";
 
 const PLACES_URL = "https://places.googleapis.com/v1/places:autocomplete";
 const MAX_SUGGESTIONS = 5;
@@ -49,6 +49,7 @@ export function AddressInput({
   "aria-label": ariaLabel,
 }: AddressInputProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+  const listboxId = useId();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [open, setOpen] = useState(false);
@@ -168,14 +169,17 @@ export function AddressInput({
         onBlur={onBlur}
         placeholder={placeholder}
         className={className}
+        role="combobox"
         aria-label={ariaLabel}
         aria-autocomplete={apiKey ? "list" : "none"}
         aria-expanded={open}
+        aria-controls={open && suggestions.length > 0 ? listboxId : undefined}
         autoComplete="off"
         style={{ width: "100%", ...inputStyle }}
       />
       {open && suggestions.length > 0 && (
         <ul
+          id={listboxId}
           role="listbox"
           style={{
             position: "absolute",
