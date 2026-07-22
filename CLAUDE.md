@@ -99,9 +99,14 @@ Tailwind-free hand-rolled CSS (prototype-faithful).
   flush. Suggestion lists render under their input, in-flow.
 - **UI copy is functional, not chatty.** Errors name the actual problem and next step.
 - No demo/sample/seed data — everything DB-backed. No dead buttons: wire a control or delete it.
+- **Compose the primitives; never hand-roll.** Read `docs/design-system.md` first — style with
+  the `--space/--type/--radius` tokens and the `components/ui` + `components/shared` primitives,
+  never a raw px or a hand-rolled card/field/button. `pnpm lint` (+ `lint:css`) now FAIL on a raw
+  token, a bad `aria-*`, or a missing `alt`; the visual/a11y nets (`E2E_VISUAL=1`) are the
+  pre-merge gate for pixels/axe — run them and re-baseline deliberately for any UI change.
 - Verify work against Owen's stated logic; screenshot-verify UI when feasible; run the full gate
-  (tsc · lint · unit · int · coverage · build) before calling a branch done; open a PR (Owen
-  merges); adversarial review for non-trivial branches.
+  (tsc · lint · lint:css · unit · int · coverage · build) before calling a branch done; open a PR
+  (Owen merges); adversarial review for non-trivial branches.
 
 ## Where deeper context lives
 
