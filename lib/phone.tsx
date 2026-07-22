@@ -87,12 +87,12 @@ export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel }: Ph
   }
 
   return (
-    <div style={{ marginTop: 12, maxWidth: 440 }}>
-      <div style={{ fontSize: 19, fontWeight: 800, color: "var(--ink)", lineHeight: 1.25 }}>
+    <div style={{ marginTop: "var(--space-3)", maxWidth: 440 }}>
+      <div style={{ fontSize: "var(--type-xl)", fontWeight: 800, color: "var(--ink)", lineHeight: 1.25 }}>
         {label}
       </div>
       {sub && (
-        <div style={{ fontSize: 14.5, color: "var(--ink-2)", marginTop: 4 }}>{sub}</div>
+        <div style={{ fontSize: "var(--type-md)", color: "var(--ink-2)", marginTop: "var(--space-1)" }}>{sub}</div>
       )}
       <input
         type="tel"
@@ -115,23 +115,23 @@ export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel }: Ph
           display: "block",
           width: "100%",
           boxSizing: "border-box",
-          marginTop: 12,
+          marginTop: "var(--space-3)",
           border: `2px solid ${error ? "var(--red)" : "var(--line)"}`,
-          borderRadius: 11,
-          padding: "13px 15px",
+          borderRadius: "var(--radius)",
+          padding: "var(--space-3) var(--space-4)",
           fontFamily: "inherit",
-          fontSize: 17,
+          fontSize: "var(--type-lg)",
           background: "var(--card)",
           color: "var(--ink)",
         }}
       />
       {error && (
-        <div style={{ marginTop: 6, fontSize: 14, color: "var(--red)" }}>{error}</div>
+        <div style={{ marginTop: "var(--space-2)", fontSize: "var(--type-md)", color: "var(--red)" }}>{error}</div>
       )}
       <button
         type="button"
         className="btn primary"
-        style={{ width: "100%", marginTop: 10, padding: "13px 16px", fontSize: 15.5 }}
+        style={{ width: "100%", marginTop: "var(--space-3)", padding: "var(--space-3) var(--space-4)", fontSize: "var(--type-md)" }}
         onClick={save}
       >
         {cta}
@@ -139,7 +139,7 @@ export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel }: Ph
       <button
         type="button"
         className="linklike"
-        style={{ display: "block", margin: "10px auto 0", fontSize: 14, color: "var(--ink-2)" }}
+        style={{ display: "block", margin: "10px auto 0", fontSize: "var(--type-md)", color: "var(--ink-2)" }}
         onClick={onCancel}
       >
         Cancel
@@ -231,7 +231,7 @@ export function PhoneGate({
         />
       )}
       {adding && !has && !canAddPhone && (
-        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
           No number on file — ask the office to add one.
         </div>
       )}
