@@ -67,4 +67,12 @@ describe("MoneyLedger — first-run empty state", () => {
     expect(screen.queryByText("No invoices yet")).toBeNull();
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
+
+  it("shows the load-failed state — not the first-run screen — when the load errored", () => {
+    q = { isFetched: true, isError: true };
+    render(<MoneyLedger />);
+    expect(screen.queryByText("No invoices yet")).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
 });

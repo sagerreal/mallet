@@ -64,6 +64,14 @@ describe("JobsHome — first-run empty state", () => {
     expect(screen.queryByTestId("toolbar")).toBeNull();
   });
 
+  it("shows the load-failed state — not the first-run screen — when the load errored", () => {
+    q = { isFetched: true, isError: true };
+    setup();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByText(/Jobs land here/)).toBeNull();
+  });
+
   it("does not show the loading line once jobs are present, even mid-refetch", () => {
     storeState = store([{ id: "j1" }]);
     q = { isFetched: false, isError: false };

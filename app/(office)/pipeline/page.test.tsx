@@ -66,6 +66,14 @@ describe("PipelinePage — first-run empty state", () => {
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
+  it("shows the load-failed state — not the first-run screen — when the load errored", () => {
+    queryState = { isFetched: true, isError: true };
+    render(<PipelinePage />);
+    expect(screen.queryByText("Your pipeline is empty")).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
   it("wires the two paths to the New-customer modal and the composer", () => {
     render(<PipelinePage />);
     const frs = screen.getByText("Your pipeline is empty").closest(".frs") as HTMLElement;

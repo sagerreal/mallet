@@ -40,4 +40,12 @@ describe("ChecklistsPanel — first-run empty state", () => {
     expect(screen.queryByTestId("cl-card")).toBeNull();
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
+
+  it("shows the load-failed state — not the first-run screen — when the load errored", () => {
+    q = { isFetched: true, isError: true };
+    render(<ChecklistsPanel />);
+    expect(screen.queryByText("No checklists yet")).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
 });
