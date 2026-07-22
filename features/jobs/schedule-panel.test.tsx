@@ -51,4 +51,12 @@ describe("SchedulePanel — first-run empty state (board untouched)", () => {
     expect(screen.queryByText("Nothing to schedule yet")).toBeNull();
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
+
+  it("shows the load-failed state — not the first-run screen — when the load errored", () => {
+    q = { isFetched: true, isError: true };
+    render(<SchedulePanel />);
+    expect(screen.queryByText("Nothing to schedule yet")).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
 });

@@ -49,6 +49,14 @@ describe("TasksPage — first-run vs caught-up empty states", () => {
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
+  it("shows the load-failed state — not the first-run screen — when the load errored", () => {
+    queryState = { isFetched: true, isError: true };
+    render(<TasksPage />);
+    expect(screen.queryByText("No tasks yet")).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
   it("shows the list (neither empty message) when there are open tasks", () => {
     tasks = [task({ done: false })];
     render(<TasksPage />);
