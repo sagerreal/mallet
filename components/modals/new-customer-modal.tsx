@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Modal } from "./modal";
-import { useCloseModal, useOpenModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
+import { useCloseModal, useOpenModal, usePushModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
 import type { Job, Visit } from "@/lib/store/types";
@@ -40,6 +40,7 @@ const ESTIMATE_VISIT_HOURS = 0.5;
 export function NewCustomerModal({ open }: { open: boolean }) {
   const close = useCloseModal();
   const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const activeModal = useActiveModal();
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
@@ -279,7 +280,11 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     if (visitPurpose !== "look") utils.v1.customers.list.invalidate();
     reset();
     close();
-    if (openBuilder && job) openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+    if (openBuilder && job) {
+      // Land the builder ON the new job: ✕ / Done pop back to the job modal.
+      openModal(MODAL.JOB, { jobId: job.id });
+      pushModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+    }
   }
 
   /**

@@ -17,7 +17,7 @@
 import { useCallback } from "react";
 import {
   useActiveModal,
-  useOpenModal,
+  usePushModal,
   useCloseModal,
   useAppStore,
 } from "@/lib/store/app-store";
@@ -46,7 +46,7 @@ import { DoneBlock } from "./done-block";
 
 export function TechJobModalContent() {
   const activeModal = useActiveModal();
-  const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const close = useCloseModal();
 
   // Role gate: this modal is shared by owner/office (full controls) and techs.
@@ -122,12 +122,12 @@ export function TechJobModalContent() {
 
   const openCloseOut = useCallback(() => {
     if (!jobId) return;
-    openModal(MODAL.CLOSE_OUT, { jobId });
-  }, [jobId, openModal]);
+    pushModal(MODAL.CLOSE_OUT, { jobId });
+  }, [jobId, pushModal]);
 
   const openInvoiceModal = useCallback(
-    (invoiceId: string) => openModal(MODAL.INVOICE, { invoiceId }),
-    [openModal],
+    (invoiceId: string) => pushModal(MODAL.INVOICE, { invoiceId }),
+    [pushModal],
   );
 
   const sendToOffice = useCallback(() => {
@@ -147,8 +147,8 @@ export function TechJobModalContent() {
 
   const onPriceOnSite = useCallback(() => {
     if (!jobId) return;
-    openModal(MODAL.TECH_QUOTE, { jobId });
-  }, [jobId, openModal]);
+    pushModal(MODAL.TECH_QUOTE, { jobId });
+  }, [jobId, pushModal]);
 
   // Early return AFTER all hooks (rules of hooks).
   if (!job) return null;
@@ -171,7 +171,7 @@ export function TechJobModalContent() {
               disabled={!lead}
               title={!lead ? "No linked customer" : undefined}
               onClick={() => {
-                if (lead) openModal(MODAL.CALL, { leadId: lead.id });
+                if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
               }}
             >
               Call
@@ -181,7 +181,7 @@ export function TechJobModalContent() {
               disabled={!lead}
               title={!lead ? "No linked customer" : undefined}
               onClick={() => {
-                if (lead) openModal(MODAL.THREAD, { leadId: lead.id });
+                if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
               }}
             >
               Text
