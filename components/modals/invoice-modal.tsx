@@ -33,6 +33,7 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
 
@@ -149,10 +150,13 @@ function EditBlock({
   onSetPricing,
   onSetDepPaid,
 }: EditBlockProps) {
-  // pricebook browse + Pricing-options reveal are local UI (prototype _invPb / _invPx).
+  // pricebook browse is local UI (prototype _invPb); the staged details
+  // (send-to / due / adjustments) are disclosure rows, one open at a time.
   const [pbOpen, setPbOpen] = useState(false);
   const [pbQuery, setPbQuery] = useState("");
-  const [pxOpen, setPxOpen] = useState(false);
+  const [openRow, setOpenRow] = useState<"sendto" | "due" | "pricing" | null>(null);
+  const toggleRow = (k: "sendto" | "due" | "pricing") =>
+    setOpenRow((prev) => (prev === k ? null : k));
   const pbMatches = pbQuery.trim()
     ? services.filter((svc) =>
         svc.name.toLowerCase().includes(pbQuery.trim().toLowerCase())
@@ -170,6 +174,8 @@ function EditBlock({
   const cost = lines.reduce((s, l) => s + (l.q || 1) * (l.c || 0), 0);
   const margin = (invoice.total || 0) - cost;
   const td = invoice.termsDays;
+  // Collapsed row summary — the value IS the state (updates as the store writes).
+  const sendToSummary = [invoice.phone, invoice.email].filter(Boolean).join(" · ") || "—";
 
   // ---- immutable line ops (map to a fresh array, never mutate a line) -------
 
@@ -193,80 +199,21 @@ function EditBlock({
 
   return (
     <div style={{ marginTop: "var(--space-4)" }}>
-      {/* Bill-to + Phone */}
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Bill to</label>
-          <input
-            type="text"
-            list="invCustList"
-            defaultValue={invoice.cust || ""}
-            placeholder="search or add a customer"
-            onChange={(e) => onPickCust(e.target.value)}
-          />
-          <datalist id="invCustList">
-            {leads.map((l) => (
-              <option key={l.id} value={l.name || ""} />
-            ))}
-          </datalist>
-        </div>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Phone</label>
-          <input
-            type="tel"
-            defaultValue={invoice.phone || ""}
-            placeholder="(925) 555-0123"
-            onChange={(e) => onSetField({ phone: e.target.value.trim() })}
-          />
-        </div>
-      </div>
-
-      {/* Email + Terms */}
-      <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
-        <div className="field" style={{ margin: "0" }}>
-          <label>
-            Email{" "}
-            <span
-              className="muted"
-              style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
-            >
-              (for a PDF copy)
-            </span>
-          </label>
-          <input
-            type="email"
-            inputMode="email"
-            defaultValue={invoice.email || ""}
-            placeholder="name@email.com"
-            onChange={(e) => onSetField({ email: e.target.value.trim() })}
-          />
-        </div>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Due</label>
-          <div className="chips">
-            <button
-              type="button"
-              className={`chip${(td ?? 0) === 0 ? " sel" : ""}`}
-              onClick={() => onSetTerms(0)}
-            >
-              On receipt
-            </button>
-            <button
-              type="button"
-              className={`chip${td === 15 ? " sel" : ""}`}
-              onClick={() => onSetTerms(15)}
-            >
-              15 days
-            </button>
-            <button
-              type="button"
-              className={`chip${td === 30 ? " sel" : ""}`}
-              onClick={() => onSetTerms(30)}
-            >
-              30 days
-            </button>
-          </div>
-        </div>
+      {/* Bill-to — the one essential field, stays open (everything else stages). */}
+      <div className="field" style={{ margin: "0" }}>
+        <label>Bill to</label>
+        <input
+          type="text"
+          list="invCustList"
+          defaultValue={invoice.cust || ""}
+          placeholder="search or add a customer"
+          onChange={(e) => onPickCust(e.target.value)}
+        />
+        <datalist id="invCustList">
+          {leads.map((l) => (
+            <option key={l.id} value={l.name || ""} />
+          ))}
+        </datalist>
       </div>
 
       {/* Line items */}
@@ -421,16 +368,83 @@ function EditBlock({
         ) : null}
       </div>
 
-      {/* Pricing options reveal */}
-      <div className={`reveal ${pxOpen ? "open" : ""}`} style={{ marginTop: "var(--space-3)" }}>
-        <div className="reveal-head" onClick={() => setPxOpen((v) => !v)}>
-          <span className="caret">▸</span>{" "}
-          <b style={{ fontSize: "var(--type-base)" }}>Pricing options</b>{" "}
-          <span className="muted" style={{ fontWeight: 500, fontSize: "var(--type-sm)" }}>
-            — {pricingSummary(p, invoice.depPaid || 0) || "discount, tax, deposit"}
-          </span>
-        </div>
-        <div className="reveal-body">
+      {/* The staged details — disclosure rows (the intake-modal grammar):
+          label · current value, one editor open at a time, in-flow. */}
+      <div style={{ borderTop: "1px solid var(--line-2)", marginTop: "var(--space-4)" }}>
+        <DisclosureRow
+          label="Send to"
+          value={sendToSummary}
+          open={openRow === "sendto"}
+          onToggle={() => toggleRow("sendto")}
+        >
+          <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+            <div className="field" style={{ margin: "0" }}>
+              <label>Phone</label>
+              <input
+                type="tel"
+                defaultValue={invoice.phone || ""}
+                placeholder="(925) 555-0123"
+                onChange={(e) => onSetField({ phone: e.target.value.trim() })}
+              />
+            </div>
+            <div className="field" style={{ margin: "0" }}>
+              <label>
+                Email{" "}
+                <span
+                  className="muted"
+                  style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
+                >
+                  (for a PDF copy)
+                </span>
+              </label>
+              <input
+                type="email"
+                inputMode="email"
+                defaultValue={invoice.email || ""}
+                placeholder="name@email.com"
+                onChange={(e) => onSetField({ email: e.target.value.trim() })}
+              />
+            </div>
+          </div>
+        </DisclosureRow>
+
+        <DisclosureRow
+          label="Due"
+          value={(td ?? 0) === 0 ? "On receipt" : `${td} days`}
+          open={openRow === "due"}
+          onToggle={() => toggleRow("due")}
+        >
+          <div className="chips">
+            <button
+              type="button"
+              className={`chip${(td ?? 0) === 0 ? " sel" : ""}`}
+              onClick={() => onSetTerms(0)}
+            >
+              On receipt
+            </button>
+            <button
+              type="button"
+              className={`chip${td === 15 ? " sel" : ""}`}
+              onClick={() => onSetTerms(15)}
+            >
+              15 days
+            </button>
+            <button
+              type="button"
+              className={`chip${td === 30 ? " sel" : ""}`}
+              onClick={() => onSetTerms(30)}
+            >
+              30 days
+            </button>
+          </div>
+        </DisclosureRow>
+
+        <DisclosureRow
+          label="Discount, tax & deposit"
+          value={pricingSummary(p, invoice.depPaid || 0) || "None"}
+          open={openRow === "pricing"}
+          onToggle={() => toggleRow("pricing")}
+        >
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
             <div className="field" style={{ flex: 1, minWidth: 90, margin: "0" }}>
               <label>Discount %</label>
@@ -464,7 +478,7 @@ function EditBlock({
               />
             </div>
           </div>
-        </div>
+        </DisclosureRow>
       </div>
     </div>
   );
