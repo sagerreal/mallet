@@ -27,13 +27,17 @@ function keyName(prop) {
   return null;
 }
 
-/** True when a value node is a raw (non-tokenised) px/number, not var()/0/auto/%. */
-function isRawValue(node) {
+/** True when a value node is a raw (non-tokenised) px/number, not var()/0/auto/%.
+ *  `key` is the style property — asymmetric (multi-value) borderRadius shorthands
+ *  like "0 0 8px 8px" or "18px 18px 4px 18px" (chat bubbles, dropdown corners) are
+ *  a legitimate per-corner design, not a magic number, so they're not flagged. */
+function isRawValue(node, key) {
   if (!node || node.type !== "Literal") return false;
   if (typeof node.value === "number") return node.value !== 0;
   if (typeof node.value === "string") {
     const v = node.value;
     if (v.includes("var(") || v.includes("calc(") || v.includes("env(")) return false;
+    if (key === "borderRadius" && v.trim().includes(" ")) return false; // asymmetric corners
     return RAW_PX.test(v);
   }
   return false;
@@ -52,7 +56,7 @@ const noRawStyle = {
         for (const p of node.properties) {
           const key = keyName(p);
           if (!key || !TOKEN_PROPS.has(key)) continue;
-          if (isRawValue(p.value)) {
+          if (isRawValue(p.value, key)) {
             const raw = p.value.value;
             context.report({ node: p.value, messageId: "raw", data: { prop: key, value: String(raw) } });
           }
