@@ -89,19 +89,34 @@ const noAdhocCard = {
 const noBareField = {
   meta: {
     type: "suggestion",
-    docs: { description: "An inline-styled raw form control should use the Field primitive / .field container." },
+    docs: { description: "A raw form control styled with an ad-hoc inline object should use the Field primitive / .field container / a shared style const." },
     schema: [],
-    messages: { field: "Inline-styled <{{tag}}> — use the Field primitive or a .field container so it inherits the field styles." },
+    messages: { field: "Ad-hoc inline style on <{{tag}}> — wrap it in a .field/Field, add a class, or reference a shared style const (don't hand-roll per-input styling)." },
   },
   create(context) {
     const TAGS = new Set(["input", "select", "textarea"]);
     return {
       JSXOpeningElement(node) {
         if (node.name.type !== "JSXIdentifier" || !TAGS.has(node.name.name)) return;
-        const hasStyle = node.attributes.some(
+        const styleAttr = node.attributes.find(
           (a) => a.type === "JSXAttribute" && a.name.type === "JSXIdentifier" && a.name.name === "style",
         );
-        if (hasStyle) {
+        if (!styleAttr || styleAttr.value?.type !== "JSXExpressionContainer") return;
+        const expr = styleAttr.value.expression;
+        // Allow a shared style const reference (style={COMPACT_INPUT}) — that IS the
+        // DRY solution. Flag only an ad-hoc object literal with its own properties
+        // (hand-rolled per-input styling), including {{ ...SHARED, fontSize: 13 }}.
+        if (expr.type !== "ObjectExpression") return;
+        // Flag only CHROME props (the treatment .field/.field-compact provides);
+        // pure layout tweaks (flex/width/minWidth/…) legitimately stay inline.
+        const CHROME = new Set([
+          "border", "borderColor", "borderWidth", "borderStyle", "borderRadius",
+          "background", "backgroundColor", "boxShadow",
+          "fontFamily", "fontSize", "fontWeight", "padding",
+          "paddingTop", "paddingBottom", "paddingLeft", "paddingRight",
+        ]);
+        const hasChrome = expr.properties.some((p) => p.type === "Property" && CHROME.has(keyName(p)));
+        if (hasChrome) {
           context.report({ node, messageId: "field", data: { tag: node.name.name } });
         }
       },
