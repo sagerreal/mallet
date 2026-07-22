@@ -468,8 +468,10 @@
   .svccard-h .m{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3)}
   .svccard-h .sp{flex:1}
   .svccard button:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:-2px}
-  .fdcols{grid-template-columns:1fr 240px;gap:var(--space-8)}
-  .fdrail{border-left:1px solid var(--line-2);padding-left:var(--space-6)}
+  .fdcols{grid-template-columns:1fr 240px;gap:var(--space-6)}
+  /* Common region: the rules rail sits on the card surface like its Services
+     neighbor — a bordered panel, not loose text floating on the page bg. */
+  .fdrail{background:var(--card);border:1px solid var(--line-2);border-radius:var(--radius);padding:var(--space-2) var(--space-5) var(--space-3);align-self:start}
   .fdrail h3{padding-top:var(--space-3)}
   /* Tasks inline editor (features/tasks/editable-task-row.tsx) — the resting pencil affordance
      (always visible, brightens on hover) + the calm inset edit panel with labeled fields. */
