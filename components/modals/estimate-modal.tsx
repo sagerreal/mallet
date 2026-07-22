@@ -17,7 +17,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
@@ -77,7 +77,7 @@ function FollowUpTrail({ e }: { e: Estimate }) {
 export function EstimateModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
-  const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const estimates = useAppStore((s) => s.estimates);
   const leads = useAppStore((s) => s.leads);
   const updateEstimate = useAppStore((s) => s.updateEstimate);
@@ -421,7 +421,7 @@ export function EstimateModalContent() {
       {(e.status === "draft" || e.status === "sent") && (
         <div style={{ marginTop: "var(--space-3)" }}>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-3)" }}>
-            <button className="btn ghost" onClick={() => openModal(MODAL.CUST_QUOTE, { estId: e.id })}>
+            <button className="btn ghost" onClick={() => pushModal(MODAL.CUST_QUOTE, { estId: e.id })}>
               Preview as customer
             </button>
             {e.status === "draft" && !sendOpen && (

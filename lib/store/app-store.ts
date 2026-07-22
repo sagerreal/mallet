@@ -56,6 +56,7 @@ if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
 export const useActiveModal = () => useAppStore((s) => s.activeModal);
 export const useOpenModal = () => useAppStore((s) => s.openModal);
 export const useCloseModal = () => useAppStore((s) => s.closeModal);
+export const usePushModal = () => useAppStore((s) => s.pushModal);
 export const useLeads = () => useAppStore((s) => s.leads);
 export const useCompanies = () => useAppStore((s) => s.companies);
 export const useEstimates = () => useAppStore((s) => s.estimates);

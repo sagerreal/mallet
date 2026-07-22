@@ -8,7 +8,11 @@ import type { ActiveModal, UIState } from "../types";
 import type { ModalId } from "../modal-ids";
 
 export interface UISlice extends UIState {
+  /** ROOT open (from a page / command bar): replaces the modal and clears the stack. */
   openModal: (id: ModalId, params?: Record<string, unknown>) => void;
+  /** DRILL-IN (from inside a modal): remembers the parent; closeModal restores it. */
+  pushModal: (id: ModalId, params?: Record<string, unknown>) => void;
+  /** Pops to the parent drill-in if there is one, else closes — never a dead end. */
   closeModal: () => void;
   setCustSeg: (seg: "people" | "biz") => void;
   dismissAttention: (key: string) => void;
@@ -21,15 +25,26 @@ export interface UISlice extends UIState {
 export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
   // state
   activeModal: null,
+  modalStack: [],
   custSeg: "people",
   dismissedAttention: [],
   cmdSeed: null,
 
   // actions
   openModal: (id: ModalId, params?: Record<string, unknown>) =>
-    set({ activeModal: { id, params } }),
+    set({ activeModal: { id, params }, modalStack: [] }),
 
-  closeModal: () => set({ activeModal: null }),
+  pushModal: (id: ModalId, params?: Record<string, unknown>) =>
+    set((s) => ({
+      activeModal: { id, params },
+      modalStack: s.activeModal ? [...s.modalStack, s.activeModal] : s.modalStack,
+    })),
+
+  closeModal: () =>
+    set((s) => {
+      const parent = s.modalStack.at(-1) ?? null;
+      return { activeModal: parent, modalStack: s.modalStack.slice(0, -1) };
+    }),
 
   setCustSeg: (seg) => set({ custSeg: seg }),
 

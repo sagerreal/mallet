@@ -14,7 +14,7 @@ import { VisitCard } from "./visit-card";
 import { TasksCard } from "./tasks-card";
 import { MoreDetails } from "./more-details";
 import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
-import { useOpenModal } from "@/lib/store/app-store";
+import { usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
@@ -45,7 +45,7 @@ interface QuotesCardProps {
 }
 
 function QuotesCard({ estimates }: QuotesCardProps) {
-  const openModal = useOpenModal();
+  const pushModal = usePushModal();
 
   if (estimates.length === 0) return null;
 
@@ -62,7 +62,7 @@ function QuotesCard({ estimates }: QuotesCardProps) {
             key={e.id}
             className="stage-row"
             style={{ cursor: "pointer" }}
-            onClick={() => openModal(MODAL.EST, { estId: e.id })}
+            onClick={() => pushModal(MODAL.EST, { estId: e.id })}
           >
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: "var(--type-base)", fontWeight: 600 }}>

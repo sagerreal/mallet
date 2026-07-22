@@ -27,7 +27,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAppStore, useActiveModal, useCloseModal, useOpenModal } from "@/lib/store/app-store";
+import { useAppStore, useActiveModal, useCloseModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { calcQuote } from "@/lib/prototype-sample";
@@ -655,7 +655,7 @@ function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaid
 export function InvoiceModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
-  const openModal = useOpenModal();
+  const pushModal = usePushModal();
 
   const invoices = useAppStore((s) => s.invoices);
   const leads = useAppStore((s) => s.leads);
@@ -832,7 +832,7 @@ export function InvoiceModalContent() {
             Archive
           </button>
         )}
-        <button className="btn ghost" onClick={() => openModal(MODAL.CUST_INVOICE, { invoiceId: invoice.id })}>
+        <button className="btn ghost" onClick={() => pushModal(MODAL.CUST_INVOICE, { invoiceId: invoice.id })}>
           Preview as customer
         </button>
         <button className="btn primary" onClick={close}>

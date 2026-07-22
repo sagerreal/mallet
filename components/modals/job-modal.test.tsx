@@ -23,6 +23,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => null,
   useCloseModal: () => vi.fn(),
   useOpenModal: () => vi.fn(),
+  usePushModal: () => vi.fn(),
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ estimates: mockEstimates }),
 }));

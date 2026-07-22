@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Lead } from "@/lib/store/types";
 import { STAGE_PILL_CLS, leadInitials } from "@/lib/prototype-sample";
-import { useAppStore, useOpenModal, useCloseModal } from "@/lib/store/app-store";
+import { useAppStore, usePushModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { AddressInput } from "@/components/ui/address-input";
 
@@ -21,7 +21,7 @@ interface LeadHeaderProps {
 
 export function LeadHeader({ lead }: LeadHeaderProps) {
   const updateLead = useAppStore((s) => s.updateLead);
-  const openModal = useOpenModal();
+  const pushModal = usePushModal();
   const closeModal = useCloseModal();
   const router = useRouter();
 
@@ -183,13 +183,13 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
             input above also adds it), so no dead button and no blank sheet. */}
         <button
           className={`btn sm${callIsPrimary ? " primary" : " ghost"}`}
-          onClick={() => openModal(MODAL.CALL, { leadId: lead.id, returnTo: MODAL.LEAD })}
+          onClick={() => pushModal(MODAL.CALL, { leadId: lead.id })}
         >
           <PhoneIcon /> Call
         </button>
         <button
           className="btn sm ghost"
-          onClick={() => openModal(MODAL.THREAD, { leadId: lead.id, returnTo: MODAL.LEAD })}
+          onClick={() => pushModal(MODAL.THREAD, { leadId: lead.id })}
         >
           <ChatIcon /> Text
           {lead.unread ? (
@@ -205,7 +205,7 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
         {lead.stage !== "Won" && lead.stage !== "Lost" && (
           <button
             className="btn sm"
-            onClick={() => openModal(MODAL.VISIT, { leadId: lead.id, returnTo: MODAL.LEAD })}
+            onClick={() => pushModal(MODAL.VISIT, { leadId: lead.id })}
           >
             Book site visit
           </button>
