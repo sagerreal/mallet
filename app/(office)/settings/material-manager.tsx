@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Settings → Pricebook → service row → Level-2 "Break into parts" reveal (in-flow,
- * anchored under the service row — no floating UI/popovers). Lists the materials
+ * Settings → Pricebook → service row → the Parts column of the expanded editor
+ * (in-flow, anchored in the service row — no floating UI/popovers, no nested
+ * reveal). Lists the materials
  * attached to ONE service (name · qty · unit cost · line cost, each removable), the
  * "parts cost $X → price basis" rollup, and an add-part row that either attaches an
  * existing material (searched client-side, results render in-flow under the search

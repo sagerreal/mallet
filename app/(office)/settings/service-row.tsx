@@ -2,9 +2,11 @@
 
 /**
  * Settings → Pricebook → one service row. Level 0 shows just name → price; clicking
- * the row (▸/▾) reveals its details IN-FLOW underneath (no floating UI): category,
- * cost/margin (owner-only), labor hours, taxable, warranty, a "Break into parts"
- * materials reveal (owner-only — cost data), and a Remove action.
+ * the row (▸/▾) reveals the FULL editor IN-FLOW underneath (no floating UI, max two
+ * levels): the fields column (category, cost/margin owner-only, labor hours,
+ * taxable, warranty, Remove) beside the Parts column (materials, owner-only — cost
+ * data). Parts used to hide behind a third-level "Break into parts" reveal; it is
+ * now simply a column of the expanded row.
  * "Add Good/Better/Best" (option groups) is Phase 3 — intentionally absent here
  * (no dead buttons for features that don't exist yet).
  */
@@ -39,7 +41,6 @@ function marginPct(service: Service): number {
 
 export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchive }: ServiceRowProps) {
   const [open, setOpen] = useState(false);
-  const [partsOpen, setPartsOpen] = useState(false);
 
   return (
     <div style={{ borderBottom: "1px solid var(--line-2)" }}>
@@ -56,7 +57,17 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
       </div>
 
       {open && (
-        <div style={{ padding: "var(--space-1) var(--space-2) var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
+        <div
+          style={{
+            padding: "var(--space-1) var(--space-2) var(--space-4)",
+            display: "grid",
+            // Two columns when Parts shows (owner/office): fields | parts.
+            // auto-fit stacks them on narrow screens — still two levels, never three.
+            gridTemplateColumns: canSeeCost ? "repeat(auto-fit, minmax(280px, 1fr))" : "1fr",
+            gap: "var(--space-3) var(--space-6)",
+          }}
+        >
+        <div style={{ display: "grid", gap: "var(--space-3)", alignContent: "start" }}>
           <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Category</label>
             <select
@@ -127,23 +138,18 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
             />
           </div>
 
-          {canSeeCost && (
-            <div style={{ display: "grid", gap: "var(--space-2)" }}>
-              <button
-                className="btn sm ghost"
-                style={{ justifySelf: "start" }}
-                onClick={() => setPartsOpen((v) => !v)}
-                aria-expanded={partsOpen}
-              >
-                {partsOpen ? "▾" : "▸"} Break into parts
-              </button>
-              {partsOpen && <MaterialManager serviceId={service.id} canSeeCost={canSeeCost} />}
-            </div>
-          )}
-
           <div>
             <button className="btn sm ghost" onClick={() => onArchive(service.id)}>✕ Remove</button>
           </div>
+        </div>
+
+        {/* Parts — a peer column of the expanded editor, not a nested reveal.
+            MaterialManager carries its own labeled header. */}
+        {canSeeCost && (
+          <div style={{ alignSelf: "start" }}>
+            <MaterialManager serviceId={service.id} canSeeCost={canSeeCost} />
+          </div>
+        )}
         </div>
       )}
     </div>
