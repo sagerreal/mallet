@@ -20,6 +20,7 @@ import { StarterPlaybookModal } from "@/app/(office)/settings/starter-playbook-m
 import { playbookFor } from "@/app/(office)/settings/trade-playbooks";
 import { TagInput } from "@/app/(office)/settings/tag-input";
 import { HourSelect } from "@/app/(office)/settings/hour-select";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
 
 const MALLET_NUMBER = "(925) 555-0100";
 
@@ -135,17 +136,14 @@ export function FrontDeskPane() {
     );
   }
 
-  // One definition-list row: label over value; click toggles its editor in-flow below.
+  // One definition-list row: label over value; click toggles its editor in-flow
+  // below. Thin wrapper binding the shared DisclosureRow to this pane's
+  // one-open-at-a-time rule state.
   function RuleRow({ k, label, value, children }: { k: RuleKey; label: string; value: React.ReactNode; children: React.ReactNode }) {
-    const open = openRule === k;
     return (
-      <div className={open ? "fdd open" : "fdd"}>
-        <button className="fdd-head" onClick={() => toggleRule(k)} aria-expanded={open}>
-          <span className="fdd-l">{label}</span>
-          <span className="fdd-v">{value}</span>
-        </button>
-        {open && <div className="fdd-body">{children}</div>}
-      </div>
+      <DisclosureRow label={label} value={value} open={openRule === k} onToggle={() => toggleRule(k)}>
+        {children}
+      </DisclosureRow>
     );
   }
 

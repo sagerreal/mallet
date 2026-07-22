@@ -16,10 +16,20 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
 import type { Job, Visit } from "@/lib/store/types";
 import { AddressInput } from "@/components/ui/address-input";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { DEFAULT_SOURCES, mergeSources } from "@/features/customers/merge-sources";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 
 type VisitPurpose = "job" | "look" | null;
+
+/** The staged (below-the-essentials) rows — one open at a time. */
+type RowKey = "type" | "source" | "book" | "more";
+
+/** Clip a collapsed-row summary to the row word budget. */
+function clip(s: string, max = 28): string {
+  const t = s.trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
 
 /** The create mutation's success payload (leadDTO + the dedup `created` flag). */
 type CreatedCustomer = RouterOutputs["v1"]["customers"]["create"];
@@ -71,19 +81,21 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setBizName(co.name);
   }, [open, paramCompanyId]);
 
+  // The staged rows (list-first accordion): one open at a time, front-desk
+  // RuleRow precedent. The collapsed value is the summary.
+  const [openRow, setOpenRow] = useState<RowKey | null>(null);
+  const toggleRow = (k: RowKey) => setOpenRow((prev) => (prev === k ? null : k));
+
   // Source picker state
   const [source, setSource] = useState<string>("");
-  const [sourceOpen, setSourceOpen] = useState(false);
   const [showAddSource, setShowAddSource] = useState(false);
   const [newSourceValue, setNewSourceValue] = useState("");
 
-  // Book a visit reveal
-  const [bookOpen, setBookOpen] = useState(false);
+  // Book a visit row
   const [jobDesc, setJobDesc] = useState("");
   const [visitPurpose, setVisitPurpose] = useState<VisitPurpose>(null);
 
-  // More details reveal
-  const [moreOpen, setMoreOpen] = useState(false);
+  // More details row
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [address, setAddress] = useState("");
@@ -102,13 +114,11 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setIsBiz(false);
     setBizName("");
     setSource("");
-    setSourceOpen(false);
+    setOpenRow(null);
     setShowAddSource(false);
     setNewSourceValue("");
-    setBookOpen(false);
     setJobDesc("");
     setVisitPurpose(null);
-    setMoreOpen(false);
     setEmail("");
     setNotes("");
     setAddress("");
@@ -337,7 +347,8 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
   function selectSource(s: string) {
     setSource(s);
-    setSourceOpen(false);
+    // Picking a source completes the row — collapse it back to its summary.
+    setOpenRow(null);
     setShowAddSource(false);
     setNewSourceValue("");
   }
@@ -352,6 +363,23 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       setNewSourceValue("");
     }
   }
+
+  // ---- collapsed row summaries (the value IS the state) ---------------------
+  const typeSummary = isBiz
+    ? bizName.trim()
+      ? `Business · ${clip(bizName)}`
+      : "Business"
+    : "Person";
+  const bookSummary =
+    visitPurpose === null
+      ? "No"
+      : `${visitPurpose === "job" ? "Job" : "Estimate visit"}${jobDesc.trim() ? ` · ${clip(jobDesc)}` : ""}`;
+  const moreParts = [
+    email.trim() ? "email" : null,
+    notes.trim() ? "notes" : null,
+    customFields.length > 0 ? `${customFields.length} custom` : null,
+  ].filter(Boolean);
+  const moreSummary = moreParts.length ? moreParts.join(" · ") : "—";
 
   return (
     <Modal open={open} onClose={handleClose}>
@@ -394,53 +422,53 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           />
         </div>
 
-        {/* 4. Customer type chip toggle */}
-        <div className="field">
-          <label>Customer type</label>
-          <div className="chips">
-            <button
-              type="button"
-              className={`chip${!isBiz ? " sel" : ""}`}
-              onClick={() => setIsBiz(false)}
-            >
-              Person
-            </button>
-            <button
-              type="button"
-              className={`chip${isBiz ? " sel" : ""}`}
-              onClick={() => setIsBiz(true)}
-            >
-              Business
-            </button>
-          </div>
-        </div>
-
-        {/* 5. Business name — hidden when Person */}
-        {isBiz && (
-          <div className="field">
-            <label>Business name</label>
-            <input
-              type="text"
-              placeholder="Crestview Property Mgmt"
-              value={bizName}
-              onChange={(e) => setBizName(e.target.value)}
-            />
-          </div>
-        )}
-
-        {/* 6. Lead source — full-width field-style dropdown (prototype qa-srcbtn) */}
-        <div className="field">
-          <label>Lead source</label>
-          <button
-            type="button"
-            className={`qa-srcbtn${sourceOpen ? " open" : ""}`}
-            onClick={() => setSourceOpen((o) => !o)}
+        {/* 4-7. The staged details — a definition list of disclosure rows
+            (front-desk RuleRow pattern): label · current value, one editor open
+            at a time, everything in-flow. The three fields above are the whole
+            90% intake; these rows are the "one level down". */}
+        <div style={{ borderTop: "1px solid var(--line-2)", margin: "var(--space-2) 0 var(--space-5)" }}>
+          <DisclosureRow
+            label="Customer type"
+            value={typeSummary}
+            open={openRow === "type"}
+            onToggle={() => toggleRow("type")}
           >
-            <span className={source ? "" : "ph"}>{source || "Select a source"}</span>
-            <span className="qa-srccaret">{sourceOpen ? "▲" : "▼"}</span>
-          </button>
-          {sourceOpen && (
-            <div className="qa-srclist">
+            <div className="chips">
+              <button
+                type="button"
+                className={`chip${!isBiz ? " sel" : ""}`}
+                onClick={() => setIsBiz(false)}
+              >
+                Person
+              </button>
+              <button
+                type="button"
+                className={`chip${isBiz ? " sel" : ""}`}
+                onClick={() => setIsBiz(true)}
+              >
+                Business
+              </button>
+            </div>
+            {isBiz && (
+              <div className="field" style={{ margin: "var(--space-3) 0 0" }}>
+                <label>Business name</label>
+                <input
+                  type="text"
+                  placeholder="Crestview Property Mgmt"
+                  value={bizName}
+                  onChange={(e) => setBizName(e.target.value)}
+                />
+              </div>
+            )}
+          </DisclosureRow>
+
+          <DisclosureRow
+            label="Lead source"
+            value={source || "—"}
+            open={openRow === "source"}
+            onToggle={() => toggleRow("source")}
+          >
+            <div className="qa-srclist" style={{ marginTop: "0" }}>
               {mergedSources.map((s) => (
                 <button
                   key={s.label}
@@ -480,22 +508,14 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 </button>
               )}
             </div>
-          )}
-        </div>
+          </DisclosureRow>
 
-
-        {/* 7. Book a visit reveal */}
-        <div className={`reveal${bookOpen ? " open" : ""}`} style={{ marginBottom: "var(--space-4)" }}>
-          <div
-            className="reveal-head"
-            onClick={() => setBookOpen((o) => !o)}
-            role="button"
-            aria-expanded={bookOpen}
+          <DisclosureRow
+            label="Book a visit"
+            value={bookSummary}
+            open={openRow === "book"}
+            onToggle={() => toggleRow("book")}
           >
-            <span className="caret">&#9658;</span>
-            Book a visit
-          </div>
-          <div className="reveal-body">
             {/* Job description */}
             <div className="field">
               <label>Job</label>
@@ -508,7 +528,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             </div>
 
             {/* Purpose toggle: Job / Estimate visit */}
-            <div className="chips" style={{ marginBottom: "var(--space-4)" }}>
+            <div className="chips" style={{ marginBottom: "0" }}>
               <button
                 type="button"
                 className={`chip${visitPurpose === "job" ? " sel" : ""}`}
@@ -532,7 +552,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             {/* Conditional book panel — the job uses the single top-level
                 Service address, so there is no second address field here. */}
             {visitPurpose === "job" && (
-              <div className="field">
+              <div className="field" style={{ margin: "var(--space-4) 0 0" }}>
                 <label>
                   Price{" "}
                   <span
@@ -556,21 +576,14 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 </div>
               </div>
             )}
-          </div>
-        </div>
+          </DisclosureRow>
 
-        {/* 8. More details reveal */}
-        <div className={`reveal${moreOpen ? " open" : ""}`} style={{ marginBottom: "var(--space-5)" }}>
-          <div
-            className="reveal-head"
-            onClick={() => setMoreOpen((o) => !o)}
-            role="button"
-            aria-expanded={moreOpen}
+          <DisclosureRow
+            label="More details"
+            value={moreSummary}
+            open={openRow === "more"}
+            onToggle={() => toggleRow("more")}
           >
-            <span className="caret">&#9658;</span>
-            More details
-          </div>
-          <div className="reveal-body">
             <div className="field">
               <label>Email</label>
               <input
@@ -638,7 +651,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 + Add a custom field
               </button>
             )}
-          </div>
+          </DisclosureRow>
         </div>
 
         {error && (
