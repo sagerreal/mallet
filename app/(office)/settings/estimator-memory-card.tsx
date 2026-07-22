@@ -1,18 +1,20 @@
 "use client";
 
 /**
- * Settings → Pricing → "Estimator memory" card: what the AI estimator has
+ * Pricebook → Defaults rail → "Estimator memory" row: what the AI estimator has
  * learned about THIS shop (quoting_rules). Two lists:
  *   - To review: proposed rules (edit-delta mining after ≥2 recurrences,
  *     plus corrections that contradicted an existing rule) — [Confirm][Dismiss].
  *   - Rules in use: confirmed rules the drafters inject — [Forget] invalidates.
- * In-flow, functional copy, no floating UI. Everything here is DB-backed;
- * nothing writes without a tap.
+ * Renders a DisclosureRow (the quiet-register grammar): the collapsed value IS
+ * the summary — "3 rules · 2 to review" — so waiting proposals are visible
+ * without opening. In-flow, functional copy, no floating UI; everything is
+ * DB-backed and nothing writes without a tap.
  */
 
 import { useState } from "react";
 import { api } from "@/lib/trpc/client";
-import { FoldCard } from "./fold-card";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
 
 const SOURCE_LABEL: Record<string, string> = {
   manual: "added here",
@@ -27,7 +29,7 @@ interface RuleView {
   timesConfirmed: number;
 }
 
-function RuleRow({
+function RuleLine({
   rule,
   busy,
   actions,
@@ -65,7 +67,12 @@ const summaryFor = (confirmedCount: number, proposedCount: number): string => {
   return proposedCount > 0 ? `${rules} · ${proposedCount} to review` : rules;
 };
 
-export function EstimatorMemoryCard() {
+export interface EstimatorMemoryRowProps {
+  open: boolean;
+  onToggle: () => void;
+}
+
+export function EstimatorMemoryRow({ open, onToggle }: EstimatorMemoryRowProps) {
   const utils = api.useUtils();
   const list = api.v1.quoting.rules.list.useQuery(undefined, { refetchOnWindowFocus: false });
   const [error, setError] = useState<string | null>(null);
@@ -85,16 +92,11 @@ export function EstimatorMemoryCard() {
   const empty = !list.isLoading && confirmed.length === 0 && proposed.length === 0;
 
   return (
-    <FoldCard
-      // FoldCard captures defaultOpen ONCE (useState initializer) — evaluated
-      // during the list query's loading render it is always false and the
-      // "proposals waiting → open for review" behavior is dead. Re-keying on
-      // load completion remounts the fold so defaultOpen is computed from the
-      // resolved data.
-      key={list.isLoading ? "loading" : "loaded"}
-      title="Estimator memory"
-      summary={summaryFor(confirmed.length, proposed.length)}
-      defaultOpen={proposed.length > 0}
+    <DisclosureRow
+      label="Estimator memory"
+      value={list.isLoading ? "…" : summaryFor(confirmed.length, proposed.length)}
+      open={open}
+      onToggle={onToggle}
     >
       <p className="muted" style={{ margin: "0 0 var(--space-3)", fontSize: "var(--type-sm)" }}>
         Rules the AI estimator follows when it drafts quotes for this shop. It proposes new ones
@@ -112,7 +114,7 @@ export function EstimatorMemoryCard() {
         <div style={{ marginBottom: "var(--space-4)" }}>
           <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-1)" }}>To review</div>
           {proposed.map((r) => (
-            <RuleRow
+            <RuleLine
               key={r.id}
               rule={r}
               busy={busy}
@@ -129,7 +131,7 @@ export function EstimatorMemoryCard() {
         <div>
           <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-1)" }}>Rules in use</div>
           {confirmed.map((r) => (
-            <RuleRow
+            <RuleLine
               key={r.id}
               rule={r}
               busy={busy}
@@ -149,6 +151,6 @@ export function EstimatorMemoryCard() {
       {error && (
         <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{error}</p>
       )}
-    </FoldCard>
+    </DisclosureRow>
   );
 }

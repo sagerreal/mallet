@@ -2,12 +2,13 @@
 
 /**
  * features/office/pricebook-pane.tsx
- * The Pricebook tab of the Office page — the catalog presentation of the SAME
- * editor the settings card had, nothing removed: toolbar (always-on search,
- * labor-rate + markup chips, CSV import), the service list (each row expands
- * in-flow to the full Level-1 editor), the add row + category manager, the
- * plumbing starter seed for an empty book, then the estimator's memory and the
- * quiet Defaults editors (labor rates, markup, terms) moved from /pricebook.
+ * The Pricebook tab in the SAME quiet register as Front Desk: one main object
+ * (the Services card — search, list, inline add) beside a subordinate Defaults
+ * rail (definition-list disclosure rows: labor rates, parts markup, terms,
+ * estimator memory, categories — label over live value, one editor open at a
+ * time, everything in-flow). Nothing removed from the old pane: the toolbar's
+ * rate chips became the rail's live values; the stray add-row is anchored
+ * inside the card; the FoldCard pile is gone.
  */
 
 import { useState } from "react";
@@ -19,12 +20,15 @@ import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { ServiceRow } from "@/app/(office)/settings/service-row";
 import { AddServiceRow } from "@/app/(office)/settings/add-service-row";
 import { CategoryManager } from "@/app/(office)/settings/category-manager";
-import { EstimatorMemoryCard } from "@/app/(office)/settings/estimator-memory-card";
-import { FoldCard } from "@/app/(office)/settings/fold-card";
+import { EstimatorMemoryRow } from "@/app/(office)/settings/estimator-memory-card";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
 
 function sortServices(services: Service[]): Service[] {
   return [...services].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 }
+
+/** The Defaults-rail rows — one open at a time (front-desk RuleRow precedent). */
+type RailKey = "labor" | "markup" | "terms" | "memory" | "categories";
 
 export function PricebookPane() {
   const services = useAppStore((s) => s.services);
@@ -53,6 +57,8 @@ export function PricebookPane() {
   const [query, setQuery] = useState("");
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [openRail, setOpenRail] = useState<RailKey | null>(null);
+  const toggleRail = (k: RailKey) => setOpenRail((prev) => (prev === k ? null : k));
   const [lrName, setLrName] = useState("");
   const [lrRate, setLrRate] = useState("");
   const [lrKind, setLrKind] = useState<LaborRateKind>("hourly");
@@ -87,141 +93,184 @@ export function PricebookPane() {
   const visible = q ? sorted.filter((s) => s.name.toLowerCase().includes(q)) : sorted;
 
   return (
-    <div style={{ maxWidth: 900 }}>
-      {/* toolbar — search + the shop's rate facts + import */}
-      <div className="pbtoolbar">
-        <input
-          className="pbsearch"
-          type="text"
-          placeholder="Search services…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search services"
-        />
-        {laborRates.slice(0, 2).map((lr) => (
-          <span key={lr.id} className="ratechip">{lr.name} <b>${lr.rate}{lr.kind === "hourly" ? "/hr" : ""}</b></span>
-        ))}
-        <span className="ratechip">Markup <b>{markup}%</b></span>
-        {canSeeCost && (
-          <button className="btn sm ghost" onClick={() => openModal(MODAL.IMPORT_SERVICES)}>
-            Import CSV
-          </button>
-        )}
-      </div>
-
-      {services.length === 0 ? (
-        <div className="card" style={{ padding: "var(--space-8) var(--space-4)", textAlign: "center" }}>
-          <p style={{ margin: "0 0 var(--space-3)", fontWeight: 700 }}>
-            Add your common jobs — e.g. “Replace 40gal water heater”.
-          </p>
-          <button className="btn" onClick={() => void handleSeed()} disabled={seeding}>
-            {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
-          </button>
-          {seedError && (
-            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{seedError}</p>
-          )}
-        </div>
-      ) : (
-        <div className="pbtablewrap">
-          {visible.map((s) => (
-            <ServiceRow
-              key={s.id}
-              service={s}
-              categories={categories}
-              canSeeCost={canSeeCost}
-              onUpdate={updateService}
-              onArchive={archiveService}
-            />
-          ))}
-          {visible.length === 0 && (
-            <div className="empty-att">No services match “{query}”.</div>
-          )}
-        </div>
-      )}
-
-      <AddServiceRow onAdd={addService} />
-      <CategoryManager categories={categories} onAdd={addCategory} />
-
-      <EstimatorMemoryCard />
-
-      {/* Quiet defaults — rarely changed, at the bottom of the surface. */}
-      <div className="tsec" style={{ padding: "var(--space-4) var(--space-2xs) var(--space-2)" }}>Defaults</div>
-
-      <FoldCard title="Labor rates" summary={`${laborRates.length} rate${laborRates.length === 1 ? "" : "s"}`}>
+    <div style={{ maxWidth: 980 }}>
+      <div className="fdcols">
+        {/* main object: the services catalog, one card */}
         <div>
-          {laborRates.map((lr) => (
-            <div key={lr.id} className="stage-row">
-              <input type="text" defaultValue={lr.name}
-                onChange={(e) => updateLaborRate(lr.id, "name", e.target.value)}
-                className="field-compact" style={{ flex: 1, minWidth: 120 }} />
-              <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-                <span className="muted">$</span>
-                <input type="number" defaultValue={lr.rate}
-                  onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
-                  className="field-compact" style={{ width: 80 }} />
-                <select
-                  aria-label={`Unit for ${lr.name}`}
-                  value={lr.kind}
-                  onChange={(e) => updateLaborRate(lr.id, "kind", e.target.value)}
-                  style={{ border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-2)", fontFamily: "inherit", fontSize: "var(--type-sm)", color: "var(--ink-2)", background: "var(--card)" }}
-                >
-                  <option value="hourly">/hr</option>
-                  <option value="flat_fee">flat</option>
-                </select>
-              </span>
-              {laborRates.length > 1 && (
-                <button className="btn sm ghost" onClick={() => removeLaborRate(lr.id)}>✕</button>
+          <div className="svccard">
+            <div className="svccard-h">
+              <b>Services</b>
+              <span className="m">{services.length}</span>
+              <span className="sp" />
+              {canSeeCost && (
+                <button className="btn sm ghost" onClick={() => openModal(MODAL.IMPORT_SERVICES)}>
+                  Import CSV
+                </button>
               )}
             </div>
-          ))}
-        </div>
-        <div style={{ marginTop: "var(--space-3)" }}>
-          <div className="chips" style={{ marginBottom: "var(--space-2)" }}>
-            <button type="button" className={`chip${lrKind === "hourly" ? " sel" : ""}`} onClick={() => setLrKind("hourly")}>
-              Hourly
-            </button>
-            <button type="button" className={`chip${lrKind === "flat_fee" ? " sel" : ""}`} onClick={() => setLrKind("flat_fee")}>
-              Flat fee
-            </button>
-          </div>
-          <div style={{ display: "flex", gap: "var(--space-2)" }}>
-            <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
-              className="field-compact" style={{ flex: 1 }} />
-            <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
-              className="field-compact" style={{ flex: "0 0 100px" }} />
-            <button className="btn" onClick={handleAddLabor}>+ Add</button>
-          </div>
-        </div>
-      </FoldCard>
 
-      <FoldCard title="Default parts markup" summary={`${markup}%`}>
-        <div className="field" style={{ maxWidth: 200, margin: "0" }}>
-          <label>Markup on new parts (%)</label>
-          <input type="number" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
-        </div>
-        <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "var(--type-sm)" }}>
-          Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
-        </p>
-      </FoldCard>
+            {services.length > 0 && (
+              <div style={{ padding: "var(--space-3) var(--space-4) var(--space-1)" }}>
+                <input
+                  className="pbsearch"
+                  type="text"
+                  placeholder="Search services…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  aria-label="Search services"
+                  style={{ width: "100%" }}
+                />
+              </div>
+            )}
 
-      <FoldCard title="Terms library" summary={`${terms.length} terms`}>
-        <div>
-          {terms.map((t) => (
-            <div key={t.id} className="stage-row">
-              <span style={{ fontWeight: 700 }}>{t.t}</span>
-              <span className="trig" style={{ maxWidth: 280, whiteSpace: "normal" }}>{t.body.slice(0, 60)}…</span>
-              <button className="btn sm ghost" onClick={() => removeTerm(t.id)}>✕</button>
+            {services.length === 0 ? (
+              <div style={{ padding: "var(--space-6) var(--space-4)", textAlign: "center" }}>
+                <p style={{ margin: "0 0 var(--space-3)", fontWeight: 700 }}>
+                  Add your common jobs — e.g. “Replace 40gal water heater”.
+                </p>
+                <button className="btn" onClick={() => void handleSeed()} disabled={seeding}>
+                  {seeding ? "Adding starter pack…" : "Start with plumbing basics"}
+                </button>
+                {seedError && (
+                  <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{seedError}</p>
+                )}
+              </div>
+            ) : (
+              <div style={{ padding: "0 var(--space-4)" }}>
+                {visible.map((s) => (
+                  <ServiceRow
+                    key={s.id}
+                    service={s}
+                    categories={categories}
+                    canSeeCost={canSeeCost}
+                    onUpdate={updateService}
+                    onArchive={archiveService}
+                  />
+                ))}
+                {visible.length === 0 && (
+                  <div className="empty-att">No services match “{query}”.</div>
+                )}
+              </div>
+            )}
+
+            {/* Inline add — anchored at the card's foot, never a stray row on the page. */}
+            <div style={{ padding: "0 var(--space-4) var(--space-3)" }}>
+              <AddServiceRow onAdd={addService} />
             </div>
-          ))}
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
-          <input type="text" id="tlName" placeholder="name (e.g. Repipe terms)" value={tlName} onChange={(e) => setTlName(e.target.value)}
-            className="field-compact" style={{ flex: 1 }} />
-          <input type="text" id="tlBody" placeholder="the fine print…" value={tlBody} onChange={(e) => setTlBody(e.target.value)}
-            className="field-compact" style={{ flex: 2 }} />
-          <button className="btn" onClick={handleAddTerm}>+ Add</button>
+
+        {/* subordinate rail: the shop's pricing defaults as a definition list */}
+        <div className="fdrail">
+          <h3>Defaults</h3>
+
+          <DisclosureRow
+            label="Labor rates"
+            value={`${laborRates.length} rate${laborRates.length === 1 ? "" : "s"}`}
+            open={openRail === "labor"}
+            onToggle={() => toggleRail("labor")}
+          >
+            <div>
+              {laborRates.map((lr) => (
+                <div key={lr.id} className="stage-row">
+                  <input type="text" defaultValue={lr.name}
+                    onChange={(e) => updateLaborRate(lr.id, "name", e.target.value)}
+                    className="field-compact" style={{ flex: 1, minWidth: 100 }} />
+                  <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+                    <span className="muted">$</span>
+                    <input type="number" defaultValue={lr.rate}
+                      onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
+                      className="field-compact" style={{ width: 72 }} />
+                    <select
+                      aria-label={`Unit for ${lr.name}`}
+                      value={lr.kind}
+                      onChange={(e) => updateLaborRate(lr.id, "kind", e.target.value)}
+                      className="tsel"
+                    >
+                      <option value="hourly">/hr</option>
+                      <option value="flat_fee">flat</option>
+                    </select>
+                  </span>
+                  {laborRates.length > 1 && (
+                    <button className="btn sm ghost" onClick={() => removeLaborRate(lr.id)}>✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <div className="chips" style={{ marginBottom: "var(--space-2)" }}>
+                <button type="button" className={`chip${lrKind === "hourly" ? " sel" : ""}`} onClick={() => setLrKind("hourly")}>
+                  Hourly
+                </button>
+                <button type="button" className={`chip${lrKind === "flat_fee" ? " sel" : ""}`} onClick={() => setLrKind("flat_fee")}>
+                  Flat fee
+                </button>
+              </div>
+              <div style={{ display: "grid", gap: "var(--space-2)" }}>
+                <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
+                  className="field-compact" />
+                <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                  <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
+                    className="field-compact" style={{ flex: 1 }} />
+                  <button className="btn sm" onClick={handleAddLabor}>+ Add</button>
+                </div>
+              </div>
+            </div>
+          </DisclosureRow>
+
+          <DisclosureRow
+            label="Parts markup"
+            value={<span className="mono">{markup}%</span>}
+            open={openRail === "markup"}
+            onToggle={() => toggleRail("markup")}
+          >
+            <div className="field" style={{ maxWidth: 160, margin: "0" }}>
+              <label>Markup on new parts (%)</label>
+              <input type="number" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
+            </div>
+            <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "var(--type-sm)" }}>
+              Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
+            </p>
+          </DisclosureRow>
+
+          <DisclosureRow
+            label="Terms library"
+            value={`${terms.length} term${terms.length === 1 ? "" : "s"}`}
+            open={openRail === "terms"}
+            onToggle={() => toggleRail("terms")}
+          >
+            <div>
+              {terms.map((t) => (
+                <div key={t.id} className="stage-row">
+                  <span style={{ fontWeight: 700 }}>{t.t}</span>
+                  <span className="trig" style={{ flex: 1, whiteSpace: "normal" }}>{t.body.slice(0, 60)}…</span>
+                  <button className="btn sm ghost" onClick={() => removeTerm(t.id)}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gap: "var(--space-2)", marginTop: terms.length ? "var(--space-3)" : "0" }}>
+              <input type="text" id="tlName" placeholder="name (e.g. Repipe terms)" value={tlName} onChange={(e) => setTlName(e.target.value)}
+                className="field-compact" />
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                <input type="text" id="tlBody" placeholder="the fine print…" value={tlBody} onChange={(e) => setTlBody(e.target.value)}
+                  className="field-compact" style={{ flex: 1 }} />
+                <button className="btn sm" onClick={handleAddTerm}>+ Add</button>
+              </div>
+            </div>
+          </DisclosureRow>
+
+          <EstimatorMemoryRow open={openRail === "memory"} onToggle={() => toggleRail("memory")} />
+
+          <DisclosureRow
+            label="Categories"
+            value={String(categories.length)}
+            open={openRail === "categories"}
+            onToggle={() => toggleRail("categories")}
+          >
+            <CategoryManager categories={categories} onAdd={addCategory} />
+          </DisclosureRow>
         </div>
-      </FoldCard>
+      </div>
     </div>
   );
 }
