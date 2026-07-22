@@ -1,4 +1,5 @@
 import tseslint from "typescript-eslint";
+import ui from "./eslint-rules/index.mjs";
 
 // Architectural boundary: a module's internals (domain/app/infra/api) are private. Other code
 // imports a module ONLY through its index barrel (@mallet/<module>). Intra-module files use
@@ -35,12 +36,17 @@ export default [
       "features/**/*.{ts,tsx}",
     ],
     languageOptions: { parser: tseslint.parser, parserOptions: { sourceType: "module" } },
+    plugins: { ui },
     rules: {
       "no-restricted-imports": ["error", importBoundary],
       "no-console": "warn",
       "max-lines": ["warn", { max: 800, skipBlankLines: true, skipComments: true }],
       "max-lines-per-function": ["warn", { max: 80, skipBlankLines: true, skipComments: true }],
       complexity: ["warn", 15],
+      // Design-system locks (eslint-rules/) — WARN now, flip to error in P7.
+      "ui/no-raw-style": "warn",
+      "ui/no-adhoc-card": "warn",
+      "ui/no-bare-field": "warn",
     },
   },
   {
