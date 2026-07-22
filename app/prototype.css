@@ -1878,3 +1878,5 @@
   @keyframes skpulse{0%,100%{opacity:.55}50%{opacity:1}}
   .sk{background:var(--manila-2);border-radius:var(--radius-sm);animation:skpulse 1.2s ease-in-out infinite}
   .sk-row{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-1);border-bottom:1px solid var(--line-2)}
+  /* Screen-reader-only: visually hidden, still announced (e.g. a skeleton's "Loading…"). */
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
