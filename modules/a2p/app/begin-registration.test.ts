@@ -45,4 +45,27 @@ describe("BeginA2pRegistrationUseCase", () => {
     expect(current()?.props.secondaryProfileSid).toBe("BUx"); // durable — not rolled back
     expect(current()?.props.status).toBe("failed");
   });
+
+  it("re-invoking on an already fully-registered org is idempotent — no status regression, no re-calls", async () => {
+    const { repo, runner, current } = memRepo();
+    const gw = gateway();
+    const uc = new BeginA2pRegistrationUseCase(gw, runner, { now: () => new Date() });
+
+    const first = await uc.exec({ orgId: "o1", info, phoneNumberSid: "PNx" });
+    expect(first.ok).toBe(true);
+    expect(current()?.props.status).toBe("number_pending");
+
+    const second = await uc.exec({ orgId: "o1", info, phoneNumberSid: "PNx" });
+    expect(second.ok).toBe(true);
+    // Bug this covers: step 1 used to unconditionally call withBusinessInfo, which always sets
+    // status="collecting" as a side effect — regressing an already-advanced registration on
+    // every re-invocation even though no SID was lost. Must stay at its advanced status.
+    expect(current()?.props.status).toBe("number_pending");
+    expect(current()?.props.secondaryProfileSid).toBe("BUx");
+    expect(current()?.props.brandSid).toBe("BNx");
+    expect(current()?.props.campaignSid).toBe("QEx");
+    // And the gateway must not be re-invoked for steps whose SIDs are already persisted.
+    expect(gw.createSecondaryProfile).toHaveBeenCalledTimes(1);
+    expect(gw.registerBrand).toHaveBeenCalledTimes(1);
+  });
 });

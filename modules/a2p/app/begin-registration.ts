@@ -53,10 +53,16 @@ export class BeginA2pRegistrationUseCase {
     info: BusinessInfo;
     phoneNumberSid: string;
   }): Promise<Result<{ status: A2pStatus }, AppError>> {
-    // 1. Save business info in its own committed tx before any external call.
+    // 1. Seed business info in its own committed tx — but ONLY for a brand-new registration
+    //    (none persisted yet, or still "not_started"). `withBusinessInfo` always sets
+    //    status="collecting" as a side effect (see domain/registration.ts), so re-invoking
+    //    `exec()` on an already-advanced registration must resume from its current state
+    //    instead of regressing status back to "collecting" on every call.
     await this.run(async (repo) => {
-      const current = (await repo.get(cmd.orgId)) ?? emptyRegistration(cmd.orgId);
-      await repo.save(current.withBusinessInfo(cmd.info));
+      const current = await repo.get(cmd.orgId);
+      if (!current || current.props.status === "not_started") {
+        await repo.save((current ?? emptyRegistration(cmd.orgId)).withBusinessInfo(cmd.info));
+      }
     });
 
     // 2. Secondary profile: create (external, no tx open) → persist (own committed tx).
