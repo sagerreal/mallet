@@ -31,7 +31,7 @@ const okOps = (): A2pOps => ({
   attachNumberToService: vi.fn(async () => undefined),
   fetchProfileStatus: vi.fn(async () => "approved" as const),
   fetchBrandStatus: vi.fn(async () => "approved" as const),
-  fetchCampaignStatus: vi.fn(async () => "approved" as const),
+  fetchCampaignStatus: vi.fn(async (_cmd: { messagingServiceSid: string; campaignSid: string }) => "approved" as const),
 });
 
 describe("TwilioA2pGateway", () => {
@@ -55,5 +55,33 @@ describe("TwilioA2pGateway", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("external_service");
     if (!r.ok && r.error.kind === "external_service") expect(r.error.retryable).toBe(false);
+  });
+
+  it("fetchStatus threads messagingServiceSid through to fetchCampaignStatus (the campaign resource is nested under the messaging service)", async () => {
+    const ops = okOps();
+    const gw = new TwilioA2pGateway("AC", "tok", "BUprimary", "https://cb", ops);
+    const r = await gw.fetchStatus({
+      profileSid: "BUxxx",
+      brandSid: "BNxxx",
+      campaignSid: "QExxx",
+      messagingServiceSid: "MGxxx",
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.campaign).toBe("approved");
+    expect(ops.fetchCampaignStatus).toHaveBeenCalledWith({ messagingServiceSid: "MGxxx", campaignSid: "QExxx" });
+  });
+
+  it("fetchStatus resolves campaign as unknown (and skips the call) when messagingServiceSid is missing", async () => {
+    const ops = okOps();
+    const gw = new TwilioA2pGateway("AC", "tok", "BUprimary", "https://cb", ops);
+    const r = await gw.fetchStatus({
+      profileSid: null,
+      brandSid: null,
+      campaignSid: "QExxx",
+      messagingServiceSid: null,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.campaign).toBe("unknown");
+    expect(ops.fetchCampaignStatus).not.toHaveBeenCalled();
   });
 });

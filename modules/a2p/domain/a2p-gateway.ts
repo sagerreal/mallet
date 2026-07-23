@@ -22,5 +22,5 @@ export interface A2pGateway {
   createMessagingService(cmd: { orgId: string }): Promise<Result<{ messagingServiceSid: string }, ExternalServiceError>>;
   registerCampaign(cmd: { messagingServiceSid: string; brandSid: string; content: CampaignContent }): Promise<Result<{ campaignSid: string }, ExternalServiceError>>;
   attachNumber(cmd: { messagingServiceSid: string; phoneNumberSid: string }): Promise<Result<void, ExternalServiceError>>;
-  fetchStatus(cmd: { profileSid: string | null; brandSid: string | null; campaignSid: string | null }): Promise<Result<{ profile: RemoteStatus; brand: RemoteStatus; campaign: RemoteStatus }, ExternalServiceError>>;
+  fetchStatus(cmd: { profileSid: string | null; brandSid: string | null; campaignSid: string | null; messagingServiceSid: string | null }): Promise<Result<{ profile: RemoteStatus; brand: RemoteStatus; campaign: RemoteStatus }, ExternalServiceError>>;
 }

@@ -63,7 +63,7 @@ export interface A2pOps {
   attachNumberToService(cmd: { messagingServiceSid: string; phoneNumberSid: string }): Promise<void>;
   fetchProfileStatus(profileSid: string): Promise<RemoteStatus>;
   fetchBrandStatus(brandSid: string): Promise<RemoteStatus>;
-  fetchCampaignStatus(campaignSid: string): Promise<RemoteStatus>;
+  fetchCampaignStatus(cmd: { messagingServiceSid: string; campaignSid: string }): Promise<RemoteStatus>;
 }
 
 const errStatus = (e: unknown): number | undefined =>
@@ -191,20 +191,25 @@ async function fetchBrandStatusOp(client: Client, brandSid: string): Promise<Rem
   return mapBrandStatus(brand.status);
 }
 
-// TODO(verify vs Twilio SDK): the real usAppToPerson resource is nested under a Messaging Service
-// (client.messaging.v1.services(serviceSid).usAppToPerson(campaignSid).fetch()) — Twilio has no
-// flat/top-level lookup by campaign SID alone. The A2pGateway.fetchStatus port
-// (../domain/a2p-gateway.ts) only carries profileSid/brandSid/campaignSid, not the
-// messagingServiceSid needed to address this resource. A2pRegistrationProps already persists
-// messagingServiceSid (../domain/registration.ts), so the fix is threading it through
-// fetchStatus's cmd (Task 8's AdvanceA2pRegistrationUseCase has it on hand) — flagged here rather
-// than guessing a signature. Until that lands, this throws a clear, typed failure instead of
-// silently returning a wrong status.
-async function fetchCampaignStatusOp(): Promise<RemoteStatus> {
-  throw Object.assign(
-    new Error("fetchCampaignStatus needs messagingServiceSid, which A2pGateway.fetchStatus does not yet pass through"),
-    { status: 501 },
-  );
+// The real usAppToPerson (campaign) resource is nested under a Messaging Service — Twilio has no
+// flat/top-level lookup by campaign SID alone. `A2pGateway.fetchStatus` (../domain/a2p-gateway.ts)
+// now carries messagingServiceSid (A2pRegistrationProps already persists it —
+// ../domain/registration.ts — and Task 8's AdvanceA2pRegistrationUseCase has it on hand from the
+// loaded registration), so this addresses the resource the same way createCampaignOp does:
+// client.messaging.v1.services(messagingServiceSid).usAppToPerson(campaignSid).
+// TODO(verify vs Twilio SDK): confirmed against the twilio@6.0.2 type declarations
+// (UsAppToPersonListInstance is callable as `(sid) => UsAppToPersonContext`, whose `.fetch()`
+// resolves a UsAppToPersonInstance with `campaignStatus: string`) — not yet exercised against a
+// live account.
+async function fetchCampaignStatusOp(
+  client: Client,
+  cmd: { messagingServiceSid: string; campaignSid: string },
+): Promise<RemoteStatus> {
+  const campaign = await client.messaging.v1
+    .services(cmd.messagingServiceSid)
+    .usAppToPerson(cmd.campaignSid)
+    .fetch();
+  return mapCampaignStatus(campaign.campaignStatus);
 }
 
 // Real ops adapter behind the A2pOps seam — the ONLY place that touches the Twilio SDK for A2P.
@@ -227,7 +232,7 @@ function buildTwilioA2pOps(client: Client): A2pOps {
     attachNumberToService: (cmd) => attachNumberToServiceOp(client, cmd),
     fetchProfileStatus: (profileSid) => fetchProfileStatusOp(client, profileSid),
     fetchBrandStatus: (brandSid) => fetchBrandStatusOp(client, brandSid),
-    fetchCampaignStatus: () => fetchCampaignStatusOp(),
+    fetchCampaignStatus: (cmd) => fetchCampaignStatusOp(client, cmd),
   };
 }
 
@@ -248,6 +253,18 @@ function mapBrandStatus(status: string): RemoteStatus {
   if (status === "APPROVED") return "approved";
   if (status === "FAILED") return "rejected";
   if (status === "PENDING" || status === "IN_REVIEW") return "pending";
+  return "unknown";
+}
+
+// IN_PROGRESS -> pending; VERIFIED -> approved; FAILED -> rejected. (UsAppToPersonInstance.
+// campaignStatus per the twilio@6.0.2 type declarations — its doc comment lists these three as
+// "Examples", not an exhaustive enum. TODO(verify vs Twilio SDK): other/terminal campaignStatus
+// values (e.g. a suspended state) are unverified against a live account, same caveat as
+// mapBrandStatus above.)
+function mapCampaignStatus(status: string): RemoteStatus {
+  if (status === "VERIFIED") return "approved";
+  if (status === "FAILED") return "rejected";
+  if (status === "IN_PROGRESS") return "pending";
   return "unknown";
 }
 
@@ -423,13 +440,17 @@ export class TwilioA2pGateway implements A2pGateway {
     profileSid: string | null;
     brandSid: string | null;
     campaignSid: string | null;
+    messagingServiceSid: string | null;
   }): Promise<Result<{ profile: RemoteStatus; brand: RemoteStatus; campaign: RemoteStatus }, ExternalServiceError>> {
     return this.wrap("fetchStatus", async () => {
       const [profile, brand, campaign] = await Promise.all([
         cmd.profileSid ? this.ops.fetchProfileStatus(cmd.profileSid) : Promise.resolve<RemoteStatus>("unknown"),
         cmd.brandSid ? this.ops.fetchBrandStatus(cmd.brandSid) : Promise.resolve<RemoteStatus>("unknown"),
-        cmd.campaignSid
-          ? this.ops.fetchCampaignStatus(cmd.campaignSid)
+        // The campaign resource is nested under the messaging service — both SIDs are required to
+        // address it; without messagingServiceSid there is no way to look up the campaign, so this
+        // resolves "unknown" rather than guessing.
+        cmd.campaignSid && cmd.messagingServiceSid
+          ? this.ops.fetchCampaignStatus({ messagingServiceSid: cmd.messagingServiceSid, campaignSid: cmd.campaignSid })
           : Promise.resolve<RemoteStatus>("unknown"),
       ]);
       return { profile, brand, campaign };
@@ -488,9 +509,15 @@ export class LoggingA2pGateway implements A2pGateway {
     profileSid: string | null;
     brandSid: string | null;
     campaignSid: string | null;
+    messagingServiceSid: string | null;
   }): Promise<Result<{ profile: RemoteStatus; brand: RemoteStatus; campaign: RemoteStatus }, ExternalServiceError>> {
     logger.info(
-      { profileSid: cmd.profileSid, brandSid: cmd.brandSid, campaignSid: cmd.campaignSid },
+      {
+        profileSid: cmd.profileSid,
+        brandSid: cmd.brandSid,
+        campaignSid: cmd.campaignSid,
+        messagingServiceSid: cmd.messagingServiceSid,
+      },
       "a2p.stub.fetchStatus",
     );
     return ok({ profile: "approved", brand: "approved", campaign: "approved" });
