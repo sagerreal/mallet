@@ -15,6 +15,8 @@ import { TwilioA2pGateway } from "@mallet/a2p";
 import type { A2pGateway } from "@mallet/a2p";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
+import { HttpQboOauthGateway } from "@mallet/accounting-sync";
+import { createSecretBox } from "@mallet/platform/crypto/secret-box";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { Config } from "@mallet/shared/config";
@@ -41,6 +43,22 @@ function buildA2pGateway(config: Config): A2pGateway | undefined {
   logger.warn("a2p: Twilio A2P config unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/PRIMARY_PROFILE_SID/A2P_STATUS_CALLBACK_URL missing) — registration is logged, not submitted");
   return undefined;
 }
+
+// QuickBooks Online. Two independently-optional pieces, and they fail differently ON PURPOSE:
+// the gateway degrading to null just disables the feature, but a missing/!32-byte encryption key
+// must NOT degrade to plaintext token storage — so the box is null and the connect flow refuses.
+const buildQboSecretBox = (keyBase64: string | undefined) => {
+  if (!keyBase64) {
+    logger.warn("qbo: QBO_TOKEN_ENCRYPTION_KEY unset — connecting QuickBooks is disabled (tokens would be unprotected)");
+    return null;
+  }
+  const box = createSecretBox(keyBase64);
+  if (!box.ok) {
+    logger.error("qbo: QBO_TOKEN_ENCRYPTION_KEY is not a 32-byte base64 key — connecting QuickBooks is disabled");
+    return null;
+  }
+  return box.value;
+};
 
 // Composition root for runtime dependencies. Built once and reused across requests (the auth
 // provider and DB pool are long-lived). The in-memory event bus is a placeholder until the
@@ -91,6 +109,20 @@ export const getAppDeps = (): AppDeps => {
 
   const a2pGateway = buildA2pGateway(config);
 
+  // QBO OAuth self-disables unless client id + secret + redirect uri are all present.
+  const qboOauthGateway =
+    config.QBO_CLIENT_ID && config.QBO_CLIENT_SECRET && config.QBO_REDIRECT_URI
+      ? new HttpQboOauthGateway({
+          clientId: config.QBO_CLIENT_ID,
+          clientSecret: config.QBO_CLIENT_SECRET,
+          redirectUri: config.QBO_REDIRECT_URI,
+        })
+      : null;
+  if (!qboOauthGateway) {
+    logger.warn("qbo: QuickBooks unconfigured (QBO_CLIENT_ID/CLIENT_SECRET/REDIRECT_URI missing) — the Settings card shows 'not configured'");
+  }
+  const qboSecretBox = buildQboSecretBox(config.QBO_TOKEN_ENCRYPTION_KEY);
+
   // Photo storage self-disables unless the service-role Supabase env is present (getSupabaseAdmin
   // throws otherwise). Bind lazily — the client is built on first upload, not at boot.
   let photoStorageGateway: PhotoStorageGateway | null = null;
@@ -108,6 +140,8 @@ export const getAppDeps = (): AppDeps => {
     tokenVerifier: createSupabaseTokenVerifier(config.NEXT_PUBLIC_SUPABASE_URL, config.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     signupStore: new SignupStore(db),
     bus: new InMemoryEventBus(),
+    qboOauthGateway,
+    qboSecretBox,
     clock: systemClock,
     ids: uuidGenerator,
     paymentLinkGateway,

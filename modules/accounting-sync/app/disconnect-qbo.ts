@@ -2,8 +2,8 @@ import type { Clock, Result, AppError } from "@mallet/shared/types";
 import { ok, err, notFound } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { SecretBox } from "@mallet/platform/crypto/secret-box";
-import type { QboConnectionRepository } from "../domain/qbo-connection-repository";
 import type { QboOauthGateway } from "../domain/qbo-oauth-gateway";
+import type { TenantRunner } from "./complete-qbo-connect";
 
 /**
  * Disconnect QuickBooks for this org.
@@ -15,14 +15,16 @@ import type { QboOauthGateway } from "../domain/qbo-oauth-gateway";
  */
 export class DisconnectQbo {
   constructor(
-    private readonly connections: QboConnectionRepository,
+    private readonly runInTenant: TenantRunner,
     private readonly gateway: QboOauthGateway,
     private readonly box: SecretBox,
     private readonly clock: Clock,
   ) {}
 
   async exec(orgId: string): Promise<Result<void, AppError>> {
-    const connection = await this.connections.getForUpdate();
+    // Read in its own short tx; the revoke round-trip below happens between transactions rather
+    // than holding one open across the network (same rule as CompleteQboConnect).
+    const connection = await this.runInTenant((repo) => repo.get());
     if (!connection) return err(notFound("QuickBooks is not connected"));
 
     // Already disconnected — succeed quietly. Clicking Disconnect twice is not an error.
@@ -39,7 +41,7 @@ export class DisconnectQbo {
       logger.warn({ orgId }, "qbo.revoke_skipped_unseal_failed");
     }
 
-    await this.connections.save(connection.disconnect(this.clock.now()));
+    await this.runInTenant((repo) => repo.save(connection.disconnect(this.clock.now())));
     logger.info({ orgId }, "qbo.disconnected");
     return ok(undefined);
   }

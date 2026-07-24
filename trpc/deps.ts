@@ -5,6 +5,8 @@ import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
 import type { A2pGateway } from "@mallet/a2p";
+import type { QboOauthGateway } from "@mallet/accounting-sync";
+import type { SecretBox } from "@mallet/platform/crypto/secret-box";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import type { Clock } from "@mallet/shared/types";
 
@@ -40,4 +42,11 @@ export interface AppDeps {
   // an org for a verified-but-unmapped auth user (SECURITY DEFINER seam).
   readonly tokenVerifier: TokenVerifier;
   readonly signupStore: Pick<SignupStore, "createOrgForUser">;
+  // QuickBooks Online OAuth. null when QBO_CLIENT_ID/SECRET/REDIRECT_URI are unset — the Settings
+  // card renders "not configured" and the connect routes 503 rather than half-working.
+  readonly qboOauthGateway?: QboOauthGateway | null;
+  // Seals the QBO tokens at rest. null when QBO_TOKEN_ENCRYPTION_KEY is unset or malformed —
+  // connecting then fail-closes, because storing a live refresh token in plaintext is not an
+  // acceptable degradation (unlike comms, which safely degrade to a logging stub).
+  readonly qboSecretBox?: SecretBox | null;
 }

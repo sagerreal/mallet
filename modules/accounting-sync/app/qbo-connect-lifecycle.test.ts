@@ -5,7 +5,11 @@ import { createSecretBox, type SecretBox } from "@mallet/platform/crypto/secret-
 import { QboConnection, type QboConnectionProps } from "../domain/qbo-connection";
 import type { QboConnectionRepository } from "../domain/qbo-connection-repository";
 import type { QboOauthGateway, QboTokens } from "../domain/qbo-oauth-gateway";
-import { CompleteQboConnect, type CompleteQboConnectCommand } from "./complete-qbo-connect";
+import {
+  CompleteQboConnect,
+  type CompleteQboConnectCommand,
+  type TenantRunner,
+} from "./complete-qbo-connect";
 import { DisconnectQbo } from "./disconnect-qbo";
 import { GetQboStatus } from "./get-qbo-status";
 
@@ -72,14 +76,17 @@ const deps = (opts: {
     refresh: vi.fn(),
     revoke: vi.fn().mockResolvedValue(opts.revoke ?? ok(undefined)),
   };
-  return { repo, gateway, saved };
+  // Mirrors the real per-op tenant runner: hands the caller a repo, in its own short tx.
+  const runInTenant: TenantRunner = (fn) => fn(repo);
+
+  return { repo, gateway, saved, runInTenant };
 };
 
 describe("CompleteQboConnect", () => {
   const run = (
     d: ReturnType<typeof deps>,
     cmd: CompleteQboConnectCommand = { code: "the-code", realmId: "913035", userId: "user-1" },
-  ) => new CompleteQboConnect(d.repo, d.gateway, box, clock, ids).exec(cmd, ORG);
+  ) => new CompleteQboConnect(d.runInTenant, d.gateway, box, clock, ids).exec(cmd, ORG);
 
   it("stores an active connection with the realm and the user who connected", async () => {
     const d = deps();
@@ -154,7 +161,7 @@ describe("CompleteQboConnect", () => {
 
 describe("DisconnectQbo", () => {
   const run = (d: ReturnType<typeof deps>) =>
-    new DisconnectQbo(d.repo, d.gateway, box, clock).exec(ORG);
+    new DisconnectQbo(d.runInTenant, d.gateway, box, clock).exec(ORG);
 
   it("revokes at Intuit then clears the local row", async () => {
     const d = deps({ stored: connection() });
@@ -251,7 +258,7 @@ describe("GetQboStatus", () => {
 describe("unauthorized exchange", () => {
   it("does not store a connection when Intuit rejects the code", async () => {
     const d = deps({ exchange: err(unauthorized("bad code")) });
-    const res = await new CompleteQboConnect(d.repo, d.gateway, box, clock, ids).exec(
+    const res = await new CompleteQboConnect(d.runInTenant, d.gateway, box, clock, ids).exec(
       { code: "stale", realmId: "913035", userId: null },
       ORG,
     );

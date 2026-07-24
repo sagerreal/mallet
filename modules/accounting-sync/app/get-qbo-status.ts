@@ -18,14 +18,17 @@ export interface QboStatus {
 }
 
 export class GetQboStatus {
+  // The gateway is NULLABLE here on purpose: when QuickBooks is unconfigured on the server there
+  // is nothing to inject, and the settings page must still render (reporting configured:false)
+  // rather than 500.
   constructor(
     private readonly connections: QboConnectionRepository,
-    private readonly gateway: QboOauthGateway,
+    private readonly gateway: QboOauthGateway | null,
     private readonly clock: Clock,
   ) {}
 
   async exec(): Promise<QboStatus> {
-    const configured = this.gateway.isConfigured();
+    const configured = this.gateway?.isConfigured() ?? false;
     const connection = await this.connections.get();
 
     if (!connection) {

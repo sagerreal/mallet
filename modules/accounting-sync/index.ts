@@ -13,11 +13,21 @@ export {
 } from "./domain/qbo-connection";
 export type { QboConnectionRepository } from "./domain/qbo-connection-repository";
 export type { QboOauthGateway, QboTokens } from "./domain/qbo-oauth-gateway";
+export { signOauthState, verifyOauthState, type OauthStateClaims } from "./domain/oauth-state";
 
 export { DrizzleQboConnectionRepository } from "./infra/drizzle-qbo-connection-repository";
 export { HttpQboOauthGateway, type IntuitOauthConfig } from "./infra/http-qbo-oauth-gateway";
 
 export { EnsureFreshAccessToken, type FreshAccess } from "./app/ensure-fresh-access-token";
-export { CompleteQboConnect, type CompleteQboConnectCommand } from "./app/complete-qbo-connect";
+export {
+  CompleteQboConnect,
+  type CompleteQboConnectCommand,
+  type TenantRunner,
+} from "./app/complete-qbo-connect";
 export { DisconnectQbo } from "./app/disconnect-qbo";
 export { GetQboStatus, type QboStatus } from "./app/get-qbo-status";
+
+// API surface. NOTE: importing this barrel pulls the router (and thus the config validator) —
+// unit tests must import the specific file they need, never `* from` here (see CLAUDE.md).
+export { createQboRouter } from "./api/qbo-router";
+export { qboStatusDTO, type QboStatusDTO } from "./api/qbo-dto";

@@ -26,6 +26,13 @@ export interface FreshAccess {
  *
  * The caller must run this inside the same transaction as its own work for the lock to mean
  * anything — that is the norm here (ownerOrOffice already wraps resolvers in withTenant).
+ *
+ * DELIBERATE EXCEPTION to the "no external call inside an open tenant tx" rule that
+ * CompleteQboConnect/DisconnectQbo follow. Serialising refresh REQUIRES holding the row lock
+ * across the exchange — releasing it first is precisely the race that strands a tenant on a dead
+ * refresh token. The cost is bounded and small: the lock covers ONE org's ONE row, and the gateway
+ * caps the call at 15s, so the worst case is that org's next QBO operation waiting behind a
+ * timeout. A permanent lock-out is a far worse trade than a bounded wait.
  */
 export class EnsureFreshAccessToken {
   constructor(

@@ -16,11 +16,19 @@ export interface CompleteQboConnectCommand {
   readonly userId: string | null;
 }
 
+/** Runs `fn` in its own short tenant transaction. Lets each DB touch commit independently of the
+ *  fallible network call between them. */
+export type TenantRunner = <T>(fn: (repo: QboConnectionRepository) => Promise<T>) => Promise<T>;
+
 /**
  * Finish the OAuth dance: trade the code for tokens, seal them, store the connection.
  *
  * CSRF `state` is verified by the ROUTE before this runs — it is a transport concern (it lives in
  * a cookie) and keeping it there means this use-case is testable without a request object.
+ *
+ * The Intuit exchange happens OUTSIDE any open transaction (hence the TenantRunner rather than a
+ * repository): holding a tenant tx open across a network round-trip is the pattern Stripe Connect
+ * taught us to avoid. Each DB touch here gets its own short transaction.
  *
  * Reconnecting overwrites the existing row (one connection per org). That is deliberate: the most
  * common reason to reconnect is a lapsed or rejected token, and the shop expects "connect again"
@@ -28,7 +36,7 @@ export interface CompleteQboConnectCommand {
  */
 export class CompleteQboConnect {
   constructor(
-    private readonly connections: QboConnectionRepository,
+    private readonly runInTenant: TenantRunner,
     private readonly gateway: QboOauthGateway,
     private readonly box: SecretBox,
     private readonly clock: Clock,
@@ -39,12 +47,15 @@ export class CompleteQboConnect {
     if (!cmd.code) return err(validation("authorization code is required", "code"));
     if (!cmd.realmId) return err(validation("realmId is required", "realmId"));
 
+    // Read first (short tx), so a reconnect can preserve row identity and sync history.
+    const existing = await this.runInTenant((repo) => repo.get());
+
+    // Network call — deliberately between transactions, not inside one.
     const exchanged = await this.gateway.exchangeCode(cmd.code);
     if (!exchanged.ok) return err(exchanged.error);
 
     const tokens = exchanged.value;
     const now = this.clock.now();
-    const existing = await this.connections.get();
 
     const created = QboConnection.create({
       // Keep the original row identity across reconnects; the repository upserts on org_id.
@@ -65,7 +76,7 @@ export class CompleteQboConnect {
     });
     if (!created.ok) return err(created.error);
 
-    await this.connections.save(created.value);
+    await this.runInTenant((repo) => repo.save(created.value));
     // realmId is not a secret (it's a company id, visible in QBO's own URLs); tokens never logged.
     logger.info({ orgId, realmId: cmd.realmId, reconnect: existing !== null }, "qbo.connected");
 

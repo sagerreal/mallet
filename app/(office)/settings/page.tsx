@@ -25,6 +25,7 @@ import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
+import { QuickbooksCard } from "./quickbooks-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
@@ -645,7 +646,7 @@ function SecChannels() {
 // Main page
 // ============================================================================
 
-type SetTab = "workspace" | "team" | "channels" | "payments";
+type SetTab = "workspace" | "team" | "channels" | "payments" | "quickbooks";
 
 // Old deep-link tab names → their new homes (settings-IA regroup). ?tab=payments must keep
 // working verbatim — Stripe's Connect onboarding return URL points at it server-side.
@@ -694,6 +695,8 @@ export default function SettingsPage() {
     { k: "team"      as SetTab, label: "Team",       body: <SecTeam /> },
     { k: "channels"  as SetTab, label: "Channels",   body: <SecChannels /> },
     { k: "payments"  as SetTab, label: "Payments",   ownerOnly: true, body: <PaymentsCard /> },
+    // ?tab=quickbooks must keep working verbatim — the OAuth callback redirects to it server-side.
+    { k: "quickbooks" as SetTab, label: "QuickBooks", ownerOnly: true, body: <QuickbooksCard /> },
   ] satisfies SectionDef[];
   const sections: SectionDef[] = allSections.filter((s) => role === "owner" || role === "office" || !s.ownerOnly);
 
