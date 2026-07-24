@@ -47,6 +47,7 @@ export const ROUTES: readonly RouteDef[] = [
   { path: "/settings?tab=team", name: "settings-team", audience: "office" },
   { path: "/settings?tab=channels", name: "settings-channels", audience: "office" },
   { path: "/settings?tab=payments", name: "settings-payments", audience: "office" },
+  { path: "/settings?tab=quickbooks", name: "settings-quickbooks", audience: "office" },
   { path: "/account", name: "account", audience: "office" },
   { path: "/more", name: "more", audience: "office", mobile: true },
 

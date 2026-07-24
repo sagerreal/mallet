@@ -16,6 +16,7 @@ import { createChecklistRouter } from "@mallet/checklists";
 import { createInboundRouter } from "@mallet/inbound";
 import { createPricebookRouter } from "@mallet/pricebook";
 import { createA2pRouter } from "@mallet/a2p";
+import { createQboRouter } from "@mallet/accounting-sync";
 
 // The versioned API tree. Clients call trpc.v1.<module>.*; a future v2 can coexist here while v1
 // stays stable. Module routers are composed in — never defined here.
@@ -41,6 +42,7 @@ export const appRouter = router({
     pricebook: createPricebookRouter(),
     frontdesk: createFrontdeskRouter(),
     a2p: createA2pRouter(),
+    qbo: createQboRouter(),
   }),
 });
 
