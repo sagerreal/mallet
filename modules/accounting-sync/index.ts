@@ -18,3 +18,6 @@ export { DrizzleQboConnectionRepository } from "./infra/drizzle-qbo-connection-r
 export { HttpQboOauthGateway, type IntuitOauthConfig } from "./infra/http-qbo-oauth-gateway";
 
 export { EnsureFreshAccessToken, type FreshAccess } from "./app/ensure-fresh-access-token";
+export { CompleteQboConnect, type CompleteQboConnectCommand } from "./app/complete-qbo-connect";
+export { DisconnectQbo } from "./app/disconnect-qbo";
+export { GetQboStatus, type QboStatus } from "./app/get-qbo-status";
