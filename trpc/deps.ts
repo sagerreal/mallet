@@ -4,6 +4,7 @@ import type { ConnectGateway } from "@mallet/settings";
 import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
+import type { A2pGateway } from "@mallet/a2p";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import type { Clock } from "@mallet/shared/types";
 
@@ -28,6 +29,10 @@ export interface AppDeps {
   // when omitted (e.g. in tests) callers fall back to the logging stub, so unconfigured comms
   // degrade to a logged no-op rather than an error.
   readonly notificationSender?: NotificationSender;
+  // A2P 10DLC registration (Twilio TrustHub + Messaging). Optional: when omitted (e.g. in tests,
+  // or when TWILIO_PRIMARY_PROFILE_SID/account creds are unset) callers fall back to
+  // LoggingA2pGateway, so registration self-disables to a logged stub rather than an error.
+  readonly a2pGateway?: A2pGateway;
   // The agent's model client (Anthropic). null when ANTHROPIC_API_KEY is unset — the AI agent
   // self-disables (its tRPC procedure returns PRECONDITION_FAILED).
   readonly llmClient: LlmClient | null;

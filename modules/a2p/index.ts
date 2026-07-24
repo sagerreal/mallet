@@ -1,0 +1,26 @@
+// Public surface for the a2p module — the only sanctioned import seam.
+export { createA2pRouter } from "./api/a2p-router";
+
+export { A2pRegistration, brandKind } from "./domain/registration";
+export type { A2pStatus, BusinessInfo, A2pRegistrationProps } from "./domain/registration";
+export type { RegistrationRepository } from "./domain/registration-repository";
+export type { A2pGateway, RemoteStatus, CampaignContent } from "./domain/a2p-gateway";
+
+export { BeginA2pRegistrationUseCase } from "./app/begin-registration";
+export type { A2pTenantRunner } from "./app/begin-registration";
+export { AdvanceA2pRegistrationUseCase } from "./app/advance-registration";
+export { GetA2pStatusUseCase } from "./app/get-status";
+export type { A2pStatusView } from "./app/get-status";
+export { buildConsentDescription, buildOptInMessage, buildSampleMessages } from "./app/generate-consent";
+
+export { DrizzleRegistrationRepository } from "./infra/drizzle-registration-repository";
+export { TwilioA2pGateway, LoggingA2pGateway, A2P_CAMPAIGN_USECASE } from "./infra/twilio-a2p-gateway";
+export type { A2pOps } from "./infra/twilio-a2p-gateway";
+
+export {
+  businessInfoDTO,
+  a2pStatusDTO,
+  a2pStatusViewDTO,
+  submitResultDTO,
+  toBusinessInfo,
+} from "./api/a2p-dto";
