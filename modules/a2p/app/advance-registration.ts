@@ -17,13 +17,15 @@ function rejectionReason(statuses: { profile: RemoteStatus; brand: RemoteStatus;
 
 /**
  * Advances a registration's status by polling Twilio's async approval outcome for the secondary
- * customer profile, brand, and campaign. Unlike `BeginA2pRegistrationUseCase` — which persists
- * each durable external SID in its OWN committed transaction because a mid-sequence failure must
- * never orphan a SID Twilio already returned — this use case makes exactly ONE external call
- * (`fetchStatus`, a read) per invocation, so read → decide → transition → save runs inside a
- * single committed tx: there is no earlier external side effect a failure here could orphan.
+ * customer profile, brand, and campaign. `fetchStatus` is a read against Twilio, but it is still a
+ * network round-trip — and this use case is called by a scheduled poll over MANY orgs (Task 12),
+ * so a naive single-tx implementation would hold one Postgres connection per org blocked on that
+ * round-trip, exhausting the pool under concurrency. Instead, mirroring the outside-any-tx external
+ * calls in `BeginA2pRegistrationUseCase` / `BeginConnectOnboardingUseCase`: read tx (load the SIDs
+ * to check) → external call with NO tx open → write tx (re-read for a concurrent-write recheck,
+ * apply the decision, save only if the status actually changed).
  *
- * Called by both the async status webhook (Task 12 — one org, one change at a time) and a
+ * Called by both the async status webhook (Task 12 — one org, one change at a time) and the
  * scheduled poll (many orgs) — `exec()` takes only an `orgId` and derives the decision entirely
  * from the persisted registration + the gateway's current view, so repeated calls are idempotent:
  * "still pending" leaves the registration untouched rather than re-saving a no-op.
@@ -36,31 +38,44 @@ export class AdvanceA2pRegistrationUseCase {
   ) {}
 
   async exec(cmd: { orgId: string }): Promise<Result<{ status: A2pStatus }, AppError>> {
-    return this.run(async (repo) => {
+    // 1. Read tx: load the registration and the SIDs to check. No tx stays open across the
+    //    external call below.
+    const sids = await this.run(async (repo) => {
       const reg = await repo.get(cmd.orgId);
-      if (!reg) return err(notFound("a2p registration not found"));
-
-      const fetched = await this.gateway.fetchStatus({
+      if (!reg) return null;
+      return {
         profileSid: reg.props.secondaryProfileSid,
         brandSid: reg.props.brandSid,
         campaignSid: reg.props.campaignSid,
         messagingServiceSid: reg.props.messagingServiceSid,
-      });
-      if (!fetched.ok) return err(fetched.error);
+      };
+    });
+    if (!sids) return err(notFound("a2p registration not found"));
 
-      const { profile, brand, campaign } = fetched.value;
+    // 2. External call, no tx open — this is the network round-trip a scheduled poll must not
+    //    hold a DB connection through.
+    const fetched = await this.gateway.fetchStatus(sids);
+    if (!fetched.ok) return err(fetched.error);
+
+    const { profile, brand, campaign } = fetched.value;
+
+    // 3. Write tx: re-read for a concurrent-write recheck (mirrors Begin's re-check before each
+    //    save), apply the decision, and save only if the status actually changed.
+    return this.run(async (repo) => {
+      const reg = await repo.get(cmd.orgId);
+      if (!reg) return err(notFound("a2p registration not found"));
 
       const reason = rejectionReason({ profile, brand, campaign });
       if (reason) {
         const failed = reg.markFailed(reason);
-        await repo.save(failed);
+        if (failed.props.status !== reg.props.status) await repo.save(failed);
         return ok({ status: failed.props.status });
       }
 
       const allApproved = profile === "approved" && brand === "approved" && campaign === "approved";
       if (allApproved && reg.props.phoneNumberSid) {
         const active = reg.markActive();
-        await repo.save(active);
+        if (active.props.status !== reg.props.status) await repo.save(active);
         return ok({ status: active.props.status });
       }
 
