@@ -71,7 +71,7 @@ export function QuickbooksCard() {
         : "Not connected";
 
   return (
-    <FoldCard title="QuickBooks" summary={summary}>
+    <FoldCard title="QuickBooks" summary={summary} defaultOpen>
       <p style={{ fontSize: "var(--type-base)", color: "var(--ink-2)", margin: "0 0 var(--space-4)" }}>
         Connect QuickBooks Online so approved crew hours go straight over instead of being typed in
         again before payroll.

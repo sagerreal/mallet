@@ -646,7 +646,11 @@ function SecChannels() {
 // Main page
 // ============================================================================
 
-type SetTab = "workspace" | "team" | "channels" | "payments" | "quickbooks";
+// Single source of truth for tab ids. The deep-link parser derives its whitelist from this — a
+// duplicated literal previously let a new tab render in the nav but silently fall back to
+// Workspace when linked to directly.
+const SET_TABS = ["workspace", "team", "channels", "payments", "quickbooks"] as const;
+type SetTab = (typeof SET_TABS)[number];
 
 // Old deep-link tab names → their new homes (settings-IA regroup). ?tab=payments must keep
 // working verbatim — Stripe's Connect onboarding return URL points at it server-side.
@@ -682,7 +686,7 @@ export default function SettingsPage() {
       return;
     }
     if (!t) return;
-    const canonical: SetTab | undefined = ["workspace", "team", "channels", "payments"].includes(t)
+    const canonical: SetTab | undefined = (SET_TABS as readonly string[]).includes(t)
       ? (t as SetTab)
       : TAB_ALIASES[t];
     if (canonical) setActiveTab(canonical);
