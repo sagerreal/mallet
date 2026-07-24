@@ -617,6 +617,20 @@
       "when": 1784918700412,
       "tag": "0087_qbo_connections_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1784924681825,
+      "tag": "0088_superb_thena",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1784924681826,
+      "tag": "0089_qbo_sync_rls",
+      "breakpoints": true
     }
   ]
 }

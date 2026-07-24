@@ -13,10 +13,29 @@ export {
 } from "./domain/qbo-connection";
 export type { QboConnectionRepository } from "./domain/qbo-connection-repository";
 export type { QboOauthGateway, QboTokens } from "./domain/qbo-oauth-gateway";
+export type {
+  QboApiGateway,
+  QboAccess,
+  QboPerson,
+  QboServiceItem,
+  QboPreflight,
+} from "./domain/qbo-api-gateway";
+export type {
+  QboEntityLink,
+  QboEntityLinkRepository,
+  QboSyncLogEntry,
+  QboSyncLogRepository,
+} from "./domain/qbo-sync-repositories";
+export { toTimeActivity, type SyncableTimeEntry } from "./domain/time-activity-mapping";
 export { signOauthState, verifyOauthState, type OauthStateClaims } from "./domain/oauth-state";
 
 export { DrizzleQboConnectionRepository } from "./infra/drizzle-qbo-connection-repository";
 export { HttpQboOauthGateway, type IntuitOauthConfig } from "./infra/http-qbo-oauth-gateway";
+export { HttpQboApiGateway, type QboEnvironment } from "./infra/http-qbo-api-gateway";
+export {
+  DrizzleQboEntityLinkRepository,
+  DrizzleQboSyncLogRepository,
+} from "./infra/drizzle-qbo-sync-repositories";
 
 export { EnsureFreshAccessToken, type FreshAccess } from "./app/ensure-fresh-access-token";
 export {
@@ -26,6 +45,8 @@ export {
 } from "./app/complete-qbo-connect";
 export { DisconnectQbo } from "./app/disconnect-qbo";
 export { GetQboStatus, type QboStatus } from "./app/get-qbo-status";
+export { SyncApprovedHours, type SyncApprovedHoursResult } from "./app/sync-approved-hours";
+export { QboTimeSyncHandler, type QboTimeSyncPorts } from "./app/qbo-time-sync-handler";
 
 // API surface. NOTE: importing this barrel pulls the router (and thus the config validator) —
 // unit tests must import the specific file they need, never `* from` here (see CLAUDE.md).

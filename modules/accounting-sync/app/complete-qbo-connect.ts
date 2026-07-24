@@ -70,6 +70,10 @@ export class CompleteQboConnect {
       connectedByUserId: cmd.userId,
       // A reconnect keeps the sync history; it is the same relationship, re-authorised.
       lastSyncAt: existing?.props.lastSyncAt ?? null,
+      // Reconnecting keeps the shop's chosen item, but never silently re-enables the push.
+      defaultItemQboId: existing?.props.defaultItemQboId ?? null,
+      defaultItemName: existing?.props.defaultItemName ?? null,
+      sendApprovedHours: existing?.props.sendApprovedHours ?? false,
       createdAt: existing?.props.createdAt ?? now,
       updatedAt: now,
       disconnectedAt: null,

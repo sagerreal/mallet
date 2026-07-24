@@ -204,7 +204,7 @@ export const createTimesheetRouter = () =>
       .output(z.object({ approved: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleTimeEntryRepository(ctx.tx, ctx.principal.orgId);
-        const useCase = new ApproveWeekUseCase(repo, ctx.deps.clock);
+        const useCase = new ApproveWeekUseCase(repo, ctx.deps.clock, ctx.deps.bus);
         const result = await useCase.exec(
           {
             techUserId: asUserId(input.techUserId),

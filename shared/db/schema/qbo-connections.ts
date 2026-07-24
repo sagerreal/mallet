@@ -3,6 +3,7 @@ import {
   pgTable,
   uuid,
   text,
+  boolean,
   timestamp,
   uniqueIndex,
   check,
@@ -40,6 +41,13 @@ export const qboConnections = pgTable(
     status: text("status").notNull().default("active"),
     connectedByUserId: uuid("connected_by_user_id"),
     lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    // QBO REQUIRES a service item (ItemRef) on every TimeActivity. Mallet has no equivalent on a
+    // timesheet, so the shop picks one default at connect time. Org-level config, hence here rather
+    // than in qbo_entity_links (which maps per-record).
+    defaultItemQboId: text("default_item_qbo_id"),
+    defaultItemName: text("default_item_name"),
+    // Opt-in, off by default: connecting must never silently start writing to someone's books.
+    sendApprovedHours: boolean("send_approved_hours").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
