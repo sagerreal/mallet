@@ -8,7 +8,42 @@ import { DrizzleRegistrationRepository } from "../infra/drizzle-registration-rep
 import { LoggingA2pGateway } from "../infra/twilio-a2p-gateway";
 import { GetA2pStatusUseCase } from "../app/get-status";
 import { BeginA2pRegistrationUseCase, type A2pTenantRunner } from "../app/begin-registration";
-import { businessInfoDTO, a2pStatusViewDTO, submitResultDTO, toBusinessInfo } from "./a2p-dto";
+import {
+  buildConsentDescription,
+  buildSampleMessages,
+  buildOptInMessage,
+  buildSmsTermsSection,
+} from "../app/generate-consent";
+import type { BusinessInfo } from "../domain/registration";
+import {
+  businessInfoDTO,
+  a2pStatusViewDTO,
+  submitResultDTO,
+  toBusinessInfo,
+  previewConsentInputDTO,
+  consentPreviewDTO,
+} from "./a2p-dto";
+
+// Only legalName is consumed by the pure generators below (every build* function reads
+// exclusively info.legalName) — the rest of BusinessInfo is a fixed, never-rendered stub that
+// exists purely to satisfy the parameter type, so the preview can run before the shop has
+// filled in the rest of the business form.
+function stubBusinessInfo(legalName: string): BusinessInfo {
+  return {
+    legalName,
+    ein: null,
+    addressStreet: "",
+    addressCity: "",
+    addressRegion: "",
+    addressPostal: "",
+    industry: "",
+    websiteUrl: "",
+    contactFirstName: "",
+    contactLastName: "",
+    contactEmail: "",
+    contactPhone: "",
+  };
+}
 
 // Layer 5: thin transport. Org is ALWAYS ctx.principal.orgId, never client input.
 export const createA2pRouter = () =>
@@ -66,4 +101,18 @@ export const createA2pRouter = () =>
         });
         return orThrow(result);
       }),
+
+    // Read-only preview of the generated consent/sample-messages/opt-in/SMS-terms — computed
+    // from the SAME pure generators submitAndRegister uses to build CampaignContent, so the
+    // wizard's preview is guaranteed to match what actually gets submitted (one source of
+    // truth). No DB access needed; pure and side-effect-free.
+    previewConsent: ownerOrOffice.input(previewConsentInputDTO).output(consentPreviewDTO).query(({ input }) => {
+      const info = stubBusinessInfo(input.legalName);
+      return {
+        consentDescription: buildConsentDescription(info),
+        sampleMessages: buildSampleMessages(info),
+        optInMessage: buildOptInMessage(info),
+        smsTerms: buildSmsTermsSection(info),
+      };
+    }),
   });

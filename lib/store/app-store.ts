@@ -58,6 +58,7 @@ if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
 // Convenience selectors — import these instead of reaching into the store directly
 export const useActiveModal = () => useAppStore((s) => s.activeModal);
 export const useOpenModal = () => useAppStore((s) => s.openModal);
+export const useA2pStatus = () => useAppStore((s) => s.a2pStatus);
 export const useCloseModal = () => useAppStore((s) => s.closeModal);
 export const usePushModal = () => useAppStore((s) => s.pushModal);
 export const useLeads = () => useAppStore((s) => s.leads);

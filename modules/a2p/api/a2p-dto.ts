@@ -71,5 +71,19 @@ export const businessInfoDTO = z.object({
 
 export const toBusinessInfo = (dto: z.infer<typeof businessInfoDTO>): BusinessInfo => ({ ...dto });
 
+// --- Consent preview (previewConsent query) ----------------------------------
+
+// Narrow input: every build* generator in app/generate-consent.ts reads exclusively
+// info.legalName, so the preview only needs the one field the owner has typically filled in
+// first — it can render while the rest of the business form is still in progress.
+export const previewConsentInputDTO = businessInfoDTO.pick({ legalName: true });
+
+export const consentPreviewDTO = z.object({
+  consentDescription: z.string(),
+  sampleMessages: z.array(z.string()),
+  optInMessage: z.string(),
+  smsTerms: z.string(),
+});
+
 // Re-exported purely for callers that want the view type alongside its DTO (router/tests).
 export type { A2pStatusView };

@@ -140,3 +140,21 @@ describe("a2p router — getStatus (hermetic)", () => {
     });
   });
 });
+
+describe("a2p router — previewConsent (hermetic, pure)", () => {
+  it("brands the generated consent/sample/opt-in/terms copy with the given legal name", async () => {
+    const caller = createA2pRouter().createCaller(ctxFor("o1"));
+
+    const preview = await caller.previewConsent({ legalName: "Summit Plumbing" });
+
+    expect(preview.consentDescription).toContain("Summit Plumbing");
+    expect(preview.consentDescription).toContain("STOP");
+    expect(preview.sampleMessages).toHaveLength(5);
+    for (const m of preview.sampleMessages) {
+      expect(m).toContain("Summit Plumbing");
+      expect(m).toContain("STOP");
+    }
+    expect(preview.optInMessage).toContain("Summit Plumbing");
+    expect(preview.smsTerms).toContain("Summit Plumbing");
+  });
+});

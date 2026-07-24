@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { BrandingCard } from "./branding-card";
+import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
@@ -49,6 +50,7 @@ function SecWorkspace({ role }: { role: string }) {
   return (
     <>
       <BrandingCard />
+      <A2pRegistrationCard />
 
       {(role === "owner" || role === "office") && (
         <>

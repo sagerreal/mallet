@@ -23,4 +23,6 @@ export {
   a2pStatusViewDTO,
   submitResultDTO,
   toBusinessInfo,
+  previewConsentInputDTO,
+  consentPreviewDTO,
 } from "./api/a2p-dto";
