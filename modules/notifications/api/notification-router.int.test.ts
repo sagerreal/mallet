@@ -145,6 +145,19 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not configured") });
   });
 
+  it("advanceReminder blocks an org whose A2P campaign isn't active", async () => {
+    // Org C's invoice isn't aged, so without the gate this would resolve to `null` (nothing due)
+    // rather than reject — a rejection here can only come from the 10DLC guard firing before the
+    // use-case (and its reminder-stage read) ever runs.
+    const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
+    await expect(
+      caller.v1.notifications.advanceReminder({ relatedType: "invoice", relatedId: orgCInvoiceId }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("10DLC") });
+
+    const listed = await caller.v1.notifications.list({ limit: 50 });
+    expect(listed.items.some((n) => n.relatedId === orgCInvoiceId)).toBe(false);
+  });
+
   it("surfaces the aged invoice as a due reminder and advances the stage once (deduped)", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const due = await caller.v1.notifications.listDueReminders({ limit: 50 });

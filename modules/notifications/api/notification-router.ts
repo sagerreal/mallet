@@ -97,9 +97,9 @@ const assertDelivered = (n: Notification, channel: string): Notification => {
 
 // Gate outbound SMS on the org's 10DLC campaign being active — the same carrier-compliance rule
 // the messaging router's `send` enforces (Task 14). This router has its own SMS-capable
-// interactive sends (send / sendInvoiceReminder), so it needs the identical guard: block BEFORE
-// any use-case/sender work when the channel is sms and the org isn't approved yet. Email is
-// unaffected (10DLC only governs SMS). Reuses the a2p module's own status projection
+// interactive sends (send / sendInvoiceReminder / advanceReminder), so it needs the identical
+// guard: block BEFORE any use-case/sender work when the channel is sms and the org isn't approved
+// yet. Email is unaffected (10DLC only governs SMS). Reuses the a2p module's own status projection
 // (GetA2pStatusUseCase.canText) so "active" is defined in exactly one place; a missing
 // registration row (org never started) reads as inactive, same as the messaging router's read.
 const assertSmsA2pActive = async (ctx: NotificationRouterCtx, channel: NotificationChannel): Promise<void> => {
@@ -199,6 +199,12 @@ export const createNotificationRouter = () =>
       .input(z.object({ relatedType: z.literal("invoice"), relatedId: z.string().uuid() }))
       .output(notificationDTO.nullable())
       .mutation(async ({ ctx, input }) => {
+        // Unlike send / sendInvoiceReminder, the channel here isn't known up front — the use-case
+        // resolves it from the target's contact info (sms if a phone is on file, else email) only
+        // after this guard would need to run. Since it CAN reach sms, a non-active org must be
+        // blocked unconditionally rather than let the use-case decide; passing the literal "sms"
+        // reuses the exact same gate the sibling paths use for the conservative "assume sms" case.
+        await assertSmsA2pActive(ctx, "sms");
         const send = new SendNotificationUseCase(
           repoFor(ctx),
           ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
