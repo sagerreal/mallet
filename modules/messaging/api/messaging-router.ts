@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { loadConfig } from "@mallet/shared/config";
-import { orgs, leads } from "@mallet/shared/db/schema";
+import { orgs, leads, a2pRegistrations } from "@mallet/shared/db/schema";
 import { asLeadId, Phone } from "@mallet/shared/types";
 import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
 import { SendMessageUseCase } from "../app/send-message";
@@ -79,6 +79,23 @@ export const createMessagingRouter = () =>
           });
         }
 
+        // Gate outbound SMS on the org's 10DLC campaign being active (mirrors the no-number
+        // precondition above — same style, same fail-fast-before-any-send-work shape). No row
+        // yet (new org, registration not started) reads as inactive, same as GetA2pStatusUseCase.
+        const a2pRows = await tx
+          .select({ status: a2pRegistrations.status })
+          .from(a2pRegistrations)
+          .where(eq(a2pRegistrations.orgId, orgId))
+          .limit(1);
+        const a2pActive = a2pRows[0]?.status === "active";
+
+        if (!a2pActive) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "texting isn't approved for this org yet — finish 10DLC registration",
+          });
+        }
+
         // Destination: an explicit office-chosen override wins (validated here — untrusted
         // input goes through Phone.parse); otherwise fall back to the lead's on-file phone.
         let leadPhone: string | null = null;
@@ -125,6 +142,7 @@ export const createMessagingRouter = () =>
         const result = await useCase.exec({
           orgId,
           orgTwilioNumber,
+          a2pActive,
           leadId: asLeadId(input.leadId),
           leadPhone,
           body: input.body,
