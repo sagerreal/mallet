@@ -73,11 +73,18 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     await admin`
       insert into messages (org_id, lead_id, direction, body, from_number, to_number, status)
       values (${orgAId}, ${leadAId}, 'outbound', 'Hi from us', '+15005550006', '+15555550199', 'sent')`;
+
+    // Org A is A2P-active so the "send" tests below exercise the Twilio-config guard they're
+    // named for, not the (separately unit-tested, see send-message.test.ts) 10DLC gate — an org
+    // with no registration row reads as inactive and would mask the intended assertion.
+    await admin`
+      insert into a2p_registrations (org_id, status) values (${orgAId}, 'active')`;
   });
 
   afterAll(async () => {
     if (orgAId) {
       await admin`delete from messages where org_id in (${orgAId}, ${orgBId})`;
+      await admin`delete from a2p_registrations where org_id in (${orgAId}, ${orgBId})`;
       await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
     }
     await admin.end({ timeout: 5 });
@@ -150,7 +157,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     await expect(
       caller.v1.messaging.send({ leadId: leadAId, body: "Hello" }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not configured") });
   });
 
   // ── RBAC ──────────────────────────────────────────────────────────────────────

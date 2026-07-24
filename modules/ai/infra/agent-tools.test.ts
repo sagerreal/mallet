@@ -62,6 +62,10 @@ vi.mock("@mallet/notifications", () => ({
   DrizzleReminderTargetReader: vi.fn(),
   STUB_EXTERNAL_ID: "stub:logged",
 }));
+vi.mock("@mallet/a2p", () => ({
+  GetA2pStatusUseCase: vi.fn(),
+  DrizzleRegistrationRepository: vi.fn(),
+}));
 // The users table import is used directly in member_list, and orgs in get_context —
 // mock @mallet/shared/db/schema with both.
 vi.mock("@mallet/shared/db/schema", () => ({
@@ -78,6 +82,7 @@ import { ListTasksUseCase, DrizzleTaskRepository, CreateTaskUseCase } from "@mal
 import { ListTimeEntriesUseCase, DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import { ListCompaniesUseCase, DrizzleCompanyRepository } from "@mallet/companies";
 import { NextRemindersDueUseCase, FollowUpPolicy, SendInvoiceNotificationUseCase, DrizzleNotificationRepository, DrizzleReminderTargetReader } from "@mallet/notifications";
+import { GetA2pStatusUseCase, DrizzleRegistrationRepository } from "@mallet/a2p";
 import { buildAgentTools } from "./agent-tools";
 
 // ---------------------------------------------------------------------------
@@ -680,6 +685,96 @@ describe("notification_list_due_reminders", () => {
     const result = await toolByName("notification_list_due_reminders").handle({}, makeCtx());
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.summary).toContain("No reminders due");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// notification_send_invoice_reminder — A2P/10DLC compliance gate
+// ---------------------------------------------------------------------------
+// The tool must not let SMS through for an org whose 10DLC campaign isn't active (mirrors the
+// notification router's guard on send / sendInvoiceReminder). Email is unaffected.
+
+describe("notification_send_invoice_reminder", () => {
+  const invoiceId = randomUUID();
+
+  beforeEach(() => {
+    vi.mocked(GetA2pStatusUseCase).mockClear();
+    vi.mocked(DrizzleRegistrationRepository).mockClear();
+    vi.mocked(SendInvoiceNotificationUseCase).mockClear();
+    vi.mocked(DrizzleNotificationRepository).mockClear();
+    vi.mocked(DrizzleReminderTargetReader).mockClear();
+  });
+
+  // A configured sender so a non-blocked path reaches SendInvoiceNotificationUseCase instead of
+  // short-circuiting on the (separate) "sender not configured" guard.
+  const ctxWithSender = (): ToolContext => ({
+    ...makeCtx(),
+    deps: { ...makeCtx().deps, notificationSender: {} as unknown as ToolContext["deps"]["notificationSender"] },
+  });
+
+  it("blocks an SMS reminder when the org's A2P campaign isn't active", async () => {
+    mockClass(DrizzleRegistrationRepository, {});
+    mockClass(GetA2pStatusUseCase, {
+      exec: vi.fn().mockResolvedValue({ status: "not_started", canText: false, needsInput: true, failureReason: null }),
+    });
+
+    // Plain makeCtx() (no sender configured) — proves the a2p gate fires FIRST, before the
+    // sender-configured check even runs.
+    const result = await toolByName("notification_send_invoice_reminder").handle(
+      { invoiceId, channel: "sms" },
+      makeCtx(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("10DLC");
+    // No send attempt was made — the gate fires before any notification/sender work.
+    expect(vi.mocked(SendInvoiceNotificationUseCase)).not.toHaveBeenCalled();
+  });
+
+  it("does not block an email reminder when the org's A2P campaign isn't active", async () => {
+    mockClass(DrizzleRegistrationRepository, {});
+    mockClass(GetA2pStatusUseCase, {
+      exec: vi.fn().mockResolvedValue({ status: "not_started", canText: false, needsInput: true, failureReason: null }),
+    });
+    mockClass(DrizzleNotificationRepository, {});
+    mockClass(DrizzleReminderTargetReader, {});
+    mockClass(SendInvoiceNotificationUseCase, {
+      exec: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { props: { id: "notif-1", channel: "email", status: "sent", externalId: "real-ext-id" } },
+      }),
+    });
+
+    const result = await toolByName("notification_send_invoice_reminder").handle(
+      { invoiceId, channel: "email" },
+      ctxWithSender(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.summary).toContain("email");
+  });
+
+  it("allows an SMS reminder when the org's A2P campaign is active", async () => {
+    mockClass(DrizzleRegistrationRepository, {});
+    mockClass(GetA2pStatusUseCase, {
+      exec: vi.fn().mockResolvedValue({ status: "active", canText: true, needsInput: false, failureReason: null }),
+    });
+    mockClass(DrizzleNotificationRepository, {});
+    mockClass(DrizzleReminderTargetReader, {});
+    mockClass(SendInvoiceNotificationUseCase, {
+      exec: vi.fn().mockResolvedValue({
+        ok: true,
+        value: { props: { id: "notif-2", channel: "sms", status: "sent", externalId: "real-ext-id" } },
+      }),
+    });
+
+    const result = await toolByName("notification_send_invoice_reminder").handle(
+      { invoiceId, channel: "sms" },
+      ctxWithSender(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.summary).toContain("sms");
   });
 });
 

@@ -30,15 +30,19 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
   let admin: Sql;
   let orgAId = "";
   let orgBId = "";
+  let orgCId = ""; // A2P-inactive org (no registration row) — dedicated to the 10DLC gate tests below.
   let leadAId = "";
   let agedInvoiceId = "";
+  let orgCInvoiceId = "";
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
     const [a] = await admin<{ id: string }[]>`insert into orgs (name) values ('NotifApi A ' || gen_random_uuid()) returning id`;
     const [b] = await admin<{ id: string }[]>`insert into orgs (name) values ('NotifApi B ' || gen_random_uuid()) returning id`;
+    const [c] = await admin<{ id: string }[]>`insert into orgs (name) values ('NotifApi C ' || gen_random_uuid()) returning id`;
     orgAId = a!.id;
     orgBId = b!.id;
+    orgCId = c!.id;
     // Lead WITH a phone so an SMS reminder has a destination.
     const [la] = await admin<{ id: string }[]>`insert into leads (org_id, name, phone_e164) values (${orgAId}, 'Cust A', '+15551230000') returning id`;
     leadAId = la!.id;
@@ -47,10 +51,28 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
       insert into invoices (org_id, num, lead_id, status, total_cents, sent_at)
       values (${orgAId}, 'INV-AGED', ${leadAId}, 'sent', 100000, now() - interval '5 days') returning id`;
     agedInvoiceId = inv!.id;
+
+    // Org A is A2P-active so the "channel is unconfigured" test below exercises the delivery
+    // (assertDelivered) guard it's named for, not the 10DLC gate — a org with no registration row
+    // reads as inactive and would mask the intended assertion (same masking class the messaging
+    // router's fixture had).
+    await admin`insert into a2p_registrations (org_id, status) values (${orgAId}, 'active')`;
+
+    // Org C stays A2P-inactive (no registration row at all) — the dedicated fixture for proving
+    // SMS is blocked and email is unaffected. Lead has BOTH contact fields so sendInvoiceReminder
+    // can resolve a destination for either channel.
+    const [lc] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name, phone_e164, email) values (${orgCId}, 'Cust C', '+15551230099', 'custc@example.com') returning id`;
+    const [invC] = await admin<{ id: string }[]>`
+      insert into invoices (org_id, num, lead_id, status) values (${orgCId}, 'INV-C1', ${lc!.id}, 'sent') returning id`;
+    orgCInvoiceId = invC!.id;
   });
 
   afterAll(async () => {
-    if (orgAId) await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
+    if (orgAId) {
+      await admin`delete from a2p_registrations where org_id in (${orgAId}, ${orgBId}, ${orgCId})`;
+      await admin`delete from orgs where id in (${orgAId}, ${orgBId}, ${orgCId})`;
+    }
     await admin.end({ timeout: 5 });
     await closeDb();
   });
@@ -63,10 +85,64 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     await expect(
       caller.v1.notifications.sendInvoiceReminder({ invoiceId: agedInvoiceId, channel: "sms" }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not configured") });
 
     const listed = await caller.v1.notifications.list({ limit: 50 });
     expect(listed.items.some((n) => n.relatedId === agedInvoiceId && n.reminderStage === null)).toBe(false);
+  });
+
+  // ── 10DLC / A2P compliance gate ───────────────────────────────────────────────
+  // Org C has no a2p_registrations row at all (reads as inactive). SMS must be blocked before
+  // any notification/sender work runs; email is untouched by the 10DLC rule.
+
+  it("send blocks SMS for an org whose A2P campaign isn't active", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
+    await expect(
+      caller.v1.notifications.send({
+        channel: "sms",
+        to: "+15555550123",
+        kind: "test",
+        body: "hello",
+        idempotencyKey: `a2p-gate-sms-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("10DLC") });
+
+    // No row was recorded — the gate fires before the use-case ever claims the idempotency key.
+    const listed = await caller.v1.notifications.list({ limit: 50 });
+    expect(listed.items.some((n) => n.kind === "test")).toBe(false);
+  });
+
+  it("send does not block email for an org whose A2P campaign isn't active", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
+    // Passes the a2p gate (email is unaffected) and reaches the existing delivery-truth guard
+    // (no real email sender configured in this test env) — proves the 10DLC rule never fires
+    // for this channel.
+    await expect(
+      caller.v1.notifications.send({
+        channel: "email",
+        to: "someone@example.com",
+        kind: "test",
+        body: "hello",
+        idempotencyKey: `a2p-gate-email-${randomUUID()}`,
+      }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not configured") });
+  });
+
+  it("sendInvoiceReminder blocks SMS for an org whose A2P campaign isn't active", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
+    await expect(
+      caller.v1.notifications.sendInvoiceReminder({ invoiceId: orgCInvoiceId, channel: "sms" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("10DLC") });
+
+    const listed = await caller.v1.notifications.list({ limit: 50 });
+    expect(listed.items.some((n) => n.relatedId === orgCInvoiceId)).toBe(false);
+  });
+
+  it("sendInvoiceReminder still allows email for an org whose A2P campaign isn't active", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
+    await expect(
+      caller.v1.notifications.sendInvoiceReminder({ invoiceId: orgCInvoiceId, channel: "email" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not configured") });
   });
 
   it("surfaces the aged invoice as a due reminder and advances the stage once (deduped)", async () => {

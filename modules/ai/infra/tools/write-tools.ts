@@ -19,10 +19,11 @@ import {
   DrizzleReminderTargetReader,
   STUB_EXTERNAL_ID,
 } from "@mallet/notifications";
+import { DrizzleRegistrationRepository, GetA2pStatusUseCase, type A2pTenantRunner } from "@mallet/a2p";
 import { ManualPaymentGateway } from "@mallet/invoicing";
 import { CreateVisitUseCase } from "@mallet/jobs";
 import { parseTool } from "./parse-tool";
-import type { AgentTool, ToolOutcome } from "../../domain/tool";
+import type { AgentTool, ToolContext, ToolOutcome } from "../../domain/tool";
 import { ENTITY_NOT_FOUND } from "../../domain/tool";
 import {
   money,
@@ -142,6 +143,22 @@ export const quoteSendTool: AgentTool = {
   },
 };
 
+// Gate outbound SMS on the org's 10DLC campaign being active — the same carrier-compliance rule
+// the notification router enforces on `send` / `sendInvoiceReminder` (Task 14 follow-up). This
+// tool is another human-triggered (approval-gated) SMS-capable send, so it needs the identical
+// guard: block before any notification/sender work when the channel is sms and the org isn't
+// approved yet. Email is unaffected. Reuses the a2p module's own status projection
+// (GetA2pStatusUseCase.canText) so "active" is defined in exactly one place. Returns a block
+// reason string (never null-and-throws) since tool handlers report failure via ToolOutcome, not
+// exceptions.
+async function smsA2pBlockReason(ctx: ToolContext, channel: "sms" | "email"): Promise<string | null> {
+  if (channel !== "sms") return null;
+  const repo = new DrizzleRegistrationRepository(ctx.tx, ctx.orgId);
+  const run: A2pTenantRunner = (fn) => fn(repo);
+  const status = await new GetA2pStatusUseCase(run).exec(ctx.orgId);
+  return status.canText ? null : "texting isn't approved for this org yet — finish 10DLC registration";
+}
+
 // --- notification_send_invoice_reminder: send an invoice notification via sms or email ---
 // Requires ctx.deps.notificationSender; returns a clean error if unconfigured (pilot safety).
 // Fingerprints on invoice status so a voided or already-paid invoice is caught before sending.
@@ -161,6 +178,8 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = parseTool(notificationSendInvoiceReminderInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
+    const smsBlockReason = await smsA2pBlockReason(ctx, parsed.data.channel);
+    if (smsBlockReason) return { ok: false, error: smsBlockReason };
     if (!ctx.deps.notificationSender) {
       return { ok: false, error: "notification sender not configured — contact your administrator" };
     }
