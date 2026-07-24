@@ -32,3 +32,4 @@ export * from "./quoting-rules";
 export * from "./frontdesk";
 export * from "./crew-schedules";
 export * from "./a2p-registrations";
+export * from "./qbo-connections";

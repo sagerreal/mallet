@@ -51,6 +51,18 @@ const ConfigSchema = z.object({
   // preprocess "" -> undefined so a blank env var (a common Vercel misconfig) degrades to the
   // fail-closed 503 path instead of failing schema validation and 500-ing the ENTIRE app at boot.
   CRON_SECRET: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(16).optional()),
+  // QuickBooks Online (Intuit). All OPTIONAL: without a client id/secret the QBO gateway degrades
+  // to a disabled stub and the Settings card says "not configured" rather than 500-ing the app.
+  // Development keys are sandbox-only — Intuit blocks them against live QBO companies — so the
+  // environment switch picks the API host, not just a label.
+  QBO_CLIENT_ID: z.string().min(1).optional(),
+  QBO_CLIENT_SECRET: z.string().min(1).optional(),
+  QBO_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
+  QBO_REDIRECT_URI: z.url().optional(),
+  // Base64 32-byte key sealing the OAuth tokens at rest (platform/crypto/secret-box). Optional so
+  // the app boots without it, but the connect flow fail-closes when absent: storing a live refresh
+  // token in plaintext is not an acceptable degradation. Mint one with `generateKey()`.
+  QBO_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
