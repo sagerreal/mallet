@@ -12,6 +12,11 @@ import { toDomain, toRow } from "./registration-mapper";
 // app.current_org_id), so RLS scopes every statement to this org. `save` upserts by orgId
 // (the a2p_registrations_org_uidx unique index) — one registration per org.
 export class DrizzleRegistrationRepository implements RegistrationRepository {
+  // `orgId` is intentionally unread here: `get()` filters on its method parameter and `save()`'s
+  // upsert relies on `FORCE ROW LEVEL SECURITY` + `WITH CHECK (org_id = current_org_id())` rather
+  // than an explicit `eq(orgId)` — safe under that enforcement, and matches the same
+  // constructor-signature parity already present on sibling repos (e.g.
+  // DrizzleNotificationRepository also carries an unread `orgId` field).
   constructor(
     private readonly tx: TenantTx,
     private readonly orgId: OrgId,

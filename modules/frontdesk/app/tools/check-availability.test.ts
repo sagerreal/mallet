@@ -72,6 +72,7 @@ const buildCtx = (args: {
     availability: fakeAvailability(args.snapshot, args.fieldCrewIds, args.crewScheduleRows),
     geocoder: args.geocoder ?? inertGeocoder(),
     sendNotification: inertSendNotification(),
+    isSmsA2pActive: async () => true,
     bus: { async emit() {} },
     clock: new FixedClock(args.now ?? TUE_0700),
     ids: { newId: () => "id-1" },

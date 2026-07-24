@@ -35,6 +35,15 @@ const noContent = (): Response => new Response(null, { status: 204 });
 // TODO(verify vs Twilio SDK) notes in twilio-a2p-gateway.ts). Checking every candidate keeps this
 // robust to whichever field name Twilio actually sends, without guessing wrong and silently
 // dropping every callback.
+//
+// NOTE: `MessagingServiceSid`/`Sid` are speculative fallbacks that `DrizzleOrgBySidReader` cannot
+// currently resolve — it only matches `secondaryProfileSid`/`brandSid`/`campaignSid` (a messaging
+// service has no async-review lifecycle, so it was never expected to appear here as the reviewed
+// resource; `Sid` is a generic catch-all in case a resource uses it instead of its named field). If
+// a callback is ever keyed ONLY by one of these, extractResourceSid still returns a value but the
+// reader won't find an org for it — the request fails closed (logged, 204, no state leaked; the
+// scheduled poll covers anything a dropped callback misses). Keep the reader's match set and this
+// list in sync if that ever needs to change.
 const SID_PARAM_CANDIDATES = [
   "CustomerProfileSid",
   "BrandSid",

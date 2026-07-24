@@ -4,7 +4,7 @@ import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { Phone, isOk, toPage, type OrgId } from "@mallet/shared/types";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import { DrizzleRegistrationRepository, GetA2pStatusUseCase, type A2pTenantRunner } from "@mallet/a2p";
+import { isSmsA2pActive } from "@mallet/a2p";
 import {
   NOTIFICATION_CHANNELS,
   NOTIFICATION_STATUSES,
@@ -104,10 +104,8 @@ const assertDelivered = (n: Notification, channel: string): Notification => {
 // registration row (org never started) reads as inactive, same as the messaging router's read.
 const assertSmsA2pActive = async (ctx: NotificationRouterCtx, channel: NotificationChannel): Promise<void> => {
   if (channel !== "sms") return;
-  const repo = new DrizzleRegistrationRepository(ctx.tx, ctx.principal.orgId);
-  const run: A2pTenantRunner = (fn) => fn(repo);
-  const status = await new GetA2pStatusUseCase(run).exec(ctx.principal.orgId);
-  if (!status.canText) {
+  const active = await isSmsA2pActive(ctx.tx, ctx.principal.orgId);
+  if (!active) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message: "texting isn't approved for this org yet — finish 10DLC registration",

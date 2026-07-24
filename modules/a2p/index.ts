@@ -11,6 +11,7 @@ export type { A2pTenantRunner } from "./app/begin-registration";
 export { AdvanceA2pRegistrationUseCase } from "./app/advance-registration";
 export { GetA2pStatusUseCase } from "./app/get-status";
 export type { A2pStatusView } from "./app/get-status";
+export { isSmsA2pActive } from "./app/is-sms-active";
 export { buildConsentDescription, buildOptInMessage, buildSampleMessages } from "./app/generate-consent";
 
 export { DrizzleRegistrationRepository, DrizzleOrgBySidReader } from "./infra/drizzle-registration-repository";

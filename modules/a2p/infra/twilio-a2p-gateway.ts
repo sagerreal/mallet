@@ -520,7 +520,14 @@ export class LoggingA2pGateway implements A2pGateway {
       },
       "a2p.stub.fetchStatus",
     );
-    return ok({ profile: "approved", brand: "approved", campaign: "approved" });
+    // NEVER "approved": AdvanceA2pRegistrationUseCase is the only writer of `active`, and its own doc
+    // comment names a scheduled poll over many orgs as an intended caller. If that poll is ever wired
+    // while A2P config is stubbed (a reachable state — see trpc/di.ts's config asymmetry: the SMS
+    // channel needs only 3 vars, the A2P gateway needs 4), an all-"approved" stub would auto-flip
+    // every polled org to `active` with no real registration ever having happened, silently reopening
+    // the whole gate. "pending" never advances a registration on its own — matching the spirit of
+    // LoggingNotificationSender, which never claims a real delivery either.
+    return ok({ profile: "pending", brand: "pending", campaign: "pending" });
   }
 }
 

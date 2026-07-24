@@ -377,8 +377,8 @@ describe("bookVisitTool", () => {
     await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
 
     const jobId = onlyJob(h).props.id;
-    // The B3 requirement: the send goes THROUGH the use-case, which persists a notifications row
-    // (observable while A2P is blocked). One row, matching the confirmation kind + idempotency key.
+    // The B3 requirement: the send goes THROUGH the use-case, which persists a notifications row —
+    // observable, regardless of provider config. One row, matching the confirmation kind + idempotency key.
     const rows = [...h.sms.rows.values()];
     expect(rows).toHaveLength(1);
     const row = rows[0]!.props;
@@ -420,6 +420,32 @@ describe("bookVisitTool", () => {
     expect(result.data).toMatchObject({ kind: "work" });
     expect(result.speak).toContain("$89");
     expect(h2.jobs.jobs.size).toBe(1);
+  });
+
+  // ── A2P compliance gate (final-review Critical fix) ──────────────────────────────
+  // Voice calls are never gated (10DLC governs SMS, not voice), but the one background SMS this
+  // tool fires — the booking confirmation — must skip, never send, for an org whose 10DLC campaign
+  // isn't active yet. Skip-not-throw: the booking itself must be completely unaffected.
+
+  it("A2P-inactive org: confirmation SMS is SKIPPED — sender/transport never called, no row written — booking still succeeds", async () => {
+    const inactive = buildHarness({ smsA2pActive: false });
+    const result = await bookVisitTool.handle(REPAIR_INPUT, inactive.ctx);
+    // the booking itself is entirely unaffected — same outcome as the A2P-active happy path
+    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.speak).toContain("$89");
+    expect(inactive.jobs.jobs.size).toBe(1);
+    // this is a SKIP, not a degraded send: the sender is never invoked and no notifications row
+    // is written at all (contrast with the "err"/"throw" sms-mode tests above, which DO write a
+    // row because the use-case was actually called).
+    expect(inactive.sms.sent).toHaveLength(0);
+    expect([...inactive.sms.rows.values()]).toHaveLength(0);
+  });
+
+  it("A2P-active org: the gate only blocks inactive orgs — confirmation SMS still sends", async () => {
+    const active = buildHarness({ smsA2pActive: true });
+    await bookVisitTool.handle(REPAIR_INPUT, active.ctx);
+    expect(active.sms.sent).toHaveLength(1);
+    expect([...active.sms.rows.values()]).toHaveLength(1);
   });
 
   it("invalid phone: never books and never sends an SMS", async () => {

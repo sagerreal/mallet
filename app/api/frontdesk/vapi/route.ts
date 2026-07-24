@@ -18,6 +18,7 @@ import {
   DrizzleNotificationRepository,
   type NotificationSender,
 } from "@mallet/notifications";
+import { isSmsA2pActive } from "@mallet/a2p";
 import { getAppDeps } from "@/trpc/di";
 import {
   parseServerMessage,
@@ -271,9 +272,12 @@ const handleEndOfCall = async (
 // an outbox-bound bus so a tool's emits are atomic with its writes, the write use-cases, and the
 // query-only readers. The comms send goes through a tenant-tx-scoped SendNotificationUseCase (so
 // the booking confirmation writes an observable notifications row); its repo + bus are tx-scoped,
-// while the underlying channel sender is request-independent (degrades to the logging stub while
-// A2P is blocked) and passed in. Every DB port is tenant-tx-scoped so nothing reaches drizzle
-// outside withTenant.
+// while the underlying channel sender is request-independent and passed in (degrades to a logging
+// stub only when the comms channel itself is unconfigured — see resolveNotificationSender). The
+// org's 10DLC status (isSmsA2pActive) is read fresh per call from the SAME tx/orgId, so the voice
+// tool's one background SMS (the booking confirmation) can skip-not-throw when the org isn't
+// A2P-active yet — see booking-confirmation.ts. Every DB port is tenant-tx-scoped so nothing
+// reaches drizzle outside withTenant.
 const buildVoiceToolDeps = (
   tx: TenantTx,
   orgId: OrgId,
@@ -299,6 +303,7 @@ const buildVoiceToolDeps = (
       systemClock,
       uuidGenerator,
     ),
+    isSmsA2pActive: () => isSmsA2pActive(tx, orgId),
     bus,
     clock: systemClock,
     ids: uuidGenerator,
