@@ -589,6 +589,20 @@
       "when": 1784324180310,
       "tag": "0083_thankful_omega_red",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1784842139468,
+      "tag": "0084_a2p_registrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1784842139469,
+      "tag": "0085_a2p_registrations_rls",
+      "breakpoints": true
     }
   ]
 }

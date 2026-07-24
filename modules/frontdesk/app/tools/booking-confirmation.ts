@@ -7,10 +7,20 @@ import type { VoiceToolContext } from "./tool-result";
 // A one-time transactional text sent right after a successful booking on an inbound call — TCPA-
 // safe. The channel + kind + STOP language are fixed constants; the body is composed from the brand
 // name and the same slot phrase book_visit speaks. It is routed through SendNotificationUseCase (NOT
-// the raw sender) so it WRITES A NOTIFICATIONS ROW — observable (records stub:logged while A2P is
-// blocked). While A2P is blocked the underlying sender is a logging stub, so the send degrades
-// gracefully: an err Result, the stub, or an unexpected throw NEVER fails the booking (it has
-// already succeeded) — every path is logged and swallowed here.
+// the raw sender) so it WRITES A NOTIFICATIONS ROW — observable.
+//
+// COMPLIANCE GATE: voice calls themselves are never gated (10DLC governs SMS, not voice), but this
+// one background SMS is real A2P traffic the moment the platform's SMS channel is configured — which
+// it is in prod. Before sending, we read the SAME `GetA2pStatusUseCase.canText` check every other
+// SMS-capable path in the app gates on (via ctx.deps.isSmsA2pActive, bound to this call's org by the
+// composition root — never a model/client-supplied org id). A non-active org SKIPS the send (never
+// throws): this is a fire-and-forget background path with no human awaiting a synchronous response,
+// so the booking must never fail on it — but an unregistered org must never actually transmit SMS
+// either. (A stale in-code comment here used to claim the underlying sender degrades to a logging
+// stub "while A2P is blocked" — that conflated an unrelated, unconfigured-channel stub with per-org
+// 10DLC state and was never actually a gate. This explicit check replaces that false rationale.)
+// Beyond the gate: an err Result, or an unexpected throw, NEVER fails the booking (it has already
+// succeeded) — every path is logged and swallowed here.
 
 const SMS_CHANNEL = "sms" as const;
 export const BOOKING_CONFIRMATION_KIND = "booking_confirmation";
@@ -30,12 +40,12 @@ export const confirmationSms = (brandName: string, slot: string): string =>
 
 // Fire the one-time booking-confirmation SMS through SendNotificationUseCase (writes a notifications
 // row + claims the idempotency key at the ledger). Background-path semantics: the send returns a
-// Result, but the booking has ALREADY succeeded, so an err (or the logging stub while A2P is
-// blocked) or an unexpected throw is logged and swallowed — it must NEVER fail the booking or bubble
-// a throw. The idempotencyKey is keyed on the job id (one confirmation per booked job); it is a HINT
-// for a future real provider — the actual at-most-once guarantee comes from the runner ledger
-// (at-most-once per toolCallId), so a Vapi tool retry returns the cached result without re-running
-// this send at all. Phone is already validated (book_visit gates booking on a valid phone).
+// Result, but the booking has ALREADY succeeded, so an err or an unexpected throw is logged and
+// swallowed — it must NEVER fail the booking or bubble a throw. The idempotencyKey is keyed on the
+// job id (one confirmation per booked job); it is a HINT for a future real provider — the actual
+// at-most-once guarantee comes from the runner ledger (at-most-once per toolCallId), so a Vapi tool
+// retry returns the cached result without re-running this send at all. Phone is already validated
+// (book_visit gates booking on a valid phone).
 export const sendBookingConfirmation = async (
   jobId: string,
   phone: Phone,
@@ -44,6 +54,17 @@ export const sendBookingConfirmation = async (
   ctx: VoiceToolContext,
 ): Promise<void> => {
   try {
+    // COMPLIANCE GATE (see file header): a non-active org skips the send — logged, never thrown —
+    // so an unregistered/pending org's booking still succeeds but never transmits real SMS.
+    const active = await ctx.deps.isSmsA2pActive();
+    if (!active) {
+      logger.info(
+        { orgId: ctx.orgId, tool: "book_visit", jobId },
+        "frontdesk.book_visit.confirmation_sms_skipped_a2p_inactive",
+      );
+      return;
+    }
+
     const result = await ctx.deps.sendNotification.exec({
       orgId: ctx.orgId,
       channel: SMS_CHANNEL,

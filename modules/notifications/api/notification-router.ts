@@ -2,7 +2,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { Phone, isOk, toPage } from "@mallet/shared/types";
+import { Phone, isOk, toPage, type OrgId } from "@mallet/shared/types";
+import type { TenantTx } from "@mallet/shared/db/tx";
+import { isSmsA2pActive } from "@mallet/a2p";
 import {
   NOTIFICATION_CHANNELS,
   NOTIFICATION_STATUSES,
@@ -67,8 +69,9 @@ const toSummaryDTO = (n: Notification) => {
   return rest;
 };
 
-const repoFor = (ctx: { tx: import("@mallet/shared/db/tx").TenantTx; principal: { orgId: import("@mallet/shared/types").OrgId } }) =>
-  new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId);
+type NotificationRouterCtx = { tx: TenantTx; principal: { orgId: OrgId } };
+
+const repoFor = (ctx: NotificationRouterCtx) => new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId);
 
 // Interactive sends must surface delivery truth. The use-case records provider failures
 // gracefully (status='failed', returned as ok) so the background reminder path never
@@ -92,6 +95,24 @@ const assertDelivered = (n: Notification, channel: string): Notification => {
   return n;
 };
 
+// Gate outbound SMS on the org's 10DLC campaign being active — the same carrier-compliance rule
+// the messaging router's `send` enforces (Task 14). This router has its own SMS-capable
+// interactive sends (send / sendInvoiceReminder / advanceReminder), so it needs the identical
+// guard: block BEFORE any use-case/sender work when the channel is sms and the org isn't approved
+// yet. Email is unaffected (10DLC only governs SMS). Reuses the a2p module's own status projection
+// (GetA2pStatusUseCase.canText) so "active" is defined in exactly one place; a missing
+// registration row (org never started) reads as inactive, same as the messaging router's read.
+const assertSmsA2pActive = async (ctx: NotificationRouterCtx, channel: NotificationChannel): Promise<void> => {
+  if (channel !== "sms") return;
+  const active = await isSmsA2pActive(ctx.tx, ctx.principal.orgId);
+  if (!active) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "texting isn't approved for this org yet — finish 10DLC registration",
+    });
+  }
+};
+
 export const createNotificationRouter = () =>
   router({
     send: ownerOrOffice
@@ -108,6 +129,7 @@ export const createNotificationRouter = () =>
       )
       .output(notificationDTO)
       .mutation(async ({ ctx, input }) => {
+        await assertSmsA2pActive(ctx, input.channel);
         let to = input.to;
         if (input.channel === "sms") {
           const parsed = Phone.parse(input.to);
@@ -147,6 +169,7 @@ export const createNotificationRouter = () =>
       .input(z.object({ invoiceId: z.string().uuid(), channel: channelEnum }))
       .output(notificationDTO)
       .mutation(async ({ ctx, input }) => {
+        await assertSmsA2pActive(ctx, input.channel);
         const send = new SendNotificationUseCase(
           repoFor(ctx),
           ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
@@ -174,6 +197,12 @@ export const createNotificationRouter = () =>
       .input(z.object({ relatedType: z.literal("invoice"), relatedId: z.string().uuid() }))
       .output(notificationDTO.nullable())
       .mutation(async ({ ctx, input }) => {
+        // Unlike send / sendInvoiceReminder, the channel here isn't known up front — the use-case
+        // resolves it from the target's contact info (sms if a phone is on file, else email) only
+        // after this guard would need to run. Since it CAN reach sms, a non-active org must be
+        // blocked unconditionally rather than let the use-case decide; passing the literal "sms"
+        // reuses the exact same gate the sibling paths use for the conservative "assume sms" case.
+        await assertSmsA2pActive(ctx, "sms");
         const send = new SendNotificationUseCase(
           repoFor(ctx),
           ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),

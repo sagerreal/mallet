@@ -34,6 +34,11 @@ const ConfigSchema = z.object({
   // (e.g. "https://trymallet.com/api/webhooks/twilio"). Vercel provides X-Forwarded-* so
   // req.url is correct there and this can be left unset.
   TWILIO_WEBHOOK_URL: z.url().optional(),
+  // A2P 10DLC ISV registration. Both optional: without the primary profile SID the A2pGateway
+  // degrades to a logging stub (dev/test boot without secrets). The status callback is where Twilio
+  // posts async brand/campaign approval results (see app/api/webhooks/twilio-a2p/route.ts).
+  TWILIO_PRIMARY_PROFILE_SID: z.string().min(1).optional(),
+  TWILIO_A2P_STATUS_CALLBACK_URL: z.url().optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   // Vapi (AI voice front desk) — all OPTIONAL. Without VAPI_WEBHOOK_SECRET the /api/frontdesk/vapi
   // route fail-closes (503, feature dark), so calls are never answered unverified. The secret is the

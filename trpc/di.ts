@@ -11,10 +11,13 @@ import {
   ChannelRouterNotificationSender,
 } from "@mallet/notifications";
 import { AnthropicLlmClient } from "@mallet/ai";
+import { TwilioA2pGateway } from "@mallet/a2p";
+import type { A2pGateway } from "@mallet/a2p";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
+import type { Config } from "@mallet/shared/config";
 import type { PaymentLinkGateway } from "@mallet/invoicing";
 import type { ConnectGateway } from "@mallet/settings";
 import { SupabasePhotoStorageGateway } from "@mallet/jobs";
@@ -22,6 +25,22 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender, NotificationChannel } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
+
+// A2P 10DLC registration self-disables (→ LoggingA2pGateway fallback, applied at the point of use
+// in a2p-router.ts) unless the full Twilio A2P config is present. Extracted from getAppDeps to keep
+// its complexity down.
+function buildA2pGateway(config: Config): A2pGateway | undefined {
+  if (config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && config.TWILIO_PRIMARY_PROFILE_SID && config.TWILIO_A2P_STATUS_CALLBACK_URL) {
+    return new TwilioA2pGateway(
+      config.TWILIO_ACCOUNT_SID,
+      config.TWILIO_AUTH_TOKEN,
+      config.TWILIO_PRIMARY_PROFILE_SID,
+      config.TWILIO_A2P_STATUS_CALLBACK_URL,
+    );
+  }
+  logger.warn("a2p: Twilio A2P config unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/PRIMARY_PROFILE_SID/A2P_STATUS_CALLBACK_URL missing) — registration is logged, not submitted");
+  return undefined;
+}
 
 // Composition root for runtime dependencies. Built once and reused across requests (the auth
 // provider and DB pool are long-lived). The in-memory event bus is a placeholder until the
@@ -70,6 +89,8 @@ export const getAppDeps = (): AppDeps => {
   // The agent's model client self-disables unless the Anthropic key is set.
   const llmClient: LlmClient | null = config.ANTHROPIC_API_KEY ? new AnthropicLlmClient(config.ANTHROPIC_API_KEY) : null;
 
+  const a2pGateway = buildA2pGateway(config);
+
   // Photo storage self-disables unless the service-role Supabase env is present (getSupabaseAdmin
   // throws otherwise). Bind lazily — the client is built on first upload, not at boot.
   let photoStorageGateway: PhotoStorageGateway | null = null;
@@ -94,6 +115,7 @@ export const getAppDeps = (): AppDeps => {
     photoStorageGateway,
     notificationSender,
     llmClient,
+    a2pGateway,
   };
   return cached;
 };

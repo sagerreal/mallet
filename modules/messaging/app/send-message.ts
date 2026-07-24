@@ -1,6 +1,6 @@
 import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
-import { notFound, err, ok } from "@mallet/shared/types";
+import { notFound, conflict, err, ok } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { SmsTransport } from "../../notifications/infra/twilio-sms-sender";
 import { TwilioSmsSender } from "../../notifications/infra/twilio-sms-sender";
@@ -18,6 +18,9 @@ export interface SendMessageDeps {
 export interface SendMessageCmd {
   readonly orgId: OrgId;
   readonly orgTwilioNumber: string | null; // from orgs.twilio_number
+  // From a2p_registrations.status === "active" for this org (read by the caller — the router —
+  // exactly like orgTwilioNumber; keeps this use case pure, no DB reader injected here).
+  readonly a2pActive: boolean;
   readonly leadId: LeadId;
   readonly leadPhone: string; // E.164 from leads.phone_e164
   readonly body: string;
@@ -39,6 +42,15 @@ export class SendMessageUseCase {
   async exec(cmd: SendMessageCmd): Promise<Result<Message, AppError>> {
     if (!cmd.orgTwilioNumber) {
       return err(notFound("this org has no texting number provisioned yet"));
+    }
+
+    // Gate outbound SMS on the org's 10DLC campaign being active — Twilio (and carriers) will
+    // filter/reject unregistered A2P traffic, and sending before approval risks the org's
+    // standing. Same "current state disallows the action" shape as the invoice/job status
+    // gates (create-payment.ts, create-job-from-estimate.ts) — conflict is the established
+    // AppError for that, not a new kind.
+    if (!cmd.a2pActive) {
+      return err(conflict("texting isn't approved for this org yet — finish 10DLC registration"));
     }
 
     const id = this.ids.newId();

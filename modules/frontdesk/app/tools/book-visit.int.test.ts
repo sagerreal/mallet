@@ -57,7 +57,10 @@ const buildDeps = (tx: TenantTx, org: OrgId): VoiceToolDeps => {
     // settings row has a NULL origin, so the service-area check is "unknown" → books normally anyway.
     geocoder: inertGeocoder(),
     // The confirmation SMS is routed through the real SendNotificationUseCase (writes an observable
-    // notifications row) with the logging stub as the channel (A2P-blocked) — never fails the booking.
+    // notifications row) with the logging stub as the channel (comms channel unconfigured in this
+    // test) — never fails the booking. This test targets job/visit RLS, not the A2P gate (that's
+    // covered by notification-router.int.test.ts's dedicated A2P-inactive org), so the gate itself
+    // is hardcoded active here rather than reading a real a2p_registrations row.
     sendNotification: new SendNotificationUseCase(
       new DrizzleNotificationRepository(tx, org),
       new LoggingNotificationSender(systemClock),
@@ -65,6 +68,7 @@ const buildDeps = (tx: TenantTx, org: OrgId): VoiceToolDeps => {
       systemClock,
       uuidGenerator,
     ),
+    isSmsA2pActive: async () => true,
     bus,
     clock: systemClock,
     ids: uuidGenerator,

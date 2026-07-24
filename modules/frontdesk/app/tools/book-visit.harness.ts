@@ -263,6 +263,10 @@ interface HarnessOverrides {
   // The geocoder the service-area check uses. Defaults to an inert one (always misses → "unknown" →
   // book normally), so existing booking tests are unaffected. Service-area tests pass a fixed point.
   geocoder?: Geocoder;
+  // Whether the org's 10DLC campaign reads as active for the booking-confirmation SMS gate. Defaults
+  // to true so every existing booking test (asserting the confirmation SMS actually sends) is
+  // unaffected; the dedicated A2P-inactive test sets this to false to assert skip-not-throw.
+  smsA2pActive?: boolean;
 }
 
 // Assemble the VoiceToolDeps from the resolved fakes. Split from buildHarness so each function keeps
@@ -292,6 +296,7 @@ const buildDeps = (args: {
     ),
     geocoder: over.geocoder ?? inertGeocoder(),
     sendNotification: sms.useCase,
+    isSmsA2pActive: async () => over.smsA2pActive ?? true,
     bus,
     clock: CLOCK,
     ids,

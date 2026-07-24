@@ -4,6 +4,7 @@
  * Unit tests for SendMessageUseCase. All dependencies are in-memory fakes —
  * no database, no network, no Twilio. Covers:
  *   - no-number guard returns err without hitting transport or repo
+ *   - a2p-not-active guard returns err without hitting transport or repo
  *   - a transport rejection returns err AND does NOT call recordOutbound
  *   - a successful send records status:"sent" with the provider SID and returns ok
  *   - a successful send with no externalId records providerSid=null
@@ -73,6 +74,7 @@ function makeSmsDeps(transport: SmsTransport): SendMessageDeps {
 const BASE_CMD: SendMessageCmd = {
   orgId: ORG_ID,
   orgTwilioNumber: ORG_NUMBER,
+  a2pActive: true,
   leadId: LEAD_ID,
   leadPhone: LEAD_PHONE,
   body: BODY,
@@ -94,6 +96,19 @@ describe("SendMessageUseCase", () => {
     const result = await uc.exec({ ...BASE_CMD, orgTwilioNumber: null });
 
     expect(result.ok).toBe(false);
+    expect(transport).not.toHaveBeenCalled();
+    expect(vi.mocked(repo.recordOutbound)).not.toHaveBeenCalled();
+  });
+
+  it("returns err immediately when a2pActive is false — transport and repo are never called", async () => {
+    const transport = vi.fn();
+    const uc = new SendMessageUseCase(repo, makeSmsDeps(transport), makeIds());
+
+    const result = await uc.exec({ ...BASE_CMD, a2pActive: false });
+
+    expect(result.ok).toBe(false);
+    const error = (result as { ok: false; error: AppError }).error;
+    expect(error.kind).toBe("conflict");
     expect(transport).not.toHaveBeenCalled();
     expect(vi.mocked(repo.recordOutbound)).not.toHaveBeenCalled();
   });

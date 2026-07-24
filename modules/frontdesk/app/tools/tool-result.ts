@@ -41,10 +41,16 @@ export interface VoiceToolDeps {
   // normally" (see service-area.ts) rather than blocking a booking on flaky geocoding.
   readonly geocoder: Geocoder;
   // Comms egress (SMS/email) routed through the notification USE-CASE (not the raw sender) so every
-  // send writes an observable notifications row (records stub:logged while A2P is blocked — the B3
-  // requirement). book_visit fires a one-time transactional booking confirmation through it; a send
-  // failure NEVER fails a booking (background-path semantics) — see book-visit.ts.
+  // send writes an observable notifications row. book_visit fires a one-time transactional booking
+  // confirmation through it; a send failure NEVER fails a booking (background-path semantics) — see
+  // book-visit.ts.
   readonly sendNotification: SendNotificationUseCase;
+  // Whether the org's 10DLC campaign is active right now (`GetA2pStatusUseCase.canText`, the SAME
+  // check every other SMS-capable path in the app gates on). Voice calls are never gated — only the
+  // one background SMS this module fires (the booking confirmation) reads this, to skip-not-throw
+  // when the org can't legally text yet. Bound to this call's tx/orgId by the composition root
+  // (app/api/frontdesk/vapi/route.ts), never re-derived from model-supplied input.
+  readonly isSmsA2pActive: () => Promise<boolean>;
   readonly bus: EventBus;
   readonly clock: Clock;
   readonly ids: IdGenerator;
