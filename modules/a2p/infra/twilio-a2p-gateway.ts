@@ -12,7 +12,21 @@ import type { BusinessInfo } from "../domain/registration";
 // changed policy SIDs across API generations before — reconfirm against that docs URL before any
 // live submission (see the Owen prerequisite in task-6-brief.md: Primary Customer Profile must be
 // APPROVED as "ISV Reseller or Partner" first).
+// Confirmed by directly fetching the ISV onboarding guide (Jul 2026): the guide quotes this exact
+// SID as "the Policy (rule set) that defines which information is required for a CustomerProfile"
+// for the Secondary Customer Profile step.
 const SECONDARY_CUSTOMER_PROFILE_POLICY_SID = "RNdfbf3fae0e1107f8aded0e7cead80bf5";
+// TODO(verify live): the A2P Trust Bundle (TrustProduct) policySid. The ISV onboarding guide
+// (https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/onboarding-isv-api, "Create an A2P
+// Profile" / "Create and submit a TrustProduct" step, which appears AFTER the Secondary Customer
+// Profile section) documents this value, but that section is beyond what automated fetches of the
+// page could retrieve (the page truncates mid-guide). No independent secondary source could
+// corroborate a specific SID, so this is left as an obviously-fake placeholder (matching Twilio's
+// own doc convention of `RNaaaa...` example SIDs) rather than risk hardcoding a wrong constant.
+// Confirm the real value via `client.trusthub.v1.policies.list()` on a live account (filter
+// friendlyName ~ "A2P Messaging Profile") or by reading that guide section directly, then replace
+// this placeholder before any live submission.
+const A2P_TRUST_BUNDLE_POLICY_SID = "RNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 // Low-throughput, mixed-content use case — matches Mallet's SMB (1-50 emp) service-message volume.
 // Confirmed a valid enum member of usAppToPersonUsecase (alongside 2FA, MARKETING, EMERGENCY, …).
 const CAMPAIGN_USECASE = "LOW_VOLUME";
@@ -49,6 +63,16 @@ export interface A2pOps {
   assignEntity(cmd: { profileSid: string; objectSid: string }): Promise<void>;
   evaluateProfile(cmd: { profileSid: string }): Promise<{ status: "compliant" | "noncompliant" }>;
   submitProfile(profileSid: string): Promise<void>;
+  // The A2P Trust Bundle (a TrustProduct, trusthub.v1.trustProducts — NOT a CustomerProfile) that
+  // registerBrand assembles before brand creation. See createBrandOp's doc comment: brand
+  // registration needs a customer-profile bundle SID AND a separate A2P Messaging Profile bundle
+  // SID, confirmed distinct via node_modules/twilio/lib/rest/messaging/v1/brandRegistration.d.ts
+  // and https://www.twilio.com/docs/messaging/api/brand-registration-resource.
+  fetchProfileDetails(profileSid: string): Promise<{ friendlyName: string; email: string }>;
+  createA2pTrustBundle(cmd: { friendlyName: string; email: string; statusCallback: string }): Promise<{ sid: string }>;
+  assignTrustBundleEntity(cmd: { trustBundleSid: string; objectSid: string }): Promise<void>;
+  evaluateTrustBundle(cmd: { trustBundleSid: string }): Promise<{ status: "compliant" | "noncompliant" }>;
+  submitTrustBundle(trustBundleSid: string): Promise<void>;
   createBrand(cmd: {
     customerProfileBundleSid: string;
     a2PProfileBundleSid: string;
@@ -135,19 +159,86 @@ async function submitProfileOp(client: Client, profileSid: string): Promise<void
   await client.trusthub.v1.customerProfiles(profileSid).update({ status: "pending-review" });
 }
 
+// RESOLVED (was TODO(verify vs Twilio SDK)): confirmed via
+// node_modules/twilio/lib/rest/messaging/v1/brandRegistration.d.ts (BrandRegistrationListInstanceCreateOptions:
+// `customerProfileBundleSid` and `a2PProfileBundleSid` are two distinct required string fields) and
+// https://www.twilio.com/docs/messaging/api/brand-registration-resource, which documents
+// a2PProfileBundleSid as "the SID of the TrustProduct resource associated with the business" — a
+// SEPARATE TrustHub resource (trusthub.v1.trustProducts, an "A2P Messaging Profile" bundle), not
+// the secondary Customer Profile bundle. registerBrand (below) now assembles that TrustProduct
+// (create -> assign the secondary profile as an entity -> evaluate -> submit) before calling this,
+// mirroring the createSecondaryProfile assembly. See A2P_TRUST_BUNDLE_POLICY_SID above for the one
+// remaining unconfirmed piece (the exact policySid).
 async function createBrandOp(
   client: Client,
   cmd: { customerProfileBundleSid: string; a2PProfileBundleSid: string; brandType: "STANDARD" | "SOLE_PROPRIETOR" },
 ): Promise<{ sid: string }> {
-  // TODO(verify vs Twilio SDK): per https://www.twilio.com/docs/messaging/api/brand-registration-resource,
-  // a2PProfileBundleSid is the "A2P Messaging Profile Bundle Sid" — Twilio's ISV guide implies
-  // this is a SEPARATE TrustHub bundle (a TrustProduct assembled against an A2P Messaging
-  // policy), not the secondary Customer Profile bundle itself. The caller currently passes
-  // customerProfileBundleSid for both as a placeholder. Confirm against a live account whether a
-  // distinct bundle must be created/assigned/evaluated first (mirroring the createSecondaryProfile
-  // assembly) before brand registration will succeed for real.
   const brand = await client.messaging.v1.brandRegistrations.create(cmd);
   return { sid: brand.sid };
+}
+
+// Reads friendlyName/email off the already-created secondary Customer Profile so the A2P Trust
+// Bundle can reuse them (avoids threading BusinessInfo through the A2pGateway.registerBrand port,
+// which only carries profileSid + kind — see ../domain/a2p-gateway.ts). Confirmed field names via
+// node_modules/twilio/lib/rest/trusthub/v1/customerProfiles.d.ts (CustomerProfilesResource:
+// friendly_name, email).
+async function fetchProfileDetailsOp(client: Client, profileSid: string): Promise<{ friendlyName: string; email: string }> {
+  const profile = await client.trusthub.v1.customerProfiles(profileSid).fetch();
+  return { friendlyName: profile.friendlyName, email: profile.email };
+}
+
+// Creates the A2P Trust Bundle (a TrustProduct, trusthub.v1.trustProducts) — confirmed distinct
+// resource from customerProfiles via node_modules/twilio/lib/rest/trusthub/v1/trustProducts.d.ts
+// (TrustProductsListInstanceCreateOptions: friendlyName, email, policySid, statusCallback? — same
+// create shape as CustomerProfilesListInstanceCreateOptions).
+async function createA2pTrustBundleOp(
+  client: Client,
+  cmd: { friendlyName: string; email: string; statusCallback: string },
+): Promise<{ sid: string }> {
+  const bundle = await client.trusthub.v1.trustProducts.create({
+    friendlyName: cmd.friendlyName,
+    email: cmd.email,
+    policySid: A2P_TRUST_BUNDLE_POLICY_SID,
+    statusCallback: cmd.statusCallback,
+  });
+  return { sid: bundle.sid };
+}
+
+// Attaches an object (here, the secondary Customer Profile bundle SID) to the A2P Trust Bundle —
+// the same object-bag assignment pattern as assignEntityOp, confirmed via
+// node_modules/twilio/lib/rest/trusthub/v1/trustProducts/trustProductsEntityAssignments.d.ts
+// (TrustProductsEntityAssignmentsListInstanceCreateOptions: { objectSid }, identical shape to
+// CustomerProfilesEntityAssignmentsListInstanceCreateOptions). Mirrors the existing
+// primaryProfileSid -> secondary-profile entity assignment below (bundle-to-bundle assignment is
+// already an established pattern in this file, not a new guess).
+async function assignTrustBundleEntityOp(
+  client: Client,
+  cmd: { trustBundleSid: string; objectSid: string },
+): Promise<void> {
+  await client.trusthub.v1
+    .trustProducts(cmd.trustBundleSid)
+    .trustProductsEntityAssignments.create({ objectSid: cmd.objectSid });
+}
+
+// Confirmed via node_modules/twilio/lib/rest/trusthub/v1/trustProducts/trustProductsEvaluations.d.ts
+// (TrustProductsEvaluationsStatus = "compliant" | "noncompliant" — identical union to the
+// CustomerProfile evaluation status used by evaluateProfileOp above).
+async function evaluateTrustBundleOp(
+  client: Client,
+  cmd: { trustBundleSid: string },
+): Promise<{ status: "compliant" | "noncompliant" }> {
+  const evaluation = await client.trusthub.v1
+    .trustProducts(cmd.trustBundleSid)
+    .trustProductsEvaluations.create({ policySid: A2P_TRUST_BUNDLE_POLICY_SID });
+  return { status: evaluation.status };
+}
+
+// Moves the Trust Bundle from draft -> pending-review, same as submitProfileOp. Confirmed via
+// node_modules/twilio/lib/rest/trusthub/v1/trustProducts.d.ts (TrustProductsStatus = "draft" |
+// "pending-review" | "in-review" | "twilio-rejected" | "twilio-approved" — identical union to
+// CustomerProfilesStatus).
+async function submitTrustBundleOp(client: Client, trustBundleSid: string): Promise<void> {
+  await client.trusthub.v1.trustProducts(trustBundleSid).update({ status: "pending-review" });
 }
 
 async function createMessagingServiceOp(client: Client, cmd: { friendlyName: string }): Promise<{ sid: string }> {
@@ -197,10 +288,12 @@ async function fetchBrandStatusOp(client: Client, brandSid: string): Promise<Rem
 // ../domain/registration.ts — and Task 8's AdvanceA2pRegistrationUseCase has it on hand from the
 // loaded registration), so this addresses the resource the same way createCampaignOp does:
 // client.messaging.v1.services(messagingServiceSid).usAppToPerson(campaignSid).
-// TODO(verify vs Twilio SDK): confirmed against the twilio@6.0.2 type declarations
-// (UsAppToPersonListInstance is callable as `(sid) => UsAppToPersonContext`, whose `.fetch()`
-// resolves a UsAppToPersonInstance with `campaignStatus: string`) — not yet exercised against a
-// live account.
+// RESOLVED (was TODO(verify vs Twilio SDK)): confirmed via
+// node_modules/twilio/lib/rest/messaging/v1/service/usAppToPerson.d.ts — UsAppToPersonListInstance
+// is callable as `(sid) => UsAppToPersonContext` scoped under a messagingServiceSid
+// (UsAppToPersonContextSolution: { messagingServiceSid, sid }), and `.fetch()` resolves a
+// UsAppToPersonInstance with `campaignStatus: string`. Both the nested path and the field name
+// match what this function already does — no code change needed here.
 async function fetchCampaignStatusOp(
   client: Client,
   cmd: { messagingServiceSid: string; campaignSid: string },
@@ -214,9 +307,12 @@ async function fetchCampaignStatusOp(
 
 // Real ops adapter behind the A2pOps seam — the ONLY place that touches the Twilio SDK for A2P.
 // Builds each call from the resource paths/params in .superpowers/sdd/twilio-sequence-ref.md,
-// cross-checked against the twilio@6.0.2 type declarations where noted. Where the reference plan
-// and the real SDK genuinely diverge (see the a2PProfileBundleSid TODO on createBrandOp above),
-// the gap is flagged rather than papered over — real-account verification is deferred to Owen.
+// cross-checked against the twilio@6.0.2 type declarations and Twilio's public docs where noted.
+// The a2PProfileBundleSid / A2P Trust Bundle gap that used to live here (createBrandOp's original
+// TODO) is now implemented (see registerBrand's trust-bundle assembly) — the one remaining
+// unconfirmed piece is A2P_TRUST_BUNDLE_POLICY_SID's exact value (see its TODO(verify live) above).
+// Any other genuine plan-vs-SDK divergence is flagged with a precise TODO(verify live) rather than
+// papered over — real-account verification of those is deferred to Owen.
 function buildTwilioA2pOps(client: Client): A2pOps {
   return {
     createCustomerProfile: (cmd) => createCustomerProfileOp(client, cmd),
@@ -226,6 +322,11 @@ function buildTwilioA2pOps(client: Client): A2pOps {
     assignEntity: (cmd) => assignEntityOp(client, cmd),
     evaluateProfile: (cmd) => evaluateProfileOp(client, cmd),
     submitProfile: (profileSid) => submitProfileOp(client, profileSid),
+    fetchProfileDetails: (profileSid) => fetchProfileDetailsOp(client, profileSid),
+    createA2pTrustBundle: (cmd) => createA2pTrustBundleOp(client, cmd),
+    assignTrustBundleEntity: (cmd) => assignTrustBundleEntityOp(client, cmd),
+    evaluateTrustBundle: (cmd) => evaluateTrustBundleOp(client, cmd),
+    submitTrustBundle: (trustBundleSid) => submitTrustBundleOp(client, trustBundleSid),
     createBrand: (cmd) => createBrandOp(client, cmd),
     createMessagingService: (cmd) => createMessagingServiceOp(client, cmd),
     createCampaign: (cmd) => createCampaignOp(client, cmd),
@@ -245,25 +346,40 @@ function mapProfileStatus(status: string): RemoteStatus {
   return "unknown";
 }
 
-// PENDING / IN_REVIEW -> pending; APPROVED -> approved; FAILED -> rejected. Terminal
-// deletion/suspension states map to "unknown" pending a real-account confirmation of how they
-// should surface to the org (TODO(verify vs Twilio SDK): DELETION_PENDING / DELETION_FAILED /
-// SUSPENDED behavior post-approval has not been exercised against a live account).
+// RESOLVED (was TODO(verify vs Twilio SDK)): BrandRegistrationStatus is an EXHAUSTIVE documented
+// union (not just examples) per node_modules/twilio/lib/rest/messaging/v1/brandRegistration.d.ts:
+// "PENDING" | "APPROVED" | "FAILED" | "IN_REVIEW" | "DELETION_PENDING" | "DELETION_FAILED" |
+// "SUSPENDED". PENDING / IN_REVIEW / DELETION_PENDING -> pending (still resolving — a deletion
+// request hasn't concluded to a final outcome yet, same as an in-flight review); APPROVED ->
+// approved; FAILED / DELETION_FAILED / SUSPENDED -> rejected. DELETION_FAILED and SUSPENDED both
+// mean the brand can no longer send (confirmed for SUSPENDED via
+// https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/troubleshooting-a2p-brands/troubleshooting-and-rectifying-a2p-campaigns-1:
+// "While suspended, campaigns cannot be used to send messages") — mapping them to "rejected"
+// (rather than "unknown") matters because AdvanceA2pRegistrationUseCase's rejectionReason() only
+// acts on "rejected" and calls markFailed; "unknown" would leave a previously-active org frozen at
+// status "active" (canText: true) forever after Twilio cuts it off. DELETION_PENDING is not
+// reachable via any Mallet-initiated flow today (no brand-deletion code path exists), so its exact
+// handling is a low-stakes judgment call, not a live-blocking unknown.
 function mapBrandStatus(status: string): RemoteStatus {
   if (status === "APPROVED") return "approved";
-  if (status === "FAILED") return "rejected";
-  if (status === "PENDING" || status === "IN_REVIEW") return "pending";
+  if (status === "FAILED" || status === "DELETION_FAILED" || status === "SUSPENDED") return "rejected";
+  if (status === "PENDING" || status === "IN_REVIEW" || status === "DELETION_PENDING") return "pending";
   return "unknown";
 }
 
-// IN_PROGRESS -> pending; VERIFIED -> approved; FAILED -> rejected. (UsAppToPersonInstance.
-// campaignStatus per the twilio@6.0.2 type declarations — its doc comment lists these three as
-// "Examples", not an exhaustive enum. TODO(verify vs Twilio SDK): other/terminal campaignStatus
-// values (e.g. a suspended state) are unverified against a live account, same caveat as
-// mapBrandStatus above.)
+// PARTIALLY RESOLVED (was TODO(verify vs Twilio SDK)): UsAppToPersonInstance.campaignStatus is
+// typed as plain `string` (no exhaustive union) per
+// node_modules/twilio/lib/rest/messaging/v1/service/usAppToPerson.d.ts, so unlike mapBrandStatus
+// there is no SDK-level exhaustive list to check against. However, Twilio's docs
+// (https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/troubleshooting-a2p-brands/troubleshooting-and-rectifying-a2p-campaigns-1)
+// confirm a 4th named value beyond the "IN_PROGRESS, VERIFIED, FAILED" examples: "in some rare
+// cases campaigns can be SUSPENDED" — while suspended, "campaigns cannot be used to send
+// messages", i.e. no longer usable, same reasoning as mapBrandStatus's SUSPENDED handling above.
+// TODO(verify live): campaignStatus still has no exhaustive documented enum — any value Twilio
+// returns beyond these 4 named ones will fall through to "unknown" here.
 function mapCampaignStatus(status: string): RemoteStatus {
   if (status === "VERIFIED") return "approved";
-  if (status === "FAILED") return "rejected";
+  if (status === "FAILED" || status === "SUSPENDED") return "rejected";
   if (status === "IN_PROGRESS") return "pending";
   return "unknown";
 }
@@ -313,14 +429,37 @@ export class TwilioA2pGateway implements A2pGateway {
         statusCallback: this.statusCallbackUrl,
       });
 
-      // TODO(verify vs Twilio SDK): the exact allowed values for business_identity/business_type/
-      // business_regions_of_operation/business_industry come from Twilio's EndUserType reference
-      // (client.trusthub.v1.endUserTypes / the ISV onboarding guide's business-information
-      // fields), which was not exhaustively available without a live account. The attribute NAMES
-      // (business_name, business_industry, business_registration_identifier,
-      // business_registration_number, business_type, business_regions_of_operation, website_url)
-      // are confirmed from the twilio@6.0.2 EndUser create() type declaration; the VALUES below
-      // are a best-faith attempt.
+      // RESOLVED (was TODO(verify vs Twilio SDK)) — attribute KEY names: confirmed from the
+      // twilio@6.0.2 EndUser create() type declaration (node_modules/twilio/lib/rest/trusthub/v1/endUser.d.ts,
+      // `attributes?: any` — untyped, but the key set below matches Twilio's own documented
+      // request-body example for a `customer_profile_business_information` EndUser) — business_name,
+      // business_industry, business_registration_identifier, business_registration_number,
+      // business_type, business_regions_of_operation, website_url are all real, used keys.
+      //
+      // Enum VALUES, confirmed via https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info:
+      //  - business_industry: CONSTRUCTION (used by Mallet's plumbing/trades ICP) is a documented
+      //    member of the published industry list (AGRICULTURE, ..., CONSTRUCTION, ..., TRAVEL).
+      //    cmd.info.industry is real per-org input (BusinessInfo.industry), not a guess — but it is
+      //    NOT validated against this enum at any boundary today; an org with a free-text industry
+      //    outside the documented list would only fail at Twilio evaluation time, not before.
+      //  - business_regions_of_operation: "USA_AND_CANADA" is a documented member (alongside
+      //    AFRICA, ASIA, EUROPE, LATIN_AMERICA). Hardcoded deliberately, not a guess — Mallet's ICP
+      //    (CLAUDE.md) is US trade shops only, so this is a legitimate constant, not a per-org input.
+      //  - business_registration_identifier: the documented enum is EIN, DUNS, CBN, CN, ACN, CIN,
+      //    VAT, VATRN, RN, Other. "EIN" (used when cmd.info.ein is present) is a confirmed member.
+      //    TODO(verify live): "NONE" (used when cmd.info.ein is null) is NOT a documented member of
+      //    that enum — Twilio publishes a wholly separate, simpler onboarding path for tax-ID-less
+      //    businesses (https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/onboarding-isv-api-sole-prop-new)
+      //    that may not use business_registration_identifier at all. Confirm live whether a
+      //    no-EIN org should route through that separate flow instead of this one with "NONE".
+      //  - business_type: the documented enum includes "Sole Proprietorship" and "Limited
+      //    Liability Corporation" (both used below), but two independent fetches of Twilio's docs
+      //    gave inconsistent listings of the full set, so this enum could not be fully corroborated.
+      //    TODO(verify live): more fundamentally, business_type here is INFERRED from
+      //    EIN-presence-alone (`cmd.info.ein ? "...LLC" : "Sole Proprietorship"`) — BusinessInfo
+      //    (../domain/registration.ts) has no real legal-entity-type field, so this is a heuristic,
+      //    not sourced per-org input. Confirm against a live account whether this heuristic ever
+      //    mismatches (e.g. a sole-EIN-less LLC, or an org with an EIN that isn't an LLC).
       const businessInfoEndUser = await this.ops.createEndUser({
         friendlyName: `${cmd.info.legalName} business information`,
         type: "customer_profile_business_information",
@@ -336,8 +475,14 @@ export class TwilioA2pGateway implements A2pGateway {
       });
       await this.ops.assignEntity({ profileSid: profile.sid, objectSid: businessInfoEndUser.sid });
 
-      // TODO(verify vs Twilio SDK): business_title/job_position values ("Owner") are a
-      // placeholder — BusinessInfo (../domain/registration.ts) has no contact-title field today.
+      // TODO(verify live): job_position/business_title are hardcoded to "Owner" — BusinessInfo
+      // (../domain/registration.ts) has no contact-title field today, so this cannot be sourced
+      // from real per-org input (not a guess left in by oversight — there is nothing to source it
+      // from). Attribute key names (first_name, last_name, email, phone_number, business_title,
+      // job_position) are confirmed real via Twilio's documented authorized_representative_1
+      // EndUser example. Confirm live whether Twilio's evaluation is sensitive to job_position
+      // wording (e.g. requires a title matching a real signing authority) before assuming "Owner"
+      // always passes.
       const repEndUser = await this.ops.createEndUser({
         friendlyName: `${cmd.info.contactFirstName} ${cmd.info.contactLastName}`,
         type: "authorized_representative_1",
@@ -360,6 +505,12 @@ export class TwilioA2pGateway implements A2pGateway {
         postalCode: cmd.info.addressPostal,
         isoCountry: "US",
       });
+      // RESOLVED (was an implicit open question, not a tagged TODO): address_sids takes a SINGLE
+      // Address SID string, not an array — confirmed via Twilio's documented customer_profile_address
+      // SupportingDocument example, `"attributes": { "address_sids": "ADaaaa..." }`
+      // (node_modules/twilio/lib/rest/trusthub/v1/supportingDocument.d.ts types `attributes` as
+      // untyped `any`, so this shape can only be confirmed from the docs, not the SDK types). The
+      // existing `address.sid` (a single string) already matches this shape — no change needed.
       const supportingDoc = await this.ops.createSupportingDocument({
         friendlyName: `${cmd.info.legalName} address document`,
         type: "customer_profile_address",
@@ -392,9 +543,32 @@ export class TwilioA2pGateway implements A2pGateway {
     kind: "standard" | "sole_proprietor";
   }): Promise<Result<{ brandSid: string }, ExternalServiceError>> {
     return this.wrap("registerBrand", async () => {
+      // Assembles the A2P Trust Bundle (a TrustProduct distinct from the secondary Customer
+      // Profile — see createBrandOp's doc comment) before brand creation, mirroring
+      // createSecondaryProfile's create -> assign -> evaluate -> submit shape. friendlyName/email
+      // are read off the already-created secondary profile rather than threaded through this
+      // method's cmd, since A2pGateway.registerBrand (../domain/a2p-gateway.ts) only carries
+      // profileSid + kind.
+      const profileDetails = await this.ops.fetchProfileDetails(cmd.profileSid);
+      const trustBundle = await this.ops.createA2pTrustBundle({
+        friendlyName: `${profileDetails.friendlyName} — A2P Trust Bundle`,
+        email: profileDetails.email,
+        statusCallback: this.statusCallbackUrl,
+      });
+      await this.ops.assignTrustBundleEntity({ trustBundleSid: trustBundle.sid, objectSid: cmd.profileSid });
+
+      const evaluation = await this.ops.evaluateTrustBundle({ trustBundleSid: trustBundle.sid });
+      if (evaluation.status !== "compliant") {
+        // Same non-retryable-4xx classification as createSecondaryProfile's compliance check.
+        throw Object.assign(new Error("A2P trust bundle failed compliance evaluation"), {
+          status: 400,
+        });
+      }
+      await this.ops.submitTrustBundle(trustBundle.sid);
+
       const brand = await this.ops.createBrand({
         customerProfileBundleSid: cmd.profileSid,
-        a2PProfileBundleSid: cmd.profileSid,
+        a2PProfileBundleSid: trustBundle.sid,
         brandType: cmd.kind === "sole_proprietor" ? "SOLE_PROPRIETOR" : "STANDARD",
       });
       return { brandSid: brand.sid };

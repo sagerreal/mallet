@@ -25,6 +25,11 @@ const okOps = (): A2pOps => ({
   assignEntity: vi.fn(async () => undefined),
   evaluateProfile: vi.fn(async () => ({ status: "compliant" as const })),
   submitProfile: vi.fn(async () => undefined),
+  fetchProfileDetails: vi.fn(async () => ({ friendlyName: "Summit Plumbing — Secondary Customer Profile", email: "sam@s.example" })),
+  createA2pTrustBundle: vi.fn(async () => ({ sid: "BUtrust" })),
+  assignTrustBundleEntity: vi.fn(async () => undefined),
+  evaluateTrustBundle: vi.fn(async () => ({ status: "compliant" as const })),
+  submitTrustBundle: vi.fn(async () => undefined),
   createBrand: vi.fn(async () => ({ sid: "BNxxx" })),
   createMessagingService: vi.fn(async () => ({ sid: "MGxxx" })),
   createCampaign: vi.fn(async () => ({ sid: "QExxx" })),
@@ -43,6 +48,35 @@ describe("TwilioA2pGateway", () => {
     if (r.ok) expect(r.value.profileSid).toBe("BUxxx");
     expect(ops.createCustomerProfile).toHaveBeenCalledOnce();
     expect(ops.submitProfile).toHaveBeenCalledWith("BUxxx");
+  });
+
+  it("registerBrand assembles a distinct A2P Trust Bundle and passes its sid as a2PProfileBundleSid (not the customer profile sid)", async () => {
+    const ops = okOps();
+    const gw = new TwilioA2pGateway("AC", "tok", "BUprimary", "https://cb", ops);
+    const r = await gw.registerBrand({ profileSid: "BUxxx", kind: "standard" });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.brandSid).toBe("BNxxx");
+    expect(ops.fetchProfileDetails).toHaveBeenCalledWith("BUxxx");
+    expect(ops.createA2pTrustBundle).toHaveBeenCalledOnce();
+    expect(ops.assignTrustBundleEntity).toHaveBeenCalledWith({ trustBundleSid: "BUtrust", objectSid: "BUxxx" });
+    expect(ops.evaluateTrustBundle).toHaveBeenCalledWith({ trustBundleSid: "BUtrust" });
+    expect(ops.submitTrustBundle).toHaveBeenCalledWith("BUtrust");
+    expect(ops.createBrand).toHaveBeenCalledWith({
+      customerProfileBundleSid: "BUxxx",
+      a2PProfileBundleSid: "BUtrust",
+      brandType: "STANDARD",
+    });
+  });
+
+  it("classifies a noncompliant A2P Trust Bundle evaluation as a non-retryable ExternalServiceError", async () => {
+    const ops = okOps();
+    ops.evaluateTrustBundle = vi.fn(async () => ({ status: "noncompliant" as const }));
+    const gw = new TwilioA2pGateway("AC", "tok", "BUprimary", "https://cb", ops);
+    const r = await gw.registerBrand({ profileSid: "BUxxx", kind: "standard" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("external_service");
+    if (!r.ok && r.error.kind === "external_service") expect(r.error.retryable).toBe(false);
+    expect(ops.createBrand).not.toHaveBeenCalled();
   });
 
   it("classifies a 4xx from a step as a non-retryable ExternalServiceError", async () => {
