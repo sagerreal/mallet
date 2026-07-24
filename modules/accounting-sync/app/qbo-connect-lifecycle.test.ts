@@ -5,7 +5,7 @@ import { createSecretBox, type SecretBox } from "@mallet/platform/crypto/secret-
 import { QboConnection, type QboConnectionProps } from "../domain/qbo-connection";
 import type { QboConnectionRepository } from "../domain/qbo-connection-repository";
 import type { QboOauthGateway, QboTokens } from "../domain/qbo-oauth-gateway";
-import { CompleteQboConnect } from "./complete-qbo-connect";
+import { CompleteQboConnect, type CompleteQboConnectCommand } from "./complete-qbo-connect";
 import { DisconnectQbo } from "./disconnect-qbo";
 import { GetQboStatus } from "./get-qbo-status";
 
@@ -76,8 +76,10 @@ const deps = (opts: {
 };
 
 describe("CompleteQboConnect", () => {
-  const run = (d: ReturnType<typeof deps>, cmd = { code: "the-code", realmId: "913035", userId: "user-1" }) =>
-    new CompleteQboConnect(d.repo, d.gateway, box, clock, ids).exec(cmd, ORG);
+  const run = (
+    d: ReturnType<typeof deps>,
+    cmd: CompleteQboConnectCommand = { code: "the-code", realmId: "913035", userId: "user-1" },
+  ) => new CompleteQboConnect(d.repo, d.gateway, box, clock, ids).exec(cmd, ORG);
 
   it("stores an active connection with the realm and the user who connected", async () => {
     const d = deps();
