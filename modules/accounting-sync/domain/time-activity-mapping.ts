@@ -43,9 +43,17 @@ const toMinutes = (t: string): number | null => {
  *   no zone, while TimeActivity's start/end carry an offset and a flag about whether it has already
  *   been applied. Getting that wrong shifts an entry to the wrong DAY. Duration is unambiguous and
  *   is what payroll actually consumes; the clock times stay visible in Mallet.
- * - **No HourlyRate / CostRate / PayrollItemRef.** QuickBooks already knows what the person is
- *   paid. Sending a rate would let Mallet silently contradict payroll — and Mallet does not even
- *   store a wage (HOURS only, by design).
+ * - **No HourlyRate / CostRate.** QuickBooks already knows what the person is paid. Sending a rate
+ *   would let Mallet silently contradict payroll — and Mallet does not even store a wage (HOURS
+ *   only, by design).
+ * - **No PayrollItemRef — a KNOWN GAP, not a preference.** That field ties an entry to a pay TYPE
+ *   (regular / overtime / holiday), which is what a payroll run consumes. Its value is a
+ *   compensation id, obtainable only from Intuit's `payrollEmployeeCompensations` GraphQL query,
+ *   which is gated behind the `payroll.compensation.read` scope — a PREMIUM API requiring Gold
+ *   tier (500+ active connections). We cannot fetch one on the free Builder tier, and Intuit's own
+ *   examples show "project only (no pay type)" as a valid payload, which is the shape we send.
+ *   Consequence: these hours reliably land in QuickBooks (visible, billable, job-costable). Whether
+ *   they also PREFILL a payroll run without a pay type is unverified — see the research doc.
  * - **No overtime split.** QBO Payroll computes overtime itself from total hours. Sending our 40h
  *   split pre-applied would double-count it. Our rule stays a display concern.
  * - **Breaks are never sent.** Unpaid break time is not worked time; pushing it would inflate pay.
