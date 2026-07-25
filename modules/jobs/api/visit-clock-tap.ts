@@ -1,5 +1,5 @@
 import type { TenantTx } from "@mallet/shared/db/tx";
-import type { Principal, Role } from "@mallet/identity";
+import type { Principal } from "@mallet/identity";
 import type { Clock, JobId } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
@@ -15,13 +15,21 @@ import type { VisitStatus } from "../domain/job";
  * module is the seam where a visit write becomes a clock segment.
  */
 
-// The role whose taps move a clock. The clock records the hours of the person who did the work,
-// and owner/office callers reach the field router as DISPATCHERS: assertOnJobIfTech waves them
-// through with no assignment at all, so a segment attributed to them would file hours for someone
-// sitting at a desk. They also keep their own visit endpoints (visit-router), which drive no clock
-// — so the rule being role-based, not surface-based, means the same person marking the same visit
-// done gets the same payroll outcome whichever screen they used.
-const CLOCKED_ROLE: Role = "tech";
+// Whose taps move a clock is a question about WORK, not about role.
+//
+// This was `role === "tech"`, which was wrong for the beachhead: in a 1-3 technician shop the owner
+// is usually a working technician, so half the jobs are theirs. Recording none of that time left job
+// costing unable to answer the only question it exists for — did we make money on that job.
+//
+// But the naive fix (drop the role check) is also wrong, and that is what the role check was
+// papering over: assertOnJobIfTech waves owner/office through with NO assignment check at all, so an
+// owner marking a technician's visit done from the field surface would have that technician's work
+// filed as the owner's hours.
+//
+// So the rule is assignment: the caller's clock moves when the caller is the person the work belongs
+// to. An owner-operator tapping Done on their own visit gets job time; an owner clearing a
+// colleague's visit from the office is DISPATCHING and gets none. Same primitive the authorisation
+// guard uses (Job.isAssignedToVisit / isAssignedTo), so the two can never disagree.
 
 /**
  * The visit statuses the FIELD surface may set — the two step buttons on the tech's visit row.
@@ -78,8 +86,14 @@ export const runVisitClockTap = async (
   ctx: ClockTapContext,
   tap: ClockTap,
   jobId: JobId,
+  /**
+   * Is this the caller's own work? The caller loaded the job to authorise the write, so it passes
+   * the answer down rather than making this re-read it. False means DISPATCHING — somebody moving
+   * another person's visit — and dispatching records no hours for the dispatcher.
+   */
+  isOwnWork: boolean,
 ): Promise<void> => {
-  if (ctx.principal.role !== CLOCKED_ROLE) return;
+  if (!isOwnWork) return;
 
   const orgId = ctx.principal.orgId;
   const techUserId = ctx.principal.userId;
