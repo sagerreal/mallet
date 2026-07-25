@@ -1200,6 +1200,11 @@
   .ts-seg button{border:none;background:var(--card);color:var(--ink-2);font:inherit;font-size:var(--type-base);font-weight:600;padding:var(--space-2) var(--space-3);cursor:pointer;border-right:1px solid var(--line)}
   .ts-seg button:last-child{border-right:none}
   .ts-seg button.on{background:var(--ink);color:var(--paper)}
+  /* Seven days do not fit on one line at every width, so this one wraps — and once it wraps the
+     single rounded outline of a segmented control stops working, so each day becomes its own key. */
+  .ts-dayseg{display:flex;flex-wrap:wrap;gap:var(--space-1);border:none;overflow:visible}
+  .ts-dayseg button{border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);white-space:nowrap}
+  .ts-dayseg button:last-child{border-right:1px solid var(--line)}
   .ts-pickwrap{flex:1;min-width:0}
   .ts-trig{display:inline-flex;align-items:center;justify-content:space-between;gap:var(--space-2);border:1px solid var(--line);background:var(--card);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font:inherit;font-size:var(--type-base);cursor:pointer;color:var(--ink);min-width:160px}
   .ts-trig:hover{border-color:var(--ink-3)}
@@ -1236,7 +1241,10 @@
   .ts-ehrs{flex:none;width:80px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
   .ts-ehrs .upd{color:var(--ink-3);font-size:var(--type-xs);font-weight:400;margin-left:var(--space-1)}
   .ts-eact{flex:none;width:50px;text-align:right;white-space:nowrap}
-  .ts-eact .ts-del{padding:var(--space-2xs) var(--space-1)}
+  /* WCAG 2.2 target-size: 24x24 minimum. The tight padding alone left these under it, and axe
+     never caught it because the a11y fixture org has no time entries — so the rows these sit on
+     are never rendered during the scan. */
+  .ts-eact .ts-del{padding:var(--space-2xs) var(--space-1);min-width:24px;min-height:24px;display:inline-flex;align-items:center;justify-content:center}
   /* a still-running row carries Stop as well as delete, so its action cell sizes to its buttons;
      every finished row keeps the narrow icon cell and the column stays aligned */
   .ts-eact.live{width:auto;display:inline-flex;align-items:center;justify-content:flex-end;gap:var(--space-1)}

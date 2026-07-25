@@ -4,6 +4,7 @@ import {
   tsAddDays,
   tsWeekStart,
   tsWeekDates,
+  tsDayShort,
   tsHours,
   tsPaid,
   tsRollup,
@@ -273,5 +274,17 @@ describe("tsIsImplausible — a row that is probably a forgotten segment", () =>
 
   it("says nothing about an unfinished row — that is the still-open banner's job, not this one", () => {
     expect(tsIsImplausible(row({ end: null, running: true }))).toBe(false);
+  });
+});
+
+describe("tsDayShort", () => {
+  it("leads with the weekday, so seven of them can be scanned in a row", () => {
+    expect(tsDayShort("2026-07-22")).toBe("Wed 22");
+    expect(tsDayShort("2026-07-20")).toBe("Mon 20");
+  });
+
+  it("does not slip to the previous day in a UTC-negative timezone", () => {
+    // Parsed at noon for exactly this reason — midnight would land on the 21st west of UTC.
+    expect(tsDayShort("2026-07-22")).toContain("22");
   });
 });

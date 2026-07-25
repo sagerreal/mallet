@@ -167,10 +167,13 @@ export function TimesheetsPanel() {
   }
 
   function handleAdd(techId: string) {
-    // Anchor a fresh draft on today if today is in view, else the week's Monday.
+    // Anchor a fresh draft on today if today is in view, else the week's Monday. That anchor is a
+    // guess, so the editor opens straight away with the day picker in it — otherwise the new row
+    // sits collapsed on a day nobody chose and the next step is not obvious.
     const day = weekDates.includes(today) ? today : weekStart;
-    addTimeEntry(techId, day);
+    const created = addTimeEntry(techId, day);
     setSelectedTechId(techId);
+    setEditId(created.id);
   }
 
   // Reopen: un-approve every approved entry this week for the given tech.
