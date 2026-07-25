@@ -37,18 +37,30 @@ const TS_EDITABLE: ReadonlySet<string> = new Set(["kind", "jobId", "date", "star
 
 // First-run empty-state copy. Timesheets are DOWNSTREAM — hours only exist once field crew clock
 // into jobs (or the office adds one by hand). Shown when there are no time entries at all.
+//
+// It says something DIFFERENT depending on whether a crew exists, because there are two genuinely
+// different situations behind "no hours" and only one of them is about setting up a crew. Telling a
+// shop with two field crew to "set up your crew" reads as software that does not know its own state,
+// and it puts an already-finished step in front of the one thing they can actually do.
 const FIRST_RUN = {
   heading: "No hours logged yet",
-  subtext: "Hours show up here once your field crew clock into jobs. Set up your crew, or add an entry by hand.",
-  crew: {
-    title: "Add field crew",
-    description: "Invite a team member and mark them field crew — their hours land here.",
-    actionLabel: "Set up crew",
+  /** Nobody is marked field crew yet — hours have nobody to belong to. */
+  noCrew: {
+    subtext: "Hours show up here once your field crew clock into jobs. Mark someone field crew to get started.",
+    crew: {
+      title: "Add field crew",
+      description: "Invite a team member and mark them field crew — their hours land here.",
+      actionLabel: "Set up crew",
+    },
   },
-  entry: {
-    title: "Add an entry by hand",
-    description: "Log time for a crew member yourself — edit the hours and job right in the grid.",
-    actionLabel: "+ Add entry",
+  /** A crew exists; they simply have not clocked in yet. The real next action is a manual entry. */
+  hasCrew: {
+    subtext: "Your crew's hours land here as soon as they start a job on their phone. You can also log time yourself.",
+    entry: {
+      title: "Add an entry by hand",
+      description: "Log time for a crew member yourself — then edit the hours and job right in the grid.",
+      actionLabel: "+ Add entry",
+    },
   },
 } as const;
 
@@ -187,18 +199,35 @@ export function TimesheetsPanel() {
   if (loading) {
     return <ListLoading />;
   }
+  // Field crew only — the techs slice is already filtered to isFieldCrew (techs-hydrator).
+  const hasCrew = techs.length > 0;
   if (firstRun) {
     return (
       <>
         <h1>Timesheets</h1>
         <FirstRunEmptyState
           heading={FIRST_RUN.heading}
-          subtext={FIRST_RUN.subtext}
-          paths={[
-            { ...FIRST_RUN.crew, onAction: () => router.push("/settings?tab=team"), variant: "primary" },
-            // Only offer a manual entry once there's a crew member to attribute it to (no dead button).
-            ...(techs.length > 0 ? [{ ...FIRST_RUN.entry, onAction: () => handleAdd(techs[0]!.id) }] : []),
-          ]}
+          subtext={hasCrew ? FIRST_RUN.hasCrew.subtext : FIRST_RUN.noCrew.subtext}
+          paths={
+            hasCrew
+              ? // A crew already exists, so the only thing left to do here is log time. Offering
+                // "Set up crew" as the primary action would hand them a step they have finished.
+                [
+                  {
+                    ...FIRST_RUN.hasCrew.entry,
+                    onAction: () => handleAdd(techs[0]!.id),
+                    variant: "primary" as const,
+                  },
+                ]
+              : // No crew: a manual entry has nobody to belong to, so it is not offered at all.
+                [
+                  {
+                    ...FIRST_RUN.noCrew.crew,
+                    onAction: () => router.push("/settings?tab=team"),
+                    variant: "primary" as const,
+                  },
+                ]
+          }
         />
       </>
     );
