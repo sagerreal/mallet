@@ -424,6 +424,8 @@
   .werr-live{position:sticky;bottom:0;z-index:5;padding:0 var(--pad,18px)}
   .werr{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-3) 0;padding:var(--space-3) var(--space-4);border-radius:var(--radius-sm);
     background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 30%,transparent);box-shadow:var(--shadow-sm)}
+  /* A deliberate no-op is not a failure: same anchored slot, without the red. */
+  .werr.notice{background:var(--card);border:1px solid var(--line);color:var(--ink)}
   .werr-msg{flex:1;font-size:var(--type-base);color:var(--ink);font-weight:600}
   .werr-x{background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:var(--type-base);padding:var(--space-2xs) var(--space-1);line-height:1}
   .loadfail{text-align:center;padding:var(--space-10) var(--space-5);max-width:420px;margin:0 auto}
@@ -1260,6 +1262,9 @@
      an identical-looking button reads as a dead control. Scoped to this surface deliberately:
      a global .btn:disabled rule would move every existing visual baseline. */
   .mh-acts .btn:disabled{opacity:.55;cursor:not-allowed}
+  /* Same treatment for My day's action row. Without it `disabled` was invisible here: the button
+     looked live while the write was in flight, which is exactly how one press became six. */
+  .md-acts .btn:disabled{opacity:.55;cursor:not-allowed}
   .mh-acts .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
   .mh-err{color:var(--red);font-size:var(--type-base);margin-top:var(--space-2)}
   .mh-lock{font-size:var(--type-xs);color:var(--ink-2);background:var(--paper);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);margin-top:var(--space-2xs)}

@@ -98,6 +98,15 @@ class FakeLeadRepository implements LeadRepository {
   async findById(_id: LeadId): Promise<Lead | null> {
     return null;
   }
+
+  async findByIds(ids: readonly LeadId[]): Promise<Lead[]> {
+    const found: Lead[] = [];
+    for (const id of ids) {
+      const lead = await this.findById(id);
+      if (lead) found.push(lead);
+    }
+    return found;
+  }
   async list(_page: CursorPage, _filter?: LeadFilter): Promise<Paginated<Lead>> {
     return { items: [], nextCursor: null };
   }

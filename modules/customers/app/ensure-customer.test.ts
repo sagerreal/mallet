@@ -74,6 +74,15 @@ class FakeLeadRepository implements LeadRepository {
     return this.store.get(id) ?? null;
   }
 
+  async findByIds(ids: readonly LeadId[]): Promise<Lead[]> {
+    const found: Lead[] = [];
+    for (const id of ids) {
+      const lead = await this.findById(id);
+      if (lead) found.push(lead);
+    }
+    return found;
+  }
+
   async list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>> {
     // Exclude soft-deleted rows.
     let rows = [...this.store.values()]

@@ -2,7 +2,8 @@
 
 /**
  * components/shared/write-error-toast.tsx
- * Announces a rolled-back optimistic write.
+ * Announces a rolled-back optimistic write — and, in a quieter skin, a write that SUCCEEDED but
+ * deliberately did less than it looks like it did (see reportWriteNotice).
  *
  * Mounted once per shell. Subscribes to the store's write-error seam and renders
  * the failure in a polite live region so it is both seen and announced — the
@@ -32,7 +33,7 @@ export function WriteErrorToast() {
   return (
     <div className="werr-live" role="status" aria-live="polite">
       {current && (
-        <div className="werr" key={current.seq}>
+        <div className={`werr${current.tone === "notice" ? " notice" : ""}`} key={current.seq}>
           <span className="werr-msg">{current.message}</span>
           <button className="werr-x" onClick={() => setCurrent(null)} aria-label="Dismiss">
             ✕

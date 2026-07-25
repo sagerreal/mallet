@@ -20,7 +20,7 @@ import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech } from "./money-redaction";
-import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES } from "./visit-clock-tap";
+import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
 
 /**
  * Just enough of a customer for the field surface to name and reach them: who this job is for and
@@ -33,22 +33,32 @@ const fieldCustomerDTO = z.object({
   phone: z.string().nullable(),
 });
 
-/** The distinct customers behind a page of jobs, in one read per customer (a technician's day is
- *  a handful of jobs, and they collapse to fewer customers still). */
+/** The distinct customers behind a page of jobs, in ONE read.
+ *
+ *  This was a loop of findById per job. myDay is the most-reloaded screen a technician has and the
+ *  whole handler is deliberately sequential on one connection, so an N+1 here landed directly on
+ *  the time between pressing a button and the screen changing. */
 const loadCustomersFor = async (
   tx: TenantTx,
   orgId: OrgId,
   jobsOnPage: readonly Job[],
 ): Promise<z.infer<typeof fieldCustomerDTO>[]> => {
   const leadIds = [...new Set(jobsOnPage.map((j) => j.props.leadId))];
-  const repo = new DrizzleLeadRepository(tx, orgId);
-  const found = [];
-  for (const leadId of leadIds) {
-    const lead = await repo.findById(leadId);
-    if (lead) found.push({ id: lead.props.id, name: lead.props.name, phone: lead.props.phone });
-  }
-  return found;
+  const found = await new DrizzleLeadRepository(tx, orgId).findByIds(leadIds);
+  return found.map((lead) => ({ id: lead.props.id, name: lead.props.name, phone: lead.props.phone }));
 };
+
+/**
+ * What the tap quietly did, for the surface that made it. Null when there is nothing to say.
+ *
+ * "segment_too_short" is the one that cost a real afternoon: a job worked for under a minute is
+ * discarded rather than rounded up, which is right, but nothing said so and the hours simply never
+ * appeared. The field response carries it so the person who tapped finds out from the tap.
+ */
+const clockNoticeDTO = z.enum(["segment_too_short", "close_bounded"]);
+
+const noticeFor = (outcome: ClockTapOutcome): z.infer<typeof clockNoticeDTO> | null =>
+  outcome.discardedTooShort ? "segment_too_short" : outcome.boundedClose ? "close_bounded" : null;
 
 // Field-surface add-addon input: description 1..200, optional client-authored id for idempotent
 // retry (mirrors the office addAddonInput's optional id), optional rate (tech with !seesPrice has
@@ -163,7 +173,7 @@ export const createFieldRouter = () =>
     // modal at all. While they moved the job without moving the clock, a tech who worked entirely
     // from the agenda recorded ten hours of unattributed `shop` time and ZERO job time: payroll
     // right, job costing empty. The two entry points must not be able to diverge.
-    start: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
+    start: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
@@ -171,18 +181,19 @@ export const createFieldRouter = () =>
       const dto = toJobDTO(started);
       // Starting the job = arriving on it: close the drive, open job time. Never fails the write.
       // Job-level, so job-level assignment is the right question — this button is not about one visit.
-      await runVisitClockTap(
+      const outcome = await runVisitClockTap(
         { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
         "arrived",
         jobId,
         started.isAssignedTo(ctx.principal.userId),
       );
-      if (ctx.principal.role !== "tech") return dto;
+      const clockNotice = noticeFor(outcome);
+      if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return redactMoneyForTech(dto, seesPrice);
+      return { ...redactMoneyForTech(dto, seesPrice), clockNotice };
     }),
 
-    complete: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
+    complete: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
@@ -190,15 +201,16 @@ export const createFieldRouter = () =>
       const dto = toJobDTO(completed);
       // Completing the job = done on it: close job time and auto-resume shop, so whoever did the work
       // stays on the clock between calls. Never fails the write.
-      await runVisitClockTap(
+      const outcome = await runVisitClockTap(
         { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
         "done",
         jobId,
         completed.isAssignedTo(ctx.principal.userId),
       );
-      if (ctx.principal.role !== "tech") return dto;
+      const clockNotice = noticeFor(outcome);
+      if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return redactMoneyForTech(dto, seesPrice);
+      return { ...redactMoneyForTech(dto, seesPrice), clockNotice };
     }),
 
     // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office

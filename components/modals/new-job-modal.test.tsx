@@ -344,3 +344,85 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     expect(updateJob).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * One press must create one job.
+ *
+ * Seen in production: three clicks on Create job produced three customers, three jobs and three
+ * visits (v1.customers.create → v1.jobs.create → v1.visits.createVisit, ×3, all 200). The chain is
+ * two awaited round trips — about a second — and the modal only closes on success, so the button
+ * sat live and every impatient press ran the whole thing again with fresh UUIDs. Server
+ * idempotency cannot collapse them: customers.create takes no client id.
+ */
+describe("NewJobModalContent — one press, one job", () => {
+  beforeEach(() => {
+    addLead.mockReset();
+    updateLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
+    closeMock = vi.fn();
+  });
+
+  const armSlowChain = () => {
+    let releaseLead: (v: unknown) => void = () => {};
+    addLead.mockReturnValue({
+      lead: { id: "opt-lead-x", name: "Maria Garcia", evisits: [] },
+      persisted: new Promise((res) => { releaseLead = res; }),
+    });
+    addJob.mockReturnValue({
+      job: { id: "job-x", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-x", origin: "db", visits: [] }),
+    });
+    return () => releaseLead({ id: "srv-lead-x", name: "Maria Garcia", evisits: [], phone: "5551234567" });
+  };
+
+  const fillForm = () => {
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "fix boiler" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("search or add"), {
+      target: { value: "Maria Garcia" },
+    });
+  };
+
+  it("ignores further presses while the first is still in flight", async () => {
+    const release = armSlowChain();
+    render(<NewJobModalContent />);
+    fillForm();
+
+    const form = screen.getByText("Create job").closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    // The customer is the first step of the chain and the one the server cannot de-duplicate.
+    expect(addLead).toHaveBeenCalledOnce();
+
+    release();
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    expect(addVisit).toHaveBeenCalledOnce();
+  });
+
+  it("says it is working, and refuses the button while it is", () => {
+    armSlowChain();
+    render(<NewJobModalContent />);
+    fillForm();
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    // The label is the feedback the missing round-trip time never gave.
+    const submit = screen.getByText("Creating…");
+    expect(submit.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Cancel").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("guards the OTHER submit too — Build the price runs the same chain", () => {
+    armSlowChain();
+    render(<NewJobModalContent />);
+    fillForm();
+
+    fireEvent.click(screen.getByText("✦ Build the price →"));
+    fireEvent.submit(screen.getByText("Creating…").closest("form")!);
+
+    expect(addLead).toHaveBeenCalledOnce();
+  });
+});

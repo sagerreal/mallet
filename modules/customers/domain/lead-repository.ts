@@ -30,6 +30,9 @@ export interface LeadRepository {
   // one row. A null phone always creates (nothing to dedupe on).
   ensureCustomer(input: EnsureCustomerInput): Promise<EnsureCustomerResult>;
   findById(id: LeadId): Promise<Lead | null>;
+  /** The named leads, in ONE read. The field agenda needs the customer behind every job it
+   *  returns, and asking per job put an N+1 on the surface a technician reloads all day. */
+  findByIds(ids: readonly LeadId[]): Promise<Lead[]>;
   list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>>;
   save(lead: Lead): Promise<void>;
   // Returns the number of rows affected (0 = not found or already archived).

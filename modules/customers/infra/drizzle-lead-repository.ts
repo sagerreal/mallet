@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
@@ -81,6 +81,15 @@ export class DrizzleLeadRepository implements LeadRepository {
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
+  }
+
+  async findByIds(ids: readonly LeadId[]): Promise<Lead[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.tx
+      .select()
+      .from(leads)
+      .where(and(inArray(leads.id, [...ids]), isNull(leads.deletedAt)));
+    return rows.map(toDomain);
   }
 
   async list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>> {

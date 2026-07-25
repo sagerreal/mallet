@@ -20,6 +20,14 @@ export interface WriteError {
   message: string;
   /** Monotonic id so repeat failures re-announce. */
   seq: number;
+  /**
+   * "error" — the write failed and was undone.
+   * "notice" — the write SUCCEEDED but deliberately did less than it looks like it did. A tap that
+   * is thrown away for being under a minute is not a failure, and dressing it in red would send
+   * the shop looking for a bug that is not there. It still has to be said out loud: silently
+   * recording nothing is what makes people believe the clock is broken.
+   */
+  tone: "error" | "notice";
 }
 
 type Listener = (e: WriteError) => void;
@@ -45,6 +53,7 @@ export function reportWriteError(action: string, err: unknown): void {
     action,
     message: `Couldn't ${humanize(action)} — your change was undone. Check your connection and try again.`,
     seq,
+    tone: "error",
   };
 
   if (process.env.NODE_ENV !== "production") {
@@ -53,6 +62,15 @@ export function reportWriteError(action: string, err: unknown): void {
   }
 
   for (const listener of listeners) listener(event);
+}
+
+/**
+ * Announce that a write succeeded but deliberately did less than it appears. The caller supplies
+ * the sentence because only the caller knows what was skipped and what to do about it.
+ */
+export function reportWriteNotice(action: string, message: string): void {
+  seq += 1;
+  for (const listener of listeners) listener({ action, message, seq, tone: "notice" });
 }
 
 /** Subscribe to write failures. Returns an unsubscribe function. */

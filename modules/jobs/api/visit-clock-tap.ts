@@ -55,6 +55,21 @@ export const CLOCK_TAP_FOR_STATUS: Record<FieldVisitStatus, ClockTap> = {
   complete: "done",
 };
 
+/**
+ * What the tap did that the person who tapped would not otherwise know.
+ *
+ * `discardedTooShort` — the segment was thrown away instead of recorded, because it did not last
+ * a whole minute (timesheets are kept to the minute, and rounding it up would invent time nobody
+ * worked). Correct, and completely invisible: the tap "worked" and no hours appeared.
+ */
+export interface ClockTapOutcome {
+  readonly discardedTooShort: boolean;
+  readonly boundedClose: boolean;
+}
+
+/** A tap that refused or failed reports nothing — it must never claim time was discarded. */
+const NO_OUTCOME: ClockTapOutcome = { discardedTooShort: false, boundedClose: false };
+
 export interface ClockTapContext {
   /** The request's org transaction — the visit write is already in it. */
   readonly tx: TenantTx;
@@ -92,14 +107,14 @@ export const runVisitClockTap = async (
    * another person's visit — and dispatching records no hours for the dispatcher.
    */
   isOwnWork: boolean,
-): Promise<void> => {
-  if (!isOwnWork) return;
+): Promise<ClockTapOutcome> => {
+  if (!isOwnWork) return NO_OUTCOME;
 
   const orgId = ctx.principal.orgId;
   const techUserId = ctx.principal.userId;
 
   try {
-    await ctx.tx.transaction(async (savepoint) => {
+    return await ctx.tx.transaction(async (savepoint) => {
       // The shop's zone is read HERE and injected: timesheets must not import settings, and a
       // wrong zone files a plumber's evening on tomorrow's sheet, so it belongs where it can be
       // seen being passed in.
@@ -123,12 +138,18 @@ export const runVisitClockTap = async (
           { orgId, techUserId, jobId, tap, reason: result.error },
           "job_visit.clock_tap_refused",
         );
+        return NO_OUTCOME;
       }
+      return {
+        discardedTooShort: result.value.discardedEntryId !== null,
+        boundedClose: result.value.boundedClose,
+      };
     });
   } catch (cause) {
     logger.error(
       { orgId, techUserId, jobId, tap, err: cause },
       "job_visit.clock_tap_failed",
     );
+    return NO_OUTCOME;
   }
 };
