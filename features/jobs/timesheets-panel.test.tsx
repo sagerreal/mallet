@@ -49,6 +49,39 @@ describe("TimesheetsPanel — first-run empty state", () => {
     expect(screen.getByRole("button", { name: "+ Add entry" })).toBeTruthy();
   });
 
+  // Owen, with two field crew already set up: "why is this occurring when I have a crew?"
+  // The screen was telling him to do a step he had finished, and putting it AHEAD of the one thing
+  // he could actually do. "No hours" has two different causes and only one is about a missing crew.
+  describe("when a crew already exists", () => {
+    beforeEach(() => {
+      storeState = store([], [{ id: "t1", name: "Mike" }]);
+    });
+
+    it("does not tell the shop to set up a crew it already has", () => {
+      render(<TimesheetsPanel />);
+      expect(screen.queryByRole("button", { name: "Set up crew" })).toBeNull();
+    });
+
+    it("makes logging time the primary action, because that is what is left to do", () => {
+      render(<TimesheetsPanel />);
+      expect(screen.getByRole("button", { name: "+ Add entry" })).toBeTruthy();
+    });
+
+    it("explains that hours arrive when the crew starts a job, rather than blaming setup", () => {
+      render(<TimesheetsPanel />);
+      expect(screen.getByText(/as soon as they start a job/i)).toBeTruthy();
+    });
+  });
+
+  describe("when there is no crew yet", () => {
+    it("asks for a crew, and does not offer an entry that would belong to nobody", () => {
+      storeState = store([]);
+      render(<TimesheetsPanel />);
+      expect(screen.getByRole("button", { name: "Set up crew" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "+ Add entry" })).toBeNull();
+    });
+  });
+
   it("shows the quiet loading state on cold load — not the first-run flash", () => {
     q = { isFetched: false, isError: false };
     render(<TimesheetsPanel />);

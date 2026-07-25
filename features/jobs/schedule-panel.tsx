@@ -435,7 +435,10 @@ export function SchedulePanel() {
       <button className="btn sm ghost" onClick={() => setSchedDay((d) => addDaysLocal(d, -1))}>
         ‹ Prev
       </button>
-      <b style={{ fontSize: "var(--type-base)" }}>
+      {/* data-dynamic: this renders a real calendar date from the wall clock, so the visual net
+          would diff it — and fail — every time the day rolls over. Masked, like the other
+          clock-derived text (handoff greeting, the tasks date input). */}
+      <b data-dynamic style={{ fontSize: "var(--type-base)" }}>
         {schedDay === today ? "Today" : colLabel(schedDay)} ·{" "}
         {new Date(schedDay + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}
       </b>
