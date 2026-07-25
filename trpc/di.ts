@@ -17,6 +17,7 @@ import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import { HttpQboOauthGateway } from "@mallet/accounting-sync";
 import { createSecretBox } from "@mallet/platform/crypto/secret-box";
+import { TwilioCallOriginator, type CallOriginator } from "@mallet/calls";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { Config } from "@mallet/shared/config";
@@ -42,6 +43,24 @@ function buildA2pGateway(config: Config): A2pGateway | undefined {
   }
   logger.warn("a2p: Twilio A2P config unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/PRIMARY_PROFILE_SID/A2P_STATUS_CALLBACK_URL missing) — registration is logged, not submitted");
   return undefined;
+}
+
+// Outbound click-to-call self-disables (→ null, surfaced as PRECONDITION_FAILED by calls.place)
+// unless the Twilio account creds AND the public URL are present. The public URL is required
+// because Twilio must be able to FETCH the TwiML and POST status back — a call placed with an
+// unreachable callback URL connects to silence.
+function buildCallOriginator(config: Config): CallOriginator | null {
+  if (config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && config.PUBLIC_APP_URL) {
+    const base = config.PUBLIC_APP_URL.replace(/\/+$/, "");
+    return new TwilioCallOriginator(
+      config.TWILIO_ACCOUNT_SID,
+      config.TWILIO_AUTH_TOKEN,
+      `${base}/api/voice/outbound`,
+      `${base}/api/webhooks/twilio/voice-status`,
+    );
+  }
+  logger.warn("calls: Twilio voice unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/PUBLIC_APP_URL missing) — outbound calling is disabled");
+  return null;
 }
 
 // QuickBooks Online. Two independently-optional pieces, and they fail differently ON PURPOSE:
@@ -108,6 +127,7 @@ export const getAppDeps = (): AppDeps => {
   const llmClient: LlmClient | null = config.ANTHROPIC_API_KEY ? new AnthropicLlmClient(config.ANTHROPIC_API_KEY) : null;
 
   const a2pGateway = buildA2pGateway(config);
+  const callOriginator = buildCallOriginator(config);
 
   // QBO OAuth self-disables unless client id + secret + redirect uri are all present.
   const qboOauthGateway =
@@ -150,6 +170,7 @@ export const getAppDeps = (): AppDeps => {
     notificationSender,
     llmClient,
     a2pGateway,
+    callOriginator,
   };
   return cached;
 };
