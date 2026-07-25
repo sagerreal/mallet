@@ -385,6 +385,59 @@ suite("visits tRPC router (full stack, live RLS)", () => {
     expect(result.visits[0]!.status).toBe("pending");
   });
 
+  // ── setVisitEnroute ─────────────────────────────────────────────────────────
+
+  it("setVisitEnroute stamps enrouteAt, leaves the visit pending, and the stamp survives a re-fetch", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+
+    const created = await caller.v1.visits.createVisit({ jobId, durationHours: 2 });
+    const visitId = created.visits[0]!.id;
+    expect(created.visits[0]!.enrouteAt).toBeNull();
+
+    const enroute = await caller.v1.visits.setVisitEnroute({ jobId, visitId });
+    const stamped = enroute.visits.find((v) => v.id === visitId)!;
+    expect(stamped.enrouteAt).not.toBeNull();
+    // A stamp, not a fifth status — and it does not start the job.
+    expect(stamped.status).toBe("pending");
+    expect(stamped.startedAt).toBeNull();
+    expect(enroute.status).toBe("scheduled");
+
+    // The whole point: a reload sees it. This is the read path the hydrator uses.
+    const refetched = await caller.v1.jobs.get({ jobId });
+    expect(refetched.visits.find((v) => v.id === visitId)!.enrouteAt).toBe(stamped.enrouteAt);
+  });
+
+  it("setVisitEnroute then reopen clears the stamp", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+
+    const created = await caller.v1.visits.createVisit({ jobId, durationHours: 2 });
+    const visitId = created.visits[0]!.id;
+
+    await caller.v1.visits.setVisitEnroute({ jobId, visitId });
+    await caller.v1.visits.setVisitStatus({ jobId, visitId, status: "complete" });
+    const reopened = await caller.v1.visits.setVisitStatus({ jobId, visitId, status: "pending" });
+
+    const visit = reopened.visits.find((v) => v.id === visitId)!;
+    expect(visit.status).toBe("pending");
+    // Without this the reopened visit would read as enroute (pending + a stale stamp).
+    expect(visit.enrouteAt).toBeNull();
+  });
+
+  it("setVisitEnroute refuses a visit that is already in progress", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+
+    const created = await caller.v1.visits.createVisit({ jobId, durationHours: 2 });
+    const visitId = created.visits[0]!.id;
+    await caller.v1.visits.setVisitStatus({ jobId, visitId, status: "in_progress" });
+
+    await expect(
+      caller.v1.visits.setVisitEnroute({ jobId, visitId }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   // ── cross-org isolation ──────────────────────────────────────────────────────
 
   it("org B cannot scheduleVisit on org A's job (NOT_FOUND via RLS)", async () => {

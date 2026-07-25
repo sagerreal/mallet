@@ -52,6 +52,8 @@ export class FakeSettingsRepository implements SettingsRepository {
 
   async getTechSeesPrice(): Promise<boolean> { return this.config?.props.techSeesPrice ?? true; }
 
+  async getTimezone(): Promise<string> { return this.config?.props.timezone ?? "America/Los_Angeles"; }
+
   async listPricebook(): Promise<PricebookItem[]> { return this.pricebook; }
 
   async createPricebook(i: {

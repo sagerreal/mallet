@@ -17,7 +17,25 @@ import type { TimeEntry } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoToTimeEntry } from "@/lib/store/dto-mapper";
 import { reportWriteError } from "../write-error";
-import { TS_DEFAULT_START, TS_DEFAULT_END } from "@/features/jobs/timesheet-constants";
+import { appErrorField } from "@/lib/trpc/error-map";
+import {
+  TS_DEFAULT_START,
+  TS_DEFAULT_END,
+  UNFINISHED_DAYS_TAG,
+} from "@/features/jobs/timesheet-constants";
+import { tsUnfinishedDays } from "@/features/jobs/timesheet-derive";
+
+/**
+ * What an approval attempt did.
+ *
+ * `unfinished` is not a failure to retry — it is the shop being told which days it must fix first,
+ * so it carries the days instead of routing through the generic write-error toast.
+ */
+export type ApproveWeekOutcome =
+  | { readonly status: "approved" }
+  | { readonly status: "unfinished"; readonly days: readonly string[] }
+  /** Anything else. Already surfaced to the user through the write-error toast. */
+  | { readonly status: "failed" };
 
 export interface TimesheetsSlice {
   timeEntries: TimeEntry[];
@@ -25,7 +43,7 @@ export interface TimesheetsSlice {
   addTimeEntry: (techId: string, date: string) => TimeEntry;
   updateTimeEntry: (id: string, patch: Partial<TimeEntry>) => void;
   deleteTimeEntry: (id: string) => void;
-  approveTechWeek: (techId: string, weekDates: string[]) => void;
+  approveTechWeek: (techId: string, weekDates: string[]) => Promise<ApproveWeekOutcome>;
   /** Management-only: un-approve an approved entry (ownerOrOffice). Bypasses the approved-entry guard. */
   reopenEntry: (id: string) => void;
 }
@@ -157,7 +175,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       });
   },
 
-  approveTechWeek: (techId, weekDates) => {
+  approveTechWeek: async (techId, weekDates) => {
     const prior = get().timeEntries.slice();
 
     // 1. Optimistic update.
@@ -169,14 +187,24 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       ),
     }));
 
-    // 2. Persist.
-    trpcVanilla.v1.timesheets.approveWeek
-      .mutate({ techUserId: techId, dates: weekDates })
-      .catch((err: unknown) => {
-        // 3. Rollback on error.
-        set({ timeEntries: prior });
-        reportWriteError("approveTechWeek", err);
-      });
+    try {
+      // 2. Persist.
+      await trpcVanilla.v1.timesheets.approveWeek.mutate({ techUserId: techId, dates: weekDates });
+      return { status: "approved" };
+    } catch (err: unknown) {
+      // 3. Rollback on error.
+      set({ timeEntries: prior });
+
+      // The server refuses the WHOLE week when any day is still on the clock, and TAGS that
+      // refusal — branch on the tag, never on the wording of the sentence. The days are named from
+      // the rows we just restored, which are the same rows the server judged.
+      if (appErrorField(err) === UNFINISHED_DAYS_TAG) {
+        return { status: "unfinished", days: tsUnfinishedDays(prior, techId, weekDates) };
+      }
+
+      reportWriteError("approveTechWeek", err);
+      return { status: "failed" };
+    }
   },
 
   reopenEntry: (id) => {

@@ -14,6 +14,8 @@ import {
   TIMESHEET_PICKER_MIN_HOUR,
   TIMESHEET_PICKER_MAX_HOUR,
   TIME_PICKER_STEP_HOURS,
+  MAX_PLAUSIBLE_BREAK_HOURS,
+  MAX_PLAUSIBLE_SEGMENT_HOURS,
 } from "./timesheet-constants";
 
 const HOURS_PER_DAY_ROLL = 24;
@@ -55,6 +57,38 @@ export function tsPaid(e: TimeEntry): number {
   return e.kind === "break" ? 0 : tsHours(e);
 }
 
+/**
+ * An entry nobody has ended: the clock is still running on it, or an end time was never recorded.
+ * Either way it has no duration, so it totals as zero and cannot be signed for — which is why the
+ * server refuses to approve a week containing one (ApproveWeekUseCase, tagged UNFINISHED_DAYS).
+ */
+export function tsIsUnfinished(e: TimeEntry): boolean {
+  return e.running === true || !e.end;
+}
+
+/**
+ * A finished row whose duration is implausible for the kind of time it records — so it is probably a
+ * segment somebody forgot to end, not a measurement.
+ *
+ * Two cases, and the break one is the reason this exists. A break is the ONLY unpaid kind, so a
+ * break left running swallows the afternoon: the tech taps Break at noon, works the rest of the day,
+ * and the row reads as five unpaid hours. Nothing else catches it — the row is FINISHED, so
+ * tsIsUnfinished is false, the still-open banner never fires, and approveWeek accepts it. The
+ * technician is simply short-paid, and the only visible symptom is a small weekly total.
+ *
+ * The paid case catches the mirror: a segment closed by the clock's bounded stale rule, whose hours
+ * are an estimate rather than measured time.
+ *
+ * This flags for a human; it never changes a number.
+ */
+export function tsIsImplausible(e: TimeEntry): boolean {
+  if (tsIsUnfinished(e)) return false;
+  const hours = tsHours(e);
+  return e.kind === "break"
+    ? hours > MAX_PLAUSIBLE_BREAK_HOURS
+    : hours > MAX_PLAUSIBLE_SEGMENT_HOURS;
+}
+
 /** This tech's entries for the given week. */
 export function tsWeekEntries(entries: TimeEntry[], techId: string, weekDates: string[]): TimeEntry[] {
   return entries.filter((e) => e.techId === techId && weekDates.includes(e.date));
@@ -83,6 +117,43 @@ export function tsRollup(entries: TimeEntry[], techId: string, weekDates: string
   const ot = tsMoney(Math.max(0, paid - FULL_TIME_HOURS_PER_WEEK));
   const approved = es.length > 0 && es.every((e) => e.status === "approved");
   return { paid, reg, ot, approved, count: es.length };
+}
+
+/**
+ * The days of this week whose hours are still unfinished, in week order.
+ *
+ * Mirrors the server's approval predicate (draft rows that are running or have no end time) so the
+ * grid can name the days BEFORE the office reads a refusal — the same list the server would send
+ * back, derived from the rows already on screen.
+ */
+export function tsUnfinishedDays(entries: TimeEntry[], techId: string, weekDates: string[]): string[] {
+  const days = new Set(
+    tsWeekEntries(entries, techId, weekDates)
+      .filter((e) => e.status !== "approved" && tsIsUnfinished(e))
+      .map((e) => e.date),
+  );
+  return weekDates.filter((d) => days.has(d));
+}
+
+const techHasVisitOn = (jobs: Job[], techId: string, date: string): boolean =>
+  jobs.some(
+    (j) => !j.archived && (j.visits ?? []).some((v) => v.techId === techId && v.date === date),
+  );
+
+/**
+ * Days this crew member was scheduled on a job and recorded no hours at all, in week order.
+ *
+ * A grid that renders only what exists shows an absent day and a genuinely idle day identically —
+ * silence reads as zero and zero reads as fine. These are the days the office has to ask about.
+ */
+export function tsUnrecordedDays(
+  jobs: Job[],
+  techId: string,
+  weekDates: string[],
+  entries: TimeEntry[],
+): string[] {
+  const recorded = new Set(tsWeekEntries(entries, techId, weekDates).map((e) => e.date));
+  return weekDates.filter((d) => !recorded.has(d) && techHasVisitOn(jobs, techId, d));
 }
 
 export function tsJob(e: TimeEntry, jobs: Job[]): Job | undefined {
@@ -119,6 +190,19 @@ export function tsT12(h: number): string {
   let d = hr % 12;
   if (d === 0) d = 12;
   return `${d}:${String(mn).padStart(2, "0")}${ap}`;
+}
+
+/**
+ * A day named for a human: "Thu Jul 2" (long: "Thursday, Jul 2"). One helper so a day header and
+ * the copy pointing at that day never name it two different ways.
+ */
+export function tsDayLabel(iso: string, weekday: "short" | "long" = "short"): string {
+  // Noon, so a UTC-negative timezone can't shift the parsed instant back onto the previous day.
+  return new Date(iso + "T12:00:00").toLocaleDateString(undefined, {
+    weekday,
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /** 12h label from an "HH:MM" string. */

@@ -6,10 +6,14 @@
  * on-site step buttons, price-on-site.
  *
  * This file is the COMPOSITION only. The modal has two states-as-views:
- *   - working view (job not done): FieldTimer hero + WorkOrderSec + PricingSec
+ *   - working view (job not done): the address + the visit row are the hero
  *   - close-out view (job done):   DoneBlock hero + the visit summary line
  * with the shared spine (header, address, visits, found work, checklist, notes)
  * rendered by the section files in this directory.
+ *
+ * There is no timer here. The one that used to be the hero was local React state that persisted
+ * nothing — it lost the technician's time on every remount and never reached a timesheet. His hours
+ * come from the day clock on My day plus these visit taps, which write real time entries.
  */
 
 "use client";
@@ -22,6 +26,7 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { MODAL } from "@/lib/store/modal-ids";
 import { CopilotSection } from "@/features/field-copilot/copilot-section";
 import {
@@ -35,7 +40,6 @@ import {
   vPlaced,
 } from "./helpers";
 import { TechHeader } from "./tech-header";
-import { FieldTimer } from "./field-timer";
 import { VisitRow } from "./visit-row";
 import { PricingSec } from "./pricing-sec";
 import { WorkOrderSec } from "./work-order-sec";
@@ -103,12 +107,16 @@ export function TechJobModalContent() {
   // Zustand's contract). jobId is a primitive string — stable once the modal is
   // open. curVisit.id can change, so the reopen handler captures curVisit.
 
+  // Which API the visit writes go to. A tech's taps must reach the assignment-gated field
+  // endpoints — those are the ones that also move his clock; owner/office keep v1.visits.
+  const visitSurface: VisitWriteSurface = isOffice ? "office" : "field";
+
   const onVisitStatus = useCallback(
     (visitId: string, status: string) => {
       if (!jobId) return;
-      setVisitStatus(jobId, visitId, status);
+      setVisitStatus(jobId, visitId, status, visitSurface);
     },
-    [jobId, setVisitStatus],
+    [jobId, setVisitStatus, visitSurface],
   );
 
   const chargeOnFile = useCallback(() => {
@@ -215,24 +223,21 @@ export function TechJobModalContent() {
         </div>
       )}
 
-      {/* 4. Field timer (hero when not done) — or the on-site close-out HERO.
-          The close-out hero is office-only: charge-on-file / take-payment /
-          send-to-office all write through ownerOrOffice endpoints. */}
-      {done ? (
-        isOffice ? (
-          <DoneBlock
-            job={job}
-            lead={lead}
-            invoice={invoice}
-            onOpenCloseOut={openCloseOut}
-            onOpenInvoice={openInvoiceModal}
-            onChargeOnFile={chargeOnFile}
-            onSendToOffice={sendToOffice}
-            onReopen={onReopen}
-          />
-        ) : null
-      ) : curVisit ? (
-        <FieldTimer key={curVisit.id} visit={curVisit} />
+      {/* 4. The on-site close-out HERO — office-only: charge-on-file / take-payment /
+          send-to-office all write through ownerOrOffice endpoints. A job that is NOT done has no
+          hero of its own: the address above and the visit row below are what the technician needs
+          on the doorstep, and they are already there. */}
+      {done && isOffice ? (
+        <DoneBlock
+          job={job}
+          lead={lead}
+          invoice={invoice}
+          onOpenCloseOut={openCloseOut}
+          onOpenInvoice={openInvoiceModal}
+          onChargeOnFile={chargeOnFile}
+          onSendToOffice={sendToOffice}
+          onReopen={onReopen}
+        />
       ) : null}
 
       {/* Work order (5a) — install job, not done, with scope lines (office-sold). */}
@@ -275,7 +280,13 @@ export function TechJobModalContent() {
               key={v.id}
               visit={v}
               quoted={quoted}
-              readOnly={!isOffice}
+              canReopen={isOffice}
+              // A tech may only move THEIR OWN visit. A two-visit job shows both rows (they are
+              // useful context — "my stop is the second one today"), but the step buttons appear
+              // only on the row assigned to the viewer. Without this a tech tapping the wrong row
+              // would move a colleague's visit and write time against it; the server refuses that
+              // now, so the alternative is an unexplained error on a button that looked live.
+              canAct={isOffice || v.techId === me.data?.userId}
               onStatus={(status) => onVisitStatus(v.id, status)}
             />
           ))

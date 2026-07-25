@@ -122,6 +122,7 @@ const makeVisitProps = (overrides: Partial<JobVisitProps> = {}): JobVisitProps =
   scheduledEnd: null,
   durationMinutes: null,
   status: "pending",
+  enrouteAt: null,
   startedAt: null,
   completedAt: null,
   notes: null,
@@ -411,6 +412,47 @@ describe("SetVisitStatusUseCase", () => {
       expect(visit?.props.completedAt).toBeNull(); // reopen clears the stamp
       expect(result.value.props.status).toBe("in_progress");
       expect(result.value.props.completedAt).toBeNull();
+    }
+  });
+
+  // ── enrouteAt ("On my way") stamp ────────────────────────────────────────
+
+  it("complete → pending (reopen): clears the enrouteAt stamp", async () => {
+    // A visit that was travelled to, worked and finished still carries the stamp of that trip.
+    const enrouteAt = new Date("2026-06-15T07:30:00Z");
+    const { jobId } = await seedJobWithVisit("pending");
+    const savedJob = await repo.findById(jobId);
+    if (!savedJob) throw new Error("job not found after seed");
+    const patched = savedJob.withVisits([makeVisit({ status: "complete", enrouteAt })], clock.now());
+    if (!isOk(patched)) throw new Error("patch failed");
+    await repo.save(patched.value);
+
+    const result = await useCase.exec({ jobId, visitId: VISIT_A, status: "pending" });
+
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      const visit = result.value.props.visits.find((v) => v.props.id === VISIT_A);
+      // A reopened visit is a fresh trip — the old departure time must not survive it.
+      expect(visit?.props.enrouteAt).toBeNull();
+    }
+  });
+
+  it("pending → in_progress (Arrived): keeps the enrouteAt stamp", async () => {
+    const enrouteAt = new Date("2026-07-01T09:40:00Z");
+    const { jobId } = await seedJobWithVisit("pending");
+    const savedJob = await repo.findById(jobId);
+    if (!savedJob) throw new Error("job not found after seed");
+    const patched = savedJob.withVisits([makeVisit({ enrouteAt })], clock.now());
+    if (!isOk(patched)) throw new Error("patch failed");
+    await repo.save(patched.value);
+
+    const result = await useCase.exec({ jobId, visitId: VISIT_A, status: "in_progress" });
+
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      const visit = result.value.props.visits.find((v) => v.props.id === VISIT_A);
+      // Arriving ends the trip; it does not erase when it started.
+      expect(visit?.props.enrouteAt).toEqual(enrouteAt);
     }
   });
 

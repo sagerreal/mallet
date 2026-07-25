@@ -1,0 +1,160 @@
+"use client";
+
+/**
+ * features/field/day-clock.tsx
+ * The technician's day row on My day: Start day → On the clock → Break → End day.
+ *
+ * It replaced a card that kept its state in React and persisted nothing — which meant a reload,
+ * a backgrounded phone or a tab switch silently un-clocked the man. The state here is a database
+ * row (`v1.timesheets.open` — the single running time entry), so the row reads the same after a
+ * reload as it did before one. That is the whole point of the feature.
+ *
+ * Job time is NOT tapped here. On my way / Arrived / ✓ Mark done on the job screen move the same
+ * clock between travel, on-site and shop, so this row only ever shows two things a job tap cannot
+ * say: that the day has begun, and that lunch is unpaid.
+ */
+
+import { useState, type ReactNode } from "react";
+import { api } from "@/lib/trpc/client";
+import { todayISO } from "@/lib/clock";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { LoadFailed } from "@/components/shared/load-failed";
+import { reportWriteError } from "@/lib/store/write-error";
+import {
+  dayClockView,
+  optimisticView,
+  DAY_CLOCK_ACTIONS,
+  WRITE_ACTION_FOR_TAP,
+  type DayClockTap,
+  type DayClockView,
+} from "./day-clock-view";
+
+/**
+ * How long the running entry is trusted without a refetch. Short, because the clock can also be
+ * moved from the job screen (Arrived closes travel and opens job time) and this row must not sit
+ * on a stale answer while the technician is looking at it.
+ */
+const OPEN_STALE_MS = 15_000;
+
+/** The row's surface. One card, so the loading, failed and settled rows do not jump the page. */
+function ClockCard({ children }: { children: ReactNode }) {
+  return (
+    <Card className="clockcard" style={{ marginBottom: "var(--space-3)" }}>
+      {children}
+    </Card>
+  );
+}
+
+/**
+ * The write half of the row: fire a tap, show the predicted state until the server answers, and
+ * put the row back where it was if it refuses.
+ *
+ * The prediction is held in component state rather than written into the query cache, because a
+ * predicted entry would need a fabricated row id — and a fake id in the cache is the sort of thing
+ * that eventually gets sent somewhere.
+ */
+function useClockTap() {
+  const utils = api.useUtils();
+  const [predicted, setPredicted] = useState<DayClockView | null>(null);
+  const clockTap = api.v1.timesheets.clockTap.useMutation();
+
+  const tap = (tapName: DayClockTap): void => {
+    setPredicted(optimisticView(tapName, new Date()));
+    clockTap.mutate(
+      // The DEVICE's timestamp, not the server's: a tap made with no signal is retried when the
+      // van reaches the road, and the moment he pressed it is the moment he means. The server
+      // bounds it in both directions before it becomes hours.
+      { tap: tapName, at: new Date().toISOString() },
+      {
+        onSuccess: (result) => {
+          utils.v1.timesheets.open.setData(undefined, result);
+          setPredicted(null);
+          // My hours reads a different query; without this the day's new segment only appears
+          // there after its own staleTime expires.
+          void utils.v1.timesheets.list.invalidate();
+        },
+        onError: (error) => {
+          // Roll back to whatever the server last said, and say so out loud — a punch that
+          // silently did not happen is exactly the failure this feature exists to prevent.
+          setPredicted(null);
+          reportWriteError(WRITE_ACTION_FOR_TAP[tapName], error);
+        },
+      },
+    );
+  };
+
+  return { predicted, tap };
+}
+
+export function DayClock() {
+  const open = api.v1.timesheets.open.useQuery(undefined, {
+    staleTime: OPEN_STALE_MS,
+    refetchOnWindowFocus: false,
+  });
+  const { predicted, tap: handleTap } = useClockTap();
+
+  // A failed load is not "off the clock". Showing the Start day button on a connection error
+  // invites a second punch on top of one that is already running.
+  if (open.isError) {
+    return (
+      <ClockCard>
+        <LoadFailed noun="time clock" onRetry={() => void open.refetch()} retrying={open.isFetching} />
+      </ClockCard>
+    );
+  }
+
+  // Cold load: no state claim at all until the row is known, for the same reason.
+  if (!open.isFetched && predicted === null) {
+    return (
+      <ClockCard>
+        <div className="clock-head">
+          <div className="clock-meta" role="status" aria-busy="true">
+            <span className="muted">Loading your time clock…</span>
+          </div>
+        </div>
+      </ClockCard>
+    );
+  }
+
+  const view = predicted ?? dayClockView(open.data?.open, todayISO());
+  const actions = DAY_CLOCK_ACTIONS[view.state];
+
+  return (
+    <ClockCard>
+      <div className="clock-head">
+        {/* One live region for the whole state sentence, so a state change is announced as the
+            sentence it is rather than as two unrelated fragments. */}
+        <div className="clock-meta" aria-live="polite">
+          <b
+            style={{
+              fontWeight: 700,
+              // The running states are marked in the verified-contrast green. The words carry the
+              // meaning on their own — colour is never the only signal here.
+              color: view.state === "off" ? "var(--ink)" : "var(--green-700)",
+            }}
+          >
+            {view.title}
+          </b>
+          {view.since ? (
+            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {" "}
+              {view.since}
+            </span>
+          ) : null}
+        </div>
+        <div className="clock-acts">
+          {actions.map((action) => (
+            <Button
+              key={action.tap}
+              variant={action.primary ? "primary" : "quiet"}
+              onClick={() => handleTap(action.tap)}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    </ClockCard>
+  );
+}

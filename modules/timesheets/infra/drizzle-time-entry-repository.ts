@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNull, isNotNull, lte, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, isNotNull, lte, inArray, or } from "drizzle-orm";
 import { timeEntries } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetAfter } from "@mallet/shared/db/keyset";
@@ -72,6 +72,28 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
           isNull(timeEntries.deletedAt),
         ),
       )
+      .limit(1);
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
+
+  async findOpenForTech(techUserId: UserId): Promise<TimeEntry | null> {
+    const rows = await this.tx
+      .select()
+      .from(timeEntries)
+      .where(
+        and(
+          eq(timeEntries.orgId, this.orgId),
+          eq(timeEntries.techUserId, techUserId),
+          eq(timeEntries.running, true),
+          isNull(timeEntries.deletedAt),
+        ),
+      )
+      // The partial unique index already guarantees at most one match. Ordering newest-first is
+      // defence in depth: on a database restored without that index the clock still resolves to
+      // the segment most recently started, rather than to whichever row the planner happened to
+      // return first.
+      .orderBy(desc(timeEntries.createdAt))
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;

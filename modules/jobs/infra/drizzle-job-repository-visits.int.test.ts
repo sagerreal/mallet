@@ -65,6 +65,7 @@ const pendingVisit = (userId: UserId | null = null): JobVisit => {
     scheduledEnd: userId ? "11:00" : null,
     durationMinutes: userId ? 120 : null,
     status: "pending",
+    enrouteAt: null,
     startedAt: null,
     completedAt: null,
     notes: null,
@@ -141,6 +142,51 @@ suite("DrizzleJobRepository — visits round-trip (live RLS)", () => {
     expect(result.loaded!.props.visits[0]!.props.status).toBe("pending");
     // Legacy-null duration round-trips as null (no coercion at the mapper).
     expect(result.loaded!.props.visits[0]!.props.durationMinutes).toBeNull();
+  });
+
+  it("round-trips the enroute_at stamp, and clearing it writes null back", async () => {
+    const orgA = asOrgId(orgAId);
+    const visit = pendingVisit();
+    // Whole seconds: timestamptz keeps microseconds, so a value with millis would compare
+    // exactly anyway — this just keeps a failure readable.
+    const enrouteAt = new Date("2026-07-10T08:40:00Z");
+
+    const stamped = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const num = await repo.nextNumber();
+      const job = makeJob(orgA, asLeadId(leadAId), num);
+      const withV = job.withVisits([visit], new Date());
+      if (!isOk(withV)) throw new Error(withV.error.message);
+      await repo.save(withV.value);
+
+      const enroute = JobVisit.create({ ...visit.props, enrouteAt });
+      if (!isOk(enroute)) throw new Error(enroute.error.message);
+      const withStamp = withV.value.withVisits([enroute.value], new Date());
+      if (!isOk(withStamp)) throw new Error(withStamp.error.message);
+      await repo.save(withStamp.value);
+
+      return { id: withV.value.props.id, loaded: await repo.findById(withV.value.props.id) };
+    });
+
+    expect(stamped.loaded!.props.visits[0]!.props.enrouteAt).toEqual(enrouteAt);
+    // Still pending — the stamp is not a status.
+    expect(stamped.loaded!.props.visits[0]!.props.status).toBe("pending");
+
+    // Reopening clears it: the column must actually be set back to null, not left behind
+    // by an upsert that only writes non-null columns.
+    const cleared = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const job = await repo.findById(stamped.id);
+      if (!job) throw new Error("job vanished");
+      const reset = JobVisit.create({ ...job.props.visits[0]!.props, enrouteAt: null });
+      if (!isOk(reset)) throw new Error(reset.error.message);
+      const withReset = job.withVisits([reset.value], new Date());
+      if (!isOk(withReset)) throw new Error(withReset.error.message);
+      await repo.save(withReset.value);
+      return repo.findById(stamped.id);
+    });
+
+    expect(cleared!.props.visits[0]!.props.enrouteAt).toBeNull();
   });
 
   it("batch-loads visits across jobs via loadPage (list)", async () => {
@@ -306,6 +352,7 @@ suite("DrizzleJobRepository — visits round-trip (live RLS)", () => {
         lat: 37.6,
         lng: -122.4,
         status: "pending",
+        enrouteAt: null,
         startedAt: null,
         completedAt: null,
         notes: null,

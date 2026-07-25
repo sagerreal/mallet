@@ -27,6 +27,7 @@ const MAX_SPANNED_LOCAL_DAYS = 7;
 
 // Stepping a UTC-anchored calendar date by exactly 24h is safe precisely because UTC has no DST.
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_MINUTE = 60 * 1000;
 
 export interface WallClock {
   readonly workDate: string; // YYYY-MM-DD
@@ -189,6 +190,34 @@ const candidateRows = (
   };
 
   return walk(startDate, start.workDate, []);
+};
+
+/**
+ * The last representable instant of the local day an instant falls in — 23:59 on the wall.
+ *
+ * Used to BOUND a close so a segment left running cannot bill past its own day (see
+ * set-clock-state's boundedEnd). Derived by walking forward from the instant in minute steps until
+ * the local date changes, then stepping back one minute: that avoids reconstructing an instant from
+ * wall-clock parts, which is ambiguous across a DST fall-back. The scan is capped because a bad
+ * zone must not spin.
+ */
+export const endOfLocalDay = (instant: Date, timeZone: string): Result<Date, ValidationError> => {
+  const start = toWallClock(instant, timeZone);
+  if (!start.ok) return err(start.error);
+
+  // A local day is 23-25 hours depending on DST, so scanning a little past 25 hours of minutes
+  // always finds the boundary while staying bounded.
+  const MAX_MINUTES_IN_A_LOCAL_DAY = 26 * 60;
+  let cursorMs = instant.getTime();
+  for (let i = 0; i < MAX_MINUTES_IN_A_LOCAL_DAY; i += 1) {
+    const next = new Date(cursorMs + MS_PER_MINUTE);
+    const wall = toWallClock(next, timeZone);
+    if (!wall.ok) return err(wall.error);
+    if (wall.value.workDate !== start.value.workDate) return ok(new Date(cursorMs));
+    cursorMs = next.getTime();
+  }
+  // Unreachable for a real zone; refusing beats returning an instant on the wrong day.
+  return err(validation("could not find the end of the local day", "timeZone"));
 };
 
 // Split an instant-pair into one timesheet row per local day it touches.

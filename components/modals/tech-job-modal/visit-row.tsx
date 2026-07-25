@@ -3,6 +3,11 @@
  * Your visit(s) row (prototype tvRow, 4568-4585) — ARRIVE label + big
  * "colLabel · H:MM AM" + ON SITE label + "~hmLabel", then full-width step
  * buttons. On-my-way / Arrived are optional; Done is never gated.
+ *
+ * The step buttons are the technician's, and they are also how his hours get recorded — each tap
+ * moves his clock (travel → on site → back to shop). Only ↩ Reopen is withheld: it is a
+ * correction to a visit that already ended, made days later, against hours he may already have
+ * been paid for.
  */
 
 "use client";
@@ -13,19 +18,29 @@ import { colLabel, hmLabel, startTimeStr } from "./helpers";
 interface VisitRowProps {
   visit: Visit;
   quoted: boolean;
-  /** Tech role: the step/done buttons call v1.visits.setVisitStatus (ownerOrOffice) — hidden. */
-  readOnly: boolean;
+  /** ↩ Reopen is an office correction (it can rewrite recorded hours) — owner/office only. */
+  canReopen: boolean;
+  /**
+   * May the viewer MOVE this visit? True for office, and for the tech this visit is assigned to.
+   *
+   * A job with two visits shows both rows, because "my stop is the second one today" is useful
+   * context — but only the viewer's own row gets step buttons. The server refuses a tech acting on
+   * a colleague's visit, so rendering the buttons anyway would be a live-looking control that
+   * returns an unexplained error.
+   */
+  canAct: boolean;
   onStatus: (status: string) => void;
 }
 
-export function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
+export function VisitRow({ visit, quoted, canReopen, canAct, onStatus }: VisitRowProps) {
   // guarded: only PLACED visits reach here, so date/start are non-null.
   const date = visit.date ?? "";
   const start = visit.start ?? 0;
   const stepP = !quoted;
 
-  // On my way → / Arrived → (scheduled → enroute → onsite). Empty once on site.
-  const step =
+  // On my way → / Arrived → (scheduled → enroute → onsite). Empty once on site, and empty on
+  // somebody else's visit.
+  const step = !canAct ? null :
     visit.status === "scheduled" ? (
       <button
         className={`btn ${stepP ? "primary" : "ghost"}`}
@@ -44,12 +59,15 @@ export function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
       </button>
     ) : null;
 
-  // ✓ Mark done / ↩ Reopen.
-  const doneB =
+  // ✓ Mark done / ↩ Reopen. A finished visit shows nothing at all to a technician rather than a
+  // button that would be refused — the row is a record at that point, not a control.
+  const doneB = !canAct ? null :
     visit.status === "done" ? (
-      <button className="btn ghost" style={{ flex: 1 }} onClick={() => onStatus("scheduled")}>
-        ↩ Reopen
-      </button>
+      canReopen ? (
+        <button className="btn ghost" style={{ flex: 1 }} onClick={() => onStatus("scheduled")}>
+          ↩ Reopen
+        </button>
+      ) : null
     ) : (
       <button
         className={`btn ${visit.status === "onsite" || quoted ? "primary" : "ghost"}`}
@@ -106,7 +124,7 @@ export function VisitRow({ visit, quoted, readOnly, onStatus }: VisitRowProps) {
           </div>
         </div>
       </div>
-      {!readOnly && (
+      {(step || doneB) && (
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
           {step}
           {doneB}

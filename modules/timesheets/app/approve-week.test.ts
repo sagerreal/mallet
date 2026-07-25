@@ -47,6 +47,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async findById(): Promise<TimeEntry | null> {
     return null;
   }
+  // Added with the clock state machine: approval never taps the clock, so it is always idle here.
+  async findOpenForTech(): Promise<TimeEntry | null> {
+    return null;
+  }
   async list(): Promise<Paginated<TimeEntry>> {
     return { items: [], nextCursor: null };
   }

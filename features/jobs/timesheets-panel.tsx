@@ -71,6 +71,9 @@ export function TimesheetsPanel() {
   const [editId, setEditId] = useState<string | null>(null);
   const [pick, setPick] = useState<TsPick>(null);
   const [crewQ, setCrewQ] = useState("");
+  // The days the server refused to approve over. Cleared whenever the view moves, so a stale
+  // refusal can never sit above a week it doesn't describe.
+  const [unfinishedDays, setUnfinishedDays] = useState<readonly string[] | null>(null);
 
   const weekDates = tsWeekDates(weekStart);
   const wkEnd = tsAddDays(weekStart, 6);
@@ -91,21 +94,35 @@ export function TimesheetsPanel() {
 
   function weekNav(delta: number) {
     setWeekStart((w) => tsWeekStart(tsAddDays(w, delta * 7)));
+    clearRowState();
+  }
+
+  function clearRowState() {
     setEditId(null);
     setPick(null);
+    setUnfinishedDays(null);
   }
 
   function handleSelect(id: string) {
     setSelectedTechId(id);
-    setEditId(null);
-    setPick(null);
+    clearRowState();
   }
 
   function handleEdit(id: string) {
+    // A running entry IS editable here — it is the only place a forgotten clock-out can be fixed.
     const e = timeEntries.find((x) => x.id === id);
-    if (!e || e.status === "approved" || e.running) return;
+    if (!e || e.status === "approved") return;
     setEditId((cur) => (cur === id ? null : id));
     setPick(null);
+  }
+
+  // Stop opens the row's out-time picker rather than stamping a time: nobody knows when the
+  // technician actually finished except the shop, and inventing hours is what this refuses to do.
+  function handleStop(id: string) {
+    const e = timeEntries.find((x) => x.id === id);
+    if (!e || e.status === "approved") return;
+    setEditId(id);
+    setPick("end");
   }
 
   function handleCloseEdit() {
@@ -123,7 +140,18 @@ export function TimesheetsPanel() {
       updateTimeEntry(id, { jobId: strVal });
       return;
     }
+    if (field === "end") {
+      // An out time finishes the entry, so the clock must stop with it. Leaving `running` set would
+      // show a complete span the week still can't be approved on — and QuickBooks would reject it.
+      updateTimeEntry(id, { end: String(val), running: false });
+      return;
+    }
     updateTimeEntry(id, { [field]: val } as Partial<TimeEntry>);
+  }
+
+  async function handleApprove(techId: string) {
+    const outcome = await approveTechWeek(techId, weekDates);
+    setUnfinishedDays(outcome.status === "unfinished" ? outcome.days : null);
   }
 
   function handleAdd(techId: string) {
@@ -237,12 +265,14 @@ export function TimesheetsPanel() {
               pick={pick}
               onSetPick={setPick}
               onEdit={handleEdit}
+              onStop={handleStop}
               onDelete={deleteTimeEntry}
               onSetField={handleSetField}
               onCloseEdit={handleCloseEdit}
               onAddEntry={() => handleAdd(selTech.id)}
-              onApprove={() => approveTechWeek(selTech.id, weekDates)}
+              onApprove={() => void handleApprove(selTech.id)}
               onReopen={() => handleReopen(es)}
+              unfinishedDays={unfinishedDays}
             />
           );
         })()}

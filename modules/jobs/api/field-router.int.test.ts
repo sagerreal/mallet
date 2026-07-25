@@ -103,7 +103,14 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
   });
 
   afterAll(async () => {
-    if (orgId) await admin`delete from orgs where id = ${orgId}`;
+    if (orgId) {
+      // Teardown order matters now: the field surface WRITES TIME ENTRIES (start/complete drive the
+      // technician's clock), and time_entries has composite FKs onto both jobs and users. Deleting
+      // the org first tries to cascade into jobs/users while those rows are still referenced.
+      // Clearing hours first is also what proves the wiring ran at all.
+      await admin`delete from time_entries where org_id = ${orgId}`;
+      await admin`delete from orgs where id = ${orgId}`;
+    }
     await admin.end({ timeout: 5 });
     await closeDb();
   });
@@ -295,7 +302,19 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
 
       const started = await caller.v1.field.start({ jobId });
       expect(started.status).toBe("in_progress");
+
+      // Starting the job also started the technician's clock. Assert it, rather than only cleaning
+      // it up: the whole point of wiring the My-day buttons is that job time is recorded from the
+      // control a technician actually uses, and a silent regression here would leave payroll right
+      // and job costing empty.
+      const hours = await admin<{ kind: string; job_id: string | null }[]>`
+        select kind, job_id from time_entries
+        where org_id = ${orgId} and tech_user_id = ${visitTechId} and deleted_at is null`;
+      expect(hours).toHaveLength(1);
+      expect(hours[0]).toMatchObject({ kind: "job", job_id: jobId });
     } finally {
+      // time_entries holds composite FKs onto BOTH jobs and users, so hours go first.
+      await admin`delete from time_entries where org_id = ${orgId} and tech_user_id = ${visitTechId}`;
       await admin`delete from jobs where id = ${jobId}`;
       await admin`delete from users where id = ${visitTechId}`;
     }
@@ -722,6 +741,247 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
           storagePath: `${orgId}/${doneJobId}/${photoId}.jpg`,
         }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+  });
+
+  // ── v1.field.setVisitEnroute / setVisitStatus — the tech drives his own visit ──
+  //
+  // These taps are the dispatch surface AND the timesheet: each one moves the technician's clock.
+  // So every case asserts both facts — the visit moved, and the hours behind it exist. A fresh
+  // technician per case keeps each one starting from an idle clock (and away from the one-running-
+  // entry-per-tech index).
+  describe("visit steps from the field surface", () => {
+    interface ClockRow {
+      kind: string;
+      job_id: string | null;
+      running: boolean;
+      src: string;
+      status: string;
+    }
+
+    const seedStepTech = async (email: string): Promise<string> => {
+      const [row] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgId}, ${randomUUID()}, ${email}, 'tech')
+        returning id
+      `;
+      return row!.id;
+    };
+
+    // A scheduled job with one pending visit, both assigned to `techId`.
+    const seedStepJob = async (num: string, techId: string): Promise<{ jobId: string; visitId: string }> => {
+      const [job] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, ${num}, 'scheduled', 0, ${techId})
+        returning id
+      `;
+      const [visit] = await admin<{ id: string }[]>`
+        insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+        values (${orgId}, ${job!.id}, ${techId}, 'pending', 1)
+        returning id
+      `;
+      return { jobId: job!.id, visitId: visit!.id };
+    };
+
+    // time_entries FKs the job with no cascade, so hours go before the job they point at.
+    const dropStepFixture = async (techId: string, jobId: string): Promise<void> => {
+      await admin`delete from time_entries where tech_user_id = ${techId}`;
+      await admin`delete from jobs where id = ${jobId}`;
+      await admin`delete from users where id = ${techId}`;
+    };
+
+    // Soft-deleted rows are excluded on purpose: a segment shorter than a minute is DISCARDED, and
+    // a test that counted it would be asserting rows the timesheet never shows.
+    const clockRows = (techId: string) => admin<ClockRow[]>`
+      select kind, job_id, running, src, status
+      from time_entries
+      where tech_user_id = ${techId} and deleted_at is null
+      order by created_at asc
+    `;
+
+    const enrouteStamp = async (visitId: string): Promise<Date | null> => {
+      const [row] = await admin<{ enroute_at: Date | null }[]>`
+        select enroute_at from job_visits where id = ${visitId}
+      `;
+      return row!.enroute_at;
+    };
+
+    it("On my way stamps the visit and starts travel time on that job", async () => {
+      const techId = await seedStepTech("step-enroute@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-ENROUTE", techId);
+      try {
+        const caller = appRouter.createCaller(ctxFor(techId, orgId, "tech"));
+        const dto = await caller.v1.field.setVisitEnroute({ jobId, visitId });
+
+        // Dispatch fact: a stamp, NOT a fifth status — the visit is still pending.
+        expect(dto.visits[0]!.status).toBe("pending");
+        expect(dto.visits[0]!.enrouteAt).not.toBeNull();
+        expect(await enrouteStamp(visitId)).not.toBeNull();
+
+        // Payroll fact: the drive is on the clock, attributed to the job he is driving to.
+        const rows = await clockRows(techId);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          kind: "travel",
+          job_id: jobId,
+          running: true,
+          src: "clock",
+          status: "draft",
+        });
+      } finally {
+        await dropStepFixture(techId, jobId);
+      }
+    });
+
+    it("Arrived moves the visit to in_progress and starts job time", async () => {
+      const techId = await seedStepTech("step-arrived@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-ARRIVED", techId);
+      try {
+        const caller = appRouter.createCaller(ctxFor(techId, orgId, "tech"));
+        const dto = await caller.v1.field.setVisitStatus({ jobId, visitId, status: "in_progress" });
+
+        expect(dto.visits[0]!.status).toBe("in_progress");
+
+        const rows = await clockRows(techId);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ kind: "job", job_id: jobId, running: true, src: "clock" });
+      } finally {
+        await dropStepFixture(techId, jobId);
+      }
+    });
+
+    it("Arrived then Done closes job time and auto-resumes unassigned shop time", async () => {
+      const techId = await seedStepTech("step-done@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-DONE", techId);
+      try {
+        const caller = appRouter.createCaller(ctxFor(techId, orgId, "tech"));
+        await caller.v1.field.setVisitStatus({ jobId, visitId, status: "in_progress" });
+        const dto = await caller.v1.field.setVisitStatus({ jobId, visitId, status: "complete" });
+
+        expect(dto.visits[0]!.status).toBe("complete");
+
+        // He is still on the clock between calls — that is what keeps the day total right even
+        // when nobody taps anything else. The resumed segment belongs to no job.
+        // (Only the RUNNING row is asserted: back-to-back taps inside one minute discard the
+        // segment between them, so whether a closed job row exists depends on the wall clock.)
+        const running = (await clockRows(techId)).filter((r) => r.running);
+        expect(running).toHaveLength(1);
+        expect(running[0]).toMatchObject({ kind: "shop", job_id: null });
+      } finally {
+        await dropStepFixture(techId, jobId);
+      }
+    });
+
+    it("Done on an idle clock writes no hours — a stray tap must not put him back on it", async () => {
+      // Deliberate: the exit taps never auto-open. A Done tapped from the truck at 8pm, hours
+      // after End day, would otherwise start a segment nobody is inside and quietly bill it.
+      const techId = await seedStepTech("step-done-idle@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-DONE-IDLE", techId);
+      try {
+        const caller = appRouter.createCaller(ctxFor(techId, orgId, "tech"));
+        const dto = await caller.v1.field.setVisitStatus({ jobId, visitId, status: "complete" });
+
+        // The dispatch half still succeeds — the visit is done either way.
+        expect(dto.visits[0]!.status).toBe("complete");
+        expect(await clockRows(techId)).toHaveLength(0);
+      } finally {
+        await dropStepFixture(techId, jobId);
+      }
+    });
+
+    it("On my way then Arrived leaves exactly ONE running entry, and it is job time", async () => {
+      // The write order is load-bearing (the database allows one running entry per tech); a bug
+      // that opened before closing would fail this on the unique index rather than in an assertion.
+      const techId = await seedStepTech("step-chain@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-CHAIN", techId);
+      try {
+        const caller = appRouter.createCaller(ctxFor(techId, orgId, "tech"));
+        await caller.v1.field.setVisitEnroute({ jobId, visitId });
+        await caller.v1.field.setVisitStatus({ jobId, visitId, status: "in_progress" });
+
+        const running = (await clockRows(techId)).filter((r) => r.running);
+        expect(running).toHaveLength(1);
+        expect(running[0]).toMatchObject({ kind: "job", job_id: jobId });
+      } finally {
+        await dropStepFixture(techId, jobId);
+      }
+    });
+
+    it("a tech is FORBIDDEN on someone else's job — no stamp, no hours", async () => {
+      const ownerTechId = await seedStepTech("step-owner-tech@field.test");
+      const strangerId = await seedStepTech("step-stranger@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-FORBIDDEN", ownerTechId);
+      try {
+        const stranger = appRouter.createCaller(ctxFor(strangerId, orgId, "tech"));
+        await expect(
+          stranger.v1.field.setVisitEnroute({ jobId, visitId }),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+        await expect(
+          stranger.v1.field.setVisitStatus({ jobId, visitId, status: "in_progress" }),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+        // Neither half of the write happened: the assignment gate fires before both.
+        expect(await enrouteStamp(visitId)).toBeNull();
+        expect(await clockRows(strangerId)).toHaveLength(0);
+        const [visit] = await admin<{ status: string }[]>`
+          select status from job_visits where id = ${visitId}
+        `;
+        expect(visit!.status).toBe("pending");
+      } finally {
+        await admin`delete from time_entries where tech_user_id = ${strangerId}`;
+        await admin`delete from users where id = ${strangerId}`;
+        await dropStepFixture(ownerTechId, jobId);
+      }
+    });
+
+    it("an owner through the field surface moves the visit but is put on no clock", async () => {
+      const techId = await seedStepTech("step-owner-surface@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-OWNER", techId);
+      try {
+        const caller = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+        const dto = await caller.v1.field.setVisitStatus({ jobId, visitId, status: "in_progress" });
+
+        expect(dto.visits[0]!.status).toBe("in_progress");
+        // The dispatcher did not do the work; filing hours against her would be an invented record.
+        expect(await clockRows(ownerUserId)).toHaveLength(0);
+        expect(await clockRows(techId)).toHaveLength(0);
+      } finally {
+        await admin`delete from time_entries where tech_user_id = ${ownerUserId}`;
+        await dropStepFixture(techId, jobId);
+      }
+    });
+
+    it("the field API refuses ↩ Reopen — it stays an office correction", async () => {
+      const techId = await seedStepTech("step-reopen@field.test");
+      const { jobId, visitId } = await seedStepJob("JOB-STEP-REOPEN", techId);
+      // A SECOND pending visit keeps the job open after the first is done, so the refusal below
+      // can only come from the input enum — not from the closed-job gate standing in for it.
+      await admin`
+        insert into job_visits (org_id, job_id, assignee_user_id, status, position)
+        values (${orgId}, ${jobId}, ${techId}, 'pending', 2)
+      `;
+      try {
+        const caller = appRouter.createCaller(ctxFor(techId, orgId, "tech"));
+        const done = await caller.v1.field.setVisitStatus({ jobId, visitId, status: "complete" });
+        expect(done.status).not.toBe("complete"); // the job is still open
+
+        // Cast because the field input enum has no such value — this is a hand-rolled client
+        // request, which is exactly what the enum is there to stop.
+        await expect(
+          caller.v1.field.setVisitStatus({
+            jobId,
+            visitId,
+            status: "pending" as unknown as "complete",
+          }),
+        ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+        const [visit] = await admin<{ status: string }[]>`
+          select status from job_visits where id = ${visitId}
+        `;
+        expect(visit!.status).toBe("complete");
+      } finally {
+        await dropStepFixture(techId, jobId);
+      }
     });
   });
 });

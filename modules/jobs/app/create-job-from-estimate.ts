@@ -56,6 +56,7 @@ export class CreateJobFromEstimateUseCase {
       scheduledEnd: null,
       durationMinutes: DEFAULT_VISIT_DURATION_MINUTES,
       status: "pending",
+      enrouteAt: null, // a brand-new visit has no "On my way" stamp
       startedAt: null,
       completedAt: null,
       notes: null,

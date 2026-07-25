@@ -102,6 +102,12 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async approveWeek(): Promise<number> {
     return 0;
   }
+
+  // Added with the clock state machine: the use-cases under test never tap the clock, so it
+  // is always idle here.
+  async findOpenForTech(): Promise<TimeEntry | null> {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +131,9 @@ describe("RemoveTimeEntryUseCase — not-found branch", () => {
 
   it("passes entryId and clock.now() to repository.remove", async () => {
     const repo = new FakeTimeEntryRepository();
+    // Seeded: the use-case now reads the entry first, to refuse an APPROVED one. An unseeded id is
+    // not-found and never reaches remove(), which is the correct behaviour, not a delegation test.
+    repo.seed(makeEntry());
     const clock = new FixedClock(FIXED_NOW);
     const useCase = new RemoveTimeEntryUseCase(repo, clock);
 
@@ -182,5 +191,55 @@ describe("RemoveTimeEntryUseCase — happy path", () => {
     );
 
     infoSpy.mockRestore();
+  });
+});
+
+// A reviewer found this: the tech-facing remove endpoint authorises on ownership alone, so a
+// technician could delete their OWN approved entry — hours that approval had already pushed to
+// QuickBooks. Mallet would then show a week the shop never signed off on while QuickBooks still
+// held the originals, with no sync path that would ever notice.
+describe("an approved entry cannot be removed", () => {
+  const approved = () => {
+    const res = TimeEntry.create({
+      id: asTimeEntryId("55555555-5555-5555-5555-555555555555"),
+      orgId: asOrgId("66666666-6666-6666-6666-666666666666"),
+      techUserId: asUserId("77777777-7777-7777-7777-777777777777"),
+      jobId: null,
+      workDate: "2026-07-21",
+      kind: "job",
+      startTime: "08:00",
+      endTime: "16:00",
+      note: "",
+      src: "clock",
+      status: "approved",
+      running: false,
+      approvedAt: new Date("2026-07-22T10:00:00.000Z"),
+      createdAt: new Date("2026-07-21T08:00:00.000Z"),
+      updatedAt: new Date("2026-07-21T08:00:00.000Z"),
+    });
+    if (!res.ok) throw new Error("fixture rejected");
+    return res.value;
+  };
+
+  const run = async () => {
+    const entry = approved();
+    const remove = vi.fn().mockResolvedValue(1);
+    const repo = { findById: vi.fn().mockResolvedValue(entry), remove } as unknown as TimeEntryRepository;
+    const res = await new RemoveTimeEntryUseCase(
+      repo,
+      new FixedClock(new Date("2026-07-24T12:00:00.000Z")),
+    ).exec({ entryId: entry.props.id }, "org-1");
+    return { res, remove };
+  };
+
+  it("refuses with a conflict, so the client can offer Reopen", async () => {
+    const { res } = await run();
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.kind).toBe("conflict");
+  });
+
+  it("does not soft-delete the row", async () => {
+    const { remove } = await run();
+    expect(remove).not.toHaveBeenCalled();
   });
 });

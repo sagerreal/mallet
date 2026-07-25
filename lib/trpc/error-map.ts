@@ -11,6 +11,24 @@ const FIXED: Record<string, string> = {
 const PASS_THROUGH = new Set(["BAD_REQUEST", "NOT_FOUND", "CONFLICT"]);
 const FALLBACK = "Something went wrong. Try again.";
 
+/**
+ * The key a domain refusal's machine-readable tag travels under on a tRPC error (written by the
+ * errorFormatter in trpc/init.ts, read by `appErrorField` below).
+ *
+ * tRPC puts only a code and a sentence on the wire. A client that must react to ONE specific rule —
+ * "this week still has hours with no end time" as opposed to any other bad request — would otherwise
+ * have to pattern-match a sentence written for humans, which is free to be reworded at any time.
+ */
+export const APP_ERROR_FIELD = "appErrorField";
+
+/** The domain tag on a transport error, or null when it carries none. */
+export const appErrorField = (error: unknown): string | null => {
+  if (typeof error !== "object" || error === null || !("data" in error)) return null;
+  const data = (error as { data?: Record<string, unknown> | null }).data;
+  const tag = data == null ? undefined : data[APP_ERROR_FIELD];
+  return typeof tag === "string" && tag !== "" ? tag : null;
+};
+
 export const userMessage = (error: unknown): string => {
   if (typeof error === "object" && error !== null && "data" in error) {
     const data = (error as { data?: { code?: string } }).data;

@@ -1,282 +1,241 @@
 "use client";
 
 /**
- * My Hours page — tech-scoped timesheet view.
+ * My Hours page — the technician's own timesheet, and the only place he can correct it.
  *
- * Fetches the caller's own time entries via v1.timesheets.list (anyRole; the
- * router enforces caller-scoping for techs — it ignores any techUserId input and
- * always uses ctx.principal.userId when role === "tech"). Does NOT depend on the
- * office Zustand store (timesheets / techs), which is only hydrated under the
- * ownerOrOffice layout.
+ * Reads v1.timesheets.list (anyRole; the router ignores any techUserId a tech passes and always
+ * scopes to ctx.principal.userId). Writes go to v1.timesheets.update / .create, which authorise
+ * by ownership — a tech may only touch his own rows — and refuse an approved row outright.
  *
- * The page passes no techUserId — the server resolves the caller automatically.
- * Week navigation is client-side pagination over the already-fetched items.
+ * Deliberately does NOT use the office Zustand timesheets slice: that slice is hydrated only
+ * under the ownerOrOffice layout, so this page queries directly and stays the single reader of
+ * its own data.
+ *
+ * Why correction lives here at all: the capture mechanism is the clock, not typing. Self-entry
+ * is the repair tool. Without it the only person who can fix a wrong hour is the office, on a
+ * Sunday, reconstructing a week they were not present for — the worst available reconstruction
+ * surface, and a record the worker never got to challenge.
  */
 
-import { useState } from "react";
-import { todayISO } from "@/lib/clock";
-import { myHoursListInput, MY_HOURS_STALE_MS } from "@/features/field/my-hours-input";
+import { useState, type ReactNode } from "react";
+import { todayISO, addDaysISO } from "@/lib/clock";
 import { api } from "@/lib/trpc/client";
-import type { RouterOutputs } from "@/lib/trpc/client";
+import { useMe } from "@/features/identity/hooks";
+import { myHoursListInput, MY_HOURS_STALE_MS } from "@/features/field/my-hours-input";
+import { shouldShowFirstRun, shouldShowLoadFailed, isFirstLoad } from "@/lib/first-run";
+import { ListLoading } from "@/components/shared/list-loading";
+import { LoadFailed } from "@/components/shared/load-failed";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
+import { Button } from "@/components/ui/button";
+import {
+  weekStart,
+  weekEntries,
+  rollup,
+  shortDayLabel,
+  DAYS_PER_WEEK,
+  HOURS_PRECISION,
+  type MyHoursEntry,
+} from "@/features/field/my-hours-derive";
+import { openEntryOf, suggestEndTime } from "@/features/field/my-hours-edit";
+import { MyHoursWeek } from "@/features/field/my-hours-entries";
+import { StillOpenBanner } from "@/features/field/my-hours-still-open";
+import { AddBlockForm } from "@/features/field/my-hours-add-block";
+import { useMyHoursWrites } from "@/features/field/use-my-hours-writes";
 
-type TimeEntryDTO = RouterOutputs["v1"]["timesheets"]["list"]["items"][number];
+type Writes = ReturnType<typeof useMyHoursWrites>;
 
-// ---- date helpers ----------------------------------------------------------
-
-function addDays(iso: string, n: number): string {
-  const d = new Date(iso + "T12:00:00");
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
-/** Monday of the week containing iso */
-function weekStart(iso: string): string {
-  const d = new Date(iso + "T12:00:00");
-  const dow = (d.getDay() + 6) % 7; // 0 = Mon
-  return addDays(iso, -dow);
-}
-
-function weekDates(wk: string): string[] {
-  return Array.from({ length: 7 }, (_, i) => addDays(wk, i));
-}
-
-function dateLabel(iso: string): string {
-  return new Date(iso + "T12:00:00").toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function shortDateLabel(iso: string): string {
-  return new Date(iso + "T12:00:00").toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-// ---- time helpers -----------------------------------------------------------
-
-function tsHours(e: TimeEntryDTO): number {
-  if (!e.startTime || !e.endTime) return 0;
-  const [sh = 0, sm = 0] = e.startTime.split(":").map(Number);
-  const [eh = 0, em = 0] = e.endTime.split(":").map(Number);
-  return Math.max(0, eh + em / 60 - (sh + sm / 60));
-}
-
-function tsPaid(e: TimeEntryDTO): number {
-  return e.kind === "break" ? 0 : tsHours(e);
-}
-
-// ---- week filter -----------------------------------------------------------
-
-function weekEntries(entries: TimeEntryDTO[], wk: string): TimeEntryDTO[] {
-  const days = new Set(weekDates(wk));
-  return entries.filter((e) => days.has(e.workDate));
-}
-
-function rollup(entries: TimeEntryDTO[], wk: string): { paid: number; ot: number; approved: boolean } {
-  const es = weekEntries(entries, wk);
-  const paid = es.reduce((s, e) => s + tsPaid(e), 0);
-  const ot = Math.max(0, paid - 40);
-  const approved = es.length > 0 && es.every((e) => e.status === "approved");
-  return { paid, ot, approved };
-}
-
-// ============================================================================
-// Sub-components
-// ============================================================================
-
-const TS_KIND_LABELS: Record<string, string> = {
-  job: "Job",
-  travel: "Travel",
-  break: "Break",
-  shop: "Shop",
-};
-
-interface EntryRowProps {
-  entry: TimeEntryDTO;
-}
-
-function EntryRow({ entry: e }: EntryRowProps) {
-  const hrs = tsHours(e);
-  const kindLabel = TS_KIND_LABELS[e.kind] ?? e.kind;
-  return (
-    <div className="ts-e">
-      <span
-        className={`ts-kind ${e.kind === "job" ? "job" : ""}`}
-        style={{ flex: "none", width: 56, textAlign: "center" }}
-      >
-        {kindLabel}
-      </span>
-      <span className="ts-elabel" style={{ flex: 1, minWidth: 0 }}>
-        {kindLabel}
-        {e.note ? <span className="muted"> · {e.note}</span> : null}
-      </span>
-      <span className="ts-etime">
-        {e.startTime}–{e.endTime ?? "—"}
-      </span>
-      <span className="ts-ehrs" style={{ fontVariantNumeric: "tabular-nums" }}>
-        {hrs.toFixed(2)} h
-      </span>
-    </div>
-  );
-}
-
-interface DayBlockProps {
-  date: string;
-  entries: TimeEntryDTO[];
-}
-
-function DayBlock({ date, entries }: DayBlockProps) {
-  const dayPaid = entries.reduce((s, e) => s + tsPaid(e), 0);
-  return (
-    <div className="ts-day">
-      <div className="ts-dhdr">
-        <span>{dateLabel(date)}</span>
-        <span className="num">{dayPaid.toFixed(2)} h</span>
-      </div>
-      {entries.map((e) => (
-        <EntryRow key={e.id} entry={e} />
-      ))}
-    </div>
-  );
-}
-
-interface WeekEntriesProps {
-  entries: TimeEntryDTO[];
-  wk: string;
-}
-
-function WeekEntries({ entries, wk }: WeekEntriesProps) {
-  const es = weekEntries(entries, wk);
-  if (!es.length) {
-    return <div className="empty-att">No hours logged yet.</div>;
-  }
-
-  const byDay: Record<string, TimeEntryDTO[]> = {};
-  es.forEach((e) => {
-    byDay[e.workDate] = [...(byDay[e.workDate] ?? []), e];
-  });
-
-  const days = weekDates(wk).filter((d) => byDay[d]);
-
-  return (
-    <>
-      {days.map((d) => (
-        <DayBlock key={d} date={d} entries={byDay[d] ?? []} />
-      ))}
-    </>
-  );
-}
-
-// ============================================================================
-// Page
-// ============================================================================
-
-export default function MyHoursPage() {
-  // v1.timesheets.list — server auto-scopes to caller when role === "tech".
-  // Fetch a wide window (84 days back → +7) so week-navigation works client-side — the window
-  // comes from myHoursListInput, shared with the field hydrator prefetch.
-  const today = todayISO();
-
-  // myHoursListInput is shared with the field hydrator's idle prefetch — same builder,
-  // same query key, so a tab switch after prefetch renders straight from cache.
-  const { data, isLoading } = api.v1.timesheets.list.useQuery(myHoursListInput(), {
-    staleTime: MY_HOURS_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
-
-  const [tsWeek, setTsWeek] = useState(() => weekStart(today));
-
-  function navWeek(delta: number): void {
-    setTsWeek((prev) => addDays(prev, delta * 7));
-  }
-
-  function goThisWeek(): void {
-    setTsWeek(weekStart(today));
-  }
-
-  if (isLoading) {
-    return (
-      <>
-        <h1>My hours</h1>
-        <div style={{ marginTop: "var(--space-3)" }}>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="sk-row">
-              <div className="sk" style={{ width: 64, height: 14, flexShrink: 0 }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-2)", justifyContent: "center" }}>
-                <div className="sk" style={{ width: "60%", height: 14 }} />
-                <div className="sk" style={{ width: "40%", height: 12 }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </>
-    );
-  }
-
-  const entries = data?.items ?? [];
-  const thisWeek = weekStart(today);
-  const r = rollup(entries, tsWeek);
-  const wkEnd = addDays(tsWeek, 6);
-
+/** The page identity, kept on every state so the four list states never swap the title out. */
+function Screen({ children }: { children: ReactNode }) {
   return (
     <>
       <h1>My hours</h1>
-
-      {/* Week nav */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--space-3)",
-          margin: "var(--space-3) 0",
-          flexWrap: "wrap",
-        }}
-      >
-        <button className="btn sm" onClick={() => navWeek(-1)}>
-          ‹ Prev
-        </button>
-        <b style={{ fontWeight: 700 }}>
-          {shortDateLabel(tsWeek)} – {shortDateLabel(wkEnd)}
-        </b>
-        <button className="btn sm" onClick={() => navWeek(1)}>
-          Next ›
-        </button>
-        {tsWeek !== thisWeek ? (
-          <button className="btn sm ghost" onClick={goThisWeek}>
-            This week
-          </button>
-        ) : null}
-        <span style={{ flex: 1 }} />
-        <span
-          className="muted"
-          style={{ fontSize: "var(--type-sm)", fontVariantNumeric: "tabular-nums" }}
-        >
-          {r.paid.toFixed(2)} paid h
-          {r.ot ? ` · ${r.ot.toFixed(2)} OT` : ""}
-        </span>
-      </div>
-
-      {/* Entries for the selected week */}
-      <WeekEntries entries={entries} wk={tsWeek} />
-
-      {/* Approval status */}
-      {r.approved ? (
-        <span
-          className="pill"
-          style={{
-            background: "var(--green-50)",
-            color: "var(--green-700)",
-            border: "1px solid var(--green-100)",
-            display: "inline-block",
-            marginTop: "var(--space-2)",
-          }}
-        >
-          ✓ Approved — locked
-        </span>
-      ) : null}
+      {children}
     </>
+  );
+}
+
+interface WeekNavProps {
+  readonly weekStartISO: string;
+  readonly thisWeekISO: string;
+  readonly paid: number;
+  readonly overtime: number;
+  readonly onNav: (weeks: number) => void;
+  readonly onThisWeek: () => void;
+}
+
+function WeekNav({ weekStartISO, thisWeekISO, paid, overtime, onNav, onThisWeek }: WeekNavProps) {
+  return (
+    <div className="mh-nav">
+      <Button variant="quiet" size="sm" onClick={() => onNav(-1)} aria-label="Previous week">
+        ‹ Prev
+      </Button>
+      <b>
+        {shortDayLabel(weekStartISO)} – {shortDayLabel(addDaysISO(weekStartISO, DAYS_PER_WEEK - 1))}
+      </b>
+      <Button variant="quiet" size="sm" onClick={() => onNav(1)} aria-label="Next week">
+        Next ›
+      </Button>
+      {weekStartISO !== thisWeekISO ? (
+        <Button variant="quiet" size="sm" onClick={onThisWeek}>
+          This week
+        </Button>
+      ) : null}
+      <span className="mh-total">
+        {paid.toFixed(HOURS_PRECISION)} paid h
+        {overtime > 0 ? ` · ${overtime.toFixed(HOURS_PRECISION)} OT` : ""}
+      </span>
+    </div>
+  );
+}
+
+/** Nothing has ever been recorded for this technician — an invitation to act, not a dead end. */
+function NoHoursYet({ onAdd }: { onAdd: () => void }) {
+  return (
+    <FirstRunEmptyState
+      heading="No hours yet"
+      subtext="Hours are recorded as you start your day and tap through your jobs. Anything the clock missed, you can add here."
+      paths={[
+        {
+          title: "Add hours you already worked",
+          description: "Pick the day and the times. The office reviews it before it reaches payroll.",
+          actionLabel: "Add hours",
+          onAction: onAdd,
+          variant: "primary",
+        },
+      ]}
+    />
+  );
+}
+
+interface WeekViewProps {
+  readonly entries: readonly MyHoursEntry[];
+  readonly today: string;
+  readonly myUserId: string | undefined;
+  readonly writes: Writes;
+  readonly openEntry: MyHoursEntry | null;
+  readonly suggestEndFor: (entry: MyHoursEntry) => string | null;
+  /** The add-a-block affordance, owned by the page because the first-run screen opens it too. */
+  readonly addSlot: ReactNode;
+}
+
+/** The populated surface. Owns which week is shown and which row is open — nothing else needs it. */
+function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addSlot }: WeekViewProps) {
+  const [weekStartISO, setWeekStartISO] = useState(() => weekStart(today));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const week = rollup(entries, weekStartISO);
+
+  return (
+    <>
+      {openEntry !== null ? (
+        <StillOpenBanner
+          entry={openEntry}
+          suggestedEnd={suggestEndFor(openEntry)}
+          saving={writes.saving}
+          error={writes.updateError}
+          onEnd={(endTime) => writes.endOpenDay(openEntry.id, endTime)}
+        />
+      ) : null}
+      <WeekNav
+        weekStartISO={weekStartISO}
+        thisWeekISO={weekStart(today)}
+        paid={week.paid}
+        overtime={week.overtime}
+        onNav={(weeks) => setWeekStartISO((prev) => addDaysISO(prev, weeks * DAYS_PER_WEEK))}
+        onThisWeek={() => setWeekStartISO(weekStart(today))}
+      />
+      <MyHoursWeek
+        entries={weekEntries(entries, weekStartISO)}
+        weekStartISO={weekStartISO}
+        today={today}
+        myUserId={myUserId}
+        editingId={editingId}
+        saving={writes.saving}
+        saveError={writes.updateError}
+        suggestEndFor={suggestEndFor}
+        onEdit={setEditingId}
+        onSave={(entryId, startTime, endTime) =>
+          writes.saveTimes(entryId, startTime, endTime, () => setEditingId(null))
+        }
+      />
+      {addSlot}
+    </>
+  );
+}
+
+export default function MyHoursPage() {
+  const today = todayISO();
+  const myUserId = useMe().data?.userId;
+
+  // Same builder — and therefore the same query key — as the field hydrator's idle prefetch.
+  const query = api.v1.timesheets.list.useQuery(myHoursListInput(), {
+    staleTime: MY_HOURS_STALE_MS,
+    refetchOnWindowFocus: false,
+  });
+  const writes = useMyHoursWrites();
+  const [addOpen, setAddOpen] = useState(false);
+
+  const entries = query.data?.items ?? [];
+  const listState = { isFetched: query.isFetched, isError: query.isError, count: entries.length };
+  const suggestEndFor = (entry: MyHoursEntry): string | null =>
+    suggestEndTime(entries.filter((e) => e.techUserId === entry.techUserId), entry);
+
+  const addBlock = (
+    <AddBlockForm
+      today={today}
+      techUserId={myUserId}
+      saving={writes.adding}
+      error={writes.createError}
+      onAdd={writes.addBlock}
+      onCancel={() => setAddOpen(false)}
+    />
+  );
+
+  if (isFirstLoad(listState)) {
+    return (
+      <Screen>
+        <ListLoading label="Loading your hours…" />
+      </Screen>
+    );
+  }
+
+  if (shouldShowLoadFailed(listState)) {
+    return (
+      <Screen>
+        <LoadFailed noun="hours" onRetry={() => void query.refetch()} retrying={query.isRefetching} />
+      </Screen>
+    );
+  }
+
+  if (shouldShowFirstRun(listState)) {
+    return (
+      <Screen>
+        <NoHoursYet onAdd={() => setAddOpen(true)} />
+        {addOpen ? addBlock : null}
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <WeekView
+        entries={entries}
+        today={today}
+        myUserId={myUserId}
+        writes={writes}
+        openEntry={openEntryOf(entries, myUserId, new Date())}
+        suggestEndFor={suggestEndFor}
+        addSlot={
+          addOpen ? (
+            addBlock
+          ) : (
+            <div className="mh-acts">
+              <Button variant="quiet" onClick={() => setAddOpen(true)}>
+                Add hours you already worked
+              </Button>
+            </div>
+          )
+        }
+      />
+    </Screen>
   );
 }

@@ -95,6 +95,7 @@ const makeVisit = (overrides: Partial<JobVisitProps> = {}): JobVisit => {
     scheduledEnd: null,
     durationMinutes: null,
     status: "pending",
+    enrouteAt: null,
     startedAt: null,
     completedAt: null,
     notes: null,

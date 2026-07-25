@@ -39,6 +39,9 @@ export const visitDTO = z.object({
   // to the start→end window).
   durationMinutes: z.number().int().nullable(),
   status: visitStatusEnum,
+  // "On my way" stamp. The client derives its own "enroute" word from
+  // (status = pending AND this set) — there is no fifth status value.
+  enrouteAt: z.string().nullable(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   notes: z.string().nullable(),
@@ -259,6 +262,7 @@ export const toVisitDTO = (visit: import("../domain/job").JobVisit) => {
     scheduledEnd: v.scheduledEnd,
     durationMinutes: v.durationMinutes,
     status: v.status,
+    enrouteAt: iso(v.enrouteAt),
     startedAt: iso(v.startedAt),
     completedAt: iso(v.completedAt),
     notes: v.notes,

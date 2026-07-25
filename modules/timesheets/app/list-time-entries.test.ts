@@ -102,6 +102,12 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async approveWeek(): Promise<number> {
     return 0;
   }
+
+  // Added with the clock state machine: the use-cases under test never tap the clock, so it
+  // is always idle here.
+  async findOpenForTech(): Promise<TimeEntry | null> {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

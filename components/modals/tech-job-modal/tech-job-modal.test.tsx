@@ -3,9 +3,12 @@
  * components/modals/tech-job-modal.test.tsx
  *
  * Guards the field-surface role gate: the tech modal is shared by owner/office
- * (full controls) and techs (field-only controls). Everything wired to an
- * ownerOrOffice endpoint must be HIDDEN for techs — otherwise the tap appears
- * to succeed and silently rolls back (FORBIDDEN). Also guards the redacted-money
+ * (full controls) and techs (field-only controls). Anything wired to an
+ * ownerOrOffice endpoint with no field sibling must be HIDDEN for techs —
+ * otherwise the tap appears to succeed and silently rolls back (FORBIDDEN).
+ * The visit step buttons DO have a field sibling, so they are the tech's; they
+ * carry the write surface with them so his taps reach the endpoints that are
+ * assignment-gated and that move his clock. Also guards the redacted-money
  * display: a server-redacted (null) rate must never render as $0.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -16,6 +19,9 @@ import type { Job, Lead, Invoice } from "@/lib/store/types";
 
 // ---------------------------------------------------------------------------
 // Mocks: store + identity (role comes from v1.identity.me via useMe)
+// The signed-in tech. Step buttons render only on a visit assigned to THIS id — a tech must not be
+// able to move a colleague's visit on a shared job.
+const MOCK_USER_ID = "tech-1";
 // ---------------------------------------------------------------------------
 
 let mockJobs: Job[] = [];
@@ -27,6 +33,7 @@ let mockRole: "owner" | "office" | "tech" | undefined = "owner";
 const noop = vi.fn();
 const mockOpenModal = vi.fn();
 const mockUpdateJob = vi.fn();
+const mockSetVisitStatus = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
@@ -39,7 +46,7 @@ vi.mock("@/lib/store/app-store", () => ({
       leads: mockLeads,
       invoices: mockInvoices,
       toggles: { techSeesPrice: mockSeesPrice },
-      setVisitStatus: noop,
+      setVisitStatus: mockSetVisitStatus,
       updateJob: mockUpdateJob,
       recordPayment: noop,
       addAddon: noop,
@@ -52,7 +59,10 @@ vi.mock("@/lib/store/app-store", () => ({
 }));
 
 vi.mock("@/features/identity/hooks", () => ({
-  useMe: () => ({ data: mockRole ? { role: mockRole } : undefined, isLoading: !mockRole }),
+  useMe: () => ({
+    data: mockRole ? { role: mockRole, userId: MOCK_USER_ID } : undefined,
+    isLoading: !mockRole,
+  }),
 }));
 
 // Deterministic date stamp for the notes composer ("[Jul 13] …").
@@ -107,6 +117,7 @@ beforeEach(() => {
   mockOpenModal.mockClear();
   mockUpdateJob.mockReset();
   mockUpdateJob.mockResolvedValue({ ok: true });
+  mockSetVisitStatus.mockReset();
 });
 
 // ---------------------------------------------------------------------------
@@ -122,6 +133,12 @@ describe("TechJobModalContent — owner/office", () => {
     expect(screen.getByText("✓ Mark done")).toBeTruthy();
     expect(screen.getByText(/Customer OK/)).toBeTruthy();
     expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
+  });
+
+  it("writes the office's taps through the OFFICE surface (no clock — she wasn't there)", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("On my way →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "office");
   });
 
   it("shows the payment hero (charge on file) when the job is done", () => {
@@ -181,10 +198,42 @@ describe("TechJobModalContent — tech", () => {
     expect(screen.queryByText("Text")).toBeNull();
   });
 
-  it("hides visit status controls (v1.visits.setVisitStatus is ownerOrOffice)", () => {
+  // A reviewer found this: the modal renders every PLACED visit, unfiltered by assignee, and the
+  // step buttons had been unhidden for techs wholesale. On a two-visit job the tech saw live
+  // controls on a colleague's row, and tapping them moved that visit and wrote time against it.
+  it("shows NO step buttons on a colleague's visit, only on the tech's own", () => {
+    mockJobs = [
+      makeJob({
+        visits: [
+          { id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "scheduled" },
+          { id: "v2", date: "2026-07-12", techId: "someone-else", start: 13, dur: 2, status: "scheduled" },
+        ],
+      }),
+    ];
     render(<TechJobModalContent />);
-    expect(screen.queryByText("On my way →")).toBeNull();
-    expect(screen.queryByText("✓ Mark done")).toBeNull();
+    // Both rows are visible (useful context), but exactly ONE carries the control.
+    expect(screen.getAllByText("On my way →")).toHaveLength(1);
+  });
+
+  it("shows the step buttons — they are the tech's, and they are how his hours get recorded", () => {
+    render(<TechJobModalContent />);
+    expect(screen.getByText("On my way →")).toBeTruthy();
+    expect(screen.getByText("✓ Mark done")).toBeTruthy();
+  });
+
+  it("writes the tech's taps through the FIELD surface (the office API would refuse him)", () => {
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("On my way →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
+  });
+
+  it("still hides ↩ Reopen on a finished visit — that correction can rewrite recorded hours", () => {
+    mockJobs = [
+      makeJob({
+        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
     expect(screen.queryByText("↩ Reopen")).toBeNull();
   });
 
@@ -230,52 +279,22 @@ describe("TechJobModalContent — tech", () => {
 });
 
 // ---------------------------------------------------------------------------
-// FieldTimer (Fix: pause must bank elapsed seconds, not epoch seconds)
+// No job timer. The old hero was local React state that persisted nothing; hours
+// now come from the day clock on My day plus the visit taps.
 // ---------------------------------------------------------------------------
 
-describe("FieldTimer — pause banks elapsed time, not epoch seconds", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-13T09:00:00Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("start → 90s → pause shows 1:30 (not epoch-scale)", () => {
+describe("TechJobModalContent — the job screen offers no timer", () => {
+  it("shows no start/resume timer control on an unfinished job", () => {
     render(<TechJobModalContent />);
-    fireEvent.click(screen.getByText("Start timer"));
-
-    act(() => {
-      vi.advanceTimersByTime(90_000);
-    });
-    // Running clock shows the live elapsed.
-    expect(screen.getByText("1:30")).toBeTruthy();
-
-    // Pause = tap the running clock.
-    fireEvent.click(screen.getByText(/on the clock/));
-    expect(screen.getByText("1:30")).toBeTruthy();
-    expect(screen.getByText("Resume timer")).toBeTruthy();
+    expect(screen.queryByText("Start timer")).toBeNull();
+    expect(screen.queryByText("Resume timer")).toBeNull();
+    expect(screen.queryByText(/on the clock/i)).toBeNull();
   });
 
-  it("pause → resume → pause accumulates run segments only", () => {
+  it("leads with the address and the visit row instead", () => {
     render(<TechJobModalContent />);
-    fireEvent.click(screen.getByText("Start timer"));
-    act(() => {
-      vi.advanceTimersByTime(60_000);
-    });
-    fireEvent.click(screen.getByText(/on the clock/)); // pause at 1:00
-
-    act(() => {
-      vi.advanceTimersByTime(600_000); // 10 min paused — must NOT count
-    });
-    fireEvent.click(screen.getByText("Resume timer"));
-    act(() => {
-      vi.advanceTimersByTime(30_000);
-    });
-    fireEvent.click(screen.getByText(/on the clock/)); // pause at 1:30
-    expect(screen.getByText("1:30")).toBeTruthy();
+    expect(screen.getByText("12 Oak St")).toBeTruthy();
+    expect(screen.getByText("Your visit")).toBeTruthy();
   });
 });
 

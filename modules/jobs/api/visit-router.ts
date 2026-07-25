@@ -10,6 +10,7 @@ import { UpdateVisitDurationUseCase } from "../app/update-visit-duration";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
 import { RemoveVisitUseCase } from "../app/remove-visit";
 import { SetVisitStatusUseCase } from "../app/set-visit-status";
+import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { visitStatusEnum, jobDTO, toJobDTO } from "./job-dto";
 
 // Shared input fragments.
@@ -199,6 +200,29 @@ export const createVisitRouter = () =>
             status: input.status,
           },
           "job_visit.status_set",
+        );
+        return toJobDTO(job);
+      }),
+
+    // "On my way". Separate from setVisitStatus because it is NOT a status change: the visit
+    // stays pending and only enroute_at moves. Routed through setVisitStatus it would arrive as
+    // the status the visit already has and be short-circuited as idempotent, which is exactly
+    // how this tap became a server no-op in the first place.
+    setVisitEnroute: ownerOrOffice
+      .input(jobIdVisitId)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new SetVisitEnrouteUseCase(repo, ctx.deps.clock);
+        const job = orThrow(
+          await useCase.exec({
+            jobId: asJobId(input.jobId),
+            visitId: asVisitId(input.visitId),
+          }),
+        );
+        logger.info(
+          { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
+          "job_visit.enroute_set",
         );
         return toJobDTO(job);
       }),

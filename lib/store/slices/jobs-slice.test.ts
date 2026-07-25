@@ -7,8 +7,11 @@ const mockSetLines = vi.fn();
 const mockCreateVisit = vi.fn();
 const mockUpdateVisitDuration = vi.fn();
 const mockSetVisitStatus = vi.fn();
+const mockSetVisitEnroute = vi.fn();
 const mockRemoveVisit = vi.fn();
 const mockScheduleVisit = vi.fn();
+const mockFieldSetVisitStatus = vi.fn();
+const mockFieldSetVisitEnroute = vi.fn();
 
 // jobs-slice imports RouterOutputs from @/lib/trpc/client for type purposes only.
 vi.mock("@/lib/trpc/client", () => ({ api: {} }));
@@ -26,8 +29,13 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         createVisit: { mutate: (...a: unknown[]) => mockCreateVisit(...a) },
         updateVisitDuration: { mutate: (...a: unknown[]) => mockUpdateVisitDuration(...a) },
         setVisitStatus: { mutate: (...a: unknown[]) => mockSetVisitStatus(...a) },
+        setVisitEnroute: { mutate: (...a: unknown[]) => mockSetVisitEnroute(...a) },
         removeVisit: { mutate: (...a: unknown[]) => mockRemoveVisit(...a) },
         scheduleVisit: { mutate: (...a: unknown[]) => mockScheduleVisit(...a) },
+      },
+      field: {
+        setVisitStatus: { mutate: (...a: unknown[]) => mockFieldSetVisitStatus(...a) },
+        setVisitEnroute: { mutate: (...a: unknown[]) => mockFieldSetVisitEnroute(...a) },
       },
     },
   },
@@ -492,6 +500,7 @@ function makeVisitDTO(id: string, overrides: Record<string, unknown> = {}) {
     scheduledEnd: null,
     durationMinutes: 120,
     status: "pending",
+    enrouteAt: null,
     startedAt: null,
     completedAt: null,
     notes: null,
@@ -611,7 +620,7 @@ describe("pending-create merge guard", () => {
     mockSetVisitStatus.mockResolvedValue(
       makeJobDTO("j-recon", { visits: [makeVisitDTO(serverVisit.id)] }),
     );
-    get().setVisitStatus("j-recon", serverVisit.id, "onsite");
+    get().setVisitStatus("j-recon", serverVisit.id, "onsite", "office");
     await flush();
 
     const ids = get().jobs[0]!.visits.map((v) => v.id);
@@ -632,6 +641,211 @@ describe("pending-create merge guard", () => {
     // Server later says the visit is gone (e.g. removed elsewhere) — no guard.
     get().setJobs([{ ...draft, id: "j-settled", origin: "db", visits: [] }]);
     expect(get().jobs[0]!.visits).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setVisitStatus("enroute") — "On my way" is a STAMP, not a status change, so it
+// must reach its own endpoint. Sent through setVisitStatus it maps to "pending",
+// the status the visit already has, and the server discards it as idempotent.
+// ---------------------------------------------------------------------------
+
+describe("setVisitStatus — On my way (office surface)", () => {
+  const SCHEDULED_VISIT = {
+    id: "aaaaaaaa-0000-0000-0000-0000000000e1",
+    date: null,
+    techId: null,
+    start: null,
+    dur: 2,
+    status: "scheduled",
+  };
+  const ENROUTE_AT = "2026-07-15T08:40:00.000Z";
+
+  beforeEach(() => {
+    mockSetVisitStatus.mockReset();
+    mockSetVisitEnroute.mockReset();
+  });
+
+  it("persists via v1.visits.setVisitEnroute, not setVisitStatus", async () => {
+    mockSetVisitEnroute.mockResolvedValue(
+      makeJobDTO("j-enroute", {
+        visits: [makeVisitDTO(SCHEDULED_VISIT.id, { enrouteAt: ENROUTE_AT })],
+      }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-enroute", [SCHEDULED_VISIT]);
+
+    get().setVisitStatus("j-enroute", SCHEDULED_VISIT.id, "enroute", "office");
+    await flush();
+
+    expect(mockSetVisitEnroute).toHaveBeenCalledWith({
+      jobId: "j-enroute",
+      visitId: SCHEDULED_VISIT.id,
+    });
+    expect(mockSetVisitStatus).not.toHaveBeenCalled();
+  });
+
+  it("keeps the visit 'enroute' after the server DTO reconciles (pending + stamp)", async () => {
+    mockSetVisitEnroute.mockResolvedValue(
+      makeJobDTO("j-enroute", {
+        visits: [makeVisitDTO(SCHEDULED_VISIT.id, { status: "pending", enrouteAt: ENROUTE_AT })],
+      }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-enroute", [SCHEDULED_VISIT]);
+
+    get().setVisitStatus("j-enroute", SCHEDULED_VISIT.id, "enroute", "office");
+    await flush();
+
+    // Reconciled from the DTO alone — the same derivation a page reload runs.
+    expect(get().jobs[0]!.visits[0]!.status).toBe("enroute");
+  });
+
+  it("rolls the visit back to 'scheduled' when the stamp write fails", async () => {
+    mockSetVisitEnroute.mockRejectedValue(new Error("offline"));
+    const { get } = makeStore();
+    seedDbJob(get, "j-enroute", [SCHEDULED_VISIT]);
+
+    get().setVisitStatus("j-enroute", SCHEDULED_VISIT.id, "enroute", "office");
+    await flush();
+
+    expect(get().jobs[0]!.visits[0]!.status).toBe("scheduled");
+  });
+
+  it("still routes a real status change to setVisitStatus", async () => {
+    mockSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-enroute", {
+        visits: [makeVisitDTO(SCHEDULED_VISIT.id, { status: "in_progress" })],
+      }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-enroute", [SCHEDULED_VISIT]);
+
+    get().setVisitStatus("j-enroute", SCHEDULED_VISIT.id, "onsite", "office");
+    await flush();
+
+    expect(mockSetVisitStatus).toHaveBeenCalledWith({
+      jobId: "j-enroute",
+      visitId: SCHEDULED_VISIT.id,
+      status: "in_progress",
+    });
+    expect(mockSetVisitEnroute).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The field surface. A technician's endpoints are assignment-gated (the office's
+// are ownerOrOffice and would refuse his token) and they are the ones that move
+// his clock — so the wrong endpoint is a lost timesheet segment, not just a 403.
+// ---------------------------------------------------------------------------
+
+describe("setVisitStatus — field surface", () => {
+  const FIELD_VISIT = {
+    id: "aaaaaaaa-0000-0000-0000-0000000000f1",
+    date: null,
+    techId: null,
+    start: null,
+    dur: 2,
+    status: "scheduled",
+  };
+
+  beforeEach(() => {
+    mockSetVisitStatus.mockReset();
+    mockSetVisitEnroute.mockReset();
+    mockFieldSetVisitStatus.mockReset();
+    mockFieldSetVisitEnroute.mockReset();
+  });
+
+  it("sends On my way to v1.field.setVisitEnroute, never the office endpoint", async () => {
+    mockFieldSetVisitEnroute.mockResolvedValue(
+      makeJobDTO("j-field", {
+        visits: [makeVisitDTO(FIELD_VISIT.id, { enrouteAt: "2026-07-15T08:40:00.000Z" })],
+      }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-field", [FIELD_VISIT]);
+
+    get().setVisitStatus("j-field", FIELD_VISIT.id, "enroute", "field");
+    await flush();
+
+    expect(mockFieldSetVisitEnroute).toHaveBeenCalledWith({
+      jobId: "j-field",
+      visitId: FIELD_VISIT.id,
+    });
+    expect(mockSetVisitEnroute).not.toHaveBeenCalled();
+  });
+
+  it("sends Arrived to v1.field.setVisitStatus as in_progress", async () => {
+    mockFieldSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-field", { visits: [makeVisitDTO(FIELD_VISIT.id, { status: "in_progress" })] }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-field", [FIELD_VISIT]);
+
+    get().setVisitStatus("j-field", FIELD_VISIT.id, "onsite", "field");
+    await flush();
+
+    expect(mockFieldSetVisitStatus).toHaveBeenCalledWith({
+      jobId: "j-field",
+      visitId: FIELD_VISIT.id,
+      status: "in_progress",
+    });
+    expect(mockSetVisitStatus).not.toHaveBeenCalled();
+  });
+
+  it("sends Mark done to v1.field.setVisitStatus as complete", async () => {
+    mockFieldSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-field", { visits: [makeVisitDTO(FIELD_VISIT.id, { status: "complete" })] }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-field", [FIELD_VISIT]);
+
+    get().setVisitStatus("j-field", FIELD_VISIT.id, "done", "field");
+    await flush();
+
+    expect(mockFieldSetVisitStatus).toHaveBeenCalledWith({
+      jobId: "j-field",
+      visitId: FIELD_VISIT.id,
+      status: "complete",
+    });
+  });
+
+  it("reconciles the field response like any other write", async () => {
+    mockFieldSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-field", { visits: [makeVisitDTO(FIELD_VISIT.id, { status: "in_progress" })] }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-field", [FIELD_VISIT]);
+
+    get().setVisitStatus("j-field", FIELD_VISIT.id, "onsite", "field");
+    await flush();
+
+    expect(get().jobs[0]!.visits[0]!.status).toBe("onsite");
+  });
+
+  it("rolls the visit back when the field write fails", async () => {
+    mockFieldSetVisitStatus.mockRejectedValue(new Error("offline"));
+    const { get } = makeStore();
+    seedDbJob(get, "j-field", [FIELD_VISIT]);
+
+    get().setVisitStatus("j-field", FIELD_VISIT.id, "onsite", "field");
+    await flush();
+
+    expect(get().jobs[0]!.visits[0]!.status).toBe("scheduled");
+  });
+
+  it("keeps the office on its own endpoints — the field API is never called for it", async () => {
+    mockSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-field", { visits: [makeVisitDTO(FIELD_VISIT.id, { status: "in_progress" })] }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-field", [FIELD_VISIT]);
+
+    get().setVisitStatus("j-field", FIELD_VISIT.id, "onsite", "office");
+    await flush();
+
+    expect(mockFieldSetVisitStatus).not.toHaveBeenCalled();
+    expect(mockSetVisitStatus).toHaveBeenCalled();
   });
 });
 

@@ -1,0 +1,118 @@
+"use client";
+
+/**
+ * features/field/my-hours-add-block.tsx
+ * "Add hours you already worked" — the technician's own repair for a block the clock missed
+ * (no signal in a crawlspace, a forgotten morning punch, a supply-house run).
+ *
+ * Expands in-flow beneath its trigger. Day and both times are pickers, not text boxes: the point
+ * of the form is that a wrong value cannot be typed onto a payroll record in the first place.
+ */
+
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/input";
+import { KIND_LABELS, dayLabel, type MyHoursEntry } from "./my-hours-derive";
+import { editWindowDates, timesProblem } from "./my-hours-edit";
+import type { AddBlockInput } from "./use-my-hours-writes";
+
+type Kind = MyHoursEntry["kind"];
+
+const KINDS: readonly Kind[] = ["job", "travel", "shop", "break"];
+
+/**
+ * Unassigned shop time is the honest default: it is the state the day container itself runs in,
+ * it is paid, and it claims nothing about a job the technician has not named.
+ */
+const DEFAULT_KIND: Kind = "shop";
+
+function KindPicker({ value, onPick }: { value: Kind; onPick: (kind: Kind) => void }) {
+  return (
+    <div className="ts-seg">
+      {KINDS.map((kind) => (
+        <button
+          key={kind}
+          className={value === kind ? "on" : ""}
+          aria-pressed={value === kind}
+          onClick={() => onPick(kind)}
+        >
+          {KIND_LABELS[kind]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export interface AddBlockFormProps {
+  readonly today: string;
+  readonly techUserId: string | undefined;
+  readonly saving: boolean;
+  readonly error: string | null;
+  readonly onAdd: (input: AddBlockInput, onDone: () => void) => void;
+  readonly onCancel: () => void;
+}
+
+export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel }: AddBlockFormProps) {
+  const [workDate, setWorkDate] = useState(today);
+  const [kind, setKind] = useState<Kind>(DEFAULT_KIND);
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [note, setNote] = useState("");
+  const problem = timesProblem(startTime, endTime);
+
+  const submit = (): void => {
+    if (techUserId === undefined || problem !== null) return;
+    onAdd({ techUserId, workDate, kind, startTime, endTime, note: note.trim() }, () => {
+      setStartTime("");
+      setEndTime("");
+      setNote("");
+      onCancel();
+    });
+  };
+
+  return (
+    <div className="ts-editor">
+      <Field label="Day">
+        <select value={workDate} onChange={(e) => setWorkDate(e.target.value)} aria-label="Day">
+          {editWindowDates(today).map((date) => (
+            <option key={date} value={date}>
+              {dayLabel(date)}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <div className="ts-erow">
+        <label>Type</label>
+        <KindPicker value={kind} onPick={setKind} />
+      </div>
+      {kind === "job" ? (
+        <p className="mh-s">Say which job in the note — the office attaches it to the job for you.</p>
+      ) : null}
+      <div className="ts-times">
+        <div className="ts-timecol">
+          <Field label="Start">
+            <input type="time" value={startTime} aria-label="Start time" onChange={(e) => setStartTime(e.target.value)} />
+          </Field>
+        </div>
+        <div className="ts-timecol">
+          <Field label="End">
+            <input type="time" value={endTime} aria-label="End time" onChange={(e) => setEndTime(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+      <Field label="Note (optional)">
+        <input type="text" value={note} aria-label="Note" maxLength={200} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+      {problem !== null ? <p className="mh-err">{problem}</p> : null}
+      {error !== null ? <p className="mh-err">{error}</p> : null}
+      <div className="mh-acts">
+        <Button disabled={problem !== null || saving || techUserId === undefined} onClick={submit}>
+          {saving ? "Adding…" : "Add these hours"}
+        </Button>
+        <Button variant="quiet" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}

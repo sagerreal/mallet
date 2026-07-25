@@ -83,20 +83,45 @@ const BACKEND_JOB_STATUS = {
   CANCELED: "canceled",
 } as const;
 
-/** Store visit status → backend VisitStatus enum value. */
+/**
+ * The words the store and the UI use for a visit. Only three of them are backend statuses:
+ * ENROUTE is DERIVED from the enroute_at stamp on a still-pending visit — the backend has no
+ * fifth status value (see JobVisitProps.enrouteAt).
+ */
+export const STORE_VISIT_STATUS = {
+  SCHEDULED: "scheduled",
+  ENROUTE: "enroute",
+  ONSITE: "onsite",
+  DONE: "done",
+} as const;
+
+/**
+ * Store visit status → backend VisitStatus enum value.
+ *
+ * "enroute" maps to pending because that IS the status of a visit being travelled to — but
+ * calling setVisitStatus with it writes nothing (the visit is already pending and the server
+ * short-circuits it as idempotent). The stamp is written by v1.visits.setVisitEnroute instead;
+ * the store's setVisitStatus routes there.
+ */
 export function storeStatusToBackend(
   storeStatus: string,
 ): "pending" | "in_progress" | "complete" | "canceled" {
-  if (storeStatus === "onsite") return "in_progress";
-  if (storeStatus === "done") return "complete";
-  // "scheduled" and anything unknown → pending
+  if (storeStatus === STORE_VISIT_STATUS.ONSITE) return "in_progress";
+  if (storeStatus === STORE_VISIT_STATUS.DONE) return "complete";
+  // "scheduled", "enroute" and anything unknown → pending
   return "pending";
 }
 
-function toStoreVisitStatusInternal(s: string): string {
-  if (s === BACKEND_VISIT_STATUS.IN_PROGRESS) return "onsite";
-  if (s === BACKEND_VISIT_STATUS.COMPLETE) return "done";
-  return "scheduled";
+/**
+ * Backend status + the enroute stamp → the store's word. A pending visit carrying a stamp is
+ * "enroute"; without one it is "scheduled". Reading the stamp here is what makes On my way
+ * survive a reload — the store holds no state the DTO cannot rebuild.
+ */
+function toStoreVisitStatusInternal(s: string, enrouteAt: string | null | undefined): string {
+  if (s === BACKEND_VISIT_STATUS.IN_PROGRESS) return STORE_VISIT_STATUS.ONSITE;
+  if (s === BACKEND_VISIT_STATUS.COMPLETE) return STORE_VISIT_STATUS.DONE;
+  if (s === BACKEND_VISIT_STATUS.PENDING && enrouteAt) return STORE_VISIT_STATUS.ENROUTE;
+  return STORE_VISIT_STATUS.SCHEDULED;
 }
 
 function toStoreJobStatusInternal(s: string): string {
@@ -154,7 +179,7 @@ export function toStoreVisit(v: VisitDTO): Visit {
       v.durationMinutes != null
         ? v.durationMinutes / 60
         : hoursBetween(v.scheduledStart, v.scheduledEnd),
-    status: toStoreVisitStatusInternal(v.status),
+    status: toStoreVisitStatusInternal(v.status, v.enrouteAt),
     ...(v.notes ? { scopeNotes: v.notes } : {}),
   };
 }

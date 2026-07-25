@@ -1162,7 +1162,7 @@
   .ts-card.open{border-color:var(--ink)}
   .ts-card .nm{display:flex;align-items:center;gap:var(--space-2);font-weight:650;font-size:var(--type-md)}
   .ts-card .nm .rate{margin-left:auto;font-size:var(--type-sm);color:var(--ink-3);font-weight:500}
-  .ts-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-1) 10px;margin:var(--space-3) 0 var(--space-1)}
+  .ts-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-1) var(--space-3);margin:var(--space-3) 0 var(--space-1)}
   .ts-metrics .l{font-size:var(--type-xs);color:var(--ink-3);text-transform:uppercase;letter-spacing:.3px}
   .ts-metrics .n{font-size:var(--type-lg);font-weight:640;font-variant-numeric:tabular-nums}
   .ts-metrics .ot .n{color:var(--amber)}
@@ -1225,6 +1225,27 @@
   .ts-ehrs .upd{color:var(--ink-3);font-size:var(--type-xs);font-weight:400;margin-left:var(--space-1)}
   .ts-eact{flex:none;width:50px;text-align:right;white-space:nowrap}
   .ts-eact .ts-del{padding:var(--space-2xs) var(--space-1)}
+  /* a still-running row carries Stop as well as delete, so its action cell sizes to its buttons;
+     every finished row keeps the narrow icon cell and the column stays aligned */
+  .ts-eact.live{width:auto;display:inline-flex;align-items:center;justify-content:flex-end;gap:var(--space-1)}
+  /* My hours (field) — the technician's own correction surface. Same day/entry rows as the
+     office grid above; these add the still-open banner, the lock lines and the week strip. */
+  .mh-act{width:auto}
+  .mh-appr{color:var(--green-700);font-weight:700}
+  .mh-open{border-color:color-mix(in srgb,var(--amber) 45%,var(--line));background:color-mix(in srgb,var(--amber) 8%,var(--card))}
+  .mh-h{font-weight:700;font-size:var(--type-md)}
+  .mh-s{color:var(--ink-2);font-size:var(--type-base);margin-top:var(--space-2)}
+  .mh-acts{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);margin-top:var(--space-3)}
+  /* A Save the technician cannot use must LOOK unusable — the reason sits directly above it, but
+     an identical-looking button reads as a dead control. Scoped to this surface deliberately:
+     a global .btn:disabled rule would move every existing visual baseline. */
+  .mh-acts .btn:disabled{opacity:.55;cursor:not-allowed}
+  .mh-acts .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
+  .mh-err{color:var(--red);font-size:var(--type-base);margin-top:var(--space-2)}
+  .mh-lock{font-size:var(--type-xs);color:var(--ink-2);background:var(--paper);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);margin-top:var(--space-2xs)}
+  .mh-nav{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3);margin:var(--space-3) 0}
+  .mh-nav b{font-weight:700}
+  .mh-total{margin-left:auto;color:var(--ink-2);font-size:var(--type-sm);font-variant-numeric:tabular-nums}
   /* scalable crew list (master-detail) */
   .ts-tlist{display:flex;flex-direction:column;gap:var(--space-2)}
   .ts-trow{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);cursor:pointer}
@@ -1527,11 +1548,6 @@
   .hrs-val{font-variant-numeric:tabular-nums;font-weight:700;min-width:56px;text-align:center}
   .md-ic{width:38px;height:38px;border:1.5px solid var(--manila-line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;transition:border-color .12s,color .12s}
   .md-ic:hover{border-color:var(--ink-3);color:var(--ink)}
-  /* tech job: the clock — big, top, the primary field action */
-  .tjclock{width:100%;display:flex;flex-direction:column;align-items:center;gap:var(--space-1);border:2px solid var(--green-600);background:var(--green-50);color:var(--ink);border-radius:var(--radius-lg);padding:var(--space-4);margin:var(--space-4) 0 var(--space-2xs);cursor:pointer;font-family:inherit}
-  .tjclock.run{border-color:var(--red);background:var(--red);color:#fff}
-  .tjclock-time{font-size:var(--type-4xl);font-weight:800;font-variant-numeric:tabular-nums;line-height:1.04}
-  .tjclock-lbl{font-size:var(--type-sm);font-weight:800;text-transform:uppercase;letter-spacing:.04em;opacity:.85}
   /* job done → getting paid is the biggest thing */
   .tjpaid{width:100%;border:2px solid var(--green-600);background:var(--green-50);border-radius:var(--radius-lg);padding:var(--space-4);margin:var(--space-4) 0 var(--space-2xs);text-align:center}
   .tjpaid.ok{border-color:#DDD7C9}
@@ -1845,9 +1861,7 @@
   .segctl button:active,.seg button:active{background:var(--manila-2)}
   .segctl button.on:active,.seg button[aria-pressed="true"]:active{filter:brightness(1.15)}
 
-  /* Field job controls: Start Timer deepens its own green; pay buttons compress. */
-  .tjclock{transition:transform .1s,box-shadow .12s,background .12s}
-  .tjclock:active{transform:scale(.97);background:var(--green-100)}
+  /* Field job controls: pay buttons compress on press. */
   .tjpaid-btn,.tjpaid-btn2{transition:transform .1s,opacity .12s}
   .tjpaid-btn:active{transform:scale(.97);opacity:.88}
   .tjpaid-btn2:active{transform:scale(.98)}

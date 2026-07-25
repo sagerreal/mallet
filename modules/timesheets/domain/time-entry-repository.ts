@@ -27,6 +27,17 @@ export interface TimeEntryRepository {
 
   findById(id: TimeEntryId): Promise<TimeEntry | null>;
 
+  /**
+   * The technician's single OPEN entry — running, not soft-deleted — or null when the clock is
+   * idle. This is what a tap acts on: the clock closes what is open before it starts anything.
+   *
+   * At most one row can match: the database holds a partial unique index on
+   * (org_id, tech_user_id) where running and deleted_at is null. So this is a lookup, not a
+   * "pick the most plausible of several" heuristic — two open segments would double-count a
+   * technician's paid hours, and that is enforced below the application, not by this method.
+   */
+  findOpenForTech(techUserId: UserId): Promise<TimeEntry | null>;
+
   list(filter: TimeEntryFilter, page: CursorPage): Promise<Paginated<TimeEntry>>;
 
   save(entry: TimeEntry): Promise<void>;
