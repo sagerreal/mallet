@@ -77,6 +77,16 @@
   a{color:inherit;text-decoration:none}
   h1,h2,h3{margin:0;font-family:var(--display);font-weight:600;letter-spacing:-.02em;text-wrap:balance;line-height:1.05}
 
+  /* Leak Check notice bar — pinned above the nav. Ported from styles.css, which this page
+     no longer links. main.js tags clicks here as leak_check_click spot:"bar". */
+  .notice{display:flex;align-items:center;justify-content:center;gap:var(--space-2);
+     flex-wrap:wrap;background:var(--ink);color:color-mix(in srgb,var(--bg) 82%,transparent);
+     padding:10px 16px;font-size:var(--text-md);font-weight:400;text-align:center;
+     transition:background .15s ease}
+  .notice b{color:var(--bg);font-weight:var(--weight-semi)}
+  .notice-go{color:var(--bg);font-weight:var(--weight-med);white-space:nowrap}
+  .notice:hover .notice-go{text-decoration:underline}
+
   /* nav */
   .nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);
        backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
@@ -478,6 +488,8 @@
 
 <div class="m">
 
+  <a class="notice" href="/leak-check">How much could <b>your</b> shop be making? <span class="notice-go">Calculate it &mdash; 2 min &rarr;</span></a>
+
   <nav class="nav"><div class="wrap">
     <div class="brand"><span class="mk" aria-hidden="true"></span>Mallet</div>
     <div class="navlinks">
@@ -486,7 +498,7 @@
            /login would 404 here. Swap for app.trymallet.com once that subdomain exists. -->
       <a href="#pricing">Pricing</a>
       <a href="https://mallet-app-snowy.vercel.app/login">Log in</a>
-      <a class="btn btn-dark" href="#demo">Book a demo</a>
+      <a class="btn btn-dark js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
     </div>
   </div></nav>
 
@@ -496,7 +508,7 @@
     <p class="sub">It answers the call, writes the quote, runs the job, and chases the invoice.</p>
     <div class="cta-row">
       <a class="btn btn-dark" href="#pricing">Get pricing</a>
-      <a class="btn btn-grey js-book-demo" href="#demo">Book a demo</a>
+      <a class="btn btn-grey js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
     </div>
 
     <div class="frame"><div class="screen">
@@ -752,7 +764,7 @@
 
     <div class="pf-embed">
       <iframe
-        data-tally-src="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
+        data-tally-src="https://tally.so/embed/44DgLr?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
         loading="lazy" width="100%" height="320" frameborder="0"
         title="Get Mallet pricing"></iframe>
     </div>
@@ -798,7 +810,7 @@
         <div class="brand"><span class="mk" aria-hidden="true"></span>Mallet</div>
         <p class="fnote">One system for measurement and mechanical trades. It answers the call, writes the quote, runs the job, and chases the invoice.</p>
         <div class="foot-cta">
-          <a class="btn btn-light js-book-demo" href="#demo">Book a demo</a>
+          <a class="btn btn-light js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
           <a class="btn btn-line" href="/leak-check">The Leak Check</a>
         </div>
       </div>
@@ -819,7 +831,7 @@
         <p class="foot-head">Get started</p>
         <a href="#pricing">Get pricing</a>
         <a href="/leak-check">The Leak Check</a>
-        <a class="js-book-demo" href="#demo">Book a demo</a>
+        <a class="js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
       </div>
     </div>
     <div class="foot-bottom">
