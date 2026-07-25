@@ -392,33 +392,9 @@
   .price-wrap h2{font-size:clamp(30px,4.6vw,54px);font-weight:400;letter-spacing:-.03em}
   .price-lead{color:var(--muted);font-size:var(--text-lg);font-weight:400;
      margin:var(--space-5) auto 0;max-width:44ch}
-  .pform{margin-top:var(--space-8);display:flex;flex-direction:column;gap:var(--space-4);
-     text-align:left}
-  .pf-label{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;
-     text-transform:uppercase;color:var(--muted);margin:0 0 var(--space-3)}
-  .pf-input{width:100%;font-family:var(--sans);font-size:var(--text-lg);font-weight:400;
-     color:var(--ink);background:var(--screen);border:1px solid var(--line);
-     border-radius:var(--radius-md);padding:13px 16px}
-  .pf-input::placeholder{color:var(--muted)}
-  .pf-input:focus{outline:2px solid var(--ink);outline-offset:-1px;border-color:transparent}
-  /* Segmented control, not a native select — one tap on a phone, and every option is visible. */
-  .pf-seg{display:flex;flex-wrap:wrap;gap:var(--space-2)}
-  .pf-seg button{font-family:var(--sans);font-size:var(--text-md);font-weight:400;cursor:pointer;
-     background:var(--screen);color:var(--ink);border:1px solid var(--line);
-     border-radius:var(--radius-pill);padding:9px 18px}
-  .pf-seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-  .pf-seg button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-  .pf-send{align-self:flex-start;margin-top:var(--space-2)}
-  .pf-note{color:var(--muted);font-size:var(--text-sm);margin:var(--space-3) 0 0}
-  .pf-error{color:var(--warn,#a8552f);font-size:var(--text-sm);margin:var(--space-2) 0 0}
-  /* Answer replaces the form in place — no redirect, no modal. */
-  .pf-done{display:none;text-align:left;border:1px solid var(--line);border-radius:var(--radius-md);
-     background:var(--screen);padding:var(--space-6)}
-  .pf-done h3{font-family:var(--display);font-size:var(--text-xl);font-weight:400;
-     letter-spacing:-.02em;margin:0 0 var(--space-3)}
-  .pf-done p{color:var(--muted);font-size:var(--text-md);margin:0;line-height:1.6}
-  .pricing.sent .pform{display:none}
-  .pricing.sent .pf-done{display:block}
+  .pf-embed{margin-top:var(--space-8);background:var(--screen);border:1px solid var(--line);
+     border-radius:var(--radius-md);padding:var(--space-5);text-align:left}
+  .pf-embed iframe{display:block;border:0;width:100%}
 
   /* FAQ — the objections a shop owner raises before they will book anything */
   .faq{max-width:760px;margin:0 auto}
@@ -772,36 +748,13 @@
   <section class="sec sec-alt pricing" id="pricing"><div class="wrap"><div class="price-wrap">
     <p class="kicker">Pricing</p>
     <h2>What does it cost?</h2>
-    <p class="price-lead">Tell us the size of the shop and we'll send your number. Ten seconds, no call required.</p>
+    <p class="price-lead">Tell us about your shop and we'll email your pricing. No call required.</p>
 
-    <form class="pform" id="pform" novalidate>
-      <div>
-        <p class="pf-label">How many people?</p>
-        <div class="pf-seg" id="pfSeg" role="group" aria-label="How many people work at your shop">
-          <button type="button" aria-pressed="true" data-size="Just me">Just me</button>
-          <button type="button" aria-pressed="false" data-size="2-5">2&ndash;5</button>
-          <button type="button" aria-pressed="false" data-size="6-15">6&ndash;15</button>
-          <button type="button" aria-pressed="false" data-size="16-50">16&ndash;50</button>
-        </div>
-      </div>
-      <div>
-        <label class="pf-label" for="pfEmail">Where should we send it?</label>
-        <input class="pf-input" id="pfEmail" name="email" type="email" inputmode="email"
-               autocomplete="email" placeholder="you@yourshop.com" required />
-        <p class="pf-error" id="pfErr" hidden></p>
-      </div>
-      <div>
-        <label class="pf-label" for="pfSite">Your website <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
-        <input class="pf-input" id="pfSite" name="website" type="text" inputmode="url"
-               autocomplete="url" placeholder="yourshop.com" />
-      </div>
-      <button class="btn btn-dark pf-send" type="submit">Send me pricing</button>
-      <p class="pf-note">No sales sequence. One email with the number, and a reply if you want it.</p>
-    </form>
-
-    <div class="pf-done" id="pfDone" role="status" aria-live="polite">
-      <h3>On its way.</h3>
-      <p id="pfDoneMsg"></p>
+    <div class="pf-embed">
+      <iframe
+        data-tally-src="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
+        loading="lazy" width="100%" height="320" frameborder="0"
+        title="Get Mallet pricing"></iframe>
     </div>
   </div></div></section>
 
@@ -949,73 +902,6 @@ function malletSequence(id,opts){
 }
 
 
-/* ---- Pricing request -------------------------------------------------------
-   Fires a `pricing_request` conversion event (size band only — never the email,
-   which must not end up in an analytics payload), answers in place, and posts the
-   fields to Tally. malletTrack is defined by main.js on the live site; guard it so
-   this file also runs standalone as a mockup. */
-(function(){
-  var form = document.getElementById('pform');
-  if(!form) return;
-
-  // TODO(owen): create a 3-field Tally form (email / size / website) and paste its id here.
-  // Until this is set the form answers the visitor but delivers nothing — do not ship empty.
-  var TALLY_FORM_ID = '';
-  // TODO(owen): the actual range, per size band. This is the whole point of the section.
-  var RANGE = {
-    'Just me': '$X–$Y a month',
-    '2-5':     '$X–$Y a month',
-    '6-15':    '$X–$Y a month',
-    '16-50':   '$X–$Y a month'
-  };
-
-  var seg = document.getElementById('pfSeg');
-  var size = 'Just me';
-  seg.addEventListener('click', function(e){
-    var b = e.target.closest('button[data-size]');
-    if(!b) return;
-    Array.prototype.forEach.call(seg.querySelectorAll('button'), function(x){
-      x.setAttribute('aria-pressed', String(x === b));
-    });
-    size = b.dataset.size;
-  });
-
-  var track = function(ev, params){
-    if (typeof window.malletTrack === 'function') window.malletTrack(ev, params || {});
-  };
-
-  form.addEventListener('submit', function(e){
-    e.preventDefault();
-    var email = document.getElementById('pfEmail').value.trim();
-    var site  = document.getElementById('pfSite').value.trim();
-    var err   = document.getElementById('pfErr');
-
-    // Validate at the boundary; name the actual problem rather than "invalid input".
-    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){
-      err.textContent = 'That email address looks incomplete — check it and try again.';
-      err.hidden = false;
-      document.getElementById('pfEmail').focus();
-      return;
-    }
-    err.hidden = true;
-
-    // Size band only. No email, no URL — those are PII and belong in the form store.
-    track('pricing_request', { size: size, has_website: site ? 'yes' : 'no' });
-
-    if(TALLY_FORM_ID){
-      var body = new FormData();
-      body.append('email', email); body.append('size', size); body.append('website', site);
-      fetch('https://tally.so/api/forms/' + TALLY_FORM_ID + '/respond', { method:'POST', body: body })
-        .catch(function(){ /* the visitor already has their answer; retry is not their problem */ });
-    }
-
-    document.getElementById('pfDoneMsg').textContent =
-      'Pricing for a ' + size.toLowerCase().replace('just me','one-person') +
-      ' shop is ' + (RANGE[size] || '') + '. Full breakdown is in your inbox at ' + email +
-      ' — reply to it and you get me, not a sequence.';
-    form.closest('.pricing').classList.add('sent');
-  });
-})();
 
 /* Front desk: a call coming in and booking itself */
 malletSequence('fdDemo',{
