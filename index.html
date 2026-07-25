@@ -478,6 +478,9 @@
     .foot-bottom{justify-content:flex-start}
   }
 
+  @media (max-width:600px){
+    .notice{padding:8px 14px;font-size:var(--text-sm);line-height:1.4}
+  }
   @media (max-width:880px){
     .ind-grid{grid-template-columns:1fr}
     .row{grid-template-columns:1fr;padding:44px 0;gap:28px}
@@ -496,9 +499,9 @@
       <a href="#work" class="hidem">How it works</a>
       <!-- Absolute: the app is a separate deploy from the marketing site, so a relative
            /login would 404 here. Swap for app.trymallet.com once that subdomain exists. -->
-      <a href="#pricing">Pricing</a>
+      <a href="#pricing" class="hidem">Pricing</a>
       <a href="https://mallet-app-snowy.vercel.app/login">Log in</a>
-      <a class="btn btn-dark js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
+      <a class="btn btn-dark js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="https://calendly.com/trymallet/30min">Book a demo</a>
     </div>
   </div></nav>
 
@@ -508,7 +511,7 @@
     <p class="sub">It answers the call, writes the quote, runs the job, and chases the invoice.</p>
     <div class="cta-row">
       <a class="btn btn-dark" href="#pricing">Get pricing</a>
-      <a class="btn btn-grey js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
+      <a class="btn btn-grey js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="https://calendly.com/trymallet/30min">Book a demo</a>
     </div>
 
     <div class="frame"><div class="screen">
@@ -765,7 +768,7 @@
     <div class="pf-embed">
       <iframe
         data-tally-src="https://tally.so/embed/44DgLr?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
-        loading="lazy" width="100%" height="320" frameborder="0"
+        width="100%" height="460" frameborder="0"
         title="Get Mallet pricing"></iframe>
     </div>
   </div></div></section>
@@ -810,7 +813,7 @@
         <div class="brand"><span class="mk" aria-hidden="true"></span>Mallet</div>
         <p class="fnote">One system for measurement and mechanical trades. It answers the call, writes the quote, runs the job, and chases the invoice.</p>
         <div class="foot-cta">
-          <a class="btn btn-light js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
+          <a class="btn btn-light js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="https://calendly.com/trymallet/30min">Book a demo</a>
           <a class="btn btn-line" href="/leak-check">The Leak Check</a>
         </div>
       </div>
@@ -831,7 +834,7 @@
         <p class="foot-head">Get started</p>
         <a href="#pricing">Get pricing</a>
         <a href="/leak-check">The Leak Check</a>
-        <a class="js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="#demo">Book a demo</a>
+        <a class="js-book-demo" data-calendly="https://calendly.com/trymallet/30min" href="https://calendly.com/trymallet/30min">Book a demo</a>
       </div>
     </div>
     <div class="foot-bottom">
@@ -914,6 +917,14 @@ function malletSequence(id,opts){
 }
 
 
+
+/* Tally's embed script defers setting the iframe src until the frame nears the viewport, so
+   jumping straight to #pricing from the hero landed on an empty box. Resolve the src at load
+   instead — embed.js still handles the dynamic-height messages afterwards. */
+(function(){
+  var f = document.querySelector('iframe[data-tally-src]');
+  if (f && !f.src) f.src = f.getAttribute('data-tally-src');
+})();
 
 /* Front desk: a call coming in and booking itself */
 malletSequence('fdDemo',{
