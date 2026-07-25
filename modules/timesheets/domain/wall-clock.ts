@@ -133,6 +133,11 @@ const addOneDay = (c: CalendarDate): CalendarDate => {
 
 // One candidate row per local day the segment touches. Rows may be zero-length; the caller
 // filters those out.
+//
+// Each crossing of local midnight LOSES ONE MINUTE: the earlier day ends at 23:59 and the next
+// begins at 00:00, so 23:59->00:00 is never billed. This is accepted deliberately. The only
+// alternative is migrating the time columns to timestamptz, which would break the time pickers,
+// the hours derivation and the QuickBooks mapper — a minute a midnight is the cheaper trade.
 const candidateRows = (
   start: WallClock,
   end: WallClock,
@@ -148,48 +153,66 @@ const candidateRows = (
     return err(validation(`unreadable local work date: "${start.workDate}"`, "startedAt"));
   }
 
-  // Each crossing of local midnight LOSES ONE MINUTE: the earlier day ends at 23:59 and the next
-  // begins at 00:00, so 23:59->00:00 is never billed. This is accepted deliberately. The only
-  // alternative is migrating the time columns to timestamptz, which would break the time pickers,
-  // the hours derivation and the QuickBooks mapper — a minute a midnight is the cheaper trade.
-  const rows: DaySegment[] = [];
-  let cursor = startDate;
-  let cursorDate = start.workDate;
-
-  while (cursorDate !== end.workDate) {
-    if (rows.length >= MAX_SPANNED_LOCAL_DAYS) {
+  // Walk calendar days from the start day to the end day, appending copies rather than pushing:
+  // recursion depth is capped by MAX_SPANNED_LOCAL_DAYS, so the immutable form costs nothing.
+  const walk = (
+    cursor: CalendarDate,
+    cursorDate: string,
+    rows: readonly DaySegment[],
+  ): Result<readonly DaySegment[], ValidationError> => {
+    if (cursorDate === end.workDate) {
+      // The final (end) day. When the segment ends exactly at local midnight this row is
+      // 00:00->00:00 and the zero-length filter drops it, which is the correct reading: the work
+      // belongs wholly to the earlier day.
+      return ok([
+        ...rows,
+        { workDate: end.workDate, startTime: START_OF_LOCAL_DAY, endTime: end.hhmm },
+      ]);
+    }
+    // The walk always finishes with one end-day row, so the days before it can be at most
+    // MAX_SPANNED_LOCAL_DAYS - 1 if the total is to honour the limit this error reports.
+    if (rows.length >= MAX_SPANNED_LOCAL_DAYS - 1) {
       return err(
-        validation(
-          `segment spans more than ${MAX_SPANNED_LOCAL_DAYS} local days`,
-          "endedAt",
-        ),
+        validation(`segment spans more than ${MAX_SPANNED_LOCAL_DAYS} local days`, "endedAt"),
       );
     }
-    rows.push({
-      workDate: cursorDate,
-      startTime: rows.length === 0 ? start.hhmm : START_OF_LOCAL_DAY,
-      endTime: END_OF_LOCAL_DAY,
-    });
-    cursor = addOneDay(cursor);
-    cursorDate = formatCalendarDate(cursor);
-  }
+    const filled: readonly DaySegment[] = [
+      ...rows,
+      {
+        workDate: cursorDate,
+        startTime: rows.length === 0 ? start.hhmm : START_OF_LOCAL_DAY,
+        endTime: END_OF_LOCAL_DAY,
+      },
+    ];
+    const next = addOneDay(cursor);
+    return walk(next, formatCalendarDate(next), filled);
+  };
 
-  // The final (end) day. When the segment ends exactly at local midnight this row is
-  // 00:00->00:00 and the zero-length filter drops it, which is the correct reading: the work
-  // belongs wholly to the earlier day.
-  rows.push({ workDate: end.workDate, startTime: START_OF_LOCAL_DAY, endTime: end.hhmm });
-  return ok(rows);
+  return walk(startDate, start.workDate, []);
 };
 
 // Split an instant-pair into one timesheet row per local day it touches.
+//
+// Known limitation: a day's start is anchored at 00:00, which assumes local midnight exists. In the
+// zones this serves (US trades — transitions happen at 02:00 local) it always does, but a handful
+// of zones shift AT midnight (e.g. America/Havana springs 23:59 -> 01:00), where a 00:00 anchor
+// names a minute that never happened and would over-count that day. Handling it means hunting for
+// each day's first existing minute; that is not worth building until a shop actually sits in such a
+// zone. The fall-back direction IS handled below, because it produces a backwards row we can detect.
 export const splitAtMidnight = (
   segment: Segment,
   timeZone: string,
 ): Result<readonly DaySegment[], ValidationError> => {
   const startedMs = segment.startedAt.getTime();
   const endedMs = segment.endedAt.getTime();
-  if (Number.isNaN(startedMs) || Number.isNaN(endedMs)) {
-    return err(validation("segment has an invalid instant", "startedAt"));
+  // Named per end so the caller is told WHICH instant is bad. Checked before the ordering
+  // comparison below, because every comparison against NaN is false and an invalid date would
+  // otherwise slip through as a valid range.
+  if (Number.isNaN(startedMs)) {
+    return err(validation("startedAt is not a valid date", "startedAt"));
+  }
+  if (Number.isNaN(endedMs)) {
+    return err(validation("endedAt is not a valid date", "endedAt"));
   }
   // The downstream TimeEntry factory rejects this too; failing here keeps the error attached to
   // the instants the caller actually passed.
@@ -208,13 +231,29 @@ export const splitAtMidnight = (
   const rows = candidateRows(start.value, end.value);
   if (!rows.ok) return rows;
 
+  // Zero-padded 24-hour "HH:MM" sorts lexicographically exactly as it runs chronologically, so a
+  // row ending before it starts means the wall clock moved BACKWARDS. That happens only inside a
+  // daylight-saving fall-back, where the same local hour is walked twice; `date` + `time` columns
+  // cannot record which pass a value belongs to. Refuse it here with a reason, rather than hand on
+  // a row the TimeEntry factory would reject as negative hours.
+  const backwards = rows.value.find((r) => r.endTime < r.startTime);
+  if (backwards) {
+    return err(
+      validation(
+        "segment ends at an earlier wall-clock time than it starts (ambiguous daylight-saving hour)",
+        "endedAt",
+      ),
+    );
+  }
+
   // A row whose start equals its end represents no billable minute and TimeEntry would reject it,
   // so it is never emitted.
   const billable = rows.value.filter((r) => r.startTime !== r.endTime);
   if (billable.length === 0) {
-    // Only reachable for a sub-minute segment: both ends truncate to the same HH:MM. Timesheet
-    // rows have one-minute resolution, so there is nothing representable to store.
-    return err(validation("segment is shorter than one minute", "endedAt"));
+    // Two ways to land here: a sub-minute segment (both ends truncate to the same HH:MM), or one
+    // spent entirely inside a repeated fall-back hour. Neither covers a whole clock minute, and
+    // timesheet rows have one-minute resolution, so there is nothing representable to store.
+    return err(validation("segment covers no whole clock minute", "endedAt"));
   }
   return ok(billable);
 };

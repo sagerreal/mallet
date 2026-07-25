@@ -99,6 +99,7 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         hoursSatClose: p.hoursSatClose,
         hoursSunOpen: p.hoursSunOpen,
         hoursSunClose: p.hoursSunClose,
+        timezone: p.timezone,
         areaCities: p.areaCities,
         areaRadiusMi: p.areaRadiusMi,
         // Service origin (front-desk vertical coverage). Address + its geocoded point;

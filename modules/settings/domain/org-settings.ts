@@ -83,6 +83,12 @@ export interface OrgSettingsProps {
   readonly hoursSunOpen: number;
   /** Sunday close hour [0, 24]. */
   readonly hoursSunClose: number;
+  /**
+   * The shop's IANA timezone (e.g. "America/Los_Angeles"). This is what makes a timestamp into a
+   * timesheet row: without it a job finished at 21:00 Pacific lands on tomorrow's sheet, because
+   * the server runs in UTC.
+   */
+  readonly timezone: string;
   /** Comma/space-separated list of service-area cities. */
   readonly areaCities: string;
   /** Service area radius in miles (non-negative). */
@@ -163,6 +169,26 @@ const firstInvalidDayHours = (p: OrgSettingsProps): ValidationError | null => {
  * can never be constructed. All mutations return a new instance (immutability). The booking
  * column is NOT NULL in the DB — always supply OrgSettings.defaultBooking() for first-run rows.
  */
+/**
+ * True when this is a canonical IANA zone name the runtime recognises.
+ *
+ * Two checks, and the second one matters more than it looks. Intl ACCEPTS legacy abbreviations and
+ * silently remaps them: "PST" resolves to America/Los_Angeles (harmless), but "EST" resolves to
+ * America/Panama and "MST" to America/Phoenix — neither of which observes daylight saving. A New
+ * York shop that typed "EST" would be an hour out for eight months of the year, on every timesheet,
+ * with nothing to show for it. So we also require the name to survive canonicalisation unchanged,
+ * which admits only real IANA names.
+ */
+const isValidTimeZone = (zone: string): boolean => {
+  if (!zone.trim()) return false;
+  try {
+    const resolved = new Intl.DateTimeFormat("en-US", { timeZone: zone }).resolvedOptions().timeZone;
+    return resolved === zone;
+  } catch {
+    return false;
+  }
+};
+
 export class OrgSettings {
   private constructor(private readonly p: OrgSettingsProps) {}
 
@@ -197,6 +223,12 @@ export class OrgSettings {
     }
     if (props.markupBps < 0) {
       return err(validation("markup must be non-negative", "markupBps"));
+    }
+    // A bad zone is worse than no zone: Intl silently falls back to UTC, which would put a
+    // late-afternoon Pacific finish on tomorrow's timesheet with nothing to show it happened.
+    // Validate here so the wrong value can never be stored in the first place.
+    if (!isValidTimeZone(props.timezone)) {
+      return err(validation(`unknown timezone: "${props.timezone}"`, "timezone"));
     }
     if (props.areaRadiusMi < 0) {
       return err(validation("area radius must be non-negative", "areaRadiusMi"));
@@ -277,6 +309,7 @@ export class OrgSettings {
         fields.hoursSunOpen !== undefined ? fields.hoursSunOpen : this.p.hoursSunOpen,
       hoursSunClose:
         fields.hoursSunClose !== undefined ? fields.hoursSunClose : this.p.hoursSunClose,
+      timezone: fields.timezone !== undefined ? fields.timezone : this.p.timezone,
       areaCities: fields.areaCities !== undefined ? fields.areaCities : this.p.areaCities,
       areaRadiusMi:
         fields.areaRadiusMi !== undefined ? fields.areaRadiusMi : this.p.areaRadiusMi,

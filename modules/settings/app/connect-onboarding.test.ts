@@ -25,6 +25,7 @@ function seedSettings(over: Partial<OrgSettingsProps> = {}): OrgSettings {
     hoursSatClose: 0,
     hoursSunOpen: 0,
     hoursSunClose: 0,
+    timezone: "America/Los_Angeles",
     areaCities: "",
     areaRadiusMi: 25,
     serviceOriginAddress: null,
