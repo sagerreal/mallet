@@ -5,6 +5,7 @@ import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
 import type { A2pGateway } from "@mallet/a2p";
+import type { CallOriginator } from "@mallet/calls";
 import type { QboOauthGateway } from "@mallet/accounting-sync";
 import type { SecretBox } from "@mallet/platform/crypto/secret-box";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
@@ -35,6 +36,11 @@ export interface AppDeps {
   // or when TWILIO_PRIMARY_PROFILE_SID/account creds are unset) callers fall back to
   // LoggingA2pGateway, so registration self-disables to a logged stub rather than an error.
   readonly a2pGateway?: A2pGateway;
+  // Outbound voice origination (Twilio). null when the Twilio voice config is incomplete —
+  // calls.place then returns PRECONDITION_FAILED. There is deliberately NO logging-stub
+  // fallback: a call the office believes was placed but never happened is the exact bug this
+  // feature exists to fix, so it must fail loudly rather than degrade.
+  readonly callOriginator?: CallOriginator | null;
   // The agent's model client (Anthropic). null when ANTHROPIC_API_KEY is unset — the AI agent
   // self-disables (its tRPC procedure returns PRECONDITION_FAILED).
   readonly llmClient: LlmClient | null;

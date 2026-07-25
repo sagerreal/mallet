@@ -422,5 +422,12 @@ export interface ActiveCall {
   leadId: string;
   sec: number;
   notes: string;
-  phase: "live" | "ended";
+  // connecting → the provider is ringing the agent's own phone; live → bridged and timing;
+  // failed → the call was never placed; ended → hung up, awaiting a disposition.
+  phase: "connecting" | "live" | "failed" | "ended";
+  // The server-side outbound_calls id, set once the call is actually placed. Null while
+  // connecting, and null forever on failure — the outcome can only be logged against a real call.
+  callId: string | null;
+  // Why placing the call failed, shown in the bar. Null unless phase is "failed".
+  error: string | null;
 }

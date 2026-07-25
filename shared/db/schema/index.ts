@@ -34,3 +34,4 @@ export * from "./crew-schedules";
 export * from "./a2p-registrations";
 export * from "./qbo-connections";
 export * from "./qbo-sync";
+export * from "./outbound-calls";
