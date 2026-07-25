@@ -83,8 +83,8 @@ export function CallModalContent() {
           <div className="path" onClick={callFromMallet} role="button">
             <b>Call from Mallet</b>
             <p>
-              They see your <b>business number</b>, not your cell. The call logs
-              itself — type notes while you talk.
+              Mallet rings <b>your phone</b> first, then connects them. They see
+              your <b>business number</b>, not your cell.
             </p>
           </div>
           <div className="path" onClick={() => setLogging(true)} role="button">

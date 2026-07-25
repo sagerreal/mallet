@@ -20,6 +20,10 @@ export const users = pgTable(
     // Certification tags for this tech (e.g. ["Gas", "Boiler"]). Additive column —
     // existing rows default to empty array. No new RLS needed (users table is FOR ALL).
     skillTags: text("skill_tags").array().notNull().default(sql`'{}'::text[]`),
+    // The mobile Mallet rings first on an outbound click-to-call, E.164. Additive + nullable:
+    // existing rows are unaffected, and it is remembered the first time a call is placed so the
+    // office does not retype it. No new RLS needed (users table is already FOR ALL).
+    callbackNumber: text("callback_number"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
