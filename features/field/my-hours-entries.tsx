@@ -51,19 +51,55 @@ function EntryRow(props: RowProps) {
 
   return (
     <>
-      <div className={`ts-e${entry.status === "approved" ? " appr" : ""}${editing ? " editing" : ""}`}>
+      {/*
+        The WHOLE ROW opens the editor, matching the office grid. On a phone especially, a small
+        button is a poor target next to the row it sits in (Fitts's Law) — and the Edit button stays,
+        so the affordance is still visible.
+
+        House .rowopen pattern: the container carries the MOUSE handler and no role/tabIndex, while a
+        focusable child button carries keyboard access. A clickable div wrapping buttons would be a
+        nested-interactive a11y violation, and axe is an enforcing gate.
+      */}
+      <div
+        className={`ts-e${entry.status === "approved" ? " appr" : ""}${editing ? " editing" : ""}${lock.editable ? " rowclick" : ""}`}
+        onClick={lock.editable ? () => onEdit(editing ? null : entry.id) : undefined}
+      >
         <span className={`ts-kind${entry.kind === "job" ? " job" : ""}`}>{kind}</span>
-        <span className="ts-elabel">
-          {kind}
-          {entry.note ? <span className="muted"> · {entry.note}</span> : null}
-        </span>
+        {lock.editable ? (
+          <button
+            type="button"
+            className="ts-elabel rowopen"
+            aria-label={`${editing ? "Close" : "Edit"} ${kind} entry, ${clockLabel(entry.startTime)}`}
+            aria-expanded={editing}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(editing ? null : entry.id);
+            }}
+          >
+            {kind}
+            {entry.note ? <span className="muted"> · {entry.note}</span> : null}
+          </button>
+        ) : (
+          <span className="ts-elabel">
+            {kind}
+            {entry.note ? <span className="muted"> · {entry.note}</span> : null}
+          </span>
+        )}
         <span className="ts-etime">
           {clockLabel(entry.startTime)}–{entry.endTime ? clockLabel(entry.endTime) : "still open"}
         </span>
         <span className="ts-ehrs">{entryHours(entry).toFixed(HOURS_PRECISION)} h</span>
         <span className="ts-eact mh-act">
           {lock.editable ? (
-            <Button variant="quiet" size="sm" onClick={() => onEdit(editing ? null : entry.id)}>
+            <Button
+              variant="quiet"
+              size="sm"
+              // The row opens the editor too, so this must not toggle it a second time.
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(editing ? null : entry.id);
+              }}
+            >
               {editing ? "Close" : "Edit"}
             </Button>
           ) : entry.status === "approved" ? (

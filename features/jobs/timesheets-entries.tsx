@@ -295,18 +295,26 @@ function TsRowActions({
       </span>
     );
   }
+  // Every action here MUST stop propagation: the whole row now opens the editor, so without this a
+  // click on Stop or Delete would also toggle the editor — two things happening from one tap, one of
+  // them unasked for.
+  const only = (handler: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    handler();
+  };
+
   return (
     <span className={`ts-eact${entry.running ? " live" : ""}`}>
       {entry.running ? (
-        <button className="btn sm" onClick={onStop}>
+        <button className="btn sm" onClick={only(onStop)}>
           Stop
         </button>
       ) : (
-        <button className="ts-del" title="Edit" onClick={onEdit}>
+        <button className="ts-del" title="Edit" onClick={only(onEdit)}>
           ✎
         </button>
       )}
-      <button className="ts-del" title="Delete entry" onClick={onDelete}>
+      <button className="ts-del" title="Delete entry" onClick={only(onDelete)}>
         ✕
       </button>
     </span>
@@ -338,11 +346,41 @@ function TsEntryRow({
       ? `${tsTimeLabel(entry.start)}–${tsTimeLabel(entry.end)}`
       : tsTimeLabel(entry.start);
   const lbl = isJob ? (hasJob ? tsLabel(entry, jobs, leads) : "— no job —") : tsLabel(entry, jobs, leads);
+  // Mirrors the panel's own rule for opening the editor: an APPROVED row is locked (reopen first).
+  // A running row is editable here — stopping one is exactly what the office needs to do.
+  const canOpen = !appr;
   return (
     <>
-      <div className={`ts-e ${appr ? "appr" : ""}${editing ? " editing" : ""}`}>
+      {/*
+        The WHOLE ROW opens the editor, not just the pencil. A 14px icon is a far smaller target
+        than the row it sits on (Fitts's Law), and the row is what a person reaches for — the pencil
+        stays as the explicit affordance, so the intent is still visible.
+
+        House .rowopen pattern: the container keeps the MOUSE handler and takes no role/tabIndex,
+        while a focusable child button carries keyboard access. A clickable div wrapping buttons
+        would be a nested-interactive a11y violation, and axe is an enforcing gate here.
+      */}
+      <div
+        className={`ts-e ${appr ? "appr" : ""}${editing ? " editing" : ""}${canOpen ? " rowclick" : ""}`}
+        onClick={canOpen ? onEdit : undefined}
+      >
         <span className={`ts-kind ${isJob ? "job" : ""}`}>{TS_KINDS[entry.kind]}</span>
-        <span className={`ts-elabel ${!isJob || !hasJob ? "muted" : ""}`}>{lbl}</span>
+        {canOpen ? (
+          <button
+            type="button"
+            className={`ts-elabel rowopen ${!isJob || !hasJob ? "muted" : ""}`}
+            aria-label={`Edit ${TS_KINDS[entry.kind]} entry, ${timeStr}`}
+            aria-expanded={editing}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+          >
+            {lbl}
+          </button>
+        ) : (
+          <span className={`ts-elabel ${!isJob || !hasJob ? "muted" : ""}`}>{lbl}</span>
+        )}
         <span className="ts-etime">{timeStr}</span>
         <span className="ts-ehrs">
           {entry.running ? "··" : tsHours(entry).toFixed(2)}

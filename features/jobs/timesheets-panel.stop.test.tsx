@@ -142,3 +142,62 @@ describe("a scheduled day with nothing recorded", () => {
     expect(screen.getByText(tsDayLabel(TODAY, "long"))).toBeTruthy();
   });
 });
+
+// Owen: "I should be able to click and edit the entry — I have to click the pencil for it to work."
+// A 14px icon is a far smaller target than the row it sits on (Fitts's Law), and the row is what a
+// person reaches for. The pencil stays, so the affordance is still visible.
+describe("the whole row opens the editor, not just the pencil", () => {
+  const finished = (over: Partial<TimeEntry> = {}): TimeEntry =>
+    mkEntry({
+      id: "e-done",
+      techId: TECH.id,
+      date: TODAY,
+      kind: "job",
+      jobId: null,
+      start: "08:00",
+      end: "16:00",
+      running: false,
+      src: "clock",
+      ...over,
+    });
+
+  const rowFor = (label: string) => {
+    const btn = screen.getByRole("button", { name: new RegExp(label, "i") });
+    // The row is the button's parent: the container holds the mouse handler (house .rowopen
+    // pattern), because a clickable div wrapping buttons is a nested-interactive a11y violation.
+    return btn.parentElement as HTMLElement;
+  };
+
+  beforeEach(() => {
+    storeState = store([finished()]);
+    vi.clearAllMocks();
+  });
+
+  it("opens the editor when the row itself is clicked", () => {
+    render(<TimesheetsPanel />);
+    fireEvent.click(rowFor("Edit Job entry"));
+    // The editor's in/out picker triggers only exist once it is open (label carries a ▾ caret).
+    expect(screen.getByRole("button", { name: /^8:00am/ })).toBeTruthy();
+  });
+
+  it("still opens from the label, for keyboard users", () => {
+    render(<TimesheetsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Edit Job entry/i }));
+    expect(screen.getByRole("button", { name: /^8:00am/ })).toBeTruthy();
+  });
+
+  it("does NOT also open the editor when Delete is clicked", () => {
+    render(<TimesheetsPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "✕" }));
+    // One tap must do one thing: the delete fired, the editor did not open behind it.
+    expect(screen.queryByRole("button", { name: /^8:00am/ })).toBeNull();
+    expect(storeState.deleteTimeEntry).toHaveBeenCalled();
+  });
+
+  it("leaves an APPROVED row unclickable — it is locked until the office reopens it", () => {
+    storeState = store([finished({ status: "approved" })]);
+    render(<TimesheetsPanel />);
+    // No edit affordance at all on an approved row.
+    expect(screen.queryByRole("button", { name: /Edit Job entry/i })).toBeNull();
+  });
+});

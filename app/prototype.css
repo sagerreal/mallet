@@ -1216,6 +1216,9 @@
   .ts-dhdr .num{color:var(--ink);font-variant-numeric:tabular-nums}
   .ts-e{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
   .ts-e:hover{background:var(--manila)}
+  /* A row that opens the editor must look like it does — the hover tint alone reads as decoration.
+     Approved rows are locked and deliberately keep the default cursor. */
+  .ts-e.rowclick{cursor:pointer}
   .ts-e.appr{color:var(--ink-2)}
   .ts-e.editing{background:color-mix(in srgb,var(--paper) 45%,var(--card))}
   .ts-e .ts-kind{flex:none;width:56px;text-align:center}
