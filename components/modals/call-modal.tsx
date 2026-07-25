@@ -8,9 +8,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { CALL_OUTCOMES } from "@/lib/store/call-constants";
 import { hasPhone, PhoneAddInput } from "@/lib/phone";
+import { useMe } from "@/features/identity/hooks";
 
 export function CallModalContent() {
   const activeModal = useActiveModal();
@@ -21,6 +23,14 @@ export function CallModalContent() {
   const addLeadNote = useAppStore((s) => s.addLeadNote);
   const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
+
+  // Mallet rings YOUR phone first, so a call cannot be placed until we know which phone that is.
+  // Say so before the press rather than letting the server refuse afterwards — the failure would
+  // land in the global call bar, after this modal has already closed.
+  const me = useMe();
+  const hasCallbackNumber = Boolean(me.data?.callbackNumber);
+  const settingsHref = me.data?.role === "tech" ? "/account" : "/settings";
+  const [needsCallbackNumber, setNeedsCallbackNumber] = useState(false);
 
   const [logging, setLogging] = useState(false);
   const [outcome, setOutcome] = useState<string>("Connected");
@@ -34,6 +44,12 @@ export function CallModalContent() {
   const phoneOnFile = hasPhone(lead);
 
   function callFromMallet() {
+    // No number to ring back on — expand the reason in flow instead of placing a call that the
+    // server would refuse. The control stays tappable; it just tells the truth.
+    if (!hasCallbackNumber) {
+      setNeedsCallbackNumber(true);
+      return;
+    }
     // startCall re-reads the store; the optimistic updateLead below runs first
     // and synchronously, so the fresh number is already in place. startCall
     // returns false only if the lead is somehow still phoneless — don't close then.
@@ -43,7 +59,7 @@ export function CallModalContent() {
   // Add-a-phone → persist optimistically (synchronous store write) → start the call.
   function savePhoneAndCall(phone: string) {
     updateLead(lead!.id, { phone });
-    if (startCall(lead!.id)) close();
+    callFromMallet();
   }
 
   function saveLogged() {
@@ -94,6 +110,25 @@ export function CallModalContent() {
               happened.
             </p>
           </div>
+        </div>
+      )}
+
+      {needsCallbackNumber && (
+        <div style={{ marginTop: "var(--space-3)" }}>
+          <div style={{ fontSize: "var(--type-md)", fontWeight: 700, color: "var(--ink)" }}>
+            Mallet needs a number to ring you on
+          </div>
+          <p className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
+            Add your mobile under Your account, then press Call again.
+          </p>
+          <Link
+            href={settingsHref}
+            className="btn primary"
+            style={{ display: "inline-block", marginTop: "var(--space-2)" }}
+            onClick={close}
+          >
+            Add your mobile
+          </Link>
         </div>
       )}
 

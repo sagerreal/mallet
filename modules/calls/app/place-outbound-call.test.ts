@@ -73,12 +73,12 @@ const leadReader = (phone: Phone | null): LeadPhoneReader => ({ findPhone: async
 const orgLine = (phone: Phone | null): OrgLineReader => ({ businessNumber: async () => phone });
 
 class FakeAgentNumbers implements AgentNumberStore {
-  public saved: { userId: UserId; number: Phone }[] = [];
+  public saved: { userId: UserId; number: Phone | null }[] = [];
   constructor(private stored: Phone | null) {}
   async find(): Promise<Phone | null> {
     return this.stored;
   }
-  async save(userId: UserId, number: Phone): Promise<void> {
+  async save(userId: UserId, number: Phone | null): Promise<void> {
     this.saved.push({ userId, number });
     this.stored = number;
   }
@@ -177,7 +177,8 @@ describe("PlaceOutboundCallUseCase", () => {
     const { useCase } = build({ agents: new FakeAgentNumbers(null) });
     const r = await useCase.exec(cmd());
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe("conflict");
+    // Tagged, so the UI can name the setting to fix instead of matching the sentence.
+    if (!r.ok && r.error.kind === "conflict") expect(r.error.field).toBe("agentNumber");
   });
 
   it("remembers a newly supplied callback number so it is not retyped next time", async () => {

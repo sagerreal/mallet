@@ -29,12 +29,17 @@ export const appErrorField = (error: unknown): string | null => {
   return typeof tag === "string" && tag !== "" ? tag : null;
 };
 
-export const userMessage = (error: unknown): string => {
+/**
+ * `fallback` replaces the generic sentence when a surface can say something more useful about the
+ * thing that failed ("the call could not be placed"). It is only ever used for errors that carry
+ * NO user-facing message of their own — a domain refusal still passes its own wording through.
+ */
+export const userMessage = (error: unknown, fallback: string = FALLBACK): string => {
   if (typeof error === "object" && error !== null && "data" in error) {
     const data = (error as { data?: { code?: string } }).data;
     const code = data?.code ?? "";
     if (FIXED[code]) return FIXED[code];
     if (PASS_THROUGH.has(code) && "message" in error) return String((error as { message: unknown }).message);
   }
-  return FALLBACK;
+  return fallback;
 };

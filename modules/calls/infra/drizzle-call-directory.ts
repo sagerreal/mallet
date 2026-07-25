@@ -60,7 +60,7 @@ export class DrizzleAgentNumberStore implements AgentNumberStore {
     return number ? asPhone(number) : null;
   }
 
-  async save(userId: UserId, number: Phone): Promise<void> {
+  async save(userId: UserId, number: Phone | null): Promise<void> {
     await this.tx
       .update(users)
       .set({ callbackNumber: number })
