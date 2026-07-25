@@ -16,8 +16,10 @@ import { render, act } from "@testing-library/react";
 import { FieldJobsHydrator } from "./field-jobs-hydrator";
 
 const setJobs = vi.fn();
+const setLeads = vi.fn();
 vi.mock("@/lib/store/app-store", () => ({
-  useAppStore: (sel: (s: { setJobs: typeof setJobs }) => unknown) => sel({ setJobs }),
+  useAppStore: (sel: (s: { setJobs: typeof setJobs; setLeads: typeof setLeads }) => unknown) =>
+    sel({ setJobs, setLeads }),
 }));
 
 const timesheetsPrefetch = vi.fn().mockResolvedValue(undefined);
@@ -65,10 +67,18 @@ const jobItem = {
   photos: [],
 };
 
+// myDay carries the customers behind those jobs — the field surface has no other source for a
+// customer's name or number, and without them its Call control cannot work.
+const customerItem = {
+  id: "22222222-2222-2222-2222-222222222222",
+  name: "Dana Alvarez",
+  phone: "+19415550134",
+};
+
 describe("FieldJobsHydrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    myDayQuery.mockReturnValue({ data: { items: [jobItem] }, isError: false, error: null });
+    myDayQuery.mockReturnValue({ data: { items: [jobItem], customers: [customerItem] }, isError: false, error: null });
   });
 
   it("hydrates store.jobs for a tech", () => {
@@ -76,6 +86,32 @@ describe("FieldJobsHydrator", () => {
     render(<FieldJobsHydrator />);
     expect(setJobs).toHaveBeenCalledTimes(1);
     expect(setJobs.mock.calls[0]![0]).toHaveLength(1);
+  });
+
+  it("hydrates the customers behind those jobs, so a tech can name and ring them", () => {
+    meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
+    render(<FieldJobsHydrator />);
+    expect(setLeads).toHaveBeenCalledTimes(1);
+    expect(setLeads.mock.calls[0]![0]).toEqual([
+      expect.objectContaining({ id: customerItem.id, name: "Dana Alvarez", phone: "+19415550134" }),
+    ]);
+  });
+
+  it("does NOT clobber store.leads for an owner (the office list is the full one)", () => {
+    meQuery.mockReturnValue({ data: { role: "owner" }, isLoading: false });
+    render(<FieldJobsHydrator />);
+    expect(setLeads).not.toHaveBeenCalled();
+  });
+
+  it("keeps a customer with no number on file — the call sheet prompts for one", () => {
+    meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
+    myDayQuery.mockReturnValue({
+      data: { items: [jobItem], customers: [{ ...customerItem, phone: null }] },
+      isError: false,
+      error: null,
+    });
+    render(<FieldJobsHydrator />);
+    expect(setLeads.mock.calls[0]![0][0].phone).toBe("");
   });
 
   it("does NOT clobber store.jobs for an owner (office hydrator owns their list)", () => {
@@ -96,7 +132,7 @@ describe("FieldJobsHydrator — idle prefetch", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
-    myDayQuery.mockReturnValue({ data: { items: [jobItem] }, isError: false, error: null });
+    myDayQuery.mockReturnValue({ data: { items: [jobItem], customers: [customerItem] }, isError: false, error: null });
   });
 
   afterEach(() => {
@@ -141,7 +177,7 @@ describe("FieldJobsHydrator — idle prefetch", () => {
       vi.runAllTimers();
     });
     // Simulate data reference changing (e.g. a refetch)
-    myDayQuery.mockReturnValue({ data: { items: [] }, isError: false, error: null });
+    myDayQuery.mockReturnValue({ data: { items: [], customers: [] }, isError: false, error: null });
     rerender(<FieldJobsHydrator />);
     await act(async () => {
       vi.runAllTimers();

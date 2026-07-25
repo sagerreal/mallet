@@ -73,10 +73,24 @@ async function seedShop(name: string, opts: { businessLine?: string | null } = {
   return { orgId: org!.id, userId: user!.id, leadId: lead!.id, line };
 }
 
+/** A technician in the shop, optionally holding a job for one of its customers. */
+async function seedTech(orgId: string, opts: { onJobFor?: string } = {}) {
+  const [tech] = await admin<{ id: string }[]>`
+    insert into users (org_id, auth_user_id, email, role)
+    values (${orgId}, ${randomUUID()}, ${`${randomUUID()}@e2e.test`}, 'tech') returning id`;
+  if (opts.onJobFor) {
+    await admin`
+      insert into jobs (org_id, num, lead_id, assignee_user_id, status)
+      values (${orgId}, ${`JOB-${randomUUID().slice(0, 8)}`}, ${opts.onJobFor}, ${tech!.id}, 'scheduled')`;
+  }
+  return tech!.id;
+}
+
 suite("v1.calls (live RLS)", () => {
   afterAll(async () => {
     for (const id of createdOrgIds) {
       await admin`delete from outbound_calls where org_id = ${id}`;
+      await admin`delete from jobs where org_id = ${id}`;
       await admin`delete from leads where org_id = ${id}`;
       await admin`delete from users where org_id = ${id}`;
       await admin`delete from orgs where id = ${id}`;
@@ -169,6 +183,68 @@ suite("v1.calls (live RLS)", () => {
     await expect(
       appRouter.createCaller(ctxFor(stranger.orgId, stranger.userId)).v1.calls.get({ callId: placed.id }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  // A technician's reach is their own work. The field shell only ever shows the customers on
+  // their own jobs, and the API must not reach further than the UI does — otherwise widening the
+  // role turns the field app into an org-wide dialler on the shop's caller ID and the shop's bill.
+  it("a tech can call a customer who is on a job of theirs", async () => {
+    const shop = await seedShop("Calls Tech Allowed Org");
+    const techId = await seedTech(shop.orgId, { onJobFor: shop.leadId });
+    const caller = appRouter.createCaller(ctxFor(shop.orgId, techId, "tech"));
+
+    const dto = await caller.v1.calls.place({ leadId: shop.leadId, agentNumber: "(781) 385-0591" });
+    expect(dto.status).toBe("dialing");
+  });
+
+  it("a tech cannot call a customer who is not on any job of theirs", async () => {
+    const shop = await seedShop("Calls Tech Denied Org");
+    const techId = await seedTech(shop.orgId); // no job
+
+    await expect(
+      appRouter
+        .createCaller(ctxFor(shop.orgId, techId, "tech"))
+        .v1.calls.place({ leadId: shop.leadId, agentNumber: "(781) 385-0591" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("a tech cannot read or log against a colleague's call", async () => {
+    const shop = await seedShop("Calls Tech Foreign Org");
+    const techId = await seedTech(shop.orgId, { onJobFor: shop.leadId });
+    const ownersCall = await appRouter
+      .createCaller(ctxFor(shop.orgId, shop.userId))
+      .v1.calls.place({ leadId: shop.leadId, agentNumber: "(781) 385-0591" });
+
+    const techCaller = appRouter.createCaller(ctxFor(shop.orgId, techId, "tech"));
+    await expect(techCaller.v1.calls.get({ callId: ownersCall.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(
+      techCaller.v1.calls.logOutcome({ callId: ownersCall.id, outcome: "Connected", notes: "" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("a tech owns their own callback number", async () => {
+    const shop = await seedShop("Calls Tech Number Org");
+    const techId = await seedTech(shop.orgId);
+    const caller = appRouter.createCaller(ctxFor(shop.orgId, techId, "tech"));
+
+    expect((await caller.v1.calls.setCallbackNumber({ callbackNumber: "781-385-0591" })).callbackNumber)
+      .toBe("+17813850591");
+    expect((await caller.v1.identity.me()).callbackNumber).toBe("+17813850591");
+  });
+
+  it("myDay carries the customers behind a tech's jobs, and nobody else's", async () => {
+    const shop = await seedShop("Calls MyDay Org");
+    const techId = await seedTech(shop.orgId, { onJobFor: shop.leadId });
+    const [other] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name, phone_e164) values (${shop.orgId}, 'Not Theirs', '+19415550999') returning id`;
+
+    const day = await appRouter.createCaller(ctxFor(shop.orgId, techId, "tech")).v1.field.myDay();
+
+    expect(day.customers.map((c) => c.id)).toEqual([shop.leadId]);
+    expect(day.customers[0]!.phone).toBe("+19415550134");
+    expect(day.customers.map((c) => c.id)).not.toContain(other!.id);
   });
 
   it("the me DTO carries the caller's own callback number", async () => {

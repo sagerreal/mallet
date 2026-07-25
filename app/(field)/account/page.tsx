@@ -11,6 +11,7 @@
 import Link from "next/link";
 import { useMe } from "@/features/identity/hooks";
 import { SignOutButton } from "@/components/shell/sign-out-button";
+import { CallbackNumberForm } from "@/features/settings/callback-number-form";
 
 const FIELD_LINKS: Array<{ href: string; label: string }> = [
   { href: "/my-day", label: "My day" },
@@ -65,6 +66,15 @@ export default function FieldAccountPage() {
       <MenuGroup label="Field" links={FIELD_LINKS} />
 
       {isOffice && <MenuGroup label="Office" links={OFFICE_LINKS} />}
+
+      {/* The one setting a technician owns. Office roles set the same number in Settings → Your
+          account; a tech has no Settings page, and pressing Call without it does nothing. Sits
+          below the destinations because this page is navigation first — a setting is not a place
+          you go. */}
+      <div className="moregroup">
+        <div className="morelabel">Calls</div>
+        <CallbackNumberForm />
+      </div>
 
       <div style={{ marginTop: "var(--space-5)" }}>
         <SignOutButton />

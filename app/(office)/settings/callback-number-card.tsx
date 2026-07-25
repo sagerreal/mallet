@@ -3,117 +3,19 @@
 /**
  * Settings → Workspace → Your account → "Your callback number".
  *
- * The mobile Mallet rings FIRST on an outbound click-to-call: we call you, you answer, and only
- * then is the customer bridged in with the shop's business line as the caller ID. Without a number
- * here, pressing Call cannot do anything — this card is the one place that number is set.
- *
- * Per-USER, not per-org, which is why it sits in the "Your account" group beside Your name.
+ * Per-USER, not per-org, which is why it sits in the "Your account" group beside Your name. The
+ * form itself is shared with the technician's Account page — a technician places calls too and has
+ * no Settings page, so this file is only the office shell around it.
  */
 
-import { useState } from "react";
-import { Phone } from "@mallet/shared/types";
-import { api } from "@/lib/trpc/client";
-import { userMessage } from "@/lib/trpc/error-map";
-import { formatPhone } from "@/lib/phone";
-import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
-import { COMPACT_INPUT } from "@/components/ui/input";
+import { CallbackNumberForm, useCallbackNumberSummary } from "@/features/settings/callback-number-form";
 import { FoldCard } from "./fold-card";
 
-const NOT_SET = "Not set";
-
-// Same treatment as the sibling account fields (Your name / Branding): the shared compact input
-// plus the settings-row border, defined once rather than hand-rolled per control.
-const inputStyle = {
-  ...COMPACT_INPUT,
-  flex: 1,
-  minWidth: 180,
-  border: "1.5px solid var(--line)",
-  fontFamily: "inherit",
-} as const;
-
 export function CallbackNumberCard() {
-  const { data: me } = api.v1.identity.me.useQuery();
-  const utils = api.useUtils();
-  const stored = me?.callbackNumber ?? null;
-
-  // Draft is local until Save so an invalidate mid-typing cannot yank the field out from under
-  // the user. `null` means "not edited yet" — fall back to what is stored.
-  const [draft, setDraft] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const { saved, flash, reset: resetSaved } = useSaveFlash();
-
-  const setCallbackNumber = api.v1.calls.setCallbackNumber.useMutation({
-    onSuccess: () => {
-      setError(null);
-      setDraft(null);
-      utils.v1.identity.me.invalidate().catch(() => {});
-      flash();
-    },
-    onError: (err) => setError(userMessage(err)),
-  });
-
-  const value = draft ?? formatPhone(stored);
-  const busy = setCallbackNumber.isPending;
-
-  function edit(next: string) {
-    setDraft(next);
-    resetSaved();
-    setError(null);
-  }
-
-  function save() {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      // Saving an empty box is a deliberate clear, not an error.
-      clear();
-      return;
-    }
-    // Same value object the call endpoint parses with, so the card never accepts a number that
-    // `place` would later reject.
-    if (!Phone.parse(trimmed).ok) {
-      setError("That number doesn't look right — 10 digits, US.");
-      return;
-    }
-    resetSaved();
-    setCallbackNumber.mutate({ callbackNumber: trimmed });
-  }
-
-  function clear() {
-    resetSaved();
-    setError(null);
-    setCallbackNumber.mutate({ callbackNumber: null });
-  }
-
+  const summary = useCallbackNumberSummary();
   return (
-    <FoldCard title="Your callback number" defaultOpen summary={formatPhone(stored) || NOT_SET}>
-      <div className="muted" style={{ fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>
-        The phone Mallet rings first when you press Call. Your customer sees the business line,
-        never this number.
-      </div>
-      <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
-        <input
-          type="tel"
-          aria-label="Your callback number"
-          placeholder="(925) 555-0123"
-          value={value}
-          onChange={(e) => edit(e.target.value)}
-          style={inputStyle}
-        />
-        <button className="btn primary" disabled={busy} onClick={save}>
-          {busy ? "Saving…" : "Save"}
-        </button>
-        {stored && (
-          <button className="btn ghost" disabled={busy} onClick={clear}>
-            Clear
-          </button>
-        )}
-        <SavedFlash saved={saved} />
-      </div>
-      {error && (
-        <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
-          {error}
-        </div>
-      )}
+    <FoldCard title="Your callback number" defaultOpen summary={summary}>
+      <CallbackNumberForm />
     </FoldCard>
   );
 }

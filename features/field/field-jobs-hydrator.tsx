@@ -31,7 +31,7 @@ import { useMemo, useEffect, useRef } from "react";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
-import type { Job } from "@/lib/store/types";
+import type { Job, Lead } from "@/lib/store/types";
 import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
@@ -43,8 +43,23 @@ type MyDayItem = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 // fields dtoJobToStoreJob actually reads — same pattern as jobs-slice adoptJob.
 const toStoreJob = (item: MyDayItem): Job => dtoJobToStoreJob(item as unknown as JobDTO);
 
+// The field surface knows a customer only as "who this job is for and the number to call" — it has
+// no lead list and no lead detail. Enough of a Lead to name them in the call bar and pass the
+// has-a-phone gate; the rest of the shape is empty because the field simply does not have it.
+const toStoreLead = (c: { id: string; name: string; phone: string | null }): Lead => ({
+  id: c.id,
+  name: c.name,
+  phone: c.phone ?? "",
+  source: "",
+  stage: "",
+  age: 0,
+  job: "",
+  last: "",
+});
+
 export function FieldJobsHydrator() {
   const setJobs = useAppStore((s) => s.setJobs);
+  const setLeads = useAppStore((s) => s.setLeads);
   const me = useMe();
   const isTech = me.data?.role === "tech";
   const { data, isError, error } = api.v1.field.myDay.useQuery(undefined, {
@@ -99,6 +114,23 @@ export function FieldJobsHydrator() {
     transform: toStoreJob,
     setSlice: setJobs,
     label: "field-jobs",
+  });
+
+  // TECH-ONLY, for the same reason the jobs hydration is: an owner/office user on a field page
+  // keeps the office LeadsHydrator's full customer list, and replacing it with the handful behind
+  // their own jobs would blank out every office surface until they navigated back.
+  const customers = useMemo(
+    () => (isTech && data ? { items: data.customers, nextCursor: null } : undefined),
+    [isTech, data],
+  );
+
+  useStoreHydrator({
+    data: customers,
+    isError,
+    error,
+    transform: toStoreLead,
+    setSlice: setLeads,
+    label: "field-customers",
   });
 
   return null;

@@ -241,6 +241,7 @@ export class DrizzleJobRepository implements JobRepository {
     const conds: SQL[] = [isNull(jobs.deletedAt)];
     if (filter?.status) conds.push(eq(jobs.status, filter.status));
     if (filter?.assigneeUserId) conds.push(eq(jobs.assigneeUserId, filter.assigneeUserId));
+    if (filter?.leadId) conds.push(eq(jobs.leadId, filter.leadId));
     if (filter?.assignedUserId) {
       // Visit-aware assignment — the SQL twin of Job.isAssignedTo: the job-level
       // assignee OR the assignee of any active (non-canceled, non-deleted) visit.
