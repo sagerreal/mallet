@@ -44,6 +44,18 @@ export function hasPhone(bearer: PhoneBearer | null | undefined): boolean {
   return p.length > 0 && p !== NO_PHONE_PLACEHOLDER;
 }
 
+/**
+ * A stored E.164 number as a person reads it: "+16693413343" → "(669) 341-3343". Anything that
+ * isn't a US 11-digit E.164 value is returned unchanged — a settings row that showed a mangled
+ * number would be worse than one that showed the raw string.
+ */
+export function formatPhone(e164: string | null | undefined): string {
+  const raw = (e164 ?? "").trim();
+  const us = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(raw);
+  if (!us) return raw;
+  return `(${us[1]}) ${us[2]}-${us[3]}`;
+}
+
 interface PhoneAddInputProps {
   /** Big heading, e.g. "No phone number for Dana yet". */
   label: string;

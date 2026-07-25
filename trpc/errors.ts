@@ -42,6 +42,27 @@ export const withAppErrorTag = <S extends { data?: unknown }>(shape: S, cause: u
   return { ...shape, data } as S;
 };
 
+/**
+ * What the client is told when a resolver threw something nobody wrote for a user.
+ * The real message is not lost — the tRPC route handler logs it (see app/api/trpc/[trpc]/route.ts).
+ */
+const INTERNAL_MESSAGE = "Something went wrong on our end. Try again.";
+
+/**
+ * Strips the message off an INTERNAL_SERVER_ERROR before it leaves the process.
+ *
+ * An unhandled throw carries whatever the library that threw wrote. Drizzle writes the SQL: when
+ * `users.callback_number` was missing, `Failed query: select "callback_number" from "users" …`
+ * was rendered verbatim in the call bar — schema on a customer-facing screen, and a sentence that
+ * told the user nothing they could act on. Every OTHER code is authored server-side FOR users and
+ * passes through untouched.
+ *
+ * Not gated on NODE_ENV: behaviour that only exists in production is behaviour no test ever runs.
+ */
+export const scrubInternalError = <S extends { message: string; data: { code?: unknown } }>(
+  shape: S,
+): S => (shape.data.code === "INTERNAL_SERVER_ERROR" ? { ...shape, message: INTERNAL_MESSAGE } : shape);
+
 // Unwrap a use-case Result at the API boundary: success value through, AppError mapped to the
 // right tRPC/HTTP status. Keeps domain errors out of the transport layer.
 export const orThrow = <T>(result: Result<T, AppError>): T => {

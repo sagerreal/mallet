@@ -1,5 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { hasPhone, ADD_PHONE_TITLE } from "./phone";
+import { hasPhone, ADD_PHONE_TITLE, formatPhone } from "./phone";
+
+describe("formatPhone", () => {
+  it("renders a US E.164 number the way a person reads it aloud", () => {
+    expect(formatPhone("+16693413343")).toBe("(669) 341-3343");
+  });
+
+  it("returns nothing for nothing — the caller decides what 'not set' reads as", () => {
+    expect(formatPhone(null)).toBe("");
+    expect(formatPhone("")).toBe("");
+    expect(formatPhone("   ")).toBe("");
+  });
+
+  it("passes anything it does not recognise through untouched rather than mangling it", () => {
+    // Non-US / short / already-formatted values are shown as stored, never silently reshaped.
+    expect(formatPhone("+442071838750")).toBe("+442071838750");
+    expect(formatPhone("(669) 341-3343")).toBe("(669) 341-3343");
+  });
+});
 
 describe("hasPhone", () => {
   it("true for a real phone number", () => {

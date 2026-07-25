@@ -11,6 +11,8 @@ import {
 } from "../infra/drizzle-call-directory";
 import { PlaceOutboundCallUseCase } from "../app/place-outbound-call";
 import { LogCallOutcomeUseCase } from "../app/log-call-outcome";
+import { GetOutboundCallUseCase } from "../app/get-outbound-call";
+import { SetCallbackNumberUseCase } from "../app/set-callback-number";
 import { outboundCallDTO, toOutboundCallDTO } from "./call-dto";
 
 const placeInput = z.object({
@@ -24,6 +26,14 @@ const logOutcomeInput = z.object({
   outcome: z.string().min(1).max(120),
   notes: z.string().max(10_000),
 });
+
+// Null clears the stored number. The USER is never in the input — it comes from the principal, so
+// nobody can rewrite a colleague's mobile and have Mallet ring them instead.
+const setCallbackNumberInput = z.object({
+  callbackNumber: z.string().max(50).nullable(),
+});
+
+const callbackNumberOutput = z.object({ callbackNumber: z.string().nullable() });
 
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
 // request's tx + ports, delegate, map the result. No business logic lives here.
@@ -60,6 +70,35 @@ export const createCallRouter = () =>
           agentNumber: input.agentNumber,
         });
         return toOutboundCallDTO(orThrow(result));
+      }),
+
+    // One call, read back. The bar polls this while connecting so "live" means the phone was
+    // actually answered rather than "the provider accepted the request".
+    get: ownerOrOffice
+      .input(z.object({ callId: z.string().uuid() }))
+      .output(outboundCallDTO)
+      .query(async ({ ctx, input }) => {
+        const useCase = new GetOutboundCallUseCase(
+          new DrizzleOutboundCallRepository(ctx.tx, ctx.principal.orgId),
+        );
+        return toOutboundCallDTO(orThrow(await useCase.exec(asOutboundCallId(input.callId))));
+      }),
+
+    // The durable write for "which phone should Mallet ring". Scoped to the caller themselves.
+    setCallbackNumber: ownerOrOffice
+      .input(setCallbackNumberInput)
+      .output(callbackNumberOutput)
+      .mutation(async ({ ctx, input }) => {
+        const useCase = new SetCallbackNumberUseCase(
+          new DrizzleAgentNumberStore(ctx.tx, ctx.principal.orgId),
+        );
+        const saved = orThrow(
+          await useCase.exec({
+            userId: ctx.principal.userId,
+            callbackNumber: input.callbackNumber,
+          }),
+        );
+        return { callbackNumber: saved };
       }),
 
     // Writes the disposition after hanging up — the step that makes the row a persisted log.

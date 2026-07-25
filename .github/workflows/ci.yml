@@ -40,6 +40,19 @@ jobs:
       - name: Unit tests + coverage (≥80%)
         run: pnpm coverage
 
+      # Schema edited without a generated migration. drizzle-kit diffs against the snapshot in
+      # shared/db/migrations/meta, NOT the database, so this needs no credentials — it is the
+      # migration check CI can actually perform. (Whether an existing migration has been APPLIED
+      # is checked by scripts/db-verify.mjs, which runs as the Vercel production build gate.)
+      - name: Migration drift (schema edited without a generated migration)
+        # drizzle-kit generate never opens a connection, but the config still wants the key to be
+        # present — a placeholder keeps this step offline and credential-free.
+        env:
+          DATABASE_URL: postgres://unused-generate-does-not-connect
+        run: |
+          pnpm db:generate
+          git diff --exit-code shared/db/migrations
+
   # Integration tests (live Supabase RLS) are NOT run here — they need DB credentials and their
   # modules load config at import. To enable once the leaked credentials are rotated: add repo
   # secrets DATABASE_URL + APP_DATABASE_URL (+ the NEXT_PUBLIC_SUPABASE_* / SUPABASE_SERVICE_ROLE_KEY

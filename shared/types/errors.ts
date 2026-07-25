@@ -20,6 +20,9 @@ export interface NotFoundError extends BaseError {
 }
 export interface ConflictError extends BaseError {
   readonly kind: "conflict";
+  // Optional machine-readable tag, same contract as a validation error's `field`: it lets a client
+  // react to ONE specific refusal without pattern-matching a sentence written for humans.
+  readonly field?: string;
 }
 export interface ExternalServiceError extends BaseError {
   readonly kind: "external_service";
@@ -43,7 +46,11 @@ export const validation = (message: string, field?: string): ValidationError => 
   field,
 });
 export const notFound = (message: string): NotFoundError => ({ kind: "not_found", message });
-export const conflict = (message: string): ConflictError => ({ kind: "conflict", message });
+export const conflict = (message: string, field?: string): ConflictError => ({
+  kind: "conflict",
+  message,
+  field,
+});
 export const externalService = (
   service: string,
   message: string,

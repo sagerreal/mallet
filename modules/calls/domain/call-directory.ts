@@ -17,6 +17,7 @@ export interface OrgLineReader {
 export interface AgentNumberStore {
   // The caller's own mobile — the leg Twilio rings first.
   find(userId: UserId): Promise<Phone | null>;
-  // Remembered on first use so the office does not retype it on every call.
-  save(userId: UserId, number: Phone): Promise<void>;
+  // Remembered on first use so the office does not retype it on every call. Null CLEARS it: a
+  // person who removes their number must end up with no number, not with the old one still stored.
+  save(userId: UserId, number: Phone | null): Promise<void>;
 }

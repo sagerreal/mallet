@@ -105,8 +105,14 @@ export class PlaceOutboundCallUseCase {
 
     if (cmd.agentNumber === undefined || cmd.agentNumber.trim().length === 0) {
       if (!stored) {
+        // Tagged so the client can point at the exact setting to fix rather than matching on the
+        // sentence. Conflict, not validation: nothing the caller SENT is wrong — a prerequisite
+        // is missing.
         return err(
-          conflict("add the mobile number Mallet should ring you on before placing a call"),
+          conflict(
+            "add the mobile number Mallet should ring you on before placing a call",
+            "agentNumber",
+          ),
         );
       }
       return ok(stored);

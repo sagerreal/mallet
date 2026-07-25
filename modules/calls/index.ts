@@ -11,6 +11,8 @@ export type { LeadPhoneReader, OrgLineReader, AgentNumberStore } from "./domain/
 export { PlaceOutboundCallUseCase } from "./app/place-outbound-call";
 export { ApplyCallStatusUseCase } from "./app/apply-call-status";
 export { LogCallOutcomeUseCase } from "./app/log-call-outcome";
+export { GetOutboundCallUseCase } from "./app/get-outbound-call";
+export { SetCallbackNumberUseCase } from "./app/set-callback-number";
 export { DrizzleOutboundCallRepository } from "./infra/drizzle-outbound-call-repository";
 export {
   DrizzleLeadPhoneReader,

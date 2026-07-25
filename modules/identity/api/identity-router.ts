@@ -2,17 +2,46 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, count, eq } from "drizzle-orm";
 import { orgs, users, orgInvites } from "@mallet/shared/db/schema";
-import { withTenant } from "@mallet/shared/db/tx";
+import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
 import { asOrgId, asUserId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { loadConfig } from "@mallet/shared/config";
 import { router, authedNoPrincipal, anyRole, ownerOrOffice } from "@/trpc/init";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
-import { ROLES } from "../domain/principal";
+import { ROLES, type Principal } from "../domain/principal";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
-const meDTO = z.object({ role: roleEnum, orgId: z.string().uuid(), orgName: z.string(), twilioNumber: z.string().nullable(), email: z.string(), name: z.string().nullable(), userId: z.string().uuid() });
+// `callbackNumber` is the mobile Mallet rings first on an outbound click-to-call. A call RECORD
+// deliberately keeps it off the wire (it can name a colleague — staff PII); `me` is scoped to
+// ctx.principal.userId, so it only ever returns the caller their own number.
+const meDTO = z.object({ role: roleEnum, orgId: z.string().uuid(), orgName: z.string(), twilioNumber: z.string().nullable(), email: z.string(), name: z.string().nullable(), userId: z.string().uuid(), callbackNumber: z.string().nullable() });
+type MeShape = z.infer<typeof meDTO>;
+
+// EVERY meDTO is built here. Four sites used to assemble the object literal by hand and had already
+// drifted apart — three hard-coded `twilioNumber: null` while `me` read the real value, so whether
+// the shell saw the business number depended on which call it adopted. One builder means a new
+// field cannot be half-added.
+const loadMeDTO = async (tx: TenantTx, principal: Principal): Promise<MeShape> => {
+  const [org] = await tx
+    .select({ name: orgs.name, twilioNumber: orgs.twilioNumber })
+    .from(orgs)
+    .where(eq(orgs.id, principal.orgId));
+  const [self] = await tx
+    .select({ email: users.email, name: users.name, callbackNumber: users.callbackNumber })
+    .from(users)
+    .where(eq(users.id, principal.userId));
+  return {
+    role: principal.role,
+    orgId: principal.orgId,
+    orgName: org?.name ?? "",
+    twilioNumber: org?.twilioNumber ?? null,
+    email: self?.email ?? "",
+    name: self?.name ?? null,
+    userId: principal.userId,
+    callbackNumber: self?.callbackNumber ?? null,
+  };
+};
 
 // Result shape for the email-send attempt. `sent` is the source of truth; `reason` is a
 // machine-readable code for the UI to surface a fallback message when `sent` is false.
@@ -77,12 +106,6 @@ async function sendInviteEmail(email: string, orgId: string): Promise<InviteEmai
   }
 }
 
-const orgNameOf = async (orgId: string): Promise<string> =>
-  withTenant(asOrgId(orgId), async (tx) => {
-    const [row] = await tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId));
-    return row?.name ?? "";
-  });
-
 export const createIdentityRouter = () =>
   router({
     // Idempotent provisioning: called once after any login. An unmapped (new) identity gets an org
@@ -93,12 +116,10 @@ export const createIdentityRouter = () =>
       .mutation(async ({ ctx, input }) => {
         if (ctx.principal) {
           const principal = ctx.principal;
-          const email = ctx.unmapped?.email ?? "";
-          const userName = await withTenant(asOrgId(principal.orgId), async (tx) => {
-            const [row] = await tx.select({ name: users.name }).from(users).where(eq(users.id, principal.userId));
-            return row?.name ?? null;
-          });
-          return { role: principal.role, orgId: principal.orgId, orgName: await orgNameOf(principal.orgId), twilioNumber: null, email, name: userName, userId: principal.userId };
+          // signup runs on authedNoPrincipal, so there is no ctx.tx — it opens its own tenant tx.
+          const me = await withTenant(asOrgId(principal.orgId), (tx) => loadMeDTO(tx, principal));
+          // The auth identity's email is the freshest one when the users row has not caught up.
+          return { ...me, email: ctx.unmapped?.email ?? me.email };
         }
         const unmapped = ctx.unmapped;
         if (!unmapped) throw new TRPCError({ code: "UNAUTHORIZED", message: "authentication required" });
@@ -112,20 +133,17 @@ export const createIdentityRouter = () =>
         const role = roleEnum.parse(provisioned.role);
         // users.id is a distinct UUID from auth_user_id (the signup fn returns only org_id+role),
         // so resolve the real users-row id — meDTO.userId must match Tech.id / members.id everywhere.
-        const newUserId = await withTenant(asOrgId(provisioned.orgId), async (tx) => {
+        const me = await withTenant(asOrgId(provisioned.orgId), async (tx) => {
           const [row] = await tx.select({ id: users.id }).from(users).where(eq(users.authUserId, unmapped.authUserId));
-          return row?.id ?? null;
+          if (!row) return null;
+          return loadMeDTO(tx, { role, orgId: asOrgId(provisioned.orgId), userId: asUserId(row.id) });
         });
-        if (!newUserId) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "provisioned user not found" });
-        return { role, orgId: provisioned.orgId, orgName: await orgNameOf(provisioned.orgId), twilioNumber: null, email: unmapped.email, name: unmapped.name ?? null, userId: newUserId };
+        if (!me) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "provisioned user not found" });
+        return { ...me, email: unmapped.email, name: me.name ?? unmapped.name ?? null };
       }),
 
     // Who am I + which org — what the shell routes on. Any role.
-    me: anyRole.output(meDTO).query(async ({ ctx }) => {
-      const [org] = await ctx.tx.select({ name: orgs.name, twilioNumber: orgs.twilioNumber }).from(orgs).where(eq(orgs.id, ctx.principal.orgId));
-      const [self] = await ctx.tx.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, ctx.principal.userId));
-      return { role: ctx.principal.role, orgId: ctx.principal.orgId, orgName: org?.name ?? "", twilioNumber: org?.twilioNumber ?? null, email: self?.email ?? "", name: self?.name ?? null, userId: ctx.principal.userId };
-    }),
+    me: anyRole.output(meDTO).query(({ ctx }) => loadMeDTO(ctx.tx, ctx.principal)),
 
     // The org's people — feeds the Jobs assign picker. Office-side only.
     members: ownerOrOffice
@@ -170,7 +188,7 @@ export const createIdentityRouter = () =>
           .update(users)
           .set({ name: input.name, updatedAt: new Date() })
           .where(eq(users.id, ctx.principal.userId))
-          .returning({ email: users.email, name: users.name });
+          .returning({ id: users.id });
 
         if (!updated) {
           throw new TRPCError({ code: "NOT_FOUND", message: "user not found in this org" });
@@ -178,15 +196,9 @@ export const createIdentityRouter = () =>
 
         logger.info({ userId: ctx.principal.userId, orgId: ctx.principal.orgId }, "user.name_updated");
 
-        return {
-          role: ctx.principal.role,
-          orgId: ctx.principal.orgId,
-          orgName: await orgNameOf(ctx.principal.orgId),
-          twilioNumber: null,
-          email: updated.email,
-          name: updated.name ?? null,
-          userId: ctx.principal.userId,
-        };
+        // Re-read through the one builder rather than assembling a second literal: this used to
+        // return twilioNumber: null, so a shell that adopted the response lost the business number.
+        return loadMeDTO(ctx.tx, ctx.principal);
       }),
 
     // Change a member's role. Restricted to owner/office. Cannot demote the last owner.
