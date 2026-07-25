@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { reportWriteError, subscribeWriteErrors, resetWriteErrorListeners } from "./write-error";
+import { reportWriteError, reportWriteNotice, subscribeWriteErrors, resetWriteErrorListeners } from "./write-error";
 
 describe("write-error reporting seam", () => {
   beforeEach(() => resetWriteErrorListeners());
@@ -41,5 +41,39 @@ describe("write-error reporting seam", () => {
     reportWriteError("second", new Error("x"));
 
     expect(seen).toEqual(["first"]);
+  });
+
+  // A deliberate no-op is not a failure. It must still be said out loud — silently recording
+  // nothing is what makes someone believe the clock is broken — but it must not be dressed as an
+  // error, or the shop goes looking for a bug that is not there.
+  describe("reportWriteNotice", () => {
+    it("announces with the caller's own sentence and a notice tone", () => {
+      const seen: { message: string; tone: string }[] = [];
+      subscribeWriteErrors((e) => seen.push({ message: e.message, tone: e.tone }));
+
+      reportWriteNotice("clock", "That was under a minute, so it wasn't recorded.");
+
+      expect(seen).toEqual([
+        { message: "That was under a minute, so it wasn't recorded.", tone: "notice" },
+      ]);
+    });
+
+    it("does not log to the console — nothing went wrong", () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      subscribeWriteErrors(() => {});
+      reportWriteNotice("clock", "nothing to see");
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("keeps failures tagged as errors, so the two can never be styled the same", () => {
+      const seen: string[] = [];
+      subscribeWriteErrors((e) => seen.push(e.tone));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      reportWriteError("archiveLead", new Error("network"));
+      reportWriteNotice("clock", "under a minute");
+
+      expect(seen).toEqual(["error", "notice"]);
+    });
   });
 });

@@ -18,6 +18,7 @@ import type { RouterOutputs } from "@/lib/trpc/client";
 import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DayClock } from "@/features/field/day-clock";
+import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -37,7 +38,10 @@ function statusLabel(status: string): { l: string; c: string; bg: string } {
   const map: Record<string, { l: string; c: string; bg: string }> = {
     scheduled: { l: "Scheduled", c: "var(--ink-2)", bg: "var(--paper)" },
     in_progress: { l: "In progress", c: "var(--green-700)", bg: "var(--green-50)" },
-    completed: { l: "Done", c: "var(--ink-3)", bg: "var(--paper)" },
+    // "complete", not "completed" — modules/jobs/domain/job.ts. The old key never matched, which
+    // was invisible only because myDay filters completed jobs out; an optimistic complete shows
+    // the status locally, so a wrong key would render the raw string "complete" at the user.
+    complete: { l: "Done", c: "var(--ink-3)", bg: "var(--paper)" },
     canceled: { l: "Canceled", c: "var(--red-600, #dc2626)", bg: "var(--red-50, #fef2f2)" },
   };
   return map[status] ?? { l: status, c: "var(--ink-2)", bg: "var(--paper)" };
@@ -117,21 +121,75 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
 // ============================================================================
 
 export default function MyDayPage() {
-  const { data, isLoading, refetch } = api.v1.field.myDay.useQuery(undefined, {
+  const utils = api.useUtils();
+  const { data, isLoading, isFetching, refetch } = api.v1.field.myDay.useQuery(undefined, {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
 
+  /**
+   * Move the card NOW.
+   *
+   * This page used to render straight off the query and only change after a second round trip:
+   * ~1.3s for the write, then ~1.2s for the refetch. For those ~2.5 seconds the button sat there
+   * still saying "Start job", so people pressed it again — and again. Every "it does nothing" and
+   * every "I had to hit it six times" was this. The house pattern is optimistic-then-reconcile
+   * (CLAUDE.md); this brings the page in line with it.
+   */
+  /**
+   * The clock does things to your hours that the button does not look like it did. Say them.
+   *
+   * A segment under a minute is thrown away rather than rounded up — right, because a timesheet is
+   * kept to the minute and inventing one would be a lie on a payroll record — but until now that
+   * happened in total silence, so the hours simply never appeared and the clock looked broken.
+   */
+  const announceClock = (notice: "segment_too_short" | "close_bounded" | null) => {
+    if (notice === "segment_too_short") {
+      reportWriteNotice(
+        "clock",
+        "That was under a minute, so it wasn't recorded. Add the time on My hours if it should count.",
+      );
+    }
+    if (notice === "close_bounded") {
+      reportWriteNotice(
+        "clock",
+        "That segment ran far too long to be real, so its end was capped. Correct it on My hours.",
+      );
+    }
+  };
+
+  const optimisticStatus = (jobId: string, status: JobSummary["status"]) => {
+    utils.v1.field.myDay.setData(undefined, (prev) =>
+      prev
+        ? { ...prev, items: prev.items.map((j) => (j.id === jobId ? { ...j, status } : j)) }
+        : prev,
+    );
+  };
+
   const startMutation = api.v1.field.start.useMutation({
-    onSuccess: () => { void refetch(); },
+    onMutate: ({ jobId }) => optimisticStatus(jobId, "in_progress"),
+    onSuccess: (dto) => { announceClock(dto.clockNotice); void refetch(); },
+    // Roll the guess back and SAY so — a write that failed silently is what made this page
+    // untrustworthy in the first place.
+    onError: (err) => {
+      void refetch();
+      reportWriteError("field.start", err);
+    },
   });
   const completeMutation = api.v1.field.complete.useMutation({
-    onSuccess: () => { void refetch(); },
+    onMutate: ({ jobId }) => optimisticStatus(jobId, "complete"),
+    onSuccess: (dto) => { announceClock(dto.clockNotice); void refetch(); },
+    onError: (err) => {
+      void refetch();
+      reportWriteError("field.complete", err);
+    },
   });
 
   const openModal = useOpenModal();
 
-  const isPending = startMutation.isPending || completeMutation.isPending;
+  // Covers the WHOLE round trip, not just the write: the refetch is the slower half, and leaving
+  // the button live during it is what allowed the second press.
+  const isPending = startMutation.isPending || completeMutation.isPending || isFetching;
 
   function handleOpen(jobId: string): void {
     // The modal reads store.jobs — hydrated from this same myDay query by

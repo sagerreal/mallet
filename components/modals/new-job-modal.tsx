@@ -403,21 +403,53 @@ export function NewJobModalContent() {
     return { ok, job: createdJob };
   }
 
+  /**
+   * ONE guarded entry point for both submit buttons.
+   *
+   * `commit()` is two awaited round trips — create the customer, then the job, then its visit —
+   * roughly a second before the modal closes, and every one of those calls mints a fresh UUID.
+   * Unguarded, three impatient clicks produced three customers, three jobs and three visits (seen
+   * in production: v1.customers.create → v1.jobs.create → v1.visits.createVisit, ×3, all 200).
+   * Server idempotency cannot save this — customers.create takes no client id and dedupes only on
+   * a non-null phone — so the guard has to be here.
+   *
+   * The ref is checked synchronously because `disabled` only takes effect on the next render: a
+   * same-tick second click is dispatched before that. Same reasoning, and the same shape, as
+   * new-customer-modal.tsx.
+   */
+  const inFlightRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+
+  async function submitCreate(openBuilder: boolean): Promise<void> {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setSaving(true);
+    try {
+      const { ok, job } = await commit();
+      if (!ok) return;
+      close();
+      if (openBuilder && job) {
+        // Land the builder ON the new job: ✕ / Done pop back to the job modal.
+        openModal(MODAL.JOB, { jobId: job.id });
+        pushModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+      }
+    } finally {
+      // Released in `finally`, never only on success: commit() deliberately supports retry (the
+      // checklist-attach path re-enters with the job already created), and a stuck guard would
+      // leave the modal permanently unable to submit.
+      inFlightRef.current = false;
+      setSaving(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if ((await commit()).ok) close();
+    await submitCreate(false);
   }
 
   async function handleBuildPrice() {
     // Create the job, then hand off to the price builder (prototype saveNewJob(true)).
-    const { ok, job } = await commit();
-    if (!ok) return;
-    close();
-    if (job) {
-      // Land the builder ON the new job: ✕ / Done pop back to the job modal.
-      openModal(MODAL.JOB, { jobId: job.id });
-      pushModal(MODAL.PRICE_BUILDER, { jobId: job.id });
-    }
+    await submitCreate(true);
   }
 
   // ---- collapsed row summaries (the value IS the state) ---------------------
@@ -702,16 +734,16 @@ export function NewJobModalContent() {
             opens the builder), so it belongs here beside Create, not as a form
             field. Jobs only: estimates are quoted by the office after the visit. */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
-          <button type="button" className="btn ghost" onClick={close}>
+          <button type="button" className="btn ghost" onClick={close} disabled={saving}>
             Cancel
           </button>
           {njType !== "estimate" && (
-            <button type="button" className="btn" onClick={handleBuildPrice}>
+            <button type="button" className="btn" onClick={handleBuildPrice} disabled={saving}>
               ✦ Build the price →
             </button>
           )}
-          <button type="submit" className="btn primary">
-            Create job
+          <button type="submit" className="btn primary" disabled={saving}>
+            {saving ? "Creating…" : "Create job"}
           </button>
         </div>
       </form>
