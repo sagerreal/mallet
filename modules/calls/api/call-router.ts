@@ -7,6 +7,8 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId, LeadId, UserId } from "@mallet/shared/types";
 import { asLeadId, asOutboundCallId } from "@mallet/shared/types";
 import type { Principal } from "@mallet/identity";
+import type { CallOriginator } from "../domain/call-originator";
+import { CALL_TRANSPORTS } from "../domain/outbound-call";
 import { DrizzleOutboundCallRepository } from "../infra/drizzle-outbound-call-repository";
 import {
   DrizzleLeadPhoneReader,
@@ -23,6 +25,9 @@ const placeInput = z.object({
   leadId: z.string().uuid(),
   // Optional: supplied the first time (or when it changes) and then remembered on the user.
   agentNumber: z.string().max(50).optional(),
+  // How the call reaches the caller. Defaults to the phone bridge, which works from any device;
+  // the client asks for "browser" only when its softphone is actually usable.
+  transport: z.enum(CALL_TRANSPORTS as unknown as ["phone", "browser"]).optional(),
 });
 
 const logOutcomeInput = z.object({
@@ -87,7 +92,18 @@ export const createCallRouter = () =>
       .mutation(async ({ ctx, input }) => {
         // Voice is not a channel that may silently degrade: a call the office believes was
         // placed but never happened is exactly the bug this feature exists to fix.
-        if (!ctx.deps.callOriginator) {
+        //
+        // A browser call needs no originator — the client's own device places it — but it does
+        // need the token issuer, and asking for one when the softphone is unconfigured means the
+        // client is confused about its own capabilities.
+        const wantsBrowser = input.transport === "browser";
+        if (wantsBrowser && !ctx.deps.voiceTokenIssuer) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "calling from the browser is not set up for this account",
+          });
+        }
+        if (!wantsBrowser && !ctx.deps.callOriginator) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: "calling is not configured — set the Twilio voice credentials",
@@ -98,7 +114,9 @@ export const createCallRouter = () =>
         await assertOnAJobForIfTech(ctx.tx, orgId, leadId, ctx.principal);
         const useCase = new PlaceOutboundCallUseCase(
           new DrizzleOutboundCallRepository(ctx.tx, orgId),
-          ctx.deps.callOriginator,
+          // Never reached on the browser path (the use case returns before originating), and the
+          // guard above proves it is present on the phone path.
+          ctx.deps.callOriginator as CallOriginator,
           new DrizzleLeadPhoneReader(ctx.tx, orgId),
           new DrizzleOrgLineReader(ctx.tx, orgId),
           new DrizzleAgentNumberStore(ctx.tx, orgId),
@@ -110,8 +128,24 @@ export const createCallRouter = () =>
           leadId,
           placedByUserId: ctx.principal.userId,
           agentNumber: input.agentNumber,
+          transport: input.transport,
         });
         return toOutboundCallDTO(orThrow(result));
+      }),
+
+    // The browser softphone's credential. Returned per-call rather than held: it is short-lived,
+    // and a client that cannot get one simply falls back to ringing the caller's handset.
+    browserToken: anyRole
+      .output(z.object({ token: z.string(), identity: z.string(), expiresAt: z.string() }))
+      .query(({ ctx }) => {
+        if (!ctx.deps.voiceTokenIssuer) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "calling from the browser is not set up for this account",
+          });
+        }
+        const issued = ctx.deps.voiceTokenIssuer.issue(ctx.principal.userId, ctx.deps.clock.now());
+        return { token: issued.token, identity: issued.identity, expiresAt: issued.expiresAt.toISOString() };
       }),
 
     // One call, read back. The bar polls this while connecting so "live" means the phone was

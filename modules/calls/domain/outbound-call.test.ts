@@ -15,6 +15,7 @@ const baseProps = (overrides: Partial<OutboundCallProps> = {}): OutboundCallProp
   toNumber: asPhone("+19415550134"),
   fromNumber: asPhone("+16693413343"),
   agentNumber: asPhone("+17813850591"),
+  transport: "phone" as const,
   status: "queued",
   providerCallSid: null,
   startedAt: null,
@@ -163,5 +164,25 @@ describe("OutboundCall.logOutcome", () => {
     const r = build({ status: "completed" }).logOutcome("   ", "", LATER);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.field).toBe("outcome");
+  });
+
+  // The two transports are mutually exclusive in shape, and the shape is what tells them apart in
+  // the database. Allowing either mismatch would mean a row that claims a leg it never had.
+  describe("transport invariants", () => {
+    it("refuses a phone call with no number to ring", () => {
+      const r = OutboundCall.create({ ...baseProps(), transport: "phone", agentNumber: null });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.field).toBe("agentNumber");
+    });
+
+    it("refuses a browser call that carries a number to ring", () => {
+      const r = OutboundCall.create({ ...baseProps(), transport: "browser" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.field).toBe("agentNumber");
+    });
+
+    it("accepts a browser call with no number", () => {
+      expect(OutboundCall.create({ ...baseProps(), transport: "browser", agentNumber: null }).ok).toBe(true);
+    });
   });
 });

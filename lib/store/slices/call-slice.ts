@@ -13,6 +13,7 @@ import type { ActiveCall, Lead } from "../types";
 import { hasPhone } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { connectBrowserCall, hangUpBrowserCall, muteBrowserCall } from "@/lib/calls/browser-device";
 
 /** The parts of an outbound-call DTO the bar reacts to. Structurally satisfied by the DTO itself. */
 export interface CallStatusUpdate {
@@ -31,7 +32,7 @@ export interface CallSlice {
    * The bar opens in "connecting" and STAYS there until an observed call status says otherwise.
    * A successful place() only means the provider accepted the request; the phone has not rung yet.
    */
-  startCall: (leadId: string) => boolean;
+  startCall: (leadId: string, transport?: "phone" | "browser") => boolean;
   /**
    * Applies a status read back from the server (the Twilio status webhook writes it). This is the
    * only thing that can make the bar "live" — see the note on `startCall`.
@@ -39,6 +40,8 @@ export interface CallSlice {
   applyCallStatus: (callId: string, update: CallStatusUpdate) => void;
   tickCall: () => void;
   setCallNotes: (notes: string) => void;
+  /** Silence our own microphone. Browser calls only; a no-op on a bridged one. */
+  toggleCallMute: () => void;
   markCallEnded: () => void;
   clearCall: () => void;
 }
@@ -75,26 +78,49 @@ const secondsSince = (startedAt: string | null): number => {
 export const createCallSlice: StateCreator<CallSlice, [], [], CallSlice> = (set, get) => ({
   activeCall: null,
 
-  startCall: (leadId) => {
+  startCall: (leadId, transport = "phone") => {
     const leads = (get() as unknown as StoreWithLeads).leads ?? [];
     const lead = leads.find((l) => l.id === leadId);
     // Refuse to open a blank call bar for a phoneless lead — the bar renders the number, so a
     // missing one dead-ends the UI (no silent no-op: caller gets false).
     if (!hasPhone(lead)) return false;
 
-    set({ activeCall: { leadId, sec: 0, notes: "", phase: "connecting", callId: null, error: null } });
+    set({
+      activeCall: { leadId, sec: 0, notes: "", phase: "connecting", callId: null, error: null, transport, muted: false },
+    });
 
     void trpcVanilla.v1.calls.place
-      .mutate({ leadId })
-      .then((dto) => {
-        // Record the id so the bar can poll for the real status. NOT "live": the provider has
-        // accepted the request, nothing has rung yet.
+      .mutate({ leadId, ...(transport === "browser" ? { transport } : {}) })
+      .then(async (dto) => {
+        // Record the id so the bar can poll for the real status. NOT "live": the row exists and
+        // nothing has rung yet.
         // Guard against a stale response: the user may have hung up or started another call.
-        set((s) =>
-          s.activeCall && s.activeCall.leadId === leadId && s.activeCall.phase === "connecting"
-            ? { activeCall: { ...s.activeCall, callId: dto.id } }
-            : {},
-        );
+        const stillOurs = () => {
+          const c = get().activeCall;
+          return Boolean(c && c.leadId === leadId && c.phase === "connecting");
+        };
+        if (!stillOurs()) return;
+        set((s) => (s.activeCall ? { activeCall: { ...s.activeCall, callId: dto.id } } : {}));
+
+        // A browser call is placed BY THIS BROWSER: the row is the reservation, and the device
+        // connect below is what actually dials. Anything that fails here means no call happened,
+        // so it surfaces in the bar rather than leaving a row that never rang.
+        if (dto.transport !== "browser") return;
+        try {
+          const { token } = await trpcVanilla.v1.calls.browserToken.query();
+          if (!stillOurs()) return;
+          await connectBrowserCall(dto.id, token, {
+            onDisconnect: () => get().markCallEnded(),
+            onError: (message) =>
+              set((s) => (s.activeCall ? { activeCall: { ...s.activeCall, phase: "failed", error: message } } : {})),
+          });
+        } catch (e: unknown) {
+          set((s) =>
+            s.activeCall && s.activeCall.leadId === leadId
+              ? { activeCall: { ...s.activeCall, phase: "failed", error: userMessage(e, "this browser could not carry the call") } }
+              : {},
+          );
+        }
       })
       .catch((e: unknown) => {
         set((s) =>
@@ -158,8 +184,25 @@ export const createCallSlice: StateCreator<CallSlice, [], [], CallSlice> = (set,
   setCallNotes: (notes) =>
     set((s) => (s.activeCall ? { activeCall: { ...s.activeCall, notes } } : {})),
 
-  markCallEnded: () =>
-    set((s) => (s.activeCall ? { activeCall: { ...s.activeCall, phase: "ended" } } : {})),
+  toggleCallMute: () =>
+    set((s) => {
+      if (!s.activeCall || s.activeCall.transport !== "browser") return {};
+      const muted = !s.activeCall.muted;
+      muteBrowserCall(muted);
+      return { activeCall: { ...s.activeCall, muted } };
+    }),
 
-  clearCall: () => set({ activeCall: null }),
+  markCallEnded: () =>
+    set((s) => {
+      if (!s.activeCall) return {};
+      // Ending a browser call means actually hanging up the line, not just changing a label.
+      if (s.activeCall.transport === "browser") hangUpBrowserCall();
+      return { activeCall: { ...s.activeCall, phase: "ended" } };
+    }),
+
+  clearCall: () => {
+    // Dismissing the bar must never leave a live line open behind it.
+    hangUpBrowserCall();
+    set({ activeCall: null });
+  },
 });

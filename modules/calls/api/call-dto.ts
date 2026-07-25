@@ -5,6 +5,8 @@ export const outboundCallDTO = z.object({
   id: z.string().uuid(),
   leadId: z.string().uuid(),
   status: z.string(),
+  // phone | browser — the call bar renders mute/keypad only for a call it is actually carrying.
+  transport: z.string(),
   // The number the customer sees — safe to show the office so they know which line went out.
   fromNumber: z.string(),
   toNumber: z.string(),
@@ -26,6 +28,7 @@ export const toOutboundCallDTO = (call: OutboundCall): OutboundCallDTO => {
     id: p.id,
     leadId: p.leadId,
     status: p.status,
+    transport: p.transport,
     fromNumber: p.fromNumber,
     toNumber: p.toNumber,
     startedAt: p.startedAt?.toISOString() ?? null,

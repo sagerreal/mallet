@@ -13,6 +13,7 @@ import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-stor
 import { CALL_OUTCOMES } from "@/lib/store/call-constants";
 import { hasPhone, PhoneAddInput } from "@/lib/phone";
 import { useMe } from "@/features/identity/hooks";
+import { browserCallingSupported } from "@/lib/calls/browser-device";
 
 export function CallModalContent() {
   const activeModal = useActiveModal();
@@ -24,11 +25,17 @@ export function CallModalContent() {
   const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
 
-  // Mallet rings YOUR phone first, so a call cannot be placed until we know which phone that is.
-  // Say so before the press rather than letting the server refuse afterwards — the failure would
-  // land in the global call bar, after this modal has already closed.
+  // Which way this call gets carried. When this browser can be the phone, it is — that is the
+  // whole point, and it needs no callback number because the microphone is the leg. Otherwise
+  // Mallet rings YOUR handset first, and cannot do that until it knows which one.
+  //
+  // Decided on mount so the answer cannot change between the render and the press.
+  const [carriedHere] = useState(() => browserCallingSupported());
   const me = useMe();
-  const hasCallbackNumber = Boolean(me.data?.callbackNumber);
+  // Only the bridge needs a number, so only the bridge is gated on one. Saying so before the press
+  // matters because the failure would otherwise land in the global call bar, after this modal has
+  // already closed.
+  const hasCallbackNumber = carriedHere || Boolean(me.data?.callbackNumber);
   const settingsHref = me.data?.role === "tech" ? "/account" : "/settings";
   const [needsCallbackNumber, setNeedsCallbackNumber] = useState(false);
 
@@ -53,7 +60,7 @@ export function CallModalContent() {
     // startCall re-reads the store; the optimistic updateLead below runs first
     // and synchronously, so the fresh number is already in place. startCall
     // returns false only if the lead is somehow still phoneless — don't close then.
-    if (startCall(lead!.id)) close();
+    if (startCall(lead!.id, carriedHere ? "browser" : "phone")) close();
   }
 
   // Add-a-phone → persist optimistically (synchronous store write) → start the call.
@@ -99,8 +106,17 @@ export function CallModalContent() {
           <div className="path" onClick={callFromMallet} role="button">
             <b>Call from Mallet</b>
             <p>
-              Mallet rings <b>your phone</b> first, then connects them. They see
-              your <b>business number</b>, not your cell.
+              {carriedHere ? (
+                <>
+                  Talk right here, through this computer. They see your{" "}
+                  <b>business number</b>, not your cell.
+                </>
+              ) : (
+                <>
+                  Mallet rings <b>your phone</b> first, then connects them. They see
+                  your <b>business number</b>, not your cell.
+                </>
+              )}
             </p>
           </div>
           <div className="path" onClick={() => setLogging(true)} role="button">

@@ -27,6 +27,7 @@ export class DrizzleOutboundCallRepository implements OutboundCallRepository {
         toNumber: p.toNumber,
         fromNumber: p.fromNumber,
         agentNumber: p.agentNumber,
+        transport: p.transport,
         status: p.status,
         providerCallSid: p.providerCallSid,
         startedAt: p.startedAt,

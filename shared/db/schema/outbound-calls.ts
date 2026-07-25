@@ -9,6 +9,10 @@ import { leads } from "./leads";
 //
 // This row is also the persisted call LOG: outcome + notes are written when the office
 // picks a disposition, so the record survives a refresh.
+//
+// TWO transports write this table. "phone" rings the caller's own handset and bridges (the field
+// case, and any browser that can't do WebRTC). "browser" is the softphone: the caller's microphone
+// IS the leg, so there is no agent number and nothing rings.
 export const outboundCalls = pgTable(
   "outbound_calls",
   {
@@ -24,7 +28,11 @@ export const outboundCalls = pgTable(
     // The org's business line — what the customer's phone displays as the caller ID.
     fromNumber: text("from_number").notNull(),
     // The agent's own mobile: Twilio rings THIS first, then bridges to toNumber.
-    agentNumber: text("agent_number").notNull(),
+    // NULL on a browser call — there is no handset to ring, the microphone is the leg.
+    agentNumber: text("agent_number"),
+    // phone | browser — which way this call was carried. A browser call has no agent_number and
+    // its provider SID is the client leg, so the two cannot be told apart from the other columns.
+    transport: text("transport").notNull().default("phone"),
     // queued | dialing | in_progress | completed | failed | no_answer | busy | canceled
     status: text("status").notNull().default("queued"),
     // Twilio's Call SID for the AGENT leg. Null until the provider accepts the request.

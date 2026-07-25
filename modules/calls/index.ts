@@ -8,6 +8,9 @@ export type { OutboundCall, OutboundCallProps, OutboundCallStatus } from "./doma
 export type { OutboundCallRepository } from "./domain/outbound-call-repository";
 export type { CallOriginator, OriginateCallCmd, CallOriginationReceipt } from "./domain/call-originator";
 export type { LeadPhoneReader, OrgLineReader, AgentNumberStore } from "./domain/call-directory";
+export type { VoiceTokenIssuer, VoiceAccessToken } from "./domain/voice-token-issuer";
+export type { CallTransport } from "./domain/outbound-call";
+export { CALL_TRANSPORTS, isCallTransport } from "./domain/outbound-call";
 export { PlaceOutboundCallUseCase } from "./app/place-outbound-call";
 export { ApplyCallStatusUseCase } from "./app/apply-call-status";
 export { LogCallOutcomeUseCase } from "./app/log-call-outcome";
@@ -21,4 +24,5 @@ export {
   DrizzleOrgByCallSidReader,
   DrizzleOrgByCallIdReader,
 } from "./infra/drizzle-call-directory";
-export { TwilioCallOriginator, type CallTransport } from "./infra/twilio-call-originator";
+export { TwilioCallOriginator, type CallHttpTransport } from "./infra/twilio-call-originator";
+export { TwilioVoiceTokenIssuer } from "./infra/twilio-voice-token-issuer";

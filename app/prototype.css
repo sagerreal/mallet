@@ -1155,6 +1155,15 @@
   .cbar .cb-end{background:#dc2626;color:#fff;border:none;border-radius:var(--radius-sm);padding:var(--space-2) var(--space-4);font-weight:800;font-size:var(--type-base);cursor:pointer}
   .cbar .chip{background:#0e0f17;border-color:#2b2e3d;color:#d7dae6}
   .cbar .chip:hover{background:#1a1d28}
+  /* Mute / keypad — only rendered when THIS browser is carrying the call. Quiet next to the red
+     End call, because they are used mid-conversation and it is the exit. */
+  .cbar .cb-tool{background:#0e0f17;border:1px solid #2b2e3d;border-radius:var(--radius-sm);color:#d7dae6;padding:var(--space-2) var(--space-3);font-weight:700;font-size:var(--type-base);cursor:pointer;white-space:nowrap}
+  .cbar .cb-tool:hover{background:#1a1d28}
+  .cbar .cb-tool[aria-pressed="true"]{background:#3f2a2a;border-color:#7f3b3b;color:#ffd9d9}
+  /* In flow, under the bar it belongs to — never a floating pad over the page. */
+  .cb-keypad{margin-top:var(--space-2);background:#15171f;border-radius:var(--radius-lg);box-shadow:0 16px 44px rgba(0,0,0,.4);padding:var(--space-3);display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-2)}
+  .cb-keypad .chip{background:#0e0f17;border:1px solid #2b2e3d;color:#d7dae6;font-variant-numeric:tabular-nums;font-weight:800}
+  .cb-keypad .chip:hover{background:#1a1d28}
   /* ---- timesheets ---- */
   .ts-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3);margin:var(--space-4) 0 var(--space-2)}
   .ts-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);cursor:pointer;transition:border-color .12s}

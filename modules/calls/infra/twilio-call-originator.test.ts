@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { asOutboundCallId, asPhone } from "@mallet/shared/types";
-import { TwilioCallOriginator, type CallTransport } from "./twilio-call-originator";
+import { TwilioCallOriginator, type CallHttpTransport } from "./twilio-call-originator";
 
 // ── constants ──────────────────────────────────────────────────────────────
 const SID = "AC00000000000000000000000000000000";
@@ -11,7 +11,7 @@ const AGENT = asPhone("+17813850591");
 const BUSINESS = asPhone("+16693413343");
 
 // ── helpers ────────────────────────────────────────────────────────────────
-const originator = (transport: CallTransport) =>
+const originator = (transport: CallHttpTransport) =>
   new TwilioCallOriginator(SID, "token", VOICE_URL, STATUS_URL, transport);
 
 const cmd = () => ({ callId: CALL_ID, agentNumber: AGENT, fromNumber: BUSINESS });
@@ -21,7 +21,7 @@ const restError = (status: number, code: number) => Object.assign(new Error("pro
 
 describe("TwilioCallOriginator", () => {
   it("rings the AGENT leg with the business line as caller ID", async () => {
-    let seen: Parameters<CallTransport>[0] | undefined;
+    let seen: Parameters<CallHttpTransport>[0] | undefined;
     const o = originator(async (p) => {
       seen = p;
       return { sid: "CA123" };
@@ -32,7 +32,7 @@ describe("TwilioCallOriginator", () => {
   });
 
   it("sends only our call id to the provider — never the customer's number", async () => {
-    let seen: Parameters<CallTransport>[0] | undefined;
+    let seen: Parameters<CallHttpTransport>[0] | undefined;
     const o = originator(async (p) => {
       seen = p;
       return { sid: "CA123" };
@@ -44,7 +44,7 @@ describe("TwilioCallOriginator", () => {
   });
 
   it("subscribes to the status events the webhook needs to close the log out", async () => {
-    let seen: Parameters<CallTransport>[0] | undefined;
+    let seen: Parameters<CallHttpTransport>[0] | undefined;
     const o = originator(async (p) => {
       seen = p;
       return { sid: "CA123" };
