@@ -1,5 +1,5 @@
 import type { TimeEntryId, JobId, Result, AppError } from "@mallet/shared/types";
-import { notFound, err, ok } from "@mallet/shared/types";
+import { notFound, err, ok, conflict } from "@mallet/shared/types";
 import type { Clock } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { TimeEntry, TimeEntryKind, TimeEntrySrc } from "../domain/time-entry";
@@ -29,6 +29,16 @@ export class UpdateTimeEntryUseCase {
   ): Promise<Result<TimeEntry, AppError>> {
     const entry = await this.entries.findById(cmd.entryId);
     if (!entry) return err(notFound("time entry not found"));
+
+    // Approved means LOCKED. Without this an approved entry could be rewritten while approvedAt
+    // stayed set — so the record would claim the shop signed off on hours it never saw, and (once
+    // already pushed) QuickBooks would hold different numbers than Mallet shows. Reopen is the only
+    // legitimate way back to editable, and it goes through ReopenEntry, not here.
+    if (entry.props.status === "approved") {
+      return err(
+        conflict("These hours are approved. Reopen the entry before changing it."),
+      );
+    }
 
     const now = this.clock.now();
     const patched = entry.patch(

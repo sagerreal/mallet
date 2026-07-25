@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNull, lte, inArray } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, isNotNull, lte, inArray, or } from "drizzle-orm";
 import { timeEntries } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetAfter } from "@mallet/shared/db/keyset";
@@ -156,6 +156,25 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
     return rows.length;
   }
 
+  async unfinishedDates(techUserId: UserId, dates: string[]): Promise<string[]> {
+    if (dates.length === 0) return [];
+    const rows = await this.tx
+      .selectDistinct({ workDate: timeEntries.workDate })
+      .from(timeEntries)
+      .where(
+        and(
+          eq(timeEntries.orgId, this.orgId),
+          eq(timeEntries.techUserId, techUserId),
+          inArray(timeEntries.workDate, dates),
+          eq(timeEntries.status, "draft"),
+          isNull(timeEntries.deletedAt),
+          // Unfinished either way: the clock is still open, or an end time was never recorded.
+          or(eq(timeEntries.running, true), isNull(timeEntries.endTime)),
+        ),
+      );
+    return rows.map((r) => r.workDate).sort();
+  }
+
   async approveWeek(techUserId: UserId, dates: string[], now: Date): Promise<number> {
     if (dates.length === 0) return 0;
     const rows = await this.tx
@@ -168,6 +187,12 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
           inArray(timeEntries.workDate, dates),
           eq(timeEntries.status, "draft"),
           isNull(timeEntries.deletedAt),
+          // Defence in depth. The use-case refuses the whole week when any day is unfinished, but
+          // this predicate means even a direct call cannot approve hours with no end: such an entry
+          // has no derivable duration, so it would be approved, pushed, and silently rejected by
+          // QuickBooks as `entry_not_finished` with nobody told.
+          eq(timeEntries.running, false),
+          isNotNull(timeEntries.endTime),
         ),
       )
       .returning();

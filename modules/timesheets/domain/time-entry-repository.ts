@@ -34,7 +34,14 @@ export interface TimeEntryRepository {
   // Soft-delete. Returns the number of rows affected (0 = not found or already deleted).
   remove(id: TimeEntryId, now: Date): Promise<number>;
 
+  /**
+   * The tech's dates in this range that still hold an UNFINISHED draft entry — running, or with no
+   * end time. Approval must refuse those days rather than approve hours that cannot be totalled and
+   * that QuickBooks then rejects. Returns distinct work dates, sorted.
+   */
+  unfinishedDates(techUserId: UserId, dates: string[]): Promise<string[]>;
+
   // Bulk approve: flip status='approved', set approvedAt=now for a tech's specific dates where
-  // status='draft'. Returns the count of rows updated.
+  // status='draft' AND the entry is finished. Returns the count of rows updated.
   approveWeek(techUserId: UserId, dates: string[], now: Date): Promise<number>;
 }

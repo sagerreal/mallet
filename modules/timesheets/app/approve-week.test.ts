@@ -26,6 +26,15 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
     this._approveWeekCount = approveWeekCount;
   }
 
+  // Added with the unfinished-week guard: these fakes hold no rows, so nothing is unfinished.
+
+  async unfinishedDates(): Promise<string[]> {
+
+    return [];
+
+  }
+
+
   async approveWeek(techUserId: UserId, dates: string[], now: Date): Promise<number> {
     this.approveWeekCalls.push({ techUserId, dates, now });
     return this._approveWeekCount;

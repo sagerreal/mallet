@@ -94,6 +94,11 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async list(): Promise<{ items: TimeEntry[]; nextCursor: null }> {
     return { items: [], nextCursor: null };
   }
+  // Added with the unfinished-week guard: these fakes hold no rows, so nothing is unfinished.
+  async unfinishedDates(): Promise<string[]> {
+    return [];
+  }
+
   async approveWeek(): Promise<number> {
     return 0;
   }
