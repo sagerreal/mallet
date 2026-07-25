@@ -142,12 +142,27 @@ export function QuickbooksSetup() {
                     }}
                   >
                     <option value="">Not matched</option>
-                    {s.people.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.displayName}
-                        {p.kind === "Vendor" ? " (contractor)" : ""}
-                      </option>
-                    ))}
+                    {/* Grouped so employees — the common case — are not buried among 1099 subs. */}
+                    <optgroup label="Employees">
+                      {s.people
+                        .filter((p) => p.kind === "Employee")
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.displayName}
+                          </option>
+                        ))}
+                    </optgroup>
+                    {s.people.some((p) => p.kind === "Vendor") && (
+                      <optgroup label="Contractors (1099)">
+                        {s.people
+                          .filter((p) => p.kind === "Vendor")
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.displayName}
+                            </option>
+                          ))}
+                      </optgroup>
+                    )}
                   </select>
                 </span>
               </div>
@@ -159,9 +174,18 @@ export function QuickbooksSetup() {
       <section>
         <button
           className={s.sendApprovedHours ? "btn quiet" : "btn primary"}
-          disabled={setSend.isPending || !s.defaultItemQboId}
-          onClick={() => {
+          disabled={setSend.isPending || setItem.isPending || !s.defaultItemQboId}
+          onClick={async () => {
             setError(null);
+            // The dropdown may be showing QuickBooks' own default, which we display but have not
+            // stored. Commit it first — otherwise the server refuses, having never been told.
+            if (!s.sendApprovedHours && s.defaultItemQboId && !s.defaultItemSaved) {
+              const name =
+                s.defaultItemName ?? s.items.find((i) => i.id === s.defaultItemQboId)?.name;
+              if (name) {
+                await setItem.mutateAsync({ qboId: s.defaultItemQboId, name });
+              }
+            }
             setSend.mutate({ on: !s.sendApprovedHours });
           }}
         >

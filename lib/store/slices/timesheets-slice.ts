@@ -17,6 +17,7 @@ import type { TimeEntry } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoToTimeEntry } from "@/lib/store/dto-mapper";
 import { reportWriteError } from "../write-error";
+import { TS_DEFAULT_START, TS_DEFAULT_END } from "@/features/jobs/timesheet-constants";
 
 export interface TimesheetsSlice {
   timeEntries: TimeEntry[];
@@ -36,20 +37,26 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
 
   addTimeEntry: (techId, date) => {
     const id = crypto.randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
-    const isToday = date === today;
+    // A recorded entry is always COMPLETE — start and end both set.
+    //
+    // This used to branch on "is `date` today?" and produce an open-ended running timer instead.
+    // That was a dead end from two directions: the row editor refuses to open for a running entry
+    // (see handleEdit), so the hours could never be filled in; and an entry with no end can't be
+    // totalled, can't be approved, and is rejected by the QuickBooks push. Intent belongs to the
+    // caller, not to the calendar — and the only caller is the office grid, which records work that
+    // already happened.
     const entry: TimeEntry = {
       id,
       techId,
       date,
       kind: "job",
       jobId: null,
-      start: "08:00",
-      end: isToday ? null : "16:00",
+      start: TS_DEFAULT_START,
+      end: TS_DEFAULT_END,
       note: "",
       src: "manual",
       status: "draft",
-      running: isToday ? true : false,
+      running: false,
     };
 
     // 1. Optimistic update.

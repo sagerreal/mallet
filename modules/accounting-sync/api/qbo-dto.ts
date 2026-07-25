@@ -47,8 +47,15 @@ export const qboSetupDTO = z.object({
   people: z.array(qboPersonDTO),
   items: z.array(z.object({ id: z.string(), name: z.string() })),
   crew: z.array(qboCrewRowDTO),
+  /** The item hours are filed under — either the shop's saved choice, or QBO's own default. */
   defaultItemQboId: z.string().nullable(),
   defaultItemName: z.string().nullable(),
+  /**
+   * False when the id above is only QuickBooks' suggestion and has NOT been persisted here. The
+   * UI must commit it before enabling the push, or the shop sees a choice on screen that the
+   * server doesn't have.
+   */
+  defaultItemSaved: z.boolean(),
   sendApprovedHours: z.boolean(),
 });
 

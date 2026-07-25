@@ -23,3 +23,11 @@ export const TIME_PICKER_STEP_HOURS = 0.25;
 
 /** Cap on job-picker suggestions in the "other open jobs" group. */
 export const MAX_JOB_SUGGESTIONS = 60;
+
+/**
+ * Default span for a hand-recorded entry. The office grid records work that ALREADY happened, so a
+ * new row is a complete, editable shift — never an open-ended timer. (Clocking in live is the field
+ * app's job; a half-open entry can't be approved, can't be totalled, and QuickBooks rejects it.)
+ */
+export const TS_DEFAULT_START = "08:00";
+export const TS_DEFAULT_END = "16:00";

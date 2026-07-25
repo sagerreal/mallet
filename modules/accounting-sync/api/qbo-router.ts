@@ -130,8 +130,15 @@ export const createQboRouter = () =>
             qboKind: link?.qboEntityKind ?? null,
           };
         }),
-        defaultItemQboId: connection.props.defaultItemQboId,
-        defaultItemName: connection.props.defaultItemName,
+        // Fall back to the company's OWN default time item when the shop hasn't chosen one — QBO
+        // already answers this question, so don't make them answer it twice. Flagged as unsaved so
+        // the UI commits it rather than showing a choice the server doesn't actually hold.
+        defaultItemSaved: connection.props.defaultItemQboId !== null,
+        defaultItemQboId: connection.props.defaultItemQboId ?? prefs.defaultItemId,
+        defaultItemName:
+          connection.props.defaultItemName ??
+          itemList.find((i) => i.id === prefs.defaultItemId)?.name ??
+          null,
         sendApprovedHours: connection.props.sendApprovedHours,
       };
     }),

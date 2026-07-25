@@ -121,6 +121,10 @@ export class HttpQboApiGateway implements QboApiGateway {
     );
     if (!employees.ok) return err(employees.error);
 
+    // Vendors are fetched in full and filtered HERE, not in the query. `Vendor1099` is returned on
+    // every vendor but is NOT a queryable property — QuickBooks answers
+    // "QueryValidationError: property 'Vendor1099' is not queryable" with a 400 (verified against a
+    // live company). So the filter has to happen client-side.
     const vendors = await this.query<{ QueryResponse?: { Vendor?: unknown } }>(
       access,
       "select * from Vendor where Active = true maxresults 1000",
@@ -137,15 +141,30 @@ export class HttpQboApiGateway implements QboApiGateway {
         id,
         displayName: str(raw.DisplayName) ?? str(raw.GivenName) ?? `Employee ${id}`,
         kind: "Employee",
-        // Intuit's flag for "use time data to create paychecks". Its absence is meaningful (older
-        // records omit it), so treat only an explicit enable as true.
-        usesTimeForPaychecks: raw.UseTimeEntry === "UseTimeEntryForTimeSheet" || raw.UseTimeEntry === true,
+        // Intuit's "use time data to create paychecks" flag — the thing that decides whether an
+        // employee's hours reach a paycheck.
+        //
+        // ABSENT IS NOT FALSE. Verified against a live company (2026-07-24): a company WITHOUT
+        // payroll omits UseTimeEntry from every Employee record entirely. Reading that absence as
+        // "off" made the UI warn about every single employee — the same mistake as the phantom
+        // TimeTrackingEnabled field. undefined here means "QuickBooks didn't say", and the UI stays
+        // quiet rather than raising an alarm it cannot substantiate.
+        usesTimeForPaychecks:
+          raw.UseTimeEntry === undefined || raw.UseTimeEntry === null
+            ? undefined
+            : raw.UseTimeEntry === "UseTimeEntryForTimeSheet" || raw.UseTimeEntry === true,
       });
     }
 
     for (const raw of asArray<Record<string, unknown>>(vendors.value.QueryResponse?.Vendor)) {
       const id = str(raw.Id);
       if (!id) continue;
+      // ONLY 1099 subcontractors. A shop's vendor list is overwhelmingly suppliers, utilities and
+      // insurers — the supply house, the phone company, the state treasury. Offering those as
+      // "who is this person in QuickBooks?" makes the picker unusable (a live company returned 26
+      // vendors, exactly 1 of them a 1099 contractor). Vendor1099 is QuickBooks' own flag for
+      // someone who gets a 1099, which is precisely the population whose time we might record.
+      if (raw.Vendor1099 !== true) continue;
       people.push({
         id,
         displayName: str(raw.DisplayName) ?? `Vendor ${id}`,
@@ -183,13 +202,20 @@ export class HttpQboApiGateway implements QboApiGateway {
     if (!res.ok) return err(res.error);
 
     const prefs = res.value.Preferences ?? {};
-    const time = (prefs.TimeTrackingPrefs ?? {}) as Record<string, unknown>;
+    const timeBlock = prefs.TimeTrackingPrefs as Record<string, unknown> | undefined;
+    const time = timeBlock ?? {};
     const defaultItem = time.DefaultTimeItem as { value?: unknown } | undefined;
 
     return ok({
-      // Absent reads as OFF. Better to tell a shop to switch time tracking on than to push entries
-      // into a company that silently discards them.
-      timeTrackingEnabled: time.TimeTrackingEnabled === true,
+      // VERIFIED against a live company (2026-07-24): QuickBooks returns NO `TimeTrackingEnabled`
+      // field. A real Essentials company with timesheets fully switched on returns only
+      // { UseServices, DefaultTimeItem, BillCustomers, ShowBillRateToAll, WorkWeekStartDate,
+      // MarkTimeEntriesBillable } — and the QBO UI has no master on/off toggle either, just those
+      // sub-options. Checking a non-existent field made this read false for EVERY company and
+      // raised a false alarm telling shops to switch on something already on.
+      // The honest signal is whether the block exists at all: a plan without time tracking has no
+      // TimeTrackingPrefs to return.
+      timeTrackingEnabled: timeBlock !== undefined,
       defaultItemId: str(defaultItem?.value),
       companyName: str((prefs.CompanyInfo as Record<string, unknown> | undefined)?.CompanyName),
     });
