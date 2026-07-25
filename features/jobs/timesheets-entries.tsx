@@ -24,6 +24,7 @@ import {
   tsTimeOpts,
   tsTechWeekJobIds,
   tsDayLabel,
+  tsDayShort,
   tsIsUnfinished,
   tsIsImplausible,
   tsUnrecordedDays,
@@ -44,6 +45,41 @@ function TsKindSeg({ entry, onPick }: TsKindSegProps) {
       {TS_KIND_KEYS.map((k) => (
         <button key={k} className={entry.kind === k ? "on" : ""} onClick={() => onPick(k)}>
           {TS_KINDS[k]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface TsDaySegProps {
+  entry: TimeEntry;
+  weekDates: string[];
+  onPick: (date: string) => void;
+}
+
+/**
+ * Which day this entry belongs to.
+ *
+ * Without it an entry could only ever live on the day it was created, so recording Wednesday's
+ * hours on Friday was impossible — the one thing manual entry exists for. The store and the
+ * server already moved an entry between days; only the control was missing.
+ *
+ * Constrained to the week on screen: moving an entry outside it would drop it out of view, which
+ * reads as deleted. Another week is reached with the week arrows, and the entry can be moved again
+ * from there.
+ */
+function TsDaySeg({ entry, weekDates, onPick }: TsDaySegProps) {
+  return (
+    <div className="ts-seg ts-dayseg">
+      {weekDates.map((d) => (
+        <button
+          key={d}
+          type="button"
+          className={entry.date === d ? "on" : ""}
+          aria-pressed={entry.date === d}
+          onClick={() => onPick(d)}
+        >
+          {tsDayShort(d)}
         </button>
       ))}
     </div>
@@ -180,7 +216,7 @@ interface TsEditorProps {
   onClose: () => void;
 }
 
-/** The expanded editor beneath a row: type, job (if job kind), in/out times. */
+/** The expanded editor beneath a row: day, type, job (if job kind), in/out times. */
 function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSetField, onClose }: TsEditorProps) {
   return (
     <div className="ts-editor">
@@ -190,6 +226,19 @@ function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSet
           every entry has one.
         </p>
       )}
+      {/* Day first: it is what the entry is ABOUT, and the thing most likely to need changing on
+          a row typed in after the fact. */}
+      <div className="ts-erow">
+        <label>Day</label>
+        <TsDaySeg
+          entry={entry}
+          weekDates={weekDates}
+          onPick={(date) => {
+            onSetPick(null);
+            onSetField("date", date);
+          }}
+        />
+      </div>
       <div className="ts-erow">
         <label>Type</label>
         <TsKindSeg

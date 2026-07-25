@@ -205,6 +205,17 @@ export function tsDayLabel(iso: string, weekday: "short" | "long" = "short"): st
   });
 }
 
+/** Compact weekday + date for the seven-across day picker: "Mon 20". Same noon parse as
+ *  tsDayLabel, for the same reason — a UTC-negative timezone would otherwise shift the date back
+ *  onto the previous day. */
+export function tsDayShort(iso: string): string {
+  const d = new Date(iso + "T12:00:00");
+  // Composed rather than asking toLocaleDateString for both parts: with {weekday, day} some
+  // locales render "22 Wed", and a day picker whose seven labels start with a number is unreadable
+  // at a glance. The weekday name still follows the reader's locale.
+  return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${d.getDate()}`;
+}
+
 /** 12h label from an "HH:MM" string. */
 export function tsTimeLabel(str: string | null): string {
   return str ? tsT12(timeToH(str)) : "";
