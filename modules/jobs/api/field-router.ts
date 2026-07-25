@@ -1,19 +1,23 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { toPage, asJobId } from "@mallet/shared/types";
+import { toPage, asJobId, asVisitId } from "@mallet/shared/types";
 import { orThrow } from "@/trpc/errors";
 import type { Principal } from "@mallet/identity";
+import { logger } from "@mallet/shared/observability";
 import { router, anyRole } from "@/trpc/init";
 import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
+import { SetVisitStatusUseCase } from "../app/set-visit-status";
+import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase } from "../app/job-execution-use-cases";
 import type { Job } from "../domain/job";
-import type { JobId } from "@mallet/shared/types";
+import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech } from "./money-redaction";
+import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES } from "./visit-clock-tap";
 
 // Field-surface add-addon input: description 1..200, optional client-authored id for idempotent
 // retry (mirrors the office addAddonInput's optional id), optional rate (tech with !seesPrice has
@@ -44,7 +48,45 @@ const assertOnJobIfTech = async (
   return job;
 };
 
+/**
+ * Visit-scoped authorisation. `assertOnJobIfTech` asks a JOB-level question — is this tech the job's
+ * assignee, or the assignee of ANY of its visits — which is right for "may they open this job" and
+ * wrong for "may they move this visit". On a two-visit job the job-level assignee would pass for a
+ * colleague's visit and could mark it done, moving someone else's work and writing time against it.
+ * Visit-scoped mutations must ask about the visit.
+ */
+const assertOnVisitIfTech = async (
+  repo: DrizzleJobRepository,
+  jobId: JobId,
+  visitId: VisitId,
+  principal: Principal,
+): Promise<Job | null> => {
+  if (principal.role !== "tech") return null;
+  const job = await repo.findById(jobId);
+  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+  if (!job.isAssignedToVisit(principal.userId, visitId)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "this visit isn't assigned to you" });
+  }
+  return job;
+};
+
 const jobIdInput = z.object({ jobId: z.string().uuid() });
+
+const jobIdVisitIdInput = z.object({
+  jobId: z.string().uuid(),
+  visitId: z.string().uuid(),
+});
+
+// The field surface's own status input. Narrower than the office's on purpose: the enum is the
+// two step buttons a technician has (see FIELD_VISIT_STATUSES), so ↩ Reopen and cancel stay
+// office-only at the API, not merely hidden in the UI.
+const fieldSetVisitStatusInput = jobIdVisitIdInput.extend({
+  status: z.enum(FIELD_VISIT_STATUSES),
+});
+
+// Every closed-job refusal on this surface says the same thing, and it names the next step rather
+// than the rule that was broken.
+const CLOSED_JOB_MESSAGE = "This job is closed — ask the office to change it.";
 
 export const createFieldRouter = () =>
   router({
@@ -80,11 +122,23 @@ export const createFieldRouter = () =>
     // start/complete return the full jobDTO — redact for techs like every other field
     // response (the client discards the body today, but money must never cross the wire
     // to a redacted tech's device).
+    //
+    // BOTH drive the clock, exactly as setVisitStatus does. These two are the big buttons on the My
+    // day agenda card — the most-used job controls a technician has, reachable without opening the
+    // modal at all. While they moved the job without moving the clock, a tech who worked entirely
+    // from the agenda recorded ten hours of unattributed `shop` time and ZERO job time: payroll
+    // right, job costing empty. The two entry points must not be able to diverge.
     start: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
       const dto = toJobDTO(orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
+      // Starting the job = arriving on it: close the drive, open job time. Never fails the write.
+      await runVisitClockTap(
+        { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
+        "arrived",
+        jobId,
+      );
       if (ctx.principal.role !== "tech") return dto;
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
       return redactMoneyForTech(dto, seesPrice);
@@ -95,10 +149,91 @@ export const createFieldRouter = () =>
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
       const dto = toJobDTO(orThrow(await new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
+      // Completing the job = done on it: close job time and auto-resume shop, so the technician
+      // stays on the clock between calls. Never fails the write.
+      await runVisitClockTap(
+        { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
+        "done",
+        jobId,
+      );
       if (ctx.principal.role !== "tech") return dto;
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
       return redactMoneyForTech(dto, seesPrice);
     }),
+
+    // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office
+    // endpoint (v1.visits.setVisitStatus stays ownerOrOffice and is NOT loosened); this is a
+    // sibling gated by assignment instead of by role, so a tech may only move a visit on a job
+    // they are on. The tap also drives their clock — see runVisitClockTap.
+    setVisitStatus: anyRole
+      .input(fieldSetVisitStatusInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const visitId = asVisitId(input.visitId);
+        const techJob = await assertOnVisitIfTech(repo, jobId, visitId, ctx.principal);
+        if (techJob?.isTerminal()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
+        }
+        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        const job = orThrow(
+          await useCase.exec({ jobId, visitId, status: input.status }),
+        );
+
+        // Hours are written AFTER the visit write, in the same transaction, and can never fail it.
+        await runVisitClockTap(
+          { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
+          CLOCK_TAP_FOR_STATUS[input.status],
+          jobId,
+        );
+
+        logger.info(
+          { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId, status: input.status },
+          "job_visit.status_set",
+        );
+        const dto = toJobDTO(job);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice);
+      }),
+
+    // "On my way" from the technician's own visit row. A STAMP, not a status change — the visit
+    // stays pending — which is why it needs its own procedure rather than a status value (routed
+    // through setVisitStatus it would arrive as the status the visit already has and be
+    // short-circuited as idempotent). Assignment-gated; drives the travel segment on the clock.
+    setVisitEnroute: anyRole
+      .input(jobIdVisitIdInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const visitId = asVisitId(input.visitId);
+        const techJob = await assertOnVisitIfTech(repo, jobId, visitId, ctx.principal);
+        if (techJob?.isTerminal()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
+        }
+        const useCase = new SetVisitEnrouteUseCase(repo, ctx.deps.clock);
+        const job = orThrow(await useCase.exec({ jobId, visitId }));
+
+        // Run on EVERY tap, including a repeat one the use-case treats as idempotent: the clock
+        // decides for itself whether a segment is already open (planTap no-ops a double tap), and
+        // a second tap is then the only thing that can repair a segment an earlier failure lost.
+        await runVisitClockTap(
+          { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
+          "enroute",
+          jobId,
+        );
+
+        logger.info(
+          { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
+          "job_visit.enroute_set",
+        );
+        const dto = toJobDTO(job);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice);
+      }),
 
     // Mint a signed upload URL for a job photo from the field surface. Any role may call this
     // (techs are assignment-gated via assertOnJobIfTech). A non-terminal gate prevents minting

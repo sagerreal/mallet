@@ -31,6 +31,12 @@ const LIST_LIMIT = 500;
 // that predates this column (it was added with a NOT NULL default, but this stays defensive).
 const toLaborRateKind = (kind: string): LaborRateKind => (kind === "flat_fee" ? "flat_fee" : "hourly");
 
+// Mirrors org_settings.timezone's schema default. Duplicated here (rather than imported from the
+// Drizzle column) because a focused read that skips the lazy create has no row to read it from,
+// and the two must not drift: a shop that never opened Settings must resolve to the same zone
+// whichever path asks.
+const DEFAULT_TIMEZONE = "America/Los_Angeles";
+
 /**
  * Real persistence. Constructed with a tenant-scoped tx (withTenant already set
  * `app.current_org_id`), so RLS appends `org_id = current_org_id()` to every statement.
@@ -99,6 +105,7 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         hoursSatClose: p.hoursSatClose,
         hoursSunOpen: p.hoursSunOpen,
         hoursSunClose: p.hoursSunClose,
+        timezone: p.timezone,
         areaCities: p.areaCities,
         areaRadiusMi: p.areaRadiusMi,
         // Service origin (front-desk vertical coverage). Address + its geocoded point;
@@ -134,6 +141,18 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
       .limit(1);
     // No row yet (settings never opened) → the column's schema default: visible.
     return rows[0]?.techSeesPrice ?? true;
+  }
+
+  async getTimezone(): Promise<string> {
+    const rows = await this.tx
+      .select({ timezone: orgSettings.timezone })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    // No row yet (settings never opened) → the column's schema default. Falling back rather than
+    // lazy-creating keeps this read side-effect-free, and a shop that never opened Settings still
+    // gets a real zone instead of UTC, which would file a West-coast evening on tomorrow's sheet.
+    return rows[0]?.timezone ?? DEFAULT_TIMEZONE;
   }
 
   /**

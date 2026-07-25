@@ -17,6 +17,25 @@ import type { TimeEntry } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoToTimeEntry } from "@/lib/store/dto-mapper";
 import { reportWriteError } from "../write-error";
+import { appErrorField } from "@/lib/trpc/error-map";
+import {
+  TS_DEFAULT_START,
+  TS_DEFAULT_END,
+  UNFINISHED_DAYS_TAG,
+} from "@/features/jobs/timesheet-constants";
+import { tsUnfinishedDays } from "@/features/jobs/timesheet-derive";
+
+/**
+ * What an approval attempt did.
+ *
+ * `unfinished` is not a failure to retry — it is the shop being told which days it must fix first,
+ * so it carries the days instead of routing through the generic write-error toast.
+ */
+export type ApproveWeekOutcome =
+  | { readonly status: "approved" }
+  | { readonly status: "unfinished"; readonly days: readonly string[] }
+  /** Anything else. Already surfaced to the user through the write-error toast. */
+  | { readonly status: "failed" };
 
 export interface TimesheetsSlice {
   timeEntries: TimeEntry[];
@@ -24,7 +43,7 @@ export interface TimesheetsSlice {
   addTimeEntry: (techId: string, date: string) => TimeEntry;
   updateTimeEntry: (id: string, patch: Partial<TimeEntry>) => void;
   deleteTimeEntry: (id: string) => void;
-  approveTechWeek: (techId: string, weekDates: string[]) => void;
+  approveTechWeek: (techId: string, weekDates: string[]) => Promise<ApproveWeekOutcome>;
   /** Management-only: un-approve an approved entry (ownerOrOffice). Bypasses the approved-entry guard. */
   reopenEntry: (id: string) => void;
 }
@@ -36,20 +55,26 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
 
   addTimeEntry: (techId, date) => {
     const id = crypto.randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
-    const isToday = date === today;
+    // A recorded entry is always COMPLETE — start and end both set.
+    //
+    // This used to branch on "is `date` today?" and produce an open-ended running timer instead.
+    // That was a dead end from two directions: the row editor refuses to open for a running entry
+    // (see handleEdit), so the hours could never be filled in; and an entry with no end can't be
+    // totalled, can't be approved, and is rejected by the QuickBooks push. Intent belongs to the
+    // caller, not to the calendar — and the only caller is the office grid, which records work that
+    // already happened.
     const entry: TimeEntry = {
       id,
       techId,
       date,
       kind: "job",
       jobId: null,
-      start: "08:00",
-      end: isToday ? null : "16:00",
+      start: TS_DEFAULT_START,
+      end: TS_DEFAULT_END,
       note: "",
       src: "manual",
       status: "draft",
-      running: isToday ? true : false,
+      running: false,
     };
 
     // 1. Optimistic update.
@@ -150,7 +175,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       });
   },
 
-  approveTechWeek: (techId, weekDates) => {
+  approveTechWeek: async (techId, weekDates) => {
     const prior = get().timeEntries.slice();
 
     // 1. Optimistic update.
@@ -162,14 +187,24 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       ),
     }));
 
-    // 2. Persist.
-    trpcVanilla.v1.timesheets.approveWeek
-      .mutate({ techUserId: techId, dates: weekDates })
-      .catch((err: unknown) => {
-        // 3. Rollback on error.
-        set({ timeEntries: prior });
-        reportWriteError("approveTechWeek", err);
-      });
+    try {
+      // 2. Persist.
+      await trpcVanilla.v1.timesheets.approveWeek.mutate({ techUserId: techId, dates: weekDates });
+      return { status: "approved" };
+    } catch (err: unknown) {
+      // 3. Rollback on error.
+      set({ timeEntries: prior });
+
+      // The server refuses the WHOLE week when any day is still on the clock, and TAGS that
+      // refusal — branch on the tag, never on the wording of the sentence. The days are named from
+      // the rows we just restored, which are the same rows the server judged.
+      if (appErrorField(err) === UNFINISHED_DAYS_TAG) {
+        return { status: "unfinished", days: tsUnfinishedDays(prior, techId, weekDates) };
+      }
+
+      reportWriteError("approveTechWeek", err);
+      return { status: "failed" };
+    }
   },
 
   reopenEntry: (id) => {

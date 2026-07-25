@@ -9,14 +9,15 @@
  * the tech-job-modal (checklist check-offs, found work) reads when a card is tapped.
  *
  * Actions: v1.field.start / v1.field.complete — assignee-guarded on the server.
- * Time clock card: kept as local/deferred state (clock → timesheets not yet wired).
+ * The day clock at the top is its own component and its own query — a real time entry, not page
+ * state, so it survives a reload (see features/field/day-clock.tsx).
  */
 
-import { useState } from "react";
 import { api } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { DayClock } from "@/features/field/day-clock";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -112,62 +113,6 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
 }
 
 // ============================================================================
-// Clock card (local/deferred — not wired to timesheets yet)
-// ============================================================================
-
-const TS_KINDS: Record<string, string> = {
-  travel: "Travel",
-  break: "Break",
-  shop: "Shop",
-};
-
-interface ClockCardProps {
-  clockState: "idle" | "travel" | "break" | "shop";
-  onClockStart: (kind: "travel" | "break" | "shop") => void;
-  onClockStop: () => void;
-}
-
-function ClockCard({ clockState, onClockStart, onClockStop }: ClockCardProps) {
-  return (
-    <div className="card clockcard" style={{ marginBottom: "var(--space-3)" }}>
-      <div className="clock-head">
-        <div className="clock-meta">
-          <b style={{ fontWeight: 700 }}>Time clock</b>
-          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
-            {clockState !== "idle" ? (
-              <span style={{ color: "var(--green-700)", fontWeight: 600 }}>
-                {`● ${TS_KINDS[clockState] ?? clockState} running`}
-              </span>
-            ) : (
-              "Not clocked in"
-            )}
-          </div>
-        </div>
-        <div className="clock-acts">
-          {clockState !== "idle" ? (
-            <button className="btn primary" onClick={onClockStop}>
-              {`Stop ${(TS_KINDS[clockState] ?? clockState).toLowerCase()}`}
-            </button>
-          ) : (
-            <>
-              <button className="btn sm" onClick={() => onClockStart("travel")}>
-                Travel
-              </button>
-              <button className="btn sm" onClick={() => onClockStart("break")}>
-                Break
-              </button>
-              <button className="btn sm" onClick={() => onClockStart("shop")}>
-                Shop
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
 // Page
 // ============================================================================
 
@@ -184,7 +129,6 @@ export default function MyDayPage() {
     onSuccess: () => { void refetch(); },
   });
 
-  const [clockState, setClockState] = useState<"idle" | "travel" | "break" | "shop">("idle");
   const openModal = useOpenModal();
 
   const isPending = startMutation.isPending || completeMutation.isPending;
@@ -203,21 +147,19 @@ export default function MyDayPage() {
     completeMutation.mutate({ jobId });
   }
 
-  function handleClockStart(kind: "travel" | "break" | "shop"): void {
-    // deferred: clock → timesheets time entries
-    setClockState(kind);
-  }
+  const items = data?.items ?? [];
 
-  function handleClockStop(): void {
-    // deferred: clock → timesheets time entries
-    setClockState("idle");
-  }
+  return (
+    <>
+      <h1>My day</h1>
+      <div className="sub">{"Today's jobs."}</div>
 
-  if (isLoading) {
-    return (
-      <>
-        <h1>My day</h1>
-        <div className="card agenda" style={{ marginTop: "var(--space-3)" }}>
+      {/* The day clock owns its own query — it must not wait on the agenda, and the agenda's
+          loading state must not blank the row that says whether he is being paid. */}
+      <DayClock />
+
+      {isLoading ? (
+        <div className="card agenda">
           {[0, 1, 2].map((i) => (
             <div key={i} className="sk-row">
               <div className="sk" style={{ width: 64, height: 14, flexShrink: 0 }} />
@@ -228,41 +170,24 @@ export default function MyDayPage() {
             </div>
           ))}
         </div>
-      </>
-    );
-  }
-
-  const items = data?.items ?? [];
-
-  return (
-    <>
-      <h1>My day</h1>
-      <div className="sub">{"Today's jobs."}</div>
-
-      {/* Clock card */}
-      <ClockCard
-        clockState={clockState}
-        onClockStart={handleClockStart}
-        onClockStop={handleClockStop}
-      />
-
-      {/* Agenda */}
-      <div className="card agenda">
-        {items.length > 0 ? (
-          items.map((job) => (
-            <JobCard
-              key={job.id}
-              job={job}
-              onOpen={handleOpen}
-              onStart={handleStart}
-              onComplete={handleComplete}
-              isPending={isPending}
-            />
-          ))
-        ) : (
-          <div className="empty-att">No jobs assigned to you today.</div>
-        )}
-      </div>
+      ) : (
+        <div className="card agenda">
+          {items.length > 0 ? (
+            items.map((job) => (
+              <JobCard
+                key={job.id}
+                job={job}
+                onOpen={handleOpen}
+                onStart={handleStart}
+                onComplete={handleComplete}
+                isPending={isPending}
+              />
+            ))
+          ) : (
+            <div className="empty-att">No jobs assigned to you today.</div>
+          )}
+        </div>
+      )}
     </>
   );
 }

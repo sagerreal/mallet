@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { userMessage } from "./error-map";
+import { userMessage, appErrorField, APP_ERROR_FIELD } from "./error-map";
 
 const trpcError: (code: string) => { data: { code: string }; message: string } = (code) => ({ data: { code }, message: "raw server text" });
 
@@ -17,5 +17,24 @@ describe("userMessage", () => {
     expect(userMessage(trpcError("BAD_REQUEST"))).toBe("raw server text");
     expect(userMessage(trpcError("NOT_FOUND"))).toBe("raw server text");
     expect(userMessage(trpcError("CONFLICT"))).toBe("raw server text");
+  });
+});
+
+describe("appErrorField", () => {
+  it("reads the tag a domain refusal put on the error", () => {
+    expect(appErrorField({ data: { code: "BAD_REQUEST", [APP_ERROR_FIELD]: "unfinishedDays" } })).toBe("unfinishedDays");
+  });
+
+  it("returns null for anything that carries no tag", () => {
+    expect(appErrorField({ data: { code: "BAD_REQUEST" } })).toBeNull();
+    expect(appErrorField({ data: null })).toBeNull();
+    expect(appErrorField(new Error("connection refused"))).toBeNull();
+    expect(appErrorField(null)).toBeNull();
+    expect(appErrorField("BAD_REQUEST")).toBeNull();
+  });
+
+  it("refuses a non-string tag rather than handing back junk to branch on", () => {
+    expect(appErrorField({ data: { [APP_ERROR_FIELD]: 42 } })).toBeNull();
+    expect(appErrorField({ data: { [APP_ERROR_FIELD]: "" } })).toBeNull();
   });
 });

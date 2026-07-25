@@ -37,6 +37,11 @@ export const orgSettings = pgTable(
     hoursSatClose: integer("hours_sat_close").notNull().default(0),
     hoursSunOpen: integer("hours_sun_open").notNull().default(0),
     hoursSunClose: integer("hours_sun_close").notNull().default(0),
+    // IANA zone (e.g. "America/Los_Angeles"). REQUIRED to turn a job's timestamp into a timesheet
+    // row: a tech finishing at 21:00 Pacific must land on today's sheet, not tomorrow's, and the
+    // server runs in UTC. Defaults to Pacific because the beachhead is West-coast trades; every
+    // shop should set its own during onboarding.
+    timezone: text("timezone").notNull().default("America/Los_Angeles"),
     areaCities: text("area_cities").notNull().default(""),
     areaRadiusMi: integer("area_radius_mi").notNull().default(25),
     // ── Service origin (front-desk vertical coverage) ─────────────────────────

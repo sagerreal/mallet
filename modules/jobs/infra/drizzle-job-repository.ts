@@ -110,6 +110,7 @@ export class DrizzleJobRepository implements JobRepository {
       lat: vp.lat ?? null,
       lng: vp.lng ?? null,
       status: vp.status,
+      enrouteAt: vp.enrouteAt,
       startedAt: vp.startedAt,
       completedAt: vp.completedAt,
       notes: vp.notes,

@@ -15,6 +15,9 @@ export interface QboConnectionRow {
   status: string;
   connectedByUserId: string | null;
   lastSyncAt: Date | null;
+  defaultItemQboId: string | null;
+  defaultItemName: string | null;
+  sendApprovedHours: boolean;
   createdAt: Date;
   updatedAt: Date;
   disconnectedAt: Date | null;
@@ -32,6 +35,9 @@ export const toDomain = (row: QboConnectionRow): QboConnection => {
     status: row.status as QboConnectionStatus,
     connectedByUserId: row.connectedByUserId,
     lastSyncAt: row.lastSyncAt,
+    defaultItemQboId: row.defaultItemQboId,
+    defaultItemName: row.defaultItemName,
+    sendApprovedHours: row.sendApprovedHours,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     disconnectedAt: row.disconnectedAt,
@@ -57,6 +63,9 @@ export const toRow = (connection: QboConnection): QboConnectionRow => {
     status: p.status,
     connectedByUserId: p.connectedByUserId,
     lastSyncAt: p.lastSyncAt,
+    defaultItemQboId: p.defaultItemQboId,
+    defaultItemName: p.defaultItemName,
+    sendApprovedHours: p.sendApprovedHours,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     disconnectedAt: p.disconnectedAt,

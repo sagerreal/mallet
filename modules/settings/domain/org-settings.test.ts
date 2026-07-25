@@ -26,6 +26,7 @@ const baseProps = (overrides: Partial<OrgSettingsProps> = {}): OrgSettingsProps 
   hoursSatClose: 0,
   hoursSunOpen: 0,
   hoursSunClose: 0,
+  timezone: "America/Los_Angeles",
   areaCities: "Pleasanton",
   areaRadiusMi: 25,
   serviceOriginAddress: null,
@@ -160,5 +161,37 @@ describe("OrgSettings.defaultBooking", () => {
     expect(typeof cfg.notServices).toBe("string");
     expect(typeof cfg.serviceFee).toBe("number");
     expect(typeof cfg.feeCredited).toBe("boolean");
+  });
+});
+
+// The timezone is what turns a job timestamp into a timesheet row. A bad value is worse than a
+// missing one: Intl silently falls back to UTC, so a 21:00 Pacific finish would land on tomorrow's
+// sheet with nothing to indicate anything went wrong.
+describe("timezone", () => {
+  const withZone = (timezone: string) =>
+    OrgSettings.create(baseProps({ timezone }));
+
+  it.each(["America/Los_Angeles", "America/New_York", "UTC", "Europe/London"])(
+    "accepts the real IANA zone %s",
+    (zone) => {
+      expect(withZone(zone).ok).toBe(true);
+    },
+  );
+
+  // Intl ACCEPTS these legacy abbreviations and silently remaps them. "EST" becomes
+  // America/Panama and "MST" becomes America/Phoenix — neither observes daylight saving, so a New
+  // York shop typing "EST" would be an hour out for eight months of the year on every timesheet.
+  it.each([
+    ["a made-up zone", "Mars/Olympus_Mons"],
+    ["PST, a legacy alias", "PST"],
+    ["EST, which silently means America/Panama and never observes DST", "EST"],
+    ["MST, which silently means America/Phoenix", "MST"],
+    ["GMT, which is not a canonical IANA name", "GMT"],
+    ["empty", ""],
+    ["whitespace", "   "],
+  ])("rejects %s rather than silently falling back", (_label, zone) => {
+    const res = withZone(zone);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("timezone");
   });
 });

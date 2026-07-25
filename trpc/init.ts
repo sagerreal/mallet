@@ -6,6 +6,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
 import type { Principal, Role, VerifiedToken } from "@mallet/identity";
+import { withAppErrorTag } from "./errors";
 import type { AppDeps } from "./deps";
 
 // Request context. `principal`/`tx` are null on the base context and narrowed to non-null by
@@ -19,7 +20,13 @@ export interface Context {
   readonly deps: AppDeps;
 }
 
-const t = initTRPC.context<Context>().create({ transformer: superjson });
+const t = initTRPC.context<Context>().create({
+  transformer: superjson,
+  // Domain refusals are TAGGED as well as worded (see toTRPCError). Copy the tag onto the error
+  // data so a client can branch on which rule refused instead of matching the sentence it wrote.
+  // Errors without a tag are returned exactly as tRPC shaped them.
+  errorFormatter: ({ shape, error }) => withAppErrorTag(shape, error.cause),
+});
 
 export const router = t.router;
 

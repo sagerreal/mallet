@@ -4,12 +4,15 @@ import { router, ownerOrOffice, anyRole } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asTimeEntryId, asUserId, asJobId, toPage } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
+import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleTimeEntryRepository } from "../infra/drizzle-time-entry-repository";
 import { CreateTimeEntryUseCase } from "../app/create-time-entry";
 import { ListTimeEntriesUseCase } from "../app/list-time-entries";
 import { UpdateTimeEntryUseCase } from "../app/update-time-entry";
 import { RemoveTimeEntryUseCase } from "../app/remove-time-entry";
 import { ApproveWeekUseCase } from "../app/approve-week";
+import { SetClockStateUseCase } from "../app/set-clock-state";
+import type { ClockTap } from "../domain/clock";
 import { timeEntryDTO, toTimeEntryDTO } from "./time-entry-dto";
 
 const paginatedDTO = z.object({
@@ -63,6 +66,36 @@ const reopenInput = z.object({
   entryId: z.string().uuid(),
 });
 
+/**
+ * The DAY-level taps — the two-tap punch on My day, plus the break either side of lunch.
+ *
+ * The job-level taps (On my way / Arrived / Done) are deliberately absent: they name a job, and a
+ * job tap must be gated by "is this job assigned to you" and written in the same transaction as the
+ * visit. That is v1.field.*; routing them through here would hand a technician a way to file job
+ * hours against a job they were never sent to.
+ */
+const DAY_CLOCK_TAPS = ["start_day", "break", "end_break", "end_day"] as const satisfies readonly ClockTap[];
+
+const clockTapInput = z.object({
+  tap: z.enum(DAY_CLOCK_TAPS),
+  /**
+   * When the tap happened, per the DEVICE. A tap made in a crawlspace with no signal is retried
+   * when the van reaches the road, and the original moment is the one that should be recorded.
+   * Never trusted: the domain bounds it against server time in both directions before it becomes
+   * hours, so a wrong phone clock cannot backdate a payroll record.
+   */
+  at: z.string().datetime(),
+});
+
+/**
+ * What the caller's clock is doing now: the single running entry, or null when they are off the
+ * clock. Every clock endpoint answers with this same shape so the client has exactly one thing to
+ * render and no way to drift from the database.
+ */
+const clockStateDTO = z.object({
+  open: timeEntryDTO.nullable(),
+});
+
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
 // request's tx + ports, delegate, map the result. No business logic lives here except the
 // own-entry authz guard (tech may only touch their own entries; owner/office may touch any).
@@ -92,6 +125,58 @@ export const createTimesheetRouter = () =>
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         });
         return { items: result.items.map(toTimeEntryDTO), nextCursor: result.nextCursor };
+      }),
+
+    /**
+     * The caller's own running entry, or null. Takes no input ON PURPOSE: a clock belongs to the
+     * person holding the phone, so there is no id to pass and therefore nothing to forge.
+     *
+     * This is the whole state of the day row on My day, and it is why that row survives a reload —
+     * the previous version kept it in React state and lost it on every refresh.
+     */
+    open: anyRole
+      .output(clockStateDTO)
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleTimeEntryRepository(ctx.tx, ctx.principal.orgId);
+        const entry = await repo.findOpenForTech(asUserId(ctx.principal.userId));
+        return { open: entry === null ? null : toTimeEntryDTO(entry) };
+      }),
+
+    /**
+     * One day-level clock tap: Start day, Break, End break, End day.
+     *
+     * Unlike the clock tap that rides along with a visit write (which is swallowed rather than
+     * allowed to fail a dispatch action), this tap IS the user's action. A refusal must reach them:
+     * the button rolls back and says so, because a technician who thinks he clocked in and did not
+     * is the exact failure this feature exists to prevent.
+     */
+    clockTap: anyRole
+      .input(clockTapInput)
+      .output(clockStateDTO)
+      .mutation(async ({ ctx, input }) => {
+        const orgId = ctx.principal.orgId;
+        // The clock records the hours of the person tapping — never an id from the wire. An owner
+        // who also runs calls punches his own clock here, exactly as a tech does.
+        const techUserId = asUserId(ctx.principal.userId);
+        const repo = new DrizzleTimeEntryRepository(ctx.tx, orgId);
+        // The shop's zone is read HERE and injected: timesheets must not import the settings
+        // module's domain, and a wrong zone files a plumber's evening on tomorrow's sheet, so it
+        // belongs where it can be seen being passed in.
+        const timeZone = await new DrizzleSettingsRepository(ctx.tx, orgId).getTimezone();
+        const useCase = new SetClockStateUseCase(repo, ctx.deps.clock, ctx.deps.ids, timeZone);
+
+        orThrow(
+          await useCase.exec(
+            { techUserId, tap: input.tap, jobId: null, at: new Date(input.at) },
+            orgId,
+          ),
+        );
+
+        // Re-read rather than reporting the plan's own `opened`: that is null both for End day and
+        // for a no-op double tap, and a client told "null" after a double-tapped Break would show
+        // the technician as off the clock while the database has him running.
+        const entry = await repo.findOpenForTech(techUserId);
+        return { open: entry === null ? null : toTimeEntryDTO(entry) };
       }),
 
     create: anyRole
@@ -204,7 +289,7 @@ export const createTimesheetRouter = () =>
       .output(z.object({ approved: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleTimeEntryRepository(ctx.tx, ctx.principal.orgId);
-        const useCase = new ApproveWeekUseCase(repo, ctx.deps.clock);
+        const useCase = new ApproveWeekUseCase(repo, ctx.deps.clock, ctx.deps.bus);
         const result = await useCase.exec(
           {
             techUserId: asUserId(input.techUserId),

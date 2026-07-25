@@ -72,6 +72,14 @@ export interface SettingsRepository {
    */
   getTechSeesPrice(): Promise<boolean>;
 
+  /**
+   * Focused read of the shop's IANA timezone — used wherever an instant has to become a
+   * calendar day, above all the timesheet clock (a tech finishing at 21:00 Pacific belongs on
+   * today's sheet, not tomorrow's, and the server runs in UTC). Returns the schema default when
+   * the org_settings row does not exist yet, mirroring getTechSeesPrice (no lazy create).
+   */
+  getTimezone(): Promise<string>;
+
   // --- pricebook_items ---------------------------------------------------
 
   /**

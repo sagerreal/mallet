@@ -2,13 +2,17 @@
 
 /**
  * features/timesheets/timesheets-hydrator.tsx
- * Mounts in both the office layout and the field layout. Subscribes to
- * trpc.v1.timesheets.list and writes the result into the Zustand store so
- * the Timesheets panel (office) and My Hours page (field) both see real DB data.
+ * Mounts in the OFFICE layout only (app/(office)/layout.tsx). Subscribes to
+ * trpc.v1.timesheets.list and writes the result into the Zustand store, which is
+ * what the office Timesheets panel reads.
  *
- * For a tech caller the backend auto-scopes the list to their own entries
- * (techUserId override in the router). For owner/office the list returns all
- * org entries. No client-side filter needed — the backend handles scoping.
+ * It is deliberately NOT mounted in the field layout: My Hours queries
+ * v1.timesheets.list directly and owns its own writes, so a second hydrator
+ * there would fill a store nothing on that surface reads.
+ *
+ * The backend scopes the list by caller — a tech gets only their own entries
+ * (techUserId override in the router), owner/office get all org entries. No
+ * client-side filter needed.
  *
  * refetchOnWindowFocus: false — same clobber-avoidance as other hydrators.
  * Optimistic mutations in timesheets-slice reconcile with the server immediately

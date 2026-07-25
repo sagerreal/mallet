@@ -466,6 +466,7 @@ const visitDTO = {
   scheduledEnd: "11:00",
   durationMinutes: null,
   status: "pending" as const,
+  enrouteAt: null as string | null,
   startedAt: null,
   completedAt: null,
   notes: null,
@@ -537,6 +538,42 @@ describe("toStoreVisit dur precedence", () => {
       durationMinutes: null,
     } as never);
     expect(v.dur).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toStoreVisit — "enroute" is DERIVED from the enroute_at stamp, not a backend
+// status. This derivation is the only thing that makes "On my way" survive a reload.
+// ---------------------------------------------------------------------------
+
+const ENROUTE_AT = "2026-07-15T08:40:00.000Z";
+
+describe("toStoreVisit enroute derivation", () => {
+  it("pending + an enrouteAt stamp → 'enroute'", () => {
+    const v = toStoreVisit({ ...visitDTO, status: "pending", enrouteAt: ENROUTE_AT } as never);
+    expect(v.status).toBe("enroute");
+  });
+
+  it("pending with no stamp → 'scheduled'", () => {
+    const v = toStoreVisit({ ...visitDTO, status: "pending", enrouteAt: null } as never);
+    expect(v.status).toBe("scheduled");
+  });
+
+  it("in_progress with a stamp → 'onsite' (arrival outranks the trip)", () => {
+    const v = toStoreVisit({ ...visitDTO, status: "in_progress", enrouteAt: ENROUTE_AT } as never);
+    expect(v.status).toBe("onsite");
+  });
+
+  it("complete with a stamp → 'done'", () => {
+    const v = toStoreVisit({ ...visitDTO, status: "complete", enrouteAt: ENROUTE_AT } as never);
+    expect(v.status).toBe("done");
+  });
+
+  it("a DTO with no enrouteAt field at all reads as 'scheduled', not enroute", () => {
+    // Guards the legacy/partial-DTO path: undefined must not be truthy-tested into a trip.
+    const { enrouteAt: _dropped, ...withoutStamp } = visitDTO;
+    const v = toStoreVisit({ ...withoutStamp, status: "pending" } as never);
+    expect(v.status).toBe("scheduled");
   });
 });
 

@@ -31,6 +31,7 @@ export const baseSettingsProps = (o: Partial<OrgSettingsProps> = {}): OrgSetting
   hoursSatClose: 0,
   hoursSunOpen: 0,
   hoursSunClose: 0,
+  timezone: "America/Los_Angeles",
   areaCities: "Pleasanton",
   areaRadiusMi: 25,
   serviceOriginAddress: null,

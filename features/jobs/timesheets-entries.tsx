@@ -23,6 +23,10 @@ import {
   tsHours,
   tsTimeOpts,
   tsTechWeekJobIds,
+  tsDayLabel,
+  tsIsUnfinished,
+  tsIsImplausible,
+  tsUnrecordedDays,
 } from "./timesheet-derive";
 
 // Which sub-picker is open inside the row editor ('job'|'start'|'end'|none).
@@ -128,7 +132,16 @@ interface TsTimePickerProps {
 /** In/out time dropdown across the configured timesheet window. */
 function TsTimePicker({ entry, field, open, onToggle, onPick }: TsTimePickerProps) {
   const val = entry[field];
-  const cur = val ? tsTimeLabel(val) : field === "end" && entry.running ? "running" : "Set time";
+  const cur = val
+    ? tsTimeLabel(val)
+    : field === "end" && entry.running
+      ? "Still running"
+      : "Set time";
+  // An out time before the in time is not a shift, and the domain rejects it — so it is never
+  // offered. Otherwise stopping a run that began at 3pm by picking 9am would fail with a generic
+  // "couldn't update" toast, which tells the office nothing about what it did wrong.
+  const opts =
+    field === "end" ? tsTimeOpts().filter((o) => o.h > timeToH(entry.start)) : tsTimeOpts();
   return (
     <>
       <button type="button" className={`ts-trig ${val ? "" : "empty"}`} onClick={onToggle}>
@@ -137,7 +150,10 @@ function TsTimePicker({ entry, field, open, onToggle, onPick }: TsTimePickerProp
       </button>
       {open && (
         <div className="ts-list ts-timelist">
-          {tsTimeOpts().map((o) => (
+          {opts.length === 0 && (
+            <div className="grp">No later time in the day — correct the in time first</div>
+          )}
+          {opts.map((o) => (
             <button
               key={o.t}
               className={`ts-opt ${val && Math.abs(timeToH(val) - o.h) < 0.001 ? "sel" : ""}`}
@@ -168,6 +184,12 @@ interface TsEditorProps {
 function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSetField, onClose }: TsEditorProps) {
   return (
     <div className="ts-editor">
+      {entry.running && (
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+          Still on the clock. Set an out time to stop it — this week can&rsquo;t be approved until
+          every entry has one.
+        </p>
+      )}
       <div className="ts-erow">
         <label>Type</label>
         <TsKindSeg
@@ -248,9 +270,47 @@ interface TsEntryRowProps {
   pick: TsPick;
   onSetPick: (p: TsPick) => void;
   onEdit: () => void;
+  onStop: () => void;
   onDelete: () => void;
   onSetField: (field: keyof TimeEntry, val: string | number) => void;
   onCloseEdit: () => void;
+}
+
+/**
+ * The row's controls. A running entry used to be inert here — no edit, no delete, no way to end it —
+ * so a technician who forgot to clock out could not be fixed by anyone. Stop opens the row's
+ * out-time picker: the office sets the real end time, nobody invents one. Approved rows carry no
+ * controls at all, because approved means locked.
+ */
+function TsRowActions({
+  entry,
+  onEdit,
+  onStop,
+  onDelete,
+}: Pick<TsEntryRowProps, "entry" | "onEdit" | "onStop" | "onDelete">) {
+  if (entry.status === "approved") {
+    return (
+      <span className="ts-eact">
+        <span className="muted">✓</span>
+      </span>
+    );
+  }
+  return (
+    <span className={`ts-eact${entry.running ? " live" : ""}`}>
+      {entry.running ? (
+        <button className="btn sm" onClick={onStop}>
+          Stop
+        </button>
+      ) : (
+        <button className="ts-del" title="Edit" onClick={onEdit}>
+          ✎
+        </button>
+      )}
+      <button className="ts-del" title="Delete entry" onClick={onDelete}>
+        ✕
+      </button>
+    </span>
+  );
 }
 
 /** One entry line; expands into TsEditor when `editing`. */
@@ -264,6 +324,7 @@ function TsEntryRow({
   pick,
   onSetPick,
   onEdit,
+  onStop,
   onDelete,
   onSetField,
   onCloseEdit,
@@ -286,25 +347,16 @@ function TsEntryRow({
         <span className="ts-ehrs">
           {entry.running ? "··" : tsHours(entry).toFixed(2)}
           {entry.kind === "break" && <span className="upd">unpaid</span>}
-        </span>
-        <span className="ts-eact">
-          {appr ? (
-            <span className="muted">✓</span>
-          ) : entry.running ? (
-            <span className="muted" style={{ fontSize: "var(--type-xs)" }}>
-              live
+          {/* A finished row too long to be a measurement — most often a break left running, which
+              silently short-pays the tech for the whole afternoon and which nothing else in the
+              system objects to. Flagged, never auto-corrected. */}
+          {tsIsImplausible(entry) && (
+            <span className="upd" title="This looks too long to be right — check it before approving">
+              check
             </span>
-          ) : (
-            <>
-              <button className="ts-del" title="Edit" onClick={onEdit}>
-                ✎
-              </button>
-              <button className="ts-del" title="Delete entry" onClick={onDelete}>
-                ✕
-              </button>
-            </>
           )}
         </span>
+        <TsRowActions entry={entry} onEdit={onEdit} onStop={onStop} onDelete={onDelete} />
       </div>
       {editing && (
         <TsEditor
@@ -325,6 +377,8 @@ function TsEntryRow({
 
 export interface TsEntriesBlockProps {
   entries: TimeEntry[];
+  /** Whose week this is — needed to spot scheduled days with no entries at all. */
+  techId: string;
   jobs: Job[];
   leads: Lead[];
   techs: Tech[];
@@ -333,14 +387,21 @@ export interface TsEntriesBlockProps {
   pick: TsPick;
   onSetPick: (p: TsPick) => void;
   onEdit: (id: string) => void;
+  onStop: (id: string) => void;
   onDelete: (id: string) => void;
   onSetField: (id: string, field: keyof TimeEntry, val: string | number) => void;
   onCloseEdit: () => void;
 }
 
-/** The week's entries grouped by day, each day tallied in paid hours. */
-export function TsEntriesBlock({
-  entries,
+interface TsDayGroupProps extends Omit<TsEntriesBlockProps, "entries" | "techId"> {
+  date: string;
+  dayEntries: TimeEntry[];
+}
+
+/** One day: its header tally, then its rows — or the fact that nothing was recorded. */
+function TsDayGroup({
+  date,
+  dayEntries,
   jobs,
   leads,
   techs,
@@ -349,51 +410,74 @@ export function TsEntriesBlock({
   pick,
   onSetPick,
   onEdit,
+  onStop,
   onDelete,
   onSetField,
   onCloseEdit,
-}: TsEntriesBlockProps) {
-  const es = tsSortEntries(entries);
-  if (!es.length) return <div className="empty-att">No entries this week.</div>;
+}: TsDayGroupProps) {
+  const paid = tsMoney(dayEntries.reduce((s, e) => s + tsPaid(e), 0));
+  const unfinished = dayEntries.some((e) => e.status !== "approved" && tsIsUnfinished(e));
+  return (
+    <div className="ts-day">
+      <div className="ts-dhdr">
+        <span>{tsDayLabel(date, "long")}</span>
+        <span className="num">
+          {paid.toFixed(2)} h
+          {/* Say WHY this day's total is short, on the day itself — the refusal above names the
+              same days, and this is where the office has to act. */}
+          {unfinished && (
+            <span style={{ color: "var(--amber)", marginLeft: "var(--space-2)" }}>
+              needs an end time
+            </span>
+          )}
+        </span>
+      </div>
+      {dayEntries.length === 0 ? (
+        <div className="ts-e">
+          <span className="ts-elabel muted">No hours recorded</span>
+        </div>
+      ) : (
+        dayEntries.map((e) => (
+          <TsEntryRow
+            key={e.id}
+            entry={e}
+            jobs={jobs}
+            leads={leads}
+            techs={techs}
+            weekDates={weekDates}
+            editing={editId === e.id}
+            pick={pick}
+            onSetPick={onSetPick}
+            onEdit={() => onEdit(e.id)}
+            onStop={() => onStop(e.id)}
+            onDelete={() => onDelete(e.id)}
+            onSetField={(field, val) => onSetField(e.id, field, val)}
+            onCloseEdit={onCloseEdit}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+/** The week's entries grouped by day, each day tallied in paid hours. */
+export function TsEntriesBlock({ entries, techId, ...rest }: TsEntriesBlockProps) {
   const byDay = new Map<string, TimeEntry[]>();
-  es.forEach((e) => {
-    const arr = byDay.get(e.date) ?? [];
-    arr.push(e);
-    byDay.set(e.date, arr);
+  tsSortEntries(entries).forEach((e) => {
+    byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
   });
-  const days = weekDates.filter((d) => byDay.has(d));
+
+  // A scheduled day with nothing recorded gets a day of its own. Rendering only the days that have
+  // rows would hide it completely, and a missing day looks exactly like a day off.
+  const unrecorded = new Set(tsUnrecordedDays(rest.jobs, techId, rest.weekDates, entries));
+  const days = rest.weekDates.filter((d) => byDay.has(d) || unrecorded.has(d));
+  if (days.length === 0) return <div className="empty-att">No entries this week.</div>;
+
   return (
     <>
-      {days.map((d) => {
-        const dayEntries = byDay.get(d) ?? [];
-        const dd = new Date(d + "T12:00:00");
-        const dp = tsMoney(dayEntries.reduce((s, e) => s + tsPaid(e), 0));
-        return (
-          <div className="ts-day" key={d}>
-            <div className="ts-dhdr">
-              <span>{dd.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</span>
-              <span className="num">{dp.toFixed(2)} h</span>
-            </div>
-            {dayEntries.map((e) => (
-              <TsEntryRow
-                key={e.id}
-                entry={e}
-                jobs={jobs}
-                leads={leads}
-                techs={techs}
-                weekDates={weekDates}
-                editing={editId === e.id}
-                pick={pick}
-                onSetPick={onSetPick}
-                onEdit={() => onEdit(e.id)}
-                onDelete={() => onDelete(e.id)}
-                onSetField={(field, val) => onSetField(e.id, field, val)}
-                onCloseEdit={onCloseEdit}
-              />
-            ))}
-          </div>
-        );
-      })}
+      {days.map((d) => (
+        <TsDayGroup key={d} date={d} dayEntries={byDay.get(d) ?? []} {...rest} />
+      ))}
     </>
   );
 }

@@ -35,6 +35,11 @@ export interface QboConnectionProps {
   readonly status: QboConnectionStatus;
   readonly connectedByUserId: string | null;
   readonly lastSyncAt: Date | null;
+  /** The QBO service item every pushed TimeActivity is filed under (QBO requires one). */
+  readonly defaultItemQboId: string | null;
+  readonly defaultItemName: string | null;
+  /** Opt-in. Connecting alone must never start writing to a shop's books. */
+  readonly sendApprovedHours: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly disconnectedAt: Date | null;
@@ -118,9 +123,21 @@ export class QboConnection {
       status: "disconnected",
       accessTokenSealed: "",
       refreshTokenSealed: "",
+      // Disconnecting must also stop the push, so a later reconnect doesn't silently resume it.
+      sendApprovedHours: false,
       disconnectedAt: now,
       updatedAt: now,
     });
+  }
+
+  /** Choose the service item that pushed hours are filed under. */
+  withDefaultItem(qboId: string, name: string, now: Date): QboConnection {
+    return this.next({ defaultItemQboId: qboId, defaultItemName: name, updatedAt: now });
+  }
+
+  /** Turn the push on or off. Off by default; the shop must ask for it explicitly. */
+  withSendApprovedHours(on: boolean, now: Date): QboConnection {
+    return this.next({ sendApprovedHours: on, updatedAt: now });
   }
 
   withLastSyncAt(now: Date): QboConnection {

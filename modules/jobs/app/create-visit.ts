@@ -63,6 +63,7 @@ export class CreateVisitUseCase {
       lat: cmd.lat ?? null,
       lng: cmd.lng ?? null,
       status: "pending",
+      enrouteAt: null, // a brand-new visit has no "On my way" stamp
       startedAt: null,
       completedAt: null,
       notes: cmd.notes,

@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
+import { QuickbooksSetup } from "./quickbooks-setup";
 
 type Outcome = "connected" | "failed" | "denied";
 
@@ -93,7 +94,10 @@ export function QuickbooksCard() {
             Company {s.realmId}
             {s.lastSyncAt ? ` · Last sent ${new Date(s.lastSyncAt).toLocaleDateString()}` : " · Nothing sent yet"}
           </div>
-          <div style={{ marginTop: "var(--space-3)" }}>
+          <div style={{ marginTop: "var(--space-4)" }}>
+            <QuickbooksSetup />
+          </div>
+          <div style={{ marginTop: "var(--space-4)" }}>
             <button
               className="btn quiet"
               disabled={disconnect.isPending}

@@ -617,6 +617,41 @@
       "when": 1784918700412,
       "tag": "0087_qbo_connections_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1784924681825,
+      "tag": "0088_superb_thena",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1784924681826,
+      "tag": "0089_qbo_sync_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1784943858479,
+      "tag": "0090_loose_echo",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1784945257729,
+      "tag": "0091_chilly_stepford_cuckoos",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1784945257730,
+      "tag": "0092_one_running_entry_per_tech",
+      "breakpoints": true
     }
   ]
 }

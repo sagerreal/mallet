@@ -7,8 +7,17 @@ import { DrizzleQboConnectionRepository } from "../infra/drizzle-qbo-connection-
 import { GetQboStatus } from "../app/get-qbo-status";
 import { DisconnectQbo } from "../app/disconnect-qbo";
 import type { TenantRunner } from "../app/complete-qbo-connect";
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { users } from "@mallet/shared/db/schema";
 import { signOauthState } from "../domain/oauth-state";
-import { qboStatusDTO, qboBeginConnectDTO } from "./qbo-dto";
+import { HttpQboApiGateway } from "../infra/http-qbo-api-gateway";
+import {
+  DrizzleQboEntityLinkRepository,
+  DrizzleQboSyncLogRepository,
+} from "../infra/drizzle-qbo-sync-repositories";
+import { EnsureFreshAccessToken } from "../app/ensure-fresh-access-token";
+import { qboStatusDTO, qboBeginConnectDTO, qboSetupDTO, qboSyncLogRowDTO } from "./qbo-dto";
 
 // A consent screen should not take longer than this; a stale nonce should not linger.
 const STATE_TTL_MS = 10 * 60_000;
@@ -56,6 +65,154 @@ export const createQboRouter = () =>
       const state = signOauthState(secret, ctx.principal.orgId, expiresAt);
       return { url: gateway.authorizeUrl(state) };
     }),
+
+    // Everything the setup screen needs, in one round trip: QuickBooks-side facts (is time
+    // tracking even on? does the company already have time in it?) plus the lists to pick from.
+    // Read-only — this never writes to the shop's books.
+    setup: ownerOrOffice.output(qboSetupDTO).query(async ({ ctx }) => {
+      const orgId = ctx.principal.orgId;
+      const connections = new DrizzleQboConnectionRepository(ctx.tx, orgId);
+      const connection = await connections.get();
+      const gateway = ctx.deps.qboOauthGateway;
+      const box = ctx.deps.qboSecretBox;
+      if (!connection || !gateway || !box) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "QuickBooks is not connected" });
+      }
+
+      const access = orThrow(
+        await new EnsureFreshAccessToken(connections, gateway, box, ctx.deps.clock).exec(orgId),
+      );
+      const api = new HttpQboApiGateway(loadConfig().QBO_ENVIRONMENT);
+
+      const [people, items, preflight] = await Promise.all([
+        api.listPeople(access),
+        api.listServiceItems(access),
+        api.preflight(access),
+      ]);
+      const peopleList = orThrow(people);
+      const itemList = orThrow(items);
+      const prefs = orThrow(preflight);
+
+      // Look back a month for time the shop is already recording in QuickBooks — pushing ours on
+      // top of that would pay the same hours twice, so the UI warns rather than silently doubling.
+      const since = new Date(ctx.deps.clock.now().getTime() - 30 * 24 * 60 * 60_000)
+        .toISOString()
+        .slice(0, 10);
+      const existing = await api.countTimeActivitySince(access, since);
+
+      const links = new DrizzleQboEntityLinkRepository(ctx.tx, orgId);
+      const existingLinks = await links.listByType("employee");
+      const byUser = new Map(existingLinks.map((l) => [l.malletId, l]));
+
+      const roster = await ctx.tx
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.orgId, orgId));
+
+      return {
+        timeTrackingEnabled: prefs.timeTrackingEnabled,
+        companyName: prefs.companyName,
+        existingTimeEntries: existing.ok ? existing.value : 0,
+        people: peopleList.map((p) => ({
+          id: p.id,
+          displayName: p.displayName,
+          kind: p.kind,
+          usesTimeForPaychecks: p.usesTimeForPaychecks ?? null,
+        })),
+        items: itemList.map((i) => ({ id: i.id, name: i.name })),
+        crew: roster.map((u) => {
+          const link = byUser.get(u.id);
+          return {
+            userId: u.id,
+            name: u.name ?? u.email,
+            qboId: link?.qboId ?? null,
+            qboName: link?.displayName ?? null,
+            qboKind: link?.qboEntityKind ?? null,
+          };
+        }),
+        // Fall back to the company's OWN default time item when the shop hasn't chosen one — QBO
+        // already answers this question, so don't make them answer it twice. Flagged as unsaved so
+        // the UI commits it rather than showing a choice the server doesn't actually hold.
+        defaultItemSaved: connection.props.defaultItemQboId !== null,
+        defaultItemQboId: connection.props.defaultItemQboId ?? prefs.defaultItemId,
+        defaultItemName:
+          connection.props.defaultItemName ??
+          itemList.find((i) => i.id === prefs.defaultItemId)?.name ??
+          null,
+        sendApprovedHours: connection.props.sendApprovedHours,
+      };
+    }),
+
+    // Match one Mallet person to a QuickBooks employee/vendor (or clear the match).
+    linkPerson: ownerOrOffice
+      .input(
+        z.object({
+          userId: z.string().min(1),
+          qboId: z.string().min(1).nullable(),
+          qboName: z.string().nullable(),
+          qboKind: z.enum(["Employee", "Vendor"]).nullable(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const links = new DrizzleQboEntityLinkRepository(ctx.tx, ctx.principal.orgId);
+        if (input.qboId === null) {
+          await links.remove("employee", input.userId);
+        } else {
+          await links.save({
+            entityType: "employee",
+            malletId: input.userId,
+            qboId: input.qboId,
+            qboEntityKind: input.qboKind ?? "Employee",
+            displayName: input.qboName,
+          });
+        }
+        return { ok: true };
+      }),
+
+    setDefaultItem: ownerOrOffice
+      .input(z.object({ qboId: z.string().min(1), name: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleQboConnectionRepository(ctx.tx, ctx.principal.orgId);
+        const connection = await repo.get();
+        if (!connection) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "QuickBooks is not connected" });
+        }
+        await repo.save(connection.withDefaultItem(input.qboId, input.name, ctx.deps.clock.now()));
+        return { ok: true };
+      }),
+
+    // The opt-in switch. Refuses to turn on without a service item, because every push would fail.
+    setSendApprovedHours: ownerOrOffice
+      .input(z.object({ on: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleQboConnectionRepository(ctx.tx, ctx.principal.orgId);
+        const connection = await repo.get();
+        if (!connection) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "QuickBooks is not connected" });
+        }
+        if (input.on && !connection.props.defaultItemQboId) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Choose which QuickBooks service hours are filed under first",
+          });
+        }
+        await repo.save(connection.withSendApprovedHours(input.on, ctx.deps.clock.now()));
+        return { ok: true };
+      }),
+
+    syncLog: ownerOrOffice
+      .output(z.array(qboSyncLogRowDTO))
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleQboSyncLogRepository(ctx.tx, ctx.principal.orgId);
+        const rows = await repo.recent(50);
+        return rows.map((r) => ({
+          malletId: r.malletId,
+          status: r.status,
+          errorCode: r.errorCode,
+          errorMessage: r.errorMessage,
+          attemptedAt: r.attemptedAt,
+        }));
+      }),
 
     disconnect: ownerOrOfficeNoTx.mutation(async ({ ctx }) => {
       const gateway = ctx.deps.qboOauthGateway;

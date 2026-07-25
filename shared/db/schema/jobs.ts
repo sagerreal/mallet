@@ -46,6 +46,10 @@ export const jobs = pgTable(
     status: text("status").notNull().default("scheduled"),
     scheduledStart: timestamp("scheduled_start", { withTimezone: true }),
     scheduledEnd: timestamp("scheduled_end", { withTimezone: true }),
+    // When the tech tapped "On my way". A STAMP, not a fifth status value: adding one would touch
+    // the check constraint, the transition matrix, the job-status derivation and the DTO enum, for
+    // a fact that is purely informational. Enroute is derived as (status = pending AND this set).
+    enrouteAt: timestamp("enroute_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
@@ -151,6 +155,10 @@ export const jobVisits = pgTable(
     lat: doublePrecision("lat"),   // nullable — the visit's geocoded latitude (WGS84), null when unknown
     lng: doublePrecision("lng"),   // nullable — the visit's geocoded longitude (WGS84), null when unknown
     status: text("status").notNull().default("pending"),
+    // When the tech tapped "On my way". A STAMP, not a fifth status value: adding one would touch
+    // the check constraint, the transition matrix, the job-status derivation and the DTO enum, for
+    // a fact that is purely informational. Enroute is derived as (status = pending AND this set).
+    enrouteAt: timestamp("enroute_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     notes: text("notes"),

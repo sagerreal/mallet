@@ -33,6 +33,7 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     hoursSatClose: row.hoursSatClose,
     hoursSunOpen: row.hoursSunOpen,
     hoursSunClose: row.hoursSunClose,
+    timezone: row.timezone,
     areaCities: row.areaCities,
     areaRadiusMi: row.areaRadiusMi,
     // Service origin (front-desk vertical coverage) — all nullable in the DB.

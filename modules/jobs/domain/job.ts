@@ -164,6 +164,14 @@ export interface JobVisitProps {
   readonly lat?: number | null;
   readonly lng?: number | null;
   readonly status: VisitStatus;
+  /**
+   * When the tech tapped "On my way". A STAMP, not a fifth status value: a visit being
+   * travelled to is still `pending`, and adding a status for it would touch the check
+   * constraint, the transition matrix, the job-status derivation and the DTO enum for a fact
+   * that is purely informational. Cleared when the visit is reopened, exactly like completedAt —
+   * the stamp describes the CURRENT trip, and a reopened visit has no trip yet.
+   */
+  readonly enrouteAt: Date | null;
   readonly startedAt: Date | null;
   readonly completedAt: Date | null;
   readonly notes: string | null;
@@ -393,6 +401,25 @@ export class Job {
     return this.p.visits.some(
       (v) => v.props.status !== "canceled" && v.props.assigneeUserId === userId,
     );
+  }
+
+  /**
+   * Is this user the person assigned to THIS specific visit?
+   *
+   * Distinct from `isAssignedTo`, which is job-level and true for the job's assignee OR the assignee
+   * of any of its visits. That is the right question for "may this tech open this job", and the
+   * WRONG question for "may this tech complete this visit": on a two-visit job the job-level
+   * assignee would pass the check for a colleague's visit and could mark it done — moving someone
+   * else's work and writing time against it. Visit-scoped actions must ask this instead.
+   *
+   * The job-level assignee is deliberately NOT granted access here. A lead tech who needs to close
+   * out a colleague's visit is doing an office action, and the office endpoint exists for it.
+   */
+  isAssignedToVisit(userId: UserId, visitId: VisitId): boolean {
+    const visit = this.p.visits.find((v) => v.props.id === visitId);
+    if (!visit) return false;
+    if (visit.props.status === "canceled") return false;
+    return visit.props.assigneeUserId === userId;
   }
 
   // Set (or clear, with null) the single assignee. Not allowed once terminal.

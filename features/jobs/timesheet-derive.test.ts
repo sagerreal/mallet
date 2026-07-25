@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkEntry, mkJob, mkLead } from "./test-factories";
+import { mkEntry, mkJob, mkLead, mkVisit } from "./test-factories";
 import {
   tsAddDays,
   tsWeekStart,
@@ -11,6 +11,11 @@ import {
   tsLabel,
   tsT12,
   tsTimeOpts,
+  tsIsUnfinished,
+  tsIsImplausible,
+  tsUnfinishedDays,
+  tsUnrecordedDays,
+  tsDayLabel,
 } from "./timesheet-derive";
 import { FULL_TIME_HOURS_PER_WEEK } from "./timesheet-constants";
 
@@ -94,6 +99,106 @@ describe("tsRollup — the 40h overtime split", () => {
   });
 });
 
+describe("tsRollup — the summary the office signs off on", () => {
+  const week = tsWeekDates("2026-06-29");
+
+  it("reports regular + overtime that add back up to the paid total", () => {
+    const entries = [
+      mkEntry({ id: "e1", techId: "3", date: "2026-06-29", start: "07:00", end: "17:00" }), // 10h
+      mkEntry({ id: "e2", techId: "3", date: "2026-06-30", start: "07:00", end: "17:00" }), // 10h
+      mkEntry({ id: "e3", techId: "3", date: "2026-07-01", start: "07:00", end: "17:00" }), // 10h
+      mkEntry({ id: "e4", techId: "3", date: "2026-07-02", start: "07:00", end: "18:00" }), // 11h
+    ];
+    const r = tsRollup(entries, "3", week);
+
+    expect(r.paid).toBe(41);
+    expect(r.reg).toBe(40);
+    expect(r.ot).toBe(1);
+    expect(tsMoney(r.reg + r.ot)).toBe(r.paid);
+  });
+
+  it("keeps an unpaid break out of every figure in the summary", () => {
+    const worked = mkEntry({ id: "e1", techId: "3", date: "2026-06-29", start: "08:00", end: "16:00" });
+    const lunch = mkEntry({ id: "e2", techId: "3", date: "2026-06-29", kind: "break", start: "12:00", end: "12:30" });
+    const r = tsRollup([worked, lunch], "3", week);
+
+    expect(r.paid).toBe(8);
+    expect(r.reg).toBe(8);
+    expect(r.ot).toBe(0);
+    expect(r.count).toBe(2);
+  });
+
+  it("counts a running entry as no hours — it has no duration yet", () => {
+    const running = mkEntry({ id: "e1", techId: "3", date: "2026-06-29", start: "08:00", end: null, running: true });
+    expect(tsRollup([running], "3", week).paid).toBe(0);
+  });
+});
+
+describe("tsIsUnfinished / tsUnfinishedDays — what blocks approval", () => {
+  const week = tsWeekDates("2026-06-29");
+
+  it("treats a running entry and an end-less entry alike", () => {
+    expect(tsIsUnfinished(mkEntry({ end: null, running: true }))).toBe(true);
+    expect(tsIsUnfinished(mkEntry({ end: null }))).toBe(true);
+    expect(tsIsUnfinished(mkEntry({ end: "16:00" }))).toBe(false);
+  });
+
+  it("names each offending day once, in week order", () => {
+    const entries = [
+      mkEntry({ id: "e1", techId: "3", date: "2026-07-02", end: null, running: true }),
+      mkEntry({ id: "e2", techId: "3", date: "2026-07-02", end: null }), // same day, second offender
+      mkEntry({ id: "e3", techId: "3", date: "2026-06-30", end: null, running: true }),
+      mkEntry({ id: "e4", techId: "3", date: "2026-06-29", end: "16:00" }), // finished
+    ];
+    expect(tsUnfinishedDays(entries, "3", week)).toEqual(["2026-06-30", "2026-07-02"]);
+  });
+
+  it("ignores other crew, other weeks and already-approved rows", () => {
+    const entries = [
+      mkEntry({ id: "e1", techId: "4", date: "2026-06-29", end: null, running: true }),
+      mkEntry({ id: "e2", techId: "3", date: "2026-07-20", end: null, running: true }),
+      mkEntry({ id: "e3", techId: "3", date: "2026-06-29", end: null, status: "approved" }),
+    ];
+    expect(tsUnfinishedDays(entries, "3", week)).toEqual([]);
+  });
+});
+
+describe("tsUnrecordedDays — the days nobody wrote anything down", () => {
+  const week = tsWeekDates("2026-06-29");
+  const jobOn = (date: string, techId: string) =>
+    mkJob({ id: `job-${date}`, visits: [mkVisit({ id: `v-${date}`, date, techId })] });
+
+  it("flags a day the crew was scheduled on a job and logged nothing", () => {
+    const jobs = [jobOn("2026-06-30", "3")];
+    expect(tsUnrecordedDays(jobs, "3", week, [])).toEqual(["2026-06-30"]);
+  });
+
+  it("says nothing about a day that has hours on it", () => {
+    const jobs = [jobOn("2026-06-30", "3")];
+    const entries = [mkEntry({ id: "e1", techId: "3", date: "2026-06-30", start: "08:00", end: "16:00" })];
+    expect(tsUnrecordedDays(jobs, "3", week, entries)).toEqual([]);
+  });
+
+  it("says nothing about a day with no work scheduled — a day off is not an omission", () => {
+    expect(tsUnrecordedDays([jobOn("2026-06-30", "4")], "3", week, [])).toEqual([]);
+    expect(tsUnrecordedDays([], "3", week, [])).toEqual([]);
+  });
+
+  it("ignores archived jobs", () => {
+    const jobs = [{ ...jobOn("2026-06-30", "3"), archived: true }];
+    expect(tsUnrecordedDays(jobs, "3", week, [])).toEqual([]);
+  });
+});
+
+describe("tsDayLabel", () => {
+  it("names a day the same way wherever it appears", () => {
+    // 2026-07-02 is a Thursday. Parsed at noon so a negative UTC offset can't roll it back a day.
+    expect(tsDayLabel("2026-07-02")).toContain("Thu");
+    expect(tsDayLabel("2026-07-02")).toContain("2");
+    expect(tsDayLabel("2026-07-02", "long")).toContain("Thursday");
+  });
+});
+
 describe("tsMoney", () => {
   it("rounds to two decimal places", () => {
     expect(tsMoney(1.236)).toBe(1.24);
@@ -125,8 +230,48 @@ describe("tsT12 / tsTimeOpts", () => {
   it("spans the configured picker window at quarter-hour steps", () => {
     const opts = tsTimeOpts();
     expect(opts[0]?.label).toBe("6:00am");
-    expect(opts.at(-1)?.label).toBe("8:00pm");
-    // 6:00 → 20:00 inclusive at 0.25h = 14h × 4 + 1 = 57 options
-    expect(opts).toHaveLength(57);
+    // Reaches the END OF THE DAY, not the end of an office shift. The window used to stop at 8pm,
+    // which made the emergency call unfixable: the office was told by the approval refusal to stop
+    // a segment that ran to 23:30, with no option in the list later than 20:00.
+    expect(opts.at(-1)?.label).toBe("11:45pm");
+    // 6:00 → 23:45 inclusive at 0.25h = 17.75h × 4 + 1 = 72 options
+    expect(opts).toHaveLength(72);
+  });
+
+  it("offers a late-evening end time, so an emergency call can be corrected", () => {
+    expect(tsTimeOpts().some((o) => o.label === "11:30pm")).toBe(true);
+  });
+});
+
+// A reviewer found the break case, and it is the quiet one: break is the ONLY unpaid kind, so a
+// break left running swallows the afternoon and the technician is simply short-paid. Nothing else
+// objects — the row is FINISHED, so tsIsUnfinished is false, the still-open banner never fires and
+// approveWeek accepts it. The only symptom is a small weekly total nobody questions.
+describe("tsIsImplausible — a row that is probably a forgotten segment", () => {
+  const row = (over: Parameters<typeof mkEntry>[0]) =>
+    mkEntry({ date: "2026-07-21", kind: "job", start: "08:00", end: "16:00", ...over });
+
+  it("flags a break that swallowed the afternoon", () => {
+    expect(tsIsImplausible(row({ kind: "break", start: "12:00", end: "17:00" }))).toBe(true);
+  });
+
+  it("leaves a real lunch alone", () => {
+    expect(tsIsImplausible(row({ kind: "break", start: "12:00", end: "12:30" }))).toBe(false);
+  });
+
+  it("flags a paid segment longer than one unbroken stretch", () => {
+    expect(tsIsImplausible(row({ start: "07:00", end: "20:00" }))).toBe(true);
+  });
+
+  it("leaves an ordinary working day alone", () => {
+    expect(tsIsImplausible(row({ start: "08:00", end: "16:30" }))).toBe(false);
+  });
+
+  it("leaves a long emergency call alone — 10 hours on one job is work, not a mistake", () => {
+    expect(tsIsImplausible(row({ start: "14:00", end: "23:30" }))).toBe(false);
+  });
+
+  it("says nothing about an unfinished row — that is the still-open banner's job, not this one", () => {
+    expect(tsIsImplausible(row({ end: null, running: true }))).toBe(false);
   });
 });

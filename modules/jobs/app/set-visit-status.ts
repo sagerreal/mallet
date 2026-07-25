@@ -1,7 +1,7 @@
 import type { JobId, VisitId, Result, AppError, Clock } from "@mallet/shared/types";
 import { notFound, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus } from "@mallet/shared/ports";
-import { JobVisit, type VisitStatus } from "../domain/job";
+import { JobVisit, type VisitStatus, type JobVisitProps } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
 import type { Job } from "../domain/job";
 
@@ -26,6 +26,19 @@ const ALLOWED_TRANSITIONS: Record<VisitStatus, readonly VisitStatus[]> = {
   complete: ["pending"],
   canceled: [],
 };
+
+type VisitStamps = Pick<JobVisitProps, "startedAt" | "completedAt" | "enrouteAt">;
+
+// The three timestamps a transition owns, as one table rather than three ternaries buried in
+// exec(). "pending" is only reachable from "complete" (the ↩ Reopen button), so it is the single
+// clearing case — and a reopened visit is a FRESH trip, which is why enrouteAt clears with
+// completedAt. Leaving the old departure stamp behind would make the reopened visit read back as
+// enroute (pending + a stamp) and hand the clock travel time from a trip that already ended.
+const stampsFor = (status: VisitStatus, current: JobVisitProps, now: Date): VisitStamps => ({
+  startedAt: status === "in_progress" ? now : current.startedAt,
+  completedAt: status === "complete" ? now : status === "pending" ? null : current.completedAt,
+  enrouteAt: status === "pending" ? null : current.enrouteAt,
+});
 
 // Applies the visit transition, then derives the JOB status from the resulting visit
 // set so the client's optimistic recalc and the server agree (no flash-then-revert):
@@ -70,10 +83,7 @@ export class SetVisitStatusUseCase {
     const newProps = {
       ...visit.props,
       status: cmd.status,
-      startedAt: cmd.status === "in_progress" ? now : visit.props.startedAt,
-      // "pending" is only reachable from "complete" (reopen) — clear the stamp there.
-      completedAt:
-        cmd.status === "complete" ? now : cmd.status === "pending" ? null : visit.props.completedAt,
+      ...stampsFor(cmd.status, visit.props, now),
     };
 
     const updated = JobVisit.create(newProps);

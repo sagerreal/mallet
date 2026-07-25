@@ -9,7 +9,7 @@
  */
 
 import type { Job, Lead, Tech, TimeEntry } from "@/lib/store/types";
-import type { TsRollup } from "./timesheet-derive";
+import { tsDayLabel, type TsRollup } from "./timesheet-derive";
 import { TsEntriesBlock, type TsPick } from "./timesheets-entries";
 
 export interface TsCrewChipsProps {
@@ -73,12 +73,35 @@ export interface TsTechWeekCardProps {
   pick: TsPick;
   onSetPick: (p: TsPick) => void;
   onEdit: (id: string) => void;
+  onStop: (id: string) => void;
   onDelete: (id: string) => void;
   onSetField: (id: string, field: keyof TimeEntry, val: string | number) => void;
   onCloseEdit: () => void;
   onAddEntry: () => void;
   onApprove: () => void;
   onReopen: () => void;
+  /** Days the last approval was refused over — empty/null when nothing was refused. */
+  unfinishedDays: readonly string[] | null;
+}
+
+/** The week's totals. HOURS ONLY — what anyone is paid lives in payroll, never in Mallet. */
+function TsWeekMetrics({ rollup }: { rollup: TsRollup }) {
+  return (
+    <div className="ts-metrics">
+      <div>
+        <div className="l">Paid</div>
+        <div className="n">{rollup.paid.toFixed(2)} h</div>
+      </div>
+      <div>
+        <div className="l">Regular</div>
+        <div className="n">{rollup.reg.toFixed(2)} h</div>
+      </div>
+      <div className="ot">
+        <div className="l">Overtime</div>
+        <div className="n">{rollup.ot.toFixed(2)} h</div>
+      </div>
+    </div>
+  );
 }
 
 /** The selected crew's week: rollup header, approve/reopen, entries. */
@@ -94,21 +117,21 @@ export function TsTechWeekCard({
   pick,
   onSetPick,
   onEdit,
+  onStop,
   onDelete,
   onSetField,
   onCloseEdit,
   onAddEntry,
   onApprove,
   onReopen,
+  unfinishedDays,
 }: TsTechWeekCardProps) {
   const locked = rollup.approved;
+  const refused = unfinishedDays != null && unfinishedDays.length > 0;
   return (
     <div className="card" style={{ marginTop: "var(--space-3)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-1)", flexWrap: "wrap" }}>
         <b style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{tech.name} · this week</b>
-        <span className="muted" style={{ fontSize: "var(--type-base)", fontVariantNumeric: "tabular-nums" }}>
-          {rollup.paid.toFixed(2)} h{rollup.ot ? ` · ${rollup.ot.toFixed(2)} OT` : ""}
-        </span>
         <span style={{ flex: 1 }} />
         {locked ? (
           <>
@@ -133,8 +156,19 @@ export function TsTechWeekCard({
           </>
         )}
       </div>
+      <TsWeekMetrics rollup={rollup} />
+      {refused && (
+        <p
+          role="alert"
+          style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-2) 0 0" }}
+        >
+          Not approved. These days still have hours with no end time:{" "}
+          {unfinishedDays.map((d) => tsDayLabel(d)).join(", ")}. Stop each one below, then approve.
+        </p>
+      )}
       <TsEntriesBlock
         entries={entries}
+        techId={tech.id}
         jobs={jobs}
         leads={leads}
         techs={techs}
@@ -143,6 +177,7 @@ export function TsTechWeekCard({
         pick={pick}
         onSetPick={onSetPick}
         onEdit={onEdit}
+        onStop={onStop}
         onDelete={onDelete}
         onSetField={onSetField}
         onCloseEdit={onCloseEdit}

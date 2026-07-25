@@ -43,6 +43,7 @@ const makeVisit = (position = 1, durationMinutes = 120): JobVisit => {
     scheduledEnd: null,
     durationMinutes,
     status: "pending",
+    enrouteAt: null,
     startedAt: null,
     completedAt: null,
     notes: null,

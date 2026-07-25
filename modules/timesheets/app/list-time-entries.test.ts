@@ -94,8 +94,19 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async remove(): Promise<number> {
     return 0;
   }
+  // Added with the unfinished-week guard: these fakes hold no rows, so nothing is unfinished.
+  async unfinishedDates(): Promise<string[]> {
+    return [];
+  }
+
   async approveWeek(): Promise<number> {
     return 0;
+  }
+
+  // Added with the clock state machine: the use-cases under test never tap the clock, so it
+  // is always idle here.
+  async findOpenForTech(): Promise<TimeEntry | null> {
+    return null;
   }
 }
 

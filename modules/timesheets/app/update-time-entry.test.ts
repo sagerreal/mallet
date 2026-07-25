@@ -88,8 +88,19 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async remove(): Promise<number> {
     return 0;
   }
+  // Added with the unfinished-week guard: these fakes hold no rows, so nothing is unfinished.
+  async unfinishedDates(): Promise<string[]> {
+    return [];
+  }
+
   async approveWeek(): Promise<number> {
     return 0;
+  }
+
+  // Added with the clock state machine: the use-cases under test never tap the clock, so it
+  // is always idle here.
+  async findOpenForTech(): Promise<TimeEntry | null> {
+    return null;
   }
 }
 
@@ -373,5 +384,67 @@ describe("UpdateTimeEntryUseCase — happy path (save + log)", () => {
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
     expect(result.value).toBeInstanceOf(TimeEntry);
+  });
+});
+
+// Approved means LOCKED. Without this guard an approved entry could be rewritten while approvedAt
+// stayed set — the record would claim the shop signed off on hours it never saw, and once already
+// pushed, QuickBooks would hold different numbers than Mallet displays. Reopen is the only way back.
+describe("an approved entry cannot be edited", () => {
+  const approvedEntry = () => {
+    const res = TimeEntry.create({
+      id: asTimeEntryId("22222222-2222-2222-2222-222222222222"),
+      orgId: asOrgId("33333333-3333-3333-3333-333333333333"),
+      techUserId: asUserId("44444444-4444-4444-4444-444444444444"),
+      jobId: null,
+      workDate: "2026-07-21",
+      kind: "job",
+      startTime: "08:00",
+      endTime: "16:00",
+      note: "",
+      src: "manual",
+      status: "approved",
+      running: false,
+      approvedAt: new Date("2026-07-22T10:00:00.000Z"),
+      createdAt: new Date("2026-07-21T08:00:00.000Z"),
+      updatedAt: new Date("2026-07-21T08:00:00.000Z"),
+    });
+    if (!res.ok) throw new Error("fixture rejected");
+    return res.value;
+  };
+
+  const runUpdate = async (patch: Record<string, unknown>) => {
+    const entry = approvedEntry();
+    const save = vi.fn();
+    const repo = {
+      findById: vi.fn().mockResolvedValue(entry),
+      save,
+    } as unknown as TimeEntryRepository;
+    const res = await new UpdateTimeEntryUseCase(
+      repo,
+      new FixedClock(new Date("2026-07-24T12:00:00.000Z")),
+    ).exec({ entryId: entry.props.id, ...patch } as never, "org-1");
+    return { res, save };
+  };
+
+  it("refuses the edit", async () => {
+    const { res } = await runUpdate({ startTime: "07:00" });
+    expect(res.ok).toBe(false);
+  });
+
+  it("reports a conflict, so the client can offer Reopen rather than retrying", async () => {
+    const { res } = await runUpdate({ startTime: "07:00" });
+    if (!res.ok) expect(res.error.kind).toBe("conflict");
+  });
+
+  it("writes nothing", async () => {
+    const { save } = await runUpdate({ endTime: "20:00" });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("refuses even a harmless-looking note change", async () => {
+    const { res, save } = await runUpdate({ note: "typo fix" });
+    expect(res.ok).toBe(false);
+    expect(save).not.toHaveBeenCalled();
   });
 });

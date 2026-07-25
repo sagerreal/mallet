@@ -2,7 +2,7 @@
  * components/modals/tech-job-modal/helpers.ts
  * Pure derivations shared by the tech-job sections — ported 1:1 from the
  * prototype (svcMeta 3991, jobMode 4002, vPlaced, quoted 4567, custName 3582,
- * colLabel 3558, hmLabel 3810, clockLabel 4769, tvRow 4577, curV 4586).
+ * colLabel 3558, hmLabel 3810, tvRow 4577, curV 4586).
  */
 
 import type { CSSProperties } from "react";
@@ -82,17 +82,6 @@ export function hmLabel(h: number): string {
     M = 0;
   }
   return M ? `${H}h ${M}m` : `${H}h`;
-}
-
-/** Seconds→"H:MM:SS" / "M:SS" (prototype clockLabel, 4769). */
-export function clockLabel(h: number): string {
-  const s = Math.round((+h || 0) * 3600);
-  const H = Math.floor(s / 3600);
-  const M = Math.floor((s % 3600) / 60);
-  const S = s % 60;
-  return H
-    ? `${H}:${String(M).padStart(2, "0")}:${String(S).padStart(2, "0")}`
-    : `${M}:${String(S).padStart(2, "0")}`;
 }
 
 /** Arrival time from a fractional hour start (prototype tvRow, 4577). */

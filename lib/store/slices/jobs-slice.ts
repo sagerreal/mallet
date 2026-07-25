@@ -72,7 +72,8 @@
 import type { StateCreator } from "zustand";
 import type { Job, Visit, Addon, VerifyAns, JobLine } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
-import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, storeStatusToBackend, type JobDTO } from "@/lib/store/dto-mapper";
+import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, type JobDTO } from "@/lib/store/dto-mapper";
+import { persistVisitStatus, visitWriteName, type VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { reportWriteError } from "../write-error";
@@ -294,7 +295,13 @@ export interface JobsSlice {
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
-  setVisitStatus: (jobId: string, visitId: string, status: string) => void;
+  /**
+   * Move a visit through its steps. `surface` decides which API is written: a technician's taps
+   * go to the assignment-gated field endpoints (and move their clock), the office's to v1.visits.
+   * Required, not defaulted — a wrong guess here either 403s a technician or silently files hours
+   * against the wrong person.
+   */
+  setVisitStatus: (jobId: string, visitId: string, status: string, surface: VisitWriteSurface) => void;
   removeVisit: (jobId: string, visitId: string) => void;
   /**
    * Adopt a job DTO returned by a server mutation (e.g. the job created by quoting.accept).
@@ -887,9 +894,12 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   },
 
   // ---------------------------------------------------------------------------
-  // setVisitStatus — maps store status words to the backend enum.
+  // setVisitStatus — optimistic, then persist through whichever API the caller can
+  // reach: persistVisitStatus picks the endpoint from `surface` (a tech's taps go to
+  // the assignment-gated field API and move their clock; the office's go to v1.visits)
+  // and routes "enroute" to the stamp endpoint, since it is not a status at all.
   // ---------------------------------------------------------------------------
-  setVisitStatus: (jobId, visitId, status) => {
+  setVisitStatus: (jobId, visitId, status, surface) => {
     const prior = snapshot(get().jobs, jobId);
 
     // 1. Optimistic update.
@@ -910,8 +920,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       // Execution-time re-check: the visit may have been removed (or its
       // create rolled back) while this op waited in the chain.
       if (!visitExists(get().jobs, jobId, visitId)) return Promise.resolve();
-      return trpcVanilla.v1.visits.setVisitStatus
-        .mutate({ jobId, visitId, status: storeStatusToBackend(status) })
+      return persistVisitStatus(surface, jobId, visitId, status)
         .then((dto) => {
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
         })
@@ -921,7 +930,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           if (prior && visitExists(get().jobs, jobId, visitId)) {
             set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
           }
-          reportWriteError("setVisitStatus", err);
+          reportWriteError(visitWriteName(status), err);
         });
     });
   },
