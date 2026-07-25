@@ -132,12 +132,15 @@ export const createFieldRouter = () =>
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
-      const dto = toJobDTO(orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
+      const started = orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
+      const dto = toJobDTO(started);
       // Starting the job = arriving on it: close the drive, open job time. Never fails the write.
+      // Job-level, so job-level assignment is the right question — this button is not about one visit.
       await runVisitClockTap(
         { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
         "arrived",
         jobId,
+        started.isAssignedTo(ctx.principal.userId),
       );
       if (ctx.principal.role !== "tech") return dto;
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
@@ -148,13 +151,15 @@ export const createFieldRouter = () =>
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
-      const dto = toJobDTO(orThrow(await new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId })));
-      // Completing the job = done on it: close job time and auto-resume shop, so the technician
+      const completed = orThrow(await new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
+      const dto = toJobDTO(completed);
+      // Completing the job = done on it: close job time and auto-resume shop, so whoever did the work
       // stays on the clock between calls. Never fails the write.
       await runVisitClockTap(
         { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
         "done",
         jobId,
+        completed.isAssignedTo(ctx.principal.userId),
       );
       if (ctx.principal.role !== "tech") return dto;
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
@@ -186,6 +191,9 @@ export const createFieldRouter = () =>
           { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
           CLOCK_TAP_FOR_STATUS[input.status],
           jobId,
+          // VISIT-level: an owner-operator working their own visit gets the hours; an owner clearing
+          // a colleague's visit is dispatching and gets none.
+          job.isAssignedToVisit(ctx.principal.userId, visitId),
         );
 
         logger.info(
@@ -223,6 +231,7 @@ export const createFieldRouter = () =>
           { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
           "enroute",
           jobId,
+          job.isAssignedToVisit(ctx.principal.userId, visitId),
         );
 
         logger.info(
