@@ -15,10 +15,11 @@
 
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore, useActiveCall } from "@/lib/store/app-store";
 import { CALL_OUTCOMES } from "@/lib/store/call-constants";
 import { CALL_UNCONFIRMED } from "@/lib/store/slices/call-slice";
+import { sendBrowserDigits } from "@/lib/calls/browser-device";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 
 function cbFmt(s: number): string {
@@ -29,6 +30,9 @@ function cbFmt(s: number): string {
 // ELAPSED time, not tick count: a backgrounded tab has its timers throttled to roughly once a
 // minute, and counting ticks there would abandon a call that is ringing perfectly well.
 const POLL_MS = 2000;
+
+// Touch-tones, for the phone trees a shop hits when calling a supplier or a warranty line.
+const KEYPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"] as const;
 const POLL_GIVE_UP_MS = 120_000;
 
 export function CallBar() {
@@ -37,6 +41,8 @@ export function CallBar() {
   const setCallNotes = useAppStore((s) => s.setCallNotes);
   const markCallEnded = useAppStore((s) => s.markCallEnded);
   const clearCall = useAppStore((s) => s.clearCall);
+  const toggleCallMute = useAppStore((s) => s.toggleCallMute);
+  const [keypadOpen, setKeypadOpen] = useState(false);
   const applyCallStatus = useAppStore((s) => s.applyCallStatus);
   const addLeadNote = useAppStore((s) => s.addLeadNote);
   const leads = useAppStore((s) => s.leads);
@@ -134,6 +140,7 @@ export function CallBar() {
   }
 
   const connecting = call.phase === "connecting";
+  const inBrowser = call.transport === "browser";
   return (
     <div id="callbar" className="on">
       <div className="cbar">
@@ -141,12 +148,37 @@ export function CallBar() {
           <div className="cb-who">{lead.name}</div>
           <div className="cb-num">
             {connecting
-              ? // Say what is actually happening: their own phone rings first.
-                "Ringing your phone — answer to connect"
+              ? // Say what is actually happening, and the two transports do different things:
+                // the softphone is already dialling the customer, the bridge rings you first.
+                inBrowser
+                ? `Calling ${lead.phone} — from your business line`
+                : "Ringing your phone — answer to connect"
               : `${lead.phone} · from your business line`}
           </div>
         </div>
         <div className="cb-timer">{connecting ? "—" : cbFmt(call.sec)}</div>
+        {/* Mute and the keypad exist only on a call this browser is carrying. On a bridged call
+            the handset owns both, and a button that quietly did nothing would be a lie. */}
+        {inBrowser && (
+          <>
+            <button
+              className="cb-tool"
+              aria-pressed={call.muted}
+              onClick={toggleCallMute}
+              title={call.muted ? "Turn your microphone back on" : "Silence your microphone"}
+            >
+              {call.muted ? "Unmute" : "Mute"}
+            </button>
+            <button
+              className="cb-tool"
+              aria-expanded={keypadOpen}
+              onClick={() => setKeypadOpen((v) => !v)}
+              title="Send touch-tones"
+            >
+              Keypad
+            </button>
+          </>
+        )}
         <input
           placeholder="Type notes while you talk — they save with the call"
           value={call.notes}
@@ -156,6 +188,16 @@ export function CallBar() {
           End call
         </button>
       </div>
+      {/* In flow, under the bar it belongs to — not a floating pad over the page. */}
+      {inBrowser && keypadOpen && (
+        <div className="cb-keypad">
+          {KEYPAD.map((digit) => (
+            <button key={digit} className="chip" onClick={() => sendBrowserDigits(digit)}>
+              {digit}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

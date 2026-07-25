@@ -204,6 +204,50 @@ describe("PlaceOutboundCallUseCase", () => {
     if (!r.ok && r.error.kind === "validation") expect(r.error.field).toBe("phone");
   });
 
+  // The browser transport: the caller's microphone is the leg, so nothing rings and there is no
+  // number to ring. Twilio is NOT asked to originate — the client's device does that itself once
+  // it has the row's id, which is why the row must exist before the response is returned.
+  describe("browser transport", () => {
+    const browserCmd = () => ({ orgId: ORG, leadId: LEAD, placedByUserId: USER, transport: "browser" as const });
+
+    it("places a call with no callback number on file", async () => {
+      const { useCase, originator } = build({ agents: new FakeAgentNumbers(null) });
+      const r = await useCase.exec(browserCmd());
+      expect(isOk(r)).toBe(true);
+      if (isOk(r)) {
+        expect(r.value.props.transport).toBe("browser");
+        expect(r.value.props.agentNumber).toBeNull();
+        // Not "dialing": nothing has been dialled yet, the browser hasn't connected.
+        expect(r.value.props.status).toBe("queued");
+      }
+      expect((originator as FakeOriginator).calls).toHaveLength(0);
+    });
+
+    it("writes the row before returning, so the id the client dials with is already persisted", async () => {
+      const { useCase } = build({ agents: new FakeAgentNumbers(null) });
+      const r = await useCase.exec(browserCmd());
+      expect(repo.createCount).toBe(1);
+      if (isOk(r)) expect(repo.rows.has(r.value.props.id)).toBe(true);
+    });
+
+    it("still refuses a customer with no phone number, and a shop with no business line", async () => {
+      const noLead = build({ lead: null, agents: new FakeAgentNumbers(null) });
+      expect((await noLead.useCase.exec(browserCmd())).ok).toBe(false);
+
+      const noLine = build({ line: null, agents: new FakeAgentNumbers(null) });
+      expect((await noLine.useCase.exec(browserCmd())).ok).toBe(false);
+    });
+
+    it("never stores or remembers a number — there is no handset in this transport", async () => {
+      const agents = new FakeAgentNumbers(null);
+      const { useCase } = build({ agents });
+      const r = await useCase.exec({ ...browserCmd(), agentNumber: "(781) 385-0591" });
+      expect(isOk(r)).toBe(true);
+      if (isOk(r)) expect(r.value.props.agentNumber).toBeNull();
+      expect(agents.saved).toHaveLength(0);
+    });
+  });
+
   it("refuses to bridge a customer to their own number", async () => {
     const { useCase } = build({ lead: AGENT });
     const r = await useCase.exec(cmd());

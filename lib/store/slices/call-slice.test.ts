@@ -15,9 +15,23 @@ import { useAppStore } from "@/lib/store/app-store";
 import { CALL_UNCONFIRMED } from "./call-slice";
 
 const place = vi.fn();
+const browserToken = vi.fn();
+const connectBrowser = vi.fn();
+const hangUp = vi.fn();
+const mute = vi.fn();
 
 vi.mock("@/lib/trpc/vanilla", () => ({
-  trpcVanilla: { v1: { calls: { place: { mutate: (...args: unknown[]) => place(...args) } } } },
+  trpcVanilla: {
+    v1: { calls: { place: { mutate: (...args: unknown[]) => place(...args) }, browserToken: { query: () => browserToken() } } },
+  },
+}));
+
+// The softphone module is stubbed: these tests are about what the STORE does, and a real Device
+// would need a microphone and a live provider.
+vi.mock("@/lib/calls/browser-device", () => ({
+  connectBrowserCall: (...args: unknown[]) => connectBrowser(...args),
+  hangUpBrowserCall: () => hangUp(),
+  muteBrowserCall: (m: boolean) => mute(m),
 }));
 
 const store = () => useAppStore.getState();
@@ -30,7 +44,9 @@ describe("call-slice", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.setState({ activeCall: null, leads: [LEAD] as never });
-    place.mockResolvedValue({ id: "call-1" });
+    place.mockResolvedValue({ id: "call-1", transport: "phone" });
+    browserToken.mockResolvedValue({ token: "jwt-token" });
+    connectBrowser.mockResolvedValue(undefined);
   });
 
   it("refuses to open a bar for a lead with no phone", () => {
@@ -72,7 +88,7 @@ describe("call-slice", () => {
     const connecting = () => {
       store().startCall("lead-1");
       useAppStore.setState({
-        activeCall: { leadId: "lead-1", sec: 0, notes: "", phase: "connecting", callId: "call-1", error: null },
+        activeCall: { leadId: "lead-1", sec: 0, notes: "", phase: "connecting", callId: "call-1", error: null, transport: "phone", muted: false },
       });
     };
 
@@ -124,6 +140,59 @@ describe("call-slice", () => {
       connecting();
       store().applyCallStatus("call-1", { status: "something-new", startedAt: null, durationSec: null });
       expect(store().activeCall?.phase).toBe("connecting");
+    });
+  });
+
+  // The browser transport: Mallet carries the call itself. The row is a reservation; the DEVICE
+  // connect is what dials, so a failure there must reach the bar rather than leaving a row that
+  // never rang.
+  describe("browser transport", () => {
+    beforeEach(() => {
+      place.mockResolvedValue({ id: "call-1", transport: "browser" });
+    });
+
+    it("connects this browser to the reserved call", async () => {
+      store().startCall("lead-1", "browser");
+      await vi.waitFor(() => expect(connectBrowser).toHaveBeenCalledTimes(1));
+      expect(place).toHaveBeenCalledWith({ leadId: "lead-1", transport: "browser" });
+      expect(connectBrowser.mock.calls[0]![0]).toBe("call-1");
+      expect(connectBrowser.mock.calls[0]![1]).toBe("jwt-token");
+      expect(store().activeCall?.transport).toBe("browser");
+      // Still connecting: the customer's phone has not been answered.
+      expect(store().activeCall?.phase).toBe("connecting");
+    });
+
+    it("surfaces a device failure instead of leaving a call that never rang", async () => {
+      connectBrowser.mockRejectedValue(Object.assign(new Error("NotAllowedError"), { data: { code: "INTERNAL_SERVER_ERROR" } }));
+      store().startCall("lead-1", "browser");
+      await vi.waitFor(() => expect(store().activeCall?.phase).toBe("failed"));
+      expect(store().activeCall?.error).toBe("this browser could not carry the call");
+    });
+
+    it("mute is a real mute, and only on a call this browser is carrying", () => {
+      store().startCall("lead-1", "browser");
+      store().toggleCallMute();
+      expect(mute).toHaveBeenCalledWith(true);
+      expect(store().activeCall?.muted).toBe(true);
+      store().toggleCallMute();
+      expect(mute).toHaveBeenLastCalledWith(false);
+    });
+
+    it("does not pretend to mute a bridged call — the handset owns that", () => {
+      place.mockResolvedValue({ id: "call-1", transport: "phone" });
+      store().startCall("lead-1");
+      store().toggleCallMute();
+      expect(mute).not.toHaveBeenCalled();
+      expect(store().activeCall?.muted).toBe(false);
+    });
+
+    it("ending or dismissing hangs up the line, never just the label", () => {
+      store().startCall("lead-1", "browser");
+      store().markCallEnded();
+      expect(hangUp).toHaveBeenCalled();
+      hangUp.mockClear();
+      store().clearCall();
+      expect(hangUp).toHaveBeenCalled();
     });
   });
 });

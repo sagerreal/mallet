@@ -21,6 +21,11 @@ const close = vi.fn();
 
 vi.mock("@/features/identity/hooks", () => ({ useMe: () => ({ data: mockMe }) }));
 
+// jsdom has no WebRTC, so the real predicate would answer "no" anyway — mocked so each test can
+// state which transport it is exercising rather than depending on the environment.
+let browserCanCarry = false;
+vi.mock("@/lib/calls/browser-device", () => ({ browserCallingSupported: () => browserCanCarry }));
+
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "call", params: { leadId: "lead-1" } }),
   useCloseModal: () => close,
@@ -35,6 +40,7 @@ beforeEach(() => {
   startCall.mockReturnValue(true);
   mockLeads = [{ id: "lead-1", name: "Dana Alvarez", phone: "" }];
   mockMe = { role: "owner", callbackNumber: "+17813850591" };
+  browserCanCarry = false;
 });
 
 describe("CallModalContent — phoneless reachability", () => {
@@ -43,7 +49,7 @@ describe("CallModalContent — phoneless reachability", () => {
     render(<CallModalContent />);
     expect(screen.getByText("Call from Mallet")).toBeTruthy();
     fireEvent.click(screen.getByText("Call from Mallet"));
-    expect(startCall).toHaveBeenCalledWith("lead-1");
+    expect(startCall).toHaveBeenCalledWith("lead-1", "phone");
     expect(close).toHaveBeenCalled();
   });
 
@@ -62,8 +68,38 @@ describe("CallModalContent — phoneless reachability", () => {
     });
     fireEvent.click(screen.getByText(/^Save/));
     expect(updateLead).toHaveBeenCalledWith("lead-1", { phone: "(925) 555-0100" });
-    expect(startCall).toHaveBeenCalledWith("lead-1");
+    expect(startCall).toHaveBeenCalledWith("lead-1", "phone");
     expect(close).toHaveBeenCalled();
+  });
+});
+
+// When the browser can be the phone, it is: no handset rings and no callback number is needed,
+// because the microphone is the leg.
+describe("CallModalContent — this browser can carry the call", () => {
+  beforeEach(() => {
+    browserCanCarry = true;
+    mockLeads = [{ id: "lead-1", name: "Dana Alvarez", phone: "555-0101" }];
+  });
+
+  it("calls through the browser, with no number on file", () => {
+    mockMe = { role: "owner", callbackNumber: null };
+    render(<CallModalContent />);
+    fireEvent.click(screen.getByText("Call from Mallet"));
+    expect(startCall).toHaveBeenCalledWith("lead-1", "browser");
+    expect(close).toHaveBeenCalled();
+  });
+
+  it("says the call happens here, not on a handset", () => {
+    render(<CallModalContent />);
+    expect(screen.getByText(/through this computer/i)).toBeTruthy();
+    expect(screen.queryByText(/rings/i)).toBeNull();
+  });
+
+  it("never asks for a callback number it does not need", () => {
+    mockMe = { role: "owner", callbackNumber: null };
+    render(<CallModalContent />);
+    fireEvent.click(screen.getByText("Call from Mallet"));
+    expect(screen.queryByText(/needs a number to ring you on/i)).toBeNull();
   });
 });
 

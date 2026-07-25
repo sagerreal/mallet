@@ -39,6 +39,14 @@ const ConfigSchema = z.object({
   // posts async brand/campaign approval results (see app/api/webhooks/twilio-a2p/route.ts).
   TWILIO_PRIMARY_PROFILE_SID: z.string().min(1).optional(),
   TWILIO_A2P_STATUS_CALLBACK_URL: z.url().optional(),
+  // Browser calling (Twilio Voice JS SDK). All three needed together: the API key pair SIGNS the
+  // short-lived Access Token the browser authenticates with, and the TwiML App is what Twilio
+  // fetches when the browser dials. The key MUST be a Standard key — Twilio does not support
+  // signing Access Tokens with a Restricted key. Without these the browser softphone self-disables
+  // and calling falls back to ringing the user's handset.
+  TWILIO_API_KEY_SID: z.string().min(1).optional(),
+  TWILIO_API_KEY_SECRET: z.string().min(1).optional(),
+  TWILIO_TWIML_APP_SID: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   // Vapi (AI voice front desk) — all OPTIONAL. Without VAPI_WEBHOOK_SECRET the /api/frontdesk/vapi
   // route fail-closes (503, feature dark), so calls are never answered unverified. The secret is the

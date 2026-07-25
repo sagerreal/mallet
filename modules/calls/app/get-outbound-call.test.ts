@@ -24,6 +24,7 @@ const aCall = (): OutboundCall => {
     toNumber: asPhone("+19415550134"),
     fromNumber: asPhone("+16693413343"),
     agentNumber: asPhone("+17813850591"),
+    transport: "phone" as const,
     status: "dialing",
     providerCallSid: "CA123",
     startedAt: null,

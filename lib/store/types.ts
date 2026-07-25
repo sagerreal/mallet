@@ -430,4 +430,10 @@ export interface ActiveCall {
   callId: string | null;
   // Why placing the call failed, shown in the bar. Null unless phase is "failed".
   error: string | null;
+  // Which way this call is being carried: "browser" means Mallet itself is the phone (mic and
+  // speakers), "phone" means the caller's own handset was rung and bridged. The bar only offers
+  // mute and a keypad for a call it is actually carrying.
+  transport: "phone" | "browser";
+  // Our microphone is silenced. Browser calls only — on a bridged call the handset owns this.
+  muted: boolean;
 }

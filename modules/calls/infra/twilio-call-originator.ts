@@ -8,7 +8,9 @@ import type { CallOriginator, OriginateCallCmd, CallOriginationReceipt } from ".
 // The one bit of the Twilio Voice SDK we call — extracted as a seam so tests inject a fake and
 // exercise the classification/breaker logic without a live account. calls.create THROWS on error;
 // a Twilio RestException carries `.status` (HTTP) and `.code` (numeric Twilio code).
-export type CallTransport = (params: {
+// The HTTP seam, injectable so the tests never reach Twilio. Distinct from the domain's
+// CallTransport (phone | browser), which is how the CALL reaches the person who placed it.
+export type CallHttpTransport = (params: {
   to: string;
   from: string;
   url: string;
@@ -34,7 +36,7 @@ const errCode = (e: unknown): number | null =>
 // returned as failures WITHOUT tripping the breaker; only 5xx / timeout / network reach it.
 // Never logs either number or the provider's free-text message — only numeric discriminators.
 export class TwilioCallOriginator implements CallOriginator {
-  private readonly transport: CallTransport;
+  private readonly transport: CallHttpTransport;
   private readonly breaker = new CircuitBreaker("twilio-voice", { failureThreshold: 5, resetMs: 30_000 });
 
   constructor(
@@ -42,7 +44,7 @@ export class TwilioCallOriginator implements CallOriginator {
     authToken: string,
     private readonly voiceUrl: string,
     private readonly statusCallbackUrl: string,
-    transport?: CallTransport,
+    transport?: CallHttpTransport,
   ) {
     // timeout: the SDK aborts its OWN request at the deadline (it ignores the resilience
     // AbortSignal), so a timed-out request is cut off rather than orphaned and dialed anyway.

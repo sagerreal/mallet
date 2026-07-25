@@ -5,7 +5,7 @@ import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
 import type { A2pGateway } from "@mallet/a2p";
-import type { CallOriginator } from "@mallet/calls";
+import type { CallOriginator, VoiceTokenIssuer } from "@mallet/calls";
 import type { QboOauthGateway } from "@mallet/accounting-sync";
 import type { SecretBox } from "@mallet/platform/crypto/secret-box";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
@@ -41,6 +41,10 @@ export interface AppDeps {
   // fallback: a call the office believes was placed but never happened is the exact bug this
   // feature exists to fix, so it must fail loudly rather than degrade.
   readonly callOriginator?: CallOriginator | null;
+  // Mints the short-lived credential the BROWSER softphone authenticates with. null when the
+  // Twilio API key / TwiML app config is incomplete — calling then falls back to the phone bridge
+  // rather than failing, because the bridge is a complete feature on its own.
+  readonly voiceTokenIssuer?: VoiceTokenIssuer | null;
   // The agent's model client (Anthropic). null when ANTHROPIC_API_KEY is unset — the AI agent
   // self-disables (its tRPC procedure returns PRECONDITION_FAILED).
   readonly llmClient: LlmClient | null;

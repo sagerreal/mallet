@@ -17,7 +17,12 @@ import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import { HttpQboOauthGateway } from "@mallet/accounting-sync";
 import { createSecretBox } from "@mallet/platform/crypto/secret-box";
-import { TwilioCallOriginator, type CallOriginator } from "@mallet/calls";
+import {
+  TwilioCallOriginator,
+  TwilioVoiceTokenIssuer,
+  type CallOriginator,
+  type VoiceTokenIssuer,
+} from "@mallet/calls";
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { Config } from "@mallet/shared/config";
@@ -60,6 +65,27 @@ function buildCallOriginator(config: Config): CallOriginator | null {
     );
   }
   logger.warn("calls: Twilio voice unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/PUBLIC_APP_URL missing) — outbound calling is disabled");
+  return null;
+}
+
+// The browser softphone's token issuer. Self-disables (→ null) unless the Standard API key pair
+// and the TwiML app are all present; calling then falls back to the phone bridge, which is a
+// complete feature on its own — so unlike the originator, this degrading is not a failure.
+function buildVoiceTokenIssuer(config: Config): VoiceTokenIssuer | null {
+  if (
+    config.TWILIO_ACCOUNT_SID &&
+    config.TWILIO_API_KEY_SID &&
+    config.TWILIO_API_KEY_SECRET &&
+    config.TWILIO_TWIML_APP_SID
+  ) {
+    return new TwilioVoiceTokenIssuer(
+      config.TWILIO_ACCOUNT_SID,
+      config.TWILIO_API_KEY_SID,
+      config.TWILIO_API_KEY_SECRET,
+      config.TWILIO_TWIML_APP_SID,
+    );
+  }
+  logger.info("calls: browser calling unconfigured (TWILIO_API_KEY_SID/SECRET/TWIML_APP_SID) — falling back to the phone bridge");
   return null;
 }
 
@@ -128,6 +154,7 @@ export const getAppDeps = (): AppDeps => {
 
   const a2pGateway = buildA2pGateway(config);
   const callOriginator = buildCallOriginator(config);
+  const voiceTokenIssuer = buildVoiceTokenIssuer(config);
 
   // QBO OAuth self-disables unless client id + secret + redirect uri are all present.
   const qboOauthGateway =
@@ -171,6 +198,7 @@ export const getAppDeps = (): AppDeps => {
     llmClient,
     a2pGateway,
     callOriginator,
+    voiceTokenIssuer,
   };
   return cached;
 };

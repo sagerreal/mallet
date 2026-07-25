@@ -29,6 +29,7 @@ const props = (o: Partial<OutboundCallProps> = {}): OutboundCallProps => ({
   toNumber: asPhone("+19415550134"),
   fromNumber: asPhone("+16693413343"),
   agentNumber: asPhone("+17813850591"),
+  transport: "phone" as const,
   status: "dialing",
   providerCallSid: SID,
   startedAt: null,

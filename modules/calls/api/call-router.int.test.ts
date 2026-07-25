@@ -36,6 +36,14 @@ const fakeOriginator = {
   },
 };
 
+const fakeTokenIssuer = {
+  issue: (userId: string, now: Date) => ({
+    token: `fake-jwt-for-${userId}`,
+    identity: `user-${userId}`,
+    expiresAt: new Date(now.getTime() + 600_000),
+  }),
+};
+
 const stubDeps = {
   authProvider: { authenticate: async () => { throw new Error("unused"); } },
   apiKeyAuthenticator: { authenticate: async () => null },
@@ -44,6 +52,7 @@ const stubDeps = {
   clock: systemClock,
   ids: uuidGenerator,
   callOriginator: fakeOriginator,
+  voiceTokenIssuer: fakeTokenIssuer,
   paymentLinkGateway: null, connectGateway: null, photoStorageGateway: null, llmClient: null,
 } as unknown as Context["deps"];
 
@@ -245,6 +254,52 @@ suite("v1.calls (live RLS)", () => {
     expect(day.customers.map((c) => c.id)).toEqual([shop.leadId]);
     expect(day.customers[0]!.phone).toBe("+19415550134");
     expect(day.customers.map((c) => c.id)).not.toContain(other!.id);
+  });
+
+  // The browser transport, against the real schema: no number is stored, nothing is originated,
+  // and the row is a reservation the client's own device then dials with.
+  it("a browser call needs no callback number and asks the provider for nothing", async () => {
+    const shop = await seedShop("Calls Browser Org");
+    const caller = appRouter.createCaller(ctxFor(shop.orgId, shop.userId));
+    const before = originated.length;
+
+    const dto = await caller.v1.calls.place({ leadId: shop.leadId, transport: "browser" });
+
+    expect(dto.transport).toBe("browser");
+    expect(dto.status).toBe("queued");
+    expect(originated).toHaveLength(before);
+
+    const [row] = await admin<{ agent_number: string | null; transport: string }[]>`
+      select agent_number, transport from outbound_calls where id = ${dto.id}`;
+    expect(row!.agent_number).toBeNull();
+    expect(row!.transport).toBe("browser");
+
+    const [user] = await admin<{ callback_number: string | null }[]>`
+      select callback_number from users where id = ${shop.userId}`;
+    expect(user!.callback_number).toBeNull();
+  });
+
+  it("mints a browser token scoped to the caller", async () => {
+    const shop = await seedShop("Calls Token Org");
+    const issued = await appRouter.createCaller(ctxFor(shop.orgId, shop.userId)).v1.calls.browserToken();
+    expect(issued.identity).toBe(`user-${shop.userId}`);
+    expect(Date.parse(issued.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
+  // Browser calling degrading is NOT a failure — the phone bridge is a complete feature — but a
+  // client asking for something the account cannot do must be told so, not silently downgraded.
+  it("refuses browser calling cleanly when it is not configured for the account", async () => {
+    const shop = await seedShop("Calls NoToken Org");
+    const noIssuer: Context = {
+      ...ctxFor(shop.orgId, shop.userId),
+      deps: { ...stubDeps, voiceTokenIssuer: null } as unknown as Context["deps"],
+    };
+    await expect(appRouter.createCaller(noIssuer).v1.calls.browserToken()).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+    });
+    await expect(
+      appRouter.createCaller(noIssuer).v1.calls.place({ leadId: shop.leadId, transport: "browser" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
 
   it("the me DTO carries the caller's own callback number", async () => {
