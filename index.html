@@ -18,624 +18,922 @@
   <!-- Favicon: Mallet sparkle mark -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B1A17'/%3E%3Cpath d='M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z' fill='%23FAF8F3'/%3E%3C/svg%3E" />
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
-
-  <link rel="stylesheet" href="styles.css" />
-  <noscript><style>[data-reveal],.hero-el,.sc,.sc-g,.sc-ck,.sc-ckdone,.ez,.act,.af-panel,.mpanel{opacity:1!important;transform:none!important;visibility:visible!important;display:block}</style></noscript>
+  <!-- NOTE: styles.css is deliberately NOT linked here. The redesign is self-contained in the
+       inline <style> below, and styles.css defines .nav/.wrap/.btn/.brand for the OLD layout —
+       loading both would collide. The other pages (/privacy, /terms, /sms, /leak-check) link it
+       themselves and are unaffected. -->
 </head>
 <body>
 
-  <!-- ============== NOTICE BAR — the Leak Check, forced into view ============== -->
-  <a class="notice" href="/leak-check">How much could <b>your</b> shop be making? <span class="notice-go">Calculate it &mdash; 2 min &rarr;</span></a>
+<style>
+  :root{
+    --bg:#ffffff;
+    --alt:#f7f5f1;
+    --frame:#ebe8e2;
+    --screen:#ffffff;
+    --ink:#17150f;
+    --muted:#6e6a62;
+    --line:#e6e3dc;
+    --pill:#f0eee9;
+    --pill-ink:#17150f;
+    --ok:#3f7d55;
+    --shadow:0 1px 2px rgba(23,21,15,.04),0 12px 32px rgba(23,21,15,.07);
+    --maxw:1120px;
+    --sans:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
+    --display:"Avenir Next","Avenir","Futura","Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    /* dimension tokens (no magic numbers) */
+    --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-8:34px;
+    --radius-sm:8px;--radius-md:12px;--radius-lg:26px;--radius-pill:100px;
+    --text-xs:12px;--text-sm:13px;--text-md:15px;--text-lg:20px;--text-xl:27px;
+    --weight-reg:400;--weight-med:500;--weight-semi:600;--weight-bold:700;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#141310;--alt:#1a1814;--frame:#201d18;--screen:#1c1a15;
+      --ink:#f4f1ea;--muted:#a49f95;--line:#2b2822;--pill:#232019;--pill-ink:#f4f1ea;
+      --ok:#6fae84;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 14px 34px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#141310;--alt:#1a1814;--frame:#201d18;--screen:#1c1a15;
+    --ink:#f4f1ea;--muted:#a49f95;--line:#2b2822;--pill:#232019;--pill-ink:#f4f1ea;
+    --ok:#6fae84;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 14px 34px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"]{
+    --bg:#ffffff;--alt:#f7f5f1;--frame:#ebe8e2;--screen:#ffffff;
+    --ink:#17150f;--muted:#6e6a62;--line:#e6e3dc;--pill:#f0eee9;--pill-ink:#17150f;
+    --ok:#3f7d55;
+    --shadow:0 1px 2px rgba(23,21,15,.04),0 12px 32px rgba(23,21,15,.07);
+  }
 
-  <!-- ============================ NAV ============================ -->
-  <header class="navwrap" id="top">
-    <div class="nav wrap">
-      <a class="wordmark" href="/" aria-label="Mallet home">
-        <span class="logo-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="#1B1A17"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#FAF8F3"/></svg>
-        </span>
-        <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
-      </a>
+  *{box-sizing:border-box}
+  body{margin:0}
+  .m{font-family:var(--sans);background:var(--bg);color:var(--ink);
+     -webkit-font-smoothing:antialiased;line-height:1.5;font-size:17px}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3{margin:0;font-family:var(--display);font-weight:600;letter-spacing:-.02em;text-wrap:balance;line-height:1.05}
 
-      <nav class="nav-links" aria-label="Primary">
-        <a class="nav-top" href="/#what">The platform</a>
-        <a class="nav-top" href="/#easy">Why it&rsquo;s easy</a>
-        <a class="nav-top" href="/#roi">The math</a>
-        <a class="nav-top" href="/#terms">Plain terms</a>
-      </nav>
+  /* nav */
+  .nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);
+       backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
+  .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:48px}
+  .brand{display:flex;align-items:center;gap:9px;font-family:var(--display);font-weight:400;letter-spacing:-.02em;font-size:19px}
+  .mk{width:19px;height:19px;border-radius:5px;background:var(--ink);position:relative}
+  .mk::after{content:"";position:absolute;inset:5px 4px;background:var(--bg);
+     clip-path:polygon(50% 0,100% 38%,72% 38%,72% 100%,28% 100%,28% 38%,0 38%)}
+  .navlinks{display:flex;align-items:center;gap:24px;color:var(--muted);font-size:14.5px;font-weight:400}
+  .navlinks a:hover{color:var(--ink)}
 
-      <div class="nav-cta">
-        <a class="btn-outline js-book-demo" href="#demo">Book a demo</a>
-        <a class="btn-primary" href="#waitlist">Start a pilot</a>
-      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mnav">
-        <span></span><span></span><span></span>
-      </button>
-      </div>
+  /* buttons */
+  .btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;
+       font-family:var(--sans);font-weight:500;font-size:14.5px;letter-spacing:-.01em;
+       padding:7px 17px;border-radius:100px;transition:transform .12s ease,background .15s ease}
+  .btn:active{transform:translateY(1px)}
+  .btn-dark{background:var(--ink);color:var(--bg)}
+  .btn-dark:hover{background:color-mix(in srgb,var(--ink) 86%,var(--muted))}
+  .btn-grey{background:var(--pill);color:var(--pill-ink)}
+  .btn-grey:hover{background:color-mix(in srgb,var(--pill) 82%,var(--muted))}
+  .btn:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+
+  /* hero */
+  .hero{padding:132px 0 96px;text-align:center}
+  h1{font-size:clamp(40px,7.2vw,92px);font-weight:400;letter-spacing:-.035em}
+  .hero p.sub{max-width:600px;margin:24px auto 0;color:var(--muted);font-size:clamp(17px,1.9vw,20px);
+     font-weight:400;letter-spacing:-.01em}
+  .cta-row{display:flex;gap:12px;justify-content:center;margin-top:38px;flex-wrap:wrap}
+  .trust{margin-top:18px;color:var(--muted);font-size:13.5px;font-weight:500}
+
+  /* device frame */
+  .frame{background:var(--frame);border-radius:26px;padding:clamp(14px,2.2vw,26px)}
+  .hero .frame{margin:120px auto 0;max-width:1000px;padding:0;background:transparent}
+  .hero .frame .screen{border:0;box-shadow:none;background:transparent}
+  .screen{background:var(--screen);border:1px solid var(--line);border-radius:14px;
+     box-shadow:var(--shadow);overflow:hidden}
+
+  /* section frame */
+  .sec{padding:96px 0}
+  .sec-alt{background:var(--alt)}
+  .kicker{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+
+  /* industries */
+  .ind h2{font-size:clamp(28px,4vw,44px);max-width:16ch}
+  .ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:34px}
+  .ind-card{background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:26px 26px 28px}
+  .sec-alt .ind-card{background:var(--screen)}
+  .ind-card h3{font-size:14px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .tag{font-size:14.5px;font-weight:600;letter-spacing:-.01em;background:var(--pill);
+       color:var(--ink);padding:7px 13px;border-radius:100px}
+  .ind-line{margin-top:30px;color:var(--muted);font-size:17px;font-weight:500;max-width:52ch}
+  .ind-line b{color:var(--ink);font-weight:700}
+
+  /* who-it's-for tabs */
+  .tabs{display:flex;gap:30px;border-bottom:1px solid var(--line);margin-top:36px}
+  .tab{background:none;border:0;cursor:pointer;font-family:var(--sans);font-weight:650;font-size:15px;
+       color:var(--muted);padding:0 0 15px;position:relative;letter-spacing:-.01em}
+  .tab:hover{color:var(--ink)}
+  .tab[aria-selected="true"]{color:var(--ink)}
+  .tab[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--ink)}
+  .tab:focus-visible{outline:2px solid var(--ink);outline-offset:4px;border-radius:3px}
+  .panel{display:none;padding-top:30px}
+  .panel.active{display:block}
+  .panel .lead2{color:var(--muted);font-size:17px;font-weight:450;margin:22px 0 0;max-width:56ch}
+  .panel .lead2 b{color:var(--ink);font-weight:650}
+
+  /* feature rows */
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:clamp(30px,5vw,80px);align-items:center;
+       padding:78px 0}
+  .row + .row{border-top:1px solid var(--line)}
+  .row .copy{max-width:440px}
+  /* the feature headings run lighter than the hero — display faces carry at size */
+  .row h2{font-size:clamp(30px,4.6vw,54px);font-weight:400;letter-spacing:-.03em}
+  .row .lead{color:var(--muted);margin:16px 0 22px;font-size:17px;font-weight:400}
+  ul.checks{list-style:none;margin:0 0 26px;padding:0;display:flex;flex-direction:column;gap:14px}
+  ul.checks li{display:grid;grid-template-columns:22px 1fr;gap:10px;color:var(--muted);
+     font-size:16px;font-weight:400;line-height:1.42}
+  ul.checks li b{color:var(--ink);font-weight:600}
+  .ck{width:20px;height:20px;margin-top:1px;border-radius:100px;border:1.5px solid var(--ink);
+     display:grid;place-items:center}
+  .ck svg{width:11px;height:11px}
+  @media (min-width:881px){ .row.rev .visual{order:-1} }
+
+  /* mock UI bits */
+  .dot{width:8px;height:8px;border-radius:100px;background:var(--ok);flex:none}
+  .live{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--muted)}
+  .pulse{animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;
+        padding:5px 10px;border-radius:100px;background:color-mix(in srgb,var(--ok) 15%,var(--screen));
+        color:var(--ok)}
+  .muted{color:var(--muted)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+
+  /* shared device chrome — used by the front desk + scheduling cards */
+  .dhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);
+     padding:var(--space-4) var(--space-4) var(--space-3);border-bottom:1px solid var(--line)}
+  .dwho{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .dwho b{font-size:var(--text-sm);font-weight:var(--weight-bold);letter-spacing:-.01em}
+  .dwho .sub{font-size:var(--text-xs);color:var(--muted)}
+  .dstat{display:inline-flex;align-items:center;gap:7px;font-size:var(--text-xs);
+     font-weight:var(--weight-semi);color:var(--muted);white-space:nowrap}
+  .dstat > span{display:none;align-items:center;gap:7px}
+  [data-phase="ring"] .st-ring,[data-phase="live"] .st-live,[data-phase="done"] .st-done,
+  [data-phase="assigned"] .st-assigned,[data-phase="texted"] .st-texted,
+  [data-phase="onsite"] .st-onsite,[data-phase="closed"] .st-closed{display:inline-flex}
+  /* waveform */
+  .wave{display:flex;align-items:center;gap:3px;height:16px}
+  .wave i{width:2px;height:100%;border-radius:2px;background:var(--muted);
+     transform:scaleY(.18);transform-origin:center;opacity:.55}
+  #fdDemo[data-phase="live"] .wave i{animation:wv .85s ease-in-out infinite alternate}
+  .wave i:nth-child(2){animation-delay:.1s}.wave i:nth-child(3){animation-delay:.22s}
+  .wave i:nth-child(4){animation-delay:.05s}.wave i:nth-child(5){animation-delay:.3s}
+  .wave i:nth-child(6){animation-delay:.16s}.wave i:nth-child(7){animation-delay:.26s}
+  @keyframes wv{from{transform:scaleY(.18)}to{transform:scaleY(1)}}
+  /* transcript */
+  .fd-talk{padding:var(--space-4);background:var(--alt);display:flex;flex-direction:column;
+     gap:var(--space-3);min-height:132px}
+  .tline{display:grid;grid-template-columns:58px 1fr;gap:var(--space-3);align-items:baseline;
+     opacity:0;transform:translateY(6px)}
+  .tline.on{opacity:1;transform:none;transition:opacity .35s ease-out,transform .35s ease-out}
+  .tline .spk{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;
+     color:var(--muted);text-transform:uppercase;padding-top:2px}
+  .tline p{font-size:var(--text-sm);line-height:1.45;margin:0;color:var(--muted)}
+  .tline.mal p{color:var(--ink);font-weight:var(--weight-med)}
+  /* facts that resolve in, shared by both cards */
+  .stagger .cap-line,.stagger .src{opacity:0;transform:translateY(6px)}
+  .stagger .cap-line.on,.stagger .src.on{opacity:1;transform:none;
+     transition:opacity .35s ease-out,transform .35s ease-out}
+
+  /* scheduling: the text the crew gets + the checklist working itself off */
+  .sms-lab{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.06em;
+     color:var(--muted);text-transform:uppercase;margin-bottom:var(--space-2)}
+  .sms{background:var(--screen);border:1px solid var(--line);
+     border-radius:var(--radius-md) var(--radius-md) var(--radius-md) var(--space-1);
+     padding:var(--space-3) var(--space-4);font-size:var(--text-sm);line-height:1.5;
+     opacity:0;transform:translateY(8px)}
+  .sms.on{opacity:1;transform:none;transition:opacity .4s ease-out,transform .4s ease-out}
+  .sms b{font-weight:var(--weight-semi)}
+  .sms .addr{color:var(--muted)}
+  .tk-list{margin-top:var(--space-4);border-top:1px solid var(--line)}
+  .tk{display:grid;grid-template-columns:18px 1fr auto;gap:var(--space-3);align-items:center;
+     padding:var(--space-3) 0;font-size:var(--text-sm);border-bottom:1px solid var(--line)}
+  .tkbox{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--line);color:var(--screen);
+     display:grid;place-items:center;transition:background .25s ease,border-color .25s ease}
+  .tkbox svg{width:10px;height:10px;opacity:0;transition:opacity .25s ease}
+  .tk.on .tkbox{background:var(--ink);border-color:var(--ink)}
+  .tk.on .tkbox svg{opacity:1}
+  .tk-t{transition:color .3s ease}
+  .tk.on .tk-t{color:var(--muted)}
+  .tk-meta{font-family:var(--mono);font-size:var(--text-xs);color:var(--muted);
+     opacity:0;transition:opacity .3s ease;white-space:nowrap}
+  .tk.on .tk-meta{opacity:1}
+  .tk-req{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.05em;
+     color:var(--muted);text-transform:uppercase}
+
+  @media (prefers-reduced-motion:reduce){
+    .wave i{animation:none!important;transform:scaleY(.5)}
+    .tline,.stagger .cap-line,.stagger .src,.sms{opacity:1;transform:none;transition:none}
+    .tkbox,.tkbox svg,.tk-t,.tk-meta{transition:none}
+  }
+
+  /* estimate table mock */
+  table.est{width:100%;border-collapse:collapse;font-size:13px}
+  table.est th{text-align:left;color:var(--muted);font-weight:700;font-size:11px;
+     text-transform:uppercase;letter-spacing:.03em;padding:0 12px 9px}
+  table.est td{padding:11px 12px;border-top:1px solid var(--line)}
+  table.est td.num{text-align:right}
+  .est-item{font-weight:650}
+  .est-sub{font-size:11.5px;color:var(--muted)}
+  .est-total{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;
+     border-top:1px solid var(--line);background:var(--alt)}
+  .sec-alt .est-total{background:var(--frame)}
+  .est-total .lab{font-weight:700;font-size:13px}
+  .est-total .amt{font-weight:800;font-size:20px}
+
+  /* estimating device — 3 capture modes */
+  .playbtn{position:absolute;right:var(--space-4);bottom:var(--space-4);width:32px;height:32px;
+     border-radius:var(--radius-pill);border:1px solid var(--line);background:var(--screen);
+     display:grid;place-items:center;cursor:pointer;color:var(--ink);box-shadow:var(--shadow)}
+  .playbtn:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+  .playbtn svg{width:12px;height:12px}
+  .screen.dev{display:flex;flex-direction:column}
+  .dev-tabs{display:flex;align-items:center;gap:var(--space-5);
+     padding:var(--space-3) var(--space-4) 0;border-bottom:1px solid var(--line)}
+  .dtab{background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;
+     font-family:var(--sans);font-size:var(--text-sm);font-weight:var(--weight-semi);color:var(--muted);
+     padding:0 0 var(--space-3);letter-spacing:-.01em}
+  .dtab:hover{color:var(--ink)}
+  .dtab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+  .dtab:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:3px}
+  .dev-tabs .playbtn{position:static;margin:0 0 var(--space-2) auto;width:28px;height:28px;box-shadow:none}
+  .dpanel{display:none;min-height:296px}
+  #estDemo.p-scan .dp-scan,#estDemo.p-aerial .dp-aerial,#estDemo.p-book .dp-book{display:block}
+  .viz{position:relative;background:var(--alt);overflow:hidden;padding:var(--space-4) var(--space-4) var(--space-3)}
+  .viz svg{width:100%;height:auto;display:block}
+  .cap{padding:var(--space-3) var(--space-5) var(--space-5);display:flex;flex-direction:column;gap:var(--space-3)}
+  .cap-line{display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);font-size:var(--text-sm)}
+  .cap-line span:first-child{color:var(--muted);font-weight:var(--weight-med)}
+  .cap-line .mono{font-weight:var(--weight-semi);color:var(--ink);white-space:nowrap}
+  .cap-total{border-top:1px solid var(--line);padding-top:var(--space-3)}
+  .cap-total span:first-child{color:var(--ink);font-weight:var(--weight-bold)}
+  .cap-total .mono{font-size:var(--text-lg);font-weight:var(--weight-bold)}
+  .scan-tag{position:absolute;left:var(--space-4);bottom:var(--space-3);
+     font-size:var(--text-xs);font-weight:var(--weight-semi);color:var(--muted);
+     background:var(--screen);border:1px solid var(--line);border-radius:var(--radius-pill);
+     padding:var(--space-1) var(--space-3);display:inline-flex;align-items:center;gap:var(--space-2)}
+  .scan-tag::before{content:"";width:7px;height:7px;border-radius:var(--radius-pill);background:var(--ok);flex:none}
+  /* scan room */
+  .room .wall-far{fill:var(--screen);stroke:var(--line);stroke-width:1.2}
+  .room .wall-side{fill:color-mix(in srgb,var(--screen) 92%,var(--muted));stroke:var(--line);stroke-width:1.2}
+  .room .wall-l{fill:color-mix(in srgb,var(--screen) 84%,var(--muted));stroke:var(--line);stroke-width:1.2}
+  .room .op{fill:var(--alt);stroke:var(--muted);stroke-width:1.2}
+  .room .edge{stroke:var(--ink);stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .room .node{fill:var(--ink)}
+  .room .dim{font-family:var(--mono);font-size:8.5px;fill:var(--muted)}
+  .room .dbadge rect{fill:var(--screen);stroke:var(--line);stroke-width:1}
+  .room .dbadge text{font-family:var(--mono);font-size:8px;fill:var(--ink);font-weight:700}
+  .sweep{position:absolute;top:0;bottom:0;left:0;width:34%;opacity:0;pointer-events:none;
+     background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--ink) 9%,transparent),transparent)}
+  #estDemo.p-scan .sweep{opacity:1;animation:sweep 2.6s ease-in-out infinite}
+  #estDemo.p-scan .node{animation:nodePulse 1.6s ease-in-out infinite}
+  @keyframes nodePulse{0%,100%{opacity:.4}50%{opacity:1}}
+  @keyframes sweep{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
+  /* aerial roof */
+  .roof .facet-a{fill:color-mix(in srgb,var(--screen) 76%,var(--muted));stroke:var(--screen);stroke-width:1.5}
+  .roof .facet-b{fill:color-mix(in srgb,var(--screen) 62%,var(--muted));stroke:var(--screen);stroke-width:1.5}
+  .roof .facet-c{fill:color-mix(in srgb,var(--screen) 88%,var(--muted));stroke:var(--screen);stroke-width:1.5}
+  .roof .rline{stroke:var(--ink);stroke-width:1.3;fill:none;opacity:.5;stroke-dasharray:3 3}
+  .roof .rlabel{font-family:var(--mono);font-size:9px;fill:var(--ink);font-weight:700}
+  .roof .rlabel .sub{fill:var(--muted);font-weight:500}
+  /* docs / plans — blueprint takeoff */
+  .plan .pwall{stroke:var(--ink);stroke-width:1.4;fill:none;stroke-linejoin:round}
+  .plan .fix{stroke:var(--ink);stroke-width:1.1;fill:var(--screen);stroke-linejoin:round}
+  .plan .dimline{stroke:var(--muted);stroke-width:.8;fill:none}
+  .plan .dimt{font-family:var(--mono);font-size:8px;fill:var(--muted)}
+  .plan .plabel{font-family:var(--mono);font-size:7.5px;fill:var(--muted);font-weight:700;letter-spacing:.05em}
+  .plan .mark{fill:none;stroke:var(--ink);stroke-width:1.6;opacity:0}
+  .src{font-size:var(--text-xs);font-weight:var(--weight-semi);color:var(--muted);
+     text-transform:uppercase;letter-spacing:.05em;margin-bottom:var(--space-1)}
+  #estDemo.p-book .plan .mark{opacity:1;animation:markPulse 1.6s ease-in-out infinite}
+  #estDemo.p-book .sweep{opacity:1;animation:sweep 2.6s ease-in-out infinite}
+  #estDemo.p-book .cap{animation:fadeUp .5s ease-out both;animation-delay:1.1s}
+  @keyframes markPulse{0%,100%{opacity:.3}50%{opacity:1}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    #estDemo.p-scan .sweep,#estDemo.p-book .sweep{opacity:0;animation:none}
+    #estDemo.p-scan .node{animation:none;opacity:1}
+    #estDemo.p-book .plan .mark{animation:none;opacity:1}
+    #estDemo.p-book .cap{animation:none}
+  }
+
+  /* invoicing: a week of money, landing on its own */
+  .wk-num{font-size:40px;font-weight:800;letter-spacing:-.04em;line-height:1.1;margin-top:var(--space-1)}
+  .wk{margin-top:var(--space-5);display:grid;grid-template-columns:repeat(5,1fr);
+      gap:var(--space-3);align-items:end;height:124px}
+  .wkb{background:var(--line);border-radius:var(--radius-sm);height:0;
+      transition:height .7s cubic-bezier(.4,0,.2,1),background .5s ease}
+  .wkb.on{height:var(--h)}
+  /* the money turns collected left to right, without anyone touching it */
+  #invDemo[data-phase="auto"] .wkb{background:var(--ok)}
+  #invDemo[data-phase="auto"] .wkb:nth-child(1){transition-delay:0s,0s}
+  #invDemo[data-phase="auto"] .wkb:nth-child(2){transition-delay:0s,.11s}
+  #invDemo[data-phase="auto"] .wkb:nth-child(3){transition-delay:0s,.22s}
+  #invDemo[data-phase="auto"] .wkb:nth-child(4){transition-delay:0s,.33s}
+  #invDemo[data-phase="auto"] .wkb:nth-child(5){transition-delay:0s,.44s}
+  .wk-days{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--space-3);
+      margin-top:var(--space-3);font-family:var(--mono);font-size:10px;font-weight:700;
+      letter-spacing:.05em;color:var(--muted);text-align:center}
+  @media (prefers-reduced-motion:reduce){
+    .wkb{transition:none}
+    #invDemo[data-phase="auto"] .wkb{transition-delay:0s,0s}
+  }
+
+  /* hero — the stack it replaces, beside the only thing a tech ever touches */
+  .split{display:grid;grid-template-columns:1fr 1fr}
+  .split .half{padding:var(--space-6) var(--space-5);text-align:left}
+  .split .half + .half{border-left:1px solid var(--line)}
+  .half-lab{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;
+     text-transform:uppercase;color:var(--muted);margin:0 0 var(--space-5)}
+  /* the trades Mallet covers, on a slow continuous loop — the list is duplicated
+     once in the markup so translateX(-50%) lands seamlessly back at the start */
+  .ticker{position:relative;overflow:hidden;padding:var(--space-4) 0 var(--space-3)}
+  .ticker::before,.ticker::after{content:"";position:absolute;top:0;bottom:0;width:80px;
+     z-index:2;pointer-events:none}
+  .ticker::before{left:0;background:linear-gradient(90deg,var(--screen),transparent)}
+  .ticker::after{right:0;background:linear-gradient(270deg,var(--screen),transparent)}
+  /* spacing must be margin, not gap: gap gives N-1 gaps, so -50% lands half a gap
+     short of the duplicate and the loop visibly jumps. A per-item margin makes
+     every repeat unit identical. */
+  .track{display:flex;width:max-content;animation:tickerSlide 34s linear infinite}
+  .track span{font-family:var(--display);font-size:19px;font-weight:400;
+     letter-spacing:-.02em;white-space:nowrap;margin-right:var(--space-6)}
+  @keyframes tickerSlide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .ticker-cap{text-align:center;margin:var(--space-3) 0 0;font-family:var(--mono);
+     font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+     color:var(--muted)}
+  @media (prefers-reduced-motion:reduce){
+    /* no scroll to reveal the rest, so wrap it and drop the duplicate half */
+    .ticker{overflow:visible;padding:var(--space-6) var(--space-6) var(--space-5)}
+    .ticker::before,.ticker::after{display:none}
+    .track{animation:none;width:auto;flex-wrap:wrap;justify-content:center;gap:var(--space-4)}
+    .track span{margin-right:0}
+    .track span[aria-hidden="true"]{display:none}
+  }
+
+
+  /* FAQ — the objections a shop owner raises before they will book anything */
+  .faq{max-width:760px;margin:0 auto}
+  .faq h2{text-align:center;font-size:clamp(30px,4.6vw,54px);font-weight:400;
+     letter-spacing:-.03em}
+  .faq-list{margin-top:var(--space-8);border-top:1px solid var(--line)}
+  .faq-item{padding:var(--space-6) 0;border-bottom:1px solid var(--line)}
+  .faq-q{font-size:var(--text-lg);font-weight:var(--weight-med);letter-spacing:-.01em;margin:0}
+  .faq-a{color:var(--muted);font-size:var(--text-md);line-height:1.6;
+     margin:var(--space-3) 0 0;max-width:62ch}
+  .assure{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--space-3);
+     margin-top:var(--space-6)}
+  .assure span{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;
+     text-transform:uppercase;color:var(--muted);background:var(--pill);
+     padding:8px 14px;border-radius:var(--radius-pill)}
+
+  /* hero stats — one panel, hairline-divided (Gestalt common region), left-aligned, no pill noise */
+  .scr-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);
+     padding:var(--space-4) var(--space-5);border-bottom:1px solid var(--line)}
+  .scr-title{font-family:var(--display);font-weight:var(--weight-semi);font-size:var(--text-md);letter-spacing:-.01em}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr)}
+  .stat{padding:var(--space-6) var(--space-5)}
+  .stat + .stat{border-left:1px solid var(--line)}
+  .stat-label{font-size:var(--text-sm);font-weight:var(--weight-med);color:var(--muted)}
+  .stat-num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:var(--weight-bold);
+     font-size:var(--text-xl);letter-spacing:-.03em;margin-top:var(--space-2);color:var(--ink)}
+  .stat-sub{font-size:var(--text-xs);font-weight:var(--weight-med);color:var(--muted);margin-top:var(--space-2)}
+  @media (max-width:600px){
+    .stats{grid-template-columns:1fr}
+    .stat + .stat{border-left:0;border-top:1px solid var(--line)}
+  }
+
+
+  /* footer */
+  /* Consent card. Ported from styles.css (no longer linked on this page) and re-expressed in
+     the redesign's tokens. It is a fixed card by necessity — a consent notice has to be visible
+     without scrolling — and it removes itself the moment a choice is made. */
+  .consent{position:fixed;left:20px;bottom:20px;z-index:80;max-width:340px;
+     background:var(--screen);border:1px solid var(--line);border-radius:var(--radius-md);
+     padding:var(--space-5) var(--space-5) var(--space-4);
+     box-shadow:0 24px 60px rgba(23,21,15,.22);font-family:var(--sans)}
+  .consent[hidden]{display:none}
+  .consent-h{font-weight:var(--weight-semi);font-size:var(--text-md);margin:0 0 var(--space-2)}
+  .consent-p{font-size:var(--text-sm);color:var(--muted);line-height:1.55;margin:0}
+  .consent-p a{text-decoration:underline}
+  .consent-row{display:flex;gap:var(--space-2);margin-top:var(--space-4)}
+  .consent-btn{flex:1;justify-content:center;cursor:pointer;border:0;
+     font-family:var(--sans);font-weight:var(--weight-med);font-size:14px;
+     padding:8px 14px;border-radius:var(--radius-pill)}
+  .btn-primary.consent-btn{background:var(--ink);color:var(--bg)}
+  .btn-outline.consent-btn{background:var(--pill);color:var(--ink)}
+  .consent-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  @media (max-width:640px){.consent{left:12px;right:12px;bottom:12px;max-width:none}}
+
+  /* Footer commits to ONE dark look in both themes — it is the page's closing anchor, and a
+     footer that flips with the theme stops reading as the bottom of the document. Tokens are
+     therefore literal, not theme-dependent. */
+  footer{
+    --foot-bg:#17150f;--foot-ink:#f4f1ea;--foot-muted:#a49f95;
+    --foot-line:rgba(244,241,234,.14);
+    background:var(--foot-bg);color:var(--foot-ink);
+    padding:var(--space-8) 0 var(--space-6);margin-top:0}
+  footer .brand{color:var(--foot-ink)}
+  footer .mk{background:var(--foot-ink)}
+  footer .mk::after{background:var(--foot-bg)}
+  .foot-top{display:grid;grid-template-columns:1.5fr repeat(3,1fr);gap:var(--space-8);
+     align-items:start}
+  footer .fnote{color:var(--foot-muted);font-size:var(--text-md);font-weight:400;
+     margin:var(--space-4) 0 0;max-width:36ch;line-height:1.55}
+  .foot-cta{display:flex;gap:var(--space-3);margin-top:var(--space-6);flex-wrap:wrap}
+  .foot-cta .btn-light{background:var(--foot-ink);color:var(--foot-bg)}
+  .foot-cta .btn-line{background:transparent;color:var(--foot-ink);
+     box-shadow:inset 0 0 0 1px var(--foot-line)}
+  .foot-cta .btn-line:hover{background:rgba(244,241,234,.07)}
+  .foot-col{display:flex;flex-direction:column;gap:var(--space-3)}
+  .foot-head{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;
+     text-transform:uppercase;color:var(--foot-muted);margin:0 0 var(--space-1)}
+  .foot-col a{color:var(--foot-ink);font-size:var(--text-md);opacity:.82}
+  .foot-col a:hover{opacity:1}
+  .foot-col a:focus-visible,.foot-bottom a:focus-visible{outline:2px solid var(--foot-ink);
+     outline-offset:3px;border-radius:3px}
+  .foot-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;
+     gap:var(--space-3);margin-top:var(--space-8);padding-top:var(--space-5);
+     border-top:1px solid var(--foot-line);color:var(--foot-muted);font-size:var(--text-sm)}
+  .foot-legal{display:flex;gap:var(--space-6)}
+  .foot-legal a{color:var(--foot-muted)}
+  .foot-legal a:hover{color:var(--foot-ink)}
+  @media (max-width:880px){
+    .foot-top{grid-template-columns:1fr 1fr;gap:var(--space-6)}
+    .foot-top .foot-brand{grid-column:1 / -1}
+    .foot-bottom{justify-content:flex-start}
+  }
+
+  @media (max-width:880px){
+    .ind-grid{grid-template-columns:1fr}
+    .row{grid-template-columns:1fr;padding:44px 0;gap:28px}
+    .navlinks .hidem{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){ .pulse{animation:none} }
+</style>
+
+<div class="m">
+
+  <nav class="nav"><div class="wrap">
+    <div class="brand"><span class="mk" aria-hidden="true"></span>Mallet</div>
+    <div class="navlinks">
+      <a href="#work" class="hidem">How it works</a>
+      <!-- Absolute: the app is a separate deploy from the marketing site, so a relative
+           /login would 404 here. Swap for app.trymallet.com once that subdomain exists. -->
+      <a href="https://mallet-app-snowy.vercel.app/login">Log in</a>
+      <a class="btn btn-dark js-book-demo" href="#demo">Book a demo</a>
     </div>
-    <div class="mnav" id="mnav">
-      <a href="/#what">The platform</a>
-      <a href="/#easy">Why it&rsquo;s easy</a>
-      <a href="/#roi">The math</a>
-      <a href="/#terms">Plain terms</a>
-      <a href="/leak-check">The Leak Check</a>
-      <div class="mnav-ctas">
-        <a class="btn-primary js-book-demo" href="/#demo">Book a demo</a>
-        <a class="btn-outline" href="/#waitlist">Start a pilot</a>
-      </div>
+  </div></nav>
+
+  <!-- HERO -->
+  <header class="hero"><div class="wrap">
+    <h1>Replaces six systems.<br>Nobody has to learn it.</h1>
+    <p class="sub">It answers the call, writes the quote, runs the job, and chases the invoice.</p>
+    <div class="cta-row">
+      <a class="btn btn-dark js-book-demo" href="#demo">Book a demo</a>
+      <a class="btn btn-grey" href="/leak-check">The Leak Check</a>
     </div>
-  </header>
 
-  <main class="frame">
-
-    <!-- ============================ HERO ============================ -->
-    <section class="hero" id="hero">
-      <div class="hero-track">
-        <div class="hero-pin">
-          <div class="bench" aria-hidden="true"></div>
-          <div class="bench-veil" aria-hidden="true"></div>
-
-          <div class="hero-inner">
-            <div class="hero-head">
-              <p class="hero-kicker">The AI-native operating system for service businesses</p>
-              <h1 class="hero-serif">Run the whole shop<br>from one screen.</h1>
-              <p class="hero-lede">Mallet answers the calls, writes the quotes, runs the jobs, and gets you paid.</p>
-              <div class="hero-actions">
-                <a class="btn-primary lg js-book-demo" href="#demo">Book a demo</a>
-                <a class="btn-amber lg" href="/leak-check">Calculate how much you could be making&nbsp;&rarr;</a>
-              </div>
-            </div>
-
-            <div class="hero-scene" id="demo" aria-label="Mallet demo — the call, the quote, the job, the invoice">
-              <!-- the flow: four stages, each feeding the next -->
-              <ol class="flow-rail" id="flowRail" aria-label="How one job flows through Mallet">
-                <li class="fr on" data-stage="0"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Front&nbsp;Desk</b><span>answers the call</span></span></li>
-                <li class="fr" data-stage="1"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Estimating</b><span>writes the quote</span></span></li>
-                <li class="fr" data-stage="2"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Foreman</b><span>runs the job</span></span></li>
-                <li class="fr" data-stage="3"><span class="fr-dot" aria-hidden="true"></span><span class="fr-txt"><b>Follow-ups</b><span>chases the invoice</span></span></li>
-                <span class="fr-line" aria-hidden="true"><i class="fr-fill" id="frFill"></i></span>
-              </ol>
-
-              <!-- the device: the real Mallet screens -->
-              <div class="hero-device">
-                <div class="desk-window">
-                  <div class="desk-bar">
-                    <span class="desk-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                    <span class="desk-title" id="stageTitle">MALLET&nbsp;FRONT&nbsp;DESK</span>
-                    <span class="desk-live"><span class="desk-dot" aria-hidden="true"></span>DEMO</span>
-                  </div>
-                  <div class="acts" id="acts">
-
-              <!-- ACT 1 · answers the call -->
-              <section class="act on" data-act="0">
-                <div class="call-tiles" aria-hidden="true">
-                  <div class="tile caller-side"><span class="avatar">S</span><span class="tl">CALLER</span></div>
-                  <div class="tile ai-side"><span class="ai-mark">&#10022;</span><span class="tl">MALLET</span></div>
-                </div>
-                <div class="call-cap">
-                  <p class="cc-status"><span class="cc-live">CONNECTED</span><b class="cc-timer">0:00</b></p>
-                  <p class="cc-line"></p>
-                </div>
-                <div class="call-checks">
-                  <span class="ck">Answered &middot; first ring</span>
-                  <span class="ck">Emergency flagged</span>
-                  <span class="ck">Booked &middot; 2:00&ndash;4:00 &middot; Marco</span>
-                  <span class="ck">Confirmation texted</span>
-                </div>
-              </section>
-
-              <!-- ACT 2 · writes the quote -->
-              <section class="act" data-act="1">
-                <p class="qc-cust">New quote &middot; <b>Sarah K.</b> <span class="qc-tag">FROM THE CALL</span></p>
-                <div class="qc-ask"><span class="qc-typed"></span><span class="qc-caret" aria-hidden="true"></span><span class="qc-build">Build it</span></div>
-                <ol class="qc-stages">
-                  <li class="qs"><b>Reading the job</b><span>your description + the call</span></li>
-                  <li class="qs"><b>Pricing from your book &amp; rates</b><span>40-gal tank &middot; labor &middot; haul-away</span></li>
-                  <li class="qs"><b>Comparing to quotes you&rsquo;ve won</b><span>3 similar jobs</span></li>
-                  <li class="qs"><b>Writing the quote</b><span>Good / Better / Best</span></li>
-                </ol>
-                <div class="qc-result">
-                  <div class="gbb"><span>GOOD<b>$1,850</b></span><span class="mid">BETTER<b>$2,400</b></span><span>BEST<b>$3,100</b></span></div>
-                  <p class="qc-sent">&check; Sent to Sarah &mdash; tap to approve</p>
-                </div>
-              </section>
-
-              <!-- ACT 3 · runs the job -->
-              <section class="act" data-act="2">
-                <div class="job-head"><span class="jh-when">TODAY &middot; 2:00</span><b class="jh-name">Water heater install</b><span class="jh-tech">MARCO</span></div>
-                <ul class="job-list">
-                  <li class="jc">Drain &amp; pull the old unit</li>
-                  <li class="jc">Set &amp; plumb the 40-gal tank</li>
-                  <li class="jc">Pressure test &middot; photo</li>
-                  <li class="jc">Haul away &middot; site clean</li>
-                </ul>
-                <p class="job-text"><span class="jt-tag">MARCO &middot; BY TEXT</span>Done at the Johnson job &mdash; install&rsquo;s in and tested, 2 hrs</p>
-                <p class="job-meta"><span class="ok">&check;</span> Checklist complete &middot; time logged &middot; invoice drafted</p>
-              </section>
-
-              <!-- ACT 4 · chases the invoice -->
-              <section class="act" data-act="3">
-                <div class="inv-head"><span>INVOICE #2216</span><b>$2,585</b><span class="inv-status">SENT</span></div>
-                <div class="inv-thread">
-                  <p class="inv-msg"><span class="im-day">DAY 3 &middot; AUTO</span>Hi Sarah &mdash; friendly reminder on invoice #2216 ($2,585). Pay online any time: rossi.co/pay</p>
-                  <p class="inv-msg"><span class="im-day">DAY 7 &middot; AUTO</span>Quick nudge on #2216 &mdash; happy to take a card by text, or call us with any questions.</p>
-                  <p class="inv-paid"><span class="ok">&check;</span> PAID &middot; $2,585 &middot; card &middot; day 8</p>
-                </div>
-              </section>
-
-                  </div>
-                </div>
-                <button class="stage-next" id="stageNext" type="button" aria-label="Next: writes the quote">&#9654;</button>
-              </div>
-
-              <!-- contextual outcome card, updates per stage -->
-              <aside class="anno-card" id="annoCard" aria-hidden="true">
-                <p class="ac-head"><span id="acTitle">MISSED CALL</span><b id="acWho">Sarah&nbsp;K.</b></p>
-                <ul id="acList">
-                  <li>&check; Texted back in 6 seconds</li>
-                  <li>&check; Booked without you</li>
-                </ul>
-              </aside>
-            </div>
-
-            <p class="hero-cue" aria-hidden="true"><span>Scroll to watch a job run itself</span><i>&darr;</i></p>
-          </div>
+    <div class="frame"><div class="screen">
+      <div class="ticker">
+        <div class="track">
+          <span>Painting</span><span>Roofing</span><span>Flooring</span><span>Tile</span>
+          <span>Drywall</span><span>Concrete &amp; paving</span><span>Restoration</span>
+          <span>Plumbing</span><span>Electrical</span><span>HVAC</span>
+          <span aria-hidden="true">Painting</span><span aria-hidden="true">Roofing</span>
+          <span aria-hidden="true">Flooring</span><span aria-hidden="true">Tile</span>
+          <span aria-hidden="true">Drywall</span><span aria-hidden="true">Concrete &amp; paving</span>
+          <span aria-hidden="true">Restoration</span>
+          <span aria-hidden="true">Plumbing</span><span aria-hidden="true">Electrical</span>
+          <span aria-hidden="true">HVAC</span>
         </div>
+        <p class="ticker-cap">Measured trades &amp; MEP</p>
       </div>
-    </section>
+    </div></div>
+  </div></header>
 
-    <!-- ======================= THE LEAK TAPE ======================= -->
-    <div class="hatch" aria-hidden="true"></div>
-    <section class="tape-band" aria-label="Money leaking this week — and Mallet catching it">
-        <!-- The leak tape: losses rolling past, Mallet catching them underneath.
-             Pure CSS marquee — each row's content is doubled for a seamless loop. -->
-        <div class="tape" aria-label="Money leaking this week — and Mallet catching it">
-          <div class="tape-row leaks" aria-hidden="true">
-            <span class="tk loss">7:42&nbsp;AM &middot; rang out &middot; <b>&ndash;$450</b></span>
-            <span class="tk loss">quote sent 3 days late &middot; lost the bid &middot; <b>&ndash;$1,850</b></span>
-            <span class="tk loss">callback &middot; skipped step &middot; <b>&ndash;$225</b></span>
-            <span class="tk loss">#2211 &middot; 42 days unpaid &middot; <b>$2,585 stuck</b></span>
-            <span class="tk loss">SAT 6:03&nbsp;AM &middot; voicemail &middot; hung up &middot; <b>&ndash;$450</b></span>
-            <span class="tk loss">two hours writing quotes &middot; after close</span>
-            <span class="tk loss">line busy &middot; called the next shop &middot; <b>&ndash;$450</b></span>
-            <span class="tk loss">callback &middot; no expansion tank &middot; <b>&ndash;$180</b></span>
-            <span class="tk loss">7:42&nbsp;AM &middot; rang out &middot; <b>&ndash;$450</b></span>
-            <span class="tk loss">quote sent 3 days late &middot; lost the bid &middot; <b>&ndash;$1,850</b></span>
-            <span class="tk loss">callback &middot; skipped step &middot; <b>&ndash;$225</b></span>
-            <span class="tk loss">#2211 &middot; 42 days unpaid &middot; <b>$2,585 stuck</b></span>
-            <span class="tk loss">SAT 6:03&nbsp;AM &middot; voicemail &middot; hung up &middot; <b>&ndash;$450</b></span>
-            <span class="tk loss">two hours writing quotes &middot; after close</span>
-            <span class="tk loss">line busy &middot; called the next shop &middot; <b>&ndash;$450</b></span>
-            <span class="tk loss">callback &middot; no expansion tank &middot; <b>&ndash;$180</b></span>
-          </div>
-          <div class="tape-row catches" aria-hidden="true">
-            <span class="tk win">&check; answered first ring &middot; booked 2:00</span>
-            <span class="tk win">&check; Good&nbsp;/&nbsp;Better&nbsp;/&nbsp;Best out in 4 min</span>
-            <span class="tk win">&check; checklist caught the skipped step</span>
-            <span class="tk win">&check; #2216 paid &middot; day 8</span>
-            <span class="tk win">&check; 6:03&nbsp;AM call &rarr; booked 9:30</span>
-            <span class="tk win">&check; dispatched Marco &middot; certified</span>
-            <span class="tk win">&check; invoice drafted at job close</span>
-            <span class="tk win">&check; follow-up sent itself &middot; day 3</span>
-            <span class="tk win">&check; answered first ring &middot; booked 2:00</span>
-            <span class="tk win">&check; Good&nbsp;/&nbsp;Better&nbsp;/&nbsp;Best out in 4 min</span>
-            <span class="tk win">&check; checklist caught the skipped step</span>
-            <span class="tk win">&check; #2216 paid &middot; day 8</span>
-            <span class="tk win">&check; 6:03&nbsp;AM call &rarr; booked 9:30</span>
-            <span class="tk win">&check; dispatched Marco &middot; certified</span>
-            <span class="tk win">&check; invoice drafted at job close</span>
-            <span class="tk win">&check; follow-up sent itself &middot; day 3</span>
-          </div>
-        </div>
-    </section>
-    <div class="hatch" aria-hidden="true"></div>
 
-    <!-- ==================== THE MATH — one panel per pillar ==================== -->
-    <section class="roi" id="roi">
-      <div class="wrap">
-        <p class="eyebrow" data-reveal>The math</p>
-        <h2 class="sec-h" data-reveal>What the leaks actually cost you.</h2>
-        <p class="sec-sub" data-reveal>That&rsquo;s the week rolling by above &mdash; set the sliders to your operation. Conservative on purpose.</p>
-        <p class="src-line" data-reveal>27% of calls to home-service businesses go unanswered <span class="src-inline">INVOCA &middot; 2025</span></p>
-        <!-- The worksheet: a job-ticket sheet, not another app window. -->
-        <div class="ledger" data-reveal>
-          <div class="ledger-body">
-        <div class="math-tabs" role="tablist" aria-label="Pick a pillar">
-          <button class="mtab on" role="tab" aria-selected="true" data-panel="0">01 &middot; FRONT&nbsp;DESK</button>
-          <button class="mtab" role="tab" aria-selected="false" data-panel="1">02 &middot; ESTIMATING</button>
-          <button class="mtab" role="tab" aria-selected="false" data-panel="2">03 &middot; FOREMAN</button>
-          <button class="mtab" role="tab" aria-selected="false" data-panel="3">04 &middot; FOLLOW-UPS</button>
-          <button class="math-next" id="mathNext" type="button" aria-label="Next pillar">&#9654;</button>
-        </div>
+  <!-- FEATURE ROWS -->
+  <div id="work"><div class="wrap">
 
-        <div class="mpanel on" data-mpanel="0">
-          <div class="roi-inputs">
-            <div class="roi-input">
-              <div class="roi-input-top"><label for="rMissed">Missed calls per week</label><output id="oMissed">5</output></div>
-              <input type="range" id="rMissed" min="0" max="25" step="1" value="5" />
-              <div class="roi-scale"><span>0</span><span>25</span></div>
-            </div>
-            <div class="roi-input">
-              <div class="roi-input-top"><label for="rTicket">Average job value</label><output class="js-ticket-out" id="oTicket">$450</output></div>
-              <input type="range" class="js-ticket" id="rTicket" min="100" max="5000" step="50" value="450" />
-              <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
-            </div>
-          </div>
-          <div class="ledger-payoff">
-            <p class="roi-label">LEFT ON THE TABLE, PER YEAR</p>
-            <p class="roi-big" id="pDesk">$23,400</p>
-            <p class="roi-note"><span id="pDeskN">52</span> booked jobs a year.</p>
-            <button class="lm-toggle" id="wkMathBtn" type="button">See the math &darr;</button>
-            <div class="lm-rows" id="wkMath" hidden>
-              <p class="lm-hint">Low on purpose &mdash; tap &minus;&thinsp;/&thinsp;+ to match your shop.</p>
-              <div class="lm-row on"><span>missed calls &times; 52 weeks</span><i aria-hidden="true"></i><b id="wm1">260</b></div>
-              <div class="lm-row on"><span>say only <span class="stp"><button type="button" data-t="real" data-d="-10" aria-label="lower">&minus;</button><b id="wkPctReal">50%</b><button type="button" data-t="real" data-d="10" aria-label="raise">+</button></span> are real customers</span><i aria-hidden="true"></i><b id="wm2">130</b></div>
-              <div class="lm-row on"><span>and just <span class="stp"><button type="button" data-t="book" data-d="-10" aria-label="lower">&minus;</button><b id="wkPctBook">4 in 10</b><button type="button" data-t="book" data-d="10" aria-label="raise">+</button></span> of those book</span><i aria-hidden="true"></i><b id="wm3">52 jobs</b></div>
-              <div class="lm-row sum on"><span>&times; your average job</span><i aria-hidden="true"></i><b id="wm4">$23,400</b></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="mpanel" data-mpanel="1">
-          <div class="roi-inputs">
-            <div class="roi-input">
-              <div class="roi-input-top"><label for="rQuotes">Quotes you write per week</label><output id="oQuotes">6</output></div>
-              <input type="range" id="rQuotes" min="0" max="40" step="1" value="6" />
-              <div class="roi-scale"><span>0</span><span>40</span></div>
-            </div>
-          </div>
-          <div class="ledger-payoff">
-            <p class="roi-label">QUOTE-WRITING, BACK PER YEAR</p>
-            <p class="roi-big" id="pEst">156 hrs</p>
-            <p class="roi-note">It drafts, you review and send &mdash; <b id="pEstWeeks">almost four 40-hour weeks</b> a year back.</p>
-          </div>
-        </div>
-
-        <div class="mpanel" data-mpanel="2">
-          <div class="roi-inputs">
-            <div class="roi-input">
-              <div class="roi-input-top"><label for="rCallbacks">Callbacks per month</label><output id="oCallbacks">2</output></div>
-              <input type="range" id="rCallbacks" min="0" max="10" step="1" value="2" />
-              <div class="roi-scale"><span>0</span><span>10</span></div>
-            </div>
-            <div class="roi-input">
-              <div class="roi-input-top"><label for="rTicket3">Average job value</label><output class="js-ticket-out" id="oTicket3">$450</output></div>
-              <input type="range" class="js-ticket" id="rTicket3" min="100" max="5000" step="50" value="450" />
-              <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
-            </div>
-          </div>
-          <div class="ledger-payoff">
-            <p class="roi-label">CALLBACKS THAT NEVER HAPPEN, PER YEAR</p>
-            <p class="roi-big" id="pFore">$1,800</p>
-            <p class="roi-note">The checklist catches the skipped step.</p>
-          </div>
-        </div>
-
-        <div class="mpanel" data-mpanel="3">
-          <div class="roi-inputs">
-            <div class="roi-input">
-              <div class="roi-input-top"><label for="rUnpaid">Unpaid invoices out right now</label><output id="oUnpaid">4</output></div>
-              <input type="range" id="rUnpaid" min="0" max="25" step="1" value="4" />
-              <div class="roi-scale"><span>0</span><span>25</span></div>
-            </div>
-            <div class="roi-input">
-              <div class="roi-input-top"><label for="rTicket4">Average job value</label><output class="js-ticket-out" id="oTicket4">$450</output></div>
-              <input type="range" class="js-ticket" id="rTicket4" min="100" max="5000" step="50" value="450" />
-              <div class="roi-scale"><span>$100</span><span>$5,000</span></div>
-            </div>
-          </div>
-          <div class="ledger-payoff">
-            <p class="roi-label">CASH ON THE STREET, RIGHT NOW</p>
-            <p class="roi-big" id="pCash">$1,800</p>
-            <p class="roi-note">The follow-ups chase it down for you.</p>
-          </div>
-        </div>
-
-        <div class="roi-total-bar">
-          <div class="ledger-total">
-            <p class="roi-label">ADD IT UP, PER YEAR</p>
-            <p class="roi-big" id="roiTotal">$25,200</p>
-            <p class="roi-note">plus <span id="roiHrs">156</span> hrs of quote-writing back.</p>
-          </div>
-        </div>
-          </div>
-        </div>
-
-        <p class="roi-fine">Deliberately modest estimates &mdash; the pilot measures the real numbers.</p>
-
-        <div class="cta-row split" data-reveal>
-          <a class="btn-amber lg" href="/leak-check">Calculate how much you could be making &mdash; 7 questions, 2 minutes &rarr;</a>
-          <a class="linkish js-book-demo" href="#demo">or book a demo &rarr;</a>
-        </div>
+    <!-- AI Estimating (lead pillar) -->
+    <section class="row" id="estimating">
+      <div class="copy">
+        <p class="kicker">AI Estimating</p>
+        <h2 style="margin-top:var(--space-3)">Estimates in minutes,<br>not at the kitchen table.</h2>
+        <p class="lead">However your trade sizes a job, Mallet prices it.</p>
+        <ul class="checks">
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Scan it.</b> Walls, ceilings, trim.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Trace it.</b> Roofs and lots, from above.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Price it.</b> Notes in, flat-rate out.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Present it.</b> Good, better, best. Signed on-site.</span></li>
+        </ul>
       </div>
-    </section>
-
-    <!-- ===================== THE PLATFORM TOUR ===================== -->
-    <!-- Pinned scrolly tour: the app frame stays put while scroll walks the
-         four stops; each stop PLAYS a scene (timers cleared on switch).
-         Mobile/reduced-motion: unpinned, stops are tap targets. -->
-    <section class="tour" id="what">
-      <div class="tour-sticky">
-        <div class="wrap tour-head">
-          <h2 class="sec-h center">This is Mallet.</h2>
-          <p class="tour-hint" aria-hidden="true">WATCH IT WORK &mdash; OR CLICK A PAGE</p>
+      <div class="visual"><div class="frame"><div class="screen dev p-scan" id="estDemo">
+        <div class="dev-tabs" role="tablist" aria-label="Estimating modes">
+          <button class="dtab" data-mode="scan" role="tab" aria-selected="true">Room scan</button>
+          <button class="dtab" data-mode="aerial" role="tab" aria-selected="false">Aerial</button>
+          <button class="dtab" data-mode="book" role="tab" aria-selected="false">Plans or notes</button>
+          <button class="playbtn" id="estPlay" aria-label="Pause demo"><svg viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1.5" width="3" height="9" rx="1"/><rect x="7" y="1.5" width="3" height="9" rx="1"/></svg></button>
         </div>
-        <div class="wrap">
-          <div class="app-frame">
+        <div class="dev-body">
 
-            <aside class="af-side" aria-label="Mallet navigation">
-              <p class="af-brand"><span class="af-mark" aria-hidden="true">&#10022;</span>Mallet<span class="af-tld">.ai</span></p>
-              <p class="af-new" aria-hidden="true">+ New</p>
-              <p class="af-item dim">Home</p>
-              <p class="af-cat">CUSTOMERS</p>
-              <button class="af-item stop" data-stop="1">Pipeline</button>
-              <p class="af-item dim">Tasks</p>
-              <p class="af-cat">WORK</p>
-              <button class="af-item stop" data-stop="2">Jobs</button>
-              <p class="af-item dim">Schedule</p>
-              <p class="af-item dim">Checklists</p>
-              <p class="af-cat">MONEY</p>
-              <button class="af-item stop" data-stop="3">Invoices</button>
-              <p class="af-cat">FIELD</p>
-              <p class="af-item dim">My day</p>
-              <button class="af-item stop on" data-stop="0">Messages</button>
-            </aside>
-
-            <div class="af-main">
-
-              <!-- STOP 1 · Messages — the AI Front Desk answers while you watch -->
-              <div class="af-panel on" data-panel="0">
-                <div class="af-top"><b>Messages</b><span class="af-pill">01 &middot; AI&nbsp;FRONT&nbsp;DESK</span></div>
-                <div class="af-split">
-                  <div class="af-list">
-                    <div class="af-convo on"><span class="af-dot" aria-hidden="true"></span><b>Sarah K.</b><i>7:42&nbsp;AM</i><span>Booked &middot; 2:00&ndash;4:00 &middot; Marco</span></div>
-                    <div class="af-convo"><b>Hector Ruiz</b><i>8:15&nbsp;AM</i><span>Texted photos of the bathroom</span></div>
-                    <div class="af-convo"><b>Tom Brennan</b><i>YEST</i><span>&ldquo;When can someone come look?&rdquo;</span></div>
-                    <div class="af-convo"><b>Diane Foster</b><i>MON</i><span>Walkthrough confirmed for Tuesday</span></div>
-                    <div class="af-convo"><b>Rita Okafor</b><i>MON</i><span>Reminder scheduled &middot; Thursday</span></div>
-                  </div>
-                  <div class="af-thread">
-                    <p class="af-meta sc" data-t="300"><span class="af-time">7:42&nbsp;AM</span> Incoming call &middot; (555)&nbsp;480-2214 &mdash; Mallet picks up</p>
-                    <p class="af-bub in sc" data-t="1000">&ldquo;My water heater&rsquo;s leaking all over the garage&hellip;&rdquo;</p>
-                    <p class="af-typing sc" data-t="1600" data-off="2500" aria-hidden="true"><span></span><span></span><span></span></p>
-                    <p class="af-bub ai sc" data-t="2600">That&rsquo;s an emergency &mdash; I can get someone out today. What&rsquo;s the address?</p>
-                    <p class="af-bub in sc" data-t="3500">&ldquo;412 Foothill Rd.&rdquo;</p>
-                    <p class="af-meta sc" data-t="4200"><span class="ok">&check;</span> In range &middot; emergency rule applied &middot; checking the crew&rsquo;s real schedule</p>
-                    <p class="af-bub ai sc" data-t="5000">Marco can be there 2:00&ndash;4:00 today. You&rsquo;re booked &mdash; confirmation is on its way to your phone.</p>
-                    <p class="af-meta done sc" data-t="6000"><span class="ok">&check;</span> Job created &middot; quote drafted from your pricebook &middot; Marco texted</p>
-                  </div>
-                </div>
-                <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>
-              </div>
-
-              <!-- STOP 2 · Pipeline — the quote card moves itself out the door -->
-              <div class="af-panel" data-panel="1">
-                <div class="af-top"><b>Pipeline</b><span class="af-pill">02 &middot; AI&nbsp;ESTIMATING</span></div>
-                <div class="af-cols">
-                  <div class="af-col">
-                    <p class="af-colh">NEW&nbsp;LEADS <span class="af-cnt">2</span></p>
-                    <div class="af-card"><b>Tom Brennan</b><span>Possible slab leak &mdash; wet spot in hallway</span><span class="af-src">NEXTDOOR &middot; 4D</span></div>
-                    <div class="af-card"><b>Janet Kim</b><span>Water heater making a banging noise</span><span class="af-src">GOOGLE &middot; TODAY</span></div>
-                  </div>
-                  <div class="af-col">
-                    <p class="af-colh">QUOTING <span class="af-cnt" id="cntQuoting">2</span></p>
-                    <div class="af-card hot" id="cardSarah"><b>Sarah K. <i class="af-amt">$2,400</i></b><span>40-gal water heater swap</span><span class="af-gbb"><i class="sc-g" data-g="0">GOOD $1,850</i><i class="sel sc-g" data-g="1">BETTER $2,400</i><i class="sc-g" data-g="2">BEST $3,100</i></span></div>
-                    <div class="af-card"><b>Hector Ruiz</b><span>Bathroom refit &mdash; from his photos</span><span class="af-src drafting"><span class="af-spark">&#10022;</span> DRAFTING FROM YOUR PRICEBOOK&hellip;</span></div>
-                  </div>
-                  <div class="af-col">
-                    <p class="af-colh">OUT <span class="af-cnt" id="cntOut">1</span></p>
-                    <div class="af-card ghost" id="cardSarahOut"><b>Sarah K. <i class="af-amt">$2,400</i></b><span>Sent &middot; tap-to-approve link texted</span><span class="af-src ok-src">&check; JUST NOW</span></div>
-                    <div class="af-card"><b>Sandy Whitfield <i class="af-amt">$1,450</i></b><span>Kitchen drain + cleanout &middot; sent 2d ago</span></div>
-                  </div>
-                  <div class="af-col">
-                    <p class="af-colh">WON&nbsp;&middot;&nbsp;30D <span class="af-cnt">6</span></p>
-                    <div class="af-card"><b>Dave Chen <i class="af-amt">$7,200</i></b><span>Whole-house repipe &mdash; accepted</span></div>
-                    <div class="af-card"><b>Linda Park <i class="af-amt">$2,150</i></b><span>Water heater &mdash; accepted</span></div>
-                    <div class="af-card"><b>Rita Okafor <i class="af-amt">$189</i></b><span>AC seasonal tune-up</span></div>
-                  </div>
-                </div>
-                <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>
-              </div>
-
-              <!-- STOP 3 · Jobs — the board plus the checklist ticking itself -->
-              <div class="af-panel" data-panel="2">
-                <div class="af-top"><b>Jobs</b><span class="af-pill">03 &middot; AI&nbsp;FOREMAN</span></div>
-                <div class="af-split jobs">
-                  <div class="af-table">
-                    <div class="af-tr th"><span>CUSTOMER / JOB</span><span>WHEN</span><span>STATUS</span><span class="r">AMOUNT</span></div>
-                    <div class="af-tr on"><span><b>Sarah K.</b> Water heater install</span><span>Today&nbsp;2:00 &middot; MARCO</span><span><i class="af-status prog" id="jobSarahStatus">IN&nbsp;PROGRESS</i></span><span class="r">$2,400</span></div>
-                    <div class="af-tr"><span><b>Dave Chen</b> Whole-house repipe &middot; 2 visits</span><span>Today&nbsp;9a &middot; CD</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$7,200</span></div>
-                    <div class="af-tr"><span><b>Sofia Hernandez</b> Two toilets</span><span>Today&nbsp;1p &middot; MR</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$920</span></div>
-                    <div class="af-tr"><span><b>Lan Nguyen</b> Faucet install</span><span>&mdash;</span><span><i class="af-status warn">NEEDS&nbsp;A&nbsp;SLOT</i></span><span class="r">$340</span></div>
-                    <div class="af-tr"><span><b>Rita Okafor</b> AC tune-up</span><span>Fri&nbsp;10a &middot; TB</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$189</span></div>
-                    <div class="af-tr"><span><b>Tom Webb</b> Drain camera</span><span>Sat&nbsp;1p &middot; CD</span><span><i class="af-status">SCHEDULED</i></span><span class="r">$640</span></div>
-                  </div>
-                  <div class="af-ckpane">
-                    <p class="af-ckh"><span class="af-time">LIVE &middot; MARCO</span><b>Water heater install</b></p>
-                    <ul class="af-ck">
-                      <li class="sc-ck">Drain &amp; pull the old unit</li>
-                      <li class="sc-ck">Set &amp; plumb the 40-gal tank</li>
-                      <li class="req sc-ck">Expansion-tank check <em>required after 3 callbacks</em></li>
-                      <li class="sc-ck photo">Pressure test &middot; photo attached</li>
-                    </ul>
-                    <p class="af-meta done sc-ckdone"><span class="ok">&check;</span> Checklist complete &middot; time logged &middot; invoice drafted</p>
-                  </div>
-                </div>
-                <p class="af-ask" aria-hidden="true"><span class="af-spark">&#10022;</span> Ask Mallet &mdash; or just say what you want done&hellip;</p>
-              </div>
-
-              <!-- STOP 4 · Invoices — ask the agent for money -->
-              <div class="af-panel" data-panel="3">
-                <div class="af-top"><b>Invoices</b><span class="af-pill">04 &middot; AI&nbsp;FOLLOW-UPS</span></div>
-                <div class="af-rows">
-                  <div class="af-inv"><b>#2216 &middot; Sarah K.</b><span>follow-ups: day 3 auto &middot; day 7 auto</span><i class="af-amt">$2,585</i><span class="af-status paid">PAID &middot; DAY&nbsp;8</span></div>
-                  <div class="af-inv"><b>#2211 &middot; Hector Ruiz</b><span>no reply to day 3 &middot; day 7</span><i class="af-amt">$1,890</i><span class="af-status warn" id="invHectorStatus">OVERDUE &middot; 42D</span></div>
-                  <div class="af-inv"><b>#2214 &middot; Rita Okafor</b><span>reminder scheduled &middot; Thursday</span><i class="af-amt">$920</i><span class="af-status">SENT</span></div>
-                  <div class="af-inv"><b>#2209 &middot; Tom Webb</b><span>deposit in &middot; balance on completion</span><i class="af-amt">$1,450</i><span class="af-status">PARTIAL</span></div>
-                </div>
-                <div class="af-agent">
-                  <p class="af-q"><span class="af-prompt">&gt;</span> <span id="agentQ"></span><span class="qc-caret" id="agentCaret" aria-hidden="true"></span></p>
-                  <p class="af-thinking" id="agentThinking"><span class="af-spark">&#10022;</span> Mallet is thinking&hellip;</p>
-                  <div class="af-answer" id="agentAnswer">
-                    <p class="af-ansh">$4,260 is gettable today:</p>
-                    <p class="af-ansl"><b>#2211 &middot; $1,890</b> &mdash; 42 days overdue. Firmer chase drafted, ready to send.</p>
-                    <p class="af-ansl"><b>#2214 &middot; $920</b> &mdash; nudge ready; card-by-text link attached.</p>
-                    <p class="af-ansl"><b>#2209 &middot; $1,450</b> &mdash; balance due at completion today; reminder queued for job close.</p>
-                    <p class="af-ansb" aria-hidden="true">Send all three</p>
-                  </div>
-                </div>
-              </div>
-
+          <div class="dpanel dp-scan">
+            <div class="viz">
+              <div class="sweep" aria-hidden="true"></div>
+              <svg class="room" viewBox="0 0 340 190" fill="none" aria-hidden="true">
+                <polygon class="wall-side" points="24,14 316,14 216,60 124,60"/>
+                <polygon class="wall-side" points="24,168 316,168 216,124 124,124"/>
+                <polygon class="wall-l" points="24,14 124,60 124,124 24,168"/>
+                <polygon class="wall-l" points="316,14 216,60 216,124 316,168"/>
+                <rect class="wall-far" x="124" y="60" width="92" height="64"/>
+                <rect class="op" x="140" y="74" width="28" height="26"/>
+                <rect class="op" x="182" y="82" width="22" height="42"/>
+                <path class="edge" d="M24 14 124 60M316 14 216 60M24 168 124 124M316 168 216 124M124 60H216V124H124Z"/>
+                <circle class="node" cx="24" cy="14" r="3.4"/><circle class="node" cx="316" cy="14" r="3.4"/>
+                <circle class="node" cx="24" cy="168" r="3.4"/><circle class="node" cx="316" cy="168" r="3.4"/>
+                <circle class="node" cx="124" cy="60" r="3.4"/><circle class="node" cx="216" cy="60" r="3.4"/>
+                <circle class="node" cx="124" cy="124" r="3.4"/><circle class="node" cx="216" cy="124" r="3.4"/>
+                <text class="dim" x="156" y="55">16 ft</text>
+                <text class="dim" x="221" y="96">9 ft</text>
+                <g class="dbadge"><rect x="133" y="62" width="42" height="13" rx="6.5"/><text x="139" y="71">&minus;18 sf</text></g>
+                <g class="dbadge"><rect x="204" y="101" width="42" height="13" rx="6.5"/><text x="210" y="110">&minus;21 sf</text></g>
+              </svg>
+              <div class="scan-tag">Scanning walls &amp; trim</div>
+            </div>
+            <div class="cap">
+              <div class="cap-line"><span>Walls &middot; ceiling &middot; trim</span><span class="mono">384 / 168 sf &middot; 92 lf</span></div>
+              <div class="cap-line cap-total"><span>Paint &middot; 2 coats + prep</span><span class="mono">$3,240</span></div>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- ===================== THE EASY PART ===================== -->
-    <!-- The anti-software section: techs work by text (a phone, not an app);
-         the office says what it wants (the ask bar). Both loop their scene. -->
-    <section class="easy" id="easy">
-      <div class="wrap">
-        <p class="eyebrow" data-reveal>The easy part</p>
-        <h2 class="sec-h" data-reveal>Built for people who hate software.</h2>
-        <p class="sec-sub" data-reveal>New software is painful, and most of it was made for the office &mdash; not the crew. Mallet takes the software out of the software: nothing to install, nothing to train, nothing to adopt.</p>
-
-        <div class="easy-grid" data-reveal>
-
-          <div class="easy-card">
-            <p class="easy-tag">YOUR CREW</p>
-            <div class="phone" data-easy="crew" aria-label="A tech running his whole day over text — demonstration">
-              <div class="phone-notch" aria-hidden="true"></div>
-              <p class="ph-head">Messages &middot; <b>Mallet</b></p>
-              <div class="ph-thread">
-                <p class="ph-bub in ez" data-t="400">Tomorrow 2:00 &mdash; water heater swap &middot; 412 Foothill Rd &middot; gate code 4482</p>
-                <p class="ph-bub out ez" data-t="1600">done. 2 hrs. shutoff valve was shot, swapped it too</p>
-                <p class="ph-meta ez" data-t="2900"><span class="ok">&check;</span> Job closed &middot; 2 hrs logged &middot; found work added to the invoice</p>
-              </div>
+          <div class="dpanel dp-aerial">
+            <div class="viz">
+              <svg class="roof" viewBox="0 0 340 190" fill="none" aria-hidden="true">
+                <polygon class="facet-a" points="70,44 238,44 210,97 98,97"/>
+                <polygon class="facet-b" points="70,150 238,150 210,97 98,97"/>
+                <polygon class="facet-c" points="70,44 98,97 70,150"/>
+                <polygon class="facet-c" points="238,44 210,97 238,150"/>
+                <polygon class="facet-a" points="238,74 300,74 300,103 238,103"/>
+                <polygon class="facet-b" points="238,103 300,103 300,132 238,132"/>
+                <path class="rline" d="M98 97H210M70 44 98 97M238 44 210 97M70 150 98 97M238 150 210 97M238 103H300"/>
+                <text class="rlabel" x="128" y="74">RF-1 <tspan class="sub">512 sf</tspan></text>
+                <text class="rlabel" x="128" y="128">RF-2 <tspan class="sub">486 sf</tspan></text>
+              </svg>
+              <div class="scan-tag">Measuring from imagery</div>
             </div>
-            <h3>If they can text, they can use it.</h3>
-            <p>Techs never open an app. The job arrives by text, and &ldquo;done&rdquo; closes it out &mdash; hours logged, found work billed, office in the loop.</p>
-          </div>
-
-          <div class="easy-card">
-            <p class="easy-tag">YOUR OFFICE</p>
-            <div class="askdemo" data-easy="office" aria-label="The office asking Mallet in plain words — demonstration">
-              <p class="ad-bar"><span class="af-spark" aria-hidden="true">&#10022;</span><span id="ezTyped"></span><span class="qc-caret" aria-hidden="true"></span></p>
-              <div class="ad-out">
-                <p class="ph-meta ez" data-t="3400"><span class="ok">&check;</span> Invoice #2217 drafted &mdash; waiting on your OK</p>
-                <p class="ph-meta ez" data-t="4200"><span class="ok">&check;</span> Reminder set &mdash; Rita, Thursday 9:00</p>
-              </div>
+            <div class="cap">
+              <div class="cap-line"><span>Total roof</span><span class="mono">28.6 SQ &middot; 6/12 pitch</span></div>
+              <div class="cap-line cap-total"><span>Shingles + tear-off &middot; 7 facets</span><span class="mono">$16,120</span></div>
             </div>
-            <h3>If you can say it, it&rsquo;s done.</h3>
-            <p>No menus to memorize. Type what you want in plain words &mdash; Mallet does the work and shows you everything before it goes out.</p>
+          </div>
+
+          <div class="dpanel dp-book">
+            <div class="viz">
+              <div class="sweep" aria-hidden="true"></div>
+              <svg class="plan" viewBox="0 0 340 190" fill="none" aria-hidden="true">
+                <rect class="pwall" x="30" y="24" width="280" height="134"/>
+                <rect class="pwall" x="35" y="29" width="270" height="124"/>
+                <path class="pwall" d="M176 29V96H305"/>
+                <!-- kitchen sink -->
+                <rect class="fix" x="118" y="34" width="34" height="14"/><circle class="fix" cx="129" cy="41" r="2.4"/><circle class="fix" cx="141" cy="41" r="2.4"/>
+                <!-- toilet -->
+                <ellipse class="fix" cx="60" cy="136" rx="10" ry="13"/><rect class="fix" x="50" y="147" width="20" height="7"/>
+                <!-- lavatory -->
+                <rect class="fix" x="92" y="143" width="28" height="13"/><circle class="fix" cx="106" cy="149" r="3.4"/>
+                <!-- tub -->
+                <rect class="fix" x="200" y="108" width="72" height="38" rx="4"/><circle class="fix" cx="210" cy="127" r="2.6"/>
+                <!-- water heater -->
+                <circle class="fix" cx="284" cy="58" r="13"/>
+                <!-- dimensions -->
+                <path class="dimline" d="M30 172H310M30 168V176M310 168V176"/>
+                <text class="dimt" x="151" y="185">24'-0"</text>
+                <path class="dimline" d="M18 24V158M14 24H22M14 158H22"/>
+                <text class="dimt" x="12" y="96" transform="rotate(-90 12 96)">12'-0"</text>
+                <text class="plabel" x="40" y="20">P-1 &middot; PLUMBING</text>
+                <!-- detection markers -->
+                <circle class="mark" cx="60" cy="138" r="17"/>
+                <circle class="mark" cx="106" cy="149" r="14"/>
+                <circle class="mark" cx="236" cy="127" r="24"/>
+                <circle class="mark" cx="284" cy="58" r="18"/>
+                <circle class="mark" cx="135" cy="41" r="16"/>
+              </svg>
+              <div class="scan-tag">Reading the plans</div>
+            </div>
+            <div class="cap">
+              <div class="src">Plans &middot; specs &middot; notes &middot; photos</div>
+              <div class="cap-line"><span>Fixtures &middot; wet wall</span><span class="mono">5 &middot; 82 lf</span></div>
+              <div class="cap-line cap-total"><span>Plumbing rough-in + set</span><span class="mono">$14,850</span></div>
+            </div>
           </div>
 
         </div>
-
-        <div class="cta-row split" data-reveal>
-          <a class="btn-primary lg" href="#waitlist">Put Mallet on your phones &mdash; start a pilot</a>
-          <a class="linkish js-book-demo" href="#demo">or book a 30-minute demo &rarr;</a>
-        </div>
-      </div>
+      </div></div></div>
     </section>
 
-    <!-- ======================= PLAIN TERMS ======================= -->
-    <section class="why" id="terms">
-      <div class="wrap">
-        <p class="eyebrow" data-reveal>Plain terms</p>
-        <h2 class="sec-h" data-reveal>Simple where it should be.<br />Deep where it counts.</h2>
-        <div class="terms-grid" data-reveal>
-          <div class="term">
-            <h3>Starts simple. Grows with you.</h3>
-            <p>A two-truck shop sees a clean, simple tool. A twenty-five-truck shop opens the same screens and finds the depth &mdash; pricebooks, crews, job costing. Same platform, no re-platforming, ever.</p>
-          </div>
-          <div class="term">
-            <h3>Everything included. One bill.</h3>
-            <p>The AIs aren&rsquo;t add-ons and there are no per-feature upsells &mdash; everything on this page ships with the platform. One login, one bill.</p>
-          </div>
-          <div class="term">
-            <h3>Live in a day.</h3>
-            <p>No implementation project, no consultants, no six-week onboarding. Your number forwards to Mallet in the morning; it's booking jobs by the afternoon.</p>
-          </div>
-        </div>
+    <!-- Front Desk -->
+    <section class="row rev" id="frontdesk">
+      <div class="copy">
+        <p class="kicker">Front Desk</p>
+        <h2 style="margin-top:12px">Every call answered. Every job booked.</h2>
+        <p class="lead">The phone rings while you're on a ladder. Mallet picks up.</p>
+        <ul class="checks">
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Answers 24/7 in <b>your shop's name</b>, so no lead ever rings out.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Books the job or the estimate visit <b>right on the call</b>.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Texts you the details. Nothing to write up later.</span></li>
+        </ul>
       </div>
-    </section>
-
-    <!-- ===================== PILOT (convert) ===================== -->
-    <div class="hatch" aria-hidden="true"></div>
-    <section class="convert" id="waitlist">
-      <div class="wrap convert-inner">
-        <div class="convert-copy">
-          <p class="eyebrow">The pilot</p>
-          <h2 class="convert-h">Put Mallet on your phones.</h2>
-          <p class="convert-sub">Live in a day on your real call volume &mdash; no contracts, cancel any time.</p>
-          <p class="convert-demo">Want to see it live first? <button class="linkbtn js-book-demo" type="button" id="demoBtn" data-calendly="https://calendly.com/trymallet/30min">Book a 30-minute demo&nbsp;&rarr;</button></p>
-        </div>
-
-        <div class="convert-form">
-          <!-- Live Tally embed (form Y5gxDv). main.js auto-loads Tally's embed script. -->
-          <div class="embed-card">
-            <iframe
-              data-tally-src="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
-              loading="lazy" width="100%" height="320" frameborder="0"
-              title="Start a Mallet pilot"></iframe>
-          </div>
-          <p class="convert-trust">Live in a day &middot; No contracts &middot; Cancel any time.</p>
-        </div>
-      </div>
-    </section>
-    <div id="demo"></div>
-
-  </main>
-
-  <!-- ============================ FOOTER ============================ -->
-  <footer class="foot">
-    <div class="wrap foot-inner">
-      <div class="foot-brand">
-        <a class="wordmark foot-wordmark" href="/">
-          <span class="logo-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="#FAF8F3"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#1B1A17"/></svg>
+      <div class="visual"><div class="frame"><div class="screen" id="fdDemo" data-phase="ring">
+        <div class="dhead">
+          <span class="dwho"><b>Janet Miller</b><span class="sub mono">(941) 555&middot;0182</span></span>
+          <span class="dstat">
+            <span class="st-ring"><span class="dot pulse"></span>Incoming call</span>
+            <span class="st-live"><span class="dot"></span>Mallet answering<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
+            <span class="st-done"><span class="dot"></span>Booked &middot; 41 sec</span>
           </span>
-          <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
-        </a>
-        <p class="foot-tag">The AI-native operating system for service businesses. It answers the call, writes the quote, runs the job, and chases the invoice.</p>
-        <div class="foot-ctas">
-          <a class="btn-amber js-book-demo" href="/#demo">Book a demo</a>
-          <a class="btn-foot-outline" href="/#waitlist">Start a pilot</a>
         </div>
+        <div class="fd-talk">
+          <div class="tline" data-at="1"><span class="spk">Caller</span><p>&ldquo;My water heater's leaking, can someone come out?&rdquo;</p></div>
+          <div class="tline mal" data-at="2"><span class="spk">Mallet</span><p>I can get a tech to you tomorrow at 9. Still 123 Gulf Dr?</p></div>
+          <div class="tline" data-at="3"><span class="spk">Caller</span><p>&ldquo;That's the one. Thank you.&rdquo;</p></div>
+        </div>
+        <div class="cap stagger">
+          <div class="src" data-at="4">Booked on the call</div>
+          <div class="cap-line" data-at="4"><span>When</span><span class="mono">Tomorrow &middot; 9:00 AM</span></div>
+          <div class="cap-line" data-at="5"><span>Address</span><span class="mono">123 Gulf Dr, Sarasota</span></div>
+          <div class="cap-line" data-at="6"><span>Crew</span><span class="mono">Mike &middot; auto-assigned</span></div>
+          <div class="cap-line cap-total" data-at="7"><span>Your time on it</span><span class="mono">0 min</span></div>
+        </div>
+      </div></div></div>
+    </section>
+
+    <!-- Scheduling & checklists -->
+    <section class="row" id="scheduling">
+      <div class="copy">
+        <p class="kicker">Scheduling &amp; job checklists</p>
+        <h2 style="margin-top:12px">Every crew knows the job before they roll.</h2>
+        <p class="lead">Drop it on the board. The truck gets the rest.</p>
+        <ul class="checks">
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Assign it.</b> The crew gets it by text. No app to open.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Run it.</b> A checklist keeps the work consistent, callbacks down.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Close it.</b> Photos and sign-off, on site.</span></li>
+        </ul>
       </div>
-      <div class="foot-cols">
-        <div class="foot-col">
-          <p class="foot-head">Platform</p>
-          <a href="/#what">The platform</a>
-          <a href="/#easy">Why it&rsquo;s easy</a>
-          <a href="/#roi">The math</a>
-          <a href="/#terms">Plain terms</a>
+      <div class="visual"><div class="frame"><div class="screen" id="schDemo" data-phase="assigned">
+        <div class="dhead">
+          <span class="dwho"><b>Two-toilet R&amp;R &middot; Hernandez</b><span class="sub">Today &middot; 1:00 PM</span></span>
+          <span class="dstat">
+            <span class="st-assigned"><span class="dot pulse"></span>Assigning</span>
+            <span class="st-texted"><span class="dot"></span>Texted to Carlos</span>
+            <span class="st-onsite"><span class="dot"></span>On site</span>
+            <span class="st-closed"><span class="dot"></span>Closed out</span>
+          </span>
         </div>
-        <div class="foot-col">
-          <p class="foot-head">The AIs</p>
-          <a href="/product#front-desk">AI Front Desk</a>
-          <a href="/product#estimating">AI Estimating</a>
-          <a href="/product#crew">AI Foreman</a>
-          <a href="/product#money">AI Invoice Follow-ups</a>
+        <div class="viz">
+          <div class="sms-lab">Text to Carlos</div>
+          <div class="sms" data-at="1"><b>Hernandez &middot; 1:00 PM</b><br><span class="addr">4180 Bayshore Rd &middot; two-toilet R&amp;R &middot; shutoff in garage</span></div>
+          <div class="tk-list">
+            <div class="tk" data-at="2"><span class="tkbox"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tk-t">Shut off supply, confirm no leaks</span><span class="tk-meta">1:06p</span></div>
+            <div class="tk" data-at="3"><span class="tkbox"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tk-t">Set new wax rings &amp; bolts</span><span class="tk-meta">1:34p</span></div>
+            <div class="tk" data-at="4"><span class="tkbox"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tk-t">Photo: both units seated <span class="tk-req">required</span></span><span class="tk-meta">2 photos</span></div>
+            <div class="tk" data-at="5"><span class="tkbox"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tk-t">Customer sign-off</span><span class="tk-meta">signed</span></div>
+          </div>
         </div>
-        <div class="foot-col">
-          <p class="foot-head">Get started</p>
-          <a href="/leak-check">The Leak Check</a>
-          <a class="js-book-demo" href="/#demo">Book a demo</a>
-          <a href="/#waitlist">Start a pilot</a>
+        <div class="cap stagger">
+          <div class="cap-line" data-at="6"><span>Checklist</span><span class="mono">4 of 4 &middot; 2 photos</span></div>
+          <div class="cap-line cap-total" data-at="7"><span>Paperwork back at the shop</span><span class="mono">None</span></div>
         </div>
+      </div></div></div>
+    </section>
+
+    <!-- 4. Invoicing & follow-up -->
+    <section class="row rev" id="invoicing">
+      <div class="copy">
+        <p class="kicker">Invoicing &amp; follow-up</p>
+        <h2 style="margin-top:12px">Get paid on the spot. Chased automatically.</h2>
+        <p class="lead">The job's done. The money shouldn't wait.</p>
+        <ul class="checks">
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><b>Invoice on the spot.</b> Card or tap-to-pay, in the field.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Automatic reminders go out <b>until it's paid</b>.</span></li>
+          <li><span class="ck"><svg viewBox="0 0 12 12" fill="none"><path d="M1 6.5 4.3 10 11 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Everything flows to your books.</span></li>
+        </ul>
       </div>
-      <div class="foot-bottom">
-        <span>&copy; 2026 Mallet Technologies, Inc. All rights reserved.</span>
-        <span class="foot-legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/sms">Text updates</a></span>
+      <div class="visual"><div class="frame"><div class="screen" id="invDemo" data-phase="in">
+        <div class="viz">
+          <p class="src">Collected automatically</p>
+          <p class="wk-num mono" id="invNum">$0</p>
+          <div class="wk">
+            <i class="wkb" data-at="1" style="--h:44px"></i>
+            <i class="wkb" data-at="2" style="--h:78px"></i>
+            <i class="wkb" data-at="3" style="--h:52px"></i>
+            <i class="wkb" data-at="4" style="--h:124px"></i>
+            <i class="wkb" data-at="5" style="--h:86px"></i>
+          </div>
+          <div class="wk-days"><span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span></div>
+        </div>
+      </div></div></div>
+    </section>
+
+  </div></div>
+
+  <!-- ===================== FAQ =====================
+       The objections a 1-3 truck owner raises before booking anything. Answered in the open
+       rather than in accordions: a collapsed objection is an unanswered one. -->
+  <section class="sec" id="faq"><div class="wrap"><div class="faq">
+    <h2>The questions every shop asks.</h2>
+    <div class="faq-list">
+      <div class="faq-item">
+        <p class="faq-q">What if my guys won't use it?</p>
+        <p class="faq-a">They don't have to. Techs get the job as a text and reply when it's done — no app, no login, no training. Mallet is for whoever runs the office.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">Do I have to change my phone number?</p>
+        <p class="faq-a">No. You keep your number and forward it to the line Mallet answers on. Your customers dial exactly what they always dialed.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">Does it work with QuickBooks?</p>
+        <p class="faq-a">Approved hours sync straight across for payroll, so nobody retypes a timesheet.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">What happens to the customers I already have?</p>
+        <p class="faq-a">They come with you. We import your list, your services and your prices before you start, so day one looks like your shop and not an empty app.</p>
+      </div>
+      <div class="faq-item">
+        <p class="faq-q">How long until it's running?</p>
+        <p class="faq-a">Most shops are taking calls through Mallet the same week. We do the setup with you on a call — you don't configure anything alone.</p>
       </div>
     </div>
-  </footer>
+  </div></div></section>
+
+
+  <!-- Footer. Three things here are load-bearing beyond navigation:
+       · the legal entity name — Apple's org enrollment cross-checks it against the D&B record
+       · Privacy + Terms — required by App Review and by the A2P 10DLC campaign reviewer
+       · /sms — the public verifiable opt-in page the 10DLC campaign points at -->
+  <footer id="demo"><div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <div class="brand"><span class="mk" aria-hidden="true"></span>Mallet</div>
+        <p class="fnote">One system for measurement and mechanical trades. It answers the call, writes the quote, runs the job, and chases the invoice.</p>
+        <div class="foot-cta">
+          <a class="btn btn-light js-book-demo" href="#demo">Book a demo</a>
+          <a class="btn btn-line" href="/leak-check">The Leak Check</a>
+        </div>
+      </div>
+      <div class="foot-col">
+        <p class="foot-head">Platform</p>
+        <a href="#work">How it works</a>
+        <a href="#faq">Common questions</a>
+        <a href="https://mallet-app-snowy.vercel.app/login">Log in</a>
+      </div>
+      <div class="foot-col">
+        <p class="foot-head">The AIs</p>
+        <a href="#frontdesk">AI Front Desk</a>
+        <a href="#estimating">AI Estimating</a>
+        <a href="#scheduling">AI Foreman</a>
+        <a href="#invoicing">AI Invoice Follow-ups</a>
+      </div>
+      <div class="foot-col">
+        <p class="foot-head">Get started</p>
+        <a href="/leak-check">The Leak Check</a>
+        <a class="js-book-demo" href="#demo">Book a demo</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>&copy; 2026 Mallet Technologies, Inc. All rights reserved.</span>
+      <span class="foot-legal">
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/sms">Text updates</a>
+      </span>
+    </div>
+  </div></footer>
+
+</div>
+
+<script>
+(function(){
+  var dev=document.getElementById('estDemo');
+  if(!dev) return;
+  var btn=document.getElementById('estPlay');
+  var tabs=[].slice.call(dev.querySelectorAll('.dtab'));
+  var modes=['scan','aerial','book'];
+  var PAUSE='<svg viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="1.5" width="3" height="9" rx="1"/><rect x="7" y="1.5" width="3" height="9" rx="1"/></svg>';
+  var PLAY='<svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 1.5 10 6 3 10.5z"/></svg>';
+  var i=0, timer=null;
+  function setMode(m){
+    i=modes.indexOf(m);
+    dev.classList.remove('p-scan','p-aerial','p-book');
+    dev.classList.add('p-'+m);
+    tabs.forEach(function(t){ t.setAttribute('aria-selected', t.dataset.mode===m ? 'true':'false'); });
+  }
+  function next(){ setMode(modes[(i+1)%modes.length]); }
+  function play(){ if(timer) return; timer=setInterval(next,3800); btn.innerHTML=PAUSE; btn.setAttribute('aria-label','Pause demo'); }
+  function pause(){ clearInterval(timer); timer=null; btn.innerHTML=PLAY; btn.setAttribute('aria-label','Play demo'); }
+  setMode('scan');
+  tabs.forEach(function(t){ t.addEventListener('click',function(){ setMode(t.dataset.mode); if(timer){ pause(); play(); } }); });
+  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  if(reduce){ btn.innerHTML=PLAY; } else { play(); }
+  btn.addEventListener('click',function(){ timer?pause():play(); });
+})();
+
+/* Shared driver: steps a device through phases + timed reveals, looping while on screen.
+   opts.phases = [[ms,phaseName],...]   opts.at = {dataAtValue:ms}   opts.cycle = loop length */
+function malletSequence(id,opts){
+  var dev=document.getElementById(id);
+  if(!dev) return;
+  var steps=[].slice.call(dev.querySelectorAll('[data-at]'));
+  var lastPhase=opts.phases[opts.phases.length-1][1];
+  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  if(reduce){
+    dev.dataset.phase=lastPhase;
+    steps.forEach(function(el){ el.classList.add('on'); });
+    if(opts.onRun) opts.onRun(true);
+    return;
+  }
+  var tid=[], running=false;
+  function clear(){ tid.forEach(clearTimeout); tid=[]; }
+  function at(ms,fn){ tid.push(setTimeout(fn,ms)); }
+  function run(){
+    clear();
+    dev.dataset.phase=opts.phases[0][1];
+    steps.forEach(function(el){ el.classList.remove('on'); });
+    if(opts.onRun) opts.onRun(false);
+    opts.phases.forEach(function(p){
+      if(p[0]>0) at(p[0],function(){ dev.dataset.phase=p[1]; });
+    });
+    Object.keys(opts.at).forEach(function(n){
+      at(opts.at[n],function(){
+        steps.forEach(function(el){ if(el.dataset.at===n) el.classList.add('on'); });
+      });
+    });
+    at(opts.cycle,run);
+  }
+  function start(){ if(!running){ running=true; run(); } }
+  function stop(){ if(running){ running=false; clear(); } }
+  if('IntersectionObserver' in window){
+    new IntersectionObserver(function(es){
+      es.forEach(function(e){ e.isIntersecting?start():stop(); });
+    },{threshold:.25}).observe(dev);
+  } else { start(); }
+}
+
+
+/* Front desk: a call coming in and booking itself */
+malletSequence('fdDemo',{
+  phases:[[0,'ring'],[800,'live'],[5000,'done']],
+  at:{1:1200,2:2500,3:3900,4:5300,5:5700,6:6100,7:6600},
+  cycle:10500
+});
+
+/* Scheduling: job texted to the crew, checklist works itself off */
+malletSequence('schDemo',{
+  phases:[[0,'assigned'],[900,'texted'],[2300,'onsite'],[6600,'closed']],
+  at:{1:800,2:2500,3:3600,4:4800,5:6000,6:6900,7:7400},
+  cycle:11000
+});
+
+/* Invoicing: a week of money, each day landing collected on its own */
+(function(){
+  var num=document.getElementById('invNum');
+  if(!num) return;
+  var TOTAL=5395, frame=null;
+  function money(n){ return '$'+n.toLocaleString('en-US'); }
+  function count(ms){
+    cancelAnimationFrame(frame);
+    var t0=null;
+    frame=requestAnimationFrame(function step(ts){
+      if(t0===null) t0=ts;
+      var p=Math.min((ts-t0)/ms,1);
+      num.textContent=money(Math.round(TOTAL*(1-Math.pow(1-p,3))));
+      if(p<1) frame=requestAnimationFrame(step);
+    });
+  }
+  malletSequence('invDemo',{
+    phases:[[0,'in'],[2600,'auto']],
+    at:{1:400,2:700,3:1000,4:1300,5:1600},
+    cycle:9000,
+    onRun:function(reduced){
+      if(reduced){ num.textContent=money(TOTAL); return; }
+      num.textContent=money(0);
+      count(2200);
+    }
+  });
+})();
+</script>
 
   <!-- ================= PRIVACY CHOICES (consent) ================= -->
   <div class="consent" id="consent" hidden>
