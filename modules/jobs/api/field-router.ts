@@ -6,6 +6,9 @@ import type { Principal } from "@mallet/identity";
 import { logger } from "@mallet/shared/observability";
 import { router, anyRole } from "@/trpc/init";
 import { DrizzleSettingsRepository } from "@mallet/settings";
+import { DrizzleLeadRepository } from "@mallet/customers";
+import type { TenantTx } from "@mallet/shared/db/tx";
+import type { OrgId } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
@@ -18,6 +21,34 @@ import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech } from "./money-redaction";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES } from "./visit-clock-tap";
+
+/**
+ * Just enough of a customer for the field surface to name and reach them: who this job is for and
+ * the number to call. Deliberately NOT the lead DTO — a technician has no business holding a
+ * customer's value, stage, notes or owner, and this list is scoped to their own jobs anyway.
+ */
+const fieldCustomerDTO = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  phone: z.string().nullable(),
+});
+
+/** The distinct customers behind a page of jobs, in one read per customer (a technician's day is
+ *  a handful of jobs, and they collapse to fewer customers still). */
+const loadCustomersFor = async (
+  tx: TenantTx,
+  orgId: OrgId,
+  jobsOnPage: readonly Job[],
+): Promise<z.infer<typeof fieldCustomerDTO>[]> => {
+  const leadIds = [...new Set(jobsOnPage.map((j) => j.props.leadId))];
+  const repo = new DrizzleLeadRepository(tx, orgId);
+  const found = [];
+  for (const leadId of leadIds) {
+    const lead = await repo.findById(leadId);
+    if (lead) found.push({ id: lead.props.id, name: lead.props.name, phone: lead.props.phone });
+  }
+  return found;
+};
 
 // Field-surface add-addon input: description 1..200, optional client-authored id for idempotent
 // retry (mirrors the office addAddonInput's optional id), optional rate (tech with !seesPrice has
@@ -90,7 +121,7 @@ const CLOSED_JOB_MESSAGE = "This job is closed — ask the office to change it."
 
 export const createFieldRouter = () =>
   router({
-    myDay: anyRole.output(z.object({ items: z.array(jobSummaryDTO) })).query(async ({ ctx }) => {
+    myDay: anyRole.output(z.object({ items: z.array(jobSummaryDTO), customers: z.array(fieldCustomerDTO) })).query(async ({ ctx }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const useCase = new ListJobsUseCase(repo);
       // Visit-aware assignment (same predicate the write gates use): a tech sees every
@@ -116,7 +147,11 @@ export const createFieldRouter = () =>
         const dto = toJobSummaryDTO(j, executionByJob.get(j.props.id));
         return isTech ? redactMoneyForTech(dto, seesPrice) : dto;
       });
-      return { items };
+      // The customers on THESE jobs, and no others — the technician's reach is their own work.
+      // Without this the field shell has no name or number for anyone, which is why its Call
+      // control could not work: the call bar renders the customer, and had nothing to render.
+      const customers = await loadCustomersFor(ctx.tx, ctx.principal.orgId, ordered);
+      return { items, customers };
     }),
 
     // start/complete return the full jobDTO — redact for techs like every other field

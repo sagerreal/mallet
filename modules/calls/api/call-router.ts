@@ -1,8 +1,12 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, ownerOrOffice } from "@/trpc/init";
+import { router, anyRole } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
+import { DrizzleJobRepository } from "@mallet/jobs";
+import type { TenantTx } from "@mallet/shared/db/tx";
+import type { OrgId, LeadId, UserId } from "@mallet/shared/types";
 import { asLeadId, asOutboundCallId } from "@mallet/shared/types";
+import type { Principal } from "@mallet/identity";
 import { DrizzleOutboundCallRepository } from "../infra/drizzle-outbound-call-repository";
 import {
   DrizzleLeadPhoneReader,
@@ -35,13 +39,49 @@ const setCallbackNumberInput = z.object({
 
 const callbackNumberOutput = z.object({ callbackNumber: z.string().nullable() });
 
+/**
+ * Assignment is the authorization boundary for a technician — the same rule the field job surface
+ * uses (`assertOnJobIfTech`), asked about a CUSTOMER instead of a job: may this person call them?
+ *
+ * A technician's field shell only ever shows the customers on their own jobs, and the API must not
+ * reach further than the UI does. Without this, widening the role would turn the field app into an
+ * org-wide dialler: any lead id would place a call on the shop's caller ID and the shop's bill.
+ *
+ * Owner/office pass — they already hold the whole customer list.
+ */
+const assertOnAJobForIfTech = async (
+  tx: TenantTx,
+  orgId: OrgId,
+  leadId: LeadId,
+  principal: Principal,
+): Promise<void> => {
+  if (principal.role !== "tech") return;
+  // `assignedUserId` is the jobs module's SQL twin of Job.isAssignedTo (job assignee OR the
+  // assignee of any active visit) — reused rather than re-expressed, so the two cannot drift.
+  const page = await new DrizzleJobRepository(tx, orgId).list(
+    { limit: 1, cursor: null },
+    { assignedUserId: principal.userId, leadId },
+  );
+  if (page.items.length === 0) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "this customer isn't on a job of yours" });
+  }
+};
+
+/** A technician may only touch the calls they placed themselves. */
+const assertOwnCallIfTech = (placedByUserId: UserId, principal: Principal): void => {
+  if (principal.role !== "tech") return;
+  if (placedByUserId !== principal.userId) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "that call is no longer available" });
+  }
+};
+
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
 // request's tx + ports, delegate, map the result. No business logic lives here.
 export const createCallRouter = () =>
   router({
     // Places a two-leg click-to-call: rings the caller's own mobile, then bridges the customer
     // with the org's business line as caller ID.
-    place: ownerOrOffice
+    place: anyRole
       .input(placeInput)
       .output(outboundCallDTO)
       .mutation(async ({ ctx, input }) => {
@@ -54,6 +94,8 @@ export const createCallRouter = () =>
           });
         }
         const orgId = ctx.principal.orgId;
+        const leadId = asLeadId(input.leadId);
+        await assertOnAJobForIfTech(ctx.tx, orgId, leadId, ctx.principal);
         const useCase = new PlaceOutboundCallUseCase(
           new DrizzleOutboundCallRepository(ctx.tx, orgId),
           ctx.deps.callOriginator,
@@ -65,7 +107,7 @@ export const createCallRouter = () =>
         );
         const result = await useCase.exec({
           orgId,
-          leadId: asLeadId(input.leadId),
+          leadId,
           placedByUserId: ctx.principal.userId,
           agentNumber: input.agentNumber,
         });
@@ -74,18 +116,20 @@ export const createCallRouter = () =>
 
     // One call, read back. The bar polls this while connecting so "live" means the phone was
     // actually answered rather than "the provider accepted the request".
-    get: ownerOrOffice
+    get: anyRole
       .input(z.object({ callId: z.string().uuid() }))
       .output(outboundCallDTO)
       .query(async ({ ctx, input }) => {
         const useCase = new GetOutboundCallUseCase(
           new DrizzleOutboundCallRepository(ctx.tx, ctx.principal.orgId),
         );
-        return toOutboundCallDTO(orThrow(await useCase.exec(asOutboundCallId(input.callId))));
+        const call = orThrow(await useCase.exec(asOutboundCallId(input.callId)));
+        assertOwnCallIfTech(call.props.placedByUserId, ctx.principal);
+        return toOutboundCallDTO(call);
       }),
 
     // The durable write for "which phone should Mallet ring". Scoped to the caller themselves.
-    setCallbackNumber: ownerOrOffice
+    setCallbackNumber: anyRole
       .input(setCallbackNumberInput)
       .output(callbackNumberOutput)
       .mutation(async ({ ctx, input }) => {
@@ -102,14 +146,18 @@ export const createCallRouter = () =>
       }),
 
     // Writes the disposition after hanging up — the step that makes the row a persisted log.
-    logOutcome: ownerOrOffice
+    logOutcome: anyRole
       .input(logOutcomeInput)
       .output(outboundCallDTO)
       .mutation(async ({ ctx, input }) => {
-        const useCase = new LogCallOutcomeUseCase(
-          new DrizzleOutboundCallRepository(ctx.tx, ctx.principal.orgId),
-          ctx.deps.clock,
-        );
+        const repo = new DrizzleOutboundCallRepository(ctx.tx, ctx.principal.orgId);
+        if (ctx.principal.role === "tech") {
+          const existing = orThrow(
+            await new GetOutboundCallUseCase(repo).exec(asOutboundCallId(input.callId)),
+          );
+          assertOwnCallIfTech(existing.props.placedByUserId, ctx.principal);
+        }
+        const useCase = new LogCallOutcomeUseCase(repo, ctx.deps.clock);
         const result = await useCase.exec({
           callId: asOutboundCallId(input.callId),
           outcome: input.outcome,

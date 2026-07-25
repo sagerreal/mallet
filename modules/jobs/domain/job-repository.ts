@@ -48,6 +48,9 @@ export interface JobFilter {
    * so a tech can SEE every job they are authorized to act on.
    */
   readonly assignedUserId?: UserId;
+  /** Narrow to one customer's jobs. Combined with assignedUserId it answers "is this person on a
+   *  job for this customer" — the question the field surface's reach is defined by. */
+  readonly leadId?: LeadId;
 }
 
 /** The four execution child collections of one job. */

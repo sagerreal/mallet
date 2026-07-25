@@ -192,9 +192,12 @@ describe("TechJobModalContent — tech", () => {
     mockRole = "tech";
   });
 
-  it("hides Call/Text (myDay carries no customer phone — no dead buttons)", () => {
+  // Call is for everyone: ringing the customer on the way is the ordinary field case, and going
+  // through Mallet is what keeps the tech's personal mobile off the customer's phone. Text stays
+  // office-only — outbound SMS is gated on the org's 10DLC registration, a separate question.
+  it("shows Call and hides Text", () => {
     render(<TechJobModalContent />);
-    expect(screen.queryByText("Call")).toBeNull();
+    expect(screen.queryByText("Call")).not.toBeNull();
     expect(screen.queryByText("Text")).toBeNull();
   });
 

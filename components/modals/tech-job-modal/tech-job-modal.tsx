@@ -166,24 +166,26 @@ export function TechJobModalContent() {
       {/* 1. Header — avatar + name + service word + title. NO status pill. */}
       <TechHeader job={job} custName={custName} />
 
-      {/* 2. Call / Text — office only. Techs don't see these at all (leads never
-          hydrate under the field shell; the myDay summary carries no customer
-          phone). For the office the buttons stay TAPPABLE: the call sheet / thread
-          each prompt to add a number in-flow when none is on file. They disable
-          only with NO linked customer (nobody to call). */}
-      {isOffice && (
-        <div style={{ marginBottom: "0" }}>
-          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-            <button
-              className="btn"
-              disabled={!lead}
-              title={!lead ? "No linked customer" : undefined}
-              onClick={() => {
-                if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
-              }}
-            >
-              Call
-            </button>
+      {/* 2. Call / Text. CALL is for everyone: a technician ringing the customer on their way is
+          the ordinary field case, and going through Mallet is what keeps their personal mobile off
+          the customer's phone. myDay now carries the customers behind a tech's own jobs, so the
+          lead is in the store on this surface too. TEXT stays office-only — outbound SMS is gated
+          on the org's 10DLC registration, a separate question from voice.
+          Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no number is on
+          file. They disable only with NO linked customer (nobody to call). */}
+      <div style={{ marginBottom: "0" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+          <button
+            className="btn"
+            disabled={!lead}
+            title={!lead ? "No linked customer" : undefined}
+            onClick={() => {
+              if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
+            }}
+          >
+            Call
+          </button>
+          {isOffice && (
             <button
               className="btn"
               disabled={!lead}
@@ -194,9 +196,9 @@ export function TechJobModalContent() {
             >
               Text
             </button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 3. Address — tappable Navigate row, or the muted no-address line. */}
       {addr ? (
