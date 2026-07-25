@@ -1,33 +1,46 @@
 import { describe, it, expect } from "vitest";
-import { isOk } from "@mallet/shared/types";
-import { planTap, type ClockPlan, type ClockState, type ClockTap, type OpenEntry } from "./clock";
+import {
+  planTap,
+  MAX_OPEN_SEGMENT_MS,
+  MAX_FUTURE_SKEW_MS,
+  MAX_BACKDATE_MS,
+  MAX_BACKWARDS_SKEW_MS,
+  type ClockPlan,
+  type ClockState,
+  type ClockTap,
+  type OpenEntry,
+  type TapInput,
+} from "./clock";
 
 const JOB_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const JOB_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
-const OPEN_ID = "entry-open";
 
-// Two instants in DIFFERENT minutes, so the matrix exercises ordinary transitions and never
-// trips the zero-length collapse. Collapse gets its own describe block.
-const STARTED = new Date("2026-07-24T15:00:00.000Z");
-const LATER = new Date("2026-07-24T17:30:00.000Z");
+// One fixed day. NOW is server time; taps are placed relative to it, so the temporal bounds are
+// exercised by real distances rather than by magic literals.
+const NOW = new Date("2026-07-24T17:00:00.000Z");
+const mins = (n: number) => n * 60_000;
+const hours = (n: number) => n * 3_600_000;
+const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs);
 
-const running = (kind: ClockState, jobId: string | null, startedAt: Date = STARTED): OpenEntry => ({
-  id: OPEN_ID,
-  kind,
-  jobId,
-  startedAt,
-});
+type PlanResult = ReturnType<typeof planTap>;
 
-const planned = (
-  tap: ClockTap,
-  open: OpenEntry | null,
-  at: Date,
+const openEntry = (
+  kind: ClockState,
   jobId: string | null,
-): ClockPlan => {
-  const r = planTap(tap, open, at, jobId);
-  if (!isOk(r)) throw new Error(`expected a plan, got ${JSON.stringify(r.error)}`);
-  return r.value;
+  startedAt: Date = at(-hours(1)),
+): OpenEntry => ({ id: "entry-open", kind, jobId, startedAt });
+
+const tap = (over: Partial<TapInput> & { tap: ClockTap }): PlanResult =>
+  planTap({ open: null, at: NOW, jobId: null, now: NOW, ...over });
+
+const planOf = (res: PlanResult): ClockPlan => {
+  if (!res.ok) throw new Error(`expected a plan, got: ${res.error.message}`);
+  return res.value;
 };
+
+// ---------------------------------------------------------------------------
+// The transition matrix — the contract, stated once and proven exhaustive.
+// ---------------------------------------------------------------------------
 
 const ALL_TAPS: readonly ClockTap[] = [
   "start_day",
@@ -39,327 +52,377 @@ const ALL_TAPS: readonly ClockTap[] = [
   "end_day",
 ];
 
-const ALL_STATES: readonly (OpenEntry | null)[] = [
-  null,
-  running("shop", null),
-  running("travel", JOB_A),
-  running("job", JOB_A),
-  running("break", null),
-];
-
-// ---------------------------------------------------------------------------
-// The exhaustive matrix: every tap from every state.
-// ---------------------------------------------------------------------------
-
-type Expected = "writes nothing" | { readonly closes: boolean; readonly opens: { readonly kind: ClockState; readonly jobId: string | null } | null };
-
-interface MatrixCase {
-  readonly state: string;
-  readonly open: OpenEntry | null;
-  readonly tap: ClockTap;
-  readonly jobId: string | null;
-  readonly rule: string;
-  readonly expected: Expected;
-}
-
-const shop = { kind: "shop", jobId: null } as const;
-const breakSeg = { kind: "break", jobId: null } as const;
-const travelA = { kind: "travel", jobId: JOB_A } as const;
-const jobA = { kind: "job", jobId: JOB_A } as const;
-
-const MATRIX: readonly MatrixCase[] = [
-  // --- nothing running -----------------------------------------------------
-  { state: "idle", open: null, tap: "start_day", jobId: null, rule: "opens shop time with no job", expected: { closes: false, opens: shop } },
-  { state: "idle", open: null, tap: "enroute", jobId: JOB_A, rule: "auto-opens travel on the job without a prior start_day", expected: { closes: false, opens: travelA } },
-  { state: "idle", open: null, tap: "arrived", jobId: JOB_A, rule: "auto-opens on-site job time without a prior start_day", expected: { closes: false, opens: jobA } },
-  { state: "idle", open: null, tap: "done", jobId: null, rule: "auto-opens shop time rather than failing", expected: { closes: false, opens: shop } },
-  { state: "idle", open: null, tap: "break", jobId: null, rule: "opens break time", expected: { closes: false, opens: breakSeg } },
-  { state: "idle", open: null, tap: "end_break", jobId: null, rule: "writes nothing — no break to end", expected: "writes nothing" },
-  { state: "idle", open: null, tap: "end_day", jobId: null, rule: "writes nothing — no day to end", expected: "writes nothing" },
-
-  // --- shop running --------------------------------------------------------
-  { state: "shop", open: running("shop", null), tap: "start_day", jobId: null, rule: "writes nothing — the day is already started", expected: "writes nothing" },
-  { state: "shop", open: running("shop", null), tap: "enroute", jobId: JOB_A, rule: "closes shop time and opens travel on the job", expected: { closes: true, opens: travelA } },
-  { state: "shop", open: running("shop", null), tap: "arrived", jobId: JOB_A, rule: "closes shop time and opens on-site job time", expected: { closes: true, opens: jobA } },
-  { state: "shop", open: running("shop", null), tap: "done", jobId: null, rule: "writes nothing — shop time is already the resumed state", expected: "writes nothing" },
-  { state: "shop", open: running("shop", null), tap: "break", jobId: null, rule: "closes shop time and opens break", expected: { closes: true, opens: breakSeg } },
-  { state: "shop", open: running("shop", null), tap: "end_break", jobId: null, rule: "writes nothing — already back on shop time", expected: "writes nothing" },
-  { state: "shop", open: running("shop", null), tap: "end_day", jobId: null, rule: "closes shop time and leaves the clock stopped", expected: { closes: true, opens: null } },
-
-  // --- travel running ------------------------------------------------------
-  { state: "travel", open: running("travel", JOB_A), tap: "start_day", jobId: null, rule: "closes travel and opens shop time", expected: { closes: true, opens: shop } },
-  { state: "travel", open: running("travel", JOB_A), tap: "enroute", jobId: JOB_A, rule: "writes nothing — already en route to that job", expected: "writes nothing" },
-  { state: "travel", open: running("travel", JOB_A), tap: "arrived", jobId: JOB_A, rule: "closes travel and opens on-site time on the same job", expected: { closes: true, opens: jobA } },
-  { state: "travel", open: running("travel", JOB_A), tap: "done", jobId: null, rule: "closes travel and resumes shop time with no job", expected: { closes: true, opens: shop } },
-  { state: "travel", open: running("travel", JOB_A), tap: "break", jobId: null, rule: "closes travel and opens break", expected: { closes: true, opens: breakSeg } },
-  { state: "travel", open: running("travel", JOB_A), tap: "end_break", jobId: null, rule: "closes travel and returns to shop time", expected: { closes: true, opens: shop } },
-  { state: "travel", open: running("travel", JOB_A), tap: "end_day", jobId: null, rule: "closes travel and leaves the clock stopped", expected: { closes: true, opens: null } },
-
-  // --- job running ---------------------------------------------------------
-  { state: "job", open: running("job", JOB_A), tap: "start_day", jobId: null, rule: "closes job time and opens shop time", expected: { closes: true, opens: shop } },
-  { state: "job", open: running("job", JOB_A), tap: "enroute", jobId: JOB_A, rule: "closes job time and opens travel on the same job", expected: { closes: true, opens: travelA } },
-  { state: "job", open: running("job", JOB_A), tap: "arrived", jobId: JOB_A, rule: "writes nothing — already on site at that job", expected: "writes nothing" },
-  { state: "job", open: running("job", JOB_A), tap: "done", jobId: null, rule: "closes job time and resumes shop time with no job", expected: { closes: true, opens: shop } },
-  { state: "job", open: running("job", JOB_A), tap: "break", jobId: null, rule: "interrupts job time and opens break", expected: { closes: true, opens: breakSeg } },
-  { state: "job", open: running("job", JOB_A), tap: "end_break", jobId: null, rule: "closes job time and returns to shop time", expected: { closes: true, opens: shop } },
-  { state: "job", open: running("job", JOB_A), tap: "end_day", jobId: null, rule: "closes job time and leaves the clock stopped", expected: { closes: true, opens: null } },
-
-  // --- break running -------------------------------------------------------
-  { state: "break", open: running("break", null), tap: "start_day", jobId: null, rule: "closes break and opens shop time", expected: { closes: true, opens: shop } },
-  { state: "break", open: running("break", null), tap: "enroute", jobId: JOB_A, rule: "closes break and opens travel on the job", expected: { closes: true, opens: travelA } },
-  { state: "break", open: running("break", null), tap: "arrived", jobId: JOB_A, rule: "closes break and opens on-site job time", expected: { closes: true, opens: jobA } },
-  { state: "break", open: running("break", null), tap: "done", jobId: null, rule: "closes break and resumes shop time", expected: { closes: true, opens: shop } },
-  { state: "break", open: running("break", null), tap: "break", jobId: null, rule: "writes nothing — already on break", expected: "writes nothing" },
-  { state: "break", open: running("break", null), tap: "end_break", jobId: null, rule: "closes break and resumes shop time with no job", expected: { closes: true, opens: shop } },
-  { state: "break", open: running("break", null), tap: "end_day", jobId: null, rule: "closes break and leaves the clock stopped", expected: { closes: true, opens: null } },
-];
-
-describe("planTap — every tap from every state has one defined outcome", () => {
-  it("covers all 5 states x 7 taps with no gaps", () => {
-    // Guards the table itself: a new tap or state must be planned here, not silently untested.
-    expect(MATRIX).toHaveLength(ALL_STATES.length * ALL_TAPS.length);
-  });
-
-  it.each(MATRIX)("from $state, $tap $rule", ({ open, tap, jobId, expected }) => {
-    const plan = planned(tap, open, LATER, jobId);
-
-    if (expected === "writes nothing") {
-      expect(plan).toEqual({ close: null, open: null, noop: true });
-      return;
-    }
-    expect(plan.noop).toBe(false);
-    expect(plan.close).toEqual(expected.closes ? { id: OPEN_ID, endedAt: LATER } : null);
-    expect(plan.open).toEqual(expected.opens === null ? null : { ...expected.opens, startedAt: LATER });
-  });
-});
-
-describe("planTap — a tap repeated on the state it produces writes nothing", () => {
-  const repeats: readonly { readonly tap: ClockTap; readonly open: OpenEntry | null; readonly jobId: string | null }[] = [
-    { tap: "start_day", open: running("shop", null), jobId: null },
-    { tap: "enroute", open: running("travel", JOB_A), jobId: JOB_A },
-    { tap: "arrived", open: running("job", JOB_A), jobId: JOB_A },
-    { tap: "done", open: running("shop", null), jobId: null },
-    { tap: "break", open: running("break", null), jobId: null },
-    { tap: "end_break", open: running("shop", null), jobId: null },
-    { tap: "end_day", open: null, jobId: null },
-  ];
-
-  it.each(repeats)("a second $tap produces no duplicate row", ({ tap, open, jobId }) => {
-    const plan = planned(tap, open, LATER, jobId);
-    expect(plan.noop).toBe(true);
-    expect(plan.close).toBeNull();
-    expect(plan.open).toBeNull();
-  });
-
-  it("a different job on the same kind is a real move, not a repeat", () => {
-    const plan = planned("enroute", running("travel", JOB_A), LATER, JOB_B);
-    expect(plan.noop).toBe(false);
-    expect(plan.close).toEqual({ id: OPEN_ID, endedAt: LATER });
-    expect(plan.open).toEqual({ kind: "travel", jobId: JOB_B, startedAt: LATER });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Zero-length collapse — the six-Dones-at-6pm case.
-// ---------------------------------------------------------------------------
+/** The five clock states a tap can arrive into; `idle` means nothing is running. */
+const ALL_STATES = ["idle", "shop", "travel", "job", "break"] as const;
+type MatrixState = (typeof ALL_STATES)[number];
 
 interface Row {
-  readonly id: string;
-  readonly kind: ClockState;
-  readonly jobId: string | null;
-  readonly startedAt: Date;
-  readonly endedAt: Date | null;
+  readonly state: MatrixState;
+  readonly tap: ClockTap;
+  readonly closes: boolean;
+  readonly opens: { kind: ClockState; jobId: string | null } | null;
+  readonly noop: boolean;
 }
 
-// Minimal stand-in for the repository write, so the test asserts on the ROWS a tech would end
-// up with rather than on the plan shape. Immutable, like the real store writes.
-const applyPlan = (rows: readonly Row[], plan: ClockPlan, newId: string): readonly Row[] => {
-  if (plan.noop) return rows;
-  const kept = plan.discardOpen === true ? rows.filter((r) => r.endedAt !== null) : rows;
-  const close = plan.close;
-  const closed =
-    close === null ? kept : kept.map((r) => (r.id === close.id ? { ...r, endedAt: close.endedAt } : r));
-  const opened = plan.open;
-  return opened === null ? closed : [...closed, { id: newId, ...opened, endedAt: null }];
+const row = (
+  state: MatrixState,
+  tapName: ClockTap,
+  closes: boolean,
+  opens: Row["opens"],
+  noop = false,
+): Row => ({ state, tap: tapName, closes, opens, noop });
+
+const SHOP = { kind: "shop" as const, jobId: null };
+const TRAVEL_A = { kind: "travel" as const, jobId: JOB_A };
+const JOB_ON_A = { kind: "job" as const, jobId: JOB_A };
+const ON_BREAK = { kind: "break" as const, jobId: null };
+const NO = null;
+
+// Read this as the product spec. Every cell is a decision someone can argue with.
+const MATRIX: readonly Row[] = [
+  // Idle: only taps that MEAN "I am starting something" may open. Exit taps are no-ops, so a
+  // stray Done after the day ended can never put the technician back on the clock.
+  row("idle", "start_day", false, SHOP),
+  row("idle", "enroute", false, TRAVEL_A),
+  row("idle", "arrived", false, JOB_ON_A),
+  row("idle", "done", false, NO, true),
+  row("idle", "break", false, ON_BREAK),
+  row("idle", "end_break", false, NO, true),
+  row("idle", "end_day", false, NO, true),
+
+  // Shop running.
+  row("shop", "start_day", false, NO, true), // already there
+  row("shop", "enroute", true, TRAVEL_A),
+  row("shop", "arrived", true, JOB_ON_A),
+  row("shop", "done", false, NO, true), // nothing to finish; already shop
+  row("shop", "break", true, ON_BREAK),
+  row("shop", "end_break", false, NO, true), // not on a break
+  row("shop", "end_day", true, NO),
+
+  // Travel running.
+  row("travel", "start_day", false, NO, true), // would destroy travel attribution
+  row("travel", "enroute", false, NO, true), // same job, already travelling
+  row("travel", "arrived", true, JOB_ON_A),
+  row("travel", "done", true, SHOP),
+  row("travel", "break", true, ON_BREAK),
+  row("travel", "end_break", false, NO, true), // not on a break
+  row("travel", "end_day", true, NO),
+
+  // Job running.
+  row("job", "start_day", false, NO, true), // would destroy job attribution
+  row("job", "enroute", true, TRAVEL_A),
+  row("job", "arrived", false, NO, true), // same job, already on site
+  row("job", "done", true, SHOP),
+  row("job", "break", true, ON_BREAK),
+  row("job", "end_break", false, NO, true), // not on a break
+  row("job", "end_day", true, NO),
+
+  // Break running.
+  row("break", "start_day", false, NO, true), // use End break
+  row("break", "enroute", true, TRAVEL_A),
+  row("break", "arrived", true, JOB_ON_A),
+  row("break", "done", true, SHOP),
+  row("break", "break", false, NO, true), // already on a break
+  row("break", "end_break", true, SHOP),
+  row("break", "end_day", true, NO),
+];
+
+const openFor = (state: MatrixState): OpenEntry | null => {
+  switch (state) {
+    case "idle":
+      return null;
+    case "shop":
+      return openEntry("shop", null);
+    case "travel":
+      return openEntry("travel", JOB_A);
+    case "job":
+      return openEntry("job", JOB_A);
+    case "break":
+      return openEntry("break", null);
+  }
 };
 
-const openRow = (rows: readonly Row[]): OpenEntry | null => {
-  const found = rows.find((r) => r.endedAt === null);
-  return found === undefined
-    ? null
-    : { id: found.id, kind: found.kind, jobId: found.jobId, startedAt: found.startedAt };
-};
+// `enroute`/`arrived` must carry a job; the others must not.
+const jobArgFor = (tapName: ClockTap): string | null =>
+  tapName === "enroute" || tapName === "arrived" ? JOB_A : null;
 
-const at = (hhmmss: string): Date => new Date(`2026-07-24T${hhmmss}.000Z`);
+const runRow = (r: Row): PlanResult =>
+  planTap({ tap: r.tap, open: openFor(r.state), at: NOW, jobId: jobArgFor(r.tap), now: NOW });
 
-describe("planTap — taps inside one minute never leave a zero-length row", () => {
-  it("six Dones tapped at 6pm from the truck leave no junk rows", () => {
-    const taps: readonly { readonly tap: ClockTap; readonly at: Date; readonly jobId: string | null }[] = [
-      { tap: "arrived", at: at("15:00:00"), jobId: JOB_A },
-      { tap: "done", at: at("18:00:05"), jobId: null },
-      { tap: "done", at: at("18:00:12"), jobId: null },
-      { tap: "done", at: at("18:00:20"), jobId: null },
-      { tap: "enroute", at: at("18:00:31"), jobId: JOB_B },
-      { tap: "arrived", at: at("18:00:44"), jobId: JOB_B },
-      { tap: "done", at: at("18:00:52"), jobId: null },
-      { tap: "end_day", at: at("18:05:00"), jobId: null },
+describe("the transition matrix is exhaustive", () => {
+  // Counting rows is NOT proof: a duplicated row plus a dropped pair still totals 35, and the
+  // dropped behaviour then ships unproven. Assert the SET of (state, tap) pairs instead.
+  it("covers every (state, tap) pair exactly once", () => {
+    const keys = MATRIX.map((r) => `${r.state}|${r.tap}`);
+    const expected = ALL_STATES.flatMap((s) => ALL_TAPS.map((t) => `${s}|${t}`));
+
+    expect(new Set(keys).size).toBe(keys.length); // no duplicates
+    expect([...keys].sort()).toEqual([...expected].sort()); // no gaps, no strays
+  });
+});
+
+describe.each(MATRIX)("$state + $tap", (r) => {
+  it(
+    r.noop ? "writes nothing" : r.closes ? "closes the running entry" : "opens without closing",
+    () => {
+      const plan = planOf(runRow(r));
+      expect(plan.noop).toBe(r.noop);
+      expect(plan.close !== null).toBe(r.closes);
+    },
+  );
+
+  it(r.opens ? `runs ${r.opens.kind} afterwards` : "runs nothing afterwards", () => {
+    const plan = planOf(runRow(r));
+    if (r.opens === null) {
+      expect(plan.open).toBeNull();
+    } else {
+      expect(plan.open).toMatchObject(r.opens);
+    }
+  });
+});
+
+// What the old "totality" block should have been. `typeof r.ok === "boolean"` is true for every
+// Result ever constructed, so a planTap that refused EVERY tap passed it — a mutation that would
+// stop every technician in the field from clocking in at all.
+describe("totality — real behaviour across the whole matrix", () => {
+  it("succeeds for every (state, tap) pair, with the matrix outcome", () => {
+    for (const r of MATRIX) {
+      const res = runRow(r);
+      expect(res.ok, `${r.state}|${r.tap} should be plannable`).toBe(true);
+      if (!res.ok) continue;
+      expect(res.value.noop, `${r.state}|${r.tap} noop`).toBe(r.noop);
+      expect(res.value.close !== null, `${r.state}|${r.tap} closes`).toBe(r.closes);
+    }
+  });
+
+  it("never throws, even for junk the type system says is impossible", () => {
+    const junk: unknown[] = [
+      { tap: "not_a_tap", open: null, at: NOW, jobId: null, now: NOW },
+      // A Symbol throws on string interpolation, so the guard must not stringify what it rejects.
+      { tap: Symbol("x"), open: null, at: NOW, jobId: null, now: NOW },
+      { tap: "done", open: undefined, at: NOW, jobId: null, now: NOW },
+      { tap: "done", open: null, at: new Date("nope"), jobId: null, now: NOW },
+      { tap: "done", open: null, at: NOW, jobId: null, now: new Date("nope") },
+      {
+        tap: "done",
+        open: { id: "x", kind: "job", jobId: JOB_A, startedAt: new Date("nope") },
+        at: NOW,
+        jobId: null,
+        now: NOW,
+      },
     ];
-
-    const rows = taps.reduce<readonly Row[]>(
-      (acc, t, i) => applyPlan(acc, planned(t.tap, openRow(acc), t.at, t.jobId), `row-${i}`),
-      [],
-    );
-
-    // The eight taps describe exactly two real spans: the job, then the shop time after it.
-    expect(rows).toHaveLength(2);
-    expect(rows.every((r) => r.endedAt !== null)).toBe(true);
-    expect(rows.every((r) => r.endedAt !== null && r.endedAt.getTime() > r.startedAt.getTime())).toBe(true);
-    expect(rows.map((r) => r.kind)).toEqual(["job", "shop"]);
+    for (const input of junk) {
+      expect(() => planTap(input as TapInput)).not.toThrow();
+      // `undefined` open is legal (it means idle), so only the genuinely invalid ones must fail.
+      const res = planTap(input as TapInput);
+      if ((input as TapInput).tap === "done" && (input as TapInput).open === undefined) continue;
+      expect(res.ok).toBe(false);
+    }
   });
 
-  it("discards the collapsed row instead of closing it", () => {
-    const plan = planned("arrived", running("travel", JOB_A, at("18:00:05")), at("18:00:40"), JOB_A);
-    expect(plan.discardOpen).toBe(true);
-    expect(plan.close).toBeNull();
+  it("treats an undefined open entry as idle rather than dereferencing it", () => {
+    // undefined is exactly what a repository lookup returns when it forgets `row ?? null`.
+    const res = planTap({ tap: "start_day", open: undefined, at: NOW, jobId: null, now: NOW });
+    expect(planOf(res).open).toMatchObject(SHOP);
+  });
+});
+
+describe("a stray exit tap can never restart the clock", () => {
+  it.each(["done", "end_break", "end_day"] as const)(
+    "%s with nothing running writes nothing",
+    (t) => {
+      expect(planOf(tap({ tap: t }))).toMatchObject({ noop: true, close: null, open: null });
+    },
+  );
+
+  it("a Done tapped after the day ended does not put the tech back on the clock", () => {
+    const afterEndDay = planOf(tap({ tap: "end_day", open: openEntry("shop", null) }));
+    expect(afterEndDay.open).toBeNull();
+
+    const stray = planOf(tap({ tap: "done", open: null, at: at(mins(5)) }));
+    expect(stray.open).toBeNull();
+    expect(stray.noop).toBe(true);
+  });
+});
+
+describe("a mis-tap never destroys attribution", () => {
+  it.each(["travel", "job"] as const)("Start day while %s is running writes nothing", (state) => {
+    expect(planOf(tap({ tap: "start_day", open: openFor(state) }))).toMatchObject({
+      noop: true,
+      close: null,
+    });
   });
 
-  it("keeps the original start instant so the span is not shortened", () => {
-    const started = at("18:00:05");
-    const plan = planned("arrived", running("travel", JOB_A, started), at("18:00:40"), JOB_A);
-    expect(plan.open).toEqual({ kind: "job", jobId: JOB_A, startedAt: started });
-  });
-
-  it("end_day inside the opening minute leaves nothing behind at all", () => {
-    const plan = planned("end_day", running("shop", null, at("18:00:05")), at("18:00:50"), null);
-    expect(plan.discardOpen).toBe(true);
+  it("Start day mid-job leaves the job segment open, so its costing survives", () => {
+    const plan = planOf(tap({ tap: "start_day", open: openEntry("job", JOB_A) }));
     expect(plan.close).toBeNull();
     expect(plan.open).toBeNull();
+  });
+
+  it.each(["shop", "travel", "job"] as const)(
+    "End break while %s is running writes nothing",
+    (state) => {
+      expect(planOf(tap({ tap: "end_break", open: openFor(state) }))).toMatchObject({
+        noop: true,
+        close: null,
+      });
+    },
+  );
+});
+
+describe("a forgotten End day cannot absorb the weekend", () => {
+  const staleShop = openEntry("shop", null, at(-MAX_OPEN_SEGMENT_MS - mins(1)));
+
+  it("Start day re-anchors a stale segment instead of no-op'ing into it", () => {
+    const plan = planOf(tap({ tap: "start_day", open: staleShop }));
     expect(plan.noop).toBe(false);
+    expect(plan.close).toMatchObject({ id: staleShop.id });
+    expect(plan.open).toMatchObject(SHOP);
   });
 
-  it("a tap in the next minute closes the row normally", () => {
-    const plan = planned("arrived", running("travel", JOB_A, at("18:00:59")), at("18:01:00"), JOB_A);
+  it("the fresh segment starts at the tap, not at the stale segment's start", () => {
+    expect(planOf(tap({ tap: "start_day", open: staleShop })).open?.startedAt).toEqual(NOW);
+  });
+
+  it("a segment inside the limit is still treated as the same one", () => {
+    const fresh = openEntry("shop", null, at(-MAX_OPEN_SEGMENT_MS + mins(1)));
+    expect(planOf(tap({ tap: "start_day", open: fresh })).noop).toBe(true);
+  });
+});
+
+describe("the tap timestamp is bounded in both directions", () => {
+  it("refuses a tap far in the future, which no later tap could close", () => {
+    expect(tap({ tap: "start_day", at: at(MAX_FUTURE_SKEW_MS + mins(1)) }).ok).toBe(false);
+  });
+
+  it("allows ordinary forward device skew", () => {
+    expect(tap({ tap: "start_day", at: at(MAX_FUTURE_SKEW_MS - mins(1)) }).ok).toBe(true);
+  });
+
+  it("refuses a tap far in the past — a day cannot open six years ago", () => {
+    expect(tap({ tap: "start_day", at: at(-MAX_BACKDATE_MS - mins(1)) }).ok).toBe(false);
+  });
+
+  it("allows a delayed tap within the window, for the retry after no signal", () => {
+    expect(tap({ tap: "start_day", at: at(-hours(2)) }).ok).toBe(true);
+  });
+
+  it("bounds the AUTO-OPEN path too, not just the path with something running", () => {
+    const res = planTap({
+      tap: "arrived",
+      open: null,
+      at: new Date("2031-05-05T00:00:00.000Z"),
+      jobId: JOB_A,
+      now: NOW,
+    });
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe("backwards taps: skew is clamped, a real reversal is refused", () => {
+  const open = openEntry("job", JOB_A, NOW);
+
+  it("clamps a sub-minute backwards tap instead of failing the dispatch", () => {
+    expect(tap({ tap: "done", open, at: at(-MAX_BACKWARDS_SKEW_MS + 1) }).ok).toBe(true);
+  });
+
+  it("refuses a genuinely backwards tap rather than inventing hours", () => {
+    expect(tap({ tap: "done", open, at: at(-hours(1)) }).ok).toBe(false);
+  });
+
+  it("a clamped tap collapses to zero length rather than producing a negative row", () => {
+    const plan = planOf(tap({ tap: "done", open, at: at(-1_000) }));
+    expect(plan.discardOpen).toBe(true);
+    expect(plan.close).toBeNull();
+  });
+});
+
+describe("zero-length collapse", () => {
+  it("six Dones in the same minute leave no junk rows", () => {
+    let open: OpenEntry | null = openEntry("job", JOB_A, NOW);
+    let rowsWritten = 0;
+    for (let i = 0; i < 6; i += 1) {
+      const plan = planOf(tap({ tap: "done", open, at: at(i * 1_000) }));
+      if (plan.close !== null) rowsWritten += 1;
+      open = plan.open ? { id: `row-${i}`, ...plan.open } : null;
+    }
+    expect(rowsWritten).toBe(0);
+  });
+
+  it("keeps the ORIGINAL start when it discards, so no worked minute is lost", () => {
+    const open = openEntry("travel", JOB_A, NOW);
+    const plan = planOf(tap({ tap: "arrived", open, at: at(30_000), jobId: JOB_A }));
+    expect(plan.discardOpen).toBe(true);
+    expect(plan.open?.startedAt).toEqual(open.startedAt);
+  });
+
+  it("closes normally once the tap lands in a later minute", () => {
+    const open = openEntry("travel", JOB_A, NOW);
+    const plan = planOf(tap({ tap: "arrived", open, at: at(mins(2)), jobId: JOB_A }));
     expect(plan.discardOpen).toBeUndefined();
-    expect(plan.close).toEqual({ id: OPEN_ID, endedAt: at("18:01:00") });
+    expect(plan.close).toMatchObject({ id: open.id });
   });
 });
 
-// ---------------------------------------------------------------------------
-// Breaks.
-// ---------------------------------------------------------------------------
-
-describe("planTap — a break interrupts anything and resumes to shop", () => {
-  it("interrupts running job time", () => {
-    const plan = planned("break", running("job", JOB_A), LATER, null);
-    expect(plan.close).toEqual({ id: OPEN_ID, endedAt: LATER });
-    expect(plan.open).toEqual({ kind: "break", jobId: null, startedAt: LATER });
+describe("job attribution", () => {
+  it("Done clears the job — hours after it belong to no job until the tech says so", () => {
+    const plan = planOf(tap({ tap: "done", open: openEntry("job", JOB_A) }));
+    expect(plan.open).toMatchObject({ kind: "shop", jobId: null });
   });
 
-  it("resumes shop time, not the interrupted job", () => {
-    // Guessing the tech went back to the same job would invent job-cost data nobody confirmed.
-    const plan = planned("end_break", running("break", null), LATER, null);
-    expect(plan.open).toEqual({ kind: "shop", jobId: null, startedAt: LATER });
+  // The Done button lives on a job card, so the caller HAS the job id and will pass it. The job
+  // must still be cleared: minutes after Done belong to no job until the tech says otherwise, and
+  // carrying it forward would invent job-cost time nobody confirmed.
+  it("Done clears the job even when the caller passes one", () => {
+    const plan = planOf(tap({ tap: "done", open: openEntry("job", JOB_A), jobId: JOB_A }));
+    expect(plan.open).toMatchObject({ kind: "shop", jobId: null });
   });
 
-  it("never carries the job forward through done", () => {
-    const plan = planned("done", running("job", JOB_A), LATER, null);
-    expect(plan.open).toEqual({ kind: "shop", jobId: null, startedAt: LATER });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Validation.
-// ---------------------------------------------------------------------------
-
-describe("planTap — the domain does not trust the device clock", () => {
-  it("refuses a tap dated before the running entry started", () => {
-    const r = planTap("done", running("job", JOB_A, at("15:00:00")), at("14:59:00"), null);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("at");
+  it("End break clears the job even when the caller passes one", () => {
+    const plan = planOf(tap({ tap: "end_break", open: openEntry("break", null), jobId: JOB_A }));
+    expect(plan.open).toMatchObject({ kind: "shop", jobId: null });
   });
 
-  it("refuses a tap whose time is not a real date", () => {
-    const r = planTap("start_day", null, new Date("not-a-date"), null);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("at");
+  it("End break resumes shop, not the interrupted job", () => {
+    // Guessing they went back to the same job would invent job-cost minutes nobody confirmed.
+    const plan = planOf(tap({ tap: "end_break", open: openEntry("break", null) }));
+    expect(plan.open).toMatchObject({ kind: "shop", jobId: null });
   });
 
-  it("accepts a tap in the same instant as the start (collapse, not backwards)", () => {
-    const started = at("15:00:00");
-    const r = planTap("done", running("job", JOB_A, started), started, null);
-    expect(isOk(r)).toBe(true);
+  it("switching directly from one job to another closes the first", () => {
+    const open = openEntry("job", JOB_A);
+    const plan = planOf(tap({ tap: "enroute", open, at: at(mins(5)), jobId: JOB_B }));
+    expect(plan.close).toMatchObject({ id: open.id });
+    expect(plan.open).toMatchObject({ kind: "travel", jobId: JOB_B });
+  });
+
+  it.each(["enroute", "arrived"] as const)("%s without a job is refused", (t) => {
+    expect(tap({ tap: t, jobId: null }).ok).toBe(false);
+  });
+
+  it.each(["start_day", "break", "end_day"] as const)("%s carrying a job is refused", (t) => {
+    expect(tap({ tap: t, jobId: JOB_A, open: openEntry("shop", null) }).ok).toBe(false);
   });
 });
 
-describe("planTap — job taps must name a job and non-job taps must not", () => {
-  const missing: readonly ClockTap[] = ["enroute", "arrived"];
-  it.each(missing)("refuses %s without a jobId", (tap) => {
-    const r = planTap(tap, null, LATER, null);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("jobId");
+describe("planning never mutates the caller's data", () => {
+  it("leaves the open entry's startedAt untouched", () => {
+    const open = openEntry("job", JOB_A, NOW);
+    // Capture the VALUE, not a shallow copy: a spread shares the same Date object, so toEqual
+    // would compare a mutated Date to itself and pass.
+    const startedMs = open.startedAt.getTime();
+
+    planTap({ tap: "done", open, at: at(mins(30)), jobId: null, now: at(mins(30)) });
+
+    expect(open.startedAt.getTime()).toBe(startedMs);
+    expect(open.kind).toBe("job");
+    expect(open.jobId).toBe(JOB_A);
   });
 
-  it.each(missing)("refuses %s with a blank jobId", (tap) => {
-    const r = planTap(tap, null, LATER, "   ");
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("jobId");
-  });
-
-  const stray: readonly ClockTap[] = ["start_day", "break", "end_day"];
-  it.each(stray)("refuses a stray jobId on %s", (tap) => {
-    const r = planTap(tap, running("job", JOB_A), LATER, JOB_A);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("jobId");
-  });
-
-  it("tolerates the jobId a Done button knows, and still resumes shop with no job", () => {
-    const plan = planned("done", running("job", JOB_A), LATER, JOB_A);
-    expect(plan.open).toEqual({ kind: "shop", jobId: null, startedAt: LATER });
-  });
-
-  it("refuses a tap it does not know", () => {
-    const r = planTap("lunch" as ClockTap, null, LATER, null);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("tap");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Totality.
-// ---------------------------------------------------------------------------
-
-describe("planTap — a tap can never throw, because dispatch runs in the same transaction", () => {
-  it("returns a Result for every tap x state x jobId combination", () => {
-    const jobIds: readonly (string | null)[] = [null, JOB_A, JOB_B, ""];
-    for (const tap of ALL_TAPS) {
-      for (const state of ALL_STATES) {
-        for (const jobId of jobIds) {
-          expect(() => planTap(tap, state, LATER, jobId)).not.toThrow();
-          const r = planTap(tap, state, LATER, jobId);
-          // Either an actionable plan or a named validation failure — never undefined behaviour.
-          expect(typeof r.ok).toBe("boolean");
-        }
-      }
-    }
-  });
-
-  it("does not throw on malformed input a JS caller could pass", () => {
-    const junk = [undefined, null, 0, "nope", {}] as unknown as ClockTap[];
-    for (const tap of junk) {
-      expect(() => planTap(tap, running("job", JOB_A), LATER, JOB_A)).not.toThrow();
-    }
-    expect(() => planTap("done", running("job", JOB_A), "18:00" as unknown as Date, null)).not.toThrow();
-    expect(() =>
-      planTap("done", { ...running("job", JOB_A), startedAt: "nope" as unknown as Date }, LATER, null),
-    ).not.toThrow();
-    expect(() => planTap("enroute", null, LATER, 7 as unknown as string)).not.toThrow();
-  });
-
-  it("leaves the running entry untouched", () => {
-    // Immutability: planning is a pure read of the open entry.
-    const open = running("job", JOB_A);
-    const snapshot = { ...open };
-    planTap("done", open, LATER, null);
-    expect(open).toEqual(snapshot);
+  it("leaves the tap instant untouched", () => {
+    const tapAt = at(mins(30));
+    const ms = tapAt.getTime();
+    planTap({ tap: "done", open: openEntry("job", JOB_A), at: tapAt, jobId: null, now: tapAt });
+    expect(tapAt.getTime()).toBe(ms);
   });
 });

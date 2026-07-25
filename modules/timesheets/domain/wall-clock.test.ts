@@ -374,3 +374,55 @@ describe("splitAtMidnight — boundary validation", () => {
     if (!result.ok) expect(result.error.field).toBe("endedAt");
   });
 });
+
+// These tests state the ACCEPTED limitation rather than a capability. They exist so nobody reads
+// the suite and concludes DST spans are handled — and so that if someone ever migrates to instants,
+// these are the tests that turn red and tell them the trade was reversed on purpose.
+//
+// Why it is accepted: US DST transitions happen at 02:00 local, so no ordinary shift reaches one.
+// The beachhead does not work nights. The fix is storing instants instead of wall times, which
+// would break the pickers, the hours derivation, the editors and the QuickBooks mapper.
+describe("DST spans mis-state duration — accepted, and pinned so it stays visible", () => {
+  const wallMinutes = (rows: readonly { startTime: string; endTime: string }[]): number =>
+    rows.reduce((total, r) => {
+      const [sh, sm] = r.startTime.split(":").map(Number);
+      const [eh, em] = r.endTime.split(":").map(Number);
+      return total + ((eh as number) * 60 + (em as number) - ((sh as number) * 60 + (sm as number)));
+    }, 0);
+
+  const realMinutes = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 60_000);
+
+  it("UNDER-bills an overnight span across the fall-back by about an hour", () => {
+    // 2026-11-01: 02:00 PDT falls back to 01:00 PST, so the local clock repeats an hour.
+    const startedAt = new Date("2026-11-01T05:00:00.000Z"); // Oct 31, 22:00 PDT
+    const endedAt = new Date("2026-11-01T14:00:00.000Z"); // Nov 1, 06:00 PST
+    const rows = unwrapSplit(splitAtMidnight({ startedAt, endedAt }, LA));
+
+    expect(realMinutes(startedAt, endedAt)).toBe(540); // 9h actually worked
+    // Billed: 8h less the one-minute midnight crossing. The repeated hour is simply not there.
+    expect(wallMinutes(rows)).toBe(479);
+  });
+
+  it("OVER-bills a span across the spring-forward by about an hour", () => {
+    // 2026-03-08: 02:00 PST jumps to 03:00 PDT, so an hour of local time never happens.
+    const startedAt = new Date("2026-03-08T06:00:00.000Z"); // 22:00 PST the previous evening
+    const endedAt = new Date("2026-03-08T13:00:00.000Z"); // 06:00 PDT
+    const rows = unwrapSplit(splitAtMidnight({ startedAt, endedAt }, LA));
+
+    expect(realMinutes(startedAt, endedAt)).toBe(420); // 7h actually worked
+    expect(wallMinutes(rows)).toBe(479); // billed as ~8h
+  });
+
+  it("still refuses a span whose wall clock runs BACKWARDS, rather than emitting a negative row", () => {
+    // The narrow sub-case that IS caught: 01:30 PDT -> 01:10 PST is 40 real minutes forward, but
+    // the wall clock moved back, and a negative row would be worse than no row.
+    const res = splitAtMidnight(
+      {
+        startedAt: new Date("2026-11-01T08:30:00.000Z"),
+        endedAt: new Date("2026-11-01T09:10:00.000Z"),
+      },
+      LA,
+    );
+    expect(res.ok).toBe(false);
+  });
+});

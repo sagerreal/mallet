@@ -193,12 +193,22 @@ const candidateRows = (
 
 // Split an instant-pair into one timesheet row per local day it touches.
 //
-// Known limitation: a day's start is anchored at 00:00, which assumes local midnight exists. In the
-// zones this serves (US trades — transitions happen at 02:00 local) it always does, but a handful
-// of zones shift AT midnight (e.g. America/Havana springs 23:59 -> 01:00), where a 00:00 anchor
-// names a minute that never happened and would over-count that day. Handling it means hunting for
-// each day's first existing minute; that is not worth building until a shop actually sits in such a
-// zone. The fall-back direction IS handled below, because it produces a backwards row we can detect.
+// KNOWN AND ACCEPTED LIMITATION — a segment that SPANS a DST transition mis-states its duration.
+//
+// Rows carry wall-clock HH:MM, and pay is derived as (end - start) on the wall. So an hour the
+// local clock repeats is billed once (fall-back under-bills by an hour) and an hour it skips is
+// billed anyway (spring-forward over-bills by an hour). Neither is detected here: only a segment
+// whose wall clock runs BACKWARDS is caught, which is a narrow sub-case.
+//
+// This is accepted, not overlooked. US DST transitions happen at 02:00 local, so no ordinary shift
+// reaches one — the beachhead does not work nights, and the shop was asked. The fix would be to
+// store instants instead of wall times, which would break the pickers, the hours derivation, the
+// editors and the QuickBooks mapper, and rewrite every existing row. If a shop ever runs crews
+// through 02:00, that migration is the answer and this comment is the reason.
+//
+// Separately: a day's start is anchored at 00:00, which assumes local midnight exists. In the zones
+// this serves it always does, but a few shift AT midnight (e.g. America/Havana springs 23:59 ->
+// 01:00), where the anchor names a minute that never happened. Same disposition, same reason.
 export const splitAtMidnight = (
   segment: Segment,
   timeZone: string,
@@ -250,10 +260,22 @@ export const splitAtMidnight = (
   // so it is never emitted.
   const billable = rows.value.filter((r) => r.startTime !== r.endTime);
   if (billable.length === 0) {
-    // Two ways to land here: a sub-minute segment (both ends truncate to the same HH:MM), or one
-    // spent entirely inside a repeated fall-back hour. Neither covers a whole clock minute, and
-    // timesheet rows have one-minute resolution, so there is nothing representable to store.
-    return err(validation("segment covers no whole clock minute", "endedAt"));
+    // Three ways to land here, and the third is not what the other two are:
+    //  - a sub-minute segment (both ends truncate to the same HH:MM);
+    //  - one spent entirely inside a repeated fall-back hour;
+    //  - one straddling midnight inside the 23:59 -> 00:00 window, e.g. 23:59:00 -> 00:00:59. That
+    //    is ~2 real minutes, but the midnight rule ends day one at 23:59 and starts day two at
+    //    00:00, so BOTH candidate rows are zero-length and the whole segment is consumed by the
+    //    one-minute crossing cost.
+    // In every case there is no nonzero HH:MM row to write, and the alternative — inventing a
+    // minute on whichever day looks closest — would put time on the sheet nobody worked. So it is
+    // refused, loudly, rather than rounded into existence.
+    return err(
+      validation(
+        "segment is too short to record at one-minute resolution (or falls entirely in the midnight crossing)",
+        "endedAt",
+      ),
+    );
   }
   return ok(billable);
 };
