@@ -4,11 +4,12 @@ import {
   asOrgId,
   asLeadId,
   asUserId,
+  asVisitId,
   zeroMoney,
   money,
   isOk,
 } from "@mallet/shared/types";
-import { Job, type JobProps } from "./job";
+import { Job, JobVisit, type JobProps } from "./job";
 
 const props = (overrides: Partial<JobProps> = {}): JobProps => ({
   id: asJobId("11111111-1111-1111-1111-111111111111"),
@@ -492,5 +493,71 @@ describe("Job requiredCerts", () => {
   it("preserves null explicitly", () => {
     const job = make({ requiredCerts: null });
     expect(job.props.requiredCerts).toBeNull();
+  });
+
+  // The board reads visits; My day reads the job. Completing the job used to move only the job, so
+  // an open block for finished work sat on the schedule while My day correctly showed nothing —
+  // two views of one fact, disagreeing.
+  describe("completing a job closes its outstanding visits", () => {
+    const withVisits = (statuses: readonly string[]) => {
+      const base = make({ status: "in_progress" });
+      const visits = statuses.map((status, i) => {
+        const v = JobVisit.create({
+          id: asVisitId(`00000000-0000-4000-8000-00000000000${i}`),
+          assigneeUserId: null,
+          scheduledDate: "2026-07-25",
+          scheduledStart: "10:00",
+          scheduledEnd: "11:30",
+          durationMinutes: 90,
+          status: status as never,
+          enrouteAt: null,
+          startedAt: null,
+          completedAt: status === "complete" ? new Date("2026-07-24T10:00:00Z") : null,
+          notes: null,
+          position: i,
+        });
+        if (!v.ok) throw new Error("fixture");
+        return v.value;
+      });
+      const withV = base.withVisits(visits, new Date("2026-07-25T09:00:00Z"));
+      if (!withV.ok) throw new Error("fixture");
+      return withV.value;
+    };
+
+    it("marks a pending visit complete", () => {
+      const now = new Date("2026-07-25T12:00:00Z");
+      const done = withVisits(["pending"]).complete(now);
+      expect(done.ok).toBe(true);
+      if (done.ok) {
+        expect(done.value.props.visits[0]!.props.status).toBe("complete");
+        expect(done.value.props.visits[0]!.props.completedAt).toEqual(now);
+      }
+    });
+
+    it("marks an in-progress visit complete", () => {
+      const done = withVisits(["in_progress"]).complete(new Date("2026-07-25T12:00:00Z"));
+      if (done.ok) expect(done.value.props.visits[0]!.props.status).toBe("complete");
+    });
+
+    it("leaves a canceled visit canceled — finishing a job does not un-cancel work", () => {
+      const done = withVisits(["canceled"]).complete(new Date("2026-07-25T12:00:00Z"));
+      if (done.ok) expect(done.value.props.visits[0]!.props.status).toBe("canceled");
+    });
+
+    it("keeps an already-complete visit's own stamp rather than restamping it", () => {
+      const done = withVisits(["complete"]).complete(new Date("2026-07-25T12:00:00Z"));
+      if (done.ok) {
+        expect(done.value.props.visits[0]!.props.completedAt).toEqual(new Date("2026-07-24T10:00:00Z"));
+      }
+    });
+
+    it("closes every open visit on a multi-visit job", () => {
+      const done = withVisits(["pending", "canceled", "pending"]).complete(new Date("2026-07-25T12:00:00Z"));
+      if (done.ok) {
+        expect(done.value.props.visits.map((v) => v.props.status)).toEqual([
+          "complete", "canceled", "complete",
+        ]);
+      }
+    });
   });
 });

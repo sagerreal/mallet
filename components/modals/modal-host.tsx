@@ -4,8 +4,11 @@
  * Mounted once in (office)/layout.tsx — works app-wide.
  *
  * All modal content components are loaded via next/dynamic (ssr:false) so the
- * 261KB modal chunk is deferred from the shared first-load bundle. Modals open
- * on user interaction, so the chunk load is imperceptible.
+ * 261KB modal chunk is deferred from the shared first-load bundle.
+ *
+ * Every one of them passes a `loading` fallback. Without it dynamic() renders null while the chunk
+ * arrives, and the shell — which paints immediately — showed an empty card collapsed to the height
+ * of its ✕ before snapping open. "Imperceptible" held on a warm chunk and not on a cold one.
  */
 
 "use client";
@@ -14,117 +17,140 @@ import dynamic from "next/dynamic";
 import { useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { Modal } from "./modal";
+import { ModalLoading } from "./modal-loading";
 
 // ----- dynamic modal content imports (all named exports → { default: X } -----
 
 const LeadModal = dynamic(
   () => import("./lead-modal/lead-modal").then((m) => ({ default: m.LeadModal })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const NewCustomerModal = dynamic(
   () => import("./new-customer-modal").then((m) => ({ default: m.NewCustomerModal })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const SweepModalContent = dynamic(
   () => import("./sweep-modal").then((m) => ({ default: m.SweepModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="sm" /> },
 );
 
 const QuoteSweepModalContent = dynamic(
   () => import("./quote-sweep-modal").then((m) => ({ default: m.QuoteSweepModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="sm" /> },
 );
 
 const ThreadModalContent = dynamic(
   () => import("./thread-modal").then((m) => ({ default: m.ThreadModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const CallModalContent = dynamic(
   () => import("./call-modal").then((m) => ({ default: m.CallModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="sm" /> },
 );
 
 const EstimateModalContent = dynamic(
   () => import("./estimate-modal").then((m) => ({ default: m.EstimateModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const JobModalContent = dynamic(
   () => import("./job-modal").then((m) => ({ default: m.JobModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const NewJobModalContent = dynamic(
   () => import("./new-job-modal").then((m) => ({ default: m.NewJobModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const EvisitModalContent = dynamic(
   () => import("./evisit-modal").then((m) => ({ default: m.EvisitModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const PriceBuilderModalContent = dynamic(
   () => import("./price-builder-modal").then((m) => ({ default: m.PriceBuilderModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const TechQuoteModalContent = dynamic(
   () => import("./tech-quote-modal").then((m) => ({ default: m.TechQuoteModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const InvoiceModalContent = dynamic(
   () => import("./invoice-modal").then((m) => ({ default: m.InvoiceModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const TechJobModalContent = dynamic(
   () => import("./tech-job-modal/tech-job-modal").then((m) => ({ default: m.TechJobModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const CustQuoteModalContent = dynamic(
   () => import("./cust-quote-modal").then((m) => ({ default: m.CustQuoteModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const CustInvoiceModalContent = dynamic(
   () => import("./cust-invoice-modal").then((m) => ({ default: m.CustInvoiceModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const CloseOutModalContent = dynamic(
   () => import("./close-out-modal").then((m) => ({ default: m.CloseOutModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const VisitModalContent = dynamic(
   () => import("./visit-modal").then((m) => ({ default: m.VisitModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const CleanUpModalContent = dynamic(
   () => import("./placeholder-modals").then((m) => ({ default: m.CleanUpModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const CompanyViewModalContent = dynamic(
   () => import("./company-view-modal").then((m) => ({ default: m.CompanyViewModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
 const ImportCustomersModalContent = dynamic(
   () => import("./import-customers-modal").then((m) => ({ default: m.ImportCustomersModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 const ImportServicesModalContent = dynamic(
   () => import("./import-services-modal").then((m) => ({ default: m.ImportServicesModalContent })),
-  { ssr: false },
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
 // ---------------------------------------------------------------------------
