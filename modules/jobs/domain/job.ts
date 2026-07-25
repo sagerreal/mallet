@@ -366,7 +366,26 @@ export class Job {
     if (!this.canComplete()) {
       return err(validation("only an in-progress job can be completed", "status"));
     }
-    return ok(new Job({ ...this.p, status: "complete", completedAt: now, updatedAt: now }));
+    // Finishing the job finishes its outstanding visits. A pending visit on a completed job is not
+    // work anyone is going to do — it is the same job — and leaving them open made the two views
+    // of the same fact disagree: the schedule board kept showing an open block for a job My day
+    // had already dropped, because the board reads visits and My day reads the job.
+    //
+    // Only OPEN visits move. A canceled one stays canceled, and one already complete keeps its own
+    // completion stamp rather than being restamped with this moment.
+    const closed: JobVisit[] = [];
+    for (const visit of this.p.visits) {
+      if (visit.props.status !== "pending" && visit.props.status !== "in_progress") {
+        closed.push(visit);
+        continue;
+      }
+      const done = JobVisit.create({ ...visit.props, status: "complete", completedAt: now });
+      // Only the status changed on props the aggregate already accepted, so this cannot fail —
+      // but a silent `as` here would hide it if it ever did.
+      if (!done.ok) return err(done.error);
+      closed.push(done.value);
+    }
+    return ok(new Job({ ...this.p, visits: closed, status: "complete", completedAt: now, updatedAt: now }));
   }
 
   // complete → in_progress. "Complete" is terminal for office edits, but field work
