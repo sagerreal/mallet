@@ -98,6 +98,16 @@ const EXPLANATIONS: Readonly<Record<string, Explanation>> = Object.freeze({
     fix: null,
     retryable: false,
   },
+  customer_not_linked: {
+    says: "This invoice's customer is no longer matched in QuickBooks.",
+    fix: "Re-match them under Match your crew, then edit the invoice again to resend it.",
+    retryable: true,
+  },
+  gone_from_quickbooks: {
+    says: "This invoice was removed inside QuickBooks, so the change had nowhere to go.",
+    fix: null,
+    retryable: false,
+  },
   // AppError kinds, which reach the log when a QuickBooks call itself refuses.
   unauthorized: {
     says: "QuickBooks rejected the connection.",

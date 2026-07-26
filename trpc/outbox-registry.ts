@@ -3,12 +3,14 @@ import {
   QboTimeSyncHandler,
   QboInvoiceSyncHandler,
   QboPaymentSyncHandler,
+  QboInvoiceChangeHandler,
 } from "@mallet/accounting-sync";
 import { systemClock } from "@mallet/shared/types";
 import {
   buildQboTimeSyncPorts,
   buildQboInvoiceSyncPorts,
   buildQboPaymentSyncPorts,
+  buildQboInvoiceChangePorts,
 } from "./qbo-sync-wiring";
 import type { OutboxHandlerMap } from "@mallet/shared/outbox";
 
@@ -30,4 +32,8 @@ export const buildOutboxHandlers = (): OutboxHandlerMap =>
     ["invoice.sent", new QboInvoiceSyncHandler(buildQboInvoiceSyncPorts())],
     // Applying the payment is what stops a synced invoice sitting unpaid in QuickBooks forever.
     ["invoice.payment.recorded", new QboPaymentSyncHandler(buildQboPaymentSyncPorts())],
+    // An edit or a void after sending must reach the books too, or QuickBooks keeps showing a
+    // number the invoice no longer says. Both are no-ops for an invoice that was never synced.
+    ["invoice.updated", new QboInvoiceChangeHandler(buildQboInvoiceChangePorts(), "update")],
+    ["invoice.voided", new QboInvoiceChangeHandler(buildQboInvoiceChangePorts(), "void")],
   ]);

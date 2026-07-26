@@ -11,11 +11,13 @@ import {
   EnsureQboCustomer,
   SyncInvoice,
   SyncPayment,
+  ResyncInvoice,
   QboInvoiceSyncHandler,
   QboPaymentSyncHandler,
   type QboTimeSyncPorts,
   type QboInvoiceSyncPorts,
   type QboPaymentSyncPorts,
+  type QboInvoiceChangePorts,
   type SyncableTimeEntry,
 } from "@mallet/accounting-sync";
 import { DrizzleInvoiceRepository } from "@mallet/invoicing";
@@ -224,3 +226,46 @@ export const buildQboPaymentSyncPorts = (): QboPaymentSyncPorts => ({
     );
   },
 });
+
+// Composition for the QuickBooks invoice EDIT/VOID handler.
+export const buildQboInvoiceChangePorts = (): QboInvoiceChangePorts => ({
+  loadSyncConfig: buildQboInvoiceSyncPorts().loadSyncConfig,
+  access: buildQboTimeSyncPorts().access,
+
+  load: async (ctx, invoiceId) => {
+    const invoices = new DrizzleInvoiceRepository(ctx.tx, ctx.orgId);
+    const invoice = await invoices.findById(asInvoiceId(invoiceId));
+    if (!invoice) return null;
+    const links = new DrizzleQboEntityLinkRepository(ctx.tx, ctx.orgId);
+    // The customer link, NOT EnsureQboCustomer: an edit must never create a customer in
+    // QuickBooks as a side effect. If the link has gone, the use-case refuses and says so.
+    const customerLink = await links.find("customer", invoice.props.leadId);
+    return {
+      invoice: {
+        id: invoice.props.id,
+        num: invoice.props.num,
+        title: invoice.props.title,
+        totalCents: invoice.props.total,
+        taxCents: invoice.props.tax,
+        sentAt: invoice.props.sentAt,
+        dueAt: invoice.props.dueAt,
+      },
+      customerQboId: customerLink?.qboId ?? null,
+    };
+  },
+
+  update: async (ctx, invoice, customerQboId, invoiceItemQboId, access) =>
+    buildResync(ctx).update(invoice, customerQboId, invoiceItemQboId, access, ctx.orgId),
+
+  void: async (ctx, invoiceId, access) => buildResync(ctx).void(invoiceId, access, ctx.orgId),
+});
+
+const buildResync = (ctx: RelayHandlerContext): ResyncInvoice => {
+  const config = loadConfig();
+  return new ResyncInvoice(
+    new HttpQboApiGateway(config.QBO_ENVIRONMENT),
+    new DrizzleQboEntityLinkRepository(ctx.tx, ctx.orgId),
+    new DrizzleQboSyncLogRepository(ctx.tx, ctx.orgId),
+    systemClock,
+  );
+};
