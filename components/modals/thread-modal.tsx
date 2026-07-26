@@ -15,6 +15,7 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type { Lead, LeadNote } from "@/lib/store/types";
 import type { MessageDTO } from "@mallet/messaging";
 import { shortWhen } from "@/lib/format";
+import { userMessage } from "@/lib/trpc/error-map";
 import { hasPhone, PhoneAddInput } from "@/lib/phone";
 
 function firstName(name: string): string {
@@ -108,7 +109,13 @@ function friendlyError(err: unknown): string {
   // Prefer structured tRPC code over message-string matching — codes are stable, messages are not.
   if (err instanceof TRPCClientError) {
     const code = err.data?.code as string | undefined;
-    if (code === "PRECONDITION_FAILED") return "Texting isn't set up yet — no business number.";
+    // PRECONDITION_FAILED covers THREE unrelated blockers on this one endpoint: no business
+    // number, 10DLC not approved, and texting not set up on the server. Collapsing them into one
+    // sentence sent somebody hunting a business number that was configured all along, so the
+    // server's own wording wins here — it is the only thing that names the real cause.
+    if (code === "PRECONDITION_FAILED") {
+      return userMessage(err, "Texting isn't set up yet.");
+    }
     if (code === "BAD_REQUEST") return "This customer has no phone number on file.";
     if (code === "BAD_GATEWAY") return "Couldn't send — please try again.";
     return "Send failed — please try again.";
@@ -116,7 +123,7 @@ function friendlyError(err: unknown): string {
   // Fallback for non-tRPC errors: match on message strings.
   const msg = err instanceof Error ? err.message : String(err);
   if (msg.includes("PRECONDITION_FAILED") || msg.toLowerCase().includes("not configured") || msg.toLowerCase().includes("twilio")) {
-    return "Texting isn't set up yet — no business number.";
+    return "Texting isn't set up yet.";
   }
   if (msg.includes("BAD_REQUEST") || msg.toLowerCase().includes("no phone")) {
     return "This customer has no phone number on file.";

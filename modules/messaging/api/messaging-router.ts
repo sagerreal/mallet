@@ -125,7 +125,7 @@ export const createMessagingRouter = () =>
         if (!config.TWILIO_ACCOUNT_SID || !config.TWILIO_AUTH_TOKEN) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: "SMS is not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN missing)",
+            message: "texting is not set up on this server yet",
           });
         }
 

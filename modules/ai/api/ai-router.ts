@@ -415,7 +415,7 @@ const drive = async (
   turn: { userMessage?: string; priorMessages?: AgentMessage[]; approvedToolUseIds?: string[]; deniedToolUseIds?: string[] },
 ): Promise<AgentResult> => {
   if (!ctx.deps.llmClient) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "the AI assistant is not enabled (ANTHROPIC_API_KEY unset)" });
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "the AI assistant is not switched on for this server" });
   }
   const tools = buildAgentTools();
   const meta: ToolMeta[] = tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, mutating: t.mutating }));
