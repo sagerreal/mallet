@@ -694,6 +694,13 @@
       "when": 1785077869274,
       "tag": "0098_safe_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1785092079725,
+      "tag": "0099_slim_crystal",
+      "breakpoints": true
     }
   ]
 }

@@ -136,6 +136,9 @@ export const createMessagingRouter = () =>
             accountSid: config.TWILIO_ACCOUNT_SID,
             authToken: config.TWILIO_AUTH_TOKEN,
             clock: ctx.deps.clock,
+            // So Twilio is told where to report what the carrier did. Without it every text stays
+            // "sent" forever, whether it landed or was dropped.
+            publicAppUrl: config.PUBLIC_APP_URL,
           },
           ctx.deps.ids,
         );

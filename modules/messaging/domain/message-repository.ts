@@ -1,4 +1,5 @@
 import type { OrgId, LeadId, MessageId } from "@mallet/shared/types";
+import type { DeliveryStatus } from "./delivery-status";
 import type { Message } from "./message";
 import type { MessageDirection } from "./message";
 
@@ -43,6 +44,19 @@ export interface MessageRepository {
   recordInbound(input: RecordInboundInput): Promise<Message>;
   listByLead(leadId: LeadId, page: { limit: number; offset: number }): Promise<Message[]>;
   findById(id: MessageId): Promise<Message | null>;
+  /**
+   * Record what the carrier said about an outbound message, found by its provider SID.
+   *
+   * Returns false when nothing was written — an unknown SID, or a callback that would move the
+   * message BACKWARDS (Twilio does not guarantee callback ordering, and a late `sent` must not
+   * un-deliver a message that plainly arrived).
+   */
+  applyProviderStatus(input: {
+    providerSid: string;
+    status: DeliveryStatus;
+    errorCode: string | null;
+    at: Date;
+  }): Promise<boolean>;
   // One efficient query — no N+1. Returns one ConversationRow per lead that has at least
   // one non-deleted message, sorted newest-first. An optional leadId filter is reserved for
   // a future tech-scoping pass; pass undefined (default) for all leads in the org.

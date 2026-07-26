@@ -134,6 +134,8 @@ export const getAppDeps = (): AppDeps => {
       config.TWILIO_AUTH_TOKEN,
       config.TWILIO_FROM_NUMBER,
       systemClock,
+      undefined,
+      config.PUBLIC_APP_URL,
     );
   }
   // Warn once at boot for any channel that fell back to the logging stub — so a partial-config

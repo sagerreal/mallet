@@ -12,7 +12,13 @@ import type {
 // The one bit of the Twilio SDK we call — extracted as a seam so tests inject a fake and exercise
 // the classification/breaker logic without a live account. messages.create THROWS on error; a
 // Twilio RestException carries `.status` (HTTP) and `.code` (numeric Twilio code).
-export type SmsTransport = (msg: { to: string; from: string; body: string }) => Promise<{ sid: string }>;
+export type SmsTransport = (msg: {
+  to: string;
+  from: string;
+  body: string;
+  /** Where Twilio reports what the CARRIER did with it. Omitted when the app has no public URL. */
+  statusCallback?: string;
+}) => Promise<{ sid: string }>;
 
 const errStatus = (e: unknown): number | undefined =>
   typeof (e as { status?: unknown }).status === "number" ? (e as { status: number }).status : undefined;
@@ -30,13 +36,27 @@ export class TwilioSmsSender implements NotificationSender {
   private readonly transport: SmsTransport;
   private readonly breaker = new CircuitBreaker("twilio", { failureThreshold: 5, resetMs: 30_000 });
 
+  /**
+   * Where Twilio reports delivery. Without it a message stays "sent" forever and a text the carrier
+   * dropped is indistinguishable from one that arrived — the single commonest way a shop believes
+   * it contacted a customer it never reached.
+   */
+  private readonly statusCallback: string | undefined;
+
   constructor(
     accountSid: string,
     authToken: string,
     private readonly from: string,
     private readonly clock: Clock,
     transport?: SmsTransport,
+    publicAppUrl?: string,
   ) {
+    // Only an https origin is usable: Twilio will not call localhost, and sending a URL it cannot
+    // reach buys nothing. Absent, sends still work — they just stay status-blind, which is the
+    // behaviour that existed before this.
+    this.statusCallback = publicAppUrl?.startsWith("https://")
+      ? `${publicAppUrl.replace(/\/$/, "")}/api/webhooks/twilio/message-status`
+      : undefined;
     // timeout: the SDK aborts its OWN request at the deadline (it ignores the resilience
     // AbortSignal), so a timed-out send is actually cut off rather than orphaned and delivered.
     const client = twilio(accountSid, authToken, { timeout: 10_000 });
@@ -48,7 +68,12 @@ export class TwilioSmsSender implements NotificationSender {
       const result = await call(
         async (): Promise<{ sid: string } | { rejected: { code: number | null; status: number } }> => {
           try {
-            const message = await this.transport({ to: cmd.to, from: this.from, body: cmd.body });
+            const message = await this.transport({
+              to: cmd.to,
+              from: this.from,
+              body: cmd.body,
+              ...(this.statusCallback ? { statusCallback: this.statusCallback } : {}),
+            });
             return { sid: message.sid };
           } catch (e) {
             const status = errStatus(e);

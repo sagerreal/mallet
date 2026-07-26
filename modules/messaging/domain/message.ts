@@ -25,6 +25,11 @@ export interface MessageProps {
   readonly toNumber: string;
   readonly providerSid: string | null;
   readonly status: MessageStatus;
+  /**
+   * The CARRIER's reason a message failed (Twilio's numeric code as text), or null. Present only
+   * on outbound failures — it is what turns "failed" into something a shop can act on.
+   */
+  readonly errorCode: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

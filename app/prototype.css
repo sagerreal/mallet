@@ -1515,6 +1515,10 @@
   .clock-acts{display:flex;gap:var(--space-2);flex:0 0 auto;flex-wrap:wrap}
   /* The running total. Its own line so it reads as a figure rather than more of the sentence,
      and tabular numerals so the digits do not jitter as the minutes roll over. */
+  /* A text the carrier refused, shown on the message itself. Red on the same line the meta sits
+     on, so it reads as a fact about THAT message rather than a page-level alarm. */
+  .msg-failed{margin-top:var(--space-1);font-size:var(--type-sm);color:var(--red);max-width:38ch}
+  .msg.us .msg-failed{text-align:right;margin-left:auto}
   .clock-elapsed{display:block;margin-top:var(--space-1);font-size:var(--type-lg);font-weight:700;color:var(--green-700);font-variant-numeric:tabular-nums}
   .jaddr svg{flex:0 0 auto;color:var(--ink-2)}
   .jaddr .nav{margin-left:auto;flex:0 0 auto;font-size:var(--type-base);font-weight:700;color:var(--ink-3);white-space:nowrap}
