@@ -599,20 +599,25 @@ export function TechQuoteModalContent() {
 
       {/* "Give the customer choices?" — once anything is priced and not all opted */}
       {anyPriced && (showGoodOpt || showBestOpt) ? (
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-4)", flexWrap: "wrap" }}>
+        // Label above, buttons below. One flat wrapping row put the label and the first button on
+        // line one and orphaned the second at the container's left edge, which read as a layout
+        // fault rather than a pair of equal choices.
+        <div style={{ marginTop: "var(--space-4)" }}>
           <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
             Give the customer choices?
           </span>
-          {showGoodOpt ? (
-            <button className="chip ghost" onClick={() => toggleTier("good")}>
-              + Add a cheaper option
-            </button>
-          ) : null}
-          {showBestOpt ? (
-            <button className="chip ghost" onClick={() => toggleTier("best")}>
-              + Add a premium option
-            </button>
-          ) : null}
+          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-2)" }}>
+            {showGoodOpt ? (
+              <button className="chip ghost" onClick={() => toggleTier("good")}>
+                + Add a cheaper option
+              </button>
+            ) : null}
+            {showBestOpt ? (
+              <button className="chip ghost" onClick={() => toggleTier("best")}>
+                + Add a premium option
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 

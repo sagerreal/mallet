@@ -226,9 +226,10 @@ export function ThreadModalContent() {
           reminders land in this same thread, marked ✦
         </div>
       ) : (
-        // No number on file — the modal becomes the add-a-phone prompt (big,
-        // legible). updateLead is synchronous, so the composer below enables
-        // as soon as a valid number is saved.
+        // No number on file — the modal becomes the add-a-phone prompt (big, legible). The
+        // optimistic store write enables the composer immediately; unlike the call modal this
+        // does NOT race its own save, because the send passes the fresh number forward rather
+        // than having the server look it up.
         <PhoneAddInput
           label="No phone number yet"
           sub={`Add ${firstName(lead.name)}'s mobile and your text goes out from your business number.`}

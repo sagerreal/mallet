@@ -181,7 +181,15 @@ export interface LeadsSlice {
   addLead: (
     draft: Omit<Lead, "id" | "age" | "last" | "acts" | "evisits">,
   ) => { lead: Lead; persisted: Promise<Lead> };
-  updateLead: (id: string, patch: Partial<Lead>) => void;
+  /**
+   * Optimistic + persist + reconcile. Resolves TRUE once the change is durable — or when the
+   * patch had nothing to persist — and FALSE when the write failed and was rolled back.
+   *
+   * Awaiting is optional and most callers don't: the point of the optimistic write is that the
+   * UI moves now. It matters only for a caller whose NEXT step is a server call that reads what
+   * this one wrote, because the server reads the database and not this store.
+   */
+  updateLead: (id: string, patch: Partial<Lead>) => Promise<boolean>;
   moveLeadStage: (id: string, stage: string) => void;
   addLeadNote: (id: string, note: Omit<LeadNote, "id">) => LeadNote;
   removeLeadNote: (id: string, noteId: string) => void;
@@ -278,9 +286,9 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
     const mutPayload = buildLeadUpdatePayload(id, patch);
     if (mutPayload === null) {
       // Nothing persistable in this patch; local update is all we need.
-      return;
+      return Promise.resolve(true);
     }
-    trpcVanilla.v1.customers.update
+    return trpcVanilla.v1.customers.update
       .mutate(mutPayload)
       .then((dto) => {
         // 4a. Reconcile: merge DTO onto the CURRENT lead (which may have
@@ -290,6 +298,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
             l.id === id ? reconcileLeadFromDTO(l, dto) : l,
           ),
         }));
+        return true;
       })
       .catch((err: unknown) => {
         // 4b. Field-level rollback: revert ONLY the keys this patch changed on
@@ -304,6 +313,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
           }),
         }));
         reportWriteError("updateLead", err);
+        return false;
       });
   },
 

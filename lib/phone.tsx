@@ -67,6 +67,13 @@ interface PhoneAddInputProps {
   onSave: (phone: string) => void;
   /** Called to dismiss without saving. */
   onCancel: () => void;
+  /**
+   * The save is in flight. Blocks a second press: `onSave` may need to wait for the write to be
+   * durable before it acts, and a re-press in that window starts a second one.
+   */
+  busy?: boolean;
+  /** Replaces the button copy while `busy`, e.g. "Saving…". */
+  busyLabel?: string;
 }
 
 /**
@@ -75,11 +82,12 @@ interface PhoneAddInputProps {
  * names the next action. Renders inside the call/thread modals (the "popup"
  * Owen asked for) and in-flow on the OK-queue cards.
  */
-export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel }: PhoneAddInputProps) {
+export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel, busy = false, busyLabel = "Saving…" }: PhoneAddInputProps) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function save() {
+    if (busy) return;
     const trimmed = value.trim();
     if (!trimmed) {
       setError("Enter a mobile number.");
@@ -145,8 +153,10 @@ export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel }: Ph
         className="btn primary"
         style={{ width: "100%", marginTop: "var(--space-3)", padding: "var(--space-3) var(--space-4)", fontSize: "var(--type-md)" }}
         onClick={save}
+        disabled={busy}
+        aria-busy={busy}
       >
-        {cta}
+        {busy ? busyLabel : cta}
       </button>
       <button
         type="button"
