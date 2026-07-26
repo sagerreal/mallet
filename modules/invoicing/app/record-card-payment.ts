@@ -67,7 +67,14 @@ export class RecordCardPaymentUseCase {
     await this.bus.emit({
       name: "invoice.payment.recorded",
       orgId: cmd.orgId,
-      payload: { invoiceId: cmd.invoiceId, amountCents: cmd.amountCents, method: "card", dueCents: invoice.due() },
+      payload: {
+        invoiceId: cmd.invoiceId,
+        // See record-payment: the ledger row's id, so two identical part-payments stay distinct.
+        paymentId: payment.value.props.id,
+        amountCents: cmd.amountCents,
+        method: "card",
+        dueCents: invoice.due(),
+      },
       occurredAt: this.clock.now(),
     });
     if (invoice.props.status === "paid") {

@@ -1,6 +1,7 @@
 import type { Result, AppError } from "@mallet/shared/types";
 import type { QboCustomerInput } from "./customer-mapping";
 import type { QboInvoiceInput } from "./invoice-mapping";
+import type { QboPaymentInput } from "./payment-mapping";
 
 /** A QuickBooks person we can attribute time to. Employees and Vendors (1099 subs) both qualify. */
 export interface QboPerson {
@@ -76,6 +77,9 @@ export interface QboApiGateway {
 
   /** Create an invoice. Not idempotent — the duplicate guard is the sync log, not a retry policy. */
   createInvoice(access: QboAccess, input: QboInvoiceInput): Promise<Result<{ id: string }, AppError>>;
+
+  /** Create a payment LINKED to an invoice. Not idempotent — the sync log is the duplicate guard. */
+  createPayment(access: QboAccess, input: QboPaymentInput): Promise<Result<{ id: string }, AppError>>;
 }
 
 /** A usable access token plus the company it belongs to. Produced by EnsureFreshAccessToken. */

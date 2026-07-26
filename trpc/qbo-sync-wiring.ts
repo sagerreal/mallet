@@ -10,9 +10,12 @@ import {
   SyncApprovedHours,
   EnsureQboCustomer,
   SyncInvoice,
+  SyncPayment,
   QboInvoiceSyncHandler,
+  QboPaymentSyncHandler,
   type QboTimeSyncPorts,
   type QboInvoiceSyncPorts,
+  type QboPaymentSyncPorts,
   type SyncableTimeEntry,
 } from "@mallet/accounting-sync";
 import { DrizzleInvoiceRepository } from "@mallet/invoicing";
@@ -163,6 +166,59 @@ export const buildQboInvoiceSyncPorts = (): QboInvoiceSyncPorts => ({
     const customers = new EnsureQboCustomer(api, links, syncLog, systemClock);
     return new SyncInvoice(api, customers, links, syncLog, systemClock).exec(
       { invoice, customer, invoiceItemQboId },
+      access,
+      ctx.orgId,
+    );
+  },
+});
+
+// Composition for the QuickBooks PAYMENT-sync handler.
+export const buildQboPaymentSyncPorts = (): QboPaymentSyncPorts => ({
+  loadSyncConfig: async (ctx: RelayHandlerContext) => {
+    const repo = new DrizzleQboConnectionRepository(ctx.tx, ctx.orgId);
+    const connection = await repo.get();
+    if (!connection) return null;
+    // Shares the INVOICE switch on purpose: a shop sending invoices but not their payments would
+    // watch its receivables climb with money it has already banked. The two are one feature.
+    return { enabled: connection.props.sendInvoices };
+  },
+
+  access: buildQboTimeSyncPorts().access,
+
+  load: async (ctx, invoiceId, paymentId) => {
+    const invoices = new DrizzleInvoiceRepository(ctx.tx, ctx.orgId);
+    const invoice = await invoices.findById(asInvoiceId(invoiceId));
+    if (!invoice) return null;
+    const row = invoice.props.payments.find((p) => p.props.id === paymentId);
+    if (!row) return null;
+    const leads = new DrizzleLeadRepository(ctx.tx, ctx.orgId);
+    const lead = await leads.findById(invoice.props.leadId);
+    if (!lead) return null;
+    return {
+      payment: {
+        id: row.props.id,
+        invoiceId: invoice.props.id,
+        amountCents: row.props.amount,
+        receivedAt: row.props.receivedAt,
+      },
+      customer: {
+        id: lead.props.id,
+        name: lead.props.name,
+        email: lead.props.email,
+        phone: lead.props.phone ?? null,
+        address: lead.props.address,
+      },
+    };
+  },
+
+  sync: async (ctx, payment, customer, access) => {
+    const config = loadConfig();
+    const api = new HttpQboApiGateway(config.QBO_ENVIRONMENT);
+    const links = new DrizzleQboEntityLinkRepository(ctx.tx, ctx.orgId);
+    const syncLog = new DrizzleQboSyncLogRepository(ctx.tx, ctx.orgId);
+    const customers = new EnsureQboCustomer(api, links, syncLog, systemClock);
+    return new SyncPayment(api, customers, links, syncLog, systemClock).exec(
+      { payment, customer },
       access,
       ctx.orgId,
     );
