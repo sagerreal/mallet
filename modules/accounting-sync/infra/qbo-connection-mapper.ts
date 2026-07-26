@@ -18,6 +18,9 @@ export interface QboConnectionRow {
   defaultItemQboId: string | null;
   defaultItemName: string | null;
   sendApprovedHours: boolean;
+  defaultInvoiceItemQboId: string | null;
+  defaultInvoiceItemName: string | null;
+  sendInvoices: boolean;
   createdAt: Date;
   updatedAt: Date;
   disconnectedAt: Date | null;
@@ -38,6 +41,9 @@ export const toDomain = (row: QboConnectionRow): QboConnection => {
     defaultItemQboId: row.defaultItemQboId,
     defaultItemName: row.defaultItemName,
     sendApprovedHours: row.sendApprovedHours,
+    defaultInvoiceItemQboId: row.defaultInvoiceItemQboId,
+    defaultInvoiceItemName: row.defaultInvoiceItemName,
+    sendInvoices: row.sendInvoices,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     disconnectedAt: row.disconnectedAt,
@@ -66,6 +72,9 @@ export const toRow = (connection: QboConnection): QboConnectionRow => {
     defaultItemQboId: p.defaultItemQboId,
     defaultItemName: p.defaultItemName,
     sendApprovedHours: p.sendApprovedHours,
+    defaultInvoiceItemQboId: p.defaultInvoiceItemQboId,
+    defaultInvoiceItemName: p.defaultInvoiceItemName,
+    sendInvoices: p.sendInvoices,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     disconnectedAt: p.disconnectedAt,

@@ -32,6 +32,8 @@ export function QuickbooksSetup() {
   const linkPerson = api.v1.qbo.linkPerson.useMutation({ onSuccess: invalidate, onError });
   const setItem = api.v1.qbo.setDefaultItem.useMutation({ onSuccess: invalidate, onError });
   const setSend = api.v1.qbo.setSendApprovedHours.useMutation({ onSuccess: invalidate, onError });
+  const setInvItem = api.v1.qbo.setDefaultInvoiceItem.useMutation({ onSuccess: invalidate, onError });
+  const setSendInv = api.v1.qbo.setSendInvoices.useMutation({ onSuccess: invalidate, onError });
 
   if (setup.isLoading) {
     return <p style={{ ...label, color: "var(--ink-3)" }} aria-busy="true">Loading…</p>;
@@ -168,6 +170,57 @@ export function QuickbooksSetup() {
               </div>
             );
           })}
+        </div>
+      </section>
+
+      <section>
+        <div style={{ fontWeight: 700, fontSize: "var(--type-base)" }}>File invoices under</div>
+        <div style={{ ...note, margin: "var(--space-1) 0 var(--space-2)" }}>
+          QuickBooks puts every invoice line against a service too. This is separate from the one
+          above — that one is your crew&apos;s labour, this one is what you bill.
+        </div>
+        <select
+          className="field"
+          value={s.defaultInvoiceItemQboId ?? ""}
+          disabled={setInvItem.isPending}
+          onChange={(e) => {
+            const item = s.items.find((i) => i.id === e.target.value);
+            if (item) {
+              setError(null);
+              setInvItem.mutate({ qboId: item.id, name: item.name });
+            }
+          }}
+        >
+          <option value="" disabled>
+            Choose a service…
+          </option>
+          {s.items.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.name}
+            </option>
+          ))}
+        </select>
+        <div style={{ ...note, marginTop: "var(--space-2)" }}>
+          Every line goes under this one item for now. Mallet&apos;s invoice lines don&apos;t name a
+          pricebook item, so there is nothing to match them against yet.
+        </div>
+      </section>
+
+      <section>
+        <button
+          className={s.sendInvoices ? "btn quiet" : "btn primary"}
+          disabled={setSendInv.isPending || setInvItem.isPending || !s.defaultInvoiceItemQboId}
+          onClick={() => {
+            setError(null);
+            setSendInv.mutate({ on: !s.sendInvoices });
+          }}
+        >
+          {s.sendInvoices ? "Stop sending invoices" : "Start sending invoices"}
+        </button>
+        <div style={{ ...note, marginTop: "var(--space-2)" }}>
+          {s.sendInvoices
+            ? "Sending an invoice puts it in QuickBooks, with its tax and its customer."
+            : "Off — nothing is being sent. Choose an item above first."}
         </div>
       </section>
 

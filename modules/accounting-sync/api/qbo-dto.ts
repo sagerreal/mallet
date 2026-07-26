@@ -57,6 +57,10 @@ export const qboSetupDTO = z.object({
    */
   defaultItemSaved: z.boolean(),
   sendApprovedHours: z.boolean(),
+  /** The invoice-line item and its own switch — separate from the hours pair above. */
+  defaultInvoiceItemQboId: z.string().nullable(),
+  defaultInvoiceItemName: z.string().nullable(),
+  sendInvoices: z.boolean(),
 });
 
 /**

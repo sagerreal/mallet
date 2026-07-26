@@ -177,6 +177,12 @@ export const createQboRouter = () =>
           itemList.find((i) => i.id === prefs.defaultItemId)?.name ??
           null,
         sendApprovedHours: connection.props.sendApprovedHours,
+        // No fallback for this one. QuickBooks has a default TIME item to borrow, but nothing that
+        // answers "which item does invoice revenue belong to" — guessing would file a shop's income
+        // against an account it never chose.
+        defaultInvoiceItemQboId: connection.props.defaultInvoiceItemQboId,
+        defaultInvoiceItemName: connection.props.defaultInvoiceItemName,
+        sendInvoices: connection.props.sendInvoices,
       };
     }),
 
@@ -215,6 +221,38 @@ export const createQboRouter = () =>
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "QuickBooks is not connected" });
         }
         await repo.save(connection.withDefaultItem(input.qboId, input.name, ctx.deps.clock.now()));
+        return { ok: true };
+      }),
+
+    // The invoice-line item. Deliberately separate from the hours item above: that one is labour,
+    // and filing a water heater under it would be wrong.
+    setDefaultInvoiceItem: ownerOrOffice
+      .input(z.object({ qboId: z.string().min(1), name: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleQboConnectionRepository(ctx.tx, ctx.principal.orgId);
+        const connection = await repo.get();
+        if (!connection) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "QuickBooks is not connected" });
+        }
+        await repo.save(connection.withDefaultInvoiceItem(input.qboId, input.name, ctx.deps.clock.now()));
+        return { ok: true };
+      }),
+
+    // The invoice switch, separate from hours: a shop may want its crew's time in QuickBooks
+    // without handing over its invoicing, and turning one on must never turn the other on.
+    setSendInvoices: ownerOrOffice
+      .input(z.object({ on: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleQboConnectionRepository(ctx.tx, ctx.principal.orgId);
+        const connection = await repo.get();
+        if (!connection) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "QuickBooks is not connected" });
+        }
+        const next = connection.withSendInvoices(input.on, ctx.deps.clock.now());
+        if (!next.ok) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: next.error.message });
+        }
+        await repo.save(next.value);
         return { ok: true };
       }),
 

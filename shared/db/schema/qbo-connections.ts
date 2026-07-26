@@ -46,8 +46,18 @@ export const qboConnections = pgTable(
     // than in qbo_entity_links (which maps per-record).
     defaultItemQboId: text("default_item_qbo_id"),
     defaultItemName: text("default_item_name"),
+    // The SAME requirement for invoice lines, and deliberately a SEPARATE item from the one above.
+    // That one is labour ("Hours"); filing a water heater under it would be wrong. No line in
+    // Mallet can name its own item — estimate, job and invoice lines are all free-text description
+    // plus money, with no pricebook reference anywhere — so one org-level default is the whole
+    // answer available today. Per-item mapping needs a pricebook link that does not exist yet.
+    defaultInvoiceItemQboId: text("default_invoice_item_qbo_id"),
+    defaultInvoiceItemName: text("default_invoice_item_name"),
     // Opt-in, off by default: connecting must never silently start writing to someone's books.
     sendApprovedHours: boolean("send_approved_hours").notNull().default(false),
+    // Its own switch, separate from hours: a shop may want its crew's time in QuickBooks without
+    // handing over its invoicing, and turning one on must never turn the other on.
+    sendInvoices: boolean("send_invoices").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),

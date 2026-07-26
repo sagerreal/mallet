@@ -19,6 +19,9 @@ const props = (over: Partial<QboConnectionProps> = {}): QboConnectionProps => ({
   defaultItemQboId: null,
   defaultItemName: null,
   sendApprovedHours: false,
+  defaultInvoiceItemQboId: null,
+  defaultInvoiceItemName: null,
+  sendInvoices: false,
   createdAt: T0,
   updatedAt: T0,
   disconnectedAt: null,
@@ -193,5 +196,45 @@ describe("isUsable — one predicate the callers agree on", () => {
   it("is true when only the ACCESS token is stale — that is refreshable, not broken", () => {
     const c = build({ accessExpiresAt: new Date(T0.getTime() - mins(1)) });
     expect(c.isUsable(T0)).toBe(true);
+  });
+});
+
+describe("QboConnection — the invoice switch", () => {
+  /**
+   * QuickBooks rejects an invoice line with no ItemRef, so the switch must not be flippable into a
+   * state whose first push is guaranteed to fail. Refusing here is what makes the settings screen
+   * able to say WHY the button is disabled instead of letting the failure land in the sync log.
+   */
+  it("refuses to turn on before an item is chosen", () => {
+    const r = build().withSendInvoices(true, T0);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("defaultInvoiceItemQboId");
+  });
+
+  it("turns on once an item is chosen", () => {
+    const withItem = build().withDefaultInvoiceItem("14", "Services", T0);
+    const r = withItem.withSendInvoices(true, T0);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.props.sendInvoices).toBe(true);
+  });
+
+  // Turning it OFF must always work — a shop that wants to stop must never be blocked by the
+  // precondition for starting.
+  it("always allows turning off, even with no item", () => {
+    expect(build().withSendInvoices(false, T0).ok).toBe(true);
+  });
+
+  // Two separate switches on purpose: a shop may want its crew's time in QuickBooks without
+  // handing over its invoicing.
+  it("does not touch the hours switch", () => {
+    const withItem = build().withDefaultInvoiceItem("14", "Services", T0);
+    const r = withItem.withSendInvoices(true, T0);
+    expect(r.ok && r.value.props.sendApprovedHours).toBe(false);
+  });
+
+  it("keeps the invoice item separate from the hours item", () => {
+    const c = build().withDefaultItem("2", "Hours", T0).withDefaultInvoiceItem("14", "Services", T0);
+    expect(c.props.defaultItemName).toBe("Hours");
+    expect(c.props.defaultInvoiceItemName).toBe("Services");
   });
 });
