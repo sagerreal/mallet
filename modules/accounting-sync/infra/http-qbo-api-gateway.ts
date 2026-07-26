@@ -12,6 +12,7 @@ import type {
   QboTimeActivityInput,
 } from "../domain/qbo-api-gateway";
 import type { QboCustomerInput } from "../domain/customer-mapping";
+import type { QboInvoiceInput } from "../domain/invoice-mapping";
 
 // The ONLY file that speaks the QuickBooks Accounting API. OAuth lives in http-qbo-oauth-gateway.
 //
@@ -355,6 +356,53 @@ export class HttpQboApiGateway implements QboApiGateway {
     }
     const name = res.value.Customer?.DisplayName;
     return ok({ id, displayName: typeof name === "string" ? name : input.displayName });
+  }
+
+
+  async createInvoice(
+    access: QboAccess,
+    input: QboInvoiceInput,
+  ): Promise<Result<{ id: string }, AppError>> {
+    const body: Record<string, unknown> = {
+      CustomerRef: { value: input.customerId },
+      DocNumber: input.docNumber,
+      TxnDate: input.txnDate,
+      Line: [
+        {
+          DetailType: "SalesItemLineDetail",
+          Amount: input.netAmount,
+          Description: input.description,
+          SalesItemLineDetail: {
+            ItemRef: { value: input.itemId },
+            Qty: 1,
+            UnitPrice: input.netAmount,
+            // Marks the line taxable so Automated Sales Tax engages. Without a TaxCodeRef the
+            // TotalTax below is ignored and the tax silently vanishes from the books.
+            TaxCodeRef: { value: input.totalTax > 0 ? "TAX" : "NON" },
+          },
+        },
+      ],
+    };
+    if (input.dueDate) body.DueDate = input.dueDate;
+    // Mallet already charged this exact amount, so it is sent as an OVERRIDE rather than letting
+    // Automated Sales Tax compute its own — a QuickBooks-computed figure that differed would leave
+    // the customer owing one number and the books showing another, and payments would stop
+    // reconciling.
+    if (input.totalTax > 0) body.TxnTaxDetail = { TotalTax: input.totalTax };
+
+    const res = await this.request<{ Invoice?: { Id?: unknown } }>(
+      access,
+      "/invoice",
+      { method: "POST", body: JSON.stringify(body), idempotent: false },
+      "invoice create",
+    );
+    if (!res.ok) return err(res.error);
+
+    const id = res.value.Invoice?.Id;
+    if (typeof id !== "string") {
+      return err(externalService("quickbooks", "QuickBooks created an invoice without an id", false));
+    }
+    return ok({ id });
   }
 
 }

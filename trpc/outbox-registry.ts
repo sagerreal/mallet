@@ -1,7 +1,7 @@
 import { InvoicePaidAuditHandler } from "@mallet/invoicing";
-import { QboTimeSyncHandler } from "@mallet/accounting-sync";
+import { QboTimeSyncHandler, QboInvoiceSyncHandler } from "@mallet/accounting-sync";
 import { systemClock } from "@mallet/shared/types";
-import { buildQboTimeSyncPorts } from "./qbo-sync-wiring";
+import { buildQboTimeSyncPorts, buildQboInvoiceSyncPorts } from "./qbo-sync-wiring";
 import type { OutboxHandlerMap } from "@mallet/shared/outbox";
 
 // Composition root for outbox relay handlers — the EXPLICIT allow-list of which events get a side
@@ -17,4 +17,7 @@ export const buildOutboxHandlers = (): OutboxHandlerMap =>
     // Approving a week is what triggers the QuickBooks push. Self-disables when the org hasn't
     // connected or hasn't switched the push on, so registering it is safe for every tenant.
     ["timeEntry.weekApproved", new QboTimeSyncHandler(buildQboTimeSyncPorts(), systemClock)],
+    // SENDING an invoice is what pushes it, not creating one: a draft is not a financial fact, and
+    // pushing drafts would put unissued revenue in a shop's books. Self-disables the same way.
+    ["invoice.sent", new QboInvoiceSyncHandler(buildQboInvoiceSyncPorts())],
   ]);

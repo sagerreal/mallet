@@ -1,5 +1,5 @@
 export interface QboEntityLink {
-  readonly entityType: "employee" | "customer" | "service_item";
+  readonly entityType: "employee" | "customer" | "service_item" | "invoice" | "payment";
   readonly malletId: string;
   readonly qboId: string;
   readonly qboEntityKind: "Employee" | "Vendor" | null;

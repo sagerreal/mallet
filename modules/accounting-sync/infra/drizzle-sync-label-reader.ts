@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { leads, timeEntries, users } from "@mallet/shared/db/schema";
+import { invoices, leads, timeEntries, users } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { SyncLabelReader } from "../domain/sync-label-reader";
 
@@ -31,6 +31,7 @@ export class DrizzleSyncLabelReader implements SyncLabelReader {
   ): Promise<ReadonlyMap<string, string>> {
     if (malletIds.length === 0) return new Map();
     if (entityType === "customer") return this.customerLabels(malletIds);
+    if (entityType === "invoice") return this.invoiceLabels(malletIds);
     if (entityType !== "time_entry") return new Map();
 
     const rows = await this.tx
@@ -58,6 +59,16 @@ export class DrizzleSyncLabelReader implements SyncLabelReader {
       .from(leads)
       .where(and(eq(leads.orgId, this.orgId), inArray(leads.id, [...malletIds])));
     return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
+
+  /** Invoices by their number — what a shop reconciles against in QuickBooks. */
+  private async invoiceLabels(malletIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    const rows = await this.tx
+      .select({ id: invoices.id, num: invoices.num })
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), inArray(invoices.id, [...malletIds])));
+    return new Map(rows.map((r) => [r.id, r.num]));
   }
 
 }

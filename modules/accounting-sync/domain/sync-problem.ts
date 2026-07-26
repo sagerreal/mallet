@@ -18,6 +18,7 @@ import {
   BREAK_NOT_PAID,
 } from "./time-activity-mapping";
 import { NO_NAME, NAME_TOO_LONG } from "./customer-mapping";
+import { NO_AMOUNT, NO_INVOICE_ITEM, TAX_EXCEEDS_TOTAL } from "./invoice-mapping";
 
 export interface SyncProblem {
   /** The stable code, kept so support can be given something exact to search for. */
@@ -66,6 +67,21 @@ const EXPLANATIONS: Readonly<Record<string, Explanation>> = Object.freeze({
   [NAME_TOO_LONG]: {
     says: "This customer's name is longer than QuickBooks allows.",
     fix: "Shorten it to 100 characters or fewer, then send again.",
+    retryable: true,
+  },
+  [NO_INVOICE_ITEM]: {
+    says: "No QuickBooks item is chosen for invoice lines.",
+    fix: "Pick one under File invoices under, then send again.",
+    retryable: true,
+  },
+  [NO_AMOUNT]: {
+    says: "This invoice has no amount, so there is nothing to send.",
+    fix: "Add the work and its price, then send the invoice again.",
+    retryable: true,
+  },
+  [TAX_EXCEEDS_TOTAL]: {
+    says: "This invoice's tax doesn't fit inside its total.",
+    fix: "Check the invoice's figures — the tax should be part of the total, not on top of it.",
     retryable: true,
   },
   // AppError kinds, which reach the log when a QuickBooks call itself refuses.
