@@ -38,6 +38,8 @@ export function CallModalContent() {
   const hasCallbackNumber = carriedHere || Boolean(me.data?.callbackNumber);
   const settingsHref = me.data?.role === "tech" ? "/account" : "/settings";
   const [needsCallbackNumber, setNeedsCallbackNumber] = useState(false);
+  const [savingPhone, setSavingPhone] = useState(false);
+  const [phoneSaveFailed, setPhoneSaveFailed] = useState(false);
 
   const [logging, setLogging] = useState(false);
   const [outcome, setOutcome] = useState<string>("Connected");
@@ -57,15 +59,26 @@ export function CallModalContent() {
       setNeedsCallbackNumber(true);
       return;
     }
-    // startCall re-reads the store; the optimistic updateLead below runs first
-    // and synchronously, so the fresh number is already in place. startCall
-    // returns false only if the lead is somehow still phoneless — don't close then.
+    // startCall reads the store, which the caller has already updated. It returns false only if
+    // the lead is somehow still phoneless — don't close then.
     if (startCall(lead!.id, carriedHere ? "browser" : "phone")) close();
   }
 
-  // Add-a-phone → persist optimistically (synchronous store write) → start the call.
-  function savePhoneAndCall(phone: string) {
-    updateLead(lead!.id, { phone });
+  // Add-a-phone → persist → start the call. The AWAIT is the whole point: the store write is
+  // optimistic and its network call is fire-and-forget, but `place` runs on the server and reads
+  // the customer from the DATABASE, not this store. Starting the call on the optimistic write
+  // therefore raced the save it depends on, and lost — the server found no number and refused
+  // with "this customer has no phone number on file" on a number just typed in.
+  async function savePhoneAndCall(phone: string) {
+    setSavingPhone(true);
+    const saved = await updateLead(lead!.id, { phone });
+    setSavingPhone(false);
+    // Rolled back — the number is not on file, so the call would refuse for the same reason.
+    // Say that here rather than let it surface in the call bar after this modal has closed.
+    if (!saved) {
+      setPhoneSaveFailed(true);
+      return;
+    }
     callFromMallet();
   }
 
@@ -92,13 +105,23 @@ export function CallModalContent() {
       ) : (
         // No number on file — the modal becomes the add-a-phone prompt (big,
         // legible). Saving persists + starts the call with the fresh number.
-        <PhoneAddInput
-          label="No phone number yet"
-          sub={`Add ${lead.name.split(" ")[0]}'s mobile and the call starts right away.`}
-          cta="Save & call"
-          onSave={savePhoneAndCall}
-          onCancel={close}
-        />
+        <>
+          <PhoneAddInput
+            label="No phone number yet"
+            sub={`Add ${lead.name.split(" ")[0]}'s mobile and the call starts right away.`}
+            cta="Save & call"
+            busy={savingPhone}
+            busyLabel="Saving the number…"
+            onSave={savePhoneAndCall}
+            onCancel={close}
+          />
+          {phoneSaveFailed && (
+            <p className="werr" role="alert">
+              The number didn&apos;t save, so the call can&apos;t go out. Check your connection and
+              press Save &amp; call again.
+            </p>
+          )}
+        </>
       )}
 
       {phoneOnFile && (

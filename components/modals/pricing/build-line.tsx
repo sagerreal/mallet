@@ -332,7 +332,9 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
             type="number"
             min={0}
             step={0.25}
-            value={line.h ?? 0}
+            value={line.h ? String(line.h) : ""}
+            placeholder="0"
+            aria-label="Hours"
             onChange={(e) =>
               onSet({ h: Math.max(0, Math.round((Number(e.target.value) || 0) * 4) / 4) })
             }
@@ -346,6 +348,7 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
             min={0}
             value={line.rate || ""}
             placeholder="rate"
+            aria-label="Hourly rate"
             onChange={(e) => onSet({ rate: Math.max(0, Number(e.target.value) || 0) })}
             style={{ width: 60, ...INP }}
           />
@@ -371,7 +374,13 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
         <input
           type="number"
           min={0}
-          value={line.amt ?? 0}
+          // Empty, not a literal 0. React deliberately does NOT renormalise a number input's
+          // string when the numeric value is unchanged (so that "1." stays typable), so seeding
+          // it with 0 meant typing a price after it left "010" sitting in the field — the total
+          // was right, the field looked broken. An empty field reads as unpriced, which it is.
+          value={line.amt ? String(line.amt) : ""}
+          placeholder="0"
+          aria-label="Price"
           onChange={(e) => onSet({ amt: Math.max(0, Number(e.target.value) || 0) })}
           style={{ width: 78, ...INP }}
         />

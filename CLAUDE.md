@@ -20,7 +20,9 @@ Tailwind-free hand-rolled CSS (prototype-faithful).
   no throws for expected validation) → Drizzle repository (org-scoped).
 
   **Module inventory (17 modules):**
-  - `accounting-sync` — QuickBooks Online sync (customers, invoices, payments)
+  - `accounting-sync` — QuickBooks Online: OAuth connect + APPROVED HOURS push (TimeActivity).
+    Invoices, customers and payments do NOT sync — `qbo_entity_links.entity_type` is generic so
+    they can ride later, but nothing writes them today.
   - `ai` — LLM agent loop, MCP server, Anthropic client, run-agent-turn, write-tools
   - `checklists` — job checklists (create, assign, complete items)
   - `companies` — canonical template module; org company profile

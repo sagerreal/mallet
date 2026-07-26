@@ -6,7 +6,7 @@
  * Mallet" path, and startCall is not fired until a number is saved.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CallModalContent } from "./call-modal";
 
 let mockLeads: { id: string; name: string; phone: string }[] = [];
@@ -15,7 +15,8 @@ let mockMe: { role: string; callbackNumber: string | null } = {
   callbackNumber: "+17813850591",
 };
 const startCall = vi.fn(() => true);
-const updateLead = vi.fn();
+// Resolves TRUE like the real action: durable. Overridden per-test to model a failed save.
+const updateLead = vi.fn(async () => true);
 const addLeadNote = vi.fn();
 const close = vi.fn();
 
@@ -61,15 +62,52 @@ describe("CallModalContent — phoneless reachability", () => {
     expect(startCall).not.toHaveBeenCalled();
   });
 
-  it("saving a number persists it and starts the call with the fresh value", () => {
+  it("saving a number persists it and starts the call with the fresh value", async () => {
     render(<CallModalContent />);
     fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
       target: { value: "(925) 555-0100" },
     });
     fireEvent.click(screen.getByText(/^Save/));
     expect(updateLead).toHaveBeenCalledWith("lead-1", { phone: "(925) 555-0100" });
-    expect(startCall).toHaveBeenCalledWith("lead-1", "phone");
+    await waitFor(() => expect(startCall).toHaveBeenCalledWith("lead-1", "phone"));
     expect(close).toHaveBeenCalled();
+  });
+
+  /**
+   * The bug this locks: the call used to start on the OPTIMISTIC store write, but `place` runs on
+   * the server and reads the customer from the database. The call raced the save it depended on
+   * and lost — the server refused a number the user had just typed in with "this customer has no
+   * phone number on file".
+   */
+  it("waits for the number to be durable before placing the call", async () => {
+    let settle: (durable: boolean) => void = () => {};
+    updateLead.mockReturnValueOnce(new Promise<boolean>((res) => { settle = res; }));
+
+    render(<CallModalContent />);
+    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
+      target: { value: "(925) 555-0100" },
+    });
+    fireEvent.click(screen.getByText(/^Save/));
+
+    // Still saving: no call yet, and the button says so and refuses a second press.
+    await screen.findByText(/Saving the number/i);
+    expect(startCall).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText(/Saving the number/i));
+
+    settle(true);
+    await waitFor(() => expect(startCall).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not place a call when the number failed to save, and says so", async () => {
+    updateLead.mockResolvedValueOnce(false);
+    render(<CallModalContent />);
+    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
+      target: { value: "(925) 555-0100" },
+    });
+    fireEvent.click(screen.getByText(/^Save/));
+
+    await screen.findByText(/didn't save, so the call can't go out/i);
+    expect(startCall).not.toHaveBeenCalled();
   });
 });
 
@@ -135,7 +173,7 @@ describe("CallModalContent — no callback number on file", () => {
     expect(screen.getByText("How did it go?")).toBeTruthy();
   });
 
-  it("adding the customer's number does not sneak past the missing callback number", () => {
+  it("adding the customer's number does not sneak past the missing callback number", async () => {
     mockLeads = [{ id: "lead-1", name: "Dana Alvarez", phone: "" }];
     render(<CallModalContent />);
     fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
@@ -143,8 +181,7 @@ describe("CallModalContent — no callback number on file", () => {
     });
     fireEvent.click(screen.getByText(/^Save/));
     expect(updateLead).toHaveBeenCalledWith("lead-1", { phone: "(925) 555-0100" });
+    await screen.findByText(/needs a number to ring you on/i);
     expect(startCall).not.toHaveBeenCalled();
-    // …and it says why, rather than appearing to do nothing.
-    expect(screen.getByText(/needs a number to ring you on/i)).toBeTruthy();
   });
 });

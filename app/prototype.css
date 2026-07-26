@@ -857,6 +857,13 @@
   .lineedit tbody input::placeholder{color:var(--ink-3)}
   .lineedit tbody input:hover{background:var(--green-50)}
   .lineedit tbody input:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+  /* No number input in this app uses the native spinner: they are two ~8px hit targets on a
+     55-year-old plumber's phone, they sit where the value should be, and nothing in the design
+     system draws them. Suppressed once here rather than per-component — this rule replaces three
+     hand-rolled copies that each only covered their own widget, which is why the price field on
+     Build the price still showed them. */
+  input[type=number]{-moz-appearance:textfield;appearance:textfield}
+  input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .lineedit tbody input.num{text-align:right;font-variant-numeric:tabular-nums;-moz-appearance:textfield;appearance:textfield}
   .lineedit tbody input.num::-webkit-outer-spin-button,.lineedit tbody input.num::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .lineedit .amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;padding-right:var(--space-3);white-space:nowrap}
