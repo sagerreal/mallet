@@ -44,6 +44,12 @@ export {
   type QboSyncActivityRow,
 } from "./app/get-qbo-sync-activity";
 export { explainSyncProblem, type SyncProblem } from "./domain/sync-problem";
+export { EnsureQboCustomer, type EnsureQboCustomerResult } from "./app/ensure-qbo-customer";
+export {
+  toQboCustomer,
+  type SyncableCustomer,
+  type QboCustomerInput,
+} from "./domain/customer-mapping";
 export type { SyncLabelReader } from "./domain/sync-label-reader";
 export { DrizzleSyncLabelReader } from "./infra/drizzle-sync-label-reader";
 export {

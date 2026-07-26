@@ -5,11 +5,13 @@ import { ok, err, externalService, unauthorized } from "@mallet/shared/types";
 import type {
   QboAccess,
   QboApiGateway,
+  QboCustomer,
   QboPerson,
   QboPreflight,
   QboServiceItem,
   QboTimeActivityInput,
 } from "../domain/qbo-api-gateway";
+import type { QboCustomerInput } from "../domain/customer-mapping";
 
 // The ONLY file that speaks the QuickBooks Accounting API. OAuth lives in http-qbo-oauth-gateway.
 //
@@ -266,4 +268,93 @@ export class HttpQboApiGateway implements QboApiGateway {
     }
     return ok({ id });
   }
+
+  /**
+   * QuickBooks' query language is SQL-shaped and takes a single string, so a value carrying an
+   * apostrophe — O'Brien Plumbing, a very ordinary customer name — would terminate the literal and
+   * make the rest of the name parse as syntax. Doubling it is the escape QBO specifies.
+   *
+   * This is not only a correctness fix: the values here are customer-supplied, so an unescaped
+   * interpolation is a query-injection seam into someone's accounting company.
+   */
+  private static quote(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`;
+  }
+
+  private async findOneCustomer(
+    access: QboAccess,
+    where: string,
+    what: string,
+  ): Promise<Result<QboCustomer | null, AppError>> {
+    const res = await this.query<{ QueryResponse?: { Customer?: unknown } }>(
+      access,
+      `select Id, DisplayName from Customer where ${where} maxresults 2`,
+      what,
+    );
+    if (!res.ok) return err(res.error);
+
+    const rows = Array.isArray(res.value.QueryResponse?.Customer)
+      ? (res.value.QueryResponse.Customer as Array<Record<string, unknown>>)
+      : [];
+    // No match is an ordinary answer, not a failure — the caller creates one.
+    const first = rows[0];
+    if (!first) return ok(null);
+    const id = first.Id;
+    const displayName = first.DisplayName;
+    if (typeof id !== "string" || typeof displayName !== "string") {
+      return err(externalService("quickbooks", "QuickBooks returned a customer we could not read", true));
+    }
+    return ok({ id, displayName });
+  }
+
+  async findCustomerByEmail(
+    access: QboAccess,
+    email: string,
+  ): Promise<Result<QboCustomer | null, AppError>> {
+    return this.findOneCustomer(
+      access,
+      `PrimaryEmailAddr = ${HttpQboApiGateway.quote(email)}`,
+      "customer lookup by email",
+    );
+  }
+
+  async findCustomerByName(
+    access: QboAccess,
+    displayName: string,
+  ): Promise<Result<QboCustomer | null, AppError>> {
+    return this.findOneCustomer(
+      access,
+      `DisplayName = ${HttpQboApiGateway.quote(displayName)}`,
+      "customer lookup by name",
+    );
+  }
+
+  async createCustomer(
+    access: QboAccess,
+    input: QboCustomerInput,
+  ): Promise<Result<QboCustomer, AppError>> {
+    const body: Record<string, unknown> = { DisplayName: input.displayName };
+    if (input.email) body.PrimaryEmailAddr = { Address: input.email };
+    if (input.phone) body.PrimaryPhone = { FreeFormNumber: input.phone };
+    // One unparsed line — see toQboCustomer for why we do not invent a structured address.
+    if (input.addressLine1) body.BillAddr = { Line1: input.addressLine1 };
+
+    // NOT idempotent. The duplicate guard is DisplayName's uniqueness in QuickBooks plus the
+    // caller's search-before-create; a retry here would be refused by QBO, not silently doubled.
+    const res = await this.request<{ Customer?: { Id?: unknown; DisplayName?: unknown } }>(
+      access,
+      "/customer",
+      { method: "POST", body: JSON.stringify(body), idempotent: false },
+      "customer create",
+    );
+    if (!res.ok) return err(res.error);
+
+    const id = res.value.Customer?.Id;
+    if (typeof id !== "string") {
+      return err(externalService("quickbooks", "QuickBooks created a customer without an id", false));
+    }
+    const name = res.value.Customer?.DisplayName;
+    return ok({ id, displayName: typeof name === "string" ? name : input.displayName });
+  }
+
 }
