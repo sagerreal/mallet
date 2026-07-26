@@ -48,28 +48,47 @@ Today both live invoices are $0 with no lines, so nothing is broken yet. That is
 - **(c) Push a balancing adjustment line.** Rejected — it puts a fictional line item on a customer's
   invoice to paper over our own inconsistency.
 
-### 2. Sales tax does not exist on invoices
+### 2. Sales tax is charged but never recorded on the invoice
 
-`invoices` has **no tax column**. Yet `estimates.tax_bps` exists AND
-`modules/quoting/domain/estimate.ts:241` already computes it:
-`money(Math.round((net * taxBps) / BPS_DENOMINATOR))`. Pricebook items and materials each carry a
-`taxable` boolean. **Tax is modelled upstream and dropped on the way to the invoice.**
+**Corrected 25 Jul 2026 after tracing the chain — the first version of this plan said Mallet does
+not charge sales tax. That was wrong, and the difference matters: this is a bookkeeping gap, not a
+money one.**
 
-That is a Mallet product bug independent of QuickBooks: a plumbing shop selling $400 of parts in
-California owes sales tax, and Mallet currently prints an invoice without it.
+Estimates model tax properly. `modules/quoting/domain/estimate.ts:238-245` is the rounding chain —
+discount on the subtotal, tax on the net, deposit on the total — and it ends `total = net + tax`.
+**The estimate total is tax-inclusive**, and it flows straight through:
+
+```
+estimate.totalCents  →  job.total            →  invoice.total
+(tax included)          create-job-from-       create-invoice-from-
+                        estimate.ts:47         job.ts:48
+```
+
+So a quoted job's invoice **does** collect sales tax. What is missing is the breakdown: `invoices`
+has no `tax_bps` / `tax_cents`, so nothing downstream can say how much of the total was tax.
+
+Three consequences, in order of severity:
+
+- **QuickBooks cannot be told the tax portion.** Revenue and sales-tax liability land in one lump,
+  which is wrong in the books and wrong on a sales-tax filing.
+- **The invoice cannot itemise it.** Several US states require sales tax stated separately on the
+  document. The invoice modal already renders a Tax row — but for an invoice it reads
+  `invoice.pricing`, which is store-only and never persisted (the DTO mapper populates `pricing`
+  for ESTIMATES). So the row exists and has nothing real behind it.
+- **Manually drafted invoices genuinely have no tax.** `draft-invoice.ts:56` computes
+  `total = Σ lines` with no tax step at all. That path is the one that really is missing it.
 
 **What QuickBooks' Automated Sales Tax changes** (verified, see Sources): every US QBO company
 created since 10 Nov 2017 calculates sales tax itself, from the shipping address (falling back to
 billing, then to the company address). `TxnTaxDetail.TxnTaxCodeRef` must be sent to signal intent;
 `TxnTaxDetail.TotalTax` overrides the computed amount and is prorated across the assigned rates.
 
-So we do **not** need rate tables, nexus logic, or jurisdiction lookups. But we cannot simply let
-QBO compute it either, because **Mallet is the system that bills the customer** — the number on the
-emailed invoice has to be right before QuickBooks ever sees it, and if QBO adds tax that Mallet did
-not charge, the books show a balance the customer never owed and payments stop reconciling.
+So we need no rate tables, nexus logic or jurisdiction lookups. And we must NOT simply let QBO
+compute it, because Mallet is the system that bills the customer — if QBO adds tax Mallet did not
+charge, the books show a balance the customer never owed and payments stop reconciling.
 
-**Therefore:** Mallet gets its own tax number (small — the math exists on estimates), and we send it
-to QBO as `TotalTax` so both agree exactly.
+**Therefore:** carry the number Mallet already computed onto the invoice, and send it to QBO as
+`TxnTaxDetail.TotalTax` so the two agree exactly.
 
 ### 3. Invoice lines have no item reference
 
@@ -111,14 +130,23 @@ A list on the QuickBooks settings card: what was sent, when, what failed and **w
 error codes mapped to sentences a shop can act on (`UNMAPPED_EMPLOYEE` → "match this person to a
 QuickBooks employee"). Retry control for failed rows.
 
-### PR1 — Tax on invoices *(prerequisite; valuable with or without QuickBooks)*
+### PR1 — Record the tax already being charged *(prerequisite)*
 
-- Migration: `invoices.tax_bps` + `invoices.tax_cents`, and `invoice_lines.taxable`.
-- Carry `tax_bps` from the accepted estimate through `create-invoice-from-job`; default from org
-  settings otherwise.
-- Reuse the estimate's computation rather than writing a second one.
-- Show tax on the invoice modal and the customer-facing document.
-- **This is the piece that must exist before any shop that charges sales tax can use invoice sync.**
+Smaller than first written, because the money is already right — this is about recording the split.
+
+- Migration: `invoices.tax_bps` + `invoices.tax_cents`. Both default 0, so every existing row keeps
+  its exact total.
+- **`total_cents` stays tax-INCLUSIVE.** `tax_cents` records how much of it is tax. The alternative
+  — making the total a pre-tax subtotal — would silently change the balance-due arithmetic on every
+  existing invoice, which is the one thing this must not do.
+- Carry `taxBps` and the computed tax from the accepted estimate through `create-invoice-from-job`.
+  **No total changes:** the number is already in there, it just becomes legible.
+- Persist it through the invoice DTO so the Tax row the modal already draws has something real
+  behind it instead of store-only state.
+- Manual drafts (`draft-invoice.ts`) apply an org default rate, defaulting to **0** so no existing
+  behaviour changes until a shop sets one.
+- **This must exist before any shop that charges sales tax can use invoice sync**, or their revenue
+  and their tax liability arrive in QuickBooks as one indistinguishable lump.
 
 ### PR2 — Customers in QuickBooks
 
