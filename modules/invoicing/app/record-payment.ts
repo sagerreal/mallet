@@ -83,6 +83,9 @@ export class RecordPaymentUseCase {
       orgId: cmd.orgId,
       payload: {
         invoiceId: updated.props.id,
+        // The ledger row's own id. Without it a consumer cannot tell two identical part-payments
+        // apart, and the QuickBooks push would dedupe one of them away as a redelivery.
+        paymentId: payment.value.props.id,
         amountCents: cmd.amount,
         method: cmd.method,
         dueCents: updated.due(),

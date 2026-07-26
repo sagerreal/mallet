@@ -1,7 +1,15 @@
 import { InvoicePaidAuditHandler } from "@mallet/invoicing";
-import { QboTimeSyncHandler, QboInvoiceSyncHandler } from "@mallet/accounting-sync";
+import {
+  QboTimeSyncHandler,
+  QboInvoiceSyncHandler,
+  QboPaymentSyncHandler,
+} from "@mallet/accounting-sync";
 import { systemClock } from "@mallet/shared/types";
-import { buildQboTimeSyncPorts, buildQboInvoiceSyncPorts } from "./qbo-sync-wiring";
+import {
+  buildQboTimeSyncPorts,
+  buildQboInvoiceSyncPorts,
+  buildQboPaymentSyncPorts,
+} from "./qbo-sync-wiring";
 import type { OutboxHandlerMap } from "@mallet/shared/outbox";
 
 // Composition root for outbox relay handlers — the EXPLICIT allow-list of which events get a side
@@ -20,4 +28,6 @@ export const buildOutboxHandlers = (): OutboxHandlerMap =>
     // SENDING an invoice is what pushes it, not creating one: a draft is not a financial fact, and
     // pushing drafts would put unissued revenue in a shop's books. Self-disables the same way.
     ["invoice.sent", new QboInvoiceSyncHandler(buildQboInvoiceSyncPorts())],
+    // Applying the payment is what stops a synced invoice sitting unpaid in QuickBooks forever.
+    ["invoice.payment.recorded", new QboPaymentSyncHandler(buildQboPaymentSyncPorts())],
   ]);

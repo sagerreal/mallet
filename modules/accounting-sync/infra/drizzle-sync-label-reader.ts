@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { invoices, leads, timeEntries, users } from "@mallet/shared/db/schema";
+import { invoices, leads, payments, timeEntries, users } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { SyncLabelReader } from "../domain/sync-label-reader";
 
@@ -32,6 +32,7 @@ export class DrizzleSyncLabelReader implements SyncLabelReader {
     if (malletIds.length === 0) return new Map();
     if (entityType === "customer") return this.customerLabels(malletIds);
     if (entityType === "invoice") return this.invoiceLabels(malletIds);
+    if (entityType === "payment") return this.paymentLabels(malletIds);
     if (entityType !== "time_entry") return new Map();
 
     const rows = await this.tx
@@ -69,6 +70,31 @@ export class DrizzleSyncLabelReader implements SyncLabelReader {
       .from(invoices)
       .where(and(eq(invoices.orgId, this.orgId), inArray(invoices.id, [...malletIds])));
     return new Map(rows.map((r) => [r.id, r.num]));
+  }
+
+
+  /**
+   * Payments by the invoice they settle plus their amount — "INV-1001 · $1,100.00".
+   *
+   * A payment has no name of its own, and left unlabelled it would render as "(no longer in
+   * Mallet)": the fallback for a DELETED record, which would read as data loss on a row that is
+   * perfectly fine.
+   */
+  private async paymentLabels(malletIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    const rows = await this.tx
+      .select({ id: payments.id, amountCents: payments.amountCents, num: invoices.num })
+      .from(payments)
+      .leftJoin(invoices, eq(invoices.id, payments.invoiceId))
+      .where(and(eq(payments.orgId, this.orgId), inArray(payments.id, [...malletIds])));
+    return new Map(
+      rows.map((r) => {
+        const amount = (r.amountCents / 100).toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+        });
+        return [r.id, r.num ? `${r.num} · ${amount}` : amount];
+      }),
+    );
   }
 
 }

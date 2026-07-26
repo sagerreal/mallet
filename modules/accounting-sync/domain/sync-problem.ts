@@ -19,6 +19,10 @@ import {
 } from "./time-activity-mapping";
 import { NO_NAME, NAME_TOO_LONG } from "./customer-mapping";
 import { NO_AMOUNT, NO_INVOICE_ITEM, TAX_EXCEEDS_TOTAL } from "./invoice-mapping";
+import {
+  NO_AMOUNT as PAYMENT_NO_AMOUNT,
+  INVOICE_NOT_IN_QBO,
+} from "./payment-mapping";
 
 export interface SyncProblem {
   /** The stable code, kept so support can be given something exact to search for. */
@@ -83,6 +87,16 @@ const EXPLANATIONS: Readonly<Record<string, Explanation>> = Object.freeze({
     says: "This invoice's tax doesn't fit inside its total.",
     fix: "Check the invoice's figures — the tax should be part of the total, not on top of it.",
     retryable: true,
+  },
+  [INVOICE_NOT_IN_QBO]: {
+    says: "The invoice this payment settles isn't in QuickBooks yet.",
+    fix: "Send the invoice first — the payment follows it over.",
+    retryable: true,
+  },
+  [PAYMENT_NO_AMOUNT]: {
+    says: "This payment has no amount, so there is nothing to send.",
+    fix: null,
+    retryable: false,
   },
   // AppError kinds, which reach the log when a QuickBooks call itself refuses.
   unauthorized: {

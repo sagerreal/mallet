@@ -13,6 +13,7 @@ import type {
 } from "../domain/qbo-api-gateway";
 import type { QboCustomerInput } from "../domain/customer-mapping";
 import type { QboInvoiceInput } from "../domain/invoice-mapping";
+import type { QboPaymentInput } from "../domain/payment-mapping";
 
 // The ONLY file that speaks the QuickBooks Accounting API. OAuth lives in http-qbo-oauth-gateway.
 //
@@ -401,6 +402,41 @@ export class HttpQboApiGateway implements QboApiGateway {
     const id = res.value.Invoice?.Id;
     if (typeof id !== "string") {
       return err(externalService("quickbooks", "QuickBooks created an invoice without an id", false));
+    }
+    return ok({ id });
+  }
+
+
+  async createPayment(
+    access: QboAccess,
+    input: QboPaymentInput,
+  ): Promise<Result<{ id: string }, AppError>> {
+    const body = {
+      CustomerRef: { value: input.customerId },
+      TxnDate: input.txnDate,
+      TotalAmt: input.amount,
+      Line: [
+        {
+          Amount: input.amount,
+          // The link is the point. Without LinkedTxn QuickBooks files this as an unapplied credit
+          // on the customer: the money shows up, the invoice still reads open, and somebody has to
+          // match them by hand.
+          LinkedTxn: [{ TxnId: input.invoiceQboId, TxnType: "Invoice" }],
+        },
+      ],
+    };
+
+    const res = await this.request<{ Payment?: { Id?: unknown } }>(
+      access,
+      "/payment",
+      { method: "POST", body: JSON.stringify(body), idempotent: false },
+      "payment create",
+    );
+    if (!res.ok) return err(res.error);
+
+    const id = res.value.Payment?.Id;
+    if (typeof id !== "string") {
+      return err(externalService("quickbooks", "QuickBooks created a payment without an id", false));
     }
     return ok({ id });
   }
