@@ -10,6 +10,7 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
@@ -52,12 +53,12 @@ function MoneyHeader({
             Auto-remind
             <span className={`switch${autoRemind ? "" : " off"}`} aria-hidden="true" />
           </button>
-          <button className="btn ghost" onClick={() => { /* deferred: financing */ }}>
-            Offer financing
-          </button>
-          <button className="btn ghost" onClick={() => { /* deferred: QuickBooks */ }}>
-            Connect QuickBooks
-          </button>
+          {/* QuickBooks lives in Settings, which is where it is actually connected and where the
+              crew matching is. This used to be a no-op button next to an "Offer financing" one that
+              was also a no-op; financing does not exist, so its button is gone rather than lying. */}
+          <Link className="btn ghost" href="/settings?tab=quickbooks">
+            QuickBooks
+          </Link>
           <button className="btn primary" onClick={onNewInvoice}>
             + New invoice
           </button>
