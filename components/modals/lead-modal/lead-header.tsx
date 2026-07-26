@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { Lead } from "@/lib/store/types";
 import { STAGE_PILL_CLS, leadInitials } from "@/lib/prototype-sample";
@@ -111,14 +111,9 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
               </>
             )}
             <span className="lead-meta-dot" aria-hidden="true">·</span>
-            <input
-              key={lead.phone}
-              className="lead-phone"
-              type="tel"
-              defaultValue={lead.phone}
-              placeholder="Add phone"
-              onBlur={(e) => updateLead(lead.id, { phone: e.target.value })}
-              aria-label="Customer phone"
+            <PhoneCell
+              value={lead.phone ?? ""}
+              onCommit={(phone) => updateLead(lead.id, { phone })}
             />
           </div>
         </div>
@@ -235,5 +230,65 @@ function ChatIcon() {
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "var(--space-1)", verticalAlign: "-2px" }} aria-hidden="true">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
     </svg>
+  );
+}
+
+/**
+ * The inline phone field.
+ *
+ * CONTROLLED, deliberately. It was an uncontrolled input with `defaultValue`, which loses whatever
+ * has been typed the moment anything re-renders the header — and since switching to another window
+ * does not move focus inside the document, `onBlur` never fires either. Typing a number, going
+ * away and coming back lost it silently, every time.
+ *
+ * It also only commits when the value actually CHANGED. The old handler fired on every blur, so
+ * tabbing through the field wrote an empty string and wiped a number nobody touched.
+ */
+export function PhoneCell({ value, onCommit }: { value: string; onCommit: (phone: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const committed = useRef(value);
+
+  // Adopt a value that changed underneath us (a reconcile, another surface) — but never while the
+  // field is focused, which would yank the number out from under someone mid-edit.
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    if (!focused && value !== committed.current) {
+      committed.current = value;
+      setDraft(value);
+    }
+  }, [value, focused]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next === committed.current) return;
+    committed.current = next;
+    onCommit(next);
+  };
+
+  return (
+    <input
+      className="lead-phone"
+      type="tel"
+      value={draft}
+      placeholder="Add phone"
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        commit();
+      }}
+      // Enter commits without needing to click away — the field is one line in a busy header and
+      // "press tab to save" is not something anybody guesses.
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          // Commit directly rather than relying on blur() to trigger onBlur as a side effect.
+          // The follow-up blur re-enters commit(), which no-ops once the value is unchanged.
+          commit();
+          e.currentTarget.blur();
+        }
+      }}
+      aria-label="Customer phone"
+    />
   );
 }

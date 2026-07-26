@@ -13,6 +13,8 @@
  * failure. Keeping it out of the store also keeps it out of every selector.
  */
 
+import { userMessage } from "@/lib/trpc/error-map";
+
 export interface WriteError {
   /** The store action that failed, e.g. "archiveLead". */
   action: string;
@@ -49,9 +51,16 @@ function humanize(action: string): string {
  */
 export function reportWriteError(action: string, err: unknown): void {
   seq += 1;
+  // The SERVER's sentence when it authored one — a domain refusal knows why it refused, and
+  // "check your connection" is actively misleading when the real cause is a duplicate phone
+  // number. The generic line stays as the fallback for genuine transport failures, which is the
+  // only case where checking a connection is useful advice.
   const event: WriteError = {
     action,
-    message: `Couldn't ${humanize(action)} — your change was undone. Check your connection and try again.`,
+    message: userMessage(
+      err,
+      `Couldn't ${humanize(action)} — your change was undone. Check your connection and try again.`,
+    ),
     seq,
     tone: "error",
   };

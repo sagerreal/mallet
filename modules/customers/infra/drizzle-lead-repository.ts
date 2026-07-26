@@ -10,6 +10,7 @@ import {
   type LeadId,
   type CursorPage,
   type Paginated,
+  type Phone,
 } from "@mallet/shared/types";
 import type { Lead } from "../domain/lead";
 import type {
@@ -78,6 +79,26 @@ export class DrizzleLeadRepository implements LeadRepository {
       .select()
       .from(leads)
       .where(and(eq(leads.id, id), isNull(leads.deletedAt)))
+      .limit(1);
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
+
+
+  async findByPhone(phone: Phone): Promise<Lead | null> {
+    const rows = await this.tx
+      .select()
+      .from(leads)
+      // Org-scoped explicitly as well as by RLS, and LIVE rows only — the unique index this
+      // mirrors is partial on `deleted_at is null`, so an archived customer must not block a
+      // number being reused.
+      .where(
+        and(
+          eq(leads.orgId, this.orgId),
+          eq(leads.phoneE164, phone),
+          isNull(leads.deletedAt),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
