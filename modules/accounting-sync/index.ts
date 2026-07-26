@@ -55,6 +55,17 @@ export { SyncPayment, type SyncPaymentCommand, type SyncPaymentResult } from "./
 export { QboPaymentSyncHandler, type QboPaymentSyncPorts } from "./app/qbo-payment-sync-handler";
 export { toQboPayment, type SyncablePayment, type QboPaymentInput } from "./domain/payment-mapping";
 export {
+  ResyncInvoice,
+  type ResyncInvoiceResult,
+  type ResyncOutcome,
+  CUSTOMER_NOT_LINKED,
+  GONE_FROM_QBO,
+} from "./app/resync-invoice";
+export {
+  QboInvoiceChangeHandler,
+  type QboInvoiceChangePorts,
+} from "./app/qbo-invoice-change-handler";
+export {
   toQboCustomer,
   type SyncableCustomer,
   type QboCustomerInput,

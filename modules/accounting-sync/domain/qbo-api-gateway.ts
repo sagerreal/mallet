@@ -80,6 +80,26 @@ export interface QboApiGateway {
 
   /** Create a payment LINKED to an invoice. Not idempotent — the sync log is the duplicate guard. */
   createPayment(access: QboAccess, input: QboPaymentInput): Promise<Result<{ id: string }, AppError>>;
+
+  /**
+   * The current SyncToken for an invoice, or null when QuickBooks no longer has it.
+   *
+   * QuickBooks uses SyncToken for optimistic concurrency: every update and void must present the
+   * CURRENT one, and a stale token is refused. So it has to be read immediately before writing —
+   * it cannot be cached, because a change made inside QuickBooks would invalidate it.
+   */
+  readInvoiceToken(access: QboAccess, qboId: string): Promise<Result<string | null, AppError>>;
+
+  /** Replace a QuickBooks invoice's amount, tax and dates with Mallet's current ones. */
+  updateInvoice(
+    access: QboAccess,
+    qboId: string,
+    syncToken: string,
+    input: QboInvoiceInput,
+  ): Promise<Result<void, AppError>>;
+
+  /** Void — never delete. Mallet is soft-delete-only and the books must be too. */
+  voidInvoice(access: QboAccess, qboId: string, syncToken: string): Promise<Result<void, AppError>>;
 }
 
 /** A usable access token plus the company it belongs to. Produced by EnsureFreshAccessToken. */

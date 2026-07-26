@@ -441,4 +441,83 @@ export class HttpQboApiGateway implements QboApiGateway {
     return ok({ id });
   }
 
+
+  async readInvoiceToken(
+    access: QboAccess,
+    qboId: string,
+  ): Promise<Result<string | null, AppError>> {
+    const res = await this.query<{ QueryResponse?: { Invoice?: unknown } }>(
+      access,
+      `select Id, SyncToken from Invoice where Id = ${HttpQboApiGateway.quote(qboId)}`,
+      "invoice read",
+    );
+    if (!res.ok) return err(res.error);
+    const rows = Array.isArray(res.value.QueryResponse?.Invoice)
+      ? (res.value.QueryResponse.Invoice as Array<Record<string, unknown>>)
+      : [];
+    const first = rows[0];
+    // Gone from QuickBooks — deleted there by hand. Not an error; the caller decides.
+    if (!first) return ok(null);
+    const token = first.SyncToken;
+    return typeof token === "string" ? ok(token) : ok(null);
+  }
+
+  async updateInvoice(
+    access: QboAccess,
+    qboId: string,
+    syncToken: string,
+    input: QboInvoiceInput,
+  ): Promise<Result<void, AppError>> {
+    // A FULL update, not sparse. A sparse update leaves untouched fields alone, and the field most
+    // likely to have changed is the money — which lives in Line[]. Sending Line at all replaces the
+    // whole array anyway, so the honest thing is to restate the invoice as Mallet now holds it.
+    const body: Record<string, unknown> = {
+      Id: qboId,
+      SyncToken: syncToken,
+      CustomerRef: { value: input.customerId },
+      DocNumber: input.docNumber,
+      TxnDate: input.txnDate,
+      Line: [
+        {
+          DetailType: "SalesItemLineDetail",
+          Amount: input.netAmount,
+          Description: input.description,
+          SalesItemLineDetail: {
+            ItemRef: { value: input.itemId },
+            Qty: 1,
+            UnitPrice: input.netAmount,
+            TaxCodeRef: { value: input.totalTax > 0 ? "TAX" : "NON" },
+          },
+        },
+      ],
+    };
+    if (input.dueDate) body.DueDate = input.dueDate;
+    if (input.totalTax > 0) body.TxnTaxDetail = { TotalTax: input.totalTax };
+
+    const res = await this.request<unknown>(
+      access,
+      "/invoice",
+      { method: "POST", body: JSON.stringify(body), idempotent: false },
+      "invoice update",
+    );
+    return res.ok ? ok(undefined) : err(res.error);
+  }
+
+  async voidInvoice(
+    access: QboAccess,
+    qboId: string,
+    syncToken: string,
+  ): Promise<Result<void, AppError>> {
+    // Void zeroes the invoice and marks it Voided, leaving the document and its number in the
+    // ledger. Delete would remove the record entirely, which is not what a void means and not what
+    // Mallet did.
+    const res = await this.request<unknown>(
+      access,
+      "/invoice?operation=void",
+      { method: "POST", body: JSON.stringify({ Id: qboId, SyncToken: syncToken }), idempotent: false },
+      "invoice void",
+    );
+    return res.ok ? ok(undefined) : err(res.error);
+  }
+
 }
