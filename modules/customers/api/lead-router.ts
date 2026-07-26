@@ -144,6 +144,17 @@ export const createLeadRouter = () =>
               const parsed = Phone.parse(input.phone);
               if (!isOk(parsed)) throw new TRPCError({ code: "BAD_REQUEST", message: parsed.error.message });
               phone = parsed.value;
+              // `leads_org_phone_uidx` forbids two live customers sharing a number. Checked HERE so
+              // the refusal can name who already has it — left to Postgres it surfaces as a bare
+              // constraint violation, which the store reports as "check your connection" while the
+              // typed number silently vanishes.
+              const holder = await repo.findByPhone(parsed.value);
+              if (holder && holder.props.id !== lead.props.id) {
+                throw new TRPCError({
+                  code: "CONFLICT",
+                  message: `${holder.props.name} already has that number. Open them instead, or give this customer a different one.`,
+                });
+              }
             }
           }
           const patched = updated.patch(

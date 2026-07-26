@@ -91,6 +91,11 @@ class FakeLeadRepository implements LeadRepository {
     return null;
   }
 
+
+  async findByPhone(): Promise<Lead | null> {
+    return null;
+  }
+
   async findByIds(ids: readonly LeadId[]): Promise<Lead[]> {
     const found: Lead[] = [];
     for (const id of ids) {

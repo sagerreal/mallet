@@ -33,6 +33,12 @@ export interface LeadRepository {
   /** The named leads, in ONE read. The field agenda needs the customer behind every job it
    *  returns, and asking per job put an N+1 on the surface a technician reloads all day. */
   findByIds(ids: readonly LeadId[]): Promise<Lead[]>;
+  /**
+   * The live customer holding this number, if any. Exists so a caller can NAME the clash before
+   * writing — `leads_org_phone_uidx` would otherwise raise a bare constraint violation that reaches
+   * the user as "check your connection".
+   */
+  findByPhone(phone: Phone): Promise<Lead | null>;
   list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>>;
   save(lead: Lead): Promise<void>;
   // Returns the number of rows affected (0 = not found or already archived).
