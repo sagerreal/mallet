@@ -40,6 +40,10 @@ export interface QboConnectionProps {
   readonly defaultItemName: string | null;
   /** Opt-in. Connecting alone must never start writing to a shop's books. */
   readonly sendApprovedHours: boolean;
+  /** The invoice-line item and its own switch. Separate from the hours pair above, on purpose. */
+  readonly defaultInvoiceItemQboId: string | null;
+  readonly defaultInvoiceItemName: string | null;
+  readonly sendInvoices: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly disconnectedAt: Date | null;
@@ -125,6 +129,9 @@ export class QboConnection {
       refreshTokenSealed: "",
       // Disconnecting must also stop the push, so a later reconnect doesn't silently resume it.
       sendApprovedHours: false,
+      defaultInvoiceItemQboId: null,
+      defaultInvoiceItemName: null,
+      sendInvoices: false,
       disconnectedAt: now,
       updatedAt: now,
     });
@@ -136,6 +143,21 @@ export class QboConnection {
   }
 
   /** Turn the push on or off. Off by default; the shop must ask for it explicitly. */
+  withDefaultInvoiceItem(qboId: string, name: string, now: Date): QboConnection {
+    return this.next({ defaultInvoiceItemQboId: qboId, defaultInvoiceItemName: name, updatedAt: now });
+  }
+
+  /**
+   * Turning invoice sync on REQUIRES an item, because QuickBooks rejects a line without one — so
+   * the switch cannot be flipped into a state that would fail on the first invoice.
+   */
+  withSendInvoices(on: boolean, now: Date): Result<QboConnection, ValidationError> {
+    if (on && this.p.defaultInvoiceItemQboId === null) {
+      return err(validation("choose which QuickBooks item invoice lines are filed under first", "defaultInvoiceItemQboId"));
+    }
+    return ok(this.next({ sendInvoices: on, updatedAt: now }));
+  }
+
   withSendApprovedHours(on: boolean, now: Date): QboConnection {
     return this.next({ sendApprovedHours: on, updatedAt: now });
   }
