@@ -32,6 +32,14 @@ export const invoices = pgTable(
     title: text("title"),
     status: text("status").notNull().default("draft"),
     totalCents: integer("total_cents").notNull().default(0),
+    // The tax split of `total_cents`, carried from the job that was billed.
+    //
+    // `total_cents` stays tax-INCLUSIVE. Making it a pre-tax subtotal instead would silently change
+    // the balance-due arithmetic (total − deposit − amountPaid) on every invoice that already
+    // exists, which is the one thing this must not do. These say how much of the total was tax, so
+    // QuickBooks can be told the split and the document can itemise it.
+    taxBps: integer("tax_bps").notNull().default(0),
+    taxCents: integer("tax_cents").notNull().default(0),
     depositPaidCents: integer("deposit_paid_cents").notNull().default(0),
     amountPaidCents: integer("amount_paid_cents").notNull().default(0),
     termsDays: integer("terms_days").notNull().default(7),
@@ -64,6 +72,10 @@ export const invoices = pgTable(
       .where(sql`${t.sourceJobId} is not null and ${t.deletedAt} is null`),
     check("invoices_status_check", sql`${t.status} in ('draft', 'sent', 'partial', 'paid', 'void')`),
     check("invoices_total_check", sql`${t.totalCents} >= 0`),
+    check("invoices_tax_bps_check", sql`${t.taxBps} >= 0`),
+    // Tax is a PART of the total, so it can never exceed it. This is the constraint that catches a
+    // caller who mistakes `total_cents` for a pre-tax subtotal.
+    check("invoices_tax_cents_check", sql`${t.taxCents} >= 0 and ${t.taxCents} <= ${t.totalCents}`),
     check(
       "invoices_deposit_check",
       sql`${t.depositPaidCents} >= 0 and ${t.depositPaidCents} <= ${t.totalCents}`,

@@ -9,7 +9,7 @@ import type {
   Result,
   ValidationError,
 } from "@mallet/shared/types";
-import { validation, ok, err } from "@mallet/shared/types";
+import { validation, ok, err, zeroMoney } from "@mallet/shared/types";
 
 export type JobStatus = "scheduled" | "in_progress" | "complete" | "canceled";
 
@@ -249,6 +249,12 @@ export interface JobProps {
   readonly canceledAt: Date | null;
   readonly cancelReason: string | null;
   readonly total: Money; // integer cents, snapshot from the source estimate at creation
+  /**
+   * The tax split of `total`, snapshotted alongside it. `total` is tax-INCLUSIVE — these say how
+   * much of it was tax, and nothing re-derives a total from them.
+   */
+  readonly taxBps: number;
+  readonly tax: Money;
   readonly notes: string | null;
   readonly scope: string | null; // free-text "anything else noticed?" note from the booking flow
   readonly callbackOf: JobId | null; // this job is a callback/redo of an earlier job (nullable)
@@ -262,7 +268,14 @@ export interface JobProps {
 
 // Input to Job.create: kind, scope, callbackOf, callbackReason, and requiredCerts may be omitted
 // so pre-existing callers keep compiling. kind defaults to "work"; the rest default to null.
-export type JobCreateProps = Omit<JobProps, "kind" | "scope" | "callbackOf" | "callbackReason" | "requiredCerts"> & {
+export type JobCreateProps = Omit<
+  JobProps,
+  "kind" | "scope" | "callbackOf" | "callbackReason" | "requiredCerts" | "taxBps" | "tax"
+> & {
+  // Optional so the many jobs created without a quote need not state "no tax" explicitly. Only
+  // create-job-from-estimate has a split to pass, because only an estimate ever computed one.
+  readonly taxBps?: number;
+  readonly tax?: Money;
   readonly kind?: JobKind;
   readonly scope?: string | null;
   readonly callbackOf?: JobId | null;
@@ -284,6 +297,18 @@ export class Job {
     }
     // Runtime re-check (mirrors status): the mapper feeds rows whose kind is plain text.
     const kind = props.kind ?? "work";
+    // A job with no quote behind it has no tax split, which is not the same as a split of zero
+    // being wrong — it simply was never computed.
+    const taxBps = props.taxBps ?? 0;
+    const tax = props.tax ?? zeroMoney;
+    if (!Number.isInteger(taxBps) || taxBps < 0) {
+      return err(validation("tax bps cannot be negative", "taxBps"));
+    }
+    // Tax is a PART of the total, never an addition to it — the invariant the whole design rests
+    // on. A caller treating `total` as a pre-tax subtotal fails here rather than in someone's books.
+    if (tax < 0 || tax > props.total) {
+      return err(validation("tax cannot exceed the job total", "tax"));
+    }
     if (!isJobKind(kind)) {
       return err(validation(`unknown job kind: ${String(kind)}`, "kind"));
     }
@@ -320,7 +345,9 @@ export class Job {
     }
     const rawRequired = props.requiredCerts ?? null;
     const requiredCerts = rawRequired === null || rawRequired.length === 0 ? null : rawRequired;
-    return ok(new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind, requiredCerts }));
+    return ok(
+      new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind, requiredCerts, taxBps, tax }),
+    );
   }
 
   // Replace the visit set — only allowed while the job is not yet terminal.

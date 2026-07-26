@@ -13,8 +13,8 @@ export interface CreateInvoiceFromJobCommand {
 }
 
 // Bill a completed job. Idempotent: one invoice per job. Total is snapshotted from the job (which
-// carries the accepted-estimate total); deposit starts at 0 for the pilot (jobs don't yet persist
-// a deposit).
+// carries the accepted-estimate total, TAX INCLUSIVE) along with its tax split; deposit starts at 0
+// for the pilot (jobs don't yet persist a deposit).
 export class CreateInvoiceFromJobUseCase {
   constructor(
     private readonly repo: InvoiceRepository,
@@ -45,6 +45,10 @@ export class CreateInvoiceFromJobUseCase {
       title: job.title,
       status: "draft",
       total: job.totalCents > 0 ? money(job.totalCents) : zeroMoney,
+      // Carried, not recomputed. The tax is already inside the total; recording the split is what
+      // lets the document itemise it and lets QuickBooks separate revenue from tax liability.
+      taxBps: job.taxBps,
+      tax: job.taxCents > 0 ? money(job.taxCents) : zeroMoney,
       depositPaid: zeroMoney,
       amountPaid: zeroMoney,
       payments: [],

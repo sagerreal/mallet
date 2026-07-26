@@ -402,6 +402,8 @@ export const invoiceCreateFromJobTool: AgentTool = {
             id: job.props.id,
             leadId: job.props.leadId,
             status: job.props.status,
+            taxBps: job.props.taxBps,
+            taxCents: job.props.tax,
             title: job.props.title,
             totalCents: job.props.total,
           };

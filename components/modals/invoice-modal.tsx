@@ -171,6 +171,8 @@ function EditBlock({
     lines.map((l) => ({ q: l.q || 1, r: l.r || 0, d: l.d, opt: false })),
     p
   );
+  // What was actually charged, as recorded when the invoice was raised.
+  const recordedTax = invoice.tax ?? 0;
   const cost = lines.reduce((s, l) => s + (l.q || 1) * (l.c || 0), 0);
   const margin = (invoice.total || 0) - cost;
   const td = invoice.termsDays;
@@ -324,12 +326,16 @@ function EditBlock({
         </div>
       ) : null}
 
-      {/* Subtotal / discount / tax / Total + margin */}
+      {/* Subtotal / discount / tax / Total + margin.
+          The tax figures come from what was RECORDED on the invoice, never from calcQuote over the
+          lines: an invoice raised from a quote carries the agreed total with no lines at all, so a
+          line-derived tax renders $0.00 under a four-figure total. Subtotal is derived the same
+          way (total − tax) so the three numbers always add up on screen. */}
       <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-3)", paddingTop: "var(--space-2)" }}>
-        {p.disc || p.tax ? (
+        {p.disc || recordedTax > 0 ? (
           <div style={ROLLUP_ROW}>
             <span>Subtotal</span>
-            <span>{fmt$(m.sub)}</span>
+            <span>{fmt$((invoice.total || 0) - recordedTax)}</span>
           </div>
         ) : null}
         {p.disc ? (
@@ -338,10 +344,10 @@ function EditBlock({
             <span style={{ color: "var(--red)" }}>−{fmt$(m.disc)}</span>
           </div>
         ) : null}
-        {p.tax ? (
+        {recordedTax > 0 ? (
           <div style={ROLLUP_ROW}>
             <span>Tax {p.tax}%</span>
-            <span>+{fmt$(m.taxed)}</span>
+            <span>{fmt$(recordedTax)}</span>
           </div>
         ) : null}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "var(--type-md)" }}>

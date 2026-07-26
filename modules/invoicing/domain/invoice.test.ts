@@ -15,6 +15,8 @@ const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
   id: asInvoiceId("11111111-1111-1111-1111-111111111111"),
   orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
   num: "INV-1000",
+  taxBps: 0,
+  tax: zeroMoney,
   sourceJobId: null,
   leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
   title: "Deck rebuild",
@@ -322,5 +324,56 @@ describe("Invoice.editLines", () => {
     const res = r.value.editLines([line(20_000, 1, 0)], now);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.field).toBe("depositPaid");
+  });
+});
+
+describe("Invoice — the tax split", () => {
+  /**
+   * The invariant the whole design rests on. `total` is TAX-INCLUSIVE, carried from the estimate's
+   * rounding chain (total = net + tax). Treating it as a pre-tax subtotal and adding tax on top
+   * would change the balance due — total − deposit − amountPaid — on every invoice that already
+   * exists, so a caller who does must fail here rather than in somebody's books.
+   */
+  it("refuses a tax larger than the total it is supposed to be part of", () => {
+    const r = Invoice.create(props({ total: money(10_000), tax: money(10_001) }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("tax");
+  });
+
+  it("allows a tax equal to the total, which a fully-taxable zero-net invoice would be", () => {
+    expect(Invoice.create(props({ total: money(10_000), tax: money(10_000) })).ok).toBe(true);
+  });
+
+  it("refuses a negative tax", () => {
+    expect(Invoice.create(props({ total: money(10_000), tax: money(-1) })).ok).toBe(false);
+  });
+
+  it("refuses a negative rate", () => {
+    const r = Invoice.create(props({ taxBps: -1 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("taxBps");
+  });
+
+  // Most invoices are drafted by hand and no tax was ever computed for them, which is not the
+  // same as a computed split that happens to be zero.
+  it("defaults to no split when none was computed", () => {
+    const r = Invoice.create(props());
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.props.taxBps).toBe(0);
+      expect(r.value.props.tax).toBe(0);
+    }
+  });
+
+  it("keeps the split through a send, which must not touch the money", () => {
+    const made = Invoice.create(props({ total: money(10_000), taxBps: 875, tax: money(804) }));
+    expect(made.ok).toBe(true);
+    if (!made.ok) return;
+    const sent = made.value.send(new Date("2026-07-25T12:00:00Z"));
+    expect(sent.ok).toBe(true);
+    if (sent.ok) {
+      expect(sent.value.props.tax).toBe(804);
+      expect(sent.value.props.total).toBe(10_000);
+    }
   });
 });

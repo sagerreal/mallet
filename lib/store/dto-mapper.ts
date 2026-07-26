@@ -410,7 +410,12 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     email: priorInv.email,
     title: dto.title ?? "Invoice",
     status: dto.status,
-    total: dto.total.cents / 100,              // cents → dollars
+    total: dto.total.cents / 100,              // cents → dollars (TAX-INCLUSIVE)
+    // The modal has always drawn a Tax row from `pricing`; until now nothing populated it for an
+    // invoice, so the row rendered off client-only state. `disc` stays 0 because an invoice carries
+    // no discount of its own — the estimate's discount is already inside the total it snapshotted.
+    pricing: { disc: 0, tax: dto.taxBps / 100 },   // basis points → percent (875 bps = 8.75%)
+    tax: dto.tax.cents / 100,                     // cents → dollars, the recorded amount
     depPaid: dto.depositPaid.cents / 100,      // cents → dollars
     payments: dto.payments.map((p) => ({
       amt: p.amount.cents / 100,               // cents → dollars

@@ -21,6 +21,10 @@ export class DrizzleEstimateReader implements EstimateReader {
       title: estimate.props.title,
       status: estimate.props.status,
       totalCents: estimate.total(),
+      // Read from the estimate's own rounding chain rather than recomputed here — one money
+      // implementation, so the split can never disagree with the total it came from.
+      taxBps: estimate.props.taxBps,
+      taxCents: estimate.taxAmount(),
     };
   }
 }

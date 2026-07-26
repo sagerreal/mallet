@@ -62,6 +62,8 @@ export const toDomain = (
     title: row.title,
     status: row.status,
     total: money(row.totalCents),
+    taxBps: row.taxBps,
+    tax: money(row.taxCents),
     depositPaid: money(row.depositPaidCents),
     amountPaid: money(row.amountPaidCents),
     payments,

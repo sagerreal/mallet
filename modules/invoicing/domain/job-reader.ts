@@ -8,7 +8,11 @@ export interface JobSummary {
   readonly leadId: LeadId;
   readonly title: string | null;
   readonly status: JobStatus;
+  /** Tax-INCLUSIVE, snapshotted from the accepted estimate. */
   readonly totalCents: number;
+  /** The rate applied, and how much of `totalCents` it accounts for. Carried, never re-derived. */
+  readonly taxBps: number;
+  readonly taxCents: number;
 }
 
 export interface JobReader {

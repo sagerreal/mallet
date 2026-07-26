@@ -51,6 +51,8 @@ const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
   id: JOB_ID,
   orgId: ORG_ID,
   num: "JOB-1000",
+  taxBps: 0,
+  tax: zeroMoney,
   leadId: LEAD_ID,
   sourceEstimateId: null,
   assigneeUserId: null,
