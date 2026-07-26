@@ -82,3 +82,17 @@ describe("QuoteCard — an empty pricebook points somewhere real", () => {
     expect(screen.queryByText(/Settings → Pricebook/)).toBeNull();
   });
 });
+
+describe("QuoteCard — no explainer card under the bar", () => {
+  it("renders the bar alone, with no first-run pitch", () => {
+    // A three-column "READS THE JOB / PRICES LIKE YOU / CHECKS YOUR WINS" card used to sit under
+    // the command bar on first visit. It explained the product to someone already using it, and it
+    // pushed the actual quote off the screen. Deleted — the bar's placeholder says enough.
+    renderCard();
+    expect(screen.queryByText(/Reads the job/i)).toBeNull();
+    expect(screen.queryByText(/Prices like you/i)).toBeNull();
+    expect(screen.queryByText(/Checks your wins/i)).toBeNull();
+    expect(screen.queryByText(/it remembers for next time/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Got it" })).toBeNull();
+  });
+});
