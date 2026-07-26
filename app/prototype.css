@@ -1510,6 +1510,9 @@
   .clockcard .clock-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3)}
   .clock-meta{min-width:0}
   .clock-acts{display:flex;gap:var(--space-2);flex:0 0 auto;flex-wrap:wrap}
+  /* The running total. Its own line so it reads as a figure rather than more of the sentence,
+     and tabular numerals so the digits do not jitter as the minutes roll over. */
+  .clock-elapsed{display:block;margin-top:var(--space-1);font-size:var(--type-lg);font-weight:700;color:var(--green-700);font-variant-numeric:tabular-nums}
   .jaddr svg{flex:0 0 auto;color:var(--ink-2)}
   .jaddr .nav{margin-left:auto;flex:0 0 auto;font-size:var(--type-base);font-weight:700;color:var(--ink-3);white-space:nowrap}
   /* "Add a line" action tiles (Build the price) — a clean 2×2 of tappable cards: icon + title + subtitle */

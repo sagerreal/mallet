@@ -121,6 +121,29 @@ describe("DayClock — the three states", () => {
     expect(screen.queryByRole("button", { name: "Start day" })).toBeNull();
   });
 
+  it("shows the running total, and advances it as the clock runs", () => {
+    openQuery = loaded(serverEntry());
+    render(<DayClock />);
+    // 7:42a → 9:05a.
+    expect(screen.getByText("1:23")).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText("1:24")).toBeTruthy();
+  });
+
+  it("keeps the running total out of the visual baseline", () => {
+    openQuery = loaded(serverEntry());
+    const { container } = render(<DayClock />);
+    expect(container.querySelector(".clock-elapsed")?.hasAttribute("data-dynamic")).toBe(true);
+  });
+
+  it("shows no total when nobody is on the clock", () => {
+    openQuery = loaded(null);
+    const { container } = render(<DayClock />);
+    expect(container.querySelector(".clock-elapsed")).toBeNull();
+  });
+
   it("on break: names the break start and offers only the way out", () => {
     openQuery = loaded(serverEntry({ kind: "break", startTime: "12:05" }));
     render(<DayClock />);
