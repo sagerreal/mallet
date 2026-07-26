@@ -1,0 +1,2 @@
+ALTER TABLE "qbo_entity_links" DROP CONSTRAINT "qbo_entity_links_type_check";--> statement-breakpoint
+ALTER TABLE "qbo_entity_links" ADD CONSTRAINT "qbo_entity_links_type_check" CHECK ("qbo_entity_links"."entity_type" in ('employee', 'customer', 'service_item', 'invoice', 'payment'));

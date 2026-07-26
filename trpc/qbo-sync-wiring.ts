@@ -8,9 +8,16 @@ import {
   EnsureFreshAccessToken,
   HttpQboApiGateway,
   SyncApprovedHours,
+  EnsureQboCustomer,
+  SyncInvoice,
+  QboInvoiceSyncHandler,
   type QboTimeSyncPorts,
+  type QboInvoiceSyncPorts,
   type SyncableTimeEntry,
 } from "@mallet/accounting-sync";
+import { DrizzleInvoiceRepository } from "@mallet/invoicing";
+import { DrizzleLeadRepository } from "@mallet/customers";
+import { asInvoiceId } from "@mallet/shared/types";
 import { loadConfig } from "@mallet/shared/config";
 import { getAppDeps } from "./di";
 
@@ -99,5 +106,65 @@ export const buildQboTimeSyncPorts = (): QboTimeSyncPorts => ({
     const repo = new DrizzleQboConnectionRepository(ctx.tx, ctx.orgId);
     const connection = await repo.get();
     if (connection) await repo.save(connection.withLastSyncAt(at));
+  },
+});
+
+// Composition for the QuickBooks INVOICE-sync handler. Same reason it lives here: it wires
+// accounting-sync to the INVOICING and CUSTOMERS modules, and cross-module assembly belongs at the
+// composition root rather than inside any of them.
+export const buildQboInvoiceSyncPorts = (): QboInvoiceSyncPorts => ({
+  loadSyncConfig: async (ctx: RelayHandlerContext) => {
+    const repo = new DrizzleQboConnectionRepository(ctx.tx, ctx.orgId);
+    const connection = await repo.get();
+    if (!connection) return null;
+    return {
+      // Its OWN switch. A shop sending hours has not thereby agreed to send its invoicing.
+      enabled: connection.props.sendInvoices,
+      invoiceItemQboId: connection.props.defaultInvoiceItemQboId,
+    };
+  },
+
+  access: buildQboTimeSyncPorts().access,
+
+  load: async (ctx, invoiceId) => {
+    const invoices = new DrizzleInvoiceRepository(ctx.tx, ctx.orgId);
+    const invoice = await invoices.findById(asInvoiceId(invoiceId));
+    if (!invoice) return null;
+    const leads = new DrizzleLeadRepository(ctx.tx, ctx.orgId);
+    const lead = await leads.findById(invoice.props.leadId);
+    // No customer means no CustomerRef, and QuickBooks requires one. Reported as "gone" rather
+    // than pushed against a placeholder.
+    if (!lead) return null;
+    return {
+      invoice: {
+        id: invoice.props.id,
+        num: invoice.props.num,
+        title: invoice.props.title,
+        totalCents: invoice.props.total,
+        taxCents: invoice.props.tax,
+        sentAt: invoice.props.sentAt,
+        dueAt: invoice.props.dueAt,
+      },
+      customer: {
+        id: lead.props.id,
+        name: lead.props.name,
+        email: lead.props.email,
+        phone: lead.props.phone ?? null,   // Phone is a branded string, not a wrapper
+        address: lead.props.address,
+      },
+    };
+  },
+
+  sync: async (ctx, invoice, customer, invoiceItemQboId, access) => {
+    const config = loadConfig();
+    const api = new HttpQboApiGateway(config.QBO_ENVIRONMENT);
+    const links = new DrizzleQboEntityLinkRepository(ctx.tx, ctx.orgId);
+    const syncLog = new DrizzleQboSyncLogRepository(ctx.tx, ctx.orgId);
+    const customers = new EnsureQboCustomer(api, links, syncLog, systemClock);
+    return new SyncInvoice(api, customers, links, syncLog, systemClock).exec(
+      { invoice, customer, invoiceItemQboId },
+      access,
+      ctx.orgId,
+    );
   },
 });

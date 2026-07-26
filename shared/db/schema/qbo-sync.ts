@@ -35,7 +35,7 @@ export const qboEntityLinks = pgTable(
     index("qbo_entity_links_org_type_idx").on(t.orgId, t.entityType),
     check(
       "qbo_entity_links_type_check",
-      sql`${t.entityType} in ('employee', 'customer', 'service_item')`,
+      sql`${t.entityType} in ('employee', 'customer', 'service_item', 'invoice', 'payment')`,
     ),
     check(
       "qbo_entity_links_kind_check",

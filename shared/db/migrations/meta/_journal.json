@@ -687,6 +687,13 @@
       "when": 1785076859597,
       "tag": "0097_third_sumo",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1785077869274,
+      "tag": "0098_safe_black_tarantula",
+      "breakpoints": true
     }
   ]
 }

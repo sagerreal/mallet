@@ -57,6 +57,7 @@ const harness = (opts: {
   findCustomerByEmail: vi.fn(),
   findCustomerByName: vi.fn(),
   createCustomer: vi.fn(),
+  createInvoice: vi.fn(),
   };
 
   const links: QboEntityLinkRepository = {

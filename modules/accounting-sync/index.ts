@@ -45,6 +45,12 @@ export {
 } from "./app/get-qbo-sync-activity";
 export { explainSyncProblem, type SyncProblem } from "./domain/sync-problem";
 export { EnsureQboCustomer, type EnsureQboCustomerResult } from "./app/ensure-qbo-customer";
+export { SyncInvoice, type SyncInvoiceCommand, type SyncInvoiceResult } from "./app/sync-invoice";
+export {
+  QboInvoiceSyncHandler,
+  type QboInvoiceSyncPorts,
+} from "./app/qbo-invoice-sync-handler";
+export { toQboInvoice, type SyncableInvoice, type QboInvoiceInput } from "./domain/invoice-mapping";
 export {
   toQboCustomer,
   type SyncableCustomer,
