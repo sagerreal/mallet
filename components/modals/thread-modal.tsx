@@ -30,6 +30,8 @@ interface MsgRow {
   from: "us" | "them" | "auto";
   text: string;
   when: string;
+  /** Set when the carrier refused it — see MessageDTO.failure. */
+  failure?: MessageDTO["failure"];
 }
 
 interface SysRow {
@@ -47,6 +49,7 @@ function dtoToRow(msg: MessageDTO): MsgRow {
     from: msg.direction === "inbound" ? "them" : "us",
     text: msg.body,
     when: shortWhen(msg.createdAt),
+    failure: msg.failure,
   };
 }
 
@@ -92,6 +95,15 @@ function ThreadRow({ row, lead }: { row: Row; lead: Lead }) {
         {metaWho}
         {row.when}
       </div>
+      {/* A text the carrier refused. Shown ON the message rather than as a toast, because the
+          thread is where somebody looks days later wondering why a customer never replied — and
+          before this existed a dropped text was indistinguishable from a delivered one. */}
+      {row.failure ? (
+        <div className="msg-failed" role="alert">
+          <b>Not delivered.</b> {row.failure.says}
+          {row.failure.fix ? <> {row.failure.fix}</> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

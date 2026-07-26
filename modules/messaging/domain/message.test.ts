@@ -13,6 +13,7 @@ const base = (overrides: Partial<MessageProps> = {}): MessageProps => ({
   toNumber: "+15555550123",
   providerSid: null,
   status: "queued",
+  errorCode: null,
   createdAt: new Date("2026-07-09T00:00:00Z"),
   updatedAt: new Date("2026-07-09T00:00:00Z"),
   ...overrides,

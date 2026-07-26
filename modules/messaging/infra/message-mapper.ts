@@ -13,6 +13,7 @@ interface MessageRow {
   toNumber: string;
   providerSid: string | null;
   status: string;
+  errorCode: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +30,7 @@ export const toDomain = (row: MessageRow): Message => {
     toNumber: row.toNumber,
     providerSid: row.providerSid,
     status: row.status as MessageStatus,
+    errorCode: row.errorCode ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

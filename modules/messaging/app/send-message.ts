@@ -13,6 +13,12 @@ export interface SendMessageDeps {
   readonly clock: Clock;
   // Injected in tests to replace the real Twilio HTTP call.
   readonly transport?: SmsTransport;
+  /**
+   * The app's public https origin, so Twilio can be told where to report delivery. Absent in dev
+   * and in tests — sends still work, they are just status-blind, which is exactly the behaviour
+   * that existed before delivery status was wired.
+   */
+  readonly publicAppUrl?: string;
 }
 
 export interface SendMessageCmd {
@@ -63,6 +69,7 @@ export class SendMessageUseCase {
       cmd.orgTwilioNumber,
       this.smsDeps.clock,
       this.smsDeps.transport,
+      this.smsDeps.publicAppUrl,
     );
 
     const receipt = await sender.send({

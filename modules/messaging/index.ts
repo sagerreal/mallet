@@ -7,3 +7,12 @@ export { SendMessageUseCase } from "./app/send-message";
 export { RecordInboundMessageUseCase } from "./app/record-inbound-message";
 export { ListThreadUseCase } from "./app/list-thread";
 export { DrizzleMessageRepository, DrizzleOrgByNumberReader, DrizzleLeadByPhoneReader, DrizzleLeadUnreadMarker } from "./infra/drizzle-message-repository";
+export { DrizzleOrgByMessageSidReader } from "./infra/drizzle-message-repository";
+export {
+  deliveryStatusOf,
+  explainSmsFailure,
+  isTerminal,
+  supersedes,
+  type DeliveryStatus,
+  type SmsFailure,
+} from "./domain/delivery-status";

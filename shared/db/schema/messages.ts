@@ -34,6 +34,13 @@ export const messages = pgTable(
     providerSid: text("provider_sid"),
     // Tracks Twilio delivery lifecycle. 'queued' → 'sent' → 'delivered' | 'failed' | 'received'.
     status: text("status").notNull().default("queued"),
+    // Why a message failed, as the CARRIER reported it (Twilio's numeric code, e.g. "30034" for a
+    // number not registered for A2P). Kept because "sent" alone cannot distinguish a text that
+    // landed from one the carrier silently dropped — which is the whole reason this column exists.
+    errorCode: text("error_code"),
+    // When the carrier last told us anything. Null until a status callback arrives, which is also
+    // how a message sent before this existed stays honestly unknown rather than claiming delivery.
+    statusAt: timestamp("status_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
