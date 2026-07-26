@@ -43,6 +43,26 @@ export async function POST(req: Request): Promise<Response> {
   const fullUrl = config.TWILIO_WEBHOOK_URL ?? req.url;
   const signature = req.headers.get("x-twilio-signature") ?? "";
 
+  // A STALE override is indistinguishable from a forged request: both produce a signature
+  // mismatch and a 403, with nothing to say which. That cost an afternoon when the app moved
+  // domains and this variable kept pointing at the old one — every inbound text was silently
+  // refused, and the only trace was an 11200 alert inside Twilio.
+  //
+  // Comparing the two ORIGINS turns that into a named cause. Logged (never thrown) because a
+  // genuine proxy deployment sets this deliberately, and because the signature check below is
+  // what actually decides — this only explains the outcome.
+  if (config.TWILIO_WEBHOOK_URL) {
+    const overrideOrigin = new URL(config.TWILIO_WEBHOOK_URL).origin;
+    const requestOrigin = new URL(req.url).origin;
+    if (overrideOrigin !== requestOrigin) {
+      logger.warn(
+        { overrideOrigin, requestOrigin },
+        "TWILIO_WEBHOOK_URL does not match the URL this request arrived on — " +
+          "signature validation will fail. Unset it on Vercel, or update it to this origin.",
+      );
+    }
+  }
+
   // Parse the URL-encoded body into a plain params map (signature covers the sorted params).
   const params: Record<string, string> = {};
   for (const [k, v] of new URLSearchParams(rawBody)) {

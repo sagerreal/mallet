@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
+import type { BookingHours } from "@/lib/store/slices/settings-slice";
 import { useMe } from "@/features/identity/hooks";
 import { ServiceRow } from "@/app/(office)/settings/booking-service-card";
 import { AddServiceModal, type NewServiceInput } from "@/app/(office)/settings/add-service-modal";
@@ -47,6 +48,99 @@ function timeLabel(h: number): string {
 }
 
 type RuleKey = "rules" | "fee" | "hours" | "area" | "transfer";
+
+/**
+ * One expandable rule row.
+ *
+ * MUST live at module scope. Defined inside FrontDeskPane it was a NEW function on every render,
+ * so React saw a different component type each time and unmounted/remounted the whole subtree —
+ * which meant every input inside a rule (the emergency transfer number, the office address, the
+ * service fee) lost focus after a single keystroke and had to be clicked back into.
+ */
+function RuleRow({
+  k,
+  label,
+  value,
+  openRule,
+  onToggle,
+  children,
+}: {
+  k: RuleKey;
+  label: string;
+  value: React.ReactNode;
+  openRule: RuleKey | null;
+  onToggle: (k: RuleKey) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <DisclosureRow label={label} value={value} open={openRule === k} onToggle={() => onToggle(k)}>
+      {children}
+    </DisclosureRow>
+  );
+}
+
+type HoursKey = Extract<keyof BookingHours, string>;
+
+/**
+ * One day's open/closed row. MUST be module scope — see RuleRow. Nested inside the component it
+ * was a new function every render, remounting the selects mid-interaction.
+ */
+function HrRow({
+  lbl,
+  oKey,
+  cKey,
+  hours,
+  setBookingHours,
+  setBookingDayHours,
+}: {
+  lbl: string;
+  oKey: HoursKey;
+  cKey: HoursKey;
+  hours: BookingHours;
+  setBookingHours: (k: HoursKey, v: number) => void;
+  setBookingDayHours: (o: HoursKey, c: HoursKey, open: number, close: number) => void;
+}) {
+  const ov = hours[oKey] ?? 0;
+  const cv = hours[cKey] ?? 0;
+  const isOpen = !(ov === 0 && cv === 0);
+  return (
+    // flexWrap so the time selects drop to a second line in a narrow pane instead of running
+    // past the panel's right edge, which is what they were doing.
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "var(--space-2) var(--space-3)", padding: "var(--space-2) 0" }}>
+      <span style={{ flex: "none", minWidth: 84, fontWeight: 700, fontSize: "var(--type-base)" }}>{lbl}</span>
+      <label className="switch">
+        <input
+          type="checkbox"
+          checked={isOpen}
+          onChange={(e) => {
+            // Open + close in ONE persisted write — the domain rejects {open, close:0}.
+            if (e.target.checked) setBookingDayHours(oKey, cKey, 8, 17);
+            else setBookingDayHours(oKey, cKey, 0, 0);
+          }}
+        />
+        <i />
+      </label>
+      {isOpen ? (
+        <>
+          <HourSelect
+            value={ov}
+            onChange={(h) => {
+              // Keep the range forward; cross-over sets both atomically.
+              if (h >= cv) setBookingDayHours(oKey, cKey, h, Math.min(h + 1, 24));
+              else setBookingHours(oKey, h);
+            }}
+            min={0}
+            max={23}
+          />
+          <span className="muted">to</span>
+          <HourSelect value={cv} onChange={(h) => setBookingHours(cKey, h)} min={ov + 1} max={24} />
+        </>
+      ) : (
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>Closed</span>
+      )}
+    </div>
+  );
+}
 
 export function FrontDeskPane() {
   const setToggle = useAppStore((s) => s.setToggle);
@@ -125,60 +219,11 @@ export function FrontDeskPane() {
   const toggleRule = (k: RuleKey) => setOpenRule((prev) => (prev === k ? null : k));
   const wdLabel = `${timeLabel(bk.hours.wdOpen)}–${timeLabel(bk.hours.wdClose)} M–F`;
 
-  type HoursKey = keyof typeof bk.hours;
 
-  function HrRow({ lbl, oKey, cKey }: { lbl: string; oKey: HoursKey; cKey: HoursKey }) {
-    const ov = bk.hours[oKey];
-    const cv = bk.hours[cKey];
-    const isOpen = !(ov === 0 && cv === 0);
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-2) 0" }}>
-        <span style={{ minWidth: 84, fontWeight: 700, fontSize: "var(--type-base)" }}>{lbl}</span>
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={isOpen}
-            onChange={(e) => {
-              // Open + close in ONE persisted write — the domain rejects {open, close:0}.
-              if (e.target.checked) setBookingDayHours(oKey, cKey, 8, 17);
-              else setBookingDayHours(oKey, cKey, 0, 0);
-            }}
-          />
-          <i />
-        </label>
-        {isOpen ? (
-          <>
-            <HourSelect
-              value={ov}
-              onChange={(h) => {
-                // Keep the range forward; cross-over sets both atomically.
-                if (h >= cv) setBookingDayHours(oKey, cKey, h, Math.min(h + 1, 24));
-                else setBookingHours(oKey, h);
-              }}
-              min={0}
-              max={23}
-            />
-            <span className="muted">to</span>
-            <HourSelect value={cv} onChange={(h) => setBookingHours(cKey, h)} min={ov + 1} max={24} />
-          </>
-        ) : (
-          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>Closed</span>
-        )}
-      </div>
-    );
-  }
 
   // One definition-list row: label over value; click toggles its editor in-flow
   // below. Thin wrapper binding the shared DisclosureRow to this pane's
   // one-open-at-a-time rule state.
-  function RuleRow({ k, label, value, children }: { k: RuleKey; label: string; value: React.ReactNode; children: React.ReactNode }) {
-    return (
-      <DisclosureRow label={label} value={value} open={openRule === k} onToggle={() => toggleRule(k)}>
-        {children}
-      </DisclosureRow>
-    );
-  }
-
   return (
     <div style={{ maxWidth: 980 }}>
       {/* slim status header — the org's REAL number; a quiet provisioning line until it lands */}
@@ -281,7 +326,7 @@ export function FrontDeskPane() {
         <div className="fdrail">
           <h3>Booking rules</h3>
 
-          <RuleRow k="rules" label="Do not book" value={`${ruleCount(bk.notServices, bk.deferKeywords ?? "")} rules`}>
+          <RuleRow k="rules" openRule={openRule} onToggle={toggleRule} label="Do not book" value={`${ruleCount(bk.notServices, bk.deferKeywords ?? "")} rules`}>
             <div className="field">
               <label>We don&apos;t do</label>
               <TagInput
@@ -300,7 +345,7 @@ export function FrontDeskPane() {
             </div>
           </RuleRow>
 
-          <RuleRow k="fee" label="Service call fee" value={<><span className="mono">${bk.serviceFee}</span>{bk.feeCredited ? " · credited" : ""}</>}>
+          <RuleRow k="fee" openRule={openRule} onToggle={toggleRule} label="Service call fee" value={<><span className="mono">${bk.serviceFee}</span>{bk.feeCredited ? " · credited" : ""}</>}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
               <span className="muted">$</span>
               <input type="number" min={0} defaultValue={bk.serviceFee}
@@ -320,14 +365,16 @@ export function FrontDeskPane() {
             </div>
           </RuleRow>
 
-          <RuleRow k="hours" label="Business hours" value={<span className="mono">{wdLabel}</span>}>
-            <HrRow lbl="Weekdays" oKey="wdOpen" cKey="wdClose" />
-            <HrRow lbl="Saturday" oKey="satOpen" cKey="satClose" />
-            <HrRow lbl="Sunday"   oKey="sunOpen" cKey="sunClose" />
+          <RuleRow k="hours" openRule={openRule} onToggle={toggleRule} label="Business hours" value={<span className="mono">{wdLabel}</span>}>
+            <HrRow lbl="Weekdays" oKey="wdOpen" cKey="wdClose" hours={bk.hours} setBookingHours={setBookingHours} setBookingDayHours={setBookingDayHours} />
+            <HrRow lbl="Saturday" oKey="satOpen" cKey="satClose" hours={bk.hours} setBookingHours={setBookingHours} setBookingDayHours={setBookingDayHours} />
+            <HrRow lbl="Sunday" oKey="sunOpen" cKey="sunClose" hours={bk.hours} setBookingHours={setBookingHours} setBookingDayHours={setBookingDayHours} />
           </RuleRow>
 
           <RuleRow
             k="transfer"
+            openRule={openRule}
+            onToggle={toggleRule}
             label="Emergency transfer"
             value={savedTransfer ? <span className="mono">{fmtPhone(savedTransfer)}</span> : "Off"}
           >
@@ -360,13 +407,21 @@ export function FrontDeskPane() {
             )}
           </RuleRow>
 
-          <RuleRow k="area" label="Service area" value={<span className="mono">{bk.area.radiusMi} mi</span>}>
+          <RuleRow k="area" openRule={openRule} onToggle={toggleRule} label="Service area" value={<span className="mono">{bk.area.radiusMi} mi</span>}>
             <div className="field" style={{ margin: "0" }}>
               <label>Office address</label>
               <input type="text" defaultValue={bk.area.originAddress}
                 onChange={(e) => setBookingArea("originAddress", e.target.value)}
                 placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
                 style={{ fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" }} />
+              {/* The behaviour was already correct — isInServiceArea returns "unknown" and the call
+                  books normally — but nothing said so, and an owner reasonably assumes a blank
+                  address means calls get turned away. */}
+              {!bk.area.originAddress.trim() && (
+                <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}>
+                  Not set — the front desk books any address. Add one to turn away jobs outside the radius.
+                </p>
+              )}
             </div>
             <div className="field" style={{ margin: "var(--space-3) 0 0" }}>
               <label>Radius (miles)</label>
