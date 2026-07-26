@@ -342,7 +342,15 @@ export interface Invoice {
   termsDays?: number | null;
   lines: InvoiceLine[];
   pricing?: { disc: number; tax: number };
+  /** Dollars, TAX-INCLUSIVE — the snapshot from the job, not a sum of `lines`. */
   total: number;
+  /**
+   * How much of `total` is sales tax, in dollars, as recorded when the invoice was raised.
+   *
+   * Must NOT be recomputed from `lines`: an invoice raised from a quote carries the agreed total
+   * with no lines at all, so a line-derived tax renders $0.00 under a four-figure total.
+   */
+  tax?: number;
   depPaid: number;
   payments: Payment[];
   status: string;

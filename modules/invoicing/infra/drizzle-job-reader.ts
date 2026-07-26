@@ -21,6 +21,8 @@ export class DrizzleJobReader implements JobReader {
       title: job.props.title,
       status: job.props.status,
       totalCents: job.props.total,
+      taxBps: job.props.taxBps,
+      taxCents: job.props.tax,
     };
   }
 }

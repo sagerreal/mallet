@@ -45,6 +45,9 @@ export class CreateJobFromEstimateUseCase {
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
     const total = estimate.totalCents > 0 ? money(estimate.totalCents) : zeroMoney;
+    // Snapshotted with the total, from the same rounding chain that produced it. The total is
+    // tax-INCLUSIVE, so this records the split rather than adding anything to what is owed.
+    const tax = estimate.taxCents > 0 ? money(estimate.taxCents) : zeroMoney;
 
     // Seed ONE unplaced default-length visit so the job modal always shows an editable
     // Length row and the schedule tray's "2h" reflects persisted data, not a display fallback.
@@ -82,6 +85,8 @@ export class CreateJobFromEstimateUseCase {
       canceledAt: null,
       cancelReason: null,
       total,
+      taxBps: estimate.taxBps,
+      tax,
       notes: null,
       checklist: null,
       visits: [visit.value],

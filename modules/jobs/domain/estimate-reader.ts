@@ -9,7 +9,11 @@ export interface EstimateSummary {
   readonly leadId: LeadId;
   readonly title: string | null;
   readonly status: EstimateStatus;
+  /** Tax-INCLUSIVE (estimate.ts: total = net + tax). */
   readonly totalCents: number;
+  /** The rate applied, and how much of `totalCents` it accounts for. Carried, never re-derived. */
+  readonly taxBps: number;
+  readonly taxCents: number;
 }
 
 export interface EstimateReader {

@@ -55,6 +55,11 @@ export const jobs = pgTable(
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
     cancelReason: text("cancel_reason"),
     totalCents: integer("total_cents").notNull().default(0),
+    // The tax split of `total_cents`, snapshotted from the accepted estimate alongside it.
+    // `total_cents` is tax-INCLUSIVE (estimate.ts: total = net + tax), so these record how much of
+    // it was tax rather than adding to it — nothing downstream re-derives a total from them.
+    taxBps: integer("tax_bps").notNull().default(0),
+    taxCents: integer("tax_cents").notNull().default(0),
     notes: text("notes"),
     // Service type ("service" | "estimate" | free-text trade label). Mirrors the store
     // Job.svc field; nullable because estimate-sourced jobs may not set one at creation.
@@ -124,6 +129,8 @@ export const jobs = pgTable(
       sql`${t.callbackReason} is null or ${t.callbackReason} in ('callback', 'new_issue', 'found_work')`,
     ),
     check("jobs_total_check", sql`${t.totalCents} >= 0`),
+    check("jobs_tax_bps_check", sql`${t.taxBps} >= 0`),
+    check("jobs_tax_cents_check", sql`${t.taxCents} >= 0`),
     check(
       "jobs_window_check",
       sql`${t.scheduledEnd} is null or ${t.scheduledStart} is null or ${t.scheduledEnd} >= ${t.scheduledStart}`,

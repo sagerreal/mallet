@@ -87,7 +87,9 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     leadId: "lead-abc",
     title: "Final bill",
     status: "sent",
-    total: makeMoneyDTO(12000),        // $120.00
+    total: makeMoneyDTO(12000),        // $120.00 — TAX-INCLUSIVE
+    taxBps: 875,                       // 8.75%
+    tax: makeMoneyDTO(965),            // the part of the $120 that is tax
     depositPaid: makeMoneyDTO(3000),   // $30.00
     amountPaid: makeMoneyDTO(3000),
     due: makeMoneyDTO(9000),
@@ -621,5 +623,36 @@ describe("mapExecution (redacted money)", () => {
     const out = mapExecution({ addons: [addon({ cents: 9000 }, null)] });
     expect(out.addons[0]?.r).toBe(90);
     expect(out.addons[0]?.c).toBeUndefined();
+  });
+});
+
+describe("dtoInvoiceToStore — the recorded tax split", () => {
+  /**
+   * The invoice modal used to compute its Tax row with calcQuote over the LINES. An invoice raised
+   * from a quote carries the agreed total with no lines at all, so that rendered "Tax 8.75%
+   * +$0.00" beneath a four-figure total. The recorded amount has to reach the store for the row to
+   * be able to tell the truth.
+   */
+  it("carries the recorded tax amount, in dollars", () => {
+    const inv = dtoInvoiceToStore(makeInvoiceDTO(), makePriorInv());
+    expect(inv.tax).toBe(9.65);
+  });
+
+  it("carries the rate as a percent for the label", () => {
+    const inv = dtoInvoiceToStore(makeInvoiceDTO(), makePriorInv());
+    expect(inv.pricing?.tax).toBe(8.75);
+  });
+
+  // The tax is already inside the total — recording the split must not move what is owed.
+  it("leaves the total alone", () => {
+    const inv = dtoInvoiceToStore(makeInvoiceDTO(), makePriorInv());
+    expect(inv.total).toBe(120);
+  });
+
+  it("reports no tax when none was recorded, rather than guessing from lines", () => {
+    const dto = makeInvoiceDTO({ taxBps: 0, tax: makeMoneyDTO(0) });
+    const inv = dtoInvoiceToStore(dto, makePriorInv());
+    expect(inv.tax).toBe(0);
+    expect(inv.pricing?.tax).toBe(0);
   });
 });

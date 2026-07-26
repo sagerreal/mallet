@@ -159,6 +159,9 @@ const completeJob = (): JobSummary => ({
   title: "Deck",
   status: "complete",
   totalCents: 100_000,
+  // A real split — a use-case that dropped it would be caught, not pass on two zeroes.
+  taxBps: 875,
+  taxCents: 8_855,
 });
 
 describe("DraftInvoiceUseCase", () => {
@@ -233,8 +236,27 @@ describe("CreateInvoiceFromJobUseCase", () => {
     expect(bus.recorded.filter((e) => e.name === "invoice.created")).toHaveLength(1);
   });
 
+  /**
+   * The point of the whole change. The tax was ALREADY inside the total — it rode from the
+   * estimate's rounding chain into the job and on to here — but nothing recorded how much of it
+   * was tax, so QuickBooks would have received revenue and sales-tax liability as one lump and the
+   * document could not itemise it.
+   */
+  it("carries the tax split from the job without touching the total", async () => {
+    const uc = useCase(new FakeJobReader(completeJob()));
+    const res = await uc.exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(res)).toBe(true);
+    if (!isOk(res)) return;
+    // The total is untouched — the tax was always inside it.
+    expect(res.value.props.total).toBe(100_000);
+    expect(res.value.props.taxBps).toBe(875);
+    expect(res.value.props.tax).toBe(8_855);
+  });
+
+
   it("uses zeroMoney when the job totalCents is 0", async () => {
-    const zeroJob: JobSummary = { ...completeJob(), totalCents: 0 };
+    // Tax is a part of the total, so a zero total carries none.
+    const zeroJob: JobSummary = { ...completeJob(), totalCents: 0, taxCents: 0 };
     const uc = useCase(new FakeJobReader(zeroJob));
     const result = await uc.exec({ orgId: ORG, jobId: JOB });
     expect(isOk(result)).toBe(true);

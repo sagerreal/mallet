@@ -59,6 +59,8 @@ export class DrizzleJobRepository implements JobRepository {
       canceledAt: p.canceledAt,
       cancelReason: p.cancelReason,
       totalCents: p.total,
+      taxBps: p.taxBps,
+      taxCents: p.tax,
       notes: p.notes,
       scope: p.scope,
       callbackOf: p.callbackOf,

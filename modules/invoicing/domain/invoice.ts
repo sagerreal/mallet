@@ -35,6 +35,16 @@ export interface InvoiceProps {
   readonly title: string | null;
   readonly status: InvoiceStatus;
   readonly total: Money; // snapshot from the source job — never re-derived from lines
+  /**
+   * The tax split of `total`, carried from the job that was billed.
+   *
+   * `total` is tax-INCLUSIVE, so these describe it rather than adding to it. Recording the split is
+   * what lets the document itemise tax and lets QuickBooks be told which part of the money is
+   * revenue and which is a liability — sent as one lump they are wrong in the books and wrong on a
+   * filing.
+   */
+  readonly taxBps: number;
+  readonly tax: Money;
   readonly depositPaid: Money; // already-collected deposit (e.g. from the accepted estimate)
   readonly amountPaid: Money; // denormalized running sum of the payments ledger
   readonly payments: readonly Payment[];
@@ -56,22 +66,41 @@ export interface InvoiceMetadataPatch {
 // A bill for completed work. Aggregate root over its payment ledger + display lines. Money is
 // integer cents; the balance due is always derived (total − deposit − amountPaid, clamped ≥ 0).
 // The total is a snapshot taken at creation, NOT recomputed from lines.
+/**
+ * Input to Invoice.create. The tax split may be omitted: most invoices are drafted by hand and no
+ * tax was ever computed for them, which is different from a computed split that happens to be zero.
+ */
+export type InvoiceCreateProps = Omit<InvoiceProps, "taxBps" | "tax"> & {
+  readonly taxBps?: number;
+  readonly tax?: Money;
+};
+
 export class Invoice {
   private constructor(private readonly p: InvoiceProps) {}
 
-  static create(props: InvoiceProps): Result<Invoice, ValidationError> {
+  static create(props: InvoiceCreateProps): Result<Invoice, ValidationError> {
     const num = props.num.trim();
     if (num.length === 0) return err(validation("invoice number is required", "num"));
     if (!isInvoiceStatus(props.status)) {
       return err(validation(`unknown invoice status: ${props.status}`, "status"));
     }
     if (props.total < 0) return err(validation("invoice total cannot be negative", "total"));
+    const taxBps = props.taxBps ?? 0;
+    const tax = props.tax ?? zeroMoney;
+    if (!Number.isInteger(taxBps) || taxBps < 0) {
+      return err(validation("tax bps cannot be negative", "taxBps"));
+    }
+    // Tax is a PART of the total, never an addition to it. A caller that mistook `total` for a
+    // pre-tax subtotal fails here rather than in somebody's books.
+    if (tax < 0 || tax > props.total) {
+      return err(validation("tax cannot exceed the invoice total", "tax"));
+    }
     if (props.depositPaid < 0 || props.depositPaid > props.total) {
       return err(validation("deposit must be between 0 and the total", "depositPaid"));
     }
     if (props.amountPaid < 0) return err(validation("amount paid cannot be negative", "amountPaid"));
     if (props.termsDays < 0) return err(validation("terms days cannot be negative", "termsDays"));
-    return ok(new Invoice({ ...props, num }));
+    return ok(new Invoice({ ...props, num, taxBps, tax }));
   }
 
   // Remaining balance, clamped at zero (an overpayment never shows negative).

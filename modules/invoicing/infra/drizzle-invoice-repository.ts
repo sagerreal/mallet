@@ -51,6 +51,8 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       title: p.title,
       status: p.status,
       totalCents: p.total,
+      taxBps: p.taxBps,
+      taxCents: p.tax,
       depositPaidCents: p.depositPaid,
       amountPaidCents: p.amountPaid,
       termsDays: p.termsDays,

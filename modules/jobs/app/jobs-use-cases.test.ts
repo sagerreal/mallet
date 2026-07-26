@@ -133,7 +133,11 @@ const acceptedEstimate = (): EstimateSummary => ({
   leadId: LEAD,
   title: "Deck",
   status: "accepted",
+  // $1,100 total, of which $88 is 8.75% tax on the $1,012 net — a real split, so a use-case that
+  // silently dropped it would be caught rather than passing on two zeroes.
   totalCents: 110_000,
+  taxBps: 875,
+  taxCents: 8_855,
 });
 
 describe("ScheduleJobUseCase", () => {
@@ -262,7 +266,8 @@ describe("CreateJobFromEstimateUseCase", () => {
   });
 
   it("uses zeroMoney when estimate totalCents is 0", async () => {
-    const zeroEstimate: EstimateSummary = { ...acceptedEstimate(), totalCents: 0 };
+    // total = net + tax with both non-negative, so a zero total carries no tax.
+    const zeroEstimate: EstimateSummary = { ...acceptedEstimate(), totalCents: 0, taxCents: 0 };
     const r = await useCase(new FakeEstimateReader(zeroEstimate)).exec({
       orgId: ORG,
       estimateId: EST,
