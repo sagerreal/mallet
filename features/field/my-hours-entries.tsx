@@ -23,7 +23,7 @@ import {
   type MyHoursEntry,
 } from "./my-hours-derive";
 import { dayLockNotes, editabilityOf } from "./my-hours-edit";
-import { MyHoursTimeEditor } from "./my-hours-time-editor";
+import { MyHoursTimeEditor, type EntryKind } from "./my-hours-time-editor";
 
 export interface MyHoursWeekProps {
   readonly entries: readonly MyHoursEntry[];
@@ -35,7 +35,7 @@ export interface MyHoursWeekProps {
   readonly saveError: string | null;
   readonly suggestEndFor: (entry: MyHoursEntry) => string | null;
   readonly onEdit: (entryId: string | null) => void;
-  readonly onSave: (entryId: string, startTime: string, endTime: string) => void;
+  readonly onSave: (entryId: string, patch: { kind: EntryKind; jobId: string | null; startTime: string; endTime: string }) => void;
 }
 
 interface RowProps extends Omit<MyHoursWeekProps, "entries" | "weekStartISO"> {
@@ -113,12 +113,14 @@ function EntryRow(props: RowProps) {
       </div>
       {editing ? (
         <MyHoursTimeEditor
+          kind={entry.kind as EntryKind}
+          jobId={entry.jobId ?? null}
           startTime={entry.startTime}
           endTime={entry.endTime ?? suggested ?? ""}
           suggestedEnd={suggested}
           saving={saving}
           serverError={saveError}
-          onSave={(startTime, endTime) => onSave(entry.id, startTime, endTime)}
+          onSave={(patch) => onSave(entry.id, patch)}
           onCancel={() => onEdit(null)}
         />
       ) : null}

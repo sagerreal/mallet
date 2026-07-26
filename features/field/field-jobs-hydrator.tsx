@@ -62,6 +62,7 @@ export function FieldJobsHydrator() {
   const setLeads = useAppStore((s) => s.setLeads);
   const me = useMe();
   const isTech = me.data?.role === "tech";
+  const myUserId = me.data?.userId;
   const { data, isError, error } = api.v1.field.myDay.useQuery(undefined, {
     staleTime: HYDRATOR_STALE_MS,
     refetchOnWindowFocus: false,
@@ -82,8 +83,12 @@ export function FieldJobsHydrator() {
     prefetchedRef.current = true;
 
     function runPrefetch(): void {
-      // myHoursListInput is the SAME builder the page uses — the keys cannot drift.
-      void utils.v1.timesheets.list.prefetch(myHoursListInput(), { staleTime: MY_HOURS_STALE_MS });
+      // myHoursListInput is the SAME builder the page uses — the keys cannot drift. It needs the
+      // caller's id for the same reason the page does, so a prefetch cannot warm an unscoped entry
+      // the page would then read.
+      if (myUserId) {
+        void utils.v1.timesheets.list.prefetch(myHoursListInput(myUserId), { staleTime: MY_HOURS_STALE_MS });
+      }
       void utils.v1.messaging.listConversations.prefetch(undefined, { staleTime: 15_000 });
     }
 
@@ -97,7 +102,7 @@ export function FieldJobsHydrator() {
     }
     const id = setTimeout(runPrefetch, 200);
     return () => clearTimeout(id);
-  }, [data, utils]);
+  }, [data, utils, myUserId]);
 
   // myDay is not paginated — adapt to the hydrator hook's { items, nextCursor }
   // contract. Memoized so the sync effect only re-runs when the data changes.

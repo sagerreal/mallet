@@ -82,14 +82,14 @@ describe("FieldJobsHydrator", () => {
   });
 
   it("hydrates store.jobs for a tech", () => {
-    meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
+    meQuery.mockReturnValue({ data: { role: "tech", userId: "tech-1" }, isLoading: false });
     render(<FieldJobsHydrator />);
     expect(setJobs).toHaveBeenCalledTimes(1);
     expect(setJobs.mock.calls[0]![0]).toHaveLength(1);
   });
 
   it("hydrates the customers behind those jobs, so a tech can name and ring them", () => {
-    meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
+    meQuery.mockReturnValue({ data: { role: "tech", userId: "tech-1" }, isLoading: false });
     render(<FieldJobsHydrator />);
     expect(setLeads).toHaveBeenCalledTimes(1);
     expect(setLeads.mock.calls[0]![0]).toEqual([
@@ -104,7 +104,7 @@ describe("FieldJobsHydrator", () => {
   });
 
   it("keeps a customer with no number on file — the call sheet prompts for one", () => {
-    meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
+    meQuery.mockReturnValue({ data: { role: "tech", userId: "tech-1" }, isLoading: false });
     myDayQuery.mockReturnValue({
       data: { items: [jobItem], customers: [{ ...customerItem, phone: null }] },
       isError: false,
@@ -131,7 +131,7 @@ describe("FieldJobsHydrator — idle prefetch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
-    meQuery.mockReturnValue({ data: { role: "tech" }, isLoading: false });
+    meQuery.mockReturnValue({ data: { role: "tech", userId: "tech-1" }, isLoading: false });
     myDayQuery.mockReturnValue({ data: { items: [jobItem], customers: [customerItem] }, isError: false, error: null });
   });
 
@@ -146,8 +146,10 @@ describe("FieldJobsHydrator — idle prefetch", () => {
       vi.runAllTimers();
     });
     expect(timesheetsPrefetch).toHaveBeenCalledTimes(1);
+    // techUserId is part of the key now: the page asks for the CALLER's rows, so a prefetch
+    // without it would warm an entry the page never reads.
     expect(timesheetsPrefetch).toHaveBeenCalledWith(
-      { fromDate: "2026-04-08", toDate: "2026-07-08", limit: 500 },
+      { techUserId: "tech-1", fromDate: "2026-04-08", toDate: "2026-07-08", limit: 500 },
       { staleTime: 60_000 },
     );
   });

@@ -164,6 +164,27 @@ export const createFieldRouter = () =>
       return { items, customers };
     }),
 
+    /**
+     * The jobs this person can put time against — theirs, regardless of status.
+     *
+     * myDay deliberately returns only scheduled + in-progress work, because it is today's agenda.
+     * Attributing hours is the opposite case: you correct a timesheet AFTER the job is finished,
+     * so a completed job has to be offered or the correction is impossible. Assignee-scoped, so a
+     * technician is never shown the shop's whole book.
+     */
+    myJobs: anyRole
+      .output(z.object({ items: z.array(z.object({ id: z.string().uuid(), num: z.string(), title: z.string().nullable() })) }))
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const page = await repo.list(
+          { limit: 50, cursor: null },
+          { assignedUserId: ctx.principal.userId },
+        );
+        return {
+          items: page.items.map((j) => ({ id: j.props.id, num: j.props.num, title: j.props.title })),
+        };
+      }),
+
     // start/complete return the full jobDTO — redact for techs like every other field
     // response (the client discards the body today, but money must never cross the wire
     // to a redacted tech's device).

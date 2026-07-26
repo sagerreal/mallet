@@ -153,9 +153,7 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         saveError={writes.updateError}
         suggestEndFor={suggestEndFor}
         onEdit={setEditingId}
-        onSave={(entryId, startTime, endTime) =>
-          writes.saveTimes(entryId, startTime, endTime, () => setEditingId(null))
-        }
+        onSave={(entryId, patch) => writes.saveEntry(entryId, patch, () => setEditingId(null))}
       />
       {addSlot}
     </>
@@ -167,7 +165,11 @@ export default function MyHoursPage() {
   const myUserId = useMe().data?.userId;
 
   // Same builder — and therefore the same query key — as the field hydrator's idle prefetch.
-  const query = api.v1.timesheets.list.useQuery(myHoursListInput(), {
+  // Scoped to ME: without it an owner-operator is served every technician's rows (the list
+  // endpoint only forces scoping on a TECH caller), and My hours showed other people's work.
+  // Disabled until `me` resolves rather than firing unscoped once and then correcting itself.
+  const query = api.v1.timesheets.list.useQuery(myHoursListInput(myUserId ?? ""), {
+    enabled: Boolean(myUserId),
     staleTime: MY_HOURS_STALE_MS,
     refetchOnWindowFocus: false,
   });
