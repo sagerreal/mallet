@@ -30,7 +30,6 @@ import {
   type ProposalChip,
 } from "./composer-state";
 import { LineTable } from "./line-table";
-import { FirstRunCard, useFirstRunIntro } from "./first-run-card";
 import { lineProvenance } from "./line-provenance";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
 
@@ -104,8 +103,6 @@ export function QuoteCard({
   const quoteIsEmpty = isGbb
     ? !(state.gbb?.opts.some((o) => hasRealLine(o.lines)) ?? false)
     : !hasRealLine(state.lines);
-  // First-run intro under the bar — until dismissed or the first draft lands.
-  const intro = useFirstRunIntro(state.aiDrafted);
 
   // The bar's mode follows the quote's state.
   const barMode: "build" | "refine" | "rebuild" = quoteIsEmpty
@@ -446,11 +443,6 @@ export function QuoteCard({
                 Keep mine
               </button>
             </div>
-          )}
-          {/* First run only: SHOW what the machine reads (three columns + the
-              learns line), then never again — the bar's placeholder carries it. */}
-          {!confirmRebuild && intro.show && barMode !== "refine" && (
-            <FirstRunCard onDismiss={intro.dismiss} />
           )}
           {!confirmRebuild && barMode === "refine" && (
             <p className="aibar-hint">
