@@ -5,18 +5,34 @@
  * The in-flow start/end editor that expands beneath a timesheet row (no popover, no modal —
  * the row stays where it was and the editor opens under it).
  *
- * Both controls are native time pickers rather than text boxes on purpose: a free-text field
+ * Both time controls are native pickers rather than text boxes on purpose: a free-text field
  * lets a technician type "8" or "0800" or "8pm" on a payroll record, and the first person to
  * discover the typo is the person paying him.
+ *
+ * TYPE and JOB are here because the clock's guess is not always right. Everything the taps cannot
+ * attribute lands as "shop", and until these existed a technician looking at a day filed entirely
+ * as shop had no way to say which of it was a job — the one correction a timesheet exists for.
  */
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/input";
+import { Field, Select } from "@/components/ui/input";
+import { api } from "@/lib/trpc/client";
 import { timesProblem } from "./my-hours-edit";
 import { clockLabel } from "./my-hours-derive";
 
+export type EntryKind = "job" | "travel" | "break" | "shop";
+
+const KINDS: readonly { readonly k: EntryKind; readonly label: string }[] = [
+  { k: "job", label: "Job" },
+  { k: "travel", label: "Travel" },
+  { k: "break", label: "Break" },
+  { k: "shop", label: "Shop" },
+];
+
 export interface MyHoursTimeEditorProps {
+  readonly kind: EntryKind;
+  readonly jobId: string | null;
   readonly startTime: string;
   /** Empty for a row left open. Pre-filled with the suggestion when there is one. */
   readonly endTime: string;
@@ -25,11 +41,13 @@ export interface MyHoursTimeEditorProps {
   readonly saving: boolean;
   /** The server's refusal, verbatim — it names the actual problem (e.g. an approved row). */
   readonly serverError: string | null;
-  readonly onSave: (startTime: string, endTime: string) => void;
+  readonly onSave: (patch: { kind: EntryKind; jobId: string | null; startTime: string; endTime: string }) => void;
   readonly onCancel: () => void;
 }
 
 export function MyHoursTimeEditor({
+  kind: initialKind,
+  jobId: initialJobId,
   startTime: initialStart,
   endTime: initialEnd,
   suggestedEnd = null,
@@ -38,12 +56,62 @@ export function MyHoursTimeEditor({
   onSave,
   onCancel,
 }: MyHoursTimeEditorProps) {
+  const [kind, setKind] = useState<EntryKind>(initialKind);
+  const [jobId, setJobId] = useState<string | null>(initialJobId);
   const [startTime, setStartTime] = useState(initialStart);
   const [endTime, setEndTime] = useState(initialEnd);
   const problem = timesProblem(startTime, endTime);
 
+  // Only the caller's own jobs, and only fetched once a job is actually being named — there is no
+  // reason to load a job list to correct a break.
+  const jobs = api.v1.field.myJobs.useQuery(undefined, {
+    enabled: kind === "job",
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
   return (
     <div className="ts-editor">
+      <div className="ts-erow">
+        <label>Type</label>
+        <div className="ts-seg">
+          {KINDS.map(({ k, label }) => (
+            <button
+              key={k}
+              type="button"
+              className={kind === k ? "on" : ""}
+              aria-pressed={kind === k}
+              onClick={() => {
+                setKind(k);
+                // A break is not work on a job. Carrying the job across would file the wrong thing.
+                if (k !== "job") setJobId(null);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {kind === "job" && (
+        <div className="ts-erow">
+          <label>Job</label>
+          <Select
+            aria-label="Job"
+            value={jobId ?? ""}
+            onChange={(e) => setJobId(e.target.value || null)}
+            style={{ maxWidth: 320 }}
+          >
+            <option value="">
+              {jobs.isLoading ? "Loading your jobs…" : "No job"}
+            </option>
+            {(jobs.data?.items ?? []).map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.title ? `${j.num} · ${j.title}` : j.num}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
       <div className="ts-times">
         <div className="ts-timecol">
           <Field label="Start">
@@ -77,7 +145,7 @@ export function MyHoursTimeEditor({
         <Button
           size="sm"
           disabled={problem !== null || saving}
-          onClick={() => onSave(startTime, endTime)}
+          onClick={() => onSave({ kind, jobId, startTime, endTime })}
         >
           {saving ? "Saving…" : "Save"}
         </Button>

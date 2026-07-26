@@ -37,13 +37,34 @@ export function useMyHoursWrites() {
   const create = api.v1.timesheets.create.useMutation({ onSuccess: reload });
 
   return {
-    /** Correct a draft row's times. Setting an end also STOPS the row: a row with an end time
-     *  that still claims to be running holds the technician's one running slot and is rejected
-     *  by the QuickBooks push as unfinished. */
-    saveTimes: (entryId: string, startTime: string, endTime: string, onDone: () => void): void => {
+    /**
+     * Correct a draft row: what it was, which job it was on, and when.
+     *
+     * Setting an end also STOPS the row: a row with an end time that still claims to be running
+     * holds the technician's one running slot and is rejected by the QuickBooks push as unfinished.
+     *
+     * kind and jobId travel together. Everything the clock cannot attribute lands as "shop", and
+     * re-filing it as a job is the whole reason a technician opens this editor.
+     */
+    saveEntry: (
+      entryId: string,
+      patch: { kind: "job" | "travel" | "break" | "shop"; jobId: string | null; startTime: string; endTime: string },
+      onDone: () => void,
+    ): void => {
       // The editor stays open until the write lands — closing it on click would hide a refusal
       // (an approved row, a bad range) behind a row that looks like it saved.
-      update.mutate({ entryId, startTime, endTime, running: false }, { onSuccess: onDone });
+      update.mutate(
+        {
+          entryId,
+          kind: patch.kind,
+          // Only a job carries a job. The server treats null as "clear it".
+          jobId: patch.kind === "job" ? patch.jobId : null,
+          startTime: patch.startTime,
+          endTime: patch.endTime,
+          running: false,
+        },
+        { onSuccess: onDone },
+      );
     },
     /** Close a day the technician left open, at a time he confirmed. */
     endOpenDay: (entryId: string, endTime: string): void => {

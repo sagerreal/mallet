@@ -45,6 +45,10 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     useUtils: () => ({ v1: { timesheets: { list: { invalidate: vi.fn() } } } }),
     v1: {
+      field: {
+        // The editor offers the caller's own jobs so a shop row can be re-filed as a job.
+        myJobs: { useQuery: () => ({ data: { items: [{ id: "job-9", num: "JOB-9", title: "boiler" }] }, isLoading: false }) },
+      },
       timesheets: {
         list: { useQuery: () => listQuery },
         update: {
@@ -90,6 +94,10 @@ describe("correcting a row", () => {
     expect(updateMutate).toHaveBeenCalledTimes(1);
     expect(updateMutate.mock.calls[0]?.[0]).toEqual({
       entryId: "draft-1",
+      // The row's existing type and job travel with the correction — editing the times must not
+      // quietly re-file the work as something else.
+      kind: "shop",
+      jobId: null,
       startTime: "08:00",
       endTime: "17:30",
       running: false,
@@ -265,5 +273,44 @@ describe("the four list states", () => {
 
     expect(screen.queryByText("No hours yet")).toBeNull();
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+  });
+
+  // Everything the clock cannot attribute lands as "shop". Re-filing it as a job is the one
+  // correction a timesheet exists for, and the field editor offered no way to do it — a day of
+  // real work sat there labelled Shop with nothing the person who did it could change.
+  it("re-files a shop row as work on a job", () => {
+    withEntries([entry({ id: "draft-1", startTime: "13:01", endTime: "18:02" })]);
+    render(<MyHoursPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.change(screen.getByLabelText("Job"), { target: { value: "job-9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(updateMutate.mock.calls[0]?.[0]).toMatchObject({ kind: "job", jobId: "job-9" });
+  });
+
+  it("does not carry a job onto time that is not job time", () => {
+    withEntries([entry({ id: "draft-1", startTime: "13:01", endTime: "18:02" })]);
+    render(<MyHoursPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.change(screen.getByLabelText("Job"), { target: { value: "job-9" } });
+    // Changed their mind: a break is not work on a job.
+    fireEvent.click(screen.getByRole("button", { name: "Break" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(updateMutate.mock.calls[0]?.[0]).toMatchObject({ kind: "break", jobId: null });
+  });
+
+  it("only offers a job picker once the row is being called job time", () => {
+    withEntries([entry({ id: "draft-1", startTime: "13:01", endTime: "18:02" })]);
+    render(<MyHoursPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByLabelText("Job")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    expect(screen.getByLabelText("Job")).toBeTruthy();
   });
 });
