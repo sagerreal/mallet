@@ -17,7 +17,6 @@ import { deriveHomePipe } from "@/features/home/pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
 import { HomePipe } from "@/features/home/home-pipe";
 import { OkQueue } from "@/features/home/ok-queue";
-import { SetupChecklist } from "@/features/home/setup-checklist";
 import dynamic from "next/dynamic";
 import { useMe } from "@/features/identity/hooks";
 import { ListLoading } from "@/components/shared/list-loading";
@@ -112,7 +111,6 @@ function TodayPane() {
 
   return (
     <div>
-      <SetupChecklist />
 
       <HandoffNote
         orgName={orgName}

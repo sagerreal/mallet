@@ -18,7 +18,6 @@ vi.mock("@/features/home/pipe", () => ({ deriveHomePipe: () => [] }));
 vi.mock("@/features/home/handoff-note", () => ({ HandoffNote: () => <div data-testid="handoff" /> }));
 vi.mock("@/features/home/home-pipe", () => ({ HomePipe: () => <div /> }));
 vi.mock("@/features/home/ok-queue", () => ({ OkQueue: () => <div /> }));
-vi.mock("@/features/home/setup-checklist", () => ({ SetupChecklist: () => <div /> }));
 vi.mock("@/features/office/front-desk-pane", () => ({ FrontDeskPane: () => <div data-testid="fd-pane" /> }));
 vi.mock("@/features/office/pricebook-pane", () => ({ PricebookPane: () => <div data-testid="pb-pane" /> }));
 vi.mock("@/features/jobs/checklists-panel", () => ({ ChecklistsPanel: () => <div data-testid="cl-pane" /> }));
