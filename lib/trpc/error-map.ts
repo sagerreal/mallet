@@ -1,14 +1,22 @@
 // One seam turning transport errors into user-facing copy. Validation/not-found/conflict messages
 // are authored server-side for users and pass through; everything else maps to fixed copy so raw
 // provider/DB text never reaches the UI.
+// NOTE: PRECONDITION_FAILED is deliberately NOT here. It used to map to "That feature isn't set up
+// yet for this account", which is checked BEFORE the pass-through list and so silently outranked
+// the server's own wording — the reason a texting failure reported a missing business number for an
+// org that had one. It is a domain refusal; its sentence names the actual blocker.
 const FIXED: Record<string, string> = {
   UNAUTHORIZED: "Your session expired. Sign in again.",
   FORBIDDEN: "Your role can't do that.",
-  PRECONDITION_FAILED: "That feature isn't set up yet for this account.",
   TOO_MANY_REQUESTS: "The assistant is busy. Try again in a moment.",
   BAD_GATEWAY: "The assistant is unavailable right now. Try again shortly.",
 };
-const PASS_THROUGH = new Set(["BAD_REQUEST", "NOT_FOUND", "CONFLICT"]);
+// PRECONDITION_FAILED belongs here for the same reason the others do: it is a DOMAIN refusal whose
+// sentence names the actual blocker, and swallowing it forces every caller to guess. The messaging
+// send alone raises it for three unrelated causes — no business number, A2P not approved, server
+// not configured — which the thread modal then reported as the same wrong sentence, sending Owen
+// hunting a business number that was there all along.
+const PASS_THROUGH = new Set(["BAD_REQUEST", "NOT_FOUND", "CONFLICT", "PRECONDITION_FAILED"]);
 const FALLBACK = "Something went wrong. Try again.";
 
 /**
@@ -39,7 +47,11 @@ export const userMessage = (error: unknown, fallback: string = FALLBACK): string
     const data = (error as { data?: { code?: string } }).data;
     const code = data?.code ?? "";
     if (FIXED[code]) return FIXED[code];
-    if (PASS_THROUGH.has(code) && "message" in error) return String((error as { message: unknown }).message);
+    if (PASS_THROUGH.has(code) && "message" in error) {
+      // An empty message carries no information; a blank error box is worse than the fallback.
+      const message = String((error as { message: unknown }).message).trim();
+      if (message !== "") return message;
+    }
   }
   return fallback;
 };

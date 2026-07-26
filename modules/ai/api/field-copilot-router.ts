@@ -82,7 +82,7 @@ export const createFieldCopilotRouter = () =>
         if (!deps.llmClient) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: "the AI assistant is not enabled (ANTHROPIC_API_KEY unset)",
+            message: "the AI assistant is not switched on for this server",
           });
         }
 
@@ -187,7 +187,7 @@ const runFieldTurn = async (
   if (!deps.llmClient) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: "the AI assistant is not enabled (ANTHROPIC_API_KEY unset)",
+      message: "the AI assistant is not switched on for this server",
     });
   }
 
