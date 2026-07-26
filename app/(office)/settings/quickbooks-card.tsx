@@ -2,8 +2,8 @@
 
 /**
  * Settings → "QuickBooks" card. Connects the shop's QuickBooks Online company so approved crew
- * hours can be sent over instead of being retyped before payroll. Nothing syncs yet — this PR only
- * establishes the connection.
+ * hours can be sent over instead of being retyped before payroll, and shows what actually
+ * happened to each one — the sync log had no reader at all until this card grew one.
  *
  * States: Not configured (server has no Intuit keys) → Not connected → Connected ✓ → Reconnect
  * needed. The connect button navigates the browser to Intuit; the return redirect lands on
@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
 import { QuickbooksSetup } from "./quickbooks-setup";
+import { QuickbooksActivity } from "./quickbooks-activity";
 
 type Outcome = "connected" | "failed" | "denied";
 
@@ -96,6 +97,14 @@ export function QuickbooksCard() {
           </div>
           <div style={{ marginTop: "var(--space-4)" }}>
             <QuickbooksSetup />
+          </div>
+          {/* Below the setup, because setup is what you fix a failure WITH — reading that someone
+              is unmatched is only useful next to the control that matches them. */}
+          <div style={{ marginTop: "var(--space-5)" }}>
+            <h3 style={{ fontSize: "var(--type-md)", fontWeight: 700, margin: "0 0 var(--space-2)" }}>
+              What&apos;s been sent
+            </h3>
+            <QuickbooksActivity />
           </div>
           <div style={{ marginTop: "var(--space-4)" }}>
             <button

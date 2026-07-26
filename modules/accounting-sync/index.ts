@@ -39,6 +39,14 @@ export {
 
 export { EnsureFreshAccessToken, type FreshAccess } from "./app/ensure-fresh-access-token";
 export {
+  GetQboSyncActivity,
+  type QboSyncActivity,
+  type QboSyncActivityRow,
+} from "./app/get-qbo-sync-activity";
+export { explainSyncProblem, type SyncProblem } from "./domain/sync-problem";
+export type { SyncLabelReader } from "./domain/sync-label-reader";
+export { DrizzleSyncLabelReader } from "./infra/drizzle-sync-label-reader";
+export {
   CompleteQboConnect,
   type CompleteQboConnectCommand,
   type TenantRunner,

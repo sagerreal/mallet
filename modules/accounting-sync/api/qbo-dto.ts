@@ -59,10 +59,35 @@ export const qboSetupDTO = z.object({
   sendApprovedHours: z.boolean(),
 });
 
-export const qboSyncLogRowDTO = z.object({
+/**
+ * One logged push attempt, as the Settings card renders it.
+ *
+ * Carries no ids the shop cannot act on beyond `malletId` (kept so support can be handed something
+ * exact) and no token material — this crosses to the client bundle.
+ */
+export const qboSyncActivityRowDTO = z.object({
+  entityType: z.string(),
   malletId: z.string(),
+  /** "Owen Duggan · Jul 25" — what the shop recognises. */
+  label: z.string(),
   status: z.enum(["succeeded", "failed", "skipped"]),
-  errorCode: z.string().nullable(),
-  errorMessage: z.string().nullable(),
+  qboId: z.string().nullable(),
+  problem: z
+    .object({
+      code: z.string(),
+      says: z.string(),
+      fix: z.string().nullable(),
+      retryable: z.boolean(),
+    })
+    .nullable(),
+  /** QuickBooks' own words, when it gave any. Shown under the explanation, never instead of it. */
+  detail: z.string().nullable(),
   attemptedAt: z.date(),
 });
+
+export const qboSyncActivityDTO = z.object({
+  rows: z.array(qboSyncActivityRowDTO),
+  retryableCount: z.number().int().min(0),
+});
+
+export type QboSyncActivityDTO = z.infer<typeof qboSyncActivityDTO>;

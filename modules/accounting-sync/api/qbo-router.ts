@@ -16,8 +16,10 @@ import {
   DrizzleQboEntityLinkRepository,
   DrizzleQboSyncLogRepository,
 } from "../infra/drizzle-qbo-sync-repositories";
+import { DrizzleSyncLabelReader } from "../infra/drizzle-sync-label-reader";
+import { GetQboSyncActivity } from "../app/get-qbo-sync-activity";
 import { EnsureFreshAccessToken } from "../app/ensure-fresh-access-token";
-import { qboStatusDTO, qboBeginConnectDTO, qboSetupDTO, qboSyncLogRowDTO } from "./qbo-dto";
+import { qboStatusDTO, qboBeginConnectDTO, qboSetupDTO, qboSyncActivityDTO } from "./qbo-dto";
 
 // A consent screen should not take longer than this; a stale nonce should not linger.
 const STATE_TTL_MS = 10 * 60_000;
@@ -41,6 +43,41 @@ export const createQboRouter = () =>
       // configured:false rather than the page failing.
       return new GetQboStatus(repo, ctx.deps.qboOauthGateway ?? null, ctx.deps.clock).exec();
     }),
+
+    // What actually happened on the last pushes. Read-only, no Intuit call — this is our own log,
+    // and it must load even when the connection is dead, because a dead connection is precisely
+    // what it exists to report.
+    syncActivity: ownerOrOffice
+      .input(z.object({ limit: z.number().int().positive().max(100).optional() }).optional())
+      .output(qboSyncActivityDTO)
+      .query(async ({ ctx, input }) => {
+        const orgId = ctx.principal.orgId;
+        const syncLog = new DrizzleQboSyncLogRepository(ctx.tx, orgId);
+        const labels = new DrizzleSyncLabelReader(ctx.tx, orgId);
+        const activity = await new GetQboSyncActivity(syncLog, labels).exec(input?.limit);
+        // Copied out rather than returned directly: the use-case's shape is readonly, and a DTO is
+        // a wire contract that must not be the domain object by another name.
+        return {
+          rows: activity.rows.map((r) => ({
+            entityType: r.entityType,
+            malletId: r.malletId,
+            label: r.label,
+            status: r.status,
+            qboId: r.qboId,
+            problem: r.problem
+              ? {
+                  code: r.problem.code,
+                  says: r.problem.says,
+                  fix: r.problem.fix,
+                  retryable: r.problem.retryable,
+                }
+              : null,
+            detail: r.detail,
+            attemptedAt: r.attemptedAt,
+          })),
+          retryableCount: activity.retryableCount,
+        };
+      }),
 
     // Start the flow: mint a signed state and hand back Intuit's consent URL for the client to
     // navigate to. Mirrors payments.beginOnboarding — the browser cannot carry our Bearer token
@@ -198,20 +235,6 @@ export const createQboRouter = () =>
         }
         await repo.save(connection.withSendApprovedHours(input.on, ctx.deps.clock.now()));
         return { ok: true };
-      }),
-
-    syncLog: ownerOrOffice
-      .output(z.array(qboSyncLogRowDTO))
-      .query(async ({ ctx }) => {
-        const repo = new DrizzleQboSyncLogRepository(ctx.tx, ctx.principal.orgId);
-        const rows = await repo.recent(50);
-        return rows.map((r) => ({
-          malletId: r.malletId,
-          status: r.status,
-          errorCode: r.errorCode,
-          errorMessage: r.errorMessage,
-          attemptedAt: r.attemptedAt,
-        }));
       }),
 
     disconnect: ownerOrOfficeNoTx.mutation(async ({ ctx }) => {
