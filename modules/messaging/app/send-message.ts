@@ -27,6 +27,14 @@ export interface SendMessageCmd {
   // From a2p_registrations.status === "active" for this org (read by the caller — the router —
   // exactly like orgTwilioNumber; keeps this use case pure, no DB reader injected here).
   readonly a2pActive: boolean;
+  /**
+   * The org's A2P Messaging Service SID, read by the caller alongside a2pActive.
+   *
+   * Carriers check the SERVICE, not the number: a 10DLC campaign attaches to a Messaging Service,
+   * and a send that names a bare `from` number is treated as unregistered traffic even when that
+   * number sits in the service's sender pool.
+   */
+  readonly messagingServiceSid: string | null;
   readonly leadId: LeadId;
   readonly leadPhone: string; // E.164 from leads.phone_e164
   readonly body: string;

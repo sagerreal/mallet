@@ -14,7 +14,10 @@ import type {
 // Twilio RestException carries `.status` (HTTP) and `.code` (numeric Twilio code).
 export type SmsTransport = (msg: {
   to: string;
-  from: string;
+  /** Omitted when `messagingServiceSid` is set — Twilio rejects a request carrying both. */
+  from?: string;
+  /** The A2P-registered Messaging Service, when the org has one. See the constructor. */
+  messagingServiceSid?: string;
   body: string;
   /** Where Twilio reports what the CARRIER did with it. Omitted when the app has no public URL. */
   statusCallback?: string;
@@ -50,6 +53,15 @@ export class TwilioSmsSender implements NotificationSender {
     private readonly clock: Clock,
     transport?: SmsTransport,
     publicAppUrl?: string,
+    /**
+     * The org's A2P Messaging Service, when it has one.
+     *
+     * THIS is what carriers check. A 10DLC campaign attaches to a Messaging SERVICE, and only
+     * numbers in that service's sender pool are covered by it — so sending with a bare `from`
+     * number is treated as unregistered traffic and filtered, even when the campaign is approved
+     * and the number sits in that pool. Sending through the service is what connects the two.
+     */
+    private readonly messagingServiceSid?: string,
   ) {
     // Only an https origin is usable: Twilio will not call localhost, and sending a URL it cannot
     // reach buys nothing. Absent, sends still work — they just stay status-blind, which is the
@@ -70,7 +82,11 @@ export class TwilioSmsSender implements NotificationSender {
           try {
             const message = await this.transport({
               to: cmd.to,
-              from: this.from,
+              // One or the other, never both — Twilio rejects a request carrying each. The service
+              // wins when present, because it is what carries the A2P registration.
+              ...(this.messagingServiceSid
+                ? { messagingServiceSid: this.messagingServiceSid }
+                : { from: this.from }),
               body: cmd.body,
               ...(this.statusCallback ? { statusCallback: this.statusCallback } : {}),
             });

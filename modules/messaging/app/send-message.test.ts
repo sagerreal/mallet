@@ -75,6 +75,7 @@ const BASE_CMD: SendMessageCmd = {
   orgId: ORG_ID,
   orgTwilioNumber: ORG_NUMBER,
   a2pActive: true,
+  messagingServiceSid: null,
   leadId: LEAD_ID,
   leadPhone: LEAD_PHONE,
   body: BODY,
