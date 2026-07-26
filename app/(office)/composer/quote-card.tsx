@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { calcQuote } from "@/lib/prototype-sample";
 import { fmt$ } from "@/lib/format";
 import type { Service } from "@/lib/store/types";
@@ -31,7 +32,6 @@ import {
 import { LineTable } from "./line-table";
 import { FirstRunCard, useFirstRunIntro } from "./first-run-card";
 import { lineProvenance } from "./line-provenance";
-import { EmptyStateHero } from "./empty-state-hero";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
 
 interface DraftRunProps2 {
@@ -99,8 +99,8 @@ export function QuoteCard({
   const suggestReplacesTypedTiers =
     state.gbb?.opts.some((o) => o.k !== "good" && hasRealLine(o.lines)) ?? false;
 
-  // Empty quote → the describe-the-job hero is the primary path (AI as the
-  // empty state, not a button); any real line anywhere dismisses it.
+  // Drives the command bar's mode only (build vs refine vs rebuild). It does NOT
+  // gate the line table — see the body below for why that was a bug.
   const quoteIsEmpty = isGbb
     ? !(state.gbb?.opts.some((o) => hasRealLine(o.lines)) ?? false)
     : !hasRealLine(state.lines);
@@ -300,18 +300,15 @@ export function QuoteCard({
         />
       )}
 
-      {/* Empty quote → the hero invitation (B1) replaces the dead empty grid;
-          the command bar below stays the single input. Opening the pricebook
-          panel or adding any line dismisses the hero and shows the normal body. */}
-      {!run && quoteIsEmpty && !state.pbOpen ? (
-        <EmptyStateHero
-          onAddLine={addLine}
-          onOpenPricebook={() => onUpdate({ pbOpen: true })}
-        />
-      ) : null}
-
-      {/* Format body — shown once the hero yields (lines exist or pricebook open) */}
-      {!run && !(quoteIsEmpty && !state.pbOpen) && (isGbb ? (
+      {/* The line editor is ALWAYS the body. It used to be hidden behind a
+          "What's the job?" hero until a line had a description, which made
+          "+ Add line" look broken: the click appended a blank line, but a blank
+          line is not a "real" line, so quoteIsEmpty stayed true and the hero kept
+          rendering. You could click it five times and see nothing — then opening
+          the pricebook flipped the body on and five blank rows appeared at once.
+          The table is the honest empty state; the command bar below still builds
+          the quote for you. */}
+      {!run && (isGbb ? (
         <GbbTiers
           state={state}
           onUpdate={onUpdate}
@@ -366,11 +363,20 @@ export function QuoteCard({
                 }}
               />
               {pbMatches.length === 0 ? (
-                <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                  {services.length === 0
-                    ? "Your pricebook is empty — add services in Settings → Pricebook."
-                    : "No matches — try a different search."}
-                </span>
+                services.length === 0 ? (
+                  // A dead end otherwise: this used to say "Settings → Pricebook", but the
+                  // pricebook moved onto the Office page — Settings has no Pricebook to find.
+                  // Link straight to it rather than describing a route.
+                  <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+                    Your pricebook is empty.{" "}
+                    <Link href="/dashboard?tab=pricebook">Add your services</Link> and they show up
+                    here.
+                  </span>
+                ) : (
+                  <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+                    No matches — try a different search.
+                  </span>
+                )
               ) : (
                 pbMatches.map((svc) => (
                   <button

@@ -11,6 +11,11 @@
  * caller passes (Draft with AI / From pricebook / Show your cost) so the
  * card above stays bare: title + format toggle, nothing else.
  *
+ * Accessibility: every cell input carries an explicit aria-label naming its column and row
+ * ("Quantity, line 2"). The <th> column headers do NOT name these inputs — a screen reader
+ * announcing a bare spinbutton is what axe's `label` rule flags, and it went unnoticed while an
+ * empty composer hid this table behind a hero.
+ *
  * Row actions are deliberately minimal: Optional (customer-facing choice) and
  * remove. Save-to-book died when the estimator's learning loop took over
  * feeding the pricebook; the Photo chip returns when it attaches real photos.
@@ -81,6 +86,7 @@ export function LineTable({
                   <input
                     value={x.d}
                     placeholder="Describe the work…"
+                    aria-label={`Description, line ${i + 1}`}
                     onChange={(e) => onUpdateLine(i, { d: e.target.value })}
                   />
                   {(() => {
@@ -93,6 +99,7 @@ export function LineTable({
                     type="number"
                     className="num"
                     value={x.q}
+                    aria-label={`Quantity, line ${i + 1}`}
                     onChange={(e) => onUpdateLine(i, { q: +e.target.value })}
                   />
                 </td>
@@ -101,6 +108,7 @@ export function LineTable({
                     type="number"
                     className="num"
                     value={x.r}
+                    aria-label={`Price, line ${i + 1}`}
                     onChange={(e) => onUpdateLine(i, { r: +e.target.value })}
                   />
                 </td>
@@ -111,6 +119,7 @@ export function LineTable({
                       className="num"
                       value={x.c ?? ""}
                       placeholder="—"
+                      aria-label={`Your cost, line ${i + 1}`}
                       title="What you paid (owner-only) — margin shows itself."
                       onChange={(e) =>
                         onUpdateLine(i, { c: +e.target.value || undefined })

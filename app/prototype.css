@@ -890,10 +890,6 @@
   /* ---------- the quote command bar (the bar IS the AI) ---------- */
   /* B1 empty-state hero — the invitation that replaces the dead empty grid.
      In-flow, no float; the command bar directly below is the single input. */
-  .es-hero{padding:var(--space-6) var(--space-1) var(--space-2);text-align:center}
-  .es-hero-title{font-size:var(--type-xl);font-weight:800;letter-spacing:-.02em;color:var(--ink)}
-  .es-hero-eg{margin:var(--space-2) auto 0;max-width:440px;font-size:var(--type-base);line-height:1.5;color:var(--ink-2)}
-  .es-hero-manual{display:flex;align-items:center;justify-content:center;gap:var(--space-1);margin-top:var(--space-3);font-size:var(--type-base);color:var(--ink-2)}
   .aibar{display:flex;align-items:center;gap:var(--space-3);background:var(--manila);border:1.5px solid var(--manila-line);border-radius:var(--radius);padding:var(--space-1) var(--space-2) var(--space-1) var(--space-4);margin-top:var(--space-3);transition:border-color .12s}
   .aibar:focus-within{border-color:var(--ink)}
   .aibar input[type=text],.aibar input{flex:1;border:0 !important;box-shadow:none !important;background:transparent;color:var(--manila-ink);font-family:var(--font-mono, ui-monospace, monospace);font-size:var(--type-base);padding:var(--space-2) 0;outline:none;min-width:0;letter-spacing:-.01em}
