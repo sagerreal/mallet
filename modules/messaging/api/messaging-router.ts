@@ -83,7 +83,11 @@ export const createMessagingRouter = () =>
         // precondition above — same style, same fail-fast-before-any-send-work shape). No row
         // yet (new org, registration not started) reads as inactive, same as GetA2pStatusUseCase.
         const a2pRows = await tx
-          .select({ status: a2pRegistrations.status })
+          .select({
+            status: a2pRegistrations.status,
+            // Read alongside the status: it is what the campaign actually attaches to.
+            messagingServiceSid: a2pRegistrations.messagingServiceSid,
+          })
           .from(a2pRegistrations)
           .where(eq(a2pRegistrations.orgId, orgId))
           .limit(1);
@@ -146,6 +150,7 @@ export const createMessagingRouter = () =>
           orgId,
           orgTwilioNumber,
           a2pActive,
+          messagingServiceSid: a2pRows[0]?.messagingServiceSid ?? null,
           leadId: asLeadId(input.leadId),
           leadPhone,
           body: input.body,
