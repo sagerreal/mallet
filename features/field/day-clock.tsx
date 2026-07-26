@@ -14,7 +14,7 @@
  * say: that the day has begun, and that lunch is unpaid.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/trpc/client";
 import { todayISO } from "@/lib/clock";
 import { Card } from "@/components/ui/card";
@@ -28,6 +28,7 @@ import {
   WRITE_ACTION_FOR_TAP,
   type DayClockTap,
   type DayClockView,
+  elapsedLabel,
 } from "./day-clock-view";
 
 /**
@@ -54,9 +55,27 @@ function ClockCard({ children }: { children: ReactNode }) {
  * predicted entry would need a fabricated row id — and a fake id in the cache is the sort of thing
  * that eventually gets sent somewhere.
  */
+/**
+ * A clock that advances, for the running total.
+ *
+ * The total is recomputed from the segment's own start rather than counted up, so a slept phone,
+ * a backgrounded tab and a reload all land on the same number. Every 15s rather than every second:
+ * the figure is shown to the minute, and this keeps the boundary tight without a per-second
+ * re-render of a card that is on screen all day.
+ */
+function useTickingNow(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
 function useClockTap() {
   const utils = api.useUtils();
   const [predicted, setPredicted] = useState<DayClockView | null>(null);
+
   const clockTap = api.v1.timesheets.clockTap.useMutation();
 
   const tap = (tapName: DayClockTap): void => {
@@ -88,6 +107,7 @@ function useClockTap() {
 }
 
 export function DayClock() {
+  const now = useTickingNow();
   const open = api.v1.timesheets.open.useQuery(undefined, {
     staleTime: OPEN_STALE_MS,
     refetchOnWindowFocus: false,
@@ -118,6 +138,10 @@ export function DayClock() {
   }
 
   const view = predicted ?? dayClockView(open.data?.open, todayISO());
+  // Nothing while a tap is still in flight: `predicted` describes the NEW segment while
+  // `open.data` still holds the old one, so a total computed across the two would read as the
+  // previous segment's length attached to the state that just replaced it.
+  const elapsed = predicted !== null || view.state === "off" ? null : elapsedLabel(open.data?.open, now);
   const actions = DAY_CLOCK_ACTIONS[view.state];
 
   return (
@@ -140,6 +164,22 @@ export function DayClock() {
             <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
               {" "}
               {view.since}
+            </span>
+          ) : null}
+          {/* The running total, ticking. The day clock is now the whole payroll record, so how long
+              it has been running is the one number worth reading at a glance — and a clock that
+              does not move is the one people distrust. */}
+          {elapsed ? (
+            <span
+              className="clock-elapsed"
+              // Genuinely live: masked out of the visual baseline, which would otherwise fail on
+              // every run as the total grows. See dynamicRegions in e2e/helpers/ui.ts.
+              data-dynamic
+              // Announced on its own, not as part of the sentence: a screen reader should not
+              // re-read "On the clock since 8:14p" every minute.
+              aria-live="off"
+            >
+              {elapsed}
             </span>
           ) : null}
         </div>
