@@ -20,6 +20,9 @@ const ConfigSchema = z.object({
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
   PUBLIC_APP_URL: z.url().optional(),
+  // Vercel's own stable production domain (system env var, exposed at build AND runtime). Read
+  // ONLY as the fallback in resolvePublicAppOrigin — see there for why it is not VERCEL_URL.
+  VERCEL_PROJECT_PRODUCTION_URL: z.string().min(1).optional(),
   // Comms providers — all OPTIONAL. Each channel independently falls back to the logging stub when
   // unconfigured (graceful degradation). Email needs RESEND_API_KEY + EMAIL_FROM; SMS needs all
   // three Twilio vars. ANTHROPIC_API_KEY unblocks the Phase 3 AI features.
@@ -74,6 +77,30 @@ const ConfigSchema = z.object({
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
+
+/**
+ * The canonical origin to put in front of a link we hand to a CUSTOMER — no trailing slash.
+ * Returns null when neither source is available, which callers must treat as a refusal.
+ *
+ * Resolution order, and the reasoning for it:
+ *  1. `PUBLIC_APP_URL` — the operator's explicit choice, so it always wins. This is where a real
+ *     custom domain goes.
+ *  2. `https://<VERCEL_PROJECT_PRODUCTION_URL>` — Vercel's STABLE production domain for the
+ *     project. A safety net so a shop that never set PUBLIC_APP_URL still sends openable links.
+ *
+ * What is deliberately NOT in that list is `VERCEL_URL`, the per-deployment URL. Vercel's own docs
+ * say it "cannot be used in conjunction with Standard Deployment Protection" — a deployment URL
+ * sits behind Vercel's login wall, so a link built from it opens fine for the signed-in sender and
+ * shows a Vercel sign-in page to the customer. Same reason the browser's `window.location.origin`
+ * is not an acceptable source: it is whatever URL the sender happened to be on.
+ */
+export const resolvePublicAppOrigin = (config: Config): string | null => {
+  const explicit = config.PUBLIC_APP_URL;
+  if (explicit) return explicit.replace(/\/+$/, "");
+  const vercelDomain = config.VERCEL_PROJECT_PRODUCTION_URL;
+  if (vercelDomain) return `https://${vercelDomain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+  return null;
+};
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): Config => {
   const parsed = ConfigSchema.safeParse(env);

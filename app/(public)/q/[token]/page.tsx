@@ -208,82 +208,100 @@ export default async function PublicQuotePage({
 
         {/* Body */}
         <div className="custbody">
-          {isAccepted ? (
+          {/*
+            A settled quote states its outcome ABOVE the quote — never INSTEAD of it.
+
+            This block used to replace the entire body, so the instant a customer approved they lost
+            sight of the lines, the total and the terms they had just agreed to. That is the one
+            clear legal defect in this flow: ESIGN (15 U.S.C. § 7001(e)) lets an electronic record be
+            denied legal effect if it cannot "be retained and accurately reproduced for later
+            reference by all parties" — and here the approval IS the agreement. It is also plainly
+            unhelpful: the customer has nothing to check the invoice against later.
+          */}
+          {isAccepted && (
             <>
               <div className="deltabanner" style={{ textAlign: "center" }}>
                 Approved — thank you!
               </div>
-              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: "var(--type-base)" }}>
-                We&rsquo;ll be in touch to schedule the work.
+              <p className="muted" style={{ textAlign: "center", margin: "var(--space-2) 0 var(--space-4)", fontSize: "var(--type-base)" }}>
+                We&rsquo;ll be in touch to schedule the work. Below is what you approved &mdash;
+                keep this link for your records.
               </p>
             </>
-          ) : isDeclined ? (
+          )}
+          {isDeclined && (
             <>
               <div className="reqcard" style={{ textAlign: "center" }}>
                 You passed on this one — no hard feelings.
               </div>
-              <p className="muted" style={{ textAlign: "center", marginTop: "var(--space-2)", fontSize: "var(--type-base)" }}>
-                Reach out any time if you change your mind.
+              <p className="muted" style={{ textAlign: "center", margin: "var(--space-2) 0 var(--space-4)", fontSize: "var(--type-base)" }}>
+                Reach out any time if you change your mind. Below is what we&rsquo;d quoted.
               </p>
-            </>
-          ) : (
-            <>
-              <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
-                Here&rsquo;s your quote from <b>{orgName}</b>
-                {customerFirstName ? `, ${customerFirstName}` : ""} — take a look.
-              </p>
-
-              {tierViews ? (
-                /* Good/Better/Best: picker + selected tier's lines + totals + actions */
-                <QuoteLines
-                  tiers={tierViews.tiers}
-                  recommendedTier={tierViews.recommendedTier}
-                  discBps={p.discBps}
-                  taxBps={p.taxBps}
-                  depBps={p.depBps}
-                  token={token}
-                  changeAlreadyRequested={Boolean(p.changeRequestedAt)}
-                />
-              ) : (
-                <>
-                  {/* Fixed lines */}
-                  {fixedLines.map((line) => {
-                    const lp = line.props;
-                    return (
-                      <LineRow
-                        key={lp.id}
-                        description={lp.description}
-                        quantity={lp.quantity}
-                        rateCents={lp.rate}
-                      />
-                    );
-                  })}
-
-                  {/* Optional add-on toggles + live totals + actions — client island */}
-                  <QuoteLines
-                    fixedSubtotalCents={fixedSubtotalCents}
-                    optionalLines={optLines.map((line) => {
-                      const lp = line.props;
-                      return {
-                        id: lp.id,
-                        description: lp.description,
-                        quantity: lp.quantity,
-                        rateCents: lp.rate,
-                      };
-                    })}
-                    discBps={p.discBps}
-                    taxBps={p.taxBps}
-                    depBps={p.depBps}
-                    token={token}
-                    changeAlreadyRequested={Boolean(p.changeRequestedAt)}
-                  />
-                </>
-              )}
-
-              {/* Terms snapshot — both formats, plain functional block */}
-              {p.termsSnapshot && <TermsBlock text={p.termsSnapshot} />}
             </>
           )}
+
+          {!isDone && (
+            <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
+              Here&rsquo;s your quote from <b>{orgName}</b>
+              {customerFirstName ? `, ${customerFirstName}` : ""} — take a look.
+            </p>
+          )}
+
+          {tierViews ? (
+            /* Good/Better/Best: picker + selected tier's lines + totals + actions.
+               Never reached on a settled quote — accept resolves the tiers into a single
+               line set, so tierViewsFor returns null from then on. */
+            <QuoteLines
+              tiers={tierViews.tiers}
+              recommendedTier={tierViews.recommendedTier}
+              discBps={p.discBps}
+              taxBps={p.taxBps}
+              depBps={p.depBps}
+              token={token}
+              changeAlreadyRequested={Boolean(p.changeRequestedAt)}
+              settled={isDone}
+            />
+          ) : (
+            <>
+              {/* Fixed lines. On an accepted quote these ARE the accepted set: accept rewrites the
+                  stored lines to the fixed ones plus the chosen add-ons. */}
+              {fixedLines.map((line) => {
+                const lp = line.props;
+                return (
+                  <LineRow
+                    key={lp.id}
+                    description={lp.description}
+                    quantity={lp.quantity}
+                    rateCents={lp.rate}
+                  />
+                );
+              })}
+
+              {/* Optional add-on toggles + live totals + actions — client island */}
+              <QuoteLines
+                fixedSubtotalCents={fixedSubtotalCents}
+                optionalLines={optLines.map((line) => {
+                  const lp = line.props;
+                  return {
+                    id: lp.id,
+                    description: lp.description,
+                    quantity: lp.quantity,
+                    rateCents: lp.rate,
+                  };
+                })}
+                discBps={p.discBps}
+                taxBps={p.taxBps}
+                depBps={p.depBps}
+                token={token}
+                changeAlreadyRequested={Boolean(p.changeRequestedAt)}
+                settled={isDone}
+              />
+            </>
+          )}
+
+          {/* Terms snapshot — both formats, plain functional block. Kept on a settled quote: the
+              terms are part of what was agreed to. */}
+          {p.termsSnapshot && <TermsBlock text={p.termsSnapshot} />}
 
           {/* Footer */}
           <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-4)" }}>

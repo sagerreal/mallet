@@ -243,8 +243,21 @@ export function EstimateModalContent() {
       return;
     }
 
-    const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
-    const quoteLink = `${appOrigin}/q/${est.publicToken}`;
+    // The link comes from the SERVER, not from window.location.origin.
+    //
+    // It used to be composed from wherever the shop happened to be when they pressed Send, which is
+    // only correct by luck: a deployment/preview URL, a branch alias, a custom domain or a localhost
+    // demo each yield a link the customer cannot open. It happened — a quote sent from a Vercel
+    // deployment URL emailed a link behind Vercel's own login wall, fine on the sender's laptop and
+    // a sign-in prompt on the customer's phone.
+    const quoteLink = est.publicUrl;
+    if (!quoteLink) {
+      // Refuse rather than send a broken link: a quote nobody can open converts at zero, and a
+      // silent fallback to the browser's origin is exactly the bug this replaced.
+      setSendError("This app has no public address configured, so the customer link can't be built. Ask your admin to set it, then resend.");
+      setIsSending(false);
+      return;
+    }
     const firstName = (lead?.name ?? "").split(" ")[0] ?? lead?.name ?? "";
     const body =
       `${firstName}, your quote ${est.num} is ready — view and approve here: ${quoteLink}`;
