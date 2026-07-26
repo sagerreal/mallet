@@ -16,6 +16,8 @@ suite("DrizzleSyncLabelReader (live RLS)", () => {
   let otherOrgId = "";
   let mineId = "";
   let theirsId = "";
+  let leadId = "";
+  let otherLeadId = "";
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 2, ssl: "require", prepare: false });
@@ -41,6 +43,12 @@ suite("DrizzleSyncLabelReader (live RLS)", () => {
     const [theirs] = await admin<{ id: string }[]>`
       insert into time_entries (org_id, tech_user_id, work_date, kind, start_time, end_time, status)
       values (${otherOrgId}, ${them!.id}, '2026-07-25', 'shop', '08:00', '16:00', 'approved') returning id`;
+    const [lead] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${orgId}, 'Acme Plumbing') returning id`;
+    const [otherLead] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${otherOrgId}, 'Someone Else Plumbing') returning id`;
+    leadId = lead!.id;
+    otherLeadId = otherLead!.id;
     mineId = mine!.id;
     theirsId = theirs!.id;
   });
@@ -48,6 +56,7 @@ suite("DrizzleSyncLabelReader (live RLS)", () => {
   afterAll(async () => {
     for (const id of [orgId, otherOrgId].filter(Boolean)) {
       await admin`delete from time_entries where org_id = ${id}`;
+      await admin`delete from leads where org_id = ${id}`;
       await admin`delete from users where org_id = ${id}`;
       await admin`delete from orgs where id = ${id}`;
     }
@@ -80,6 +89,20 @@ suite("DrizzleSyncLabelReader (live RLS)", () => {
 
   it("asks nothing of the database for an empty id list", async () => {
     expect((await read(orgId, [])).size).toBe(0);
+  });
+
+  it("names a customer by their own name", async () => {
+    const labels = await withTenant(asOrgId(orgId), (tx) =>
+      new DrizzleSyncLabelReader(tx, orgId).labelsFor("customer", [leadId]),
+    );
+    expect(labels.get(leadId)).toBe("Acme Plumbing");
+  });
+
+  it("will not name another org's customer", async () => {
+    const labels = await withTenant(asOrgId(orgId), (tx) =>
+      new DrizzleSyncLabelReader(tx, orgId).labelsFor("customer", [otherLeadId]),
+    );
+    expect(labels.size).toBe(0);
   });
 
   // Invoices and payments reach this reader before they are implemented; a settings screen must

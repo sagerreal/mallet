@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { timeEntries, users } from "@mallet/shared/db/schema";
+import { leads, timeEntries, users } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { SyncLabelReader } from "../domain/sync-label-reader";
 
@@ -30,6 +30,7 @@ export class DrizzleSyncLabelReader implements SyncLabelReader {
     malletIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>> {
     if (malletIds.length === 0) return new Map();
+    if (entityType === "customer") return this.customerLabels(malletIds);
     if (entityType !== "time_entry") return new Map();
 
     const rows = await this.tx
@@ -49,4 +50,14 @@ export class DrizzleSyncLabelReader implements SyncLabelReader {
       rows.map((r) => [r.id, `${r.name ?? r.email ?? "Someone"} · ${shortDate(r.workDate)}`]),
     );
   }
+
+  /** Customers are named by their own name — nothing else on the row means anything to a shop. */
+  private async customerLabels(malletIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    const rows = await this.tx
+      .select({ id: leads.id, name: leads.name })
+      .from(leads)
+      .where(and(eq(leads.orgId, this.orgId), inArray(leads.id, [...malletIds])));
+    return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
 }

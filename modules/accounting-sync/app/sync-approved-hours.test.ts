@@ -53,6 +53,10 @@ const harness = (opts: {
       created.push(input);
       return queue.shift() ?? ok({ id: `qbo-${created.length}` });
     }),
+  // Present so the fake satisfies the port; the hours path never touches customers.
+  findCustomerByEmail: vi.fn(),
+  findCustomerByName: vi.fn(),
+  createCustomer: vi.fn(),
   };
 
   const links: QboEntityLinkRepository = {

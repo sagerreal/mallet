@@ -1,4 +1,5 @@
 import type { Result, AppError } from "@mallet/shared/types";
+import type { QboCustomerInput } from "./customer-mapping";
 
 /** A QuickBooks person we can attribute time to. Employees and Vendors (1099 subs) both qualify. */
 export interface QboPerson {
@@ -12,6 +13,12 @@ export interface QboPerson {
    * land somewhere that quietly never reaches a paycheck.
    */
   readonly usesTimeForPaychecks?: boolean;
+}
+
+/** A QuickBooks customer, as much of one as we need to link and display. */
+export interface QboCustomer {
+  readonly id: string;
+  readonly displayName: string;
 }
 
 /** A QuickBooks service item — the mandatory ItemRef on every TimeActivity. */
@@ -55,6 +62,16 @@ export interface QboApiGateway {
     access: QboAccess,
     input: QboTimeActivityInput,
   ): Promise<Result<{ id: string }, AppError>>;
+
+  /**
+   * Find one customer by an exact email or an exact DisplayName. Null when there is no match.
+   *
+   * Exact only, and never fuzzy: a near-match filed against the wrong customer puts one shop's
+   * money on another's account, and nothing downstream would ever notice.
+   */
+  findCustomerByEmail(access: QboAccess, email: string): Promise<Result<QboCustomer | null, AppError>>;
+  findCustomerByName(access: QboAccess, displayName: string): Promise<Result<QboCustomer | null, AppError>>;
+  createCustomer(access: QboAccess, input: QboCustomerInput): Promise<Result<QboCustomer, AppError>>;
 }
 
 /** A usable access token plus the company it belongs to. Produced by EnsureFreshAccessToken. */

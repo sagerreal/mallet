@@ -17,6 +17,7 @@ import {
   NOT_FINISHED,
   BREAK_NOT_PAID,
 } from "./time-activity-mapping";
+import { NO_NAME, NAME_TOO_LONG } from "./customer-mapping";
 
 export interface SyncProblem {
   /** The stable code, kept so support can be given something exact to search for. */
@@ -56,6 +57,16 @@ const EXPLANATIONS: Readonly<Record<string, Explanation>> = Object.freeze({
     says: "Break time isn't sent to QuickBooks — it isn't paid time.",
     fix: null,
     retryable: false,
+  },
+  [NO_NAME]: {
+    says: "This customer has no name to file under in QuickBooks.",
+    fix: "Give them a name on their customer record, then send again.",
+    retryable: true,
+  },
+  [NAME_TOO_LONG]: {
+    says: "This customer's name is longer than QuickBooks allows.",
+    fix: "Shorten it to 100 characters or fewer, then send again.",
+    retryable: true,
   },
   // AppError kinds, which reach the log when a QuickBooks call itself refuses.
   unauthorized: {
