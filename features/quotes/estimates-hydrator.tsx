@@ -39,7 +39,12 @@ function daysAgo(isoDate: string): number {
   return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86_400_000);
 }
 
-function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
+/**
+ * List-summary DTO → store estimate. Exported for tests: this is the mapping the store takes after
+ * a REFRESH, and a field dropped here is invisible until someone reloads the page and a feature
+ * quietly stops working (that is exactly how publicUrl broke the send path once).
+ */
+export function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
   return {
     id: dto.id,
     num: dto.num,
@@ -69,6 +74,9 @@ function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
     // publicToken: the /q/<token> share link — carried on summaries so the
     // estimate modal can send the quote by text/email after a refresh.
     publicToken: dto.publicToken ?? undefined,
+    // publicUrl: the FINISHED customer link, composed server-side. Must ride the summary too — this
+    // hydrator is the path the store takes after a refresh, and the send path refuses without it.
+    publicUrl: dto.publicUrl ?? undefined,
     // changeRequestedAt from the summary DTO — indicates a pending customer request.
     changeRequestedAt: dto.changeRequestedAt ?? undefined,
     // Good/Better/Best fields — on summaries so the modal/rails can show the

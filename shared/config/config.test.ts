@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadConfig } from "./index";
+import { loadConfig, resolvePublicAppOrigin } from "./index";
 
 const validEnv = {
   NODE_ENV: "test",
@@ -60,5 +60,42 @@ describe("loadConfig", () => {
     expect(cfg.EMAIL_FROM).toBe("Mallet <notifications@example.com>");
     expect(cfg.TWILIO_FROM_NUMBER).toBe("+15555550123");
     expect(cfg.ANTHROPIC_API_KEY).toBe("sk-ant-x");
+  });
+});
+
+/**
+ * The origin that goes in front of a link we hand to a customer. Worth its own tests because a
+ * wrong answer here is invisible to the sender and fatal to the recipient: a quote link built from
+ * a Vercel DEPLOYMENT url sits behind Vercel's login wall, so it opens for the signed-in shop and
+ * shows a sign-in page to the customer.
+ */
+describe("resolvePublicAppOrigin", () => {
+  const cfg = (extra: Record<string, string>) =>
+    loadConfig({ ...validEnv, ...extra } as NodeJS.ProcessEnv);
+
+  it("prefers the operator's explicit PUBLIC_APP_URL", () => {
+    const origin = resolvePublicAppOrigin(
+      cfg({ PUBLIC_APP_URL: "https://app.example.com", VERCEL_PROJECT_PRODUCTION_URL: "x.vercel.app" }),
+    );
+    expect(origin).toBe("https://app.example.com");
+  });
+
+  it("strips a trailing slash so links never come out as //q/<token>", () => {
+    expect(resolvePublicAppOrigin(cfg({ PUBLIC_APP_URL: "https://app.example.com/" })))
+      .toBe("https://app.example.com");
+  });
+
+  it("falls back to Vercel's STABLE production domain, with a scheme added", () => {
+    expect(resolvePublicAppOrigin(cfg({ VERCEL_PROJECT_PRODUCTION_URL: "mallet.vercel.app" })))
+      .toBe("https://mallet.vercel.app");
+  });
+
+  it("tolerates a Vercel domain that already carries a scheme or slash", () => {
+    expect(resolvePublicAppOrigin(cfg({ VERCEL_PROJECT_PRODUCTION_URL: "https://mallet.vercel.app/" })))
+      .toBe("https://mallet.vercel.app");
+  });
+
+  it("returns null when neither source exists, so callers refuse instead of guessing", () => {
+    expect(resolvePublicAppOrigin(cfg({}))).toBeNull();
   });
 });

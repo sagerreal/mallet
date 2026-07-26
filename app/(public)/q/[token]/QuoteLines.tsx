@@ -70,6 +70,17 @@ interface QuoteLinesBaseProps {
   readonly depBps: number;
   readonly token: string;
   readonly changeAlreadyRequested: boolean;
+  /**
+   * The quote is already accepted or declined, so render it as a RECORD: lines, totals and terms
+   * still visible, no way to change the selection or act again.
+   *
+   * The page used to replace the whole quote with "Approved — thank you!", so the moment a customer
+   * approved they could no longer see what they had approved. That is the one clear legal defect in
+   * this flow: ESIGN (15 U.S.C. § 7001(e)) lets an electronic record be denied legal effect if it
+   * cannot "be retained and accurately reproduced for later reference by all parties" — and the
+   * approval IS the agreement, so the agreement has to stay readable.
+   */
+  readonly settled?: boolean;
 }
 
 interface SingleQuoteLinesProps extends QuoteLinesBaseProps {
@@ -220,7 +231,7 @@ function resolveLines(props: QuoteLinesProps, selectedTier: QuoteTier | null): R
 // ---- island -----------------------------------------------------------------
 
 export function QuoteLines(props: QuoteLinesProps) {
-  const { discBps, taxBps, depBps, token, changeAlreadyRequested } = props;
+  const { discBps, taxBps, depBps, token, changeAlreadyRequested, settled = false } = props;
   const tiered = props.tiers != null ? props : null;
 
   // Good/Better/Best: which option the customer is looking at. Defaults to the
@@ -233,7 +244,9 @@ export function QuoteLines(props: QuoteLinesProps) {
   // cards lock the moment an accept/decline is in flight and stay locked once
   // terminal — the displayed total can never diverge from the committed one.
   const [phase, setPhase] = useState<QuotePhase>("idle");
-  const locked = phase === "busy" || phase === "approved" || phase === "declined";
+  // `settled` locks a quote that was already settled on an EARLIER visit (the phase states only
+  // cover this one). A declined quote still lists its add-ons — read-only, as what was on offer.
+  const locked = settled || phase === "busy" || phase === "approved" || phase === "declined";
 
   const { activeTier, optionalLines, fixedSubtotalCents } = resolveLines(props, selectedTier);
 
@@ -305,16 +318,20 @@ export function QuoteLines(props: QuoteLinesProps) {
       {/* Totals — recompute on every toggle / tier switch */}
       <TotalsBlock {...totals} discBps={discBps} taxBps={taxBps} depBps={depBps} />
 
-      {/* Approve / decline / request-change */}
-      <QuoteActions
-        token={token}
-        totalCents={totals.totalCents}
-        changeAlreadyRequested={changeAlreadyRequested}
-        selectedLineIds={[...selectedIds]}
-        chosenTier={selectedTier}
-        phase={phase}
-        onPhaseChange={handlePhaseChange}
-      />
+      {/* Approve / decline / request-change — gone once the quote is settled. The page above states
+          the outcome; offering the buttons again would invite a second decision on something
+          already decided (the server refuses it, but a dead button is worse than no button). */}
+      {!settled && (
+        <QuoteActions
+          token={token}
+          totalCents={totals.totalCents}
+          changeAlreadyRequested={changeAlreadyRequested}
+          selectedLineIds={[...selectedIds]}
+          chosenTier={selectedTier}
+          phase={phase}
+          onPhaseChange={handlePhaseChange}
+        />
+      )}
     </>
   );
 }

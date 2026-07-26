@@ -153,6 +153,13 @@ export interface Estimate {
    * records (the summary DTO omits it) and locally-created estimates.
    */
   publicToken?: string;
+  /**
+   * The finished customer-facing link, composed SERVER-side from the configured canonical origin.
+   * Absent only when the server can resolve no canonical origin at all — the send path then refuses
+   * rather than inventing one, because a link built from the sender's browser location is only
+   * correct by luck (a deployment URL sends the customer to a Vercel sign-in page).
+   */
+  publicUrl?: string;
   /** ISO timestamp when the customer last requested a change. */
   changeRequestedAt?: string;
   /** The customer's change request message. */

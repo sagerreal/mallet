@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
@@ -74,10 +75,23 @@ const estimateDTO = z.object({
   acceptedTier: tierEnum.nullable(),
   tierNames: tierNamesDTO.nullable(),
   termsSnapshot: z.string().nullable(),
-  // The unguessable public_token generated at draft time. Exposed here so the send screen
-  // can construct the customer-facing link /q/<token>. Never exposed to end-customers via
+  // The unguessable public_token generated at draft time. Never exposed to end-customers via
   // this authed endpoint — they receive only the link, not the ability to enumerate tokens.
   publicToken: z.string().nullable(),
+  /**
+   * The FINISHED customer-facing link. Composed here, on the server, rather than by the client.
+   *
+   * The client used to build it from `window.location.origin` — whatever URL the shop happened to
+   * be on when they pressed Send. That is only correct by luck: a preview/deployment URL, a branch
+   * alias, a future custom domain or a localhost demo each produce a link the customer cannot open.
+   * It happened: a quote sent from a Vercel deployment URL emailed a link behind Vercel's own login
+   * wall, which opened fine on the sender's laptop and asked a customer to sign in to Vercel.
+   *
+   * Null only when no canonical origin can be resolved at all (see resolvePublicAppOrigin), which
+   * the send path treats as a refusal — a quote nobody can open converts at zero, so failing loudly
+   * beats sending a broken link.
+   */
+  publicUrl: z.string().nullable(),
   createdAt: z.string(),
 });
 
@@ -91,8 +105,10 @@ const estimateSummaryDTO = z.object({
   total: moneyDTO,
   createdAt: z.string(),
   // Share-link token — carried on summaries so list-hydrated estimates can be
-  // sent by text/email from the estimate modal (the link is /q/<token>).
+  // sent by text/email from the estimate modal.
   publicToken: z.string().nullable(),
+  /** The finished customer-facing link, composed server-side. See the full DTO for why. */
+  publicUrl: z.string().nullable(),
   changeRequestedAt: z.string().nullable(),
   // Tier fields on summaries too — the modal/rails show "3 options · recommended Better"
   // pre-accept and "Accepted: Best" post-accept from list-hydrated data.
@@ -248,8 +264,29 @@ const toEstimateDTO = (estimate: Estimate) => {
     tierNames: p.tierNames,
     termsSnapshot: p.termsSnapshot,
     publicToken: p.publicToken ?? null,
+    publicUrl: publicUrlFor(p.publicToken ?? null),
     createdAt: p.createdAt.toISOString(),
   };
+};
+
+/**
+ * The customer-facing link for a quote, or null when the origin cannot be resolved.
+ *
+ * Composed from the CANONICAL configured origin — never from the request or the sender's browser,
+ * which vary per deployment URL, branch alias, custom domain and localhost. See
+ * resolvePublicAppOrigin for the resolution order and why VERCEL_URL is excluded.
+ *
+ * Memoized: a list response maps this over every estimate, and loadConfig re-parses the whole
+ * schema on each call. The origin is process-level configuration and cannot change mid-process.
+ */
+// `undefined` means "not resolved yet"; a resolved `null` (no origin configured) is cached too, so
+// an unconfigured deployment does not re-parse the config for every row.
+let cachedOrigin: string | null | undefined;
+const publicUrlFor = (token: string | null): string | null => {
+  if (!token) return null;
+  if (cachedOrigin === undefined) cachedOrigin = resolvePublicAppOrigin(loadConfig());
+  if (cachedOrigin === null) return null;
+  return `${cachedOrigin}/q/${token}`;
 };
 
 const toSummaryDTO = (estimate: Estimate) => {
@@ -263,6 +300,7 @@ const toSummaryDTO = (estimate: Estimate) => {
     total: money(estimate.total()),
     createdAt: p.createdAt.toISOString(),
     publicToken: p.publicToken ?? null,
+    publicUrl: publicUrlFor(p.publicToken ?? null),
     changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
     recommendedTier: p.recommendedTier,
     acceptedTier: p.acceptedTier,

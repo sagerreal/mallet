@@ -363,6 +363,7 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     },
     cachedTotal: dto.total.cents / 100,   // cents → dollars
     publicToken: dto.publicToken ?? undefined,  // null → undefined (absent when not yet set)
+    publicUrl: dto.publicUrl ?? undefined,
     changeRequestedAt: dto.changeRequestedAt ?? undefined,
     changeRequest: dto.changeRequest ?? undefined,
     // Good/Better/Best — tier fields ride the DTO as-is (no money units involved;

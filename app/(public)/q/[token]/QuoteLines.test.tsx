@@ -283,3 +283,65 @@ describe("QuoteLines — Good/Better/Best picker", () => {
     for (const card of tierCards()) expect(card.disabled).toBe(false);
   });
 });
+
+describe("QuoteLines — a settled quote is a record, not an offer", () => {
+  it("keeps the lines and total but drops every action button", () => {
+    render(
+      <QuoteLines
+        fixedSubtotalCents={100_000}
+        optionalLines={OPTIONAL_LINES}
+        discBps={0}
+        taxBps={0}
+        depBps={0}
+        token={TOKEN}
+        changeAlreadyRequested={false}
+        settled
+      />,
+    );
+
+    // The record survives — this is the ESIGN § 7001(e) retainability point: the customer must
+    // still be able to read what they agreed to.
+    expect(screen.getByText(/Total \$1,000/)).toBeTruthy();
+    expect(screen.getByText("Expansion tank")).toBeTruthy();
+
+    // No second decision on offer. No Approve, no decline, no request-a-change.
+    expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("locks the add-on toggles so the displayed total cannot be edited after the fact", () => {
+    render(
+      <QuoteLines
+        fixedSubtotalCents={100_000}
+        optionalLines={OPTIONAL_LINES}
+        discBps={0}
+        taxBps={0}
+        depBps={0}
+        token={TOKEN}
+        changeAlreadyRequested={false}
+        settled
+      />,
+    );
+
+    for (const box of checkboxes()) expect(box.disabled).toBe(true);
+    fireEvent.click(checkboxes()[0]!);
+    expect(screen.getByText(/Total \$1,000/)).toBeTruthy(); // unchanged
+  });
+
+  it("locks the tier cards on a settled tiered quote", () => {
+    render(
+      <QuoteLines
+        tiers={TIERS}
+        recommendedTier="better"
+        discBps={0}
+        taxBps={0}
+        depBps={0}
+        token={TOKEN}
+        changeAlreadyRequested={false}
+        settled
+      />,
+    );
+    for (const card of tierCards()) expect(card.disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+  });
+});
