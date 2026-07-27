@@ -22,6 +22,16 @@ const baseProps = (overrides: Partial<OrgSettingsProps> = {}): OrgSettingsProps 
   scopeOn: false,
   hoursWdOpen: 8,
   hoursWdClose: 17,
+  hoursMonOpen: 8,
+  hoursMonClose: 17,
+  hoursTueOpen: 8,
+  hoursTueClose: 17,
+  hoursWedOpen: 8,
+  hoursWedClose: 17,
+  hoursThuOpen: 8,
+  hoursThuClose: 17,
+  hoursFriOpen: 8,
+  hoursFriClose: 17,
   hoursSatOpen: 0,
   hoursSatClose: 0,
   hoursSunOpen: 0,
@@ -85,32 +95,46 @@ describe("OrgSettings.create", () => {
 // as "closed" to the voice availability math and silently sends every caller to voicemail — so the
 // aggregate must REJECT it at the boundary (no silent failure), not persist a broken schedule.
 describe("OrgSettings.create — business hours invariant", () => {
-  it("rejects weekday hours with close=0 and open>0 (the silent-voicemail bug)", () => {
-    const r = OrgSettings.create(baseProps({ hoursWdOpen: 8, hoursWdClose: 0 }));
+  // Hours are per-day now (a shop that closes early on Friday could not be expressed before), so
+  // the invariant is asserted on a named day. Same rule, same silent-voicemail bug it prevents:
+  // open>0 with close=0 is not "closed", it is a day that swallows every call.
+  it("rejects a day with close=0 and open>0 (the silent-voicemail bug)", () => {
+    const r = OrgSettings.create(baseProps({ hoursMonOpen: 8, hoursMonClose: 0 }));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("hoursWdClose");
+    if (!r.ok) expect(r.error.field).toBe("hoursMonClose");
   });
 
-  it("rejects inverted weekday hours (close before open)", () => {
-    const r = OrgSettings.create(baseProps({ hoursWdOpen: 17, hoursWdClose: 9 }));
+  it("names the offending day, so the owner knows which row to fix", () => {
+    const r = OrgSettings.create(baseProps({ hoursWedOpen: 9, hoursWedClose: 8 }));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("hoursWdClose");
+    if (!r.ok) expect(r.error.message).toMatch(/Wednesday/);
   });
 
-  it("rejects zero-width weekday hours (open===close, nonzero)", () => {
-    const r = OrgSettings.create(baseProps({ hoursWdOpen: 12, hoursWdClose: 12 }));
+  it("lets one weekday differ from the rest — the whole point of the change", () => {
+    const r = OrgSettings.create(baseProps({ hoursFriOpen: 8, hoursFriClose: 12 }));
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects inverted day hours (close before open)", () => {
+    const r = OrgSettings.create(baseProps({ hoursMonOpen: 17, hoursMonClose: 9 }));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.field).toBe("hoursWdClose");
+    if (!r.ok) expect(r.error.field).toBe("hoursMonClose");
+  });
+
+  it("rejects zero-width day hours (open===close, nonzero)", () => {
+    const r = OrgSettings.create(baseProps({ hoursMonOpen: 12, hoursMonClose: 12 }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("hoursMonClose");
   });
 
   it("accepts the closed sentinel (open===0 && close===0)", () => {
-    const s = unwrap(OrgSettings.create(baseProps({ hoursWdOpen: 0, hoursWdClose: 0 })));
-    expect(s.props.hoursWdClose).toBe(0);
+    const s = unwrap(OrgSettings.create(baseProps({ hoursMonOpen: 0, hoursMonClose: 0 })));
+    expect(s.props.hoursMonClose).toBe(0);
   });
 
-  it("accepts a valid forward weekday range", () => {
-    const s = unwrap(OrgSettings.create(baseProps({ hoursWdOpen: 8, hoursWdClose: 17 })));
-    expect(s.props.hoursWdClose).toBe(17);
+  it("accepts a valid forward day range", () => {
+    const s = unwrap(OrgSettings.create(baseProps({ hoursMonOpen: 8, hoursMonClose: 17 })));
+    expect(s.props.hoursMonClose).toBe(17);
   });
 
   it("rejects an invalid Saturday range even when weekdays are valid", () => {

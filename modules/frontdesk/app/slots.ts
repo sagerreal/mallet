@@ -39,6 +39,18 @@ export interface SlotWindow {
 export interface OrgHours {
   readonly wdOpen: number;
   readonly wdClose: number;
+  // Per-day hours. Optional so a caller that has not been migrated still type-checks and simply
+  // falls back to the weekday pair — a missing field must never mean "closed".
+  readonly monOpen?: number;
+  readonly monClose?: number;
+  readonly tueOpen?: number;
+  readonly tueClose?: number;
+  readonly wedOpen?: number;
+  readonly wedClose?: number;
+  readonly thuOpen?: number;
+  readonly thuClose?: number;
+  readonly friOpen?: number;
+  readonly friClose?: number;
   readonly satOpen: number;
   readonly satClose: number;
   readonly sunOpen: number;
@@ -358,7 +370,21 @@ function groupVisitsByDate(visits: readonly BookedVisit[]): Map<string, BookedVi
 function dayHoursFor(weekday: number, hours: OrgHours): DayHours {
   if (weekday === 0) return { open: hours.sunOpen, close: hours.sunClose };
   if (weekday === 6) return { open: hours.satOpen, close: hours.satClose };
-  return { open: hours.wdOpen, close: hours.wdClose };
+  // Mon–Fri each carry their own pair now — a shop that closes at noon on Friday could not be
+  // expressed before, and most trade shops have at least one day that differs.
+  //
+  // `??` NOT `||`: a genuine 0 is the CLOSED sentinel, and `||` would treat it as missing and
+  // fall back to the weekday hours — quietly reopening a day the owner had closed.
+  const perDay: ReadonlyArray<readonly [number | undefined, number | undefined]> = [
+    [undefined, undefined], // 0 = Sunday, handled above
+    [hours.monOpen, hours.monClose],
+    [hours.tueOpen, hours.tueClose],
+    [hours.wedOpen, hours.wedClose],
+    [hours.thuOpen, hours.thuClose],
+    [hours.friOpen, hours.friClose],
+  ];
+  const [open, close] = perDay[weekday] ?? [undefined, undefined];
+  return { open: open ?? hours.wdOpen, close: close ?? hours.wdClose };
 }
 
 // A DayHours is closed when open and close are both 0 (the schema convention) OR when the range is

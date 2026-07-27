@@ -18,6 +18,16 @@ export interface PromptFacts {
   readonly brandName: string;
   readonly hoursWdOpen: number;
   readonly hoursWdClose: number;
+  readonly hoursMonOpen: number;
+  readonly hoursMonClose: number;
+  readonly hoursTueOpen: number;
+  readonly hoursTueClose: number;
+  readonly hoursWedOpen: number;
+  readonly hoursWedClose: number;
+  readonly hoursThuOpen: number;
+  readonly hoursThuClose: number;
+  readonly hoursFriOpen: number;
+  readonly hoursFriClose: number;
   readonly hoursSatOpen: number;
   readonly hoursSatClose: number;
   readonly hoursSunOpen: number;
@@ -253,7 +263,11 @@ const buildFactsSection = (f: PromptFacts): string => {
   const lines: string[] = [
     `## ${SECTIONS.facts}`,
     "Hours:",
-    formatDayHours("Weekdays", f.hoursWdOpen, f.hoursWdClose),
+    formatDayHours("Monday", f.hoursMonOpen, f.hoursMonClose),
+    formatDayHours("Tuesday", f.hoursTueOpen, f.hoursTueClose),
+    formatDayHours("Wednesday", f.hoursWedOpen, f.hoursWedClose),
+    formatDayHours("Thursday", f.hoursThuOpen, f.hoursThuClose),
+    formatDayHours("Friday", f.hoursFriOpen, f.hoursFriClose),
     formatDayHours("Saturday", f.hoursSatOpen, f.hoursSatClose),
     formatDayHours("Sunday", f.hoursSunOpen, f.hoursSunClose),
     `Service area: within ${f.areaRadiusMi} miles of the shop — measured by real distance, not city names.`,

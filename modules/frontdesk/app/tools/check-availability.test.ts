@@ -21,8 +21,25 @@ const PRINCIPAL: Principal = {
 // Tuesday 2026-07-14 07:00 local (before the 8:00 open) — deterministic, matches slots.test.
 const TUE_0700 = new Date(2026, 6, 14, 7, 0, 0);
 
+/**
+ * Build settings for a test. A fixture that sets only the weekday pair has every weekday MIRROR
+ * it — the same thing migration 0100 did to real orgs, so a fixture written before per-day hours
+ * still expresses what it meant. An explicit per-day value always wins.
+ */
 const settingsFrom = (over: Partial<OrgSettingsProps> = {}): OrgSettings => {
-  const result = OrgSettings.create(baseSettingsProps({ orgId: ORG, ...over }));
+  const wdOpen = over.hoursWdOpen;
+  const wdClose = over.hoursWdClose;
+  const mirrored =
+    wdOpen !== undefined && wdClose !== undefined
+      ? {
+          hoursMonOpen: wdOpen, hoursMonClose: wdClose,
+          hoursTueOpen: wdOpen, hoursTueClose: wdClose,
+          hoursWedOpen: wdOpen, hoursWedClose: wdClose,
+          hoursThuOpen: wdOpen, hoursThuClose: wdClose,
+          hoursFriOpen: wdOpen, hoursFriClose: wdClose,
+        }
+      : {};
+  const result = OrgSettings.create(baseSettingsProps({ orgId: ORG, ...mirrored, ...over }));
   if (!result.ok) throw new Error(`settings fixture: ${result.error.message}`);
   return result.value;
 };
@@ -102,6 +119,16 @@ describe("checkAvailabilityTool", () => {
     const satOnly = settingsFrom({
       hoursWdOpen: 0,
       hoursWdClose: 0,
+      hoursMonOpen: 0,
+      hoursMonClose: 0,
+      hoursTueOpen: 0,
+      hoursTueClose: 0,
+      hoursWedOpen: 0,
+      hoursWedClose: 0,
+      hoursThuOpen: 0,
+      hoursThuClose: 0,
+      hoursFriOpen: 0,
+      hoursFriClose: 0,
       hoursSatOpen: 8,
       hoursSatClose: 14,
       hoursSunOpen: 0,

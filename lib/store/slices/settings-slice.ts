@@ -63,8 +63,19 @@ export interface BookingService {
 }
 
 export interface BookingHours {
+  /** Retained for a release so a rollback reads real hours. Nothing derives availability from it. */
   wdOpen: number;
   wdClose: number;
+  monOpen: number;
+  monClose: number;
+  tueOpen: number;
+  tueClose: number;
+  wedOpen: number;
+  wedClose: number;
+  thuOpen: number;
+  thuClose: number;
+  friOpen: number;
+  friClose: number;
   satOpen: number;
   satClose: number;
   sunOpen: number;
@@ -108,7 +119,15 @@ const EMPTY_BOOKING: BookingCfg = {
   notServices: "",
   serviceFee: 89,
   feeCredited: true,
-  hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+  hours: {
+    wdOpen: 8, wdClose: 17,
+    monOpen: 8, monClose: 17,
+    tueOpen: 8, tueClose: 17,
+    wedOpen: 8, wedClose: 17,
+    thuOpen: 8, thuClose: 17,
+    friOpen: 8, friClose: 17,
+    satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0,
+  },
   area: { cities: "", radiusMi: 25, originAddress: "" },
 };
 
@@ -148,6 +167,16 @@ export interface BookingPayload {
   };
   hoursWdOpen: number;
   hoursWdClose: number;
+  hoursMonOpen: number;
+  hoursMonClose: number;
+  hoursTueOpen: number;
+  hoursTueClose: number;
+  hoursWedOpen: number;
+  hoursWedClose: number;
+  hoursThuOpen: number;
+  hoursThuClose: number;
+  hoursFriOpen: number;
+  hoursFriClose: number;
   hoursSatOpen: number;
   hoursSatClose: number;
   hoursSunOpen: number;
@@ -175,6 +204,16 @@ export function buildBookingPayload(b: BookingCfg): BookingPayload {
     },
     hoursWdOpen: b.hours.wdOpen,
     hoursWdClose: b.hours.wdClose,
+    hoursMonOpen: b.hours.monOpen,
+    hoursMonClose: b.hours.monClose,
+    hoursTueOpen: b.hours.tueOpen,
+    hoursTueClose: b.hours.tueClose,
+    hoursWedOpen: b.hours.wedOpen,
+    hoursWedClose: b.hours.wedClose,
+    hoursThuOpen: b.hours.thuOpen,
+    hoursThuClose: b.hours.thuClose,
+    hoursFriOpen: b.hours.friOpen,
+    hoursFriClose: b.hours.friClose,
     hoursSatOpen: b.hours.satOpen,
     hoursSatClose: b.hours.satClose,
     hoursSunOpen: b.hours.sunOpen,

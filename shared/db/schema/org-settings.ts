@@ -31,8 +31,23 @@ export const orgSettings = pgTable(
     techTexts: boolean("tech_texts").notNull().default(true),
     frontDesk: boolean("front_desk").notNull().default(true),
     scopeOn: boolean("scope_on").notNull().default(false),
+    // Kept for one release so a rollback still reads real hours; NOTHING reads these any more.
+    // Per-day columns below replaced them — "weekdays" could not express a shop that closes early
+    // on Friday, which is most of them.
     hoursWdOpen: integer("hours_wd_open").notNull().default(8),
     hoursWdClose: integer("hours_wd_close").notNull().default(17),
+    // Per-day hours. Backfilled from the weekday pair above, so every existing org keeps exactly
+    // the hours it had. 0/0 is the closed sentinel, same convention as Saturday/Sunday.
+    hoursMonOpen: integer("hours_mon_open").notNull().default(8),
+    hoursMonClose: integer("hours_mon_close").notNull().default(17),
+    hoursTueOpen: integer("hours_tue_open").notNull().default(8),
+    hoursTueClose: integer("hours_tue_close").notNull().default(17),
+    hoursWedOpen: integer("hours_wed_open").notNull().default(8),
+    hoursWedClose: integer("hours_wed_close").notNull().default(17),
+    hoursThuOpen: integer("hours_thu_open").notNull().default(8),
+    hoursThuClose: integer("hours_thu_close").notNull().default(17),
+    hoursFriOpen: integer("hours_fri_open").notNull().default(8),
+    hoursFriClose: integer("hours_fri_close").notNull().default(17),
     hoursSatOpen: integer("hours_sat_open").notNull().default(0),
     hoursSatClose: integer("hours_sat_close").notNull().default(0),
     hoursSunOpen: integer("hours_sun_open").notNull().default(0),

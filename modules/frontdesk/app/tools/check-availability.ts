@@ -85,6 +85,16 @@ const toOrgHours = (s: OrgSettings): OrgHours => {
   const p = s.props;
   return {
     wdOpen: p.hoursWdOpen,
+    monOpen: p.hoursMonOpen,
+    monClose: p.hoursMonClose,
+    tueOpen: p.hoursTueOpen,
+    tueClose: p.hoursTueClose,
+    wedOpen: p.hoursWedOpen,
+    wedClose: p.hoursWedClose,
+    thuOpen: p.hoursThuOpen,
+    thuClose: p.hoursThuClose,
+    friOpen: p.hoursFriOpen,
+    friClose: p.hoursFriClose,
     wdClose: p.hoursWdClose,
     satOpen: p.hoursSatOpen,
     satClose: p.hoursSatClose,
