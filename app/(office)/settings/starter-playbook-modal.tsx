@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/modals/modal";
 import { TRADE_PLAYBOOKS, playbookFor } from "./trade-playbooks";
-import { routeOf } from "./booking-lanes";
+import { laneChipLabel } from "./booking-lanes";
 
 const CHIP: React.CSSProperties = {
   fontSize: "var(--type-sm)",
@@ -76,7 +76,7 @@ export function StarterPlaybookModal({
             >
               <span style={{ flex: 1, fontWeight: 600, fontSize: "var(--type-base)" }}>{s.name}</span>
               {(s.emergencyTriggers ?? "").length > 0 && <span style={CHIP}>⚡ emergency</span>}
-              <span style={CHIP}>{routeOf(s.lane) === "quote" ? "Quote first" : "Book it"}</span>
+              <span style={CHIP}>{laneChipLabel(s)}</span>
             </div>
           ))}
         </div>

@@ -5,12 +5,15 @@ import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { Segmented } from "./segmented";
 import { COMPACT_INPUT } from "@/components/ui/input";
+import type { ServiceLane } from "@mallet/settings";
 import {
-  routeOf,
-  laneFor,
+  LANE_OPTIONS,
+  isBookableLane,
+  flatPriceMissing,
+  laneChipLabel,
+  laneConsequence,
   parseBallpark,
   formatBallpark,
-  type BookingRoute,
   type BallparkRange,
 } from "./booking-lanes";
 
@@ -19,19 +22,8 @@ import {
 // `.seg` for the lane toggle, `.btn sm ghost` for the optional-field add buttons —
 // the same visual language as the composer (the house reference for "good UI").
 
-// ---- Lane copy ------------------------------------------------------------------
-
-// The OWNER-facing binary: a service either books a job right away or gets quoted first.
-// Price is an attribute of a bookable service, not a third kind of service (storage still
-// keeps the repair/estimate/flat lanes — see booking-lanes.ts for the mapping).
-const ROUTE_OPTIONS = [
-  { value: "book" as const, label: "Book it" },
-  { value: "quote" as const, label: "Quote first" },
-] as const;
-
-function routeChipLabel(service: BookingService): string {
-  return routeOf(service.lane) === "quote" ? "Quote first" : "Book it";
-}
+// Lane copy (labels, the collapsed chip, and what the caller hears) lives in booking-lanes.ts —
+// starter-playbook-modal and add-service-modal render the same three lanes and must not drift.
 
 // Booking fields use the shared COMPACT_INPUT treatment (imported above) so they
 // read as crisp single-line inputs, not the roomier global .field boxes. Width-capped.
@@ -160,6 +152,9 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
 
 export interface ServiceRowProps {
   service: BookingService;
+  /** The org-wide service call fee, in dollars — rendered so a "Service call" lane can state the
+   *  number the caller will actually hear instead of leaving it to a panel further down the page. */
+  serviceFee: number;
   index: number;
   isExpanded: boolean;
   onToggle: () => void;
@@ -218,13 +213,12 @@ function CollapsedRow({
         <span style={CHIP_STYLE}>⚡ emergency</span>
       )}
       {(service.ballpark ?? "").length > 0 && <span style={CHIP_STYLE}>~ ballpark</span>}
-      {service.lane === "flat" && (service.price ?? 0) > 0 && (
-        <span style={CHIP_STYLE}>{`$${service.price}`}</span>
-      )}
       {(service.requiredCerts ?? []).map((cert) => (
         <span key={cert} style={CHIP_STYLE}>{cert}</span>
       ))}
-      <span style={CHIP_STYLE}>{routeChipLabel(service)}</span>
+      {/* The lane chip carries the flat price itself ("$149 flat"), so there is no separate
+          price chip to read as a second, unrelated fact. */}
+      <span style={CHIP_STYLE}>{laneChipLabel(service)}</span>
     </button>
   );
 }
@@ -237,8 +231,9 @@ function ExpandedEditor({
   updateBookingService,
   onRemove,
   isLast,
-}: Pick<ServiceRowProps, "service" | "index" | "updateBookingService" | "onRemove" | "isLast">) {
-  const [route, setRoute] = useState<BookingRoute>(routeOf(service.lane));
+  serviceFee,
+}: Pick<ServiceRowProps, "service" | "index" | "updateBookingService" | "onRemove" | "isLast" | "serviceFee">) {
+  const [lane, setLane] = useState<ServiceLane>(service.lane);
   const [price, setPrice] = useState<string>(
     service.lane === "flat" && (service.price ?? 0) > 0 ? String(service.price) : "",
   );
@@ -249,16 +244,18 @@ function ExpandedEditor({
   const [showBallpark, setShowBallpark] = useState((service.ballpark ?? "").length > 0);
   const [showCerts, setShowCerts] = useState((service.requiredCerts ?? []).length > 0);
 
-  // Route + price DERIVE the stored lane (book+price=flat, book alone=repair, quote=estimate).
-  function handleRouteChange(next: BookingRoute) {
-    setRoute(next);
-    updateBookingService(index, "lane", laneFor(next, price));
+  const priceMissing = flatPriceMissing(lane, price);
+
+  // The lane is now chosen DIRECTLY — it is no longer inferred from whether a price happens to be
+  // filled in, so picking a lane can never quietly land you in a different one.
+  function handleLaneChange(next: ServiceLane) {
+    setLane(next);
+    updateBookingService(index, "lane", next);
   }
 
   function handlePriceChange(v: string) {
     setPrice(v);
     updateBookingService(index, "price", v);
-    updateBookingService(index, "lane", laneFor(route, v));
   }
 
   function handleBallparkChange(next: BallparkRange) {
@@ -287,21 +284,35 @@ function ExpandedEditor({
       <div className="field">
         <label>Job type</label>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
-          <Segmented value={route} onChange={handleRouteChange} options={ROUTE_OPTIONS} aria-label="Job type" />
-          {route === "book" && (
+          <Segmented value={lane} onChange={handleLaneChange} options={LANE_OPTIONS} aria-label="Job type" />
+          {lane === "flat" && (
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
               <input
                 type="number"
                 min={0}
                 value={price}
-                placeholder="priced on site"
+                placeholder="149"
+                aria-label="Flat price"
+                aria-invalid={priceMissing || undefined}
                 onChange={(e) => handlePriceChange(e.target.value)}
                 style={{ ...COMPACT_INPUT, width: 140 }}
               />
             </div>
           )}
         </div>
+        {/* What the CALLER hears. The old two-button control had nowhere to say this, which is why
+            the service call fee read as if it came from nowhere. */}
+        <p
+          style={{
+            marginTop: "var(--space-2)",
+            marginBottom: 0,
+            fontSize: "var(--type-sm)",
+            color: priceMissing ? "var(--red, #B3261E)" : "var(--ink-2)",
+          }}
+        >
+          {laneConsequence(lane, price, serviceFee)}
+        </p>
       </div>
 
       <div className="field">
@@ -315,7 +326,7 @@ function ExpandedEditor({
         />
       </div>
 
-      {route === "book" && showEmergency && (
+      {isBookableLane(lane) && showEmergency && (
         <div className="field">
           <label>Emergency words</label>
           <input
@@ -328,7 +339,7 @@ function ExpandedEditor({
         </div>
       )}
 
-      {route === "quote" && showBallpark && (
+      {lane === "estimate" && showBallpark && (
         <div className="field">
           <label>Ballpark range ($)</label>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
@@ -378,12 +389,12 @@ function ExpandedEditor({
         }}
       >
         <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-          {route === "book" && !showEmergency && (
+          {isBookableLane(lane) && !showEmergency && (
             <button type="button" className="btn sm ghost" onClick={() => setShowEmergency(true)}>
               + Emergency words
             </button>
           )}
-          {route === "quote" && !showBallpark && (
+          {lane === "estimate" && !showBallpark && (
             <button type="button" className="btn sm ghost" onClick={() => setShowBallpark(true)}>
               + Ballpark range
             </button>
@@ -410,7 +421,7 @@ function ExpandedEditor({
 // ---- ServiceRow (collapsed + expanded) -------------------------------------------------
 
 export function ServiceRow(props: ServiceRowProps) {
-  const { service, index, isExpanded, onToggle, updateBookingService, onRemove, isLast } = props;
+  const { service, index, isExpanded, onToggle, updateBookingService, onRemove, isLast, serviceFee } = props;
   return (
     <div>
       <CollapsedRow
@@ -426,6 +437,7 @@ export function ServiceRow(props: ServiceRowProps) {
           updateBookingService={updateBookingService}
           onRemove={onRemove}
           isLast={isLast}
+          serviceFee={serviceFee}
         />
       )}
     </div>

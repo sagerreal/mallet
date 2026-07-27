@@ -9,12 +9,8 @@ import { Modal } from "@/components/modals/modal";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { Segmented } from "./segmented";
 import { COMPACT_INPUT } from "@/components/ui/input";
-import { laneFor, type BookingRoute } from "./booking-lanes";
-
-const ROUTE_OPTIONS = [
-  { value: "book" as const, label: "Book it" },
-  { value: "quote" as const, label: "Quote first" },
-] as const;
+import type { ServiceLane } from "@mallet/settings";
+import { LANE_OPTIONS, flatPriceMissing } from "./booking-lanes";
 
 export interface NewServiceInput {
   name: string;
@@ -33,21 +29,22 @@ export function AddServiceModal({
   onAdd: (svc: NewServiceInput) => void;
 }) {
   const [name, setName] = useState("");
-  const [route, setRoute] = useState<BookingRoute>("book");
+  const [lane, setLane] = useState<ServiceLane>("repair");
   const [price, setPrice] = useState("");
   const [triggers, setTriggers] = useState("");
 
   function reset() {
     setName("");
-    setRoute("book");
+    setLane("repair");
     setPrice("");
     setTriggers("");
   }
 
   function handleAdd() {
-    if (!name.trim()) return;
-    // The stored lane derives from the binary route + optional price (booking-lanes.ts).
-    onAdd({ name: name.trim(), lane: laneFor(route, price), price, triggers });
+    // A flat lane with no price would fall back to speaking the SERVICE FEE, a different number
+    // than the owner means to charge — so it is refused here rather than saved quietly.
+    if (!name.trim() || flatPriceMissing(lane, price)) return;
+    onAdd({ name: name.trim(), lane, price, triggers });
     reset();
     onClose();
   }
@@ -74,15 +71,16 @@ export function AddServiceModal({
       <div className="field">
         <label>Job type</label>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
-          <Segmented value={route} onChange={setRoute} options={ROUTE_OPTIONS} aria-label="Job type" />
-          {route === "book" && (
+          <Segmented value={lane} onChange={setLane} options={LANE_OPTIONS} aria-label="Job type" />
+          {lane === "flat" && (
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
               <input
                 type="number"
                 min={0}
                 value={price}
-                placeholder="priced on site"
+                placeholder="149"
+                aria-label="Flat price"
                 onChange={(e) => setPrice(e.target.value)}
                 style={{ ...COMPACT_INPUT, width: 140 }}
               />

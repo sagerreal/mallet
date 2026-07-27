@@ -318,6 +318,7 @@ export function FrontDeskPane() {
                 updateBookingService={updateBookingService}
                 onRemove={() => handleRemoveService(i)}
                 isLast={i === bk.services.length - 1}
+                serviceFee={bk.serviceFee}
               />
             ))}
             {bk.services.length === 0 && (

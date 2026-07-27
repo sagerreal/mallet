@@ -122,6 +122,18 @@ describe("buildSystemPrompt — business facts", () => {
     expect(p).toContain("$89");
     expect(p).not.toMatch(/credited/i);
   });
+
+  it("scopes the service fee to the repair lane and forbids it on an estimate call", () => {
+    // Unscoped, the prompt said "book a FREE estimate visit" and "Service/diagnostic fee: $89"
+    // with nothing connecting the fee to a lane — and the IRON GUARDRAIL only bans amounts NOT
+    // written in the prompt, so quoting $89 on a free-estimate call was permitted.
+    const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
+    const feeLine = p.split("\n").find((l) => l.includes("$89") && /fee/i.test(l));
+
+    expect(feeLine).toBeDefined();
+    expect(feeLine).toMatch(/repair/i);
+    expect(feeLine).toMatch(/never state it on an estimate/i);
+  });
 });
 
 describe("buildSystemPrompt — services table & lane scripts", () => {
