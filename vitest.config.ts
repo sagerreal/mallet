@@ -9,7 +9,10 @@ import { malletAliases } from "./vitest.aliases";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["**/*.test.ts", "**/*.test.tsx"],
+    // .test.mjs is here for scripts/ — build tooling that runs under plain node (the Vercel
+    // buildCommand) and so cannot be TypeScript. tsconfig has allowJs:false, so those files are
+    // invisible to tsc; this is what gives them a test.
+    include: ["**/*.test.ts", "**/*.test.tsx", "**/*.test.mjs"],
     exclude: ["node_modules/**", "**/node_modules/**", ".next/**", ".claude/**", "**/*.int.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
     coverage: {
