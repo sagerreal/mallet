@@ -220,9 +220,18 @@ const formatDayHours = (label: string, open: number, close: number): string =>
     ? `${label}: closed`
     : `${label}: ${formatHour(open)} to ${formatHour(close)}`;
 
+// The fee line names the LANE it belongs to. Unscoped, it contradicted the estimate script: the
+// model was told "book a FREE estimate visit" and, three sections earlier, "Service/diagnostic fee:
+// $95" with nothing tying that to a lane — and the IRON GUARDRAIL only forbids amounts "not written
+// in this prompt", so quoting the fee on a free-estimate call was permitted. book_visit already
+// speaks the right thing per lane (book-visit-speak.ts); this stops the model volunteering the
+// wrong one mid-conversation, before any tool runs.
 const formatFeeLine = (fee: number, credited: boolean): string => {
-  const base = `Service/diagnostic fee: $${fee}`;
-  return credited ? `${base}, credited toward the repair if the customer goes ahead.` : `${base}.`;
+  const credit = credited ? ", credited toward the work if the customer goes ahead" : "";
+  return (
+    `Service call fee: $${fee}${credit}. This applies ONLY to services listed as the "repair" ` +
+    `lane. NEVER state it on an estimate-lane call — those visits are free.`
+  );
 };
 
 const formatServiceLine = (s: PromptService): string => {
