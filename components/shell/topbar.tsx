@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { Row } from "@/components/ui/row";
+import { useNewMenuItems } from "@/components/shell/new-menu-items";
 
 // Route → breadcrumb, so the topbar reflects the current screen (like the prototype's crumb).
 const CRUMBS: Record<string, { section: string; label: string }> = {
@@ -49,6 +51,13 @@ const MoonIcon = () => (
   </svg>
 );
 
+const PlusIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
 interface TopbarProps {
   section?: string;
   label?: string;
@@ -64,6 +73,15 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   const section = sectionProp ?? crumb?.section ?? "Customer";
   const label = labelProp ?? crumb?.label ?? "Home";
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  // The sidebar's "+ New" is `display:none` below 760px, so the topbar carries the
+  // create actions on a phone. Same items, so the two surfaces cannot drift.
+  const [newOpen, setNewOpen] = useState(false);
+  const newItems = useNewMenuItems(() => setNewOpen(false));
+
+  // Collapse on navigation — otherwise the panel outlives the page it opened on.
+  useEffect(() => {
+    setNewOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     // Read stored theme preference
@@ -82,23 +100,45 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   };
 
   return (
-    <header className="topbar">
-      <div className="crumb" id="crumb">
-        <b>{section}</b>
-        {label && (
-          <>
-            <span className="sep">›</span>
-            {label}
-          </>
-        )}
-      </div>
-      <div className="spacer" />
-      <button className="iconbtn" onClick={toggleTheme} title="Light / dark">
-        {theme === "light" ? <MoonIcon /> : <SunIcon />}
-      </button>
-      <button className="iconbtn" title="Notifications" style={{ position: "relative" }}>
-        <BellIcon />
-      </button>
-    </header>
+    <>
+      <header className="topbar">
+        <div className="crumb" id="crumb">
+          <b>{section}</b>
+          {label && (
+            <>
+              <span className="sep">›</span>
+              {label}
+            </>
+          )}
+        </div>
+        <div className="spacer" />
+        <button
+          className="iconbtn topnew"
+          onClick={() => setNewOpen((o) => !o)}
+          aria-label="New"
+          title="New"
+          aria-haspopup="true"
+          aria-expanded={newOpen}
+        >
+          <PlusIcon />
+        </button>
+        <button className="iconbtn" onClick={toggleTheme} title="Light / dark">
+          {theme === "light" ? <MoonIcon /> : <SunIcon />}
+        </button>
+        <button className="iconbtn" title="Notifications" style={{ position: "relative" }}>
+          <BellIcon />
+        </button>
+      </header>
+
+      {/* A SIBLING of the header, not a child — so it expands in flow and pushes the
+          page down, anchored and flush, rather than floating over the content. */}
+      {newOpen && (
+        <div className="topnewmenu">
+          {newItems.map((item) => (
+            <Row key={item.label} label={item.label} onClick={item.action} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }

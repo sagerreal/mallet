@@ -1,27 +1,21 @@
 /**
  * components/shell/new-menu.tsx
- * The "+ New" dropdown button (§2.4).
- * Items dispatch openModal() — no magic strings, all MODAL.* constants.
+ * The "+ New" dropdown button (§2.4) — the DESKTOP create surface, in the sidebar.
+ *
+ * The sidebar is `display:none` below 760px, so the MOBILE create surface is the
+ * topbar's "+" instead. Both render the same actions from useNewMenuItems, so the
+ * two surfaces cannot drift.
  */
 
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useOpenModal, useAppStore } from "@/lib/store/app-store";
-import { MODAL } from "@/lib/store/modal-ids";
-
-interface MenuItem {
-  label: string;
-  action: () => void;
-}
+import { useNewMenuItems } from "@/components/shell/new-menu-items";
 
 export function NewMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const openModal = useOpenModal();
-  const addInvoice = useAppStore((s) => s.addInvoice);
+  const items = useNewMenuItems(() => setOpen(false));
 
   // Close when clicking outside
   useEffect(() => {
@@ -34,33 +28,6 @@ export function NewMenu() {
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
-
-  // Pipeline order (matches prototype): lead → quote → job → invoice.
-  const items: MenuItem[] = [
-    {
-      label: "New customer",
-      action: () => { openModal(MODAL.NEW_CUSTOMER); setOpen(false); },
-    },
-    {
-      label: "New quote",
-      action: () => { router.push("/composer"); setOpen(false); },
-    },
-    {
-      label: "New job",
-      action: () => { openModal(MODAL.NEW_JOB); setOpen(false); },
-    },
-    {
-      label: "New invoice",
-      action: () => {
-        const inv = addInvoice({
-          jobId: null, leadId: "", cust: "", phone: "", title: "New invoice",
-          lines: [], total: 0, depPaid: 0, payments: [], status: "draft", age: 0, archived: false,
-        });
-        openModal(MODAL.INVOICE, { invoiceId: inv.id });
-        setOpen(false);
-      },
-    },
-  ];
 
   return (
     <div ref={ref} style={{ position: "relative" }}>

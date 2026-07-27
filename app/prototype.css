@@ -256,6 +256,10 @@
   #aidrawer{display:none!important}   /* AI moved to the command line; the old persistent side rail is retired */
   .iconbtn{background:none;border:1px solid transparent;color:var(--ink-2);width:34px;height:34px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:var(--type-md)}
   .iconbtn:hover{background:var(--paper);color:var(--ink)}
+  /* the topbar's create surface — MOBILE ONLY. Desktop creates from the sidebar's
+     "+ New", which is display:none below 760px; this is its replacement, not a peer. */
+  .topnew{display:none}
+  .topnewmenu{display:none}
   main{flex:1;overflow-y:auto;padding:var(--space-6) var(--space-8);min-width:0;background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:22px 22px}
   main>*{max-width:1180px}
   .iconbtn svg{width:17px;height:17px;stroke:currentColor}
@@ -1745,6 +1749,14 @@
     .jtile.warn{border-left:4px solid var(--red)}
     input[type=number],input[type=tel],input[type=email],input[type=text],input[type=date],input[type=time],textarea,select{font-size:var(--type-lg)}
     .topbar{padding:0 var(--space-3);gap:var(--space-2)}
+    /* create surface for phones — the sidebar's "+ New" is hidden at this width, so
+       without this there is NO way to make a customer, quote, job or invoice that
+       isn't already on the page you happen to be looking at. */
+    .topnew{display:flex}
+    /* expands in flow directly under the bar, full-bleed and flush; it pushes the
+       page down rather than floating over it. Rows are the standard .uirow. */
+    .topnewmenu{display:flex;flex-direction:column;background:var(--card);border-bottom:1px solid var(--line);flex:0 0 auto;z-index:29}
+    .topnewmenu .uirow{min-height:48px;font-size:var(--type-md)}
     .searchbox{display:none}   /* role "view as" stays visible on mobile — the Tech role lives on a phone */
     .topbar .spacer{flex:1}
     .mobtn{display:inline-block}
