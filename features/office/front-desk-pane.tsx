@@ -81,6 +81,17 @@ function RuleRow({
 
 type HoursKey = Extract<keyof BookingHours, string>;
 
+// Monday-first, the way a work week reads.
+const DAY_ROWS: ReadonlyArray<{ label: string; oKey: HoursKey; cKey: HoursKey }> = [
+  { label: "Monday", oKey: "monOpen", cKey: "monClose" },
+  { label: "Tuesday", oKey: "tueOpen", cKey: "tueClose" },
+  { label: "Wednesday", oKey: "wedOpen", cKey: "wedClose" },
+  { label: "Thursday", oKey: "thuOpen", cKey: "thuClose" },
+  { label: "Friday", oKey: "friOpen", cKey: "friClose" },
+  { label: "Saturday", oKey: "satOpen", cKey: "satClose" },
+  { label: "Sunday", oKey: "sunOpen", cKey: "sunClose" },
+];
+
 /**
  * One day's open/closed row. MUST be module scope — see RuleRow. Nested inside the component it
  * was a new function every render, remounting the selects mid-interaction.
@@ -366,9 +377,19 @@ export function FrontDeskPane() {
           </RuleRow>
 
           <RuleRow k="hours" openRule={openRule} onToggle={toggleRule} label="Business hours" value={<span className="mono">{wdLabel}</span>}>
-            <HrRow lbl="Weekdays" oKey="wdOpen" cKey="wdClose" hours={bk.hours} setBookingHours={setBookingHours} setBookingDayHours={setBookingDayHours} />
-            <HrRow lbl="Saturday" oKey="satOpen" cKey="satClose" hours={bk.hours} setBookingHours={setBookingHours} setBookingDayHours={setBookingDayHours} />
-            <HrRow lbl="Sunday" oKey="sunOpen" cKey="sunClose" hours={bk.hours} setBookingHours={setBookingHours} setBookingDayHours={setBookingDayHours} />
+            {/* Every day its own row. "Weekdays" could not express a shop that closes at noon on
+                Friday, which is most of them. */}
+            {DAY_ROWS.map((d) => (
+              <HrRow
+                key={d.oKey}
+                lbl={d.label}
+                oKey={d.oKey}
+                cKey={d.cKey}
+                hours={bk.hours}
+                setBookingHours={setBookingHours}
+                setBookingDayHours={setBookingDayHours}
+              />
+            ))}
           </RuleRow>
 
           <RuleRow
