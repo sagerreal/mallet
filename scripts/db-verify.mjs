@@ -42,26 +42,19 @@ async function main() {
   }
 
   const journal = JSON.parse(readFileSync(JOURNAL_PATH, "utf-8"));
-  const lastEntry = journal.entries.at(-1);
-  if (!lastEntry) {
-    console.error("ERROR: Journal is empty — nothing to verify.");
-    process.exit(1);
-  }
+  const entries = journal.entries ?? [];
 
   const db = postgres(databaseUrl, { max: 1, ssl: "require", prepare: false });
   try {
-    const rows = await db`
-      SELECT created_at::text AS created_at FROM drizzle.__drizzle_migrations
-      ORDER BY id DESC
-      LIMIT 1
-    `;
-    const liveWhen = rows[0]?.created_at ? Number(rows[0].created_at) : null;
+    // The WHOLE applied set, not just the newest row. A high-water mark cannot tell "the database
+    // is ahead" apart from "the database is ahead AND a migration in the middle never ran" — see
+    // migration-state.mjs. ~100 integers; the cost is nothing and the distinction is the gate.
+    const rows = await db`SELECT created_at::text AS created_at FROM drizzle.__drizzle_migrations`;
+    const appliedWhens = rows
+      .map((r) => Number(r.created_at))
+      .filter((n) => Number.isFinite(n));
 
-    const verdict = compareMigrationState({
-      liveWhen,
-      journalWhen: lastEntry.when,
-      journalTag: lastEntry.tag,
-    });
+    const verdict = compareMigrationState({ appliedWhens, entries });
 
     if (!verdict.ok) {
       console.error(`\n${verdict.message}`);
