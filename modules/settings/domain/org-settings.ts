@@ -71,10 +71,24 @@ export interface OrgSettingsProps {
   readonly techTexts: boolean;
   readonly frontDesk: boolean;
   readonly scopeOn: boolean;
-  /** Weekday open hour [0, 24]. */
+  /**
+   * Weekday open/close, retained so a rollback still reads real hours. NOTHING derives
+   * availability from these any more — the per-day fields below do. Kept in sync on write so the
+   * two never disagree if something old reads them.
+   */
   readonly hoursWdOpen: number;
-  /** Weekday close hour [0, 24]. */
   readonly hoursWdClose: number;
+  /** Per-day open/close hours [0, 24]. 0/0 means closed, same sentinel as Saturday/Sunday. */
+  readonly hoursMonOpen: number;
+  readonly hoursMonClose: number;
+  readonly hoursTueOpen: number;
+  readonly hoursTueClose: number;
+  readonly hoursWedOpen: number;
+  readonly hoursWedClose: number;
+  readonly hoursThuOpen: number;
+  readonly hoursThuClose: number;
+  readonly hoursFriOpen: number;
+  readonly hoursFriClose: number;
   /** Saturday open hour [0, 24]. */
   readonly hoursSatOpen: number;
   /** Saturday close hour [0, 24]. */
@@ -150,8 +164,19 @@ const isValidDayHours = (open: number, close: number): boolean => {
 // The first day whose hours violate the invariant, anchored to that day's CLOSE field (the field the
 // hours editor drives against a fixed open), or null when weekday/Saturday/Sunday are all valid.
 const firstInvalidDayHours = (p: OrgSettingsProps): ValidationError | null => {
-  if (!isValidDayHours(p.hoursWdOpen, p.hoursWdClose)) {
-    return validation("weekday hours: closing time must be after opening time", "hoursWdClose");
+  // Each day named individually so the error points at the field the owner actually edited —
+  // "Wednesday hours" is actionable where "weekday hours" sends them hunting through five rows.
+  const perDay: ReadonlyArray<readonly [string, number, number, string]> = [
+    ["Monday", p.hoursMonOpen, p.hoursMonClose, "hoursMonClose"],
+    ["Tuesday", p.hoursTueOpen, p.hoursTueClose, "hoursTueClose"],
+    ["Wednesday", p.hoursWedOpen, p.hoursWedClose, "hoursWedClose"],
+    ["Thursday", p.hoursThuOpen, p.hoursThuClose, "hoursThuClose"],
+    ["Friday", p.hoursFriOpen, p.hoursFriClose, "hoursFriClose"],
+  ];
+  for (const [name, open, close, field] of perDay) {
+    if (!isValidDayHours(open, close)) {
+      return validation(`${name} hours: closing time must be after opening time`, field);
+    }
   }
   if (!isValidDayHours(p.hoursSatOpen, p.hoursSatClose)) {
     return validation("Saturday hours: closing time must be after opening time", "hoursSatClose");

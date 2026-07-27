@@ -376,7 +376,12 @@ describe("settings-slice persistence", () => {
       notServices: "Septic",
       serviceFee: 89,
       feeCredited: true,
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      hours: { wdOpen: 8, wdClose: 17,
+ monOpen: 8, monClose: 17,
+ tueOpen: 8, tueClose: 17,
+ wedOpen: 8, wedClose: 17,
+ thuOpen: 8, thuClose: 17,
+ friOpen: 8, friClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
       area: { cities: "Oakland", radiusMi: 25, originAddress: "200 Ray St, Pleasanton, CA" },
     };
     const payload = buildBookingPayload(booking);
@@ -396,7 +401,7 @@ describe("settings-slice persistence", () => {
       notServices: "",
       serviceFee: 89,
       feeCredited: true,
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      hours: { wdOpen: 8, wdClose: 17, monOpen: 8, monClose: 17, tueOpen: 8, tueClose: 17, wedOpen: 8, wedClose: 17, thuOpen: 8, thuClose: 17, friOpen: 8, friClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
       area: { cities: "", radiusMi: 25, originAddress: "   " },
     };
     expect(buildBookingPayload(booking).serviceOriginAddress).toBeNull();
@@ -410,7 +415,7 @@ describe("settings-slice persistence", () => {
       notServices: "",
       serviceFee: 89,
       feeCredited: true,
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      hours: { wdOpen: 8, wdClose: 17, monOpen: 8, monClose: 17, tueOpen: 8, tueClose: 17, wedOpen: 8, wedClose: 17, thuOpen: 8, thuClose: 17, friOpen: 8, friClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
       area: { cities: "", radiusMi: 25, originAddress: "" },
     };
     const payload = buildBookingPayload(booking);
@@ -425,7 +430,7 @@ describe("settings-slice persistence", () => {
       notServices: "",
       serviceFee: 89,
       feeCredited: true,
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      hours: { wdOpen: 8, wdClose: 17, monOpen: 8, monClose: 17, tueOpen: 8, tueClose: 17, wedOpen: 8, wedClose: 17, thuOpen: 8, thuClose: 17, friOpen: 8, friClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
       area: { cities: "", radiusMi: 25, originAddress: "" },
     };
     const payload = buildBookingPayload(booking);
@@ -440,7 +445,7 @@ describe("settings-slice persistence", () => {
       notServices: "",
       serviceFee: 89,
       feeCredited: true,
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      hours: { wdOpen: 8, wdClose: 17, monOpen: 8, monClose: 17, tueOpen: 8, tueClose: 17, wedOpen: 8, wedClose: 17, thuOpen: 8, thuClose: 17, friOpen: 8, friClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
       area: { cities: "", radiusMi: 25, originAddress: "" },
     };
     const payload = buildBookingPayload(booking);
@@ -454,7 +459,7 @@ describe("settings-slice persistence", () => {
       serviceFee: 89,
       feeCredited: true,
       deferKeywords: "insurance, claim, adjuster",
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      hours: { wdOpen: 8, wdClose: 17, monOpen: 8, monClose: 17, tueOpen: 8, tueClose: 17, wedOpen: 8, wedClose: 17, thuOpen: 8, thuClose: 17, friOpen: 8, friClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
       area: { cities: "", radiusMi: 25, originAddress: "" },
     };
     const payload = buildBookingPayload(booking);
@@ -467,7 +472,7 @@ describe("settings-slice persistence", () => {
       notServices: "",
       serviceFee: 89,
       feeCredited: true,
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
+      hours: { wdOpen: 8, wdClose: 17, monOpen: 8, monClose: 17, tueOpen: 8, tueClose: 17, wedOpen: 8, wedClose: 17, thuOpen: 8, thuClose: 17, friOpen: 8, friClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
       area: { cities: "", radiusMi: 25, originAddress: "" },
     };
     const payload = buildBookingPayload(booking);
