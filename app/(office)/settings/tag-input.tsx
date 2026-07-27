@@ -75,7 +75,12 @@ export function TagInput({
             border: "1px solid var(--line)",
             background: "var(--manila, var(--bg))",
             color: "var(--ink)",
-            whiteSpace: "nowrap",
+            // A long tag WRAPS inside the pill rather than overflowing the bordered box.
+            // "residential or home cleaning" is an ordinary rule, and with nowrap and no
+            // max-width it ran past the container's own border.
+            maxWidth: "100%",
+            minWidth: 0,
+            textAlign: "left",
           }}
         >
           {t}
@@ -84,6 +89,8 @@ export function TagInput({
             aria-label={`Remove ${t}`}
             onClick={(e) => { e.stopPropagation(); removeTag(i); }}
             style={{
+              // Never wraps off the pill when the label takes two lines.
+              flex: "none",
               border: "none",
               background: "transparent",
               cursor: "pointer",
