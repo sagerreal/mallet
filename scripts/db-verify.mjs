@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 /**
- * db:verify — validates that the live DB is at the same migration as the journal.
- * Exits 0 on success, 1 on divergence (with a loud message).
+ * db:verify — validates that the live DB is not BEHIND the migrations this branch carries.
+ * Exits 0 on success (including when the DB is ahead), 1 when a migration is missing.
  *
  * Usage: node --env-file=.env.local scripts/db-verify.mjs
  * Called after every db:migrate to catch the silent-no-op gotcha.
  *
  * Drizzle's __drizzle_migrations table stores { id (serial), hash, created_at (unix ms) }.
  * The journal entry's `when` field is the same unix-ms timestamp drizzle inserts as created_at.
- * We verify by comparing the highest created_at in the DB to the last entry's `when`.
+ * We compare the highest created_at in the DB to the last entry's `when`.
+ *
+ * The comparison itself lives in ./migration-state.mjs, which documents why it is directional
+ * rather than an equality check. Read that before tightening this.
  */
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { compareMigrationState } from "./migration-state.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const JOURNAL_PATH = resolve(__dirname, "../shared/db/migrations/meta/_journal.json");
@@ -52,18 +56,21 @@ async function main() {
       LIMIT 1
     `;
     const liveWhen = rows[0]?.created_at ? Number(rows[0].created_at) : null;
-    const journalWhen = lastEntry.when;
 
-    if (liveWhen !== journalWhen) {
-      console.error(
-        `\nMIGRATION DIVERGENCE DETECTED!\n` +
-          `  Journal last entry : ${lastEntry.tag} (when=${journalWhen})\n` +
-          `  Live DB last when  : ${liveWhen ?? "(none)"}\n\n` +
-          `Run \`npm run db:migrate\` to apply pending migrations, then re-run \`npm run db:verify\`.\n`,
-      );
+    const verdict = compareMigrationState({
+      liveWhen,
+      journalWhen: lastEntry.when,
+      journalTag: lastEntry.tag,
+    });
+
+    if (!verdict.ok) {
+      console.error(`\n${verdict.message}`);
       process.exit(1);
     }
-    console.log(`db:verify ✓  live DB is at ${lastEntry.tag} (when=${liveWhen})`);
+    // A warning still passes, but goes to stderr so it is visible in a build log rather than
+    // buried among the lines nobody reads when the build is green.
+    if (verdict.level === "warn") console.error(`\n${verdict.message}`);
+    else console.log(verdict.message);
   } finally {
     await db.end({ timeout: 5 });
   }
