@@ -5,8 +5,12 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { updatePassword } from "@/features/auth/hooks";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export default function ResetPasswordPage() {
+  // onSubmit does not exist until React attaches. Until then a submit is a native
+  // GET that puts credentials in the URL — see lib/use-hydrated.ts.
+  const hydrated = useHydrated();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -22,10 +26,10 @@ export default function ResetPasswordPage() {
 
   return (
     <Card>
-      <form onSubmit={onSubmit} className="stack-3">
+      <form onSubmit={onSubmit} method="post" className="stack-3">
         <Field label="New password"><Input name="password" type="password" required minLength={8} autoComplete="new-password" /></Field>
         {error ? <p style={{ fontSize: "var(--type-sm)", color: "var(--red)" }}>{error}</p> : null}
-        <Button type="submit" style={{ width: "100%" }}>Set password</Button>
+        <Button type="submit" style={{ width: "100%" }} disabled={!hydrated}>Set password</Button>
       </form>
     </Card>
   );
