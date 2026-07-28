@@ -44,6 +44,7 @@ export default function SetPasswordPage() {
           <Field label="Your name">
             <Input
               name="fullName"
+              enterKeyHint="next"
               type="text"
               required
               maxLength={80}
@@ -54,6 +55,7 @@ export default function SetPasswordPage() {
           <Field label="Password">
             <Input
               name="password"
+              enterKeyHint="go"
               type="password"
               required
               minLength={8}

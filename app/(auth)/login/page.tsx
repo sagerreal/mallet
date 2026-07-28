@@ -33,11 +33,11 @@ export default function LoginPage() {
       <form onSubmit={onSubmit} method="post">
         <label className="auth-field">
           <span>Email</span>
-          <input className="auth-input" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
+          <input className="auth-input" name="email" enterKeyHint="next" type="email" required autoComplete="email" placeholder="you@example.com" />
         </label>
         <label className="auth-field">
           <span>Password</span>
-          <input className="auth-input" name="password" type="password" required autoComplete="current-password" placeholder="••••••••" />
+          <input className="auth-input" name="password" enterKeyHint="go" type="password" required autoComplete="current-password" placeholder="••••••••" />
         </label>
         {error && <p className="auth-error">{error}</p>}
         <button className="auth-submit" type="submit" disabled={busy || !hydrated}>

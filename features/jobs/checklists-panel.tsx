@@ -86,6 +86,7 @@ export function ChecklistsPanel() {
         <h2 style={{ margin: "0", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.02em" }}>Checklists</h2>
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <input
+            enterKeyHint="search"
             type="text"
             placeholder="Search checklists…"
             aria-label="Search checklists"

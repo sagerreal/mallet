@@ -171,6 +171,7 @@ export function MaterialManager({ serviceId, canSeeCost }: MaterialManagerProps)
 
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
         <input
+          enterKeyHint="search"
           type="text"
           placeholder="Search materials to add…"
           value={search}

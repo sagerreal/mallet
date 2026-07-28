@@ -35,7 +35,7 @@ export default function ForgotPasswordPage() {
       <form onSubmit={onSubmit} method="post">
         <label className="auth-field">
           <span>Email</span>
-          <input className="auth-input" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
+          <input className="auth-input" name="email" enterKeyHint="go" type="email" required autoComplete="email" placeholder="you@example.com" />
         </label>
         <button className="auth-submit" type="submit" disabled={!hydrated}>Send reset link</button>
       </form>

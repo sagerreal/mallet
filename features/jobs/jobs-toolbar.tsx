@@ -51,6 +51,7 @@ export function JobsToolbar({
           <line x1="16.5" y1="16.5" x2="22" y2="22"/>
         </svg>
         <input
+          enterKeyHint="search"
           type="text"
           aria-label="Search jobs"
           placeholder="Search customer, job, address…"
