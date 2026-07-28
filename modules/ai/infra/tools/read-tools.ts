@@ -407,7 +407,7 @@ export const memberListTool: AgentTool = {
   mutating: false,
   async handle(_input, ctx): Promise<ToolOutcome> {
     const rows = await ctx.tx
-      .select({ id: users.id, name: users.name, role: users.role, isFieldCrew: users.isFieldCrew })
+      .select({ id: users.id, name: users.name, role: users.role, isFieldCrew: users.isFieldCrew, email: users.email, skillTags: users.skillTags })
       .from(users)
       .where(eq(users.orgId, ctx.orgId));
     if (rows.length === 0) return { ok: true, summary: "No members found." };
@@ -417,7 +417,11 @@ export const memberListTool: AgentTool = {
         .map((r) => {
           const display = r.name ?? "(no name)";
           const crew = r.isFieldCrew ? " [field crew]" : "";
-          return `${display} — ${r.role}${crew} [id: ${r.id}]`;
+          // skillTags are the CERT TAGS dispatch is gated on — "who can do a gas job" is
+          // unanswerable without them, and it is the whole point of having them.
+          const certs = r.skillTags && r.skillTags.length > 0 ? ` — certs: ${r.skillTags.join(", ")}` : "";
+          const email = r.email ? ` — ${r.email}` : "";
+          return `${display} — ${r.role}${crew}${certs}${email} [id: ${r.id}]`;
         })
         .join("\n"),
     };
@@ -459,6 +463,10 @@ export const companyGetTool: AgentTool = {
     if (!company) return { ok: false, error: `company ${parsed.data.companyId} not found — use company_list to find the right id` };
     const p = company.props;
     const parts = [p.name];
+    // Phone and email are on the company record and were the two fields a person actually needs
+    // from it — an address and a website answer neither "call them" nor "email them".
+    if (p.phone) parts.push(`phone: ${p.phone}`);
+    if (p.email) parts.push(`email: ${p.email}`);
     if (p.address) parts.push(`address: ${p.address}`);
     if (p.website) parts.push(`website: ${p.website}`);
     if (p.notes) parts.push(`notes: ${p.notes}`);

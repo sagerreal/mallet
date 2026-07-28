@@ -75,17 +75,65 @@ export const quoteDraftInput = z.object({
   title: z.string().max(200).optional(),
   taxBps: z.number().int().min(0).max(10_000).optional(),
   depBps: z.number().int().min(0).max(10_000).optional(),
+  // Discount in basis points (500 = 5%). Was hardcoded to 0, so the agent could not honour "give
+  // them 10% off" on a quote it was otherwise building correctly.
+  discBps: z.number().int().min(0).max(10_000).optional(),
+  // How long the quote stands. Hardcoded null, so every agent-drafted quote was open-ended.
+  validDays: z.number().int().min(1).max(365).optional(),
+  // Good/Better/Best. The whole tiered format was unreachable: the agent could READ a tiered quote
+  // and had no way to produce one. Set recommendedTier to make the quote tiered — the domain then
+  // requires every line to carry a tier.
+  recommendedTier: z.enum(["good", "better", "best"]).optional(),
+  tierNames: z
+    .object({ good: z.string().max(60), better: z.string().max(60), best: z.string().max(60) })
+    .optional(),
   lines: z
     .array(
       z.object({
         description: z.string().min(1).max(500),
         quantity: z.number().positive().max(10_000),
         rateCents: z.number().int().min(0).max(10_000_000),
+        // Cost, for margin. Hardcoded 0, so every agent-drafted job reported 100% margin.
+        costCents: z.number().int().min(0).max(10_000_000).optional(),
         isOptional: z.boolean().optional(),
+        tier: z.enum(["good", "better", "best"]).optional(),
       }),
     )
     .min(1)
     .max(100),
+});
+// Correcting an OPEN invoice in place. Without this the only way to change net terms or fix a
+// wrong line was void-and-redraft, which burns an invoice number and leaves a void row in the
+// ledger for what was a typo.
+export const invoiceUpdateInput = z.object({
+  invoiceId: z.string().uuid(),
+  title: z.string().max(200).nullable().optional(),
+  termsDays: z.number().int().min(0).max(365).optional(),
+  depositPaidCents: z.number().int().min(0).max(100_000_000).optional(),
+  // FULL replacement set when supplied — the use case replaces the display lines wholesale, so a
+  // partial list silently deletes the rest. The tool description says so in those words.
+  lines: z
+    .array(
+      z.object({
+        description: z.string().min(1).max(500),
+        quantity: z.number().positive().max(10_000),
+        rateCents: z.number().int().min(0).max(10_000_000),
+      }),
+    )
+    .min(1)
+    .max(100)
+    .optional(),
+});
+// Editing an existing customer. customer_create could only create; a changed phone or a new
+// address had no path at all.
+export const customerUpdateInput = z.object({
+  customerId: z.string().uuid(),
+  name: z.string().min(1).max(200).optional(),
+  phone: z.string().max(32).nullable().optional(),
+  email: z.string().max(320).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  role: z.string().max(100).nullable().optional(),
 });
 export const invoiceSendInput = z.object({ invoiceId: z.string().uuid() });
 export const quoteSendInput = z.object({ estimateId: z.string().uuid() });

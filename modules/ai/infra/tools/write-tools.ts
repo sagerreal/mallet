@@ -9,6 +9,8 @@ import {
   CreateInvoiceFromJobUseCase,
   RecordPaymentUseCase,
   VoidInvoiceUseCase,
+  UpdateInvoiceMetadataUseCase,
+  PatchInvoiceLinesUseCase,
 } from "@mallet/invoicing";
 import { DrizzleEstimateRepository, DraftEstimateUseCase, SendEstimateUseCase, AcceptEstimateUseCase, DeclineEstimateUseCase, runInSavepoint } from "@mallet/quoting";
 import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase, PatchVisitScheduleUseCase, CreateJobFromEstimateUseCase, DrizzleEstimateReader } from "@mallet/jobs";
@@ -39,6 +41,8 @@ import {
   jobScheduleInput,
   jobAssignInput,
   visitPatchInput,
+  invoiceUpdateInput,
+  customerUpdateInput,
   quoteAcceptInput,
   quoteDeclineInput,
   taskCreateInput,
@@ -86,11 +90,21 @@ export const quoteDraftTool: AgentTool = {
       orgId: ctx.orgId,
       leadId: asLeadId(parsed.data.leadId),
       title: parsed.data.title ?? null,
-      discBps: 0,
+      discBps: parsed.data.discBps ?? 0,
       taxBps: parsed.data.taxBps ?? 0,
       depBps: parsed.data.depBps ?? 0,
-      validDays: null,
-      lines: parsed.data.lines.map((l) => ({ description: l.description, quantity: l.quantity, rateCents: l.rateCents, costCents: 0, isOptional: l.isOptional ?? false, needsPhoto: false })),
+      validDays: parsed.data.validDays ?? null,
+      recommendedTier: parsed.data.recommendedTier ?? null,
+      tierNames: parsed.data.tierNames ?? null,
+      lines: parsed.data.lines.map((l) => ({
+        description: l.description,
+        quantity: l.quantity,
+        rateCents: l.rateCents,
+        costCents: l.costCents ?? 0,
+        isOptional: l.isOptional ?? false,
+        needsPhoto: false,
+        tier: l.tier ?? null,
+      })),
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     return { ok: true, summary: `Drafted estimate ${result.value.props.num} — total ${money(result.value.total())} (id: ${result.value.props.id}).` };
@@ -310,6 +324,107 @@ const publicOrigin = (): string | null => {
     }
   }
   return cachedOrigin;
+};
+
+// --- invoice_update: correct an OPEN invoice in place ---
+// Fingerprints on status + total so a concurrent payment or send is caught before the edit lands.
+export const invoiceUpdateTool: AgentTool = {
+  name: "invoice_update",
+  description:
+    "Correct an OPEN invoice (draft, sent or partial): its title, payment terms, deposit, or its line items. Use this instead of voiding and re-drafting — a void burns the invoice number and leaves a void row in the ledger. NOTE: `lines` REPLACES the whole set, so send every line you want kept, not just the changed one. Frozen once the invoice is paid or void. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(invoiceUpdateInput),
+  input: invoiceUpdateInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(invoiceUpdateInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const inv = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
+    return inv ? `invoice:${inv.props.id}:${inv.props.status}:${inv.props.total}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(invoiceUpdateInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const d = parsed.data;
+    const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.orgId);
+    const invoiceId = asInvoiceId(d.invoiceId);
+
+    const wantsMeta = d.title !== undefined || d.termsDays !== undefined || d.depositPaidCents !== undefined;
+    if (!wantsMeta && !d.lines) {
+      return { ok: false, error: "nothing to change — supply a title, termsDays, depositPaidCents, or lines" };
+    }
+
+    if (wantsMeta) {
+      const meta = new UpdateInvoiceMetadataUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+      const r = await meta.exec({
+        invoiceId,
+        ...(d.title !== undefined ? { title: d.title } : {}),
+        ...(d.termsDays !== undefined ? { termsDays: d.termsDays } : {}),
+        ...(d.depositPaidCents !== undefined ? { depositPaidCents: d.depositPaidCents } : {}),
+      });
+      if (!isOk(r)) return { ok: false, error: r.error.message };
+    }
+
+    if (d.lines) {
+      const patch = new PatchInvoiceLinesUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+      const r = await patch.exec({ invoiceId, lines: d.lines.map((l) => ({ description: l.description, quantity: l.quantity, rateCents: l.rateCents, costCents: 0 })) });
+      if (!isOk(r)) return { ok: false, error: r.error.message };
+      const updated = r.value;
+      return { ok: true, summary: `Invoice ${updated.props.num} updated — total ${asMoney(updated.props.total)}, balance ${asMoney(updated.due())}.` };
+    }
+
+    const after = await repo.findById(invoiceId);
+    return after
+      ? { ok: true, summary: `Invoice ${after.props.num} updated — total ${asMoney(after.props.total)}.` }
+      : { ok: true, summary: "Invoice updated." };
+  },
+};
+
+// --- customer_update: edit an existing customer ---
+// Fingerprints on the customer's name + stage so a concurrent change is caught at confirm.
+export const customerUpdateTool: AgentTool = {
+  name: "customer_update",
+  description:
+    "Edit an existing customer: name, phone, email, service address, notes or role. Use customer_find or customer_list to get the id. Pass null to clear a field. Only the fields you supply change. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(customerUpdateInput),
+  input: customerUpdateInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(customerUpdateInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.customerId));
+    return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(customerUpdateInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const d = parsed.data;
+    const repo = new DrizzleLeadRepository(ctx.tx, ctx.orgId);
+    const lead = await repo.findById(asLeadId(d.customerId));
+    if (!lead) return { ok: false, error: `customer ${d.customerId} not found — use customer_find or customer_list` };
+
+    // Normalise before writing: leads_org_phone_uidx is keyed on E.164, so storing a raw
+    // "(781) 385-0591" would both break dedupe and make customer_find miss them afterwards.
+    const fields: Record<string, unknown> = {};
+    if (d.name !== undefined) fields.name = d.name;
+    if (d.email !== undefined) fields.email = d.email;
+    if (d.address !== undefined) fields.address = d.address;
+    if (d.notes !== undefined) fields.notes = d.notes;
+    if (d.role !== undefined) fields.role = d.role;
+    if (d.phone !== undefined) {
+      if (d.phone === null || d.phone.trim().length === 0) fields.phone = null;
+      else {
+        const ph = Phone.parse(d.phone);
+        if (!isOk(ph)) return { ok: false, error: ph.error.message };
+        fields.phone = ph.value;
+      }
+    }
+    if (Object.keys(fields).length === 0) return { ok: false, error: "nothing to change — supply at least one field" };
+
+    const patched = lead.patch(fields, ctx.deps.clock.now());
+    if (!isOk(patched)) return { ok: false, error: patched.error.message };
+    await repo.save(patched.value);
+    return { ok: true, summary: `Updated ${patched.value.props.name} — changed ${Object.keys(fields).join(", ")}.` };
+  },
 };
 
 // --- quote_accept / quote_decline: record the customer's answer ---

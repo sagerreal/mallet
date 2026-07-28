@@ -70,7 +70,7 @@ vi.mock("@mallet/a2p", () => ({
 // The users table import is used directly in member_list, and orgs + org_settings in
 // get_context — mock @mallet/shared/db/schema with all three.
 vi.mock("@mallet/shared/db/schema", () => ({
-  users: { id: "id", orgId: "orgId", name: "name", role: "role", isFieldCrew: "isFieldCrew" },
+  users: { id: "id", orgId: "orgId", name: "name", role: "role", isFieldCrew: "isFieldCrew", email: "email", skillTags: "skillTags" },
   orgs: { id: "id", name: "name" },
   // get_context now reads the org's timezone so "today" is the shop's today, not UTC's.
   orgSettings: { orgId: "orgId", timezone: "timezone" },
