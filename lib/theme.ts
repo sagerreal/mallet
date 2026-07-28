@@ -52,7 +52,9 @@ export function nextTheme(current: Theme): Theme {
  * outright in some privacy modes, and a theme is never worth a blank page.
  */
 export const THEME_INIT_SCRIPT = `(function(){try{
+var d=document.documentElement;
+if(d.getAttribute('data-theme')==='light'||d.getAttribute('data-theme')==='dark')return;
 var s=localStorage.getItem('${THEME_STORAGE_KEY}');
 var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
-document.documentElement.setAttribute('data-theme',t);
-}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
+d.setAttribute('data-theme',t);
+}catch(e){}})();`;
