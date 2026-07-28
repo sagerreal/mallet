@@ -7,6 +7,9 @@ export { AnthropicLlmClient } from "./infra/anthropic-llm-client";
 export { runAgentTurn } from "./app/run-agent-turn";
 export type { AgentResult, ToolMeta, ExecuteTool, PendingAction, RunAgentParams } from "./app/run-agent-turn";
 export { buildAgentTools } from "./infra/agent-tools";
+// The one-line "here is what I am about to do" shown before a mutating tool runs. Exported so
+// every approval surface (in-app panel, SMS confirmation) describes an action identically.
+export { describeProposal } from "./domain/proposal-summary";
 export type { LlmClient, LlmRequest, AssistantTurn, AgentMessage, AssistantBlock, Effort } from "./domain/llm-client";
 export { LlmError } from "./domain/llm-client";
 export type { AgentTool, ToolContext, ToolDeps, ToolOutcome } from "./domain/tool";

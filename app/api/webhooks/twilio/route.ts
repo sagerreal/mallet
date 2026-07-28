@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { validateRequest } from "twilio";
 import { loadConfig } from "@mallet/shared/config";
 import { withTenant } from "@mallet/shared/db/tx";
@@ -16,6 +17,11 @@ import { getAppDeps } from "@/trpc/di";
 // Signature verification is the FIRST thing that happens — before any DB access.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// An agent turn is opus at high effort with up to 15 tool iterations — the tRPC route that hosts
+// the same loop declares 300 too. `after()` work still bills against this ceiling, so without it
+// the platform default would cut a staffer's reply off mid-thought. This route previously declared
+// none because all it did was one INSERT.
+export const maxDuration = 300;
 
 // Return minimal valid TwiML — an empty <Response/> instructs Twilio to do nothing further
 // (no auto-reply). Adding a <Message> here would auto-reply, which we don't want.
@@ -88,6 +94,82 @@ export async function POST(req: Request): Promise<Response> {
 
   const deps = getAppDeps();
   return runWithContext({ requestId: deps.ids.newId() }, async () => {
+    // ── Staff assistant branch ────────────────────────────────────────────────────────────
+    // Texts to the ONE Mallet-owned assistant number are staff talking to the AI, not customers
+    // talking to a shop. That number belongs to no org, so the To-number lookup below would find
+    // nothing and drop the message — this branch has to come first.
+    //
+    // Unset MALLET_ASSISTANT_NUMBER and the branch never runs: the feature is dark, not half-on.
+    if (config.MALLET_ASSISTANT_NUMBER && to === config.MALLET_ASSISTANT_NUMBER) {
+      if (!config.TWILIO_ACCOUNT_SID || !config.TWILIO_AUTH_TOKEN || !deps.llmClient) {
+        logger.warn({ path: "webhooks/twilio" }, "assistant text received but the assistant is not configured");
+        return twimlEmpty();
+      }
+
+      const accountSid = config.TWILIO_ACCOUNT_SID;
+      const authToken = config.TWILIO_AUTH_TOKEN;
+      const assistantNumber = config.MALLET_ASSISTANT_NUMBER;
+      const llm = deps.llmClient;
+
+      // Answer Twilio NOW and do the work after. A turn takes minutes; Twilio gives ~15 seconds
+      // and RETRIES on timeout, so awaiting here would run the staffer's instruction twice.
+      after(async () => {
+        try {
+          // Imported HERE, not at module scope. The assistant branch is the rare path, and a
+          // static import would pull the agent, its 29 tools and the privileged db client into
+          // every ordinary customer text's cold start.
+          const {
+            handleStaffSms,
+            DrizzleStaffByPhoneReader,
+            DrizzleSmsSessionStore,
+            makeAgentTurnRunner,
+            TwilioStaffReplySender,
+          } = await import("@mallet/sms-agent");
+
+          const staffReader = new DrizzleStaffByPhoneReader();
+          const staff = await staffReader.findStaffByPhone(from);
+          if (!staff) {
+            // Not a verified staff mobile. Deliberately silent: replying "you are not recognised"
+            // to an unknown number would confirm to a stranger that this number is a live agent
+            // endpoint, and would text back at whoever a spoofer chose as the sender.
+            logger.warn({ path: "webhooks/twilio" }, "assistant text from an unrecognised number; ignored");
+            return;
+          }
+
+          await handleStaffSms(
+            {
+              staffReader: { findStaffByPhone: async () => staff },
+              sessions: new DrizzleSmsSessionStore(staff.orgId, deps.ids.newId),
+              runTurn: makeAgentTurnRunner({
+                llm,
+                clock: deps.clock,
+                ids: deps.ids,
+                notificationSender: deps.notificationSender,
+                paymentLinkGateway: deps.paymentLinkGateway,
+              }),
+              reply: new TwilioStaffReplySender({
+                accountSid,
+                authToken,
+                assistantNumber,
+                messagingServiceSid: config.MALLET_ASSISTANT_MESSAGING_SERVICE_SID,
+                clock: deps.clock,
+              }),
+            },
+            { fromPhone: from, body },
+          );
+        } catch (error) {
+          // after() runs past the response, so a throw here reaches no one. Log loudly — this is
+          // the only trace that a staffer asked something and got silence.
+          logger.error(
+            { err: error instanceof Error ? error.message : String(error) },
+            "staff assistant turn failed",
+          );
+        }
+      });
+
+      return twimlEmpty();
+    }
+
     try {
       // Resolve which org owns the To-number. This runs privileged (owner role, BYPASSRLS)
       // because the webhook has no principal yet. It returns only an OrgId — minimal data.

@@ -2,6 +2,7 @@
 // schema entry point, and app code imports tables from here, so the import seam
 // stays stable. New schema files MUST be re-exported here or drizzle-kit will miss them.
 export * from "./orgs";
+export * from "./staff-sms-sessions";
 export * from "./users";
 export * from "./leads";
 export * from "./estimates";
