@@ -24,6 +24,13 @@ export const users = pgTable(
     // existing rows are unaffected, and it is remembered the first time a call is placed so the
     // office does not retype it. No new RLS needed (users table is already FOR ALL).
     callbackNumber: text("callback_number"),
+    // Set only when the number has PROVEN it belongs to this user — they texted a code back from
+    // it. Until then callback_number is self-assertion: a logged-in user typing digits into a box,
+    // with no OTP and no ownership proof. That is fine for "ring me at this number" (the worst case
+    // is your own call goes to the wrong phone) and NOT fine as the identity behind an inbound
+    // command channel, where it decides whose org an SMS may write to. The SMS agent matches on
+    // this column being non-null; nothing else reads it, so the calling flow is unchanged.
+    callbackVerifiedAt: timestamp("callback_verified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -32,6 +39,17 @@ export const users = pgTable(
     uniqueIndex("users_auth_user_uidx").on(t.authUserId),
     index("users_org_idx").on(t.orgId),
     check("users_role_check", sql`${t.role} in ('owner', 'office', 'tech')`),
+    // GLOBAL, not per-org, and that is the whole point. Every shop's staff texts ONE Mallet-owned
+    // assistant number, so the number a text arrived AT no longer says which shop it belongs to —
+    // the SENDER's number is the only thing that identifies both the person and their org. Scoped
+    // per-org this index would permit the same mobile in two shops, and an inbound text would have
+    // no way to choose between them.
+    //
+    // Partial: only VERIFIED numbers are constrained, so the many NULLs and any unverified
+    // duplicates stay legal and no existing row is invalidated.
+    uniqueIndex("users_verified_callback_uidx")
+      .on(t.callbackNumber)
+      .where(sql`${t.callbackVerifiedAt} is not null`),
     // Composite-unique target so child tables (e.g. jobs.assignee_user_id) can FK on (org_id, id)
     // and never point at another org's user.
     unique("users_org_id_uq").on(t.orgId, t.id),
