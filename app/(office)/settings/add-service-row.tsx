@@ -57,6 +57,7 @@ export function AddServiceRow({ onAdd, autoFocus = false }: AddServiceRowProps) 
         />
         <input
           type="number"
+          inputMode="decimal"
           placeholder="price $"
           value={price}
           onChange={(e) => { setPrice(e.target.value); if (error) setError(null); }}

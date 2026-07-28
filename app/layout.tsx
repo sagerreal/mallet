@@ -35,6 +35,13 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // When the on-screen keyboard opens, shrink the LAYOUT viewport rather than only
+  // sliding the visual one. Without this the page keeps its full height behind the
+  // keyboard, so `position:fixed` bottom chrome — #mobiletabs and the .cmdline Ask
+  // Mallet bar at bottom:60px — stays pinned underneath it and the focused field can
+  // end up hidden. The native shell gets this from Capacitor's Keyboard
+  // resize:"native"; this is the same behaviour for mobile web, which had nothing.
+  interactiveWidget: "resizes-content",
   themeColor: "#FCFBF7",
 };
 

@@ -89,6 +89,7 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
                 <span className="muted">$</span>
                 <input
                   type="number"
+                  inputMode="decimal"
                   min={0}
                   defaultValue={service.cost}
                   onChange={(e) => onUpdate(service.id, { cost: Math.max(0, Number(e.target.value) || 0) })}
@@ -106,6 +107,7 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
             <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Labor</label>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               step={0.25}
               defaultValue={service.laborHours ?? ""}

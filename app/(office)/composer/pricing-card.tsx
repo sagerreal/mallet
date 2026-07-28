@@ -34,6 +34,7 @@ export function PricingCard({
             <label>Discount %</label>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               value={state.pricing.disc || ""}
               placeholder="0"
@@ -51,6 +52,7 @@ export function PricingCard({
             <label>Deposit required %</label>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               value={state.pricing.dep || ""}
               placeholder="0"
@@ -68,6 +70,7 @@ export function PricingCard({
             <label>Tax %</label>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               step={0.25}
               value={state.pricing.tax || ""}

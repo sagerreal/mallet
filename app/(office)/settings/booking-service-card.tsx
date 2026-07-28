@@ -290,6 +290,7 @@ function ExpandedEditor({
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
               <input
                 type="number"
+                inputMode="decimal"
                 min={0}
                 value={price}
                 placeholder="149"
@@ -345,6 +346,7 @@ function ExpandedEditor({
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               value={ballpark.low}
               placeholder="150"
@@ -354,6 +356,7 @@ function ExpandedEditor({
             <span className="muted">to</span>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               value={ballpark.high}
               placeholder="300"

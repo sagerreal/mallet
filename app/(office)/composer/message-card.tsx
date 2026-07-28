@@ -129,6 +129,7 @@ export function MessageCard({
             <label>Price valid (days)</label>
             <input
               type="number"
+              inputMode="decimal"
               min={1}
               value={state.validDays}
               onChange={(e) =>

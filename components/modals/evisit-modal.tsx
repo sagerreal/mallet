@@ -183,6 +183,7 @@ function SchedFields({
           <label>Length (h)</label>
           <input
             type="number"
+            inputMode="decimal"
             min={0.25}
             step={0.25}
             value={visit.dur || 1}

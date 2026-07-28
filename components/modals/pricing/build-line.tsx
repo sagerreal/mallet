@@ -330,6 +330,7 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
         <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
           <input
             type="number"
+            inputMode="decimal"
             min={0}
             step={0.25}
             value={line.h ? String(line.h) : ""}
@@ -345,6 +346,7 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
           </span>
           <input
             type="number"
+            inputMode="decimal"
             min={0}
             value={line.rate || ""}
             placeholder="rate"
@@ -373,6 +375,7 @@ export function LineRow({ line, onSet, onRemove }: LineRowProps) {
         <span className="muted">$</span>
         <input
           type="number"
+          inputMode="decimal"
           min={0}
           // Empty, not a literal 0. React deliberately does NOT renormalise a number input's
           // string when the numeric value is unchanged (so that "1." stays typable), so seeding
