@@ -185,6 +185,7 @@ export function PricebookPane() {
             {services.length > 0 && (
               <div style={{ padding: "var(--space-3) var(--space-4) var(--space-1)" }}>
                 <input
+                  enterKeyHint="search"
                   className="pbsearch"
                   type="text"
                   placeholder="Search services…"

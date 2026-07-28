@@ -55,6 +55,8 @@ export function CommandBar() {
           placeholder={api.isThinking ? "Mallet is thinking…" : "Ask Mallet — or just say what you want done…"}
           aria-label="Ask Mallet"
           aria-busy={api.isThinking}
+          // Enter submits (handleKeyDown), so the keyboard action key says "send", not "return".
+          enterKeyHint="send"
           value={api.value}
           onChange={(e) => api.setValue(e.target.value)}
           onFocus={() => api.openPanel()}

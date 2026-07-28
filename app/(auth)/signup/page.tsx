@@ -57,19 +57,19 @@ export default function SignupPage() {
       <form onSubmit={onSubmit} method="post">
         <label className="auth-field">
           <span>Business name</span>
-          <input className="auth-input" name="orgName" required maxLength={80} placeholder="Rivera Plumbing" />
+          <input className="auth-input" name="orgName" enterKeyHint="next" required maxLength={80} placeholder="Rivera Plumbing" />
         </label>
         <label className="auth-field">
           <span>Your name</span>
-          <input className="auth-input" name="fullName" required maxLength={80} autoComplete="name" placeholder="Mike Rivera" />
+          <input className="auth-input" name="fullName" enterKeyHint="next" required maxLength={80} autoComplete="name" placeholder="Mike Rivera" />
         </label>
         <label className="auth-field">
           <span>Email</span>
-          <input className="auth-input" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
+          <input className="auth-input" name="email" enterKeyHint="next" type="email" required autoComplete="email" placeholder="you@example.com" />
         </label>
         <label className="auth-field">
           <span>Password</span>
-          <input className="auth-input" name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="8+ characters" />
+          <input className="auth-input" name="password" enterKeyHint="go" type="password" required minLength={8} autoComplete="new-password" placeholder="8+ characters" />
         </label>
         {error && <p className="auth-error">{error}</p>}
         <button className="auth-submit" type="submit" disabled={busy || !hydrated}>

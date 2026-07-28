@@ -133,6 +133,7 @@ function TsJobPicker({ entry, jobs, leads, techs, weekDates, open, onToggle, onP
       {open && (
         <div className="ts-list">
           <input
+            enterKeyHint="search"
             className="ts-search"
             placeholder="Search all jobs…"
             value={q}

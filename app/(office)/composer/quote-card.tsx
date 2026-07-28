@@ -350,6 +350,7 @@ export function QuoteCard({
                 value={pbQuery}
                 onChange={(e) => setPbQuery(e.target.value)}
                 placeholder="Search your pricebook…"
+                enterKeyHint="search"
                 style={{
                   flexBasis: "100%",
                   border: "1.5px solid var(--line)",

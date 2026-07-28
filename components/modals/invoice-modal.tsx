@@ -307,6 +307,7 @@ function EditBlock({
             value={pbQuery}
             onChange={(e) => setPbQuery(e.target.value)}
             placeholder="Search your pricebook…"
+            enterKeyHint="search"
             style={{ ...LINE_INPUT, flex: "none", width: "100%", marginBottom: "var(--space-2)" }}
           />
           {pbMatches.length ? (
