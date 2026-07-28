@@ -40,7 +40,7 @@ function stripComments(src: string): string {
     .map((line) => {
       const m = line.match(/(^|\s)\/\/(?!\/)/);
       if (!m || m.index === undefined) return line;
-      const at = m.index + m[1].length;
+      const at = m.index + (m[1]?.length ?? 0);
       // Leave `https://` alone.
       if (at > 0 && line[at - 1] === ":") return line;
       return line.slice(0, at);

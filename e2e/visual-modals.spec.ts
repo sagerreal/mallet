@@ -15,7 +15,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { login, prepare, settle, dynamicRegions, OWNER } from "./helpers/ui";
+import { login, prepare, settle, dynamicRegionsIn, OWNER } from "./helpers/ui";
 
 test.skip(!process.env.E2E_VISUAL, "set E2E_VISUAL=1 to run modal visual regression");
 
@@ -55,21 +55,6 @@ async function closeModal(page: Page): Promise<void> {
   await page.getByRole("dialog").waitFor({ state: "hidden" }).catch(() => {});
 }
 
-/** Navigate to a dynamic detail route and screenshot the full page. These routes
- *  (/money/[id], /jobs/[id]) are absent from the route net because they need a
- *  seeded record id; we take it from the hydrated store. */
-async function shootDetailPage(page: Page, name: string, path: string): Promise<void> {
-  await page.goto(path);
-  await settle(page);
-  await expect(page).toHaveScreenshot(`page-${name}.png`, {
-    animations: "disabled",
-    mask: dynamicRegions(page),
-    maxDiffPixels: 150,
-    fullPage: true,
-    timeout: 15_000,
-  });
-}
-
 /** Open a modal, wait for it, screenshot the dialog panel, close. */
 async function shootModal(page: Page, name: string, id: string, params?: Record<string, string>): Promise<void> {
   await openModal(page, id, params);
@@ -78,7 +63,11 @@ async function shootModal(page: Page, name: string, id: string, params?: Record<
   await settle(page);
   await expect(dialog).toHaveScreenshot(`modal-${name}.png`, {
     animations: "disabled",
-    mask: dynamicRegions(page),
+    // Scoped to the dialog, NOT the page: a page-wide mask locator paints
+    // [data-dynamic] nodes from the surface behind the modal into this clipped
+    // shot, which both hid real modal content and made the baseline drift with
+    // unrelated dashboard data. See dynamicRegionsIn.
+    mask: dynamicRegionsIn(dialog),
     maxDiffPixels: 150,
     timeout: 15_000,
   });
@@ -109,9 +98,17 @@ test.describe("modal visual baselines", () => {
     if (ids.estId) await shootModal(page, "estimate", "est", { estId: ids.estId });
     if (ids.invoiceId) await shootModal(page, "invoice", "invoice", { invoiceId: ids.invoiceId });
 
-    // Dynamic detail routes — the last heavy Tailwind pages; baseline them so the
-    // P4f port off Tailwind is provably pixel-identical (0-diff without --update).
-    if (ids.invoiceId) await shootDetailPage(page, "money-detail", `/money/${ids.invoiceId}`);
-    if (ids.jobId) await shootDetailPage(page, "jobs-detail", `/jobs/${ids.jobId}`);
+    // The /money/[id] and /jobs/[id] FULL-PAGE shots that used to live here are gone.
+    // They existed to prove the P4f port off Tailwind was pixel-identical; Tailwind is
+    // fully removed (no config, no dependency), so that job is done. They could not
+    // keep passing regardless, for two structural reasons:
+    //   1. This spec needs the dev-only `window.__appStore` handle, so it cannot run
+    //      against a production build — and `next dev` paints the dev-tools badge into
+    //      any full-page shot. That is the #246 trap; a dialog-clipped shot avoids it,
+    //      a full-page one cannot.
+    //   2. They shot `invoices[0]` / `jobs[0]` from live data, so the baseline captured
+    //      whichever record happened to be first (it drifted INV-1005/$450 → INV-1006/
+    //      $900). No amount of masking fixes a baseline whose subject changes.
+    // The modal shots above are dialog-clipped and record-agnostic, so they are stable.
   });
 });
