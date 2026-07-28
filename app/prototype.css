@@ -1697,7 +1697,18 @@
   /* tour spotlight: rings the one block the guided tour is pointing at */
   .jtile.tourflash,.dvblock.tourflash,.gv-block.tourflash,.wk-item.tourflash{box-shadow:0 0 0 3px var(--amber),0 0 0 7px rgba(154,103,0,.22);animation:tourpulse 1.3s ease-in-out infinite}
   @keyframes tourpulse{0%,100%{box-shadow:0 0 0 3px var(--amber),0 0 0 7px rgba(154,103,0,.22)}50%{box-shadow:0 0 0 3px var(--amber),0 0 0 11px rgba(154,103,0,0)}}
-  @media (prefers-reduced-motion:reduce){ .jtile.tourflash,.dvblock.tourflash,.gv-block.tourflash,.wk-item.tourflash{animation:none} *{transition:none!important} }
+  @media (prefers-reduced-motion:reduce){ .jtile.tourflash,.dvblock.tourflash,.gv-block.tourflash,.wk-item.tourflash{animation:none} *{transition:none!important}
+    /* The blanket transition kill above has always been here; the matching ANIMATION kill
+       was not. 21 distinct named animations were relying on 10 hand-maintained per-selector
+       blocks, so anything added later was uncovered by default — the failure mode is silent
+       and only a user with the OS setting on ever sees it.
+       This is deliberately blanket: reduced-motion is a request to stop moving, not a request
+       to stop moving in the places we remembered. The nine specific blocks above stay, because
+       several also restore a STATIC appearance (e.g. .qdot.live swaps its pulse for a ring)
+       which a bare kill cannot do. Skeletons lose their shimmer and become plain blocks —
+       correct: they still convey structure, and a pulsing placeholder is exactly the motion
+       this setting exists to remove. */
+    *{animation:none!important} }
   /* unplaced-visit chip in the "to place" tray */
   .vchip{display:inline-flex;align-items:center;gap:var(--space-2);background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--type-sm);font-weight:700;cursor:grab}
   .vchip.arm{border-color:var(--green-600);background:var(--green-50)}

@@ -3,11 +3,15 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "@/features/auth/hooks";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // onSubmit does not exist until React attaches. Until then a submit is a native
+  // GET that puts the password in the URL — see lib/use-hydrated.ts.
+  const hydrated = useHydrated();
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -26,7 +30,7 @@ export default function LoginPage() {
     <>
       <h1 className="auth-title">Welcome back</h1>
       <p className="auth-sub">Sign in to your Mallet account.</p>
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} method="post">
         <label className="auth-field">
           <span>Email</span>
           <input className="auth-input" name="email" type="email" required autoComplete="email" placeholder="you@example.com" />
@@ -36,7 +40,7 @@ export default function LoginPage() {
           <input className="auth-input" name="password" type="password" required autoComplete="current-password" placeholder="••••••••" />
         </label>
         {error && <p className="auth-error">{error}</p>}
-        <button className="auth-submit" type="submit" disabled={busy}>
+        <button className="auth-submit" type="submit" disabled={busy || !hydrated}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>

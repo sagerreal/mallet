@@ -2,8 +2,12 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { signUp } from "@/features/auth/hooks";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export default function SignupPage() {
+  // onSubmit does not exist until React attaches. Until then a submit is a native
+  // GET that puts credentials in the URL — see lib/use-hydrated.ts.
+  const hydrated = useHydrated();
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,7 +54,7 @@ export default function SignupPage() {
     <>
       <h1 className="auth-title">Create your account</h1>
       <p className="auth-sub">Get your crew running in minutes.</p>
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} method="post">
         <label className="auth-field">
           <span>Business name</span>
           <input className="auth-input" name="orgName" required maxLength={80} placeholder="Rivera Plumbing" />
@@ -68,7 +72,7 @@ export default function SignupPage() {
           <input className="auth-input" name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="8+ characters" />
         </label>
         {error && <p className="auth-error">{error}</p>}
-        <button className="auth-submit" type="submit" disabled={busy}>
+        <button className="auth-submit" type="submit" disabled={busy || !hydrated}>
           {busy ? "Creating account…" : "Create account"}
         </button>
       </form>
