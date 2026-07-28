@@ -78,6 +78,11 @@ export class SendMessageUseCase {
       this.smsDeps.clock,
       this.smsDeps.transport,
       this.smsDeps.publicAppUrl,
+      // The 7th argument was omitted, so every two-way text went out naming a bare `from` number.
+      // cmd.messagingServiceSid was read by the router and declared here and then silently dropped
+      // — the campaign attaches to the SERVICE, so a bare number reads as unregistered traffic to
+      // carriers even with an approved campaign and the number sitting in that service's pool.
+      cmd.messagingServiceSid ?? undefined,
     );
 
     const receipt = await sender.send({
