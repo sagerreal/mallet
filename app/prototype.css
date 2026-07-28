@@ -287,6 +287,9 @@
   /* the topbar's create surface — MOBILE ONLY. Desktop creates from the sidebar's
      "+ New", which is display:none below 760px; this is its replacement, not a peer. */
   .topnew{display:none}
+  /* Back is a PHONE affordance. Desktop has the sidebar, which reaches every route
+     directly, so a back control there is redundant chrome. */
+  .topback{display:none}
   .topnewmenu{display:none}
   main{flex:1;overflow-y:auto;padding:var(--space-6) var(--space-8);min-width:0;background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:22px 22px}
   main>*{max-width:1180px}
@@ -1815,6 +1818,11 @@
        without this there is NO way to make a customer, quote, job or invoice that
        isn't already on the page you happen to be looking at. */
     .topnew{display:flex}
+    /* Leading edge, iOS convention — and it reuses .iconbtn so the 44px mobile floor
+       from e2e/mobile-floors.spec.ts applies to it for free. The negative inline start
+       pulls it flush to the bar's padding edge so the chevron sits where a thumb
+       reaches, without indenting the breadcrumb that follows it. */
+    .topback{display:flex;margin-inline-start:calc(-1 * var(--space-2))}
     /* expands in flow directly under the bar, full-bleed and flush; it pushes the
        page down rather than floating over it. Rows are the standard .uirow. */
     .topnewmenu{display:flex;flex-direction:column;background:var(--card);border-bottom:1px solid var(--line);flex:0 0 auto;z-index:29}
