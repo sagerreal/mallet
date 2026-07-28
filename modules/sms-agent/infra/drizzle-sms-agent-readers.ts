@@ -1,6 +1,6 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { ownerDb } from "@mallet/shared/db/owner-client";
-import type { TenantTx } from "@mallet/shared/db/tx";
+import { withTenant } from "@mallet/shared/db/tx";
 import { users, staffSmsSessions } from "@mallet/shared/db/schema";
 import { asOrgId, type OrgId, type UserId } from "@mallet/shared/types";
 import type { Role } from "@mallet/identity";
@@ -58,15 +58,22 @@ const parseIds = (raw: string | null): readonly string[] => {
   }
 };
 
+/**
+ * Opens its OWN short tenant transaction per call rather than taking one in.
+ *
+ * The alternative — one transaction wrapping the whole exchange — would hold a connection open for
+ * the length of an LLM conversation with tool calls, minutes at a time, pinning a pool slot and
+ * blocking migrations. Same reason the agent's tool executor opens one per tool call.
+ */
 export class DrizzleSmsSessionStore implements SmsSessionStore {
   constructor(
-    private readonly tx: TenantTx,
     private readonly orgId: OrgId,
     private readonly newId: () => string,
   ) {}
 
   async find(phoneE164: string): Promise<SmsSession | null> {
-    const rows = await this.tx
+    return withTenant(this.orgId, async (tx) => {
+    const rows = await tx
       .select()
       .from(staffSmsSessions)
       .where(and(eq(staffSmsSessions.orgId, this.orgId), eq(staffSmsSessions.phone, phoneE164)))
@@ -81,11 +88,13 @@ export class DrizzleSmsSessionStore implements SmsSessionStore {
       pendingToolUseIds: parseIds(row.pendingJson),
       pendingSummary: row.pendingSummary,
     };
+    });
   }
 
   async save(input: SaveSessionInput): Promise<void> {
     const now = new Date();
-    await this.tx
+    await withTenant(this.orgId, async (tx) => {
+    await tx
       .insert(staffSmsSessions)
       .values({
         id: this.newId(),
@@ -111,5 +120,6 @@ export class DrizzleSmsSessionStore implements SmsSessionStore {
           updatedAt: now,
         },
       });
+    });
   }
 }
