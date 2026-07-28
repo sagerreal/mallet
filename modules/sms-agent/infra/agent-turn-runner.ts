@@ -1,4 +1,5 @@
 import { withTenant } from "@mallet/shared/db/tx";
+import { logger } from "@mallet/shared/observability";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import type { IdGenerator, JsonValue } from "@mallet/shared/ports";
 import type { Clock } from "@mallet/shared/types";
@@ -22,7 +23,15 @@ import type { RunTurnInput, TurnResult } from "../app/handle-staff-sms";
 // that becomes "Reply YES to confirm" instead of a button. So the capability is identical and the
 // authorisation step is preserved rather than skipped.
 const SYSTEM_PROMPT = [
-  "You are Mallet's assistant, talking to a member of staff over SMS. You are not talking to a customer.",
+  "You are MALLET, talking to a member of staff over SMS. You are not talking to a customer.",
+  "",
+  "WHO YOU ARE:",
+  "- You are Mallet, the software this shop runs on. You work FOR the staffer reading this.",
+  "- Never introduce yourself as the shop or as the shop's assistant. Tools will tell you the",
+  "  shop's name (Summit Commercial Cleaning, and so on) — that is the name of THEIR business,",
+  "  the customer you are helping, never your own identity. Saying \"I'm <shop>'s assistant\" to",
+  "  the person who owns that shop is backwards.",
+  "- No greeting or self-introduction unless asked who you are. Answer the message.",
   "",
   "WRITING FOR TEXT:",
   "- Keep replies under 320 characters. They are read on a phone, often one-handed on a job site.",
@@ -38,6 +47,29 @@ const SYSTEM_PROMPT = [
   "- If you need a detail you do not have (which job, which customer), ask ONE short question.",
   "- Never invent an id, a price, or a name. Look it up with a tool or ask.",
 ].join("\n");
+
+// A text is not a research task. The in-app assistant runs at high effort with 16k of output
+// headroom because it is answering into a panel someone is watching; over SMS the same settings buy
+// deliberation nobody asked for while the staffer stares at a phone on a job site.
+//
+// `effort: "low"` is the big lever — it is what decides how long the model deliberates before
+// answering, and "look up my schedule" or "add this customer" are lookups, not reasoning problems.
+const SMS_EFFORT = "low" as const;
+
+// runAgentTurn never passes maxTokens, so every call inherits the client's 16,000 default. With
+// adaptive thinking on, that is a lot of rope. A 320-character reply plus tool-call JSON fits well
+// inside this, and a smaller ceiling bounds the worst case rather than the typical one.
+const SMS_MAX_TOKENS = 4_000;
+
+/**
+ * Caps output tokens for SMS turns.
+ *
+ * A decorator rather than a change to runAgentTurn: maxTokens is a property of THIS channel (short
+ * replies to a phone), not of the agent loop, and the in-app assistant should keep its headroom.
+ */
+const withSmsLimits = (llm: LlmClient): LlmClient => ({
+  next: (request) => llm.next({ ...request, maxTokens: SMS_MAX_TOKENS }),
+});
 
 export interface AgentTurnRunnerDeps {
   readonly llm: LlmClient;
@@ -108,17 +140,32 @@ export function makeAgentTurnRunner(deps: AgentTurnRunnerDeps) {
       });
     };
 
+    const startedAt = Date.now();
     const result = await runAgentTurn({
-      llm: deps.llm,
+      llm: withSmsLimits(deps.llm),
       system: SYSTEM_PROMPT,
       tools: meta,
       execute,
-      effort: "high",
+      effort: SMS_EFFORT,
       userMessage: input.userMessage,
       priorMessages: parseTranscript(input.transcript),
       approvedToolUseIds: input.approvedToolUseIds,
       deniedToolUseIds: input.deniedToolUseIds,
     });
+
+    // Timed so "it takes a while" is a number next time, not an impression. Turn count is the
+    // other half — a slow turn with six tool calls is a different problem from a slow single call.
+    logger.info(
+      {
+        orgId,
+        status: result.status,
+        durationMs: Date.now() - startedAt,
+        transcriptMessages: result.transcript.length,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+      },
+      "sms.agent.turn.completed",
+    );
 
     const transcript = JSON.stringify(result.transcript);
 

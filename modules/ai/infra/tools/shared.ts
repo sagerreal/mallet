@@ -82,6 +82,14 @@ export const taskCreateInput = z.object({
 });
 export const customerCreateInput = z.object({
   name: z.string().min(1).max(200),
+  // EnsureCustomerUseCase has always accepted these four; the tool hardcoded them to null, so a
+  // customer created by the agent had no way to be phoned, emailed or driven to. For a service
+  // business that is not a partial record, it is an unusable one — and the assistant reported it
+  // as "there is no address field", which is false: leads.address exists.
+  phone: z.string().max(32).optional().nullable(),
+  email: z.string().max(320).optional().nullable(),
+  address: z.string().max(500).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
   source: z.string().max(100).optional().nullable(),
   companyId: z.string().uuid().optional().nullable(),
   role: z.string().max(100).optional().nullable(),

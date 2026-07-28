@@ -1,3 +1,4 @@
+import { Phone, type Phone as PhoneT } from "@mallet/shared/types";
 import { toPage, isOk, asLeadId, asInvoiceId, asEstimateId, asJobId, asTaskId, asCompanyId, asTimeEntryId, asUserId, asVisitId, money as asMoney } from "@mallet/shared/types";
 import { DrizzleLeadRepository, EnsureCustomerUseCase } from "@mallet/customers";
 import {
@@ -309,7 +310,7 @@ export const taskCreateTool: AgentTool = {
 export const customerCreateTool: AgentTool = {
   name: "customer_create",
   description:
-    "Create a new customer (or return the existing one with the same name). TWO-STEP: first call proposes, second call with confirmToken executes.",
+    "Create a new customer (or return the existing one with the same name). Accepts phone, email and service address — capture them when the user gives them. TWO-STEP: first call proposes, second call with confirmToken executes.",
   inputSchema: jsonSchema(customerCreateInput),
   input: customerCreateInput,
   mutating: true,
@@ -322,16 +323,28 @@ export const customerCreateTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = parseTool(customerCreateInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
+    // A phone typed by a human ("(781) 385-0591") must be normalised before it reaches the
+    // repository — leads_org_phone_uidx is keyed on E.164, so an unparsed string would create a
+    // duplicate customer instead of matching the existing one. Refuse a bad number rather than
+    // silently dropping it: a customer saved without the number the staffer just dictated is a
+    // worse outcome than being told it was wrong.
+    let phone: PhoneT | null = null;
+    if (parsed.data.phone && parsed.data.phone.trim().length > 0) {
+      const p = Phone.parse(parsed.data.phone);
+      if (!isOk(p)) return { ok: false, error: p.error.message };
+      phone = p.value;
+    }
+
     const uc = new EnsureCustomerUseCase(new DrizzleLeadRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({
       name: parsed.data.name,
-      phone: null,
-      email: null,
+      phone,
+      email: parsed.data.email ?? null,
       source: parsed.data.source ?? null,
       companyId: parsed.data.companyId ? asCompanyId(parsed.data.companyId) : null,
       role: parsed.data.role ?? null,
-      notes: null,
-      address: null,
+      notes: parsed.data.notes ?? null,
+      address: parsed.data.address ?? null,
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     const p = result.value.lead.props;
