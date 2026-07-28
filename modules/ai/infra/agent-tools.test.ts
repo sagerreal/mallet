@@ -58,6 +58,7 @@ vi.mock("@mallet/notifications", () => ({
   FollowUpPolicy: vi.fn(),
   SendNotificationUseCase: vi.fn(),
   SendInvoiceNotificationUseCase: vi.fn(),
+  AdvanceReminderUseCase: vi.fn(),
   DrizzleNotificationRepository: vi.fn(),
   DrizzleReminderTargetReader: vi.fn(),
   STUB_EXTERNAL_ID: "stub:logged",
@@ -81,7 +82,7 @@ import { ListJobsUseCase, DrizzleJobRepository, ScheduleJobUseCase, AssignJobUse
 import { ListTasksUseCase, DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { ListTimeEntriesUseCase, DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import { ListCompaniesUseCase, DrizzleCompanyRepository } from "@mallet/companies";
-import { NextRemindersDueUseCase, FollowUpPolicy, SendInvoiceNotificationUseCase, DrizzleNotificationRepository, DrizzleReminderTargetReader } from "@mallet/notifications";
+import { NextRemindersDueUseCase, FollowUpPolicy, SendInvoiceNotificationUseCase, AdvanceReminderUseCase, DrizzleNotificationRepository, DrizzleReminderTargetReader } from "@mallet/notifications";
 import { GetA2pStatusUseCase, DrizzleRegistrationRepository } from "@mallet/a2p";
 import { buildAgentTools } from "./agent-tools";
 
@@ -701,6 +702,7 @@ describe("notification_send_invoice_reminder", () => {
     vi.mocked(GetA2pStatusUseCase).mockClear();
     vi.mocked(DrizzleRegistrationRepository).mockClear();
     vi.mocked(SendInvoiceNotificationUseCase).mockClear();
+    vi.mocked(AdvanceReminderUseCase).mockClear();
     vi.mocked(DrizzleNotificationRepository).mockClear();
     vi.mocked(DrizzleReminderTargetReader).mockClear();
   });
@@ -728,7 +730,7 @@ describe("notification_send_invoice_reminder", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("10DLC");
     // No send attempt was made — the gate fires before any notification/sender work.
-    expect(vi.mocked(SendInvoiceNotificationUseCase)).not.toHaveBeenCalled();
+    expect(vi.mocked(AdvanceReminderUseCase)).not.toHaveBeenCalled();
   });
 
   it("does not block an email reminder when the org's A2P campaign isn't active", async () => {
@@ -738,7 +740,7 @@ describe("notification_send_invoice_reminder", () => {
     });
     mockClass(DrizzleNotificationRepository, {});
     mockClass(DrizzleReminderTargetReader, {});
-    mockClass(SendInvoiceNotificationUseCase, {
+    mockClass(AdvanceReminderUseCase, {
       exec: vi.fn().mockResolvedValue({
         ok: true,
         value: { props: { id: "notif-1", channel: "email", status: "sent", externalId: "real-ext-id" } },
@@ -761,7 +763,7 @@ describe("notification_send_invoice_reminder", () => {
     });
     mockClass(DrizzleNotificationRepository, {});
     mockClass(DrizzleReminderTargetReader, {});
-    mockClass(SendInvoiceNotificationUseCase, {
+    mockClass(AdvanceReminderUseCase, {
       exec: vi.fn().mockResolvedValue({
         ok: true,
         value: { props: { id: "notif-2", channel: "sms", status: "sent", externalId: "real-ext-id" } },
@@ -775,6 +777,28 @@ describe("notification_send_invoice_reminder", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.summary).toContain("sms");
+  });
+
+  it("says nothing is due instead of re-sending a reminder already sent", async () => {
+    // The loop this fixes: the tool used to call the first-contact path, which never recorded a
+    // reminderStage — so notification_list_due_reminders reported the SAME reminder as due on
+    // every turn and the agent re-proposed it forever. AdvanceReminder returns null when the
+    // policy says nothing is due, and that has to read as a real answer.
+    mockClass(DrizzleRegistrationRepository, {});
+    mockClass(GetA2pStatusUseCase, {
+      exec: vi.fn().mockResolvedValue({ status: "active", canText: true, needsInput: false, failureReason: null }),
+    });
+    mockClass(DrizzleNotificationRepository, {});
+    mockClass(DrizzleReminderTargetReader, {});
+    mockClass(AdvanceReminderUseCase, { exec: vi.fn().mockResolvedValue({ ok: true, value: null }) });
+
+    const result = await toolByName("notification_send_invoice_reminder").handle(
+      { invoiceId, channel: "email" },
+      ctxWithSender(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.summary).toMatch(/no reminder is due/i);
   });
 });
 

@@ -14,7 +14,8 @@ import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase } from "@mal
 import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import {
-  SendInvoiceNotificationUseCase,
+  AdvanceReminderUseCase,
+  FollowUpPolicy,
   SendNotificationUseCase,
   DrizzleNotificationRepository,
   DrizzleReminderTargetReader,
@@ -187,9 +188,27 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
     const repo = new DrizzleNotificationRepository(ctx.tx, ctx.orgId);
     const reader = new DrizzleReminderTargetReader(ctx.tx, ctx.orgId);
     const sendUc = new SendNotificationUseCase(repo, ctx.deps.notificationSender, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
-    const uc = new SendInvoiceNotificationUseCase(reader, sendUc, ctx.deps.ids);
-    const result = await uc.exec({ orgId: ctx.orgId, invoiceId: parsed.data.invoiceId, channel: parsed.data.channel });
+
+    // AdvanceReminder, NOT SendInvoiceNotification. This tool is named "send invoice REMINDER" but
+    // called the first-contact path, which sends kind "invoice_sent" with `reminderStage: null`.
+    // Two consequences, both silent:
+    //
+    //   1. A customer 45 days overdue got the gentle "your invoice is ready" copy instead of the
+    //      stage-appropriate past-due wording.
+    //   2. Nothing recorded that a reminder went out. sentReminderStages never saw the row, so
+    //      notification_list_due_reminders kept reporting the SAME reminder as due — the read tool
+    //      leading the model into a loop it could not exit, re-proposing the same send every turn.
+    //
+    // AdvanceReminder resolves the due stage, sends that stage's copy, and keys idempotency on
+    // `reminder:<id>:<stage>` so the stage is recorded and cannot repeat.
+    const uc = new AdvanceReminderUseCase(reader, repo, sendUc, new FollowUpPolicy(), ctx.deps.clock);
+    const result = await uc.exec({ orgId: ctx.orgId, relatedType: "invoice", relatedId: parsed.data.invoiceId });
     if (!isOk(result)) return { ok: false, error: result.error.message };
+    // Null means the policy says nothing is due — a real answer, not a failure. Saying so stops the
+    // model inventing a reason or retrying.
+    if (result.value === null) {
+      return { ok: true, summary: "No reminder is due for that invoice yet — the follow-up sequence is up to date." };
+    }
     const p = result.value.props;
     // Delivery truth (mirrors the notification router's interactive guard): a stubbed
     // no-op or provider rejection must not read back to the agent as a sent reminder.
@@ -347,8 +366,43 @@ export const customerCreateTool: AgentTool = {
       address: parsed.data.address ?? null,
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
-    const p = result.value.lead.props;
-    return { ok: true, summary: `Customer "${p.name}" ready — stage ${p.stage} (id: ${p.id}).` };
+
+    // ensureCustomer DEDUPES on phone: a matching active customer comes back untouched
+    // (ON CONFLICT DO NOTHING), so every other supplied field is discarded. Before phone was
+    // accepted here that could never happen — phone was always null and a null never conflicts —
+    // so accepting phone turned a create-only tool into one that could silently swallow the
+    // address and email on the very request that motivated adding them.
+    //
+    // Fill only what is EMPTY on the existing record. A supplied value that DIFFERS from a value
+    // already on file is not applied: the agent has no way to know which is right, and quietly
+    // overwriting a customer's real address with one dictated over a noisy phone line is worse
+    // than saying so.
+    const repo2 = new DrizzleLeadRepository(ctx.tx, ctx.orgId);
+    let p = result.value.lead.props;
+    if (!result.value.created) {
+      const wanted = { email: parsed.data.email, address: parsed.data.address, notes: parsed.data.notes, role: parsed.data.role };
+      const fill: Record<string, string> = {};
+      const conflicts: string[] = [];
+      for (const [k, v] of Object.entries(wanted)) {
+        if (!v || v.trim().length === 0) continue;
+        const current = (p as unknown as Record<string, unknown>)[k];
+        if (current === null || current === undefined || current === "") fill[k] = v;
+        else if (String(current) !== v) conflicts.push(k);
+      }
+      if (Object.keys(fill).length > 0) {
+        const patched = result.value.lead.patch(fill, ctx.deps.clock.now());
+        if (!isOk(patched)) return { ok: false, error: patched.error.message };
+        await repo2.save(patched.value);
+        p = patched.value.props;
+      }
+      const added = Object.keys(fill);
+      const note =
+        (added.length ? ` Added ${added.join(", ")} to their existing record.` : "") +
+        (conflicts.length ? ` Left ${conflicts.join(", ")} unchanged — they already have different values on file.` : "");
+      return { ok: true, summary: `"${p.name}" already exists (id: ${p.id}).${note}` };
+    }
+
+    return { ok: true, summary: `Customer "${p.name}" created — stage ${p.stage} (id: ${p.id}).` };
   },
 };
 
@@ -571,7 +625,15 @@ export const timesheetApproveWeekTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = parseTool(timesheetApproveWeekInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    const uc = new ApproveWeekUseCase(new DrizzleTimeEntryRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    // The bus is NOT optional in practice. approve-week.ts calls approval "the only trigger for
+    // hours leaving Mallet": without it, `timeEntry.weekApproved` never fires, QboTimeSyncHandler
+    // never runs, and the hours an owner just approved never reach QuickBooks. The rows still flip
+    // to `approved` and the tool still answers "Approved 12 entries", so the failure is invisible
+    // until someone notices missing TimeActivity rows in QBO.
+    //
+    // Unrecoverable through this tool, too — re-approving returns count 0, and the emit is guarded
+    // on `count > 0`, so wiring the bus later would not re-fire the ones already approved.
+    const uc = new ApproveWeekUseCase(new DrizzleTimeEntryRepository(ctx.tx, ctx.orgId), ctx.deps.clock, ctx.deps.bus);
     const result = await uc.exec(
       {
         techUserId: asUserId(parsed.data.techUserId),
