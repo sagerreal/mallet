@@ -25,6 +25,35 @@ export const estimateListInput = listInput.extend({ status: z.enum(["draft", "se
 
 // --- read tool input schemas ---
 export const customerGetInput = z.object({ customerId: z.string().uuid() });
+// Lookup by the thing a shop actually has in hand. LeadRepository.findByPhone has always existed
+// and no tool reached it, so "who is calling from 781-385-0591" had no answer and customer_get
+// accepted only a UUID nobody says out loud.
+export const customerFindInput = z.object({ phone: z.string().min(7).max(32) });
+// Reassigning or re-timing a VISIT. job_assign sets jobs.assignee_user_id, which the dispatch
+// board, the Jobs list and a tech's day do NOT read — they read the visit. So "put Mike on
+// tomorrow's Henderson job" through job_assign changed a field nobody looks at while answering
+// "assigned", and the wrong tech turned up.
+export const quoteAcceptInput = z.object({
+  estimateId: z.string().uuid(),
+  // Good/Better/Best. Omitted on a tiered quote the domain defaults to the RECOMMENDED tier,
+  // which is the office accept path; rejected outright on a single-format quote.
+  chosenTier: z.enum(["good", "better", "best"]).optional(),
+});
+export const quoteDeclineInput = z.object({
+  estimateId: z.string().uuid(),
+  reason: z.string().min(1).max(500),
+});
+export const visitPatchInput = z.object({
+  jobId: z.string().uuid(),
+  visitId: z.string().uuid(),
+  // Every field optional; null CLEARS it (unplacing a visit back to the unscheduled pile is a
+  // real dispatch action, not a mistake).
+  assigneeUserId: z.string().uuid().nullable().optional(),
+  scheduledDate: z.string().max(10).nullable().optional(),
+  scheduledStart: z.string().max(8).nullable().optional(),
+  scheduledEnd: z.string().max(8).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
 export const estimateGetInput = z.object({ estimateId: z.string().uuid() });
 export const invoiceGetInput = z.object({ invoiceId: z.string().uuid() });
 export const jobListInput = listInput.extend({ status: z.enum(["scheduled", "in_progress", "complete", "canceled"]).optional() });

@@ -1,3 +1,4 @@
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { Phone, type Phone as PhoneT } from "@mallet/shared/types";
 import { toPage, isOk, asLeadId, asInvoiceId, asEstimateId, asJobId, asTaskId, asCompanyId, asTimeEntryId, asUserId, asVisitId, money as asMoney } from "@mallet/shared/types";
 import { DrizzleLeadRepository, EnsureCustomerUseCase } from "@mallet/customers";
@@ -9,8 +10,8 @@ import {
   RecordPaymentUseCase,
   VoidInvoiceUseCase,
 } from "@mallet/invoicing";
-import { DrizzleEstimateRepository, DraftEstimateUseCase, SendEstimateUseCase } from "@mallet/quoting";
-import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase } from "@mallet/jobs";
+import { DrizzleEstimateRepository, DraftEstimateUseCase, SendEstimateUseCase, AcceptEstimateUseCase, DeclineEstimateUseCase, runInSavepoint } from "@mallet/quoting";
+import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase, PatchVisitScheduleUseCase, CreateJobFromEstimateUseCase, DrizzleEstimateReader } from "@mallet/jobs";
 import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import {
@@ -37,6 +38,9 @@ import {
   notificationSendInvoiceReminderInput,
   jobScheduleInput,
   jobAssignInput,
+  visitPatchInput,
+  quoteAcceptInput,
+  quoteDeclineInput,
   taskCreateInput,
   customerCreateInput,
   invoiceDraftInput,
@@ -141,7 +145,14 @@ export const quoteSendTool: AgentTool = {
     const uc = new SendEstimateUseCase(new DrizzleEstimateRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({ estimateId: asEstimateId(parsed.data.estimateId) });
     if (!isOk(result)) return { ok: false, error: result.error.message };
-    return { ok: true, summary: `Sent estimate ${result.value.props.num} (id: ${result.value.props.id}).` };
+    // The link is the POINT of sending, and it was the one thing the summary left out — so the
+    // agent's next sentence ("here's the link to send them") was unanswerable, and nothing else
+    // returns it either: not estimate_get, not estimate_list. The model had no way to know the
+    // link existed at all.
+    const sent = result.value.props;
+    const origin = publicOrigin();
+    const link = sent.publicToken && origin ? ` — ${origin}/q/${sent.publicToken}` : "";
+    return { ok: true, summary: `Sent estimate ${sent.num}${link} (id: ${sent.id}).` };
   },
 };
 
@@ -261,7 +272,7 @@ export const jobScheduleTool: AgentTool = {
 export const jobAssignTool: AgentTool = {
   name: "job_assign",
   description:
-    "Assign a job to a crew member (found via member_list). Pass assigneeUserId as null to unassign. TWO-STEP: first call proposes, second call with confirmToken executes.",
+    "Set the job-level owner for a crew member (found via member_list). NOT what changes who actually turns up — the dispatch board, the Jobs list and a tech's day all read the VISIT, so use visit_patch to change who is going or when. Use this only for overall ownership of a job with no visits yet. Pass assigneeUserId as null to unassign. TWO-STEP: first call proposes, second call with confirmToken executes.",
   inputSchema: jsonSchema(jobAssignInput),
   input: jobAssignInput,
   mutating: true,
@@ -283,6 +294,145 @@ export const jobAssignTool: AgentTool = {
     const p = result.value.props;
     const assignee = p.assigneeUserId ? "assigned ✓" : "unassigned";
     return { ok: true, summary: `Job ${p.num} ${assignee} (id: ${p.id}).` };
+  },
+};
+
+// The public quote origin, resolved once. Cached like the estimate router does it, and tolerant of
+// a missing config: a deployment (or a unit test) without a public URL should send the quote and
+// omit the link, not fail the send over a display detail.
+let cachedOrigin: string | null | undefined;
+const publicOrigin = (): string | null => {
+  if (cachedOrigin === undefined) {
+    try {
+      cachedOrigin = resolvePublicAppOrigin(loadConfig());
+    } catch {
+      cachedOrigin = null;
+    }
+  }
+  return cachedOrigin;
+};
+
+// --- quote_accept / quote_decline: record the customer's answer ---
+// Accept is the conversion point: it also MINTS THE JOB. Without these two the agent could draft
+// and send a quote and then had no way to act on "they said yes" — the lead → quote → dispatch
+// chain was severed at exactly the step that matters.
+export const quoteAcceptTool: AgentTool = {
+  name: "quote_accept",
+  description:
+    "Record that the customer ACCEPTED a quote. This also creates the job, so it is how a won quote becomes work on the board. For a Good/Better/Best quote pass chosenTier; omitted, the recommended tier is used. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(quoteAcceptInput),
+  input: quoteAcceptInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(quoteAcceptInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const est = await new DrizzleEstimateRepository(ctx.tx, ctx.orgId).findById(asEstimateId(parsed.data.estimateId));
+    return est ? `estimate:${est.props.id}:${est.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(quoteAcceptInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const repo = new DrizzleEstimateRepository(ctx.tx, ctx.orgId);
+    const uc = new AcceptEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+    const result = await uc.exec({
+      estimateId: asEstimateId(parsed.data.estimateId),
+      ...(parsed.data.chosenTier ? { chosenTier: parsed.data.chosenTier } : {}),
+    });
+    if (!isOk(result)) return { ok: false, error: result.error.message };
+
+    // Job creation happens INLINE, exactly as the office accept route does it — estimate.accepted
+    // has no registered handler, so relying on the event would accept the quote and silently never
+    // produce the job. In a savepoint because a failed job creation must NOT roll back a
+    // successful acceptance: the customer really did say yes.
+    const jobNum = await runInSavepoint<string>(
+      ctx.tx,
+      async (sp) => {
+        const createJob = new CreateJobFromEstimateUseCase(
+          new DrizzleJobRepository(sp, ctx.orgId),
+          new DrizzleEstimateReader(sp, ctx.orgId),
+          ctx.deps.bus,
+          ctx.deps.clock,
+          ctx.deps.ids,
+        );
+        const job = await createJob.exec({ orgId: ctx.orgId, estimateId: asEstimateId(parsed.data.estimateId) });
+        return job.ok ? job.value.props.num : null;
+      },
+      () => undefined,
+    );
+
+    const e = result.value.props;
+    return {
+      ok: true,
+      summary: jobNum
+        ? `Quote ${e.num} accepted — job ${jobNum} created and ready to schedule.`
+        : `Quote ${e.num} accepted. The job was NOT created — create it manually and tell the user so.`,
+    };
+  },
+};
+
+export const quoteDeclineTool: AgentTool = {
+  name: "quote_decline",
+  description:
+    "Record that the customer DECLINED a quote, with their reason. Moves the lead to lost with the reason captured. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(quoteDeclineInput),
+  input: quoteDeclineInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(quoteDeclineInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const est = await new DrizzleEstimateRepository(ctx.tx, ctx.orgId).findById(asEstimateId(parsed.data.estimateId));
+    return est ? `estimate:${est.props.id}:${est.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(quoteDeclineInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new DeclineEstimateUseCase(new DrizzleEstimateRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const result = await uc.exec({ estimateId: asEstimateId(parsed.data.estimateId), reason: parsed.data.reason });
+    if (!isOk(result)) return { ok: false, error: result.error.message };
+    return { ok: true, summary: `Quote ${result.value.props.num} marked declined — reason recorded.` };
+  },
+};
+
+// --- visit_patch: reassign or re-time a VISIT (what the dispatch board reads) ---
+// Fingerprints on the visit's current assignee + slot so a concurrent change is caught at confirm.
+export const visitPatchTool: AgentTool = {
+  name: "visit_patch",
+  description:
+    "Reassign, move, re-time or unplace a scheduled VISIT. Use this — not job_assign — to change who is going or when: the dispatch board, the Jobs list and a tech's day all read the visit, not the job. Pass null to clear a field (unplacing a visit returns it to the unscheduled pile). Get jobId and visitId from job_get. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(visitPatchInput),
+  input: visitPatchInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(visitPatchInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    const visit = job?.props.visits.find((v) => v.props.id === parsed.data.visitId);
+    if (!visit) return ENTITY_NOT_FOUND;
+    const v = visit.props;
+    return `visit:${v.id}:${v.assigneeUserId ?? "unassigned"}:${v.scheduledDate ?? "unplaced"}:${v.scheduledStart ?? "-"}`;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(visitPatchInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new PatchVisitScheduleUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const d = parsed.data;
+    const result = await uc.exec({
+      jobId: asJobId(d.jobId),
+      visitId: asVisitId(d.visitId),
+      // `undefined` means leave alone, `null` means clear — the use case distinguishes them, so
+      // these must be forwarded as-is rather than collapsed with `?? null`.
+      ...(d.assigneeUserId !== undefined ? { assigneeUserId: d.assigneeUserId === null ? null : asUserId(d.assigneeUserId) } : {}),
+      ...(d.scheduledDate !== undefined ? { scheduledDate: d.scheduledDate } : {}),
+      ...(d.scheduledStart !== undefined ? { scheduledStart: d.scheduledStart } : {}),
+      ...(d.scheduledEnd !== undefined ? { scheduledEnd: d.scheduledEnd } : {}),
+      ...(d.notes !== undefined ? { notes: d.notes } : {}),
+    });
+    if (!isOk(result)) return { ok: false, error: result.error.message };
+    const v = result.value.props.visits.find((x) => x.props.id === d.visitId)?.props;
+    if (!v) return { ok: true, summary: `Visit updated on job ${result.value.props.num}.` };
+    const when = v.scheduledDate ? `${v.scheduledDate}${v.scheduledStart ? ` ${v.scheduledStart}` : ""}` : "unplaced";
+    const who = v.assigneeUserId ? `assigned to ${v.assigneeUserId}` : "unassigned";
+    return { ok: true, summary: `Visit on job ${result.value.props.num} — ${when}, ${who}.` };
   },
 };
 

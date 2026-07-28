@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { users, orgs } from "@mallet/shared/db/schema";
-import { toPage, asLeadId, asInvoiceId, asEstimateId, asJobId, asCompanyId } from "@mallet/shared/types";
+import { toPage, isOk, Phone, asLeadId, asInvoiceId, asEstimateId, asJobId, asCompanyId } from "@mallet/shared/types";
 import { ListLeadsUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { ListInvoicesUseCase, DrizzleInvoiceRepository } from "@mallet/invoicing";
 import { ListEstimatesUseCase, DrizzleEstimateRepository } from "@mallet/quoting";
@@ -21,6 +21,7 @@ import {
   invoiceListInput,
   estimateListInput,
   customerGetInput,
+  customerFindInput,
   estimateGetInput,
   invoiceGetInput,
   jobListInput,
@@ -63,7 +64,7 @@ export const getContextTool: AgentTool = {
 
 export const customerListTool: AgentTool = {
   name: "customer_list",
-  description: "List the org's customers/leads (most recent first). Returns each customer's name, stage, and id. Use the id to reference a customer in other tools.",
+  description: "List the org's customers/leads (most recent first). Returns each customer's name, phone, email, stage and id. Use the id to reference a customer in other tools.",
   inputSchema: jsonSchema(listInput),
   input: listInput,
   mutating: false,
@@ -76,7 +77,18 @@ export const customerListTool: AgentTool = {
     if (page.items.length === 0) return { ok: true, summary: "No customers found." };
     return {
       ok: true,
-      summary: page.items.map((l) => `${l.props.name} — stage ${l.props.stage} [id: ${l.props.id}]`).join("\n"),
+      // Phone and email are on the row already. Omitting them meant "what's Dave's number" —
+      // about the most ordinary question a shop asks — had no answer, and the agent could not
+      // hand a number to click-to-call or a text without a second lookup that also lacked it.
+      summary: page.items
+        .map((l) => {
+          const q = l.props;
+          const bits = [`${q.name} — stage ${q.stage}`];
+          if (q.phone) bits.push(String(q.phone));
+          if (q.email) bits.push(q.email);
+          return `${bits.join(" | ")} [id: ${q.id}]`;
+        })
+        .join("\n"),
     };
   },
 };
@@ -125,7 +137,7 @@ export const estimateListTool: AgentTool = {
 // --- customer_get: fetch one customer by id ---
 export const customerGetTool: AgentTool = {
   name: "customer_get",
-  description: "Fetch a single customer/lead by id (use customer_list to find ids). Returns the customer's name, stage, and any linked company id.",
+  description: "Fetch a single customer/lead by id (use customer_list to find ids). Returns name, phone, email, service address, stage, notes and any linked company.",
   inputSchema: jsonSchema(customerGetInput),
   input: customerGetInput,
   mutating: false,
@@ -135,9 +147,41 @@ export const customerGetTool: AgentTool = {
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.customerId));
     if (!lead) return { ok: false, error: `customer ${parsed.data.customerId} not found — use customer_list to find the right id` };
     const p = lead.props;
+    // Everything below was already on the record and simply not printed. A customer detail view
+    // that omits the phone number and the address is not a detail view.
     const parts = [`${p.name} — stage ${p.stage}`];
+    if (p.phone) parts.push(`phone: ${p.phone}`);
+    if (p.email) parts.push(`email: ${p.email}`);
+    if (p.address) parts.push(`address: ${p.address}`);
     if (p.companyId) parts.push(`company id: ${p.companyId}`);
     if (p.role) parts.push(`role: ${p.role}`);
+    if (p.notes) parts.push(`notes: ${p.notes}`);
+    parts.push(`[id: ${p.id}]`);
+    return { ok: true, summary: parts.join(" | ") };
+  },
+};
+
+// --- customer_find: look a customer up by phone number ---
+export const customerFindTool: AgentTool = {
+  name: "customer_find",
+  description:
+    "Find a customer by phone number, in any format ((781) 385-0591, 781-385-0591, +17813850591). Use this when you have a number rather than an id — for an inbound caller, a number read aloud, or before creating a customer who may already exist.",
+  inputSchema: jsonSchema(customerFindInput),
+  input: customerFindInput,
+  mutating: false,
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = customerFindInput.safeParse(input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    // Normalise first: leads.phone_e164 is stored +1XXXXXXXXXX, so a raw "(781) 385-0591" would
+    // match nothing and read back as "no such customer" — the most misleading possible answer.
+    const phone = Phone.parse(parsed.data.phone);
+    if (!isOk(phone)) return { ok: false, error: phone.error.message };
+    const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findByPhone(phone.value);
+    if (!lead) return { ok: true, summary: `No customer on file with ${phone.value}.` };
+    const p = lead.props;
+    const parts = [`${p.name} — stage ${p.stage}`, `phone: ${p.phone}`];
+    if (p.email) parts.push(`email: ${p.email}`);
+    if (p.address) parts.push(`address: ${p.address}`);
     parts.push(`[id: ${p.id}]`);
     return { ok: true, summary: parts.join(" | ") };
   },

@@ -49,3 +49,6 @@ export {
 export type { JobWithExecution } from "./app/job-execution-use-cases";
 export type { PhotoStorageGateway, SignedUpload, CreateUploadUrlCmd, DownloadContext, DownloadResult } from "./domain/photo-storage-gateway";
 export { SupabasePhotoStorageGateway, JOB_PHOTOS_BUCKET } from "./infra/supabase-photo-storage-gateway";
+// Reassigning or re-timing a VISIT — what the dispatch board and a tech's day actually read.
+export { PatchVisitScheduleUseCase } from "./app/patch-visit-schedule";
+export type { PatchVisitScheduleCommand } from "./app/patch-visit-schedule";
