@@ -13,6 +13,7 @@
  * state, so it survives a reload (see features/field/day-clock.tsx).
  */
 
+import { haptics } from "@/lib/haptics";
 import { api } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { useOpenModal } from "@/lib/store/app-store";
@@ -198,10 +199,13 @@ export default function MyDayPage() {
   }
 
   function handleStart(jobId: string): void {
+    haptics.commit();
     startMutation.mutate({ jobId });
   }
 
   function handleComplete(jobId: string): void {
+    // A finished job is a completed task, not just a state change — success, not commit.
+    haptics.success();
     completeMutation.mutate({ jobId });
   }
 
