@@ -164,12 +164,22 @@ export function ThreadModalContent() {
   const utils = api.useUtils();
 
   // Fetch real thread from the backend.
+  //
+  // An open thread has to keep asking. There is no realtime channel for messages, so with
+  // refetchOnWindowFocus off and no interval this modal was a snapshot taken the moment it opened:
+  // a customer could reply and the reply would never appear while you sat looking at the
+  // conversation. Tabbing away to a phone and back is the single most likely moment a new message
+  // exists, and that was the one event explicitly turned off.
+  //
+  // Polling only while the modal is open, matching the repo's existing precedent
+  // (features/field/hooks.ts) — one request per open thread, and none once it closes.
   const { data: thread, isLoading } = api.v1.messaging.listByLead.useQuery(
     { leadId: leadId ?? "" },
     {
       enabled: Boolean(leadId),
-      staleTime: 15_000,
-      refetchOnWindowFocus: false,
+      staleTime: 5_000,
+      refetchOnWindowFocus: true,
+      refetchInterval: leadId ? 10_000 : false,
     },
   );
 

@@ -246,10 +246,15 @@ function ConversationRow({
 function CustomerInbox() {
   const openModal = useOpenModal();
 
+  // An inbox that never refetches is a screenshot. There is no realtime channel for messages, so
+  // without a poll a tech watching this list would not see a customer's text arrive — and
+  // refetchOnWindowFocus was off, which is exactly the moment (coming back to the app) a new one
+  // is most likely to be waiting.
   const { data: conversations, isLoading } =
     api.v1.messaging.listConversations.useQuery(undefined, {
-      staleTime: 15_000,
-      refetchOnWindowFocus: false,
+      staleTime: 5_000,
+      refetchOnWindowFocus: true,
+      refetchInterval: 15_000,
     });
 
   if (isLoading) {
