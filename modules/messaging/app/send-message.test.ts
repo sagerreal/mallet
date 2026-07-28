@@ -90,6 +90,33 @@ describe("SendMessageUseCase", () => {
     repo = makeRepo();
   });
 
+  it("sends THROUGH the A2P Messaging Service when the org has one", async () => {
+    // Regression. The 7th TwilioSmsSender argument was omitted, so cmd.messagingServiceSid was
+    // read by the router, declared on the cmd, and silently dropped — every text went out naming
+    // a bare `from`. Carriers check the SERVICE a 10DLC campaign attaches to, so a bare number is
+    // filtered as unregistered traffic even with an approved campaign. The failure is invisible
+    // from inside the app: Twilio accepts the send and the handset never rings.
+    const transport = vi.fn(async () => ({ sid: "SM_svc" }));
+    const uc = new SendMessageUseCase(repo, makeSmsDeps(transport), makeIds());
+
+    await uc.exec({ ...BASE_CMD, messagingServiceSid: "MG_test_service" });
+
+    expect(transport).toHaveBeenCalledWith(
+      expect.objectContaining({ messagingServiceSid: "MG_test_service" }),
+    );
+  });
+
+  it("omits the Messaging Service when the org has none, rather than sending undefined", async () => {
+    const transport = vi.fn(async () => ({ sid: "SM_bare" }));
+    const uc = new SendMessageUseCase(repo, makeSmsDeps(transport), makeIds());
+
+    await uc.exec({ ...BASE_CMD, messagingServiceSid: null });
+
+    expect(transport).toHaveBeenCalledWith(
+      expect.not.objectContaining({ messagingServiceSid: expect.anything() }),
+    );
+  });
+
   it("returns err immediately when orgTwilioNumber is null — transport and repo are never called", async () => {
     const transport = vi.fn();
     const uc = new SendMessageUseCase(repo, makeSmsDeps(transport), makeIds());
