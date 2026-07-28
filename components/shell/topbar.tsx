@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Row } from "@/components/ui/row";
 import { useNewMenuItems } from "@/components/shell/new-menu-items";
 import { isTabRoot, parentRouteOf } from "@/components/shell/tab-roots";
+import { THEME_STORAGE_KEY, nextTheme, type Theme } from "@/lib/theme";
 
 // Route → breadcrumb, so the topbar reflects the current screen (like the prototype's crumb).
 const CRUMBS: Record<string, { section: string; label: string }> = {
@@ -80,7 +81,7 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   const crumb = matched ? CRUMBS[matched] : undefined;
   const section = sectionProp ?? crumb?.section ?? "Customer";
   const label = labelProp ?? crumb?.label ?? "Home";
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<Theme>("light");
   // The sidebar's "+ New" is `display:none` below 760px, so the topbar carries the
   // create actions on a phone. Same items, so the two surfaces cannot drift.
   const [newOpen, setNewOpen] = useState(false);
@@ -103,19 +104,22 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   }, [pathname]);
 
   useEffect(() => {
-    // Read stored theme preference
-    const stored = localStorage.getItem("mallet-theme") as "light" | "dark" | null;
-    if (stored) {
-      setTheme(stored);
-      document.documentElement.setAttribute("data-theme", stored);
-    }
+    // Adopt whatever is ALREADY on screen. The pre-paint script in app/layout.tsx has
+    // already resolved stored-choice-or-system onto data-theme, so the attribute is the
+    // source of truth — not localStorage, which is empty for a system-dark user who has
+    // never toggled. Reading localStorage here is what made the first tap a no-op on a
+    // system-dark phone: state said "light" while the screen was dark.
+    const applied = document.documentElement.getAttribute("data-theme");
+    if (applied === "dark" || applied === "light") setTheme(applied);
   }, []);
 
   const toggleTheme = () => {
-    const next = theme === "light" ? "dark" : "light";
+    const next = nextTheme(theme);
     setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("mallet-theme", next);
+    // Writing it is what promotes this from "following the system" to an explicit
+    // choice that outlives sunset.
+    localStorage.setItem(THEME_STORAGE_KEY, next);
   };
 
   return (

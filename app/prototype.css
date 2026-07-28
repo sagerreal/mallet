@@ -109,6 +109,18 @@
      Capacitor already sets scrollView.bounces=false, so this is the fix for mobile web
      and for any inner scroller the native setting does not cover. */
   html,body{overscroll-behavior-y:none}
+  /* Controls that declare no background of their own fell through to the USER AGENT's
+     form default. In dark that is Chromium's rgb(59,59,59) — a colour this palette has
+     never known about — which left even a correct --line-strong border at only ~2.2:1
+     and made those fields look pasted in from another app.
+     Deliberately a BARE ELEMENT selector so it loses to everything: any rule with a
+     class (.field input, .lineitems input on --paper, .lineedit input on transparent)
+     still wins on specificity, so this only fills the gap where nothing was declared.
+     That is why it is here, early, and not in the !important border rule below.
+     Scoped to DARK on purpose. Applying it in both themes also replaced light's UA
+     white with warm --card, which moved 23 light snapshots — arguably nicer, but an
+     unrequested restyle, and light's UA default was never the defect. */
+  [data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{background-color:var(--card)}
   button{font-family:inherit;cursor:pointer}
   /* The 3:1 control-boundary floor (WCAG 1.4.11), enforced in ONE place.
      It has to be !important because the boundary is authored three different ways and two

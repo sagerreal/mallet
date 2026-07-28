@@ -5,6 +5,7 @@ import { TrpcProvider } from "@/lib/trpc/provider";
 import "./globals.css";
 import "./prototype.css";
 import { NativeReady } from "@/components/shell/native-ready";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
@@ -49,6 +50,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} ${spaceMono.variable}`}>
+      <head>
+        {/* Resolves stored-choice-or-system onto data-theme BEFORE first paint. A React
+            effect runs after paint, which is exactly the cream flash this avoids on a
+            system-dark phone. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         <NativeReady />
         <TrpcProvider>{children}</TrpcProvider>
