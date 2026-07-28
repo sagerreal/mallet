@@ -1,3 +1,4 @@
+import { Children, cloneElement, isValidElement, useId } from "react";
 import type { InputHTMLAttributes, SelectHTMLAttributes, ReactNode, CSSProperties } from "react";
 
 /**
@@ -29,10 +30,27 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   // Mirrors the prototype `.field` markup used across the app (div > label +
   // control), so the descendant rules in prototype.css style the control for free.
+  //
+  // The label MUST be programmatically associated with its control. As a bare
+  // sibling with no htmlFor it was decorative only: screen readers fell back to the
+  // control's placeholder for its accessible name (which disappears as soon as the
+  // user types), tapping the label did not focus the control — a free hit target,
+  // and not a small loss for a gloved thumb — and `getByLabel` matched nothing,
+  // which is why e2e/field.spec.ts sat silently red.
+  //
+  // Done by cloning the child rather than nesting the control inside the <label>:
+  // prototype.css positions `.field > label` and `.field > input` as siblings, and
+  // nesting would silently restyle every form in the app. An id the caller already
+  // set always wins.
+  const generatedId = useId();
+  const only = Children.count(children) === 1 ? (children as ReactNode) : null;
+  const child = isValidElement<{ id?: string }>(only) ? only : null;
+  const controlId = child?.props.id ?? (child ? generatedId : undefined);
+
   return (
     <div className="field">
-      <label>{label}</label>
-      {children}
+      <label htmlFor={controlId}>{label}</label>
+      {child && !child.props.id ? cloneElement(child, { id: controlId }) : children}
     </div>
   );
 }

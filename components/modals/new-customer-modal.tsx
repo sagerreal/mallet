@@ -394,8 +394,14 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       <form onSubmit={handleSubmit}>
         {/* 1. Name */}
         <div className="field">
-          <label>Name</label>
+          {/* htmlFor/id, not a bare <label>: without the pairing a screen reader falls
+              back to the placeholder for this control's name — and a placeholder is gone
+              the moment you type. It also makes the label a hit target that focuses the
+              field, which matters with gloves on. The Field primitive now does this
+              automatically; this site is still hand-rolled markup. */}
+          <label htmlFor="nc-name">Name</label>
           <input
+            id="nc-name"
             type="text"
             placeholder="Full name"
             value={name}
