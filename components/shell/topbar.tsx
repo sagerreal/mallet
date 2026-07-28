@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Row } from "@/components/ui/row";
 import { useNewMenuItems } from "@/components/shell/new-menu-items";
+import { isTabRoot, parentRouteOf } from "@/components/shell/tab-roots";
 
 // Route → breadcrumb, so the topbar reflects the current screen (like the prototype's crumb).
 const CRUMBS: Record<string, { section: string; label: string }> = {
@@ -51,6 +52,12 @@ const MoonIcon = () => (
   </svg>
 );
 
+const ChevronLeftIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15 18 9 12 15 6" />
+  </svg>
+);
+
 const PlusIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <line x1="12" y1="5" x2="12" y2="19" />
@@ -65,6 +72,7 @@ interface TopbarProps {
 
 export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   // Longest-prefix match so nested routes inherit the parent crumb.
   const matched = Object.keys(CRUMBS)
     .filter((route) => pathname === route || pathname.startsWith(route + "/"))
@@ -77,6 +85,17 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   // create actions on a phone. Same items, so the two surfaces cannot drift.
   const [newOpen, setNewOpen] = useState(false);
   const newItems = useNewMenuItems(() => setNewOpen(false));
+
+  // The bottom tab bar is the only navigation on a phone and reaches nine routes.
+  // Everything else (/pipeline, /tasks, /composer, /settings, /jobs/:id, /money/:id)
+  // was a dead end — and a WKWebView has no browser chrome to fall back on.
+  const showBack = !isTabRoot(pathname);
+  const goBack = () => {
+    // A cold launch straight onto a deep route has nothing to pop, so fall back to
+    // the route's own parent rather than doing nothing.
+    if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push(parentRouteOf(pathname));
+  };
 
   // Collapse on navigation — otherwise the panel outlives the page it opened on.
   useEffect(() => {
@@ -102,6 +121,11 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   return (
     <>
       <header className="topbar">
+        {showBack && (
+          <button className="iconbtn topback" onClick={goBack} aria-label="Back" title="Back">
+            <ChevronLeftIcon />
+          </button>
+        )}
         <div className="crumb" id="crumb">
           <b>{section}</b>
           {label && (
