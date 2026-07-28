@@ -360,7 +360,7 @@ export function FrontDeskPane() {
           <RuleRow k="fee" openRule={openRule} onToggle={toggleRule} label="Service call fee" value={<><span className="mono">${bk.serviceFee}</span>{bk.feeCredited ? " · credited" : ""}</>}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
               <span className="muted">$</span>
-              <input type="number" min={0} defaultValue={bk.serviceFee}
+              <input type="number" inputMode="decimal" min={0} defaultValue={bk.serviceFee}
                 onChange={(e) => setServiceFee(Number(e.target.value))}
                 style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: "var(--radius-md)", padding: "var(--space-3) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-md)", background: "var(--card)" }} />
               <span className="muted" style={{ fontSize: "var(--type-sm)" }}>to come diagnose a repair</span>
@@ -447,7 +447,7 @@ export function FrontDeskPane() {
             </div>
             <div className="field" style={{ margin: "var(--space-3) 0 0" }}>
               <label>Radius (miles)</label>
-              <input type="number" min={0} defaultValue={bk.area.radiusMi}
+              <input type="number" inputMode="decimal" min={0} defaultValue={bk.area.radiusMi}
                 onChange={(e) => setBookingArea("radiusMi", e.target.value)}
                 style={{ fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)", maxWidth: 120 }} />
             </div>

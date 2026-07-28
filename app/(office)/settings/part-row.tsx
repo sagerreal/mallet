@@ -32,6 +32,7 @@ export function PartRow({ material, quantity, onQuantityChange, onRemove }: Part
       <span style={{ flex: 1 }}>{material.name}</span>
       <input
         type="number"
+        inputMode="decimal"
         min={0.01}
         step={0.01}
         defaultValue={quantity}

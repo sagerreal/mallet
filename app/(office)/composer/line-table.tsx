@@ -97,6 +97,7 @@ export function LineTable({
                 <td>
                   <input
                     type="number"
+                    inputMode="decimal"
                     className="num"
                     value={x.q}
                     aria-label={`Quantity, line ${i + 1}`}
@@ -106,6 +107,7 @@ export function LineTable({
                 <td>
                   <input
                     type="number"
+                    inputMode="decimal"
                     className="num"
                     value={x.r}
                     aria-label={`Price, line ${i + 1}`}
@@ -116,6 +118,7 @@ export function LineTable({
                   <td>
                     <input
                       type="number"
+                      inputMode="decimal"
                       className="num"
                       value={x.c ?? ""}
                       placeholder="—"

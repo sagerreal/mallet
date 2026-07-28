@@ -111,6 +111,7 @@ export function DurField({ dur, onChange }: DurFieldProps) {
       >
         <input
           type="number"
+          inputMode="decimal"
           min={0}
           max={24}
           aria-label="Length hours"
@@ -121,6 +122,7 @@ export function DurField({ dur, onChange }: DurFieldProps) {
         <span className="unit">h</span>
         <input
           type="number"
+          inputMode="decimal"
           min={0}
           max={59}
           step={5}

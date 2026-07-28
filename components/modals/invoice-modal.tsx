@@ -242,6 +242,7 @@ function EditBlock({
             />
             <input
               type="number"
+              inputMode="decimal"
               min={1}
               value={l.q || 1}
               title="qty"
@@ -251,6 +252,7 @@ function EditBlock({
             <span className="muted">$</span>
             <input
               type="number"
+              inputMode="decimal"
               min={0}
               value={l.r || 0}
               title="price"
@@ -260,6 +262,7 @@ function EditBlock({
             {money ? (
               <input
                 type="number"
+                inputMode="decimal"
                 min={0}
                 value={l.c ?? ""}
                 placeholder="cost"
@@ -456,6 +459,7 @@ function EditBlock({
               <label>Discount %</label>
               <input
                 type="number"
+                inputMode="decimal"
                 min={0}
                 defaultValue={p.disc || ""}
                 placeholder="0"
@@ -466,6 +470,7 @@ function EditBlock({
               <label>Tax %</label>
               <input
                 type="number"
+                inputMode="decimal"
                 min={0}
                 step={0.25}
                 defaultValue={p.tax || ""}
@@ -477,6 +482,7 @@ function EditBlock({
               <label>Deposit paid $</label>
               <input
                 type="number"
+                inputMode="decimal"
                 min={0}
                 defaultValue={invoice.depPaid || ""}
                 placeholder="0"

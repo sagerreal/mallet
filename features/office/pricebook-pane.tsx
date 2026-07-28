@@ -240,7 +240,7 @@ export function PricebookPane() {
                     className="field-compact" style={{ flex: 1, minWidth: 100 }} />
                   <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                     <span className="muted">$</span>
-                    <input type="number" defaultValue={lr.rate}
+                    <input type="number" inputMode="decimal" defaultValue={lr.rate}
                       onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
                       className="field-compact" style={{ width: 72 }} />
                     <select
@@ -272,7 +272,7 @@ export function PricebookPane() {
                 <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
                   className="field-compact" />
                 <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                  <input type="number" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
+                  <input type="number" inputMode="decimal" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
                     className="field-compact" style={{ flex: 1 }} />
                   <button className="btn sm" onClick={handleAddLabor}>+ Add</button>
                 </div>
@@ -288,7 +288,7 @@ export function PricebookPane() {
           >
             <div className="field" style={{ maxWidth: 160, margin: "0" }}>
               <label>Markup on new parts (%)</label>
-              <input type="number" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
+              <input type="number" inputMode="decimal" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
             </div>
             <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "var(--type-sm)" }}>
               Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.

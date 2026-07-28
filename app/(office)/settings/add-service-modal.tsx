@@ -77,6 +77,7 @@ export function AddServiceModal({
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
               <input
                 type="number"
+                inputMode="decimal"
                 min={0}
                 value={price}
                 placeholder="149"
