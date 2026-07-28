@@ -11,6 +11,14 @@
     --ink:#15110B; --ink-2:#585D66; --ink-3:#636870;
     /* warm "software white" — content stays WHITE (just a warm one, not stark #FFF); only the chrome (sidebar/command line) is manila. bg is a soft warm white LIGHTER than the manila chrome, so content reads as the white work-surface, not cream. */
     --bg:#EFEAE0; --card:#FDFCF9; --paper:#F6F1E7; --line:#E3DDD1; --line-2:#EFEAE0;
+    /* --line-strong is the FORM-CONTROL boundary, and ONLY that — dividers keep --line,
+       because a divider is decorative and explicitly exempt from WCAG 1.4.11.
+       1.4.11 wants 3:1 for anything you must see to identify a control. --line measures
+       1.07–1.35:1 across the five surfaces a control can sit on (card, bg, paper, manila,
+       manila-2), so an input was effectively borderless — in sunlight, on a job site,
+       genuinely invisible. Solved for >=3:1 on ALL five: worst 3.13:1 on --manila-2,
+       best 3.86:1 on --card. */
+    --line-strong:#8A7E72;
     --amber:#8A5A00; --amber-bg:#F2EAD9; --red:#B23A2A; --red-bg:#F4E7E1;
     --blue:#4A639E; --blue-bg:#E9ECF3; --purple:#7A6BA6; --purple-bg:#F2EAD9;
     --radius:12px; --radius-sm:9px; --aiw:0px; /* AI is the command bar, not a side drawer — no reserved right column (overlays cover full width) */
@@ -31,6 +39,9 @@
     --accent:#F4F5F7; --accent-2:#C7CBD2; --dot:var(--manila-ink); --pri-bg:#F4F5F7; --pri-fg:#111317;
     --ink:#F3F4F6; --ink-2:#A0A5AE; --ink-3:#9096A0;
     --bg:#0F0D09; --card:#1B1813; --paper:#232019; --line:#332E25; --line-2:#272218;
+    /* Dark twin, solved against the dark surfaces independently rather than reused:
+       worst 3.16:1 on --manila-2, best 3.80:1 on --bg. */
+    --line-strong:#736D67;
     --amber:#E0A53B; --amber-bg:#262019; --red:#DE6F62; --red-bg:#35201E;
     --blue:#8FA0C8; --blue-bg:#1B2440; --purple:#9B8FCB; --purple-bg:#262019;
     --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 26px rgba(0,0,0,.5); --shadow-lg:0 24px 64px rgba(0,0,0,.62);
@@ -99,6 +110,18 @@
      and for any inner scroller the native setting does not cover. */
   html,body{overscroll-behavior-y:none}
   button{font-family:inherit;cursor:pointer}
+  /* The 3:1 control-boundary floor (WCAG 1.4.11), enforced in ONE place.
+     It has to be !important because the boundary is authored three different ways and two
+     of them are unreachable by any selector:
+       1. ~13 stylesheet rules (.field input[...], .auth-input, .te-input, …) — reachable.
+       2. 23+ INLINE `style={{ border: "1.5px solid var(--line)" }}` props in JSX.
+       3. shared inline style CONSTANTS spread into controls (e.g. COMPACT_INPUT's siblings).
+     Inline styles beat every selector at every specificity, so chasing call sites both
+     fails and has to be re-done for each new one. A single floor cannot be forgotten.
+     Scoped to real text-entry/choice controls — checkbox, radio, range and color draw their own
+     native boundary and are excluded so we do not repaint platform widgets (color also has a user-chosen swatch as its background, so a ratio against it is meaningless). Verified in the
+     browser across 6 routes x both themes; e2e/mobile-floors.spec.ts holds it. */
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),select,textarea{border-color:var(--line-strong)!important}
 
   /* ---------- app shell: full-height sidebar + in-content topbar ---------- */
   .appshell{display:flex;flex-direction:column;height:100vh;overflow:hidden}
