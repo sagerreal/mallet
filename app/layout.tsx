@@ -4,6 +4,7 @@ import { Inter, Space_Grotesk, Space_Mono } from "next/font/google";
 import { TrpcProvider } from "@/lib/trpc/provider";
 import "./globals.css";
 import "./prototype.css";
+import { NativeReady } from "@/components/shell/native-ready";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} ${spaceMono.variable}`}>
       <body>
+        <NativeReady />
         <TrpcProvider>{children}</TrpcProvider>
       </body>
     </html>

@@ -14,6 +14,7 @@
  * say: that the day has begun, and that lunch is unpaid.
  */
 
+import { haptics } from "@/lib/haptics";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/trpc/client";
 import { todayISO } from "@/lib/clock";
@@ -79,6 +80,10 @@ function useClockTap() {
   const clockTap = api.v1.timesheets.clockTap.useMutation();
 
   const tap = (tapName: DayClockTap): void => {
+    // Fire with the OPTIMISTIC update, not on server success: the buzz is confirmation
+    // that the press landed, and it has to arrive in the same instant as the UI does.
+    // A punch made with no signal still feels like it happened, because it did.
+    haptics.commit();
     setPredicted(optimisticView(tapName, new Date()));
     clockTap.mutate(
       // The DEVICE's timestamp, not the server's: a tap made with no signal is retried when the
@@ -97,6 +102,7 @@ function useClockTap() {
           // Roll back to whatever the server last said, and say so out loud — a punch that
           // silently did not happen is exactly the failure this feature exists to prevent.
           setPredicted(null);
+          haptics.warn();
           reportWriteError(WRITE_ACTION_FOR_TAP[tapName], error);
         },
       },
