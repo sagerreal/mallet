@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { users, orgs } from "@mallet/shared/db/schema";
+import { users, orgs, orgSettings } from "@mallet/shared/db/schema";
 import { toPage, isOk, Phone, asLeadId, asInvoiceId, asEstimateId, asJobId, asCompanyId } from "@mallet/shared/types";
 import { ListLeadsUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { ListInvoicesUseCase, DrizzleInvoiceRepository } from "@mallet/invoicing";
@@ -48,15 +48,32 @@ const contextInput = z.object({});
 export const getContextTool: AgentTool = {
   name: "get_context",
   description:
-    "Returns the org's display name and today's ISO date. Call this at the start of a new conversation so you can address the team correctly and reason about dates.",
+    "Returns the org's display name, today's date IN THE ORG'S OWN TIMEZONE, and that timezone. Call this at the start of a new conversation so you can address the team correctly and reason about dates.",
   inputSchema: jsonSchema(contextInput),
   input: contextInput,
   mutating: false,
   async handle(_input, ctx): Promise<ToolOutcome> {
     const rows = await ctx.tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, ctx.orgId)).limit(1);
     const orgName = rows[0]?.name ?? "your organization";
-    const todayISO = ctx.deps.clock.now().toISOString().slice(0, 10);
-    return { ok: true, summary: JSON.stringify({ orgName, todayISO }) };
+
+    // The org's OWN timezone, not UTC. toISOString() rolls over at midnight UTC — 5pm Pacific —
+    // so every evening the agent believed it was already tomorrow and would schedule "today" onto
+    // the wrong day. org_settings.timezone is NOT NULL with a default, so a shop always has one.
+    const tzRows = await ctx.tx
+      .select({ timezone: orgSettings.timezone })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, ctx.orgId))
+      .limit(1);
+    const timezone = tzRows[0]?.timezone ?? "America/Los_Angeles";
+    // en-CA formats as YYYY-MM-DD, which is the ISO date shape without hand-assembling parts.
+    const todayISO = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(ctx.deps.clock.now());
+
+    return { ok: true, summary: JSON.stringify({ orgName, todayISO, timezone }) };
   },
 };
 
@@ -109,7 +126,19 @@ export const invoiceListTool: AgentTool = {
     if (page.items.length === 0) return { ok: true, summary: "No invoices found." };
     return {
       ok: true,
-      summary: page.items.map((inv) => `${inv.props.num} — ${inv.props.status} — total ${money(inv.props.total)}, due ${money(inv.due())} [id: ${inv.props.id}]`).join("\n"),
+      // leadId, title and dueAt were all on the row and none were printed. Without leadId the
+      // agent can list invoices and list customers and has no way to connect the two; without
+      // dueAt it cannot answer "who is overdue" even by filtering client-side.
+      summary: page.items
+        .map((inv) => {
+          const q = inv.props;
+          const bits = [`${q.num} — ${q.status}`];
+          if (q.title) bits.push(`"${q.title}"`);
+          bits.push(`total ${money(q.total)}, balance ${money(inv.due())}`);
+          if (q.dueAt) bits.push(`due ${q.dueAt.toISOString().slice(0, 10)}`);
+          return `${bits.join(" — ")} [id: ${q.id}, customer: ${q.leadId}]`;
+        })
+        .join("\n"),
     };
   },
 };
@@ -128,7 +157,22 @@ export const estimateListTool: AgentTool = {
       filter: parsed.data.status ? { status: parsed.data.status } : undefined,
     });
     if (page.items.length === 0) return { ok: true, summary: "No estimates found." };
-    return { ok: true, summary: page.items.map((e) => `${e.props.num} — ${e.props.status} — total ${money(e.total())} [id: ${e.props.id}]`).join("\n") };
+    return {
+      ok: true,
+      summary: page.items
+        .map((e) => {
+          const q = e.props;
+          const bits = [`${q.num} — ${q.status}`];
+          if (q.title) bits.push(`"${q.title}"`);
+          bits.push(`total ${money(e.total())}`);
+          // A tiered quote reported as a single total is a misleading answer, not a terse one.
+          if (q.recommendedTier) bits.push(`tiered (recommended: ${q.recommendedTier})`);
+          if (q.acceptedTier) bits.push(`accepted: ${q.acceptedTier}`);
+          if (q.changeRequestedAt) bits.push("CHANGES REQUESTED");
+          return `${bits.join(" — ")} [id: ${q.id}, customer: ${q.leadId}]`;
+        })
+        .join("\n"),
+    };
   },
 };
 
@@ -199,9 +243,28 @@ export const estimateGetTool: AgentTool = {
     if (!parsed.success) return invalid(parsed.error.issues);
     const estimate = await new DrizzleEstimateRepository(ctx.tx, ctx.orgId).findById(asEstimateId(parsed.data.estimateId));
     if (!estimate) return { ok: false, error: `estimate ${parsed.data.estimateId} not found — use estimate_list to find the right id` };
+    // Good/Better/Best is a whole quote FORMAT, and flattening it to one list of lines next to
+    // one total misrepresents the document — the customer is choosing between tiers, not buying
+    // every line. isOptional matters for the same reason: an add-on read as included inflates
+    // the number the agent quotes out loud.
     const p = estimate.props;
-    const linesSummary = p.lines.map((l) => `  ${l.props.description} x${l.props.quantity} @ ${money(l.props.rate)}`).join("\n");
-    return { ok: true, summary: `${p.num} — ${p.status} — total ${money(estimate.total())} [id: ${p.id}]\nLines:\n${linesSummary}` };
+    const linesSummary = p.lines
+      .map((l) => {
+        const q = l.props;
+        const tags = [q.tier ? `[${q.tier}]` : "", q.isOptional ? "(optional)" : ""].filter(Boolean).join(" ");
+        return `  ${tags ? `${tags} ` : ""}${q.description} x${q.quantity} @ ${money(q.rate)}`;
+      })
+      .join("\n");
+    const head = [`${p.num} — ${p.status}`];
+    if (p.title) head.push(`"${p.title}"`);
+    head.push(`total ${money(estimate.total())}`);
+    if (p.recommendedTier) head.push(`TIERED — recommended: ${p.recommendedTier}`);
+    if (p.acceptedTier) head.push(`accepted: ${p.acceptedTier}`);
+    if (p.changeRequestedAt) head.push("CHANGES REQUESTED by the customer");
+    return {
+      ok: true,
+      summary: `${head.join(" — ")} [id: ${p.id}, customer: ${p.leadId}]\nLines:\n${linesSummary}`,
+    };
   },
 };
 
@@ -217,10 +280,23 @@ export const invoiceGetTool: AgentTool = {
     if (!parsed.success) return invalid(parsed.error.issues);
     const invoice = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
     if (!invoice) return { ok: false, error: `invoice ${parsed.data.invoiceId} not found — use invoice_list to find the right id` };
+    // A bill with no lines, no due date and no customer is a receipt total, not an invoice. Every
+    // field below was already loaded and simply not printed — so "what's on invoice 1042" and
+    // "who is it for" both went unanswered about a record holding both answers.
     const p = invoice.props;
+    const head = [`${p.num} — ${p.status}`];
+    if (p.title) head.push(`"${p.title}"`);
+    head.push(`total ${money(p.total)}, paid ${money(p.amountPaid)}, balance ${money(invoice.due())}`);
+    if (p.depositPaid) head.push(`deposit ${money(p.depositPaid)}`);
+    if (p.sentAt) head.push(`sent ${p.sentAt.toISOString().slice(0, 10)}`);
+    if (p.dueAt) head.push(`due ${p.dueAt.toISOString().slice(0, 10)}`);
+    if (p.termsDays !== null && p.termsDays !== undefined) head.push(`net ${p.termsDays}`);
+    const lines = p.lines.length
+      ? `\nLines:\n${p.lines.map((l) => `  ${l.props.description} x${l.props.quantity} @ ${money(l.props.rate)}`).join("\n")}`
+      : "";
     return {
       ok: true,
-      summary: `${p.num} — ${p.status} — total ${money(p.total)}, paid ${money(p.amountPaid)}, due ${money(invoice.due())} [id: ${p.id}]`,
+      summary: `${head.join(" — ")} [id: ${p.id}, customer: ${p.leadId}]${lines}`,
     };
   },
 };
@@ -246,8 +322,12 @@ export const jobListTool: AgentTool = {
         .map((j) => {
           const p = j.props;
           const title = p.title ? ` — ${p.title}` : "";
-          const assignee = p.assigneeUserId ? " — assigned" : "";
-          return `${p.num}${title} — ${p.status}${assignee} [id: ${p.id}]`;
+          // Assignment stays a flag, not a raw UUID — a deliberate earlier decision, and right:
+          // a bare user id is noise in a reply and means nothing to the reader. Use member_list to
+          // put a name to it. leadId below is different in kind: a HANDLE the agent needs to call
+          // the next tool, the same role the job's own id already plays here.
+          const assignee = p.assigneeUserId ? " — assigned" : " — unassigned";
+          return `${p.num}${title} — ${p.status}${assignee} [id: ${p.id}, customer: ${p.leadId}]`;
         })
         .join("\n"),
     };
@@ -305,7 +385,10 @@ export const taskListTool: AgentTool = {
           const p = t.props;
           const due = p.dueDate ? ` due ${p.dueDate}` : "";
           const done = p.done ? " [done]" : "";
-          return `${p.text}${due}${done} [id: ${p.id}]`;
+          // A task attaches to a Lead; without leadId "what's outstanding for the Hendersons"
+          // cannot be answered from this list.
+          const who = p.leadId ? `, customer: ${p.leadId}` : "";
+          return `${p.text}${due}${done} [id: ${p.id}${who}]`;
         })
         .join("\n"),
     };

@@ -67,11 +67,13 @@ vi.mock("@mallet/a2p", () => ({
   GetA2pStatusUseCase: vi.fn(),
   DrizzleRegistrationRepository: vi.fn(),
 }));
-// The users table import is used directly in member_list, and orgs in get_context —
-// mock @mallet/shared/db/schema with both.
+// The users table import is used directly in member_list, and orgs + org_settings in
+// get_context — mock @mallet/shared/db/schema with all three.
 vi.mock("@mallet/shared/db/schema", () => ({
   users: { id: "id", orgId: "orgId", name: "name", role: "role", isFieldCrew: "isFieldCrew" },
   orgs: { id: "id", name: "name" },
+  // get_context now reads the org's timezone so "today" is the shop's today, not UTC's.
+  orgSettings: { orgId: "orgId", timezone: "timezone" },
 }));
 
 // Import after mocks are hoisted so the vi.mock() factory captures the mocked modules.
@@ -900,7 +902,20 @@ describe("invoice_get", () => {
     const invoiceId = randomUUID();
     mockClass(DrizzleInvoiceRepository, {
       findById: vi.fn().mockResolvedValue({
-        props: { id: invoiceId, num: "INV-011", status: "partial", total: 100000, amountPaid: 40000 },
+        // A real invoice from the repository always carries lines, a leadId and a due date —
+        // the fixture omitted them, which is why the tool could ship without returning any.
+        props: {
+          id: invoiceId,
+          num: "INV-011",
+          status: "partial",
+          total: 100000,
+          amountPaid: 40000,
+          leadId: "lead-77",
+          title: "Backflow test",
+          dueAt: new Date("2026-08-15T00:00:00Z"),
+          termsDays: 30,
+          lines: [{ props: { description: "Backflow test", quantity: 1, rate: 100000 } }],
+        },
         due: () => 60000,
       }),
     });
@@ -909,6 +924,10 @@ describe("invoice_get", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary).toContain("INV-011");
+      // The things a bill is useless without, and that this tool used to drop.
+      expect(result.summary).toContain("lead-77");
+      expect(result.summary).toContain("2026-08-15");
+      expect(result.summary).toContain("Backflow test");
       expect(result.summary).toContain("partial");
       expect(result.summary).toContain("$1000.00");
       expect(result.summary).toContain("$400.00");
