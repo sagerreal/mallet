@@ -3,13 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Text message updates — Mallet</title>
-  <meta name="description" content="Opt in to receive service text messages from Mallet — appointment confirmations, reminders, quotes, and invoices." />
+  <title>You're opted in — Mallet</title>
+  <meta name="description" content="Your text message preferences have been recorded." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B1A17'/%3E%3Cpath d='M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z' fill='%23FAF8F3'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
+  <meta name="robots" content="noindex" />
   <style>
     .optin{max-width:620px;margin:0 auto;padding:3rem 28px 4rem}
     .optin h1{font-size:clamp(1.9rem,4vw,2.6rem);margin-bottom:.4rem}
@@ -20,20 +21,14 @@
       font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:var(--r);
       padding:.7rem .8rem;width:100%}
     .optin textarea{min-height:90px;resize:vertical}
-    /* NOT .consent — styles.css:933 defines that as the fixed-position cookie banner
-       (position:fixed;left:20px;bottom:20px). This block reused the name, so the checkbox was
-       rendered pinned to the corner of the viewport instead of inside the form, and the A2P
-       reviewer reported "no checkbox available to explicitly select the consent language".
-       position/inset are declared here so a future global rule cannot move it again. */
-    .optin .optin-consent{position:static;inset:auto;z-index:auto;max-width:none;box-shadow:none;
-      display:flex;gap:.6rem;align-items:flex-start;background:var(--parchment);
+    .optin .consent{display:flex;gap:.6rem;align-items:flex-start;background:var(--parchment);
       border:1px solid var(--line);border-radius:var(--r);padding:.9rem 1rem}
-    .optin .optin-consent input{margin-top:.2rem;width:18px;height:18px;flex:none}
-    .optin .optin-consent span{font-size:.9rem;line-height:1.55;color:var(--ink)}
-    .optin .optin-consent a{color:var(--amber-deep);text-decoration:underline}
+    .optin .consent input{margin-top:.2rem;width:18px;height:18px;flex:none}
+    .optin .consent span{font-size:.9rem;line-height:1.55;color:var(--ink)}
+    .optin .consent a{color:var(--amber-deep);text-decoration:underline}
     .optin .btn-primary{justify-self:start;border:0;cursor:pointer}
-    .optin-error{background:#F4E7E1;border:1px solid #B23A2A;color:#7A2618;
-      border-radius:var(--r);padding:.8rem 1rem;margin:0 0 1.2rem;font-size:.95rem}
+    .optin .fine{color:var(--ink-soft);font-size:.82rem;line-height:1.5;margin:.2rem 0 0}
+    .optin .fine strong{color:var(--ink)}
   </style>
 </head>
 <body>
@@ -70,43 +65,16 @@
   </header>
 
   <main class="optin">
-    <h1>Text message updates</h1>
-    <p class="lede">Give us your number and we&rsquo;ll keep you posted by text on your service &mdash; appointment confirmations, reminders, quotes, and invoices. Opting in is your choice and isn&rsquo;t required to work with us.</p>
-
-    <!-- The endpoint redirects back here with ?error=… when it refuses a submission. Without this
-         banner that redirect would look like the form silently did nothing. -->
-    <p class="optin-error" id="optin-error" role="alert" hidden></p>
-
-    <!-- Posts to a real endpoint. It used to be action="mailto:", which handed the submission to
-         the visitor's mail client: nothing was recorded, nothing confirmed, and a reviewer who
-         pressed Send saw no result at all. Consent you cannot produce on request is not consent. -->
-    <form action="/api/sms-optin" method="post">
-      <label class="fld">Name
-        <input type="text" name="name" autocomplete="name" placeholder="Your name" />
-      </label>
-      <label class="fld">Mobile number
-        <input type="tel" name="mobile" autocomplete="tel" placeholder="(925) 555-0123" required />
-      </label>
-
-      <!-- Directly beneath the phone field, unchecked, and NOT required — the form submits
-           without it. Wording is the carrier-standard disclosure: who is texting, what about,
-           that consent is not a condition of purchase, frequency, rates, STOP/HELP, and links. -->
-      <label class="optin-consent">
-        <input type="checkbox" name="sms_consent" value="yes" />
-        <span>By checking this box, I agree to receive appointment confirmations and reminders,
-          technician arrival updates, quotes and invoices with secure payment links, and reply
-          messages from Mallet at the phone number provided. <strong>Consent is not a condition of
-          purchase.</strong> Msg frequency may vary. Message and data rates may apply. Reply
-          <strong>STOP</strong> to opt out at any time or <strong>HELP</strong> for support. View our
-          <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms of Service</a>.</span>
-      </label>
-
-      <label class="fld">What do you need? <span style="font-weight:400;color:var(--ink-soft)">(optional)</span>
-        <textarea name="details" placeholder="e.g. water heater making noise, quote for exterior painting"></textarea>
-      </label>
-
-      <button class="btn-primary" type="submit">Send</button>
-    </form>
+    <h1>You&rsquo;re all set</h1>
+    <p class="lede">We&rsquo;ve recorded your number and your text message preference.</p>
+    <p class="lede">If you ticked the consent box, you&rsquo;ll get service texts from Mallet about
+      your own job &mdash; appointment confirmations and reminders, technician arrival updates, and
+      quotes and invoices with secure payment links. Reply <strong>STOP</strong> at any time to stop
+      them, or <strong>HELP</strong> for support. Msg frequency may vary; message and data rates may
+      apply.</p>
+    <p class="lede">If you left it unchecked that&rsquo;s completely fine &mdash; we simply won&rsquo;t
+      text you. It was never a condition of working with us.</p>
+    <p><a class="btn-primary" href="/">Back to Mallet</a></p>
   </main>
 
   <footer class="foot">
@@ -152,22 +120,6 @@
       </div>
     </div>
   </footer>
-  <script>
-    // Turn ?error=… from the endpoint into something the visitor can actually read.
-    (function () {
-      var MESSAGES = {
-        phone: "That mobile number doesn't look right \u2014 please enter a 10-digit US number.",
-        server: "Something went wrong on our end and your details were not saved. Please try again."
-      };
-      var code = new URLSearchParams(window.location.search).get("error");
-      var msg = code && MESSAGES[code];
-      if (!msg) return;
-      var el = document.getElementById("optin-error");
-      el.textContent = msg;
-      el.hidden = false;
-    })();
-  </script>
-
   <!-- Vercel Web Analytics — cookieless, counts every visit (no consent gate) -->
   <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
   <script defer src="/_vercel/insights/script.js"></script>
