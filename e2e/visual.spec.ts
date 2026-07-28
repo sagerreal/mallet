@@ -9,6 +9,25 @@
  *
  * Opt-in — visual diffing is machine-specific, so it runs when E2E_VISUAL=1
  * (and in CI, on a pinned container) rather than on every local `test:e2e`.
+ *
+ * ⚠️ RUN AND RE-BASELINE AGAINST A PRODUCTION BUILD. Never `next dev`.
+ *
+ *     pnpm build && PORT=3131 pnpm start
+ *     E2E_VISUAL=1 E2E_BASE_URL=http://localhost:3131 npx playwright test e2e/visual.spec.ts
+ *
+ * These baselines were previously taken against a dev server, and the consequences
+ * were not obvious:
+ *   - `next dev` renders the Next dev-tools badge. It is not in a production build,
+ *     so EVERY route differed by ~1,000-3,500 px on that badge alone. 68 of 78
+ *     snapshots failed against production on a clean main, which meant the net could
+ *     not validate the thing that actually ships.
+ *   - the badge also appears and disappears during a dev session, so dev-vs-dev runs
+ *     were nondeterministic. A real change of a few hundred pixels was invisible
+ *     inside that noise: one change looked like it moved 48 snapshots when it moved 3.
+ *
+ * Re-baselined against production and verified deterministic: two consecutive full
+ * runs, 78 passed, 0 failures, no variance. Keep it that way — if a run is noisy,
+ * suspect the server it is pointed at before you suspect the diff.
  */
 
 import { test, expect } from "@playwright/test";
