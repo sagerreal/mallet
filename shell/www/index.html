@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Mallet</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #fcfbf7;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: #13110c;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Never loaded while `server.url` is set in capacitor.config.json — the webview goes
+      straight to https://app.trymallet.com. This file exists because Capacitor requires a
+      webDir with an index, and because it is what would load if server.url were removed.
+
+      The screen that actually matters is offline.html, which `server.errorPath` loads when
+      the remote origin cannot be reached at launch.
+    -->
+  </body>
+</html>

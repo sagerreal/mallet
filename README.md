@@ -1,116 +1,146 @@
-# Mallet Scanner — demo app
+# mallet-ios
 
-A one-screen iOS app that scans a room with RoomPlan and prints the measurements an estimator bids
-from. It exists to prove four things on real hardware in one go:
+Two separate iOS apps. They stay separate until the accuracy question below is answered.
 
-1. The Apple Developer account, signing and provisioning work.
-2. The device has LiDAR and RoomPlan runs on it.
-3. The measurements we care about come out the other end.
-4. **`polygonCorners` beats `dimensions`** — the screen shows both wall areas side by side and the
-   percentage between them. That contrast is the reason this demo exists.
+| | | |
+|---|---|---|
+| `shell/` | **Mallet on your phone** | Capacitor + WKWebView pointed at the hosted app. `com.trymallet.app` |
+| `scanner/` | **RoomPlan accuracy instrument** | Standalone SwiftUI, measures a room and prints the numbers. `com.trymallet.scanner` |
 
-⚠️ **Not yet compiled.** These files were written before Xcode was installed, so they are
-ready-to-build, not verified-to-build. Expect to fix a small thing or two on first compile.
+`mallet-app` is **not modified by any of this**. That is deliberate and worth preserving.
 
 ---
 
-## Setup (~10 minutes once Xcode is installed)
+## `shell/` — the Capacitor app
 
-### 1. Install Xcode
+### Why it points at a URL instead of bundling the web app
 
-Mac App Store → search **Xcode** → Install (~15 GB). Then open it once and accept the licence, and
-point the command line at it:
+`mallet-app` cannot be statically exported: it has a `middleware.ts` doing Supabase SSR
+session refresh on every route, plus route handlers and dynamic public pages. More decisive,
+the tRPC client uses a **relative** URL — `"/api/trpc"` in `lib/trpc/provider.tsx` and
+`lib/trpc/vanilla.ts`. Bundle the assets locally and that resolves to
+`capacitor://localhost/api/trpc`, which 404s. Point the webview at the real origin and every
+line of existing code works unchanged, cookies and auth included.
+
+This costs nothing later: the Capacitor JS bridge is injected with a `WKUserScript` at
+document-start, which is scoped to the **webview, not the origin**. So
+`window.Capacitor.Plugins.RoomPlan.startScan()` will work from `app.trymallet.com`. Remote
+`server.url` does not foreclose native plugins — it is how Ionic live-reload works.
+
+Two honest limits: Capacitor's own types mark `server.url` *"not intended for use in
+production"*, and App Store review §4.2 rejects pure webview wrappers. Neither matters for a
+device demo; both matter the day this stops being one.
+
+### Setup
+
+Requires Xcode 26.0+ (Capacitor 8 minimum) and an active Apple Developer membership.
 
 ```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-xcodebuild -version          # confirm
+cd shell
+npm install          # npm, NOT pnpm — see below
+npx cap sync ios
+npx cap open ios
 ```
 
-### 2. Create the project
+In Xcode: **Signing & Capabilities → Team**, then run on a device.
 
-Xcode → **File → New → Project… → iOS → App**
+### Things that will waste your time if you don't know them
 
-| Field | Value |
-|---|---|
-| Product Name | `MalletScanner` |
-| Team | your Apple Developer team |
-| Organization Identifier | `com.trymallet` |
-| Bundle Identifier | `com.trymallet.scanner` *(auto-filled)* |
-| Interface | **SwiftUI** |
-| Language | **Swift** |
-| Storage | None |
-| Testing System | None (for now) |
+- **Capacitor 8 uses Swift Package Manager, not CocoaPods.** The published docs still say
+  CocoaPods. There is no Podfile; dependencies live in `ios/App/CapApp-SPM/Package.swift`, and
+  you open `App.xcodeproj` — there is no `.xcworkspace`.
+- **Use npm, not pnpm.** `Package.swift` hardcodes `path: "../../../node_modules/@capacitor/…"`.
+  pnpm's symlinked layout fights that.
+- **`capacitor.config.ts` hard-fails** if TypeScript isn't installed in this package. Hence
+  `capacitor.config.json`.
+- **`cap sync` overwrites** `ios/App/App/public/` and `ios/App/App/capacitor.config.json` on
+  every run. Never hand-edit those. It does **not** touch `Info.plist`, so the settings below
+  are safe.
+- **Plugin registration is a static manifest,** not runtime class discovery. `packageClassList`
+  in the generated `capacitor.config.json` is built by `cap sync` from installed **npm**
+  packages. Dropping a `.swift` file into the target registers nothing, and hand-editing that
+  JSON gets wiped. Register from a `CAPBridgeViewController` subclass's `capacitorDidLoad()`
+  via `bridge?.registerPluginInstance(...)`.
+- **Never enable `CapacitorHttp`.** It monkey-patches `fetch` and `XMLHttpRequest`, which
+  breaks the tRPC `httpBatchLink` + superjson pipeline.
 
-Save it into `mallet-ios/` — **not** into a subfolder — so it sits beside the existing
-`MalletScanner/` source directory.
+### What was changed from the generated template, and why
 
-### 3. Replace the generated sources
+- `Info.plist` — portrait only. Capacitor reads orientation from Info.plist and **ignores**
+  `app/manifest.ts`; the template allows landscape and the CSS is phone-portrait-first.
+- `Info.plist` — `NSCameraUsageDescription`, added ahead of the RoomPlan work. RoomPlan
+  hard-crashes without it.
+- `LaunchScreen.storyboard` — background was `systemBackgroundColor`, which renders **black**
+  on a phone in dark mode. Now literal `#FCFBF7`. Mallet is light-only (`color-scheme:light`;
+  dark is an explicit `[data-theme]` opt-in), so this is correct in every case.
+- `Assets.xcassets/Splash.imageset` — the template ships white; now `#FCFBF7`, so launch reads
+  as one continuous surface into the webview instead of a white-then-cream flash.
+- `Assets.xcassets/AppIcon` — the Mallet sparkle, from `mallet-app/public/icon-512.png`.
+  ⚠️ Xcode wants 1024 and the only source is 512, so this is a 2× upscale. Acceptable for a
+  smooth mark with no text; replace with a real 1024 export before submission.
+- `capacitor.config.json` — `ios.backgroundColor` (else Capacitor falls back to
+  `UIColor.systemBackground`, black in dark mode), `allowsLinkPreview: false`, and
+  `Keyboard.resize: "native"` (without it the webview does not resize and the keyboard covers
+  the bottom-fixed Ask-Mallet bar).
 
-Xcode generates `MalletScannerApp.swift` and `ContentView.swift`. Delete both from the project
-(**Move to Trash**), then drag these four files from `MalletScanner/` into the project navigator with
-*Copy items if needed* unchecked and *Add to target: MalletScanner* checked:
+### Iterating against a local dev server
 
-- `MalletScannerApp.swift`
-- `ContentView.swift`
-- `RoomScanner.swift`
-- `RoomMeasurements.swift`
+`server.url` points at production, so web changes need a deploy. To work against your Mac:
+set `server.url` to `http://<mac-lan-ip>:3000` with `"cleartext": true`, and run the web app
+with `next dev -H 0.0.0.0`.
 
-### 4. Camera permission — the app crashes without this
+### Known, accepted
 
-Select the project → **Info** tab → add:
-
-| Key | Value |
-|---|---|
-| `NSCameraUsageDescription` | `Mallet uses the camera and LiDAR sensor to measure rooms.` |
-
-RoomPlan will hard-crash on launch of the scanner if this string is missing. It is not optional and
-it is not a warning.
-
-### 5. Deployment target
-
-Set **Minimum Deployments → iOS 17.0**.
-
-RoomPlan itself is iOS 16+, but `polygonCorners` — the thing that makes wall areas honest rather
-than bounding boxes — is iOS 17. The code degrades gracefully to bounding boxes below 17, but there
-is no reason to ship that.
-
-### 6. Run on the phone
-
-Plug in the iPhone Pro → select it as the run destination → **⌘R**.
-
-First run will need:
-- **Trust this computer** on the phone
-- On the phone: **Settings → General → VPN & Device Management → trust your developer certificate**
-- Xcode → Signing & Capabilities → **Automatically manage signing**, with your team selected
-
-> The Simulator cannot run this. There is no AR and no LiDAR in the Simulator — it must be a real
-> device.
+- **Offline is a cold-start splash only.** `server.errorPath` fires on network-layer failures
+  during main-frame navigation, so a launch with no signal shows `www/offline.html`. It does
+  **not** fire once the SPA has loaded — there is no service worker, so mid-session signal loss
+  still breaks. The demo needs live connectivity.
+- **`window.open` always leaves the app**, even same-origin — Capacitor's `createWebViewWith`
+  hands every one to Safari. Hits the quote preview in `composer/page.tsx` and `sidebar.tsx`.
+- **Signup and password reset leave the app** — those emails open in Mail → Safari. Log in
+  with an existing account; don't demo signup.
 
 ---
 
-## What to check on the first real scan
+## `scanner/` — the RoomPlan accuracy instrument
 
-Scan a room you can also measure by hand. The demo is only useful if you compare it to a tape.
+⚠️ **Not yet compiled.** Written before Xcode existed on this machine. Ready-to-build, not
+verified-to-build. There is no `.xcodeproj` yet; create one as an iOS App (SwiftUI, Swift, no
+storage, no tests), add the four files from `scanner/MalletScanner/`, set
+`NSCameraUsageDescription`, and set **Minimum Deployments → iOS 17.0**.
 
-1. **Wall area (polygon) vs (bounding box)** — the "Difference" row. In a room with a flat ceiling
-   these should be close. In a room with a **sloped or vaulted** ceiling, the bounding box should be
-   visibly larger, because it squares off the slope. That is the whole `polygonCorners` argument,
-   demonstrated on your own wall.
-2. **Floor area vs a tape measure.** This is the number that decides the product. Published RoomPlan
-   accuracy ranges from half an inch to 37 cm on a 6.45 m wall, and nobody has published a real
-   figure. **Ours will be the real figure.**
-3. **Openings.** Does it find every door and window? Does it merge a double door into one?
-4. **Try to break it deliberately.** A blank white wall (this should trip RoomPlan's `lowTexture`
-   state — LiDAR does *not* remove the blank-wall problem), an unlit room, a room with a big mirror,
-   and a long scan to see whether it thermally throttles.
+RoomPlan itself is iOS 16+, but `polygonCorners` is iOS 17 — and that is the whole point.
+`dimensions` is a **bounding box**; every "RoomPlan only makes rectangles" complaint online is
+self-inflicted by using it. The app computes wall area **both ways** and shows the percentage
+between them, so the difference is visible on a real wall instead of theoretical. In a flat
+room they should be close; in a **vaulted or sloped** room the bounding box should be visibly
+larger, because it squares off the slope.
 
-Record the results. Ten rooms against a laser is the validation gate before any more app work — it
-decides whether a scan can be the price basis or only ever a draft the estimator confirms.
+The Simulator cannot run this. No AR, no LiDAR — it must be an iPhone Pro (12 Pro or later) or
+a LiDAR iPad Pro.
 
----
+### The validation gate — do this before any more scanning work
 
-## What this is not
+**Ten real rooms, RoomPlan vs a tape measure.** Record error on wall length, wall height and
+opening dimensions.
 
-No upload, no auth, no Mallet API, no exterior scanning, no persistence. One screen, one scan, one
-set of numbers on screen. Each of those is a later module and none of them should be started until
-the accuracy question above is answered.
+A tape is accurate to ~1/8″ over 15 ft. We are looking for 2% error, which on a 12 ft wall is
+~3 inches — far larger than tape error, so a tape settles this.
+
+Published RoomPlan accuracy spans *half an inch* to *37 cm on a 6.45 m wall*: a 30× spread with
+zero peer-reviewed measurements. **Nobody has published this number.** Ours will be the real one.
+
+- error **< 2%** → a scan can be the price basis
+- error **> 2%** → a scan is a *draft* the estimator confirms, and confirm-and-edit becomes the
+  core UX rather than a nicety
+
+Either way we ship, but we design differently — so measure first.
+
+Also try to break it deliberately: a blank white wall (this should trip RoomPlan's `lowTexture`
+state — **LiDAR does not remove the blank-wall problem**), an unlit room, a room with a large
+mirror, and a long scan to see whether it thermally throttles.
+
+Two numbers on the results screen are **derived, not measured**, and are labelled as such in
+the app: ceiling area (RoomPlan has no ceiling concept at all — `Surface.Category` has exactly
+five cases, and deriving from the floor is wrong for exactly the vaulted rooms worth the most),
+and baseboard run (subtracts door widths only, not cased openings).
