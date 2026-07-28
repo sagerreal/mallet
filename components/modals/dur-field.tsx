@@ -19,6 +19,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useGroupLabel } from "@/components/ui/input";
 
 // Commit clamps (mirror the backend: durationHours positive, max 24).
 const MIN_TOTAL_HOURS = 0.25;
@@ -70,6 +71,7 @@ export interface DurFieldProps {
 /** Length as h + m (not a coarse 0.5h step) — mirrors visitDurField. */
 export function DurField({ dur, onChange }: DurFieldProps) {
   const [drafts, setDrafts] = useState<DurDrafts>(() => durToDrafts(dur));
+  const lengthGroup = useGroupLabel();
   // True while focus is inside the h+m group — blocks prop-driven resyncs.
   const focusedRef = useRef(false);
 
@@ -102,12 +104,15 @@ export function DurField({ dur, onChange }: DurFieldProps) {
 
   return (
     <div className="field" style={{ margin: "0" }}>
-      <label>Length</label>
+      {/* Two inputs (h and m), so the label names the pair and each keeps its own
+          name — htmlFor can only reach one of them. */}
+      <label {...lengthGroup.labelProps}>Length</label>
       <div
         className="sched-dur"
         style={{ flexWrap: "nowrap" }}
         onFocus={handleGroupFocus}
         onBlur={handleGroupBlur}
+        {...lengthGroup.groupProps}
       >
         <input
           type="number"

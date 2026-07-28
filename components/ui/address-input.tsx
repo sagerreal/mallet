@@ -36,6 +36,12 @@ interface AddressInputProps {
   className?: string;
   inputStyle?: React.CSSProperties;
   "aria-label"?: string;
+  /**
+   * Forwarded to the inner `<input>` so a `<label htmlFor>` can reach it — `Field`
+   * clones its child with a generated id, and without this the id landed on nothing
+   * and the label pointed at a control that did not exist.
+   */
+  id?: string;
 }
 
 export function AddressInput({
@@ -47,6 +53,7 @@ export function AddressInput({
   className,
   inputStyle,
   "aria-label": ariaLabel,
+  id,
 }: AddressInputProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
   const listboxId = useId();
@@ -163,6 +170,7 @@ export function AddressInput({
     <div ref={containerRef} style={{ position: "relative", flex: "1 1 auto", minWidth: 0, width: "100%" }}>
       <input
         type="text"
+        id={id}
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}

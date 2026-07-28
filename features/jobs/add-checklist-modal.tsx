@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Modal } from "@/components/modals/modal";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { userMessage } from "@/lib/trpc/error-map";
-import { COMPACT_INPUT } from "@/components/ui/input";
+import { COMPACT_INPUT, Field } from "@/components/ui/input";
 
 type DraftItem = { text: string; type: "check" | "photo" };
 
@@ -65,8 +65,7 @@ export function AddChecklistModal({
         New checklist
       </h3>
 
-      <div className="field">
-        <label>Checklist name</label>
+      <Field label="Checklist name">
         <input
           type="text"
           autoFocus
@@ -77,7 +76,7 @@ export function AddChecklistModal({
           style={COMPACT_INPUT}
           disabled={drafting}
         />
-      </div>
+      </Field>
 
       {error && (
         <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-2) 0 0" }} role="alert">{error}</p>

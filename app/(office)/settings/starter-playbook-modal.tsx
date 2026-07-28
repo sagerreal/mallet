@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/modals/modal";
+import { Field } from "@/components/ui/input";
 import { TRADE_PLAYBOOKS, playbookFor } from "./trade-playbooks";
 import { laneChipLabel } from "./booking-lanes";
 
@@ -44,14 +45,13 @@ export function StarterPlaybookModal({
         Starter playbook
       </h3>
 
-      <div className="field">
-        <label>Your trade</label>
+      <Field label="Your trade">
         <select className="tsel" value={tradeKey} onChange={(e) => setTradeKey(e.target.value)}>
           {TRADE_PLAYBOOKS.map((t) => (
             <option key={t.key} value={t.key}>{t.label}</option>
           ))}
         </select>
-      </div>
+      </Field>
 
       {/* Preview: the ACTUAL services this seeds — content, not explainer text. */}
       {playbook && (

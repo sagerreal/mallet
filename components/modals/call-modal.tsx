@@ -14,6 +14,7 @@ import { CALL_OUTCOMES } from "@/lib/store/call-constants";
 import { hasPhone, PhoneAddInput } from "@/lib/phone";
 import { useMe } from "@/features/identity/hooks";
 import { browserCallingSupported } from "@/lib/calls/browser-device";
+import { Field, FieldGroup } from "@/components/ui/input";
 
 export function CallModalContent() {
   const activeModal = useActiveModal();
@@ -173,55 +174,49 @@ export function CallModalContent() {
 
       {logging && (
         <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-4)", paddingTop: "var(--space-3)" }}>
-          <div className="field">
-            <label>How did it go?</label>
-            <div className="chips">
-              {CALL_OUTCOMES.map((o) => (
-                <button
-                  key={o}
-                  type="button"
-                  className={`chip${outcome === o ? " sel" : ""}`}
-                  onClick={() => setOutcome(o)}
-                >
-                  {o}
-                </button>
-              ))}
-            </div>
-          </div>
+          <FieldGroup label="How did it go?" groupClassName="chips">
+            {CALL_OUTCOMES.map((o) => (
+              <button
+                key={o}
+                type="button"
+                className={`chip${outcome === o ? " sel" : ""}`}
+                onClick={() => setOutcome(o)}
+                aria-pressed={outcome === o}
+              >
+                {o}
+              </button>
+            ))}
+          </FieldGroup>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--space-3)" }}>
-            <div className="field" style={{ marginBottom: "0" }}>
-              <label>Direction</label>
+            <Field label="Direction" style={{ marginBottom: "0" }}>
               <select value={dir} onChange={(e) => setDir(e.target.value)}>
                 <option value="out">I called them</option>
                 <option value="in">They called me</option>
               </select>
-            </div>
-            <div className="field" style={{ marginBottom: "0" }}>
-              <label>How long</label>
+            </Field>
+            <Field label="How long" style={{ marginBottom: "0" }}>
               <input
                 value={dur}
                 onChange={(e) => setDur(e.target.value)}
                 placeholder="e.g. 5m — optional"
               />
-            </div>
-            <div className="field" style={{ marginBottom: "0" }}>
-              <label>When</label>
+            </Field>
+            <Field label="When" style={{ marginBottom: "0" }}>
               <select value={when} onChange={(e) => setWhen(e.target.value)}>
                 <option>Just now</option>
                 <option>Earlier today</option>
                 <option>Yesterday</option>
               </select>
-            </div>
+            </Field>
           </div>
-          <div className="field" style={{ marginTop: "var(--space-3)" }}>
-            <label>Notes</label>
+          <Field label="Notes" style={{ marginTop: "var(--space-3)" }}>
             <textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="what they said, what happens next…"
             />
-          </div>
+          </Field>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
             <button className="btn ghost" onClick={close}>
               Cancel

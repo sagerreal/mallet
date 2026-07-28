@@ -34,6 +34,7 @@ import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
+import { Field } from "@/components/ui/input";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
 
@@ -202,8 +203,7 @@ function EditBlock({
   return (
     <div style={{ marginTop: "var(--space-4)" }}>
       {/* Bill-to — the one essential field, stays open (everything else stages). */}
-      <div className="field" style={{ margin: "0" }}>
-        <label>Bill to</label>
+      <Field label="Bill to" style={{ margin: "0" }}>
         <input
           type="text"
           list="invCustList"
@@ -216,7 +216,7 @@ function EditBlock({
             <option key={l.id} value={l.name || ""} />
           ))}
         </datalist>
-      </div>
+      </Field>
 
       {/* Line items */}
       <div className="muted" style={SEC_LABEL}>
@@ -388,25 +388,26 @@ function EditBlock({
           onToggle={() => toggleRow("sendto")}
         >
           <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-            <div className="field" style={{ margin: "0" }}>
-              <label>Phone</label>
+            <Field label="Phone" style={{ margin: "0" }}>
               <input
                 type="tel"
                 defaultValue={invoice.phone || ""}
                 placeholder="(925) 555-0123"
                 onChange={(e) => onSetField({ phone: e.target.value.trim() })}
               />
-            </div>
-            <div className="field" style={{ margin: "0" }}>
-              <label>
-                Email{" "}
+            </Field>
+            <Field
+              label="Email"
+              style={{ margin: "0" }}
+              hint={
                 <span
                   className="muted"
                   style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
                 >
                   (for a PDF copy)
                 </span>
-              </label>
+              }
+            >
               <input
                 type="email"
                 inputMode="email"
@@ -414,7 +415,7 @@ function EditBlock({
                 placeholder="name@email.com"
                 onChange={(e) => onSetField({ email: e.target.value.trim() })}
               />
-            </div>
+            </Field>
           </div>
         </DisclosureRow>
 
@@ -456,8 +457,7 @@ function EditBlock({
           onToggle={() => toggleRow("pricing")}
         >
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
-            <div className="field" style={{ flex: 1, minWidth: 90, margin: "0" }}>
-              <label>Discount %</label>
+            <Field label="Discount %" style={{ flex: 1, minWidth: 90, margin: "0" }}>
               <input
                 type="number"
                 inputMode="decimal"
@@ -466,9 +466,8 @@ function EditBlock({
                 placeholder="0"
                 onChange={(e) => onSetPricing({ disc: Math.max(0, Number(e.target.value) || 0) })}
               />
-            </div>
-            <div className="field" style={{ flex: 1, minWidth: 90, margin: "0" }}>
-              <label>Tax %</label>
+            </Field>
+            <Field label="Tax %" style={{ flex: 1, minWidth: 90, margin: "0" }}>
               <input
                 type="number"
                 inputMode="decimal"
@@ -478,9 +477,8 @@ function EditBlock({
                 placeholder="0"
                 onChange={(e) => onSetPricing({ tax: Math.max(0, Number(e.target.value) || 0) })}
               />
-            </div>
-            <div className="field" style={{ flex: 1, minWidth: 110, margin: "0" }}>
-              <label>Deposit paid $</label>
+            </Field>
+            <Field label="Deposit paid $" style={{ flex: 1, minWidth: 110, margin: "0" }}>
               <input
                 type="number"
                 inputMode="decimal"
@@ -489,7 +487,7 @@ function EditBlock({
                 placeholder="0"
                 onChange={(e) => onSetDepPaid(Math.max(0, Math.round(Number(e.target.value) || 0)))}
               />
-            </div>
+            </Field>
           </div>
         </DisclosureRow>
       </div>

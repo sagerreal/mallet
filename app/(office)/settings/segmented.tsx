@@ -14,6 +14,13 @@ interface SegmentedProps<T extends string> {
   onChange: (v: T) => void;
   options: readonly SegmentedOption<T>[];
   "aria-label"?: string;
+  /**
+   * Names this group from a visible `<label>` instead of a duplicated string. The
+   * `.seg` div is already the group, so a caller with a visible label points at it
+   * rather than wrapping a second group around it — nesting would leave the inner
+   * one anonymous.
+   */
+  "aria-labelledby"?: string;
 }
 
 export function Segmented<T extends string>({
@@ -21,9 +28,10 @@ export function Segmented<T extends string>({
   onChange,
   options,
   "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
 }: SegmentedProps<T>) {
   return (
-    <div className="seg" role="group" aria-label={ariaLabel}>
+    <div className="seg" role="group" aria-label={ariaLabel} aria-labelledby={ariaLabelledBy}>
       {options.map((opt) => (
         <button
           key={opt.value}

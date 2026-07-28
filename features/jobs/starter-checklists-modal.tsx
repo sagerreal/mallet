@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/modals/modal";
+import { Field } from "@/components/ui/input";
 import { CHECKLIST_STARTERS, type StarterChecklist } from "@/app/(office)/jobs/checklist-starters";
 
 const CHIP: React.CSSProperties = {
@@ -57,14 +58,13 @@ export function StarterChecklistsModal({
         Starter checklists
       </h3>
 
-      <div className="field">
-        <label>Your trade</label>
+      <Field label="Your trade">
         <select className="tsel" value={tradeKey} onChange={(e) => setTradeKey(e.target.value)}>
           {CHECKLIST_STARTERS.map((t) => (
             <option key={t.key} value={t.key}>{t.label}</option>
           ))}
         </select>
-      </div>
+      </Field>
 
       {/* Preview: the actual checklists this seeds */}
       {set && (

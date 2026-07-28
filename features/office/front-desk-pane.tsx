@@ -25,6 +25,7 @@ import { HourSelect } from "@/app/(office)/settings/hour-select";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { fmtPhone } from "@/lib/format";
+import { Field } from "@/components/ui/input";
 
 /** Loose client-side gate for the transfer number — the server re-validates with the Phone VO. */
 function isUsPhone(raw: string): boolean {
@@ -339,22 +340,20 @@ export function FrontDeskPane() {
           <h3>Booking rules</h3>
 
           <RuleRow k="rules" openRule={openRule} onToggle={toggleRule} label="Do not book" value={`${ruleCount(bk.notServices, bk.deferKeywords ?? "")} rules`}>
-            <div className="field">
-              <label>We don&apos;t do</label>
+            <Field label="We don't do">
               <TagInput
                 value={bk.notServices}
                 onChange={(v) => setBookingField("notServices", v)}
                 placeholder="Type a service and press Enter — e.g. new construction"
               />
-            </div>
-            <div className="field" style={{ marginBottom: "0" }}>
-              <label>Hand off to a person</label>
+            </Field>
+            <Field label="Hand off to a person" style={{ marginBottom: "0" }}>
               <TagInput
                 value={bk.deferKeywords ?? ""}
                 onChange={(v) => setBookingField("deferKeywords", v)}
                 placeholder="Type a word and press Enter — e.g. insurance, claim, warranty"
               />
-            </div>
+            </Field>
           </RuleRow>
 
           <RuleRow k="fee" openRule={openRule} onToggle={toggleRule} label="Service call fee" value={<><span className="mono">${bk.serviceFee}</span>{bk.feeCredited ? " · credited" : ""}</>}>
@@ -430,8 +429,7 @@ export function FrontDeskPane() {
           </RuleRow>
 
           <RuleRow k="area" openRule={openRule} onToggle={toggleRule} label="Service area" value={<span className="mono">{bk.area.radiusMi} mi</span>}>
-            <div className="field" style={{ margin: "0" }}>
-              <label>Office address</label>
+            <Field label="Office address" style={{ margin: "0" }}>
               <input type="text" defaultValue={bk.area.originAddress}
                 onChange={(e) => setBookingArea("originAddress", e.target.value)}
                 placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
@@ -444,13 +442,12 @@ export function FrontDeskPane() {
                   Not set — the front desk books any address. Add one to turn away jobs outside the radius.
                 </p>
               )}
-            </div>
-            <div className="field" style={{ margin: "var(--space-3) 0 0" }}>
-              <label>Radius (miles)</label>
+            </Field>
+            <Field label="Radius (miles)" style={{ margin: "var(--space-3) 0 0" }}>
               <input type="number" inputMode="decimal" min={0} defaultValue={bk.area.radiusMi}
                 onChange={(e) => setBookingArea("radiusMi", e.target.value)}
                 style={{ fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)", maxWidth: 120 }} />
-            </div>
+            </Field>
           </RuleRow>
         </div>
       </div>

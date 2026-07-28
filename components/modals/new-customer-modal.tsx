@@ -19,6 +19,7 @@ import { AddressInput } from "@/components/ui/address-input";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { DEFAULT_SOURCES, mergeSources } from "@/features/customers/merge-sources";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
+import { Field, FieldGroup } from "@/components/ui/input";
 
 type VisitPurpose = "job" | "look" | null;
 
@@ -393,26 +394,18 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
       <form onSubmit={handleSubmit}>
         {/* 1. Name */}
-        <div className="field">
-          {/* htmlFor/id, not a bare <label>: without the pairing a screen reader falls
-              back to the placeholder for this control's name — and a placeholder is gone
-              the moment you type. It also makes the label a hit target that focuses the
-              field, which matters with gloves on. The Field primitive now does this
-              automatically; this site is still hand-rolled markup. */}
-          <label htmlFor="nc-name">Name</label>
+        <Field label="Name">
           <input
-            id="nc-name"
             type="text"
             placeholder="Full name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
           />
-        </div>
+        </Field>
 
         {/* 2. Phone + dup-hint */}
-        <div className="field">
-          <label>Phone</label>
+        <Field label="Phone">
           <input
             type="tel"
             placeholder="(925) 555-0123"
@@ -420,18 +413,20 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             onChange={(e) => setPhone(e.target.value)}
           />
           <div className="muted" id="qaDupHint" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }} />
-        </div>
+        </Field>
 
         {/* 3. Service address — right under Phone; field service lives or dies on it */}
-        <div className="field">
-          <label>Service address</label>
+        {/* The aria-label is gone on purpose: it outranks a label element in the
+            accessible-name computation, so keeping it would have made the newly
+            associated <label> dead weight and left getByLabelText unable to
+            resolve the control. */}
+        <Field label="Service address">
           <AddressInput
             value={address}
             onChange={setAddress}
             placeholder="123 Main St, Oakland CA 94601"
-            aria-label="Service address"
           />
-        </div>
+        </Field>
 
         {/* 4-7. The staged details — a definition list of disclosure rows
             (front-desk RuleRow pattern): label · current value, one editor open
@@ -461,15 +456,14 @@ export function NewCustomerModal({ open }: { open: boolean }) {
               </button>
             </div>
             {isBiz && (
-              <div className="field" style={{ margin: "var(--space-3) 0 0" }}>
-                <label>Business name</label>
+              <Field label="Business name" style={{ margin: "var(--space-3) 0 0" }}>
                 <input
                   type="text"
                   placeholder="Crestview Property Mgmt"
                   value={bizName}
                   onChange={(e) => setBizName(e.target.value)}
                 />
-              </div>
+              </Field>
             )}
           </DisclosureRow>
 
@@ -528,15 +522,14 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             onToggle={() => toggleRow("book")}
           >
             {/* Job description */}
-            <div className="field">
-              <label>Job</label>
+            <Field label="Job">
               <input
                 type="text"
                 placeholder="water heater making noise"
                 value={jobDesc}
                 onChange={(e) => setJobDesc(e.target.value)}
               />
-            </div>
+            </Field>
 
             {/* Purpose toggle: Job / Estimate visit */}
             <div className="chips" style={{ marginBottom: "0" }}>
@@ -561,18 +554,24 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             </div>
 
             {/* Conditional book panel — the job uses the single top-level
-                Service address, so there is no second address field here. */}
+                Service address, so there is no second address field here.
+
+                A caption over a button, not a form field: the button names itself
+                ("Build the price"), so htmlFor would name it twice and say nothing
+                about the hint beneath. The caption names a group instead. */}
             {visitPurpose === "job" && (
-              <div className="field" style={{ margin: "var(--space-4) 0 0" }}>
-                <label>
-                  Price{" "}
+              <FieldGroup
+                label="Price"
+                style={{ margin: "var(--space-4) 0 0" }}
+                hint={
                   <span
                     className="muted"
                     style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
                   >
                     (optional)
                   </span>
-                </label>
+                }
+              >
                 <button
                   type="button"
                   className="btn"
@@ -585,7 +584,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
                   Same builder your crew uses — or price later.
                 </div>
-              </div>
+              </FieldGroup>
             )}
           </DisclosureRow>
 
@@ -595,24 +594,22 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             open={openRow === "more"}
             onToggle={() => toggleRow("more")}
           >
-            <div className="field">
-              <label>Email</label>
+            <Field label="Email">
               <input
                 type="email"
                 placeholder="otherwise asked at first quote"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-            </div>
-            <div className="field">
-              <label>Notes</label>
+            </Field>
+            <Field label="Notes">
               <input
                 type="text"
                 placeholder="gate code, best time to call…"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
-            </div>
+            </Field>
 
             {customFields.map((f, i) => (
               <div className="cfrow" key={i}>

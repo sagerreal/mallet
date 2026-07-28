@@ -15,6 +15,7 @@
 import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
 import type { ComposerState } from "./composer-state";
+import { Field } from "@/components/ui/input";
 
 // Keeps the composed SMS body comfortably under the 1600-char messaging cap
 // (intro + ~100 chars of fixed copy + the quote link). maxLength stops input
@@ -64,13 +65,14 @@ export function MessageCard({
           </span>
         </div>
         <div className="reveal-body">
-          <div className="field">
-            <label>
-              Intro message{" "}
+          <Field
+            label="Intro message"
+            hint={
               <span className="muted">
                 (leads the text/email — the auto intro covers most sends)
               </span>
-            </label>
+            }
+          >
             <textarea
               rows={2}
               maxLength={INTRO_MAX_CHARS}
@@ -89,18 +91,20 @@ export function MessageCard({
                 {state.intro.length >= INTRO_MAX_CHARS ? " — at the limit" : ""}
               </div>
             )}
-          </div>
-          <div className="field">
-            <label>
-              Terms{" "}
+          </Field>
+          {/* The select's aria-label is gone: it outranked the visible label, so the
+              label was decorative and getByLabelText matched nothing. */}
+          <Field
+            label="Terms"
+            hint={
               <span className="muted">
                 (shown on the quote page — attached as written now)
               </span>
-            </label>
+            }
+          >
             <select
               value={state.terms?.id ?? ""}
               onChange={(e) => selectTerms(e.target.value)}
-              aria-label="Terms"
               style={{ maxWidth: 320 }}
             >
               <option value="">None</option>
@@ -124,9 +128,8 @@ export function MessageCard({
                 {state.terms.text}
               </p>
             )}
-          </div>
-          <div className="field" style={{ maxWidth: 200, marginBottom: "0" }}>
-            <label>Price valid (days)</label>
+          </Field>
+          <Field label="Price valid (days)" style={{ maxWidth: 200, marginBottom: "0" }}>
             <input
               type="number"
               inputMode="decimal"
@@ -138,7 +141,7 @@ export function MessageCard({
                 })
               }
             />
-          </div>
+          </Field>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@
  * Collapsible: the header row toggles the fields open in-flow.
  */
 
+import { Field } from "@/components/ui/input";
 import { pricingSummary, type ComposerState } from "./composer-state";
 
 export function PricingCard({
@@ -30,8 +31,7 @@ export function PricingCard({
         </div>
         <div className="reveal-body">
         <div style={{ display: "flex", gap: "var(--space-4)" }}>
-          <div className="field" style={{ flex: 1 }}>
-            <label>Discount %</label>
+          <Field label="Discount %" style={{ flex: 1 }}>
             <input
               type="number"
               inputMode="decimal"
@@ -47,9 +47,8 @@ export function PricingCard({
                 })
               }
             />
-          </div>
-          <div className="field" style={{ flex: 1 }}>
-            <label>Deposit required %</label>
+          </Field>
+          <Field label="Deposit required %" style={{ flex: 1 }}>
             <input
               type="number"
               inputMode="decimal"
@@ -65,9 +64,8 @@ export function PricingCard({
                 })
               }
             />
-          </div>
-          <div className="field" style={{ flex: 1 }}>
-            <label>Tax %</label>
+          </Field>
+          <Field label="Tax %" style={{ flex: 1 }}>
             <input
               type="number"
               inputMode="decimal"
@@ -84,7 +82,7 @@ export function PricingCard({
                 })
               }
             />
-          </div>
+          </Field>
         </div>
         </div>
       </div>

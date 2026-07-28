@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { Segmented } from "./segmented";
-import { COMPACT_INPUT } from "@/components/ui/input";
+import { COMPACT_INPUT, Field, useGroupLabel } from "@/components/ui/input";
 import type { ServiceLane } from "@mallet/settings";
 import {
   LANE_OPTIONS,
@@ -56,6 +56,7 @@ interface ServiceCertChipsEditorProps {
 
 function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceCertChipsEditorProps) {
   const [draft, setDraft] = useState("");
+  const certGroup = useGroupLabel();
   const atCap = certs.length >= CERT_MAX;
 
   function handleAdd(): void {
@@ -76,8 +77,11 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
 
   return (
     <div className="field">
-      <label>Certifications required</label>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "var(--space-2)", marginBottom: certs.length > 0 ? 8 : 0 }}>
+      <label {...certGroup.labelProps}>Certifications required</label>
+      <div
+        {...certGroup.groupProps}
+        style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "var(--space-2)", marginBottom: certs.length > 0 ? 8 : 0 }}
+      >
         {certs.map((cert, i) => (
           <span
             key={`${cert}-${i}`}
@@ -120,6 +124,7 @@ function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceC
         <input
           type="text"
           value={draft}
+          aria-label="Add a certification"
           placeholder={atCap ? "10 max" : "e.g. Gas"}
           disabled={atCap}
           onChange={(e) => setDraft(e.target.value)}
@@ -243,6 +248,8 @@ function ExpandedEditor({
   );
   const [showBallpark, setShowBallpark] = useState((service.ballpark ?? "").length > 0);
   const [showCerts, setShowCerts] = useState((service.requiredCerts ?? []).length > 0);
+  const laneGroup = useGroupLabel();
+  const ballparkGroup = useGroupLabel();
 
   const priceMissing = flatPriceMissing(lane, price);
 
@@ -271,20 +278,27 @@ function ExpandedEditor({
       }}
     >
       <div style={{ maxWidth: FIELD_MAX_WIDTH }}>
-      <div className="field">
-        <label>Service name</label>
+      <Field label="Service name">
         <input
           type="text"
           defaultValue={service.name}
           onChange={(e) => updateBookingService(index, "name", e.target.value)}
           style={COMPACT_INPUT}
         />
-      </div>
+      </Field>
 
       <div className="field">
-        <label>Job type</label>
+        {/* Segmented already renders the group; the visible label names it directly
+            rather than a second group wrapping it, which would leave the inner one
+            anonymous. Its hardcoded aria-label is gone — same string, said twice. */}
+        <label {...laneGroup.labelProps}>Job type</label>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
-          <Segmented value={lane} onChange={handleLaneChange} options={LANE_OPTIONS} aria-label="Job type" />
+          <Segmented
+            value={lane}
+            onChange={handleLaneChange}
+            options={LANE_OPTIONS}
+            aria-labelledby={laneGroup.labelProps.id}
+          />
           {lane === "flat" && (
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
@@ -316,8 +330,7 @@ function ExpandedEditor({
         </p>
       </div>
 
-      <div className="field">
-        <label>Job description</label>
+      <Field label="Job description">
         <input
           type="text"
           defaultValue={service.triggers}
@@ -325,11 +338,10 @@ function ExpandedEditor({
           placeholder="e.g. leaking, no hot water, clog"
           style={COMPACT_INPUT}
         />
-      </div>
+      </Field>
 
       {isBookableLane(lane) && showEmergency && (
-        <div className="field">
-          <label>Emergency words</label>
+        <Field label="Emergency words">
           <input
             type="text"
             defaultValue={service.emergencyTriggers ?? ""}
@@ -337,18 +349,21 @@ function ExpandedEditor({
             placeholder="e.g. burst pipe, no heat, flooding"
             style={COMPACT_INPUT}
           />
-        </div>
+        </Field>
       )}
 
       {lane === "estimate" && showBallpark && (
         <div className="field">
-          <label>Ballpark range ($)</label>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          {/* Two controls, so the label names the pair and each end names itself —
+              a screen reader otherwise reads two anonymous number inputs. */}
+          <label {...ballparkGroup.labelProps}>Ballpark range ($)</label>
+          <div {...ballparkGroup.groupProps} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
             <input
               type="number"
               inputMode="decimal"
               min={0}
               value={ballpark.low}
+              aria-label="Ballpark range from"
               placeholder="150"
               onChange={(e) => handleBallparkChange({ ...ballpark, low: e.target.value })}
               style={{ ...COMPACT_INPUT, width: 120 }}
@@ -359,6 +374,7 @@ function ExpandedEditor({
               inputMode="decimal"
               min={0}
               value={ballpark.high}
+              aria-label="Ballpark range to"
               placeholder="300"
               onChange={(e) => handleBallparkChange({ ...ballpark, high: e.target.value })}
               style={{ ...COMPACT_INPUT, width: 120 }}
