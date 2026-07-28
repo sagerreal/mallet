@@ -16,6 +16,7 @@ import type { Service, Category } from "@/lib/store/types";
 import type { ServiceUpdateFields } from "@/lib/store/pricebook-mapper";
 import { fmt$ } from "@/lib/format";
 import { MaterialManager } from "./material-manager";
+import { useFieldId } from "@/components/ui/input";
 
 export interface ServiceRowProps {
   service: Service;
@@ -41,6 +42,9 @@ function marginPct(service: Service): number {
 
 export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchive }: ServiceRowProps) {
   const [open, setOpen] = useState(false);
+  const categoryField = useFieldId();
+  const costField = useFieldId();
+  const laborField = useFieldId();
 
   return (
     <div style={{ borderBottom: "1px solid var(--line-2)" }}>
@@ -69,8 +73,9 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
         >
         <div style={{ display: "grid", gap: "var(--space-3)", alignContent: "start" }}>
           <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Category</label>
+            <label {...categoryField.labelProps} style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Category</label>
             <select
+              {...categoryField.controlProps}
               className="tsel"
               value={service.categoryId ?? ""}
               onChange={(e) => onUpdate(service.id, { categoryId: e.target.value || null })}
@@ -84,10 +89,11 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
 
           {canSeeCost && (
             <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
-              <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Your cost</label>
+              <label {...costField.labelProps} style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Your cost</label>
               <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                 <span className="muted">$</span>
                 <input
+                  {...costField.controlProps}
                   type="number"
                   inputMode="decimal"
                   min={0}
@@ -104,8 +110,9 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
           )}
 
           <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-            <label style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Labor</label>
+            <label {...laborField.labelProps} style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Labor</label>
             <input
+              {...laborField.controlProps}
               type="number"
               inputMode="decimal"
               min={0}

@@ -12,6 +12,7 @@ import { useState } from "react";
 import type { Lead } from "@/lib/store/types";
 import { useAppStore, useOpenModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { Field } from "@/components/ui/input";
 
 interface MoreDetailsProps {
   lead: Lead;
@@ -79,8 +80,7 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
         </div>
         <div className="reveal-body">
           {/* Email (service address now lives up top in the header) */}
-          <div className="field">
-            <label>Email</label>
+          <Field label="Email">
             <input
               key={lead.email ?? ""}
               type="email"
@@ -88,17 +88,16 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
               defaultValue={lead.email ?? ""}
               onBlur={(e) => updateLead(lead.id, { email: e.target.value })}
             />
-          </div>
+          </Field>
 
           {/* Business / company */}
-          <div className="field">
-            <label>Business</label>
+          <Field label="Business">
             <input
               type="text"
               placeholder="Company name (if applicable)"
               defaultValue=""
             />
-          </div>
+          </Field>
 
           {/* Membership pill (if applicable) */}
           {lead.card && (
@@ -110,16 +109,16 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
           )}
 
           {/* Custom fields */}
+          {/* Field uses useId(), so one per row inside a .map() is safe. */}
           {customFields.map((f) => (
-            <div className="field" key={f.key}>
-              <label>{f.label}</label>
+            <Field label={f.label} key={f.key}>
               <input
                 type="text"
                 value={f.value}
                 onChange={(e) => updateCustomField(f.key, e.target.value)}
                 placeholder={f.label}
               />
-            </div>
+            </Field>
           ))}
 
           {/* Add custom field */}

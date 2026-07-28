@@ -19,6 +19,7 @@ import {
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead } from "@/lib/store/types";
+import { Field, FieldGroup } from "@/components/ui/input";
 
 /** Guess the visit type from the request wording (prototype qaPurposeGuess). */
 function guessPurpose(txt: string): "job" | "look" {
@@ -154,15 +155,14 @@ export function VisitModalContent() {
       </p>
 
       {/* Job description */}
-      <div className="field">
-        <label>Job</label>
+      <Field label="Job">
         <input
           type="text"
           placeholder="water heater making noise"
           value={jobDesc}
           onChange={(e) => setJobDesc(e.target.value)}
         />
-      </div>
+      </Field>
 
       {/* Purpose — Job (priced on the visit) vs Estimate visit (scope, then quote) */}
       <div className="chips" style={{ marginBottom: "var(--space-1)" }}>
@@ -187,15 +187,17 @@ export function VisitModalContent() {
           : "Scoped on site, then quoted — no job until they say yes."}
       </p>
 
-      {/* Price (Job only) — build it now with the crew's builder, or price later */}
+      {/* Price (Job only) — build it now with the crew's builder, or price later.
+          A caption over a button, not a form field — see new-customer-modal. */}
       {purpose === "job" && (
-        <div className="field">
-          <label>
-            Price{" "}
+        <FieldGroup
+          label="Price"
+          hint={
             <span className="muted" style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>
               (optional)
             </span>
-          </label>
+          }
+        >
           <button
             type="button"
             className="btn"
@@ -207,19 +209,18 @@ export function VisitModalContent() {
           <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
             Same builder your crew uses — or price later.
           </div>
-        </div>
+        </FieldGroup>
       )}
 
       {/* Service address */}
-      <div className="field">
-        <label>Service address</label>
+      <Field label="Service address">
         <input
           type="text"
           placeholder="leave blank and we'll text for it"
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
         />
-      </div>
+      </Field>
 
       {error && (
         <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>

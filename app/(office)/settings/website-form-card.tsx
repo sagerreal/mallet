@@ -10,6 +10,7 @@ import { useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
 import { IconWell } from "./icon-well";
+import { useFieldId } from "@/components/ui/input";
 
 // The public form lives at <origin>/f/<token>. Match the app's existing client link-building
 // (the quote link uses window.location.origin — see components/modals/estimate-modal.tsx).
@@ -29,6 +30,8 @@ export function WebsiteFormCard() {
     onSuccess: () => utils.v1.inbound.list.invalidate(),
   });
   const [copied, setCopied] = useState("");
+  const linkField = useFieldId();
+  const embedField = useFieldId();
 
   const form = list.data?.find((e) => e.channel === "form");
   const link = form ? `${origin()}/f/${form.token}` : "";
@@ -62,18 +65,21 @@ export function WebsiteFormCard() {
         </div>
       ) : (
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
+          {/* The label's target is the readonly input INSIDE the flex row, not the
+              row itself, so these pair by id rather than composing Field — Field
+              would put the id on the row div and the label would point at a div. */}
           <div className="field" style={{ margin: "0" }}>
-            <label>Share this link</label>
+            <label {...linkField.labelProps}>Share this link</label>
             <div style={{ display: "flex", gap: "var(--space-2)" }}>
-              <input readOnly value={link} style={inputStyle} />
+              <input {...linkField.controlProps} readOnly value={link} style={inputStyle} />
               <button className="btn" onClick={() => copy("link", link)}>{copied === "link" ? "Copied" : "Copy"}</button>
               <a className="btn ghost" href={link} target="_blank" rel="noopener noreferrer">Preview</a>
             </div>
           </div>
           <div className="field" style={{ margin: "0" }}>
-            <label>Or embed on your site</label>
+            <label {...embedField.labelProps}>Or embed on your site</label>
             <div style={{ display: "flex", gap: "var(--space-2)" }}>
-              <input readOnly value={iframe} style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: "var(--type-sm)" }} />
+              <input {...embedField.controlProps} readOnly value={iframe} style={{ ...inputStyle, fontFamily: "var(--font-mono, monospace)", fontSize: "var(--type-sm)" }} />
               <button className="btn" onClick={() => copy("iframe", iframe)}>{copied === "iframe" ? "Copied" : "Copy"}</button>
             </div>
           </div>

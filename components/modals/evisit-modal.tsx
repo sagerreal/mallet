@@ -29,6 +29,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import type { Lead, Visit, Tech, Job } from "@/lib/store/types";
 import { hasPhone } from "@/lib/phone";
 import { todayISO } from "@/lib/clock";
+import { Field } from "@/components/ui/input";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -140,17 +141,15 @@ function SchedFields({
   return (
     <div>
       <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Day</label>
+        <Field label="Day" style={{ margin: "0" }}>
           <input
             type="date"
             value={visit.date ?? ""}
             min={todayISO()}
             onChange={(e) => onSet("date", e.target.value)}
           />
-        </div>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Crew</label>
+        </Field>
+        <Field label="Crew" style={{ margin: "0" }}>
           <select
             value={visit.techId ?? ""}
             onChange={(e) => onSet("techId", e.target.value)}
@@ -163,24 +162,22 @@ function SchedFields({
               </option>
             ))}
           </select>
-        </div>
+        </Field>
       </div>
 
       <div
         className="row2"
         style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginTop: "var(--space-2)" }}
       >
-        <div className="field" style={{ margin: "0" }}>
-          <label>Start</label>
+        <Field label="Start" style={{ margin: "0" }}>
           <input
             type="time"
             value={visit.start != null ? hToTime(visit.start) : ""}
             step={60}
             onChange={(e) => onSet("start", e.target.value)}
           />
-        </div>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Length (h)</label>
+        </Field>
+        <Field label="Length (h)" style={{ margin: "0" }}>
           <input
             type="number"
             inputMode="decimal"
@@ -189,7 +186,7 @@ function SchedFields({
             value={visit.dur || 1}
             onChange={(e) => onSet("dur", e.target.value)}
           />
-        </div>
+        </Field>
       </div>
 
       {!placed ? (

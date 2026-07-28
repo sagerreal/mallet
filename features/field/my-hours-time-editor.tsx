@@ -16,7 +16,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field, Select } from "@/components/ui/input";
+import { Field, Select, useFieldId, useGroupLabel } from "@/components/ui/input";
 import { api } from "@/lib/trpc/client";
 import { timesProblem } from "./my-hours-edit";
 import { clockLabel } from "./my-hours-derive";
@@ -57,6 +57,8 @@ export function MyHoursTimeEditor({
   onCancel,
 }: MyHoursTimeEditorProps) {
   const [kind, setKind] = useState<EntryKind>(initialKind);
+  const kindGroup = useGroupLabel();
+  const jobField = useFieldId();
   const [jobId, setJobId] = useState<string | null>(initialJobId);
   const [startTime, setStartTime] = useState(initialStart);
   const [endTime, setEndTime] = useState(initialEnd);
@@ -72,8 +74,10 @@ export function MyHoursTimeEditor({
 
   return (
     <div className="ts-editor">
-      <div className="ts-erow">
-        <label>Type</label>
+      {/* The row is the group and the label names it from inside — the buttons are a
+          toggle set, so there is no single control for htmlFor to point at. */}
+      <div className="ts-erow" {...kindGroup.groupProps}>
+        <label {...kindGroup.labelProps}>Type</label>
         <div className="ts-seg">
           {KINDS.map(({ k, label }) => (
             <button
@@ -94,9 +98,10 @@ export function MyHoursTimeEditor({
       </div>
       {kind === "job" && (
         <div className="ts-erow">
-          <label>Job</label>
+          {/* aria-label removed: it outranked this visible label, leaving it dead. */}
+          <label {...jobField.labelProps}>Job</label>
           <Select
-            aria-label="Job"
+            {...jobField.controlProps}
             value={jobId ?? ""}
             onChange={(e) => setJobId(e.target.value || null)}
             style={{ maxWidth: 320 }}
@@ -114,11 +119,12 @@ export function MyHoursTimeEditor({
       )}
       <div className="ts-times">
         <div className="ts-timecol">
+          {/* No aria-label: it outranks the <label>, so it made these Fields'
+              visible labels decorative. The label is the accessible name. */}
           <Field label="Start">
             <input
               type="time"
               value={startTime}
-              aria-label="Start time"
               onChange={(e) => setStartTime(e.target.value)}
             />
           </Field>
@@ -128,7 +134,6 @@ export function MyHoursTimeEditor({
             <input
               type="time"
               value={endTime}
-              aria-label="End time"
               onChange={(e) => setEndTime(e.target.value)}
             />
           </Field>

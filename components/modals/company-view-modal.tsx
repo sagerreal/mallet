@@ -25,6 +25,7 @@ import { StagePill } from "@/components/shared/stage-pill";
 import type { Company, Estimate, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { pipeSum } from "@/lib/estimates";
+import { Field } from "@/components/ui/input";
 
 
 function firstName(name: string): string {
@@ -104,24 +105,22 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
     <div className="card">
       <h3>Details</h3>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-        <div className="field" style={{ marginBottom: "0" }}>
-          <label>Phone</label>
+        <Field label="Phone" style={{ marginBottom: "0" }}>
           <input
             type="text"
             defaultValue={company.phone}
             placeholder="—"
             onBlur={(e) => onSave({ phone: e.target.value.trim() })}
           />
-        </div>
-        <div className="field" style={{ marginBottom: "0" }}>
-          <label>Email</label>
+        </Field>
+        <Field label="Email" style={{ marginBottom: "0" }}>
           <input
             type="text"
             defaultValue={company.email}
             placeholder="—"
             onBlur={(e) => onSave({ email: e.target.value.trim() })}
           />
-        </div>
+        </Field>
       </div>
       <div
         style={{
@@ -131,34 +130,31 @@ function DetailsCard({ company, onSave }: DetailsCardProps) {
           marginTop: "var(--space-3)",
         }}
       >
-        <div className="field" style={{ marginBottom: "0" }}>
-          <label>Website</label>
+        <Field label="Website" style={{ marginBottom: "0" }}>
           <input
             type="text"
             defaultValue={company.website ?? ""}
             placeholder="—"
             onBlur={(e) => onSave({ website: e.target.value.trim() })}
           />
-        </div>
-        <div className="field" style={{ marginBottom: "0" }}>
-          <label>Office address</label>
+        </Field>
+        <Field label="Office address" style={{ marginBottom: "0" }}>
           <input
             type="text"
             defaultValue={company.address ?? ""}
             placeholder="—"
             onBlur={(e) => onSave({ address: e.target.value.trim() })}
           />
-        </div>
+        </Field>
       </div>
-      <div className="field" style={{ marginTop: "var(--space-3)", marginBottom: "0" }}>
-        <label>About this account</label>
+      <Field label="About this account" style={{ marginTop: "var(--space-3)", marginBottom: "0" }}>
         <textarea
           rows={2}
           defaultValue={company.notes ?? ""}
           placeholder="how you know them, who runs it…"
           onBlur={(e) => onSave({ notes: e.target.value.trim() })}
         />
-      </div>
+      </Field>
     </div>
   );
 }

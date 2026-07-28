@@ -31,6 +31,7 @@ import { useCloseModal, useOpenModal, usePushModal, useLeads, useAppStore } from
 import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead, Visit } from "@/lib/store/types";
+import { Field, FieldGroup } from "@/components/ui/input";
 
 // A custom-checklist line mentioning a photo becomes a photo step (shared heuristic).
 const CHK_PHOTO_RE = /photo|picture/i;
@@ -474,8 +475,7 @@ export function NewJobModalContent() {
 
       <form onSubmit={handleSubmit}>
         {/* What's the job? */}
-        <div className="field">
-          <label>What&apos;s the job?</label>
+        <Field label="What's the job?">
           <input
             type="text"
             placeholder="e.g. water heater repair"
@@ -483,23 +483,22 @@ export function NewJobModalContent() {
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
           />
-        </div>
+        </Field>
 
         {/* Type chips — Estimate | Job */}
-        <div className="field">
-          <label>Type</label>
-          <div className="chips">
-            {(
-              [
-                ["estimate", "Estimate"],
-                ["service", "Job"],
-              ] as const
-            ).map(([t, lbl]) => (
+        <FieldGroup label="Type" groupClassName="chips">
+          {(
+            [
+              ["estimate", "Estimate"],
+              ["service", "Job"],
+            ] as const
+          ).map(([t, lbl]) => (
               <button
                 key={t}
                 type="button"
                 className={`chip${njType === t ? " sel" : ""}`}
                 onClick={() => selectType(t)}
+                aria-pressed={njType === t}
               >
                 <span
                   style={{
@@ -514,17 +513,15 @@ export function NewJobModalContent() {
                 />
                 {lbl}
               </button>
-            ))}
-          </div>
-        </div>
+          ))}
+        </FieldGroup>
 
         {/* Customer (datalist picker) + Phone */}
         <div
           className="row2"
           style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}
         >
-          <div className="field" style={{ marginBottom: "0" }}>
-            <label>Customer</label>
+          <Field label="Customer" style={{ marginBottom: "0" }}>
             <input
               type="text"
               list="njCustList"
@@ -538,9 +535,8 @@ export function NewJobModalContent() {
                 <option key={l.id} value={l.name} />
               ))}
             </datalist>
-          </div>
-          <div className="field" style={{ marginBottom: "0" }}>
-            <label>Phone</label>
+          </Field>
+          <Field label="Phone" style={{ marginBottom: "0" }}>
             <input
               type="tel"
               inputMode="tel"
@@ -549,19 +545,18 @@ export function NewJobModalContent() {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
-          </div>
+          </Field>
         </div>
 
         {/* Service address */}
-        <div className="field">
-          <label>Service address</label>
+        <Field label="Service address">
           <input
             type="text"
             placeholder="add the address"
             value={addr}
             onChange={(e) => setAddr(e.target.value)}
           />
-        </div>
+        </Field>
 
         {/* The staged details — a definition list of disclosure rows (front-desk
             RuleRow pattern): label · current value, one editor open at a time,
@@ -715,15 +710,14 @@ export function NewJobModalContent() {
             open={openRow === "notes"}
             onToggle={() => toggleRow("notes")}
           >
-            <div className="field" style={{ marginBottom: "0" }}>
-              <label>Notes</label>
+            <Field label="Notes" style={{ marginBottom: "0" }}>
               <input
                 type="text"
                 placeholder="gate code, what to bring…"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
-            </div>
+            </Field>
           </DisclosureRow>
         </div>
 

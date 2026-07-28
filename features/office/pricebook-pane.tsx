@@ -28,6 +28,7 @@ import { AddServiceRow } from "@/app/(office)/settings/add-service-row";
 import { CategoryManager } from "@/app/(office)/settings/category-manager";
 import { EstimatorMemoryRow } from "@/app/(office)/settings/estimator-memory-card";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
+import { Field } from "@/components/ui/input";
 
 function sortServices(services: Service[]): Service[] {
   return [...services].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
@@ -287,10 +288,9 @@ export function PricebookPane() {
             open={openRail === "markup"}
             onToggle={() => toggleRail("markup")}
           >
-            <div className="field" style={{ maxWidth: 160, margin: "0" }}>
-              <label>Markup on new parts (%)</label>
+            <Field label="Markup on new parts (%)" style={{ maxWidth: 160, margin: "0" }}>
               <input type="number" inputMode="decimal" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
-            </div>
+            </Field>
             <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "var(--type-sm)" }}>
               Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
             </p>

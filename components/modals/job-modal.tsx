@@ -41,6 +41,7 @@ import { JobChecklistBlock } from "./job-checklist-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
 import { dayLoad } from "@/features/jobs/jobs-helpers";
+import { Field, FieldGroup } from "@/components/ui/input";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -206,17 +207,15 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
       }}
     >
       <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Day</label>
+        <Field label="Day" style={{ margin: "0" }}>
           <input
             type="date"
             value={visit.date ?? ""}
             min={todayISO()}
             onChange={(e) => onUpdate({ date: e.target.value })}
           />
-        </div>
-        <div className="field" style={{ margin: "0" }}>
-          <label>Crew</label>
+        </Field>
+        <Field label="Crew" style={{ margin: "0" }}>
           <select
             value={visit.techId ?? ""}
             onChange={(e) => onUpdate({ techId: e.target.value || null })}
@@ -257,22 +256,21 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
               ];
             })()}
           </select>
-        </div>
+        </Field>
       </div>
 
       <div
         className="row2"
         style={{ gridTemplateColumns: "1fr auto", gap: "var(--space-3)", marginTop: "var(--space-2)", alignItems: "end" }}
       >
-        <div className="field" style={{ margin: "0" }}>
-          <label>Start</label>
+        <Field label="Start" style={{ margin: "0" }}>
           <input
             type="time"
             value={hToTime(visit.start ?? 0)}
             step={60}
             onChange={(e) => onUpdate({ start: timeToH(e.target.value) })}
           />
-        </div>
+        </Field>
         <DurField dur={visit.dur} onChange={(dur) => onUpdate({ dur })} />
       </div>
 
@@ -627,17 +625,16 @@ function TypeField({ job, onSetSvc }: TypeFieldProps) {
   const isEst = job.svc === "estimate";
 
   return (
-    <div className="field" style={{ marginTop: "var(--space-3)" }}>
-      <label>Type</label>
-      <div className="chips">
-        {TYPE_CHIPS.map(({ t, lbl, sub }) => {
-          const sel = (t === "estimate") === isEst;
-          return (
+    <FieldGroup label="Type" style={{ marginTop: "var(--space-3)" }} groupClassName="chips">
+      {TYPE_CHIPS.map(({ t, lbl, sub }) => {
+        const sel = (t === "estimate") === isEst;
+        return (
             <button
               key={t}
               className={`chip ${sel ? "sel" : ""}`}
               onClick={() => onSetSvc(t)}
               title={sub}
+              aria-pressed={sel}
             >
               <span
                 style={{
@@ -652,10 +649,9 @@ function TypeField({ job, onSetSvc }: TypeFieldProps) {
               />
               {lbl}
             </button>
-          );
-        })}
-      </div>
-    </div>
+        );
+      })}
+    </FieldGroup>
   );
 }
 
@@ -813,40 +809,37 @@ export function JobModalContent() {
 
       {/* 3. Customer phone (only when there's no linked lead) */}
       {!lead && (
-        <div className="field" style={{ margin: "0 0 var(--space-3)" }}>
-          <label>Customer phone</label>
+        <Field label="Customer phone" style={{ margin: "0 0 var(--space-3)" }}>
           <input
             type="tel"
             defaultValue={job.phone || ""}
             placeholder="so you can call/text from the job"
             onBlur={(e) => updateJob(job.id, { phone: e.target.value.trim() })}
           />
-        </div>
+        </Field>
       )}
 
       {/* 4. Job title */}
-      <div className="field" style={{ margin: "0" }}>
-        <label>Job</label>
+      <Field label="Job" style={{ margin: "0" }}>
         <input
           type="text"
           defaultValue={job.title}
           onBlur={(e) => updateJob(job.id, { title: e.target.value.trim() })}
         />
-      </div>
+      </Field>
 
       {/* 5. Type */}
       <TypeField job={job} onSetSvc={(svc) => setJobSvc(job.id, svc)} />
 
       {/* 6. Service address */}
-      <div className="field" style={{ marginTop: "var(--space-3)" }}>
-        <label>Service address</label>
+      <Field label="Service address" style={{ marginTop: "var(--space-3)" }}>
         <input
           type="text"
           defaultValue={job.addr || ""}
           placeholder={lead?.address || "add the address"}
           onBlur={(e) => updateJob(job.id, { addr: e.target.value.trim() })}
         />
-      </div>
+      </Field>
 
       {/* 7. Price summary — PRICE + Total only, never cost/margin/profit */}
       <PriceSummary

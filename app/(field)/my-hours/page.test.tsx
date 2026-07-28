@@ -88,7 +88,7 @@ describe("correcting a row", () => {
     render(<MyHoursPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("End time"), { target: { value: "17:30" } });
+    fireEvent.change(screen.getByLabelText("End"), { target: { value: "17:30" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(updateMutate).toHaveBeenCalledTimes(1);
@@ -109,7 +109,7 @@ describe("correcting a row", () => {
     render(<MyHoursPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("End time"), { target: { value: "07:00" } });
+    fireEvent.change(screen.getByLabelText("End"), { target: { value: "07:00" } });
 
     expect(screen.getByText("The end time has to be after the start time.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
@@ -212,8 +212,8 @@ describe("adding a block the clock missed", () => {
     render(<MyHoursPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Add hours you already worked" }));
-    fireEvent.change(screen.getByLabelText("Start time"), { target: { value: "06:00" } });
-    fireEvent.change(screen.getByLabelText("End time"), { target: { value: "07:30" } });
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "06:00" } });
+    fireEvent.change(screen.getByLabelText("End"), { target: { value: "07:30" } });
     fireEvent.click(screen.getByRole("button", { name: "Add these hours" }));
 
     expect(createMutate).toHaveBeenCalledTimes(1);
@@ -264,7 +264,7 @@ describe("the four list states", () => {
 
     expect(screen.getByText("No hours yet")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
-    expect(screen.getByLabelText("Start time")).toBeTruthy();
+    expect(screen.getByLabelText("Start")).toBeTruthy();
   });
 
   it("shows the week once there are rows", () => {

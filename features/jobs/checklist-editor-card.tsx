@@ -9,7 +9,7 @@ import type { Checklist } from "@/lib/store/types";
 import type { NewChecklistItem } from "@/lib/store/slices/checklists-slice";
 import { useAppStore } from "@/lib/store/app-store";
 import { Segmented } from "@/app/(office)/settings/segmented";
-import { COMPACT_INPUT } from "@/components/ui/input";
+import { COMPACT_INPUT, Field, useGroupLabel } from "@/components/ui/input";
 const FIELD_MAX_WIDTH = 560;
 const CHIP_STYLE: React.CSSProperties = {
   fontSize: "var(--type-sm)",
@@ -107,6 +107,7 @@ function ExpandedEditor({
   const updateChecklist = useAppStore((s) => s.updateChecklist);
 
   const [draftName, setDraftName] = useState(checklist.name);
+  const stepsGroup = useGroupLabel();
   const [draftItems, setDraftItems] = useState<DraftItem[]>(
     checklist.items
       .slice()
@@ -180,28 +181,29 @@ function ExpandedEditor({
       }}
     >
       <div style={{ maxWidth: FIELD_MAX_WIDTH }}>
-        <div className="field">
-          <label>Checklist name</label>
+        <Field label="Checklist name">
           <input
             type="text"
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
             style={COMPACT_INPUT}
           />
-        </div>
+        </Field>
 
-        {/* Steps list */}
+        {/* Steps list — the label names the list of rows, and each row's text input
+            names itself by step number; there is no single control to point at. */}
         {draftItems.length > 0 && (
           <div style={{ marginBottom: "var(--space-3)" }}>
-            <label style={{ display: "block", fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>Steps</label>
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-              {draftItems.map((item) => (
+            <label {...stepsGroup.labelProps} style={{ display: "block", fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>Steps</label>
+            <div {...stepsGroup.groupProps} style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+              {draftItems.map((item, stepIdx) => (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
                   <input
                     type="text"
                     value={item.text}
                     onChange={(e) => handleStepText(item.id, e.target.value)}
                     placeholder="Step description"
+                    aria-label={`Step ${stepIdx + 1} description`}
                     style={{ ...COMPACT_INPUT, flex: 1 }}
                   />
                   <Segmented

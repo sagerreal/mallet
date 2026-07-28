@@ -11,7 +11,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/input";
+import { Field, useGroupLabel } from "@/components/ui/input";
 import { KIND_LABELS, dayLabel, type MyHoursEntry } from "./my-hours-derive";
 import { editWindowDates, timesProblem } from "./my-hours-edit";
 import type { AddBlockInput } from "./use-my-hours-writes";
@@ -54,6 +54,7 @@ export interface AddBlockFormProps {
 
 export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel }: AddBlockFormProps) {
   const [workDate, setWorkDate] = useState(today);
+  const kindGroup = useGroupLabel();
   const [kind, setKind] = useState<Kind>(DEFAULT_KIND);
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
@@ -73,7 +74,10 @@ export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel
   return (
     <div className="ts-editor">
       <Field label="Day">
-        <select value={workDate} onChange={(e) => setWorkDate(e.target.value)} aria-label="Day">
+        {/* No aria-label here or below: an aria-label outranks the <label> element,
+            so it made each Field's visible label decorative and getByLabelText could
+            not resolve these controls. The label is the name now. */}
+        <select value={workDate} onChange={(e) => setWorkDate(e.target.value)}>
           {editWindowDates(today).map((date) => (
             <option key={date} value={date}>
               {dayLabel(date)}
@@ -81,8 +85,8 @@ export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel
           ))}
         </select>
       </Field>
-      <div className="ts-erow">
-        <label>Type</label>
+      <div className="ts-erow" {...kindGroup.groupProps}>
+        <label {...kindGroup.labelProps}>Type</label>
         <KindPicker value={kind} onPick={setKind} />
       </div>
       {kind === "job" ? (
@@ -91,17 +95,17 @@ export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel
       <div className="ts-times">
         <div className="ts-timecol">
           <Field label="Start">
-            <input type="time" value={startTime} aria-label="Start time" onChange={(e) => setStartTime(e.target.value)} />
+            <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
           </Field>
         </div>
         <div className="ts-timecol">
           <Field label="End">
-            <input type="time" value={endTime} aria-label="End time" onChange={(e) => setEndTime(e.target.value)} />
+            <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Note (optional)">
-        <input type="text" value={note} aria-label="Note" maxLength={200} onChange={(e) => setNote(e.target.value)} />
+        <input type="text" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} />
       </Field>
       {problem !== null ? <p className="mh-err">{problem}</p> : null}
       {error !== null ? <p className="mh-err">{error}</p> : null}

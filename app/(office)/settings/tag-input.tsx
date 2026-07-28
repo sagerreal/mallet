@@ -20,11 +20,17 @@ export function TagInput({
   onChange,
   placeholder,
   maxWidth = 560,
+  id,
 }: {
   value: string;
   onChange: (next: string) => void;
   placeholder?: string;
   maxWidth?: number;
+  /**
+   * Forwarded to the draft `<input>` so a `<label htmlFor>` can reach it. `Field`
+   * clones its child with a generated id; without this the id landed on nothing.
+   */
+  id?: string;
 }) {
   const tags = parseTags(value);
   const [draft, setDraft] = useState("");
@@ -107,6 +113,7 @@ export function TagInput({
       ))}
       <input
         type="text"
+        id={id}
         value={draft}
         placeholder={tags.length === 0 ? placeholder : undefined}
         onChange={(e) => {

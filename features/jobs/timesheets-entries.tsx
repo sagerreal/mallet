@@ -11,6 +11,7 @@
 import { useState } from "react";
 import type { Job, Lead, Tech, TimeEntry } from "@/lib/store/types";
 import { timeToH } from "@/lib/time";
+import { useGroupLabel } from "@/components/ui/input";
 import { custName, liveJobs, techById } from "./jobs-helpers";
 import { TS_KINDS, TS_KIND_KEYS, MAX_JOB_SUGGESTIONS } from "./timesheet-constants";
 import {
@@ -43,7 +44,12 @@ function TsKindSeg({ entry, onPick }: TsKindSegProps) {
   return (
     <div className="ts-seg">
       {TS_KIND_KEYS.map((k) => (
-        <button key={k} className={entry.kind === k ? "on" : ""} onClick={() => onPick(k)}>
+        <button
+          key={k}
+          className={entry.kind === k ? "on" : ""}
+          aria-pressed={entry.kind === k}
+          onClick={() => onPick(k)}
+        >
           {TS_KINDS[k]}
         </button>
       ))}
@@ -181,7 +187,15 @@ function TsTimePicker({ entry, field, open, onToggle, onPick }: TsTimePickerProp
     field === "end" ? tsTimeOpts().filter((o) => o.h > timeToH(entry.start)) : tsTimeOpts();
   return (
     <>
-      <button type="button" className={`ts-trig ${val ? "" : "empty"}`} onClick={onToggle}>
+      {/* No aria-label: the trigger's own text is the current time, which is the most
+          useful thing to announce, and an aria-label would replace it. The enclosing
+          row is a group named "Time" and the visible In/Out caption sits alongside. */}
+      <button
+        type="button"
+        className={`ts-trig ${val ? "" : "empty"}`}
+        aria-expanded={open}
+        onClick={onToggle}
+      >
         <span className="cv">{cur}</span>
         <span style={{ color: "var(--ink-3)" }}>▾</span>
       </button>
@@ -219,6 +233,10 @@ interface TsEditorProps {
 
 /** The expanded editor beneath a row: day, type, job (if job kind), in/out times. */
 function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSetField, onClose }: TsEditorProps) {
+  const dayGroup = useGroupLabel();
+  const kindGroup = useGroupLabel();
+  const jobGroup = useGroupLabel();
+  const timeGroup = useGroupLabel();
   return (
     <div className="ts-editor">
       {entry.running && (
@@ -229,8 +247,11 @@ function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSet
       )}
       {/* Day first: it is what the entry is ABOUT, and the thing most likely to need changing on
           a row typed in after the fact. */}
-      <div className="ts-erow">
-        <label>Day</label>
+      {/* Each row labels a composite widget, not one control, so the row itself is
+          the group and the label names it from inside — aria-labelledby may point at
+          a descendant, which keeps the markup exactly as it was. */}
+      <div className="ts-erow" {...dayGroup.groupProps}>
+        <label {...dayGroup.labelProps}>Day</label>
         <TsDaySeg
           entry={entry}
           weekDates={weekDates}
@@ -240,8 +261,8 @@ function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSet
           }}
         />
       </div>
-      <div className="ts-erow">
-        <label>Type</label>
+      <div className="ts-erow" {...kindGroup.groupProps}>
+        <label {...kindGroup.labelProps}>Type</label>
         <TsKindSeg
           entry={entry}
           onPick={(kind) => {
@@ -251,8 +272,8 @@ function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSet
         />
       </div>
       {entry.kind === "job" && (
-        <div className="ts-erow">
-          <label>Job</label>
+        <div className="ts-erow" {...jobGroup.groupProps}>
+          <label {...jobGroup.labelProps}>Job</label>
           <div className="ts-pickwrap">
             <TsJobPicker
               entry={entry}
@@ -270,8 +291,8 @@ function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSet
           </div>
         </div>
       )}
-      <div className="ts-erow">
-        <label>Time</label>
+      <div className="ts-erow" {...timeGroup.groupProps}>
+        <label {...timeGroup.labelProps}>Time</label>
         <div className="ts-times">
           <div className="ts-timecol">
             <div className="tl">In</div>
