@@ -1,0 +1,12 @@
+-- IF NOT EXISTS, deliberately.
+--
+-- This column was already applied to the shared dev/prod database under a migration numbered 0104,
+-- which then collided: another branch merged its own 0104 (and an 0105) to main first, so the
+-- original file never landed and this one is a renumbered replant. The DATABASE already has the
+-- column; only the ledger is missing the entry.
+--
+-- A plain ADD COLUMN would therefore fail with "column already exists" and block every deploy, so
+-- this reconciles the ledger to a schema that is already correct rather than trying to re-apply it.
+-- Migrations are single-writer here for exactly this reason (CLAUDE.md); the guard is what makes
+-- the recovery safe rather than another outage.
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "takes_calls" boolean DEFAULT false NOT NULL;

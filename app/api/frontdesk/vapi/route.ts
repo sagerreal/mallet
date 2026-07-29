@@ -21,6 +21,7 @@ import {
 import { isSmsA2pActive } from "@mallet/a2p";
 import { getAppDeps } from "@/trpc/di";
 import {
+  DrizzleOnCallReader,
   parseServerMessage,
   BuildAssistantUseCase,
   RunToolCallsUseCase,
@@ -179,6 +180,10 @@ const handleAssistantRequest = async (
       settings: new DrizzleSettingsReader(tx, orgId),
       leadByPhone: new DrizzleLeadByPhoneReader(tx, orgId),
       leadSummary: new DrizzleLeadSummaryReader(tx, orgId),
+      // Who may be interrupted right now. Opens its own short tx rather than sharing this one:
+      // the tenant tx here is the caller-recognition read, and a LEFT JOIN over users +
+      // crew_schedules is a separate concern with its own lifetime.
+      onCall: new DrizzleOnCallReader(),
     },
     VOICE_TOOLS.map(toVoiceToolSpec),
   );

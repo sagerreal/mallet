@@ -31,6 +31,15 @@ export const users = pgTable(
     // command channel, where it decides whose org an SMS may write to. The SMS agent matches on
     // this column being non-null; nothing else reads it, so the calling flow is unchanged.
     callbackVerifiedAt: timestamp("callback_verified_at", { withTimezone: true }),
+    // Whether the AI front desk may put a caller through to this person when a call needs a human.
+    //
+    // Escalation was a SINGLE org-wide number, so a shop with three office staff had no way to say
+    // "Sarah is on today". Who is actually reachable now comes from crew_schedules — the same
+    // per-person hours the dispatch board already uses — so this is the only new fact: is this
+    // person someone the front desk may interrupt at all.
+    //
+    // Defaults false: nobody's phone starts ringing because an upgrade shipped.
+    takesCalls: boolean("takes_calls").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
