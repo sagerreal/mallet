@@ -10,6 +10,11 @@ export type PaintingRoomQuantityRow = typeof paintingRoomQuantities.$inferSelect
 
 // Reconstruct a domain RoomCapture from a DB row. Corrupt data throws rather than silently
 // coercing — the same contract as company-mapper's toDomain.
+//
+// Deliberate asymmetry: this throw is what makes `getCapture` (a direct open of one capture)
+// fail loudly on corrupt geometry/props. `listByJob` (drizzle-measurement-repository.ts) does
+// NOT let this throw escape the page — it catches it per-row, skips the unreadable capture, and
+// logs `measurements.capture.unreadable` so one bad row can't blank a whole job's room list.
 export const toDomainCapture = (row: RoomCaptureRow): RoomCapture => {
   let geometry = null;
   if (row.geometry !== null) {

@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { roomCaptures, paintingRoomQuantities } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 import type { RoomCapture } from "../domain/room-capture";
 import { toWireGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantity, PaintingQuantityKind } from "../domain/derive-painting";
@@ -35,7 +36,7 @@ function pgErrorInfo(e: unknown): { code: string | null; constraint: string | nu
     constraint: typeof withPgFields.constraint_name === "string" ? withPgFields.constraint_name : null,
   };
 }
-import { toCaptureWithQuantities, type RoomCaptureRow } from "./measurement-mapper";
+import { toDomainCapture, toStoredQuantity, toCaptureWithQuantities, type RoomCaptureRow } from "./measurement-mapper";
 
 // Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
 // app.current_org_id), so RLS appends `org_id = current_org_id()` to every statement. orgId is
@@ -68,9 +69,13 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
       .orderBy(desc(roomCaptures.capturedAt), desc(roomCaptures.id));
 
     if (rows.length === 0) return [];
-    return this.attachQuantities(rows);
+    return this.attachQuantitiesSkippingCorrupt(rows);
   }
 
+  // getCapture is a direct open of ONE capture — unlike listByJob, a corrupt row here must
+  // fail loudly (toDomainCapture, via toCaptureWithQuantities/attachQuantities, throws). This
+  // is a deliberate asymmetry with listByJob's skip-and-log: silently returning null would hide
+  // real corruption from whoever explicitly asked for this exact capture.
   async getCapture(id: string): Promise<RoomCaptureWithQuantities | null> {
     const rows = await this.tx
       .select()
@@ -241,5 +246,40 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     }
 
     return rows.map((row) => toCaptureWithQuantities(row, byCapture.get(row.id) ?? []));
+  }
+
+  // listByJob's variant of attachQuantities: one unreadable capture (corrupt geometry/props —
+  // toDomainCapture throws) must not fail the whole job's room list. Each row is mapped
+  // individually so a bad row can be skipped and logged instead of aborting the page; getCapture
+  // deliberately keeps the throwing path (see its comment above) — this method exists only for
+  // the multi-row list.
+  private async attachQuantitiesSkippingCorrupt(rows: readonly RoomCaptureRow[]): Promise<RoomCaptureWithQuantities[]> {
+    const healthy: { row: RoomCaptureRow; capture: RoomCapture }[] = [];
+    for (const row of rows) {
+      try {
+        healthy.push({ row, capture: toDomainCapture(row) });
+      } catch {
+        logger.warn({ captureId: row.id }, "measurements.capture.unreadable");
+      }
+    }
+    if (healthy.length === 0) return [];
+
+    const captureIds = healthy.map((h) => h.row.id);
+    const quantityRows = await this.tx
+      .select()
+      .from(paintingRoomQuantities)
+      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)));
+
+    const byCapture = new Map<string, typeof quantityRows>();
+    for (const q of quantityRows) {
+      const arr = byCapture.get(q.captureId) ?? [];
+      arr.push(q);
+      byCapture.set(q.captureId, arr);
+    }
+
+    return healthy.map(({ row, capture }) => ({
+      capture,
+      quantities: (byCapture.get(row.id) ?? []).map(toStoredQuantity),
+    }));
   }
 }
