@@ -8,6 +8,7 @@
 
 import type { Tech } from "@/lib/store/types";
 import { JOB_STATUS_FILTERS } from "./jobs-list-config";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 interface JobsFiltersProps {
   statusFilter: string;
@@ -26,27 +27,25 @@ export function JobsFilters({ statusFilter, crewFilter, techs, onStatus, onCrew,
       {showStatus && (
         <div className="field">
           <label htmlFor="jobs-filter-status">Status</label>
-          <select id="jobs-filter-status" value={statusFilter} onChange={(e) => onStatus(e.target.value)}>
-            <option value="">Any</option>
-            {JOB_STATUS_FILTERS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          <SelectMenu
+            value={statusFilter}
+            onChange={onStatus}
+            options={[{ value: "", label: "Any" }, ...JOB_STATUS_FILTERS.map((s) => ({ value: s.value, label: s.label }))]}
+            aria-label="Status"
+            compact
+          />
         </div>
       )}
 
       <div className="field">
         <label htmlFor="jobs-filter-crew">Crew</label>
-        <select id="jobs-filter-crew" value={crewFilter} onChange={(e) => onCrew(e.target.value)}>
-          <option value="">Any</option>
-          {techs.map((t) => (
-            <option key={t.id} value={String(t.id)}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          value={crewFilter}
+          onChange={onCrew}
+          options={[{ value: "", label: "Any" }, ...techs.map((t) => ({ value: String(t.id), label: t.name }))]}
+          aria-label="Crew"
+          compact
+        />
       </div>
 
       <button type="button" className="linklike" onClick={onClear} style={{ alignSelf: "flex-end" }}>

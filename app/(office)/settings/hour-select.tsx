@@ -1,8 +1,12 @@
 "use client";
 
-// 12-hour time select over INTEGER hours (the storage format, 0–24). Rides the app's `.tsel`
-// styled select (prototype.css) — same chevroned control the team-roles rows use — so the
-// closed state looks native to the app rather than the raw OS box.
+import { SelectMenu } from "@/components/ui/select-menu";
+
+// 12-hour time select over INTEGER hours (the storage format, 0–24).
+//
+// `.tsel` styled the CLOSED box and could do nothing about the open list, which the operating
+// system drew — so a business-hours row showed fourteen app-styled boxes that each opened a grey
+// macOS menu. SelectMenu draws both halves.
 
 export function hourLabel(h: number): string {
   if (h === 0) return "12:00 AM";
@@ -23,10 +27,12 @@ export function HourSelect({ value, onChange, min = 0, max = 23 }: {
     options.push(h);
   }
   return (
-    <select className="tsel" value={value} onChange={(e) => onChange(Number(e.target.value))}>
-      {options.map((h) => (
-        <option key={h} value={h}>{hourLabel(h)}</option>
-      ))}
-    </select>
+    <SelectMenu
+      value={String(value)}
+      onChange={(v) => onChange(Number(v))}
+      options={options.map((h) => ({ value: String(h), label: hourLabel(h) }))}
+      aria-label="Time"
+      compact
+    />
   );
 }
