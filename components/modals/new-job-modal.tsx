@@ -465,13 +465,16 @@ export function NewJobModalContent() {
 
   const visitsTotalH = visits.reduce((s, v) => s + v.h, 0);
   const visitsSummary = `${visits.length} visit${visits.length > 1 ? "s" : ""} · ${visitsTotalH}h`;
-  const notesSummary = notes.trim() ? clip(notes) : "—";
+  const notesSummary = notes.trim() ? clip(notes) : "Add";
 
   // ---- render ---------------------------------------------------------------
 
   return (
     <div>
-      <h2 style={{ marginBottom: "var(--space-4)" }}>New job</h2>
+      {/* Sticky sheet header — the title never scrolls away on a tall sheet. */}
+      <div className="sheet-head">
+        <h2>New job</h2>
+      </div>
 
       <form onSubmit={handleSubmit}>
         {/* What's the job? */}
@@ -725,19 +728,22 @@ export function NewJobModalContent() {
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
         )}
 
-        {/* Footer — Build-the-price is a terminal action (creates the job, then
-            opens the builder), so it belongs here beside Create, not as a form
-            field. Jobs only: estimates are quoted by the office after the visit. */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
+        {/* Sticky footer — ONE filled primary (Create job) docked where the
+            thumb is; Cancel and Build-the-price stay quiet beside it.
+            Build-the-price is a terminal action too (creates the job, then
+            opens the builder), so it belongs here, not as a form field. Jobs
+            only: estimates are quoted by the office after the visit. Stays
+            INSIDE the form so Enter-to-submit keeps working. */}
+        <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <button type="button" className="btn ghost" onClick={close} disabled={saving}>
             Cancel
           </button>
           {njType !== "estimate" && (
             <button type="button" className="btn" onClick={handleBuildPrice} disabled={saving}>
-              ✦ Build the price →
+              Build the price
             </button>
           )}
-          <button type="submit" className="btn primary" disabled={saving}>
+          <button type="submit" className="sheet-pri" disabled={saving}>
             {saving ? "Creating…" : "Create job"}
           </button>
         </div>

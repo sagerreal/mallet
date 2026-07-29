@@ -420,7 +420,7 @@ describe("NewJobModalContent — one press, one job", () => {
     render(<NewJobModalContent />);
     fillForm();
 
-    fireEvent.click(screen.getByText("✦ Build the price →"));
+    fireEvent.click(screen.getByText("Build the price"));
     fireEvent.submit(screen.getByText("Creating…").closest("form")!);
 
     expect(addLead).toHaveBeenCalledOnce();

@@ -12,13 +12,15 @@
  * LaborRate shape here, then handed to AddMenu as props.
  *
  * OFFICE single-tier mode (fromCreate=true) renders:
- *   - the eyebrow "PRICE THE JOB · <customer>" + <h2>Build the price</h2>
+ *   - the sticky .sheet-head: <h2>Build the price</h2> over one .sheet-meta line
+ *     ("Price the job · <customer>")
  *   - the built line list (.card) with per-line editable rows + a per-tier Total
  *   - the "+ Add a line" builder: a 2×2 .addgrid of .addtile tiles
  *       Pricebook (browse saved items) · Custom item (one-off price)
  *       Labor    (browse your rates $/hr) · Custom labor (one-off $/hr)
  *     browsing a sublist stays open while building (adding does NOT collapse it)
- *   - the footer "Save price →" (tqSavePrice) → updateJob(jobId, { lines })
+ *   - the sticky .sheet-foot: ONE .sheet-pri "Save price →" (tqSavePrice) →
+ *     updateJob(jobId, { lines }); "← Back" stays a quiet ghost beside it
  *
  * OUT OF SCOPE — correctly, for office single-tier mode (fromCreate=true):
  *   - the Good/Better/Best tier selector + the "Give the customer choices?"
@@ -164,21 +166,15 @@ export function PriceBuilderModalContent() {
   }
 
   return (
-    <div>
-      {/* Header — eyebrow + title (office single-tier: "Price the job"). The shell renders the ✕. */}
-      <div
-        className="muted"
-        style={{
-          fontSize: "var(--type-xs)",
-          fontWeight: 800,
-          letterSpacing: ".05em",
-          textTransform: "uppercase",
-          color: "var(--green-700)",
-        }}
-      >
-        Price the job · {custLabel(job, lead)}
+    <>
+      {/* Sticky sheet header — the title as an <h2> over one calm meta line
+          (task context · customer). The shell renders the ✕. */}
+      <div className="sheet-head">
+        <h2>Build the price</h2>
+        <div className="sheet-meta">
+          <span>Price the job · {custLabel(job, lead)}</span>
+        </div>
       </div>
-      <h2 style={{ marginBottom: "var(--space-4)" }}>Build the price</h2>
 
       {/* Built line list + single-tier Total */}
       {lines.length ? (
@@ -240,27 +236,21 @@ export function PriceBuilderModalContent() {
         <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{saveError}</p>
       ) : null}
 
-      {/* Footer — Back to the job + office single-tier save (prototype tqSavePrice) */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: "var(--space-5)",
-        }}
-      >
-        <button className="btn ghost" onClick={returnToJob} disabled={saving}>
+      {/* Sticky footer — ONE filled primary (the office single-tier save, prototype
+          tqSavePrice) docked where the thumb is; Back stays quiet beside it. */}
+      <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <button className="btn ghost" onClick={returnToJob} disabled={saving} style={{ flexShrink: 0 }}>
           ← Back
         </button>
         <button
-          className="btn primary"
+          className="sheet-pri"
           onClick={savePrice}
           disabled={!anyPriced || saving}
-          style={anyPriced && !saving ? undefined : { opacity: 0.45 }}
+          style={{ flex: 1, opacity: anyPriced && !saving ? undefined : 0.45 }}
         >
           {saving ? "Saving…" : "Save price →"}
         </button>
       </div>
-    </div>
+    </>
   );
 }
