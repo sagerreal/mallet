@@ -99,7 +99,7 @@ export function QuoteSweepModalContent() {
           checked={checked.has(e.id)}
           onChange={() => toggle(e.id)}
         />
-        <b style={{ flex: 1 }}>
+        <b className="sweeptitle">
           {e.num} — {e.title}
         </b>
         <span className="muted">{l ? l.name : ""}</span>
@@ -146,7 +146,7 @@ export function QuoteSweepModalContent() {
               const l = leads.find((x) => x.id === e.leadId);
               return (
                 <div className="sweeprow" key={e.id}>
-                  <b style={{ flex: 1 }}>
+                  <b className="sweeptitle">
                     {e.num} — {e.title}
                   </b>
                   <span className="muted">{l ? l.name : ""}</span>
