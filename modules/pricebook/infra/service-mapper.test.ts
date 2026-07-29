@@ -22,6 +22,7 @@ const baseRow = (): ServiceRow => ({
   isAddon: false,
   active: true,
   position: 0,
+  measuredBy: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
   deletedAt: null,
@@ -63,6 +64,23 @@ describe("rowToService (service mapper)", () => {
   it("throws on a corrupt row (negative unit price violates the domain invariant)", () => {
     const row = baseRow();
     row.unitPriceCents = -1;
+    expect(() => rowToService(row)).toThrow(/corrupt pricebook_item/);
+  });
+
+  it("passes through a null measured_by as null (flat price)", () => {
+    const service = rowToService(baseRow());
+    expect(service.props.measuredBy).toBeNull();
+  });
+
+  it("maps a valid measured_by value through unchanged", () => {
+    const row = baseRow();
+    row.measuredBy = "walls_sqft";
+    expect(rowToService(row).props.measuredBy).toBe("walls_sqft");
+  });
+
+  it("throws on a corrupt row (measured_by outside the 6-kind set)", () => {
+    const row = baseRow();
+    row.measuredBy = "square_footage";
     expect(() => rowToService(row)).toThrow(/corrupt pricebook_item/);
   });
 });

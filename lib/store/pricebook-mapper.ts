@@ -17,6 +17,10 @@ export type MaterialDTO = RouterOutputs["v1"]["pricebook"]["material"]["create"]
 export type ServiceMaterialDTO =
   RouterOutputs["v1"]["pricebook"]["serviceMaterial"]["listForService"][number];
 
+// Derived from the DTO (not hand-declared) so the payload types below stay assignable to the
+// tRPC mutation input without importing a domain module into the store layer.
+export type MeasuredByKind = NonNullable<ServiceDTO["measuredBy"]>;
+
 // ---------------------------------------------------------------------------
 // DTO -> store (dollars)
 // ---------------------------------------------------------------------------
@@ -36,6 +40,7 @@ export function serviceDtoToStore(dto: ServiceDTO): Service {
     isAddon: dto.isAddon,
     active: dto.active,
     position: dto.position,
+    measuredBy: dto.measuredBy,
   };
 }
 
@@ -100,6 +105,10 @@ export interface AddServiceFields {
   warrantyText?: string | null;
   imageUrl?: string | null;
   isAddon?: boolean;
+  // Plain string passthrough at the store boundary (see lib/store/types.ts Service.measuredBy);
+  // narrowed to MeasuredByKind at the tRPC payload boundary below — the server still re-validates
+  // membership regardless.
+  measuredBy?: string | null;
 }
 
 /** Payload for v1.pricebook.service.create (cents) — the client authors `id` for optimistic UI. */
@@ -115,6 +124,7 @@ export interface ServiceCreatePayload {
   warrantyText: string | null;
   imageUrl: string | null;
   isAddon: boolean;
+  measuredBy: MeasuredByKind | null;
 }
 
 export function serviceCreatePayload(id: string, fields: AddServiceFields): ServiceCreatePayload {
@@ -130,6 +140,7 @@ export function serviceCreatePayload(id: string, fields: AddServiceFields): Serv
     warrantyText: fields.warrantyText ?? null,
     imageUrl: fields.imageUrl ?? null,
     isAddon: fields.isAddon ?? false,
+    measuredBy: (fields.measuredBy ?? null) as MeasuredByKind | null,
   };
 }
 
@@ -149,6 +160,7 @@ export type ServiceUpdateFields = Partial<
     | "isAddon"
     | "active"
     | "position"
+    | "measuredBy"
   >
 >;
 
@@ -166,6 +178,7 @@ export interface ServiceUpdatePayload {
   isAddon?: boolean;
   active?: boolean;
   position?: number;
+  measuredBy?: MeasuredByKind | null;
 }
 
 export function serviceUpdatePayload(
@@ -188,6 +201,9 @@ export function serviceUpdatePayload(
     ...(fields.isAddon !== undefined ? { isAddon: fields.isAddon } : {}),
     ...(fields.active !== undefined ? { active: fields.active } : {}),
     ...(fields.position !== undefined ? { position: fields.position } : {}),
+    ...(fields.measuredBy !== undefined
+      ? { measuredBy: fields.measuredBy as MeasuredByKind | null }
+      : {}),
   };
 }
 

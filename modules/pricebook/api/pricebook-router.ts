@@ -37,6 +37,7 @@ import {
   serviceMaterialDTO,
   toMaterialDTO,
   toServiceMaterialDTO,
+  measuredByKindDTO,
 } from "./pricebook-dto";
 
 const serviceListInput = z.object({
@@ -62,6 +63,7 @@ const serviceCreateInput = z.object({
   isAddon: z.boolean().optional(),
   active: z.boolean().optional(),
   position: z.number().int().optional(),
+  measuredBy: measuredByKindDTO.nullable().optional(),
 });
 
 const serviceUpdateInput = z.object({
@@ -79,6 +81,7 @@ const serviceUpdateInput = z.object({
   isAddon: z.boolean().optional(),
   active: z.boolean().optional(),
   position: z.number().int().optional(),
+  measuredBy: measuredByKindDTO.nullable().optional(),
 });
 
 const serviceArchiveInput = z.object({
@@ -213,6 +216,7 @@ export const createPricebookRouter = () =>
               isAddon: input.isAddon ?? false,
               active: input.active ?? true,
               position: input.position ?? 0,
+              measuredBy: input.measuredBy ?? null,
             },
             ctx.principal.orgId,
           );
@@ -241,6 +245,7 @@ export const createPricebookRouter = () =>
               isAddon: input.isAddon,
               active: input.active,
               position: input.position,
+              measuredBy: input.measuredBy,
             },
             ctx.principal.orgId,
           );

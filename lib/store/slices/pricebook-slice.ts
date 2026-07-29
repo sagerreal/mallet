@@ -178,6 +178,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
       isAddon: cmd.isAddon ?? false,
       active: true,
       position: 0,
+      measuredBy: cmd.measuredBy ?? null,
     };
 
     // Optimistic append — UI reflects the new service immediately.

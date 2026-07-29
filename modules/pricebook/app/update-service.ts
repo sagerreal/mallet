@@ -1,7 +1,7 @@
 import type { ServiceId, Result, AppError, Clock } from "@mallet/shared/types";
 import { notFound, ok, err } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
-import type { Service } from "../domain/service";
+import type { Service, PaintingQuantityKind } from "../domain/service";
 import type { ServiceRepository } from "../domain/service-repository";
 
 export interface UpdateServiceCommand {
@@ -19,6 +19,7 @@ export interface UpdateServiceCommand {
   readonly isAddon?: boolean;
   readonly active?: boolean;
   readonly position?: number;
+  readonly measuredBy?: PaintingQuantityKind | null;
 }
 
 export class UpdateServiceUseCase {
@@ -47,6 +48,7 @@ export class UpdateServiceUseCase {
         isAddon: cmd.isAddon,
         active: cmd.active,
         position: cmd.position,
+        measuredBy: cmd.measuredBy,
       },
       now,
     );

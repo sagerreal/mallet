@@ -4,6 +4,19 @@ import type { Category } from "../domain/category";
 import type { Material } from "../domain/material";
 import type { ServiceMaterial } from "../domain/service-material";
 
+// Mirrors modules/pricebook/domain/service.ts's MEASURED_BY_KIND_SET, which is itself
+// compile-time pinned to measurements' PaintingQuantityKind. Kept as a literal zod enum here
+// (rather than importing the domain's derived array) so this DTO module stays a pure
+// leaf — no import of domain constants required for a boundary schema.
+export const measuredByKindDTO = z.enum([
+  "walls_sqft",
+  "ceiling_sqft",
+  "baseboard_lnft",
+  "crown_lnft",
+  "doors_count",
+  "windows_count",
+]);
+
 export const serviceDTO = z.object({
   id: z.string().uuid(),
   categoryId: z.string().uuid().nullable(),
@@ -19,6 +32,7 @@ export const serviceDTO = z.object({
   isAddon: z.boolean(),
   active: z.boolean(),
   position: z.number().int(),
+  measuredBy: measuredByKindDTO.nullable(),
 });
 
 export type ServiceDTO = z.infer<typeof serviceDTO>;
@@ -95,6 +109,7 @@ export const toServiceDTO = (service: Service): ServiceDTO => {
     isAddon: p.isAddon,
     active: p.active,
     position: p.position,
+    measuredBy: p.measuredBy,
   };
 };
 

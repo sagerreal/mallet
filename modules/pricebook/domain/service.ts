@@ -1,5 +1,36 @@
 import type { OrgId, Result, ServiceId, ValidationError } from "@mallet/shared/types";
 import { validation, ok, err } from "@mallet/shared/types";
+// Type-only import through the module's sanctioned barrel (a deep `.../domain/derive-painting`
+// import is blocked by the eslint import-boundary rule, and would also be the wrong call: the
+// barrel re-exports createMeasurementRouter, which pulls the config validator and throws
+// without DB env in unit tests). `import type` is erased at compile time — verbatimModuleSyntax
+// guarantees no runtime import statement survives — so this never triggers that barrel
+// evaluation despite going through the same specifier.
+import type { PaintingQuantityKind } from "@mallet/measurements";
+
+export type { PaintingQuantityKind };
+
+// Compile-time pin: if derive-painting.ts's PaintingQuantityKind ever adds/removes a literal,
+// this exhaustiveness map fails to typecheck (`Record<PaintingQuantityKind, true>` requires
+// every member present, and an extra key here would be a type error too) — stronger than a
+// runtime-only assertion, and it does not require importing the measurements module barrel.
+// This is the single source of the 6-kind membership list; MEASURED_BY_KINDS is derived from it.
+const MEASURED_BY_KIND_SET: Record<PaintingQuantityKind, true> = {
+  walls_sqft: true,
+  ceiling_sqft: true,
+  baseboard_lnft: true,
+  crown_lnft: true,
+  doors_count: true,
+  windows_count: true,
+};
+
+// The 6 kinds a measured-by service can be priced per unit of, for UI/validation consumers.
+export const MEASURED_BY_KINDS: readonly PaintingQuantityKind[] = Object.keys(
+  MEASURED_BY_KIND_SET,
+) as PaintingQuantityKind[];
+
+const isMeasuredByKind = (v: string): v is PaintingQuantityKind =>
+  Object.prototype.hasOwnProperty.call(MEASURED_BY_KIND_SET, v);
 
 export interface ServiceProps {
   readonly id: ServiceId;
@@ -17,6 +48,10 @@ export interface ServiceProps {
   readonly isAddon: boolean;
   readonly active: boolean;
   readonly position: number;
+  // When set, unitPriceCents is a PER-UNIT rate against this measured room quantity (e.g. a
+  // painting wall service priced per sqft) rather than a flat price. Null preserves today's
+  // flat-price semantics unchanged.
+  readonly measuredBy: PaintingQuantityKind | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -34,6 +69,9 @@ export class Service {
     }
     if (props.costCents < 0) {
       return err(validation("cost must be ≥ 0", "costCents"));
+    }
+    if (props.measuredBy !== null && !isMeasuredByKind(props.measuredBy)) {
+      return err(validation("measuredBy must be a recognized room quantity kind", "measuredBy"));
     }
     return ok(new Service({ ...props, name }));
   }
@@ -55,6 +93,7 @@ export class Service {
       isAddon?: boolean;
       active?: boolean;
       position?: number;
+      measuredBy?: PaintingQuantityKind | null;
     },
     now: Date,
   ): Result<Service, ValidationError> {
@@ -75,6 +114,7 @@ export class Service {
       isAddon: fields.isAddon !== undefined ? fields.isAddon : this.p.isAddon,
       active: fields.active !== undefined ? fields.active : this.p.active,
       position: fields.position !== undefined ? fields.position : this.p.position,
+      measuredBy: fields.measuredBy !== undefined ? fields.measuredBy : this.p.measuredBy,
       updatedAt: now,
     });
   }

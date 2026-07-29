@@ -1,5 +1,5 @@
 {
-  "id": "ad0986d7-87dc-41f4-9b68-c964d16fe819",
+  "id": "709b3538-c2c3-4b59-ada5-183c3b411100",
   "prevId": "35085b3b-e340-4d89-94ff-7437677cf261",
   "version": "7",
   "dialect": "postgresql",
@@ -1605,48 +1605,6 @@
         "required_certs": {
           "name": "required_certs",
           "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signer_name": {
-          "name": "signer_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signature_svg": {
-          "name": "signature_svg",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signer_ip": {
-          "name": "signer_ip",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signer_user_agent": {
-          "name": "signer_user_agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signed_at": {
-          "name": "signed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signed_snapshot": {
-          "name": "signed_snapshot",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signed_by_user_id": {
-          "name": "signed_by_user_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -5378,6 +5336,12 @@
           "notNull": true,
           "default": 0
         },
+        "measured_by": {
+          "name": "measured_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5506,7 +5470,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "pricebook_items_measured_by_check": {
+          "name": "pricebook_items_measured_by_check",
+          "value": "\"pricebook_items\".\"measured_by\" is null or \"pricebook_items\".\"measured_by\" in ('walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.pricebook_materials": {

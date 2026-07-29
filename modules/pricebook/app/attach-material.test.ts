@@ -43,6 +43,7 @@ const baseServiceProps = (overrides: Partial<ServiceProps> = {}): ServiceProps =
   isAddon: false,
   active: true,
   position: 0,
+  measuredBy: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
   ...overrides,
