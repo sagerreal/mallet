@@ -20,6 +20,7 @@ const MINTED_ID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 class FakeMeasurementRepository implements MeasurementRepository {
   createCaptureCalls: { capture: RoomCapture; quantities: readonly PaintingQuantity[] }[] = [];
   setQuantityCalls: { captureId: string; kind: PaintingQuantityKind; value: number | null; status: QuantityStatus }[] = [];
+  setQuantityReturns = 1;
 
   async createCapture(capture: RoomCapture, quantities: readonly PaintingQuantity[]): Promise<void> {
     this.createCaptureCalls.push({ capture, quantities });
@@ -43,7 +44,7 @@ class FakeMeasurementRepository implements MeasurementRepository {
     patch: { value: number | null; status: QuantityStatus },
   ): Promise<number> {
     this.setQuantityCalls.push({ captureId, kind, value: patch.value, status: patch.status });
-    return 1;
+    return this.setQuantityReturns;
   }
 
   async renameRoom(): Promise<number> {
@@ -105,6 +106,33 @@ describe("CreateManualRoomUseCase", () => {
 
     expect(isErr(result)).toBe(true);
     if (isErr(result) && result.error.kind === "validation") expect(result.error.field).toBe("roomName");
+  });
+
+  it("returns a validation error when the same quantity kind is supplied more than once", async () => {
+    const result = await useCase.exec(
+      baseCmd({
+        quantities: [
+          { kind: "walls_sqft", value: 240 },
+          { kind: "walls_sqft", value: 300 },
+        ],
+      }),
+      ORG,
+    );
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) expect(result.error.kind).toBe("validation");
+    expect(repo.createCaptureCalls).toHaveLength(0);
+  });
+
+  // ── setQuantity silently missing a row must not be reported as success ────
+
+  it("returns an error (not ok) when setQuantity affects zero rows for a provided quantity", async () => {
+    repo.setQuantityReturns = 0;
+
+    const result = await useCase.exec(baseCmd({ quantities: [{ kind: "walls_sqft", value: 240 }] }), ORG);
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) expect(result.error.kind).toBe("not_found");
   });
 
   // ── happy path ────────────────────────────────────────────────────────────

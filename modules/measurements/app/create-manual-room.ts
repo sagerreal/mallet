@@ -1,5 +1,5 @@
 import type { JobId, Result, AppError } from "@mallet/shared/types";
-import { asOrgId, validation, ok, err } from "@mallet/shared/types";
+import { asOrgId, notFound, validation, ok, err } from "@mallet/shared/types";
 import type { Clock } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
@@ -48,6 +48,14 @@ export class CreateManualRoomUseCase {
       }
     }
 
+    const seenKinds = new Set<PaintingQuantityKind>();
+    for (const q of cmd.quantities) {
+      if (seenKinds.has(q.kind)) {
+        return err(validation(`quantity kind "${q.kind}" was supplied more than once`, q.kind));
+      }
+      seenKinds.add(q.kind);
+    }
+
     const now = this.clock.now();
     const captureResult = RoomCapture.create({
       id: cmd.id ?? this.ids.newId(),
@@ -79,7 +87,14 @@ export class CreateManualRoomUseCase {
 
     const provided = new Map(cmd.quantities.map((q) => [q.kind, q.value]));
     for (const [kind, value] of provided) {
-      await this.repo.setQuantity(capture.props.id, kind, { value, status: "confirmed" });
+      const affected = await this.repo.setQuantity(capture.props.id, kind, { value, status: "confirmed" });
+      // The capture row was just created in this same call — 0 rows affected here means the
+      // just-inserted quantity row is unexpectedly missing, not a normal "not found" input
+      // error. Surface it rather than silently reporting 'confirmed' while the DB still holds
+      // 'needs_confirm'.
+      if (affected === 0) {
+        return err(notFound(`quantity "${kind}" could not be set on the newly created room capture`));
+      }
     }
 
     const storedQuantities: StoredQuantity[] = ALL_PAINTING_QUANTITY_KINDS.map((kind) => {
