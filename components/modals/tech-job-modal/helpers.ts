@@ -93,14 +93,6 @@ export function startTimeStr(start: number): string {
   return `${h12}:${String(mn).padStart(2, "0")} ${hr < 12 ? "AM" : "PM"}`;
 }
 
-export function initialsOf(name: string): string {
-  return name
-    .split(" ")
-    .map((w) => w[0] ?? "")
-    .join("")
-    .slice(0, 2);
-}
-
 /** The current visit the timer tracks (prototype curV, 4586). */
 export function currentVisit(visits: Visit[]): Visit | undefined {
   return (

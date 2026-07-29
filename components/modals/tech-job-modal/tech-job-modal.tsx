@@ -5,11 +5,16 @@
  * job-modal, DIFFERENT rendering: timer-first, no status pill, tappable address,
  * on-site step buttons, price-on-site.
  *
- * This file is the COMPOSITION only. The modal has two states-as-views:
- *   - working view (job not done): the address + the visit row are the hero
- *   - close-out view (job done):   DoneBlock hero + the visit summary line
- * with the shared spine (header, address, visits, found work, checklist, notes)
- * rendered by the section files in this directory.
+ * This file is the COMPOSITION only, in the sheet grammar: a sticky .sheet-head
+ * (customer name + job meta), Call/Text as a .sheet-secrow, the in-flow spine
+ * (address, visits, pricing, found work, checklist, notes — the section files in
+ * this directory), and ONE sticky .sheet-foot primary. Two states-as-views:
+ *   - working view (job not done): the address + the visit row are the hero;
+ *     the foot primary is a plain Done (the step buttons are per-visit and
+ *     assignment-gated, so they stay on their rows)
+ *   - close-out view (job done, office): DoneBlock status card in-body; the
+ *     branch's terminal action (charge on file / take payment / send to the
+ *     office) IS the foot primary — see doneFootAction.
  *
  * There is no timer here. The one that used to be the hero was local React state that persisted
  * nothing — it lost the technician's time on every remount and never reached a timesheet. His hours
@@ -29,6 +34,7 @@ import { useMe } from "@/features/identity/hooks";
 import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { MODAL } from "@/lib/store/modal-ids";
 import { CopilotSection } from "@/features/field-copilot/copilot-section";
+import { fmt$ } from "@/lib/format";
 import {
   colLabel,
   currentVisit,
@@ -37,6 +43,7 @@ import {
   invDue,
   jobMode,
   jobQuoted,
+  jobTotal,
   vPlaced,
 } from "./helpers";
 import { TechHeader } from "./tech-header";
@@ -46,7 +53,7 @@ import { WorkOrderSec } from "./work-order-sec";
 import { FoundWorkSec } from "./found-work-sec";
 import { ChecklistSec } from "./checklist-sec";
 import { NoteFeed } from "./note-feed";
-import { DoneBlock } from "./done-block";
+import { DoneBlock, doneFootAction } from "./done-block";
 
 export function TechJobModalContent() {
   const activeModal = useActiveModal();
@@ -161,43 +168,57 @@ export function TechJobModalContent() {
   // Early return AFTER all hooks (rules of hooks).
   if (!job) return null;
 
+  // --- The ONE foot primary (sheet grammar) ----------------------------------
+  // Close-out states hand the DoneBlock branch's terminal action to the sticky
+  // foot; every other state gets a plain full-width Done so the field view is
+  // never dismissable only via the tiny shell ✕. All non-destructive.
+  const footKind = done && isOffice ? doneFootAction(job, lead, invoice) : null;
+  const footDue = invoice ? invDue(invoice) : jobTotal(job);
+  const footCard = lead?.card;
+  const footPri =
+    footKind === "charge" && footCard
+      ? { label: `Charge ${fmt$(footDue)} to ${footCard.brand} ···· ${footCard.last4}`, run: chargeOnFile }
+      : footKind === "collect"
+        ? { label: "Take payment →", run: openCloseOut }
+        : footKind === "sendoffice"
+          ? { label: "Send to the office to bill", run: sendToOffice }
+          : { label: "Done", run: close };
+
   return (
-    <div>
-      {/* 1. Header — avatar + name + service word + title. NO status pill. */}
+    <>
+      {/* 1. Sticky sheet header — customer name + service word + title. NO status pill. */}
       <TechHeader job={job} custName={custName} />
 
-      {/* 2. Call / Text. CALL is for everyone: a technician ringing the customer on their way is
-          the ordinary field case, and going through Mallet is what keeps their personal mobile off
-          the customer's phone. myDay now carries the customers behind a tech's own jobs, so the
-          lead is in the store on this surface too. TEXT stays office-only — outbound SMS is gated
-          on the org's 10DLC registration, a separate question from voice.
-          Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no number is on
-          file. They disable only with NO linked customer (nobody to call). */}
-      <div style={{ marginBottom: "0" }}>
-        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+      {/* 2. Call / Text — the quiet peer-action row. CALL is for everyone: a technician ringing
+          the customer on their way is the ordinary field case, and going through Mallet is what
+          keeps their personal mobile off the customer's phone. myDay now carries the customers
+          behind a tech's own jobs, so the lead is in the store on this surface too. TEXT stays
+          office-only — outbound SMS is gated on the org's 10DLC registration, a separate question
+          from voice. Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no
+          number is on file. They disable only with NO linked customer (nobody to call). */}
+      <div className="sheet-secrow">
+        <button
+          className="sheet-sec"
+          disabled={!lead}
+          title={!lead ? "No linked customer" : undefined}
+          onClick={() => {
+            if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
+          }}
+        >
+          Call
+        </button>
+        {isOffice && (
           <button
-            className="btn"
+            className="sheet-sec"
             disabled={!lead}
             title={!lead ? "No linked customer" : undefined}
             onClick={() => {
-              if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
+              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
             }}
           >
-            Call
+            Text
           </button>
-          {isOffice && (
-            <button
-              className="btn"
-              disabled={!lead}
-              title={!lead ? "No linked customer" : undefined}
-              onClick={() => {
-                if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
-              }}
-            >
-              Text
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* 3. Address — tappable Navigate row, or the muted no-address line. */}
@@ -335,13 +356,12 @@ export function TechJobModalContent() {
           Call/Text; the server refuses note edits once the job is complete). */}
       <NoteFeed job={job} canCompose={isOffice && !done} updateJob={updateJob} />
 
-      {/* Close — a real full-width Done so the field view isn't dismissable only
-          via the tiny shell ✕ (every other modal ends with a primary action). */}
-      <div style={{ display: "flex", marginTop: "var(--space-5)" }}>
-        <button className="btn primary" style={{ flex: 1 }} onClick={close}>
-          Done
+      {/* THE primary — docked where the thumb is, whatever the sheet's height. */}
+      <div className="sheet-foot">
+        <button className="sheet-pri" onClick={footPri.run}>
+          {footPri.label}
         </button>
       </div>
-    </div>
+    </>
   );
 }
