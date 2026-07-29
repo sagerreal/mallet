@@ -78,7 +78,29 @@ export async function settle(page: Page): Promise<void> {
 /**
  * Regions that stay non-deterministic even with a frozen clock (live relative
  * labels, generated ids). Masked in screenshots rather than asserted.
+ *
+ * Correct for FULL-PAGE shots. Do not use it for an element-clipped shot — see
+ * `dynamicRegionsIn` for why.
  */
 export function dynamicRegions(page: Page): Locator[] {
   return [page.locator("[data-dynamic]")];
+}
+
+/**
+ * The same masking, scoped to the element being shot.
+ *
+ * A page-wide mask locator is wrong for an element-clipped screenshot: Playwright
+ * paints every match at its PAGE coordinates, so `[data-dynamic]` nodes sitting
+ * BEHIND a modal get painted into the modal's image. Measured on new-customer at
+ * 1280×900: the dialog occupies [330,40 620×621] and contains zero `[data-dynamic]`
+ * nodes, yet two dashboard nodes — an `h1` at y=185 and a `span.muted` at y=522 —
+ * landed inside that rectangle and covered the Phone field and the "More details"
+ * row with mask bands.
+ *
+ * Two consequences, both bad: real modal content was never actually asserted where a
+ * band fell, and the baseline drifted whenever the dashboard's live content changed
+ * height, since that moves the bands. Scoping to the shot element fixes both.
+ */
+export function dynamicRegionsIn(scope: Locator): Locator[] {
+  return [scope.locator("[data-dynamic]")];
 }

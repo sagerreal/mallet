@@ -833,11 +833,22 @@
   /* ---------- modal ---------- */
   .overlay{position:fixed;inset:0;right:var(--aiw);background:color-mix(in srgb,#0a0c14 52%,transparent);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;z-index:100;padding:var(--space-10) var(--space-4);overflow-y:auto}
   .overlay.open{display:flex}
-  .modal{background:var(--card);border-radius:var(--radius-xl);width:100%;max-width:620px;padding:var(--space-6);position:relative;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:modalin .2s ease}
+  /* The modal's padding is a variable so the ✕ can be positioned FROM it (below).
+     The ✕ used to be a hard-coded 13px inset, which optically aligned its glyph with
+     the content column at the desktop padding of 24px — and only there. The mobile
+     breakpoint drops the padding to 16px without touching the ✕, so on every one of
+     the 22 modals the close glyph sat 7.5px inside the content column (measured).
+     Deriving one from the other is what stops that drifting apart again. */
+  .modal{--modal-pad-x:var(--space-6);--modal-pad-y:var(--space-6);background:var(--card);border-radius:var(--radius-xl);width:100%;max-width:620px;padding:var(--modal-pad-y) var(--modal-pad-x);position:relative;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:modalin .2s ease}
   @keyframes modalin{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:none}}
   .modal.wide{max-width:760px}
   .modal h2{font-family:var(--font-display);font-size:var(--type-xl);font-weight:600;margin-bottom:var(--space-1);letter-spacing:-.02em}
-  .modal .x{position:absolute;top:13px;right:13px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;border-radius:var(--radius-sm);background:transparent;font-size:var(--type-lg);color:var(--ink-3);cursor:pointer;line-height:1;transition:background .12s,color .12s;z-index:2}
+  /* --x-optical is (button 34px - glyph 13px)/2 rounded to the 11px the desktop
+     inset already encoded, so `--modal-pad - 11px` reproduces today's desktop
+     position EXACTLY (24 - 11 = 13) and yields 5px/9px on mobile, where the padding
+     is 16/20. Desktop pixels are unchanged by construction. */
+  .modal{--x-optical:11px}
+  .modal .x{position:absolute;top:calc(var(--modal-pad-y) - var(--x-optical));right:calc(var(--modal-pad-x) - var(--x-optical));width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;border-radius:var(--radius-sm);background:transparent;font-size:var(--type-lg);color:var(--ink-3);cursor:pointer;line-height:1;transition:background .12s,color .12s;z-index:2}
   .modal .x:hover{background:rgba(21,17,11,.06);color:var(--ink)}
   .modal .x:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .modal .x:hover{color:var(--ink)}
@@ -1884,7 +1895,16 @@
     .toolbar{flex-wrap:wrap}
     html,body{overflow-x:hidden;max-width:100%}
     .overlay{padding:var(--space-4) var(--space-3);right:0;left:0}
-    .modal,.modal.wide,.custmodal{max-width:100% !important;width:100% !important;padding:var(--space-5) var(--space-4);max-height:86vh;overflow-y:auto;margin:0}
+    /* Setting the pad VARIABLES (not `padding` directly) is what moves the ✕ with
+       the padding — see the .modal rule. */
+    .modal,.modal.wide,.custmodal{--modal-pad-x:var(--space-4);--modal-pad-y:var(--space-5);max-width:100% !important;width:100% !important;padding:var(--modal-pad-y) var(--modal-pad-x);max-height:86vh;overflow-y:auto;margin:0}
+    /* A 5-column sweep row does not fit 390px. The flexible title is the only
+       element that can yield space, but a flex item's default min-width:auto floors
+       it at its longest word — so `flex:1` alone does not shrink it and the trailing
+       columns push past the panel edge (measured: +9px). Mobile-only, so desktop
+       rows are untouched. */
+    .sweeprow>b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sweeprow>.muted{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     #noteToggle{bottom:70px;left:10px;padding:var(--space-2) var(--space-3);font-size:var(--type-xs);z-index:61}
     /* ---- wide list tables → stacked cards on phones (each row is a card,
            each cell a label:value line, the name/primary cell the card title) ---- */
