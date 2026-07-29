@@ -26,7 +26,10 @@ import { A2pBusinessForm } from "./a2p-business-form";
 import type { A2pStatusView } from "@mallet/a2p";
 
 function summaryFor(status: A2pStatusView | null): string {
-  if (!status) return "…";
+  // "…" is a LOADING state, and it is only honest while something is actually loading. When the
+  // status never arrives the card sat on it indefinitely with an empty body and no way to act —
+  // which is how the whole registration flow stayed invisible for weeks.
+  if (!status) return "Loading…";
   if (status.canText) return "Active";
   if (status.needsInput) return status.status === "failed" ? "Needs attention" : "Not set up";
   return "Pending approval";
@@ -38,6 +41,11 @@ export function A2pRegistrationCard() {
 
   return (
     <FoldCard title="Texting (A2P 10DLC)" summary={summaryFor(status)} defaultOpen>
+      {!status && (
+        <p className="muted" style={{ fontSize: "var(--type-base)", margin: 0 }}>
+          Checking your texting registration…
+        </p>
+      )}
       {status && status.needsInput && (
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
           {status.status === "failed" && (
