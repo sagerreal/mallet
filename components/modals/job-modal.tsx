@@ -2,7 +2,11 @@
  * components/modals/job-modal.tsx
  * Faithful port of the prototype's openJob office/owner body (lines 4699-4729)
  * plus its per-visit visitRow (4677-4698) and helpers jobPriceSummary (4513),
- * jobNoteFeed (6364), moneyPointer (6379).
+ * jobNoteFeed (6364), moneyPointer (6379) — re-housed in the sheet grammar:
+ * sticky .sheet-head (job title · status · customer · phone), Call/Text as a
+ * .sheet-secrow, the label+value sections as SheetRow accordions (schedule and
+ * checklist blocks kept intact inside theirs), and a sticky .sheet-foot with
+ * Done as the one primary and Delete job quiet red beside it.
  *
  * OFFICE/OWNER ONLY — the tech field view (techJobHtml, gated by
  * state.role==='tech') is a different Field-area surface and is NOT built here.
@@ -37,6 +41,7 @@ import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/type
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
+import { SheetRow } from "./sheet-row";
 import { JobChecklistBlock } from "./job-checklist-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
@@ -111,14 +116,6 @@ function timeToH(s: string): number {
 function colLabel(iso: string): string {
   const d = new Date(iso + "T12:00:00");
   return d.toLocaleDateString(undefined, { weekday: "short" });
-}
-
-function initialsOf(name: string): string {
-  return name
-    .split(" ")
-    .map((w) => w[0] ?? "")
-    .join("")
-    .slice(0, 2);
 }
 
 // ---- invoice helpers (prototype invPaid / invDue) --------------------------
@@ -540,14 +537,13 @@ function jobNoteEntries(job: Job): NoteEntry[] {
   return E;
 }
 
+/** Renders bare .nfeed rows — the Notes SheetRow above it carries the label. */
 function NoteFeed({ job }: { job: Job }) {
   const entries = jobNoteEntries(job);
   if (entries.length === 0) return null;
 
   return (
-    <div className="card" style={{ marginTop: "var(--space-4)" }}>
-      <h3 style={{ fontSize: "var(--type-base)" }}>Notes</h3>
-      <div className="nfeed">
+    <div className="nfeed">
         {entries.map((n) => (
           <div className="nrow" key={n.key}>
             <div className="nmeta">
@@ -562,7 +558,6 @@ function NoteFeed({ job }: { job: Job }) {
             <div className="ntext">{n.text}</div>
           </div>
         ))}
-      </div>
     </div>
   );
 }
@@ -625,7 +620,7 @@ function TypeField({ job, onSetSvc }: TypeFieldProps) {
   const isEst = job.svc === "estimate";
 
   return (
-    <FieldGroup label="Type" style={{ marginTop: "var(--space-3)" }} groupClassName="chips">
+    <FieldGroup label="Type" style={{ margin: "0" }} groupClassName="chips">
       {TYPE_CHIPS.map(({ t, lbl, sub }) => {
         const sel = (t === "estimate") === isEst;
         return (
@@ -729,172 +724,201 @@ export function JobModalContent() {
   }
 
   const status = JST[job.status] ?? JST.scheduled!;
+  const noteCount = jobNoteEntries(job).length;
+  const hasLines = (job.lines ?? []).length > 0;
+  const priceValue = hasLines
+    ? fmt$(jobTotal(job))
+    : job.sourceEstimateId
+      ? "from quote"
+      : "Add";
+  const scheduleValue =
+    visits.length > 0
+      ? `${visits.length} visit${visits.length === 1 ? "" : "s"}`
+      : "Add";
 
   return (
-    <div>
-      {/* 1. Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-2)" }}>
-        <div
-          className="avatar"
-          style={{
-            width: 42,
-            height: 42,
-            background: "var(--green-100)",
-            color: "var(--green-900)",
-            fontSize: "var(--type-md)",
-          }}
-        >
-          {initialsOf(custName)}
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ marginBottom: "var(--space-2xs)" }}>{custName}</h2>
-          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
-            <span className="stpill" style={{ color: status.c, background: status.bg }}>
-              {status.l}
-            </span>
-            {visits.length > 1 && (
-              <span className="pill" style={{ background: "var(--purple-bg)", color: "var(--purple)" }}>
-                {visits.length} visits
-              </span>
-            )}
-            {lead && (
-              <span
-                className="linklike"
-                style={{ fontSize: "var(--type-sm)" }}
-                onClick={() => {
-                  close();
-                  openModal(MODAL.LEAD, { leadId: lead.id });
-                }}
-              >
-                See customer →
-              </span>
-            )}
-          </div>
+    <>
+      {/* Sticky header — the job as an h2 over one calm meta line
+          (status pill · customer · phone). */}
+      <div className="sheet-head">
+        <h2>{job.title?.trim() || custName}</h2>
+        <div className="sheet-meta">
+          <span className="stpill" style={{ color: status.c, background: status.bg }}>
+            {status.l}
+          </span>
+          {lead ? (
+            <button
+              type="button"
+              className="linklike"
+              onClick={() => {
+                close();
+                openModal(MODAL.LEAD, { leadId: lead.id });
+              }}
+            >
+              {custName} →
+            </button>
+          ) : (
+            <span>{custName}</span>
+          )}
+          {phone && <span>{phone}</span>}
         </div>
       </div>
 
-      {/* 2. Call / Text + phone — Call/Text stay TAPPABLE when a customer is
+      {/* Quiet peer actions — Call/Text stay TAPPABLE when a customer is
           linked; the call sheet / thread each prompt to add a number in-flow
           when none is on file. They disable only with NO linked customer (there
           is nobody to call). */}
-      <div style={{ margin: "var(--space-3) 0" }}>
-        <div style={{ display: "flex", gap: "var(--space-2)" }}>
-          <button
-            className="btn"
-            disabled={!lead}
-            title={!lead ? "No linked customer" : undefined}
-            onClick={() => {
-              if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
-            }}
+      <div className="sheet-secrow">
+        <button
+          className="sheet-sec"
+          disabled={!lead}
+          title={!lead ? "No linked customer" : undefined}
+          onClick={() => {
+            if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
+          }}
+        >
+          Call
+        </button>
+        <button
+          className="sheet-sec"
+          disabled={!lead}
+          title={!lead ? "No linked customer" : undefined}
+          onClick={() => {
+            if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
+          }}
+        >
+          Text
+        </button>
+      </div>
+
+      <div className="sheet-rows">
+        {/* Customer phone — only when there's no linked lead to carry one. */}
+        {!lead && (
+          <SheetRow
+            label="Customer phone"
+            value={job.phone?.trim() ? job.phone : "Add"}
+            valueIsHint={!job.phone?.trim()}
+            expandable
           >
-            Call
-          </button>
-          <button
-            className="btn"
-            disabled={!lead}
-            title={!lead ? "No linked customer" : undefined}
-            onClick={() => {
-              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
-            }}
+            <Field label="Customer phone" style={{ margin: "0" }}>
+              <input
+                type="tel"
+                defaultValue={job.phone || ""}
+                placeholder="so you can call/text from the job"
+                onBlur={(e) => updateJob(job.id, { phone: e.target.value.trim() })}
+              />
+            </Field>
+          </SheetRow>
+        )}
+
+        <SheetRow
+          label="Job"
+          value={job.title?.trim() ? job.title : "Add"}
+          valueIsHint={!job.title?.trim()}
+          expandable
+        >
+          <Field label="Job" style={{ margin: "0" }}>
+            <input
+              type="text"
+              defaultValue={job.title}
+              onBlur={(e) => updateJob(job.id, { title: e.target.value.trim() })}
+            />
+          </Field>
+        </SheetRow>
+
+        <SheetRow
+          label="Type"
+          value={job.svc === "estimate" ? "Estimate" : "Job"}
+          expandable
+        >
+          <TypeField job={job} onSetSvc={(svc) => setJobSvc(job.id, svc)} />
+        </SheetRow>
+
+        <SheetRow
+          label="Service address"
+          value={job.addr?.trim() ? job.addr : "Add"}
+          valueIsHint={!job.addr?.trim()}
+          expandable
+        >
+          <Field label="Service address" style={{ margin: "0" }}>
+            <input
+              type="text"
+              defaultValue={job.addr || ""}
+              placeholder={lead?.address || "add the address"}
+              onBlur={(e) => updateJob(job.id, { addr: e.target.value.trim() })}
+            />
+          </Field>
+        </SheetRow>
+
+        {/* Price — PRICE + Total only, never cost/margin/profit (LOCKED rule).
+            PriceSummary renders nothing for estimate-type jobs, so hide the row. */}
+        {jobMode(job) !== "estimate" && (
+          <SheetRow
+            label="Price"
+            value={priceValue}
+            valueIsHint={priceValue === "Add"}
+            expandable
           >
-            Text
-          </button>
-          {phone && (
-            <span className="muted" style={{ fontSize: "var(--type-sm)", alignSelf: "center" }}>
-              {phone}
-            </span>
+            <PriceSummary
+              job={job}
+              onBuildPrice={() => pushModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
+              onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
+            />
+          </SheetRow>
+        )}
+
+        {/* Schedule — the visit editor kept intact inside the accordion. */}
+        <SheetRow
+          label="Schedule"
+          value={scheduleValue}
+          valueIsHint={visits.length === 0}
+          expandable
+        >
+          {visits.length ? (
+            visits.map((v) => (
+              <VisitRow
+                key={v.id}
+                job={job}
+                visit={v}
+                techs={techs}
+                conflict={conflictsWith(v)}
+                loadOf={(techId) =>
+                  v.date != null ? dayLoad(jobs, techId, v.date) : 0
+                }
+                onUpdate={(patch) => updateVisit(job.id, v.id, patch)}
+                onRemove={() => removeVisit(job.id, v.id)}
+                onGoToSchedule={goToSchedule}
+              />
+            ))
+          ) : (
+            <div className="empty-att" style={{ marginBottom: "var(--space-2)" }}>
+              Not scheduled yet.
+            </div>
           )}
-        </div>
+          <button className="btn sm" onClick={() => addVisit(job.id)}>
+            {visits.length ? "+ Add a visit" : "+ Add a visit — set the length"}
+          </button>
+        </SheetRow>
+
+        {/* Notes — read-only feed, only when there is something to read. */}
+        {noteCount > 0 && (
+          <SheetRow label="Notes" value={String(noteCount)} expandable>
+            <NoteFeed job={job} />
+          </SheetRow>
+        )}
+
+        {/* Checklist — the template picker + create form kept intact inside. */}
+        <SheetRow
+          label="Checklist"
+          value={job.checklist?.name?.trim() ? job.checklist.name : "Add"}
+          valueIsHint={!job.checklist?.name?.trim()}
+          expandable
+        >
+          <JobChecklistBlock job={job} />
+        </SheetRow>
       </div>
 
-      {/* 3. Customer phone (only when there's no linked lead) */}
-      {!lead && (
-        <Field label="Customer phone" style={{ margin: "0 0 var(--space-3)" }}>
-          <input
-            type="tel"
-            defaultValue={job.phone || ""}
-            placeholder="so you can call/text from the job"
-            onBlur={(e) => updateJob(job.id, { phone: e.target.value.trim() })}
-          />
-        </Field>
-      )}
-
-      {/* 4. Job title */}
-      <Field label="Job" style={{ margin: "0" }}>
-        <input
-          type="text"
-          defaultValue={job.title}
-          onBlur={(e) => updateJob(job.id, { title: e.target.value.trim() })}
-        />
-      </Field>
-
-      {/* 5. Type */}
-      <TypeField job={job} onSetSvc={(svc) => setJobSvc(job.id, svc)} />
-
-      {/* 6. Service address */}
-      <Field label="Service address" style={{ marginTop: "var(--space-3)" }}>
-        <input
-          type="text"
-          defaultValue={job.addr || ""}
-          placeholder={lead?.address || "add the address"}
-          onBlur={(e) => updateJob(job.id, { addr: e.target.value.trim() })}
-        />
-      </Field>
-
-      {/* 7. Price summary — PRICE + Total only, never cost/margin/profit */}
-      <PriceSummary
-        job={job}
-        onBuildPrice={() => pushModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
-        onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
-      />
-
-      {/* 8. View signed agreement — deferred (signed-doc viewer not built) */}
-
-      {/* 9. Schedule */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          margin: "var(--space-4) 0 var(--space-2)",
-        }}
-      >
-        <h3 style={{ fontSize: "var(--type-md)", fontWeight: 800 }}>Schedule</h3>
-      </div>
-
-      {visits.length ? (
-        visits.map((v) => (
-          <VisitRow
-            key={v.id}
-            job={job}
-            visit={v}
-            techs={techs}
-            conflict={conflictsWith(v)}
-            loadOf={(techId) =>
-              v.date != null ? dayLoad(jobs, techId, v.date) : 0
-            }
-            onUpdate={(patch) => updateVisit(job.id, v.id, patch)}
-            onRemove={() => removeVisit(job.id, v.id)}
-            onGoToSchedule={goToSchedule}
-          />
-        ))
-      ) : (
-        <div className="empty-att" style={{ marginBottom: "var(--space-2)" }}>
-          Not scheduled yet.
-        </div>
-      )}
-
-      <button className="btn sm" onClick={() => addVisit(job.id)}>
-        {visits.length ? "+ Add a visit" : "+ Add a visit — set the length"}
-      </button>
-
-      {/* 11. Note feed */}
-      <NoteFeed job={job} />
-
-      {/* 12. Job checklist */}
-      <JobChecklistBlock job={job} />
-
-      {/* 13. Money pointer */}
+      {/* Money pointer — ONE anchored pointer, never the P&L. */}
       <MoneyPointer
         job={job}
         invoice={invoice}
@@ -902,28 +926,25 @@ export function JobModalContent() {
         onOpenInvoice={(invId) => { close(); openModal(MODAL.INVOICE, { invoiceId: invId }); }}
       />
 
-      {/* 14. Footer */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginTop: "var(--space-5)",
-          borderTop: "1px solid var(--line)",
-          paddingTop: "var(--space-4)",
-        }}
-      >
-        <button
-          className="btn sm ghost"
-          style={{ color: "var(--red)", borderColor: deleteArmed ? "var(--red)" : undefined }}
-          onClick={confirmDelete}
-        >
-          {deleteArmed ? "Yes, delete job" : "Delete job"}
-        </button>
-        <button className="btn primary" onClick={close}>
-          Done
-        </button>
+      {/* Sticky footer — Done is THE primary; Delete stays quiet and red. */}
+      <div className="sheet-foot">
+        <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "stretch" }}>
+          <button
+            className="btn ghost"
+            style={{
+              color: "var(--red)",
+              borderColor: deleteArmed ? "var(--red)" : undefined,
+              flexShrink: 0,
+            }}
+            onClick={confirmDelete}
+          >
+            {deleteArmed ? "Yes, delete job" : "Delete job"}
+          </button>
+          <button className="sheet-pri" onClick={close}>
+            Done
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

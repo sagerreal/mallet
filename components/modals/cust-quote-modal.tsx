@@ -14,6 +14,13 @@
  * rendered faithfully but WITHOUT a duplicate ✕ (the prototype's custCloseBtn()),
  * matching cust-invoice-modal.tsx.
  *
+ * Sheet frame (#253 grammar): the brand block is the identity, so it stays as-is
+ * and is WRAPPED in a sticky .sheet-head — the shop's name never scrolls away
+ * while the customer reads the lines. On the live (approvable) paths the one
+ * terminal action, Approve, docks as THE .sheet-pri in a sticky .sheet-foot;
+ * decline stays the quiet in-body "Not right now" affordance. Confirmation and
+ * error states have no terminal action, so they render no foot.
+ *
  * Two render paths, keyed off the REAL store estimate:
  *   • Tiered path — pre-accept Good/Better/Best (recommendedTier set, not yet
  *     resolved). Tiers derive from the tier-tagged lines + tierNames; the user
@@ -334,19 +341,20 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
       {/* totals rollup */}
       <CustTotals m={m} pricing={pricing} />
 
-      {/* Approve — prominent primary button. deferred: on-glass signature. */}
-      <button
-        className="btn primary"
-        style={{ width: "100%", padding: "var(--space-3)", fontSize: "var(--type-md)", marginTop: "var(--space-2)" }}
-        onClick={() => onApprove(m.total, selectedOptLines)}
-      >
-        Approve — {fmt$(m.total)}
-      </button>
-
       {/* deferred: "Request a change" ghost button + card */}
 
-      {/* Not right now → reason picker */}
+      {/* Not right now → reason picker (quiet, in-body — never in the foot) */}
       <DeclineBlock onDecline={onDecline} />
+
+      <CustFooter />
+
+      {/* Approve — THE terminal action, docked where the thumb is.
+          deferred: on-glass signature. */}
+      <div className="sheet-foot">
+        <button className="sheet-pri" onClick={() => onApprove(m.total, selectedOptLines)}>
+          Approve — {fmt$(m.total)}
+        </button>
+      </div>
     </>
   );
 }
@@ -466,19 +474,20 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
         </div>
       )}
 
-      {/* Approve THE SELECTED TIER. deferred: on-glass signature. */}
-      <button
-        className="btn primary"
-        style={{ width: "100%", padding: "var(--space-3)", fontSize: "var(--type-md)", marginTop: "var(--space-2)" }}
-        onClick={() => onApprove(selTier.k, finalLines)}
-      >
-        ✓ Approve {selTier.name} — {fmt$(m.total)}
-      </button>
-
       {/* deferred: "Request a change" card */}
 
-      {/* Not right now → reason picker */}
+      {/* Not right now → reason picker (quiet, in-body — never in the foot) */}
       <DeclineBlock onDecline={onDecline} />
+
+      <CustFooter />
+
+      {/* Approve THE SELECTED TIER — THE terminal action, docked.
+          deferred: on-glass signature. */}
+      <div className="sheet-foot">
+        <button className="sheet-pri" onClick={() => onApprove(selTier.k, finalLines)}>
+          ✓ Approve {selTier.name} — {fmt$(m.total)}
+        </button>
+      </div>
     </>
   );
 }
@@ -566,7 +575,12 @@ export function CustQuoteModalContent() {
 
   return (
     <div>
-      <CustHead brand={brand} />
+      {/* Sticky sheet header — the brand block itself is untouched (it IS the
+          identity); the .sheet-head wrapper only makes it stick. The shell
+          renders the ✕. */}
+      <div className="sheet-head">
+        <CustHead brand={brand} />
+      </div>
       <div className="custbody">
         {estimate.status === "accepted" ? (
           <>
@@ -580,17 +594,15 @@ export function CustQuoteModalContent() {
           </>
         ) : tierViews ? (
           // Tiered path — pre-accept Good/Better/Best from the real store fields.
-          <>
-            <TieredPath
-              estimate={estimate}
-              brand={brand}
-              rec={tierViews.rec}
-              tiers={tierViews.tiers}
-              onApprove={approveTier}
-              onDecline={decline}
-            />
-            <CustFooter />
-          </>
+          // The path renders its own CustFooter + docked Approve foot.
+          <TieredPath
+            estimate={estimate}
+            brand={brand}
+            rec={tierViews.rec}
+            tiers={tierViews.tiers}
+            onApprove={approveTier}
+            onDecline={decline}
+          />
         ) : isTieredUnresolved ? (
           // Tiered estimate whose lines aren't loaded (or hold no fixed line):
           // rendering it flat would show a wrong total and Approve couldn't
@@ -604,15 +616,13 @@ export function CustQuoteModalContent() {
           </>
         ) : (
           // Line-items path — single quotes + resolved tiered quotes.
-          <>
-            <LineItemsPath
-              estimate={estimate}
-              brand={brand}
-              onApprove={(total, selectedOptLines) => approve(total, selectedOptLines)}
-              onDecline={decline}
-            />
-            <CustFooter />
-          </>
+          // The path renders its own CustFooter + docked Approve foot.
+          <LineItemsPath
+            estimate={estimate}
+            brand={brand}
+            onApprove={(total, selectedOptLines) => approve(total, selectedOptLines)}
+            onDecline={decline}
+          />
         )}
       </div>
     </div>

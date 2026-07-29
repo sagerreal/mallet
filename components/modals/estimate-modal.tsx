@@ -12,6 +12,15 @@
  * editable destination → confirm). Mirrors the composer's send semantics:
  * the status flip always persists; delivery failure surfaces inline without
  * rolling back the sent state.
+ *
+ * Sheet grammar (the lead-modal shape): sticky .sheet-head (title · status pill
+ * · num · customer · tier line), a quiet "Preview as customer" secondary, the
+ * line table + banners in the body, and a sticky .sheet-foot whose one filled
+ * primary exists ONLY for drafts:
+ *   draft, panel closed → "Send quote"          (opens the in-flow send panel)
+ *   draft, panel open   → "Send by text/email"  (the terminal confirm)
+ * Sent/accepted/declined quotes are record viewers with no single advance —
+ * no foot is rendered, and Delete stays quiet and red, never promoted.
  */
 
 "use client";
@@ -25,6 +34,7 @@ import type { Estimate } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { isExpired, gbbTierLine, effectiveEstLines } from "@/lib/estimates";
 import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
+import { Field } from "@/components/ui/input";
 import { api } from "@/lib/trpc/client";
 
 
@@ -142,17 +152,17 @@ export function EstimateModalContent() {
   // L2: surface a non-not_found query error inline rather than silently leaving the table empty.
   if (fullQuery.isError && fullQuery.error?.data?.code !== "NOT_FOUND") {
     return (
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)" }}>
-          <div>
-            <div className="muted">{e.num}</div>
-            <h2>{e.title}</h2>
+      <>
+        <div className="sheet-head">
+          <h2>{e.title}</h2>
+          <div className="sheet-meta">
+            <span>{e.num}</span>
           </div>
         </div>
         <div className="card" style={{ marginTop: "var(--space-4)", color: "var(--ink-2)", fontSize: "var(--type-base)" }}>
           Couldn&apos;t load the quote details — close and reopen to retry.
         </div>
-      </div>
+      </>
     );
   }
 
@@ -320,20 +330,28 @@ export function EstimateModalContent() {
   }
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)", paddingRight: "var(--space-8)" }}>
-        <div>
-          <div className="muted">{e.num}</div>
-          <h2>{e.title}</h2>
-          <div className="muted">
-            {lead ? lead.name : ""} · {lead ? lead.phone : ""}
-          </div>
-          {gbbTierLine(e) && <div className="muted">{gbbTierLine(e)}</div>}
-        </div>
-        <div>
+    <>
+      {/* Sticky head — the quote's title, one calm meta line under it.
+          The shell renders the ✕; .sheet-head's own padding clears it. */}
+      <div className="sheet-head">
+        <h2>{e.title}</h2>
+        <div className="sheet-meta">
           <SoftPill tone={stamp.cls as PillTone}>{stamp.label}</SoftPill>
+          <span>{e.num}</span>
+          {lead ? <span>{lead.name}</span> : null}
+          {lead?.phone && lead.phone !== "—" ? <span>{lead.phone}</span> : null}
+          {gbbTierLine(e) ? <span>{gbbTierLine(e)}</span> : null}
         </div>
       </div>
+
+      {/* Quiet secondary — the customer-facing preview, a peer not the primary. */}
+      {(e.status === "draft" || e.status === "sent") && (
+        <div className="sheet-secrow">
+          <button className="sheet-sec" onClick={() => pushModal(MODAL.CUST_QUOTE, { estId: e.id })}>
+            Preview as customer
+          </button>
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: "var(--space-4)" }}>
         <table>
@@ -431,126 +449,80 @@ export function EstimateModalContent() {
       )}
       {e.status === "sent" && <FollowUpTrail e={e} />}
 
-      {(e.status === "draft" || e.status === "sent") && (
-        <div style={{ marginTop: "var(--space-3)" }}>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-3)" }}>
-            <button className="btn ghost" onClick={() => pushModal(MODAL.CUST_QUOTE, { estId: e.id })}>
-              Preview as customer
-            </button>
-            {e.status === "draft" && !sendOpen && (
-              <button className="btn primary" onClick={openSendPanel}>
-                Send quote
+      {/* Inline send panel — expands in-flow; the confirm lives in the foot. */}
+      {e.status === "draft" && sendOpen && (
+        <div
+          style={{
+            marginTop: "var(--space-3)",
+            padding: "var(--space-4) var(--space-4)",
+            border: "1.5px solid var(--line)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--card)",
+          }}
+        >
+          {/* Channel toggle */}
+          <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
+            {(["text", "email"] as const).map((ch) => (
+              <button
+                key={ch}
+                className={`btn sm ${sendChannel === ch ? "primary" : "ghost"}`}
+                onClick={() => setSendChannel(ch)}
+                disabled={isSending}
+              >
+                {ch === "text" ? "Text" : "Email"}
               </button>
-            )}
+            ))}
           </div>
 
-          {/* Inline send panel — expands in-flow below the action row */}
-          {e.status === "draft" && sendOpen && (
-            <div
-              style={{
-                marginTop: "var(--space-3)",
-                padding: "var(--space-4) var(--space-4)",
-                border: "1.5px solid var(--line)",
-                borderRadius: "var(--radius-sm, 9px)",
-                background: "var(--card)",
+          {/* Destination input — Field associates the label with the control. */}
+          <Field
+            label={sendChannel === "text" ? "Mobile number" : "Email address"}
+            style={{ margin: 0 }}
+          >
+            <input
+              type={sendChannel === "text" ? "tel" : "email"}
+              value={dest}
+              placeholder={sendChannel === "text" ? "(925) 555-0123" : "name@email.com"}
+              onChange={(ev) => {
+                setDest(ev.target.value);
+                if (destError) setDestError(null);
               }}
-            >
-              {/* Channel toggle */}
-              <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
-                {(["text", "email"] as const).map((ch) => (
-                  <button
-                    key={ch}
-                    className={`btn sm ${sendChannel === ch ? "primary" : "ghost"}`}
-                    onClick={() => setSendChannel(ch)}
-                    disabled={isSending}
-                  >
-                    {ch === "text" ? "Text" : "Email"}
-                  </button>
-                ))}
-              </div>
+              onBlur={commitDest}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter") {
+                  ev.preventDefault();
+                  commitDest();
+                }
+              }}
+              disabled={isSending}
+              style={{
+                width: "100%",
+                border: `1.5px solid ${destError ? "var(--red)" : "var(--line)"}`,
+                borderRadius: "var(--radius-sm)",
+                padding: "var(--space-2) var(--space-3)",
+                fontFamily: "inherit",
+                fontSize: "var(--type-base)",
+                background: "var(--card)",
+                color: "var(--ink)",
+              }}
+            />
+          </Field>
+          {destError && (
+            <div style={{ marginTop: "var(--space-1)", fontSize: "var(--type-sm)", color: "var(--red)" }}>
+              {destError}
+            </div>
+          )}
 
-              {/* Destination input */}
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "var(--type-sm)",
-                    fontWeight: 600,
-                    color: "var(--ink-2)",
-                    marginBottom: "var(--space-1)",
-                  }}
-                >
-                  {sendChannel === "text" ? "Mobile number" : "Email address"}
-                </label>
-                <input
-                  type={sendChannel === "text" ? "tel" : "email"}
-                  value={dest}
-                  placeholder={sendChannel === "text" ? "(925) 555-0123" : "name@email.com"}
-                  onChange={(ev) => {
-                    setDest(ev.target.value);
-                    if (destError) setDestError(null);
-                  }}
-                  onBlur={commitDest}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter") {
-                      ev.preventDefault();
-                      commitDest();
-                    }
-                  }}
-                  disabled={isSending}
-                  aria-label={sendChannel === "text" ? "Mobile number" : "Email address"}
-                  style={{
-                    width: "100%",
-                    maxWidth: 280,
-                    border: `1.5px solid ${destError ? "var(--red)" : "var(--line)"}`,
-                    borderRadius: "var(--radius-sm, 9px)",
-                    padding: "var(--space-2) var(--space-3)",
-                    fontFamily: "inherit",
-                    fontSize: "var(--type-base)",
-                    background: "var(--card)",
-                    color: "var(--ink)",
-                  }}
-                />
-                {destError && (
-                  <div style={{ marginTop: "var(--space-1)", fontSize: "var(--type-sm)", color: "var(--red)" }}>
-                    {destError}
-                  </div>
-                )}
-              </div>
-
-              {/* Inline delivery error */}
-              {sendError && (
-                <div style={{ marginTop: "var(--space-2)", fontSize: "var(--type-base)", color: "var(--red)" }}>
-                  {sendError}
-                </div>
-              )}
-
-              {/* Panel actions */}
-              <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)", justifyContent: "flex-end" }}>
-                <button
-                  className="btn sm ghost"
-                  onClick={closeSendPanel}
-                  disabled={isSending}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn sm primary"
-                  onClick={confirmSend}
-                  disabled={isSending}
-                >
-                  {isSending
-                    ? "Sending…"
-                    : sendChannel === "text"
-                    ? "Send by text"
-                    : "Send by email"}
-                </button>
-              </div>
+          {/* Inline delivery error */}
+          {sendError && (
+            <div style={{ marginTop: "var(--space-2)", fontSize: "var(--type-base)", color: "var(--red)" }}>
+              {sendError}
             </div>
           )}
         </div>
       )}
 
+      {/* Delete — destructive, so quiet and red with the armed two-tap; never the primary. */}
       <div
         style={{
           display: "flex",
@@ -577,6 +549,41 @@ export function EstimateModalContent() {
           {deleteArmed ? "Yes, delete" : "Delete quote"}
         </button>
       </div>
-    </div>
+
+      {/* Sticky foot — drafts only: the ONE advance action. A sent/accepted/
+          declined quote is a record viewer with no terminal action, so no foot. */}
+      {e.status === "draft" && (
+        <div className="sheet-foot">
+          {sendOpen ? (
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <button
+                className="btn ghost"
+                style={{ flex: 1, minHeight: 44 }}
+                onClick={closeSendPanel}
+                disabled={isSending}
+              >
+                Cancel
+              </button>
+              <button
+                className="sheet-pri"
+                style={{ flex: 2, width: "auto" }}
+                onClick={confirmSend}
+                disabled={isSending}
+              >
+                {isSending
+                  ? "Sending…"
+                  : sendChannel === "text"
+                  ? "Send by text"
+                  : "Send by email"}
+              </button>
+            </div>
+          ) : (
+            <button className="sheet-pri" onClick={openSendPanel}>
+              Send quote
+            </button>
+          )}
+        </div>
+      )}
+    </>
   );
 }
