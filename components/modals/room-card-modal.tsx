@@ -1,33 +1,470 @@
 /**
  * components/modals/room-card-modal.tsx
- * Room card drill-in — opened from JobMeasureBlock, either to view/edit an
+ * Room card drill-in — the centerpiece of measurements ("tap the room, tap the
+ * number, fix the number"). Opened from JobMeasureBlock, either to view/edit an
  * existing room capture ({ captureId, jobId }) or to create a manual room
  * ({ jobId } only, no captureId).
  *
- * PLACEHOLDER — Task 8 fills in the quantity list, override/confirm actions,
- * and the manual-room create form. This stub only resolves the sheet head so
- * the modal typechecks, registers, and renders without crashing when opened.
+ * View mode is a record viewer, not a form: every quantity edits itself in-row
+ * (SheetRow expandable → Field → commit on blur/Enter), so there is no filled
+ * .sheet-pri — the whole footer is just the quiet "Remove room" two-tap.
+ *
+ * Create mode is the opposite: a plain form (name + six optional quantities)
+ * with ONE .sheet-pri, "Add room", that awaits addManualRoom's `persisted`
+ * promise before closing — mirrors new-job-modal's addLead.persisted pattern.
  */
 
 "use client";
 
-import { useActiveModal, useAppStore } from "@/lib/store/app-store";
+import { useState, type FormEvent } from "react";
+import { useActiveModal, useAppStore, useCloseModal } from "@/lib/store/app-store";
+import { useJobRooms } from "@/features/measurements/use-job-rooms";
+import { SheetRow } from "./sheet-row";
+import { Field } from "@/components/ui/input";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { SrcPill } from "@/components/shared/stage-pill";
+import { formatDate } from "@/lib/format";
+import type { RoomCard, RoomQuantity, RoomQuantityKind } from "@/lib/store/types";
+
+// ---- quantity kinds: fixed order, trade labels, unit shape -----------------
+
+type QuantityUnit = "sqft" | "lnft" | "count";
+
+interface QuantityDef {
+  kind: RoomQuantityKind;
+  label: string;
+  unit: QuantityUnit;
+}
+
+/** Fixed display order — never re-sorted by whatever order the server returns. */
+const QUANTITY_DEFS: readonly QuantityDef[] = [
+  { kind: "walls_sqft", label: "Walls (sq ft)", unit: "sqft" },
+  { kind: "ceiling_sqft", label: "Ceiling (sq ft)", unit: "sqft" },
+  { kind: "baseboard_lnft", label: "Baseboard (ln ft)", unit: "lnft" },
+  { kind: "crown_lnft", label: "Crown (ln ft)", unit: "lnft" },
+  { kind: "doors_count", label: "Doors", unit: "count" },
+  { kind: "windows_count", label: "Windows", unit: "count" },
+];
+
+/** 1 decimal for sq ft / ln ft, whole numbers for counts. */
+export function formatQuantity(value: number, unit: QuantityUnit): string {
+  return unit === "count" ? String(Math.round(value)) : value.toFixed(1);
+}
+
+function findQuantity(room: RoomCard, kind: RoomQuantityKind): RoomQuantity | undefined {
+  return room.quantities.find((q) => q.kind === kind);
+}
+
+// ---- status → display law ---------------------------------------------------
+
+export interface QuantityDisplay {
+  value: string;
+  valueIsHint: boolean;
+  badge: { tone: BadgeTone; text: string } | null;
+  measured: string | null;
+}
+
+/**
+ * Renders one quantity per the status law in the Task 8 brief:
+ *  - needs_confirm → amber "Confirm" badge + "Add" hint (tap to fill in).
+ *  - manual-source rows are ALWAYS plain — everything on a manual room is
+ *    typed by definition, so nothing there is ever "edited" or "confirmed".
+ *  - override (scan source) → the edited value + a blue "edited" badge + the
+ *    muted original scan value beside it, so an override never reads measured.
+ *  - confirmed (scan source, derivedValue null — a resolved vaulted value with
+ *    no scan number underneath it) → green "confirmed" badge.
+ *  - derived, or anything else → plain value, no badge.
+ */
+export function quantityDisplay(
+  q: RoomQuantity,
+  source: RoomCard["source"],
+  unit: QuantityUnit,
+): QuantityDisplay {
+  if (q.status === "needs_confirm") {
+    return { value: "Add", valueIsHint: true, badge: { tone: "amber", text: "Confirm" }, measured: null };
+  }
+
+  const effective = q.value ?? q.derivedValue;
+  if (effective == null) {
+    return { value: "Add", valueIsHint: true, badge: null, measured: null };
+  }
+  const formatted = formatQuantity(effective, unit);
+
+  if (source === "manual") {
+    return { value: formatted, valueIsHint: false, badge: null, measured: null };
+  }
+
+  if (q.status === "override") {
+    const measured = q.derivedValue != null ? `measured ${formatQuantity(q.derivedValue, unit)}` : null;
+    return { value: formatted, valueIsHint: false, badge: { tone: "blue", text: "edited" }, measured };
+  }
+
+  if (q.status === "confirmed" && q.derivedValue == null) {
+    return { value: formatted, valueIsHint: false, badge: { tone: "green", text: "confirmed" }, measured: null };
+  }
+
+  return { value: formatted, valueIsHint: false, badge: null, measured: null };
+}
+
+// ---- input parsing -----------------------------------------------------------
+
+/** Parses committed editor text into a validated non-negative number, or an error naming the bad value. */
+export function parseQuantityInput(
+  raw: string,
+  unit: QuantityUnit,
+): { ok: true; value: number } | { ok: false; error: string } | { ok: "empty" } {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { ok: "empty" };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return { ok: false, error: `"${trimmed}" is not a number.` };
+  if (unit === "count" && !Number.isInteger(n)) {
+    return { ok: false, error: `"${trimmed}" is not a whole number.` };
+  }
+  if (n < 0) return { ok: false, error: `"${trimmed}" can't be negative.` };
+  return { ok: true, value: n };
+}
+
+// ---- quantity row (view mode) ------------------------------------------------
+
+function QuantityRow({
+  def,
+  quantity,
+  source,
+  onCommit,
+}: {
+  def: QuantityDef;
+  quantity: RoomQuantity;
+  source: RoomCard["source"];
+  onCommit: (kind: RoomQuantityKind, value: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const display = quantityDisplay(quantity, source, def.unit);
+
+  function openEditor(next: boolean) {
+    setOpen(next);
+    if (next) {
+      const effective = quantity.value ?? quantity.derivedValue;
+      setDraft(effective != null ? formatQuantity(effective, def.unit) : "");
+      setError(null);
+    }
+  }
+
+  function commit() {
+    const parsed = parseQuantityInput(draft, def.unit);
+    if (parsed.ok === "empty") {
+      // No-op close — nothing typed, nothing to save.
+      setOpen(false);
+      setError(null);
+      return;
+    }
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    onCommit(def.kind, parsed.value);
+    setOpen(false);
+    setError(null);
+  }
+
+  return (
+    <SheetRow
+      label={def.label}
+      value={display.value}
+      valueIsHint={display.valueIsHint}
+      after={
+        (display.badge || display.measured) && (
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+            {display.measured && <span className="muted">{display.measured}</span>}
+            {display.badge && <Badge tone={display.badge.tone}>{display.badge.text}</Badge>}
+          </span>
+        )
+      }
+      expandable
+      open={open}
+      onOpenChange={openEditor}
+    >
+      <Field label={def.label}>
+        <input
+          type="text"
+          inputMode={def.unit === "count" ? "numeric" : "decimal"}
+          value={draft}
+          autoFocus
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            }
+          }}
+        />
+      </Field>
+      {error && (
+        <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{error}</p>
+      )}
+    </SheetRow>
+  );
+}
+
+// ---- room name row (rename, view mode) ---------------------------------------
+
+function RoomNameRow({ room, onRename }: { room: RoomCard; onRename: (name: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(room.roomName);
+
+  function openEditor(next: boolean) {
+    setOpen(next);
+    if (next) setDraft(room.roomName);
+  }
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== room.roomName) onRename(trimmed);
+    setOpen(false);
+  }
+
+  return (
+    <SheetRow label="Room name" value={room.roomName} expandable open={open} onOpenChange={openEditor}>
+      <Field label="Room name">
+        <input
+          type="text"
+          value={draft}
+          autoFocus
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            }
+          }}
+        />
+      </Field>
+    </SheetRow>
+  );
+}
+
+// ---- remove room (two-tap armed delete, sweep-modal pattern) -----------------
+
+function RemoveRoomRow({ onRemove }: { onRemove: () => void }) {
+  const [armed, setArmed] = useState(false);
+
+  return (
+    <div className="sheet-foot">
+      <button
+        type="button"
+        className="btn ghost"
+        style={{ color: "var(--red)", borderColor: armed ? "var(--red)" : undefined, width: "100%" }}
+        onClick={() => {
+          if (!armed) {
+            setArmed(true);
+            return;
+          }
+          onRemove();
+        }}
+      >
+        {armed ? "Really remove this room? Tap again" : "Remove room"}
+      </button>
+    </div>
+  );
+}
+
+// ---- source pill (sheet-meta) -------------------------------------------------
+
+function sourceLabel(room: RoomCard): string {
+  return room.source === "manual" ? "Manual" : `Scanned · ${formatDate(room.capturedAt)}`;
+}
+
+// ---- view mode ----------------------------------------------------------------
+
+function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefined }) {
+  const jobId = room.jobId;
+  const setRoomQuantity = useAppStore((s) => s.setRoomQuantity);
+  const renameRoom = useAppStore((s) => s.renameRoom);
+  const archiveRoom = useAppStore((s) => s.archiveRoom);
+  const close = useCloseModal();
+
+  function commitQuantity(kind: RoomQuantityKind, value: number) {
+    setRoomQuantity(jobId, room.id, kind, value);
+  }
+
+  function remove() {
+    archiveRoom(jobId, room.id);
+    close();
+  }
+
+  return (
+    <>
+      <div className="sheet-head">
+        <h2>{room.roomName}</h2>
+        <div className="sheet-meta">
+          <SrcPill src={sourceLabel(room)} />
+          {jobName && <span>{jobName}</span>}
+        </div>
+      </div>
+
+      <div className="sheet-rows">
+        <RoomNameRow room={room} onRename={(name) => renameRoom(jobId, room.id, name)} />
+
+        {QUANTITY_DEFS.map((def) => {
+          const quantity = findQuantity(room, def.kind);
+          if (!quantity) return null;
+          return (
+            <QuantityRow key={def.kind} def={def} quantity={quantity} source={room.source} onCommit={commitQuantity} />
+          );
+        })}
+
+        {room.source === "roomplan_v1" && (
+          <div className="muted" style={{ padding: "var(--space-3) 0" }}>
+            Re-scan replaces these numbers and clears edits.
+          </div>
+        )}
+      </div>
+
+      <RemoveRoomRow onRemove={remove} />
+    </>
+  );
+}
+
+// ---- create mode ----------------------------------------------------------------
+
+function CreateRoom({ jobId, jobName }: { jobId: string; jobName: string | undefined }) {
+  const close = useCloseModal();
+  const addManualRoom = useAppStore((s) => s.addManualRoom);
+
+  const [name, setName] = useState("");
+  const [drafts, setDrafts] = useState<Record<RoomQuantityKind, string>>({
+    walls_sqft: "",
+    ceiling_sqft: "",
+    baseboard_lnft: "",
+    crown_lnft: "",
+    doors_count: "",
+    windows_count: "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function setDraft(kind: RoomQuantityKind, value: string) {
+    setDrafts((prev) => ({ ...prev, [kind]: value }));
+  }
+
+  /** Parses every filled-in field; returns null (with `error` set) on the first bad value. */
+  function collectQuantities(): { kind: RoomQuantityKind; value: number }[] | null {
+    const collected: { kind: RoomQuantityKind; value: number }[] = [];
+    for (const def of QUANTITY_DEFS) {
+      const parsed = parseQuantityInput(drafts[def.kind], def.unit);
+      if (parsed.ok === "empty") continue;
+      if (!parsed.ok) {
+        setError(parsed.error);
+        return null;
+      }
+      collected.push({ kind: def.kind, value: parsed.value });
+    }
+    return collected;
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (saving) return;
+    setError(null);
+
+    const quantities = collectQuantities();
+    if (quantities === null) return;
+
+    setSaving(true);
+    try {
+      const { persisted } = addManualRoom(jobId, name, quantities);
+      await persisted;
+      close();
+    } catch {
+      setError("Couldn't save this room — check your connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="sheet-head">
+        <h2>New room</h2>
+        <div className="sheet-meta">
+          <SrcPill src="Manual" />
+          {jobName && <span>{jobName}</span>}
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        <Field label="Room name">
+          <input type="text" placeholder="e.g. Living room" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </Field>
+
+        {QUANTITY_DEFS.map((def) => (
+          <Field key={def.kind} label={def.label}>
+            <input
+              type="text"
+              inputMode={def.unit === "count" ? "numeric" : "decimal"}
+              value={drafts[def.kind]}
+              onChange={(e) => setDraft(def.kind, e.target.value)}
+            />
+          </Field>
+        ))}
+
+        {error && (
+          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
+        )}
+
+        <div className="sheet-foot">
+          <button type="submit" className="sheet-pri" disabled={saving}>
+            {saving ? "Adding…" : "Add room"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ---- entry point ----------------------------------------------------------------
 
 export function RoomCardModalContent() {
   const activeModal = useActiveModal();
   const jobId = activeModal?.params?.jobId as string | undefined;
   const captureId = activeModal?.params?.captureId as string | undefined;
 
+  useJobRooms(jobId);
+
   const room = useAppStore((s) =>
     jobId && captureId ? s.roomsByJob[jobId]?.find((r) => r.id === captureId) : undefined,
   );
+  const job = useAppStore((s) => (jobId ? s.jobs.find((j) => j.id === jobId) : undefined));
 
-  return (
-    <div>
-      <div className="sheet-head">
-        <h2>{room?.roomName?.trim() || "Room"}</h2>
+  if (!jobId) {
+    return (
+      <div>
+        <div className="sheet-head">
+          <h2>Room</h2>
+        </div>
+        <p className="muted">This room is no longer available.</p>
       </div>
-      {/* Task 8 fills this in */}
-    </div>
-  );
+    );
+  }
+
+  if (!captureId) {
+    return <CreateRoom jobId={jobId} jobName={job?.title} />;
+  }
+
+  if (!room) {
+    return (
+      <div>
+        <div className="sheet-head">
+          <h2>Room</h2>
+        </div>
+        <p className="muted">This room is no longer available — it may have been removed.</p>
+      </div>
+    );
+  }
+
+  return <ViewRoom room={room} jobName={job?.title} />;
 }

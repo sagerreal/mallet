@@ -19,9 +19,16 @@ import { useId, useState, type ReactNode } from "react";
 interface SheetRowProps {
   label: string;
   /** Trailing text. Pass the real value when filled, "Add" when empty. */
-  value?: string;
+  value?: ReactNode;
   /** Muted "Add"-style treatment for the trailing text. */
   valueIsHint?: boolean;
+  /**
+   * Extra trailing content rendered between the value and the chevron — a
+   * status Badge, a small muted note ("measured 560"). Kept separate from
+   * `value` so `value` stays the single right-aligned, ellipsis-truncated
+   * string every other row already passes.
+   */
+  after?: ReactNode;
   /** Renders a chevron and an in-flow accordion body. */
   expandable?: boolean;
   /** Open the accordion on first render (used when a row is the primary's target). */
@@ -38,6 +45,7 @@ export function SheetRow({
   label,
   value,
   valueIsHint,
+  after,
   expandable,
   defaultOpen,
   open: openProp,
@@ -64,6 +72,7 @@ export function SheetRow({
       >
         <span className="lab">{label}</span>
         {value != null && <span className={`val${valueIsHint ? " add" : ""}`}>{value}</span>}
+        {after}
         <span className="chev" aria-hidden="true">
           ›
         </span>
