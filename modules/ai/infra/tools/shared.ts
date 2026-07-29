@@ -135,6 +135,26 @@ export const customerUpdateInput = z.object({
   notes: z.string().max(2000).nullable().optional(),
   role: z.string().max(100).nullable().optional(),
 });
+// Job lifecycle. Every one of these use cases already existed and none was reachable, so the
+// agent could CREATE a job and then never move or stop it — the board filled with jobs it had no
+// way to finish.
+export const jobIdInput = z.object({ jobId: z.string().uuid() });
+export const jobCancelInput = z.object({ jobId: z.string().uuid(), reason: z.string().min(1).max(500) });
+export const jobRescheduleInput = z.object({
+  jobId: z.string().uuid(),
+  scheduledStart: z.string().min(1).max(40),
+  scheduledEnd: z.string().min(1).max(40),
+});
+// Task lifecycle. task_create was the only task write tool, so a task could be raised and never
+// closed — a to-do list that only grows.
+export const taskSetDoneInput = z.object({ taskId: z.string().uuid(), done: z.boolean() });
+export const taskUpdateInput = z.object({
+  taskId: z.string().uuid(),
+  text: z.string().min(1).max(500).optional(),
+  dueDate: z.string().max(10).nullable().optional(),
+  leadId: z.string().uuid().nullable().optional(),
+});
+export const taskRemoveInput = z.object({ taskId: z.string().uuid() });
 export const invoiceSendInput = z.object({ invoiceId: z.string().uuid() });
 export const quoteSendInput = z.object({ estimateId: z.string().uuid() });
 export const notificationSendInvoiceReminderInput = z.object({

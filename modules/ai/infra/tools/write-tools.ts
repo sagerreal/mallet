@@ -13,8 +13,8 @@ import {
   PatchInvoiceLinesUseCase,
 } from "@mallet/invoicing";
 import { DrizzleEstimateRepository, DraftEstimateUseCase, SendEstimateUseCase, AcceptEstimateUseCase, DeclineEstimateUseCase, runInSavepoint } from "@mallet/quoting";
-import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase, PatchVisitScheduleUseCase, CreateJobFromEstimateUseCase, DrizzleEstimateReader } from "@mallet/jobs";
-import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
+import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase, PatchVisitScheduleUseCase, CreateJobFromEstimateUseCase, DrizzleEstimateReader, StartJobUseCase, CompleteJobUseCase, CancelJobUseCase, RescheduleJobUseCase } from "@mallet/jobs";
+import { DrizzleTaskRepository, CreateTaskUseCase, SetTaskDoneUseCase, UpdateTaskUseCase, RemoveTaskUseCase } from "@mallet/tasks";
 import { DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import {
   AdvanceReminderUseCase,
@@ -41,6 +41,12 @@ import {
   jobScheduleInput,
   jobAssignInput,
   visitPatchInput,
+  jobIdInput,
+  jobCancelInput,
+  jobRescheduleInput,
+  taskSetDoneInput,
+  taskUpdateInput,
+  taskRemoveInput,
   invoiceUpdateInput,
   customerUpdateInput,
   quoteAcceptInput,
@@ -324,6 +330,190 @@ const publicOrigin = (): string | null => {
     }
   }
   return cachedOrigin;
+};
+
+// --- job lifecycle: start / complete / cancel / reschedule ---
+// Every one of these wraps a use case that already existed and had no tool, so the agent could
+// create a job and never move or stop it. All fingerprint on job status so a concurrent
+// transition is caught at confirm rather than silently overwritten.
+export const jobStartTool: AgentTool = {
+  name: "job_start",
+  description:
+    "Mark a job as started/in progress. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobIdInput),
+  input: jobIdInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new StartJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId) });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} started.` };
+  },
+};
+
+export const jobCompleteTool: AgentTool = {
+  name: "job_complete",
+  description:
+    "Mark a job as complete/done — the work is finished. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobIdInput),
+  input: jobIdInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new CompleteJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId) });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} marked complete.` };
+  },
+};
+
+export const jobCancelTool: AgentTool = {
+  name: "job_cancel",
+  description:
+    "Cancel a job, with the reason. Use job_complete for work that was finished — cancel is for work that will not happen. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobCancelInput),
+  input: jobCancelInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobCancelInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobCancelInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new CancelJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId), reason: parsed.data.reason });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} cancelled — reason recorded.` };
+  },
+};
+
+export const jobRescheduleTool: AgentTool = {
+  name: "job_reschedule",
+  description:
+    "Move a job to a new start and end time (ISO 8601). This moves the JOB's window; to move who is going or an individual visit on the board, use visit_patch. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobRescheduleInput),
+  input: jobRescheduleInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobRescheduleInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobRescheduleInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    // Reject an unparseable date here rather than passing Invalid Date into the domain, where it
+    // would land as a null timestamp and silently unschedule the job.
+    const start = new Date(parsed.data.scheduledStart);
+    const end = new Date(parsed.data.scheduledEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return { ok: false, error: "scheduledStart and scheduledEnd must be ISO 8601 date-times" };
+    }
+    const uc = new RescheduleJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId), scheduledStart: start, scheduledEnd: end });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} rescheduled.` };
+  },
+};
+
+// --- task lifecycle: done / update / remove ---
+// task_create was the only task write tool, so a to-do list could only grow.
+export const taskSetDoneTool: AgentTool = {
+  name: "task_set_done",
+  description:
+    "Mark a task done, or reopen it (pass done: false). TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(taskSetDoneInput),
+  input: taskSetDoneInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(taskSetDoneInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const t = await new DrizzleTaskRepository(ctx.tx, ctx.orgId).findById(asTaskId(parsed.data.taskId));
+    return t ? `task:${t.props.id}:${t.props.done}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(taskSetDoneInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new SetTaskDoneUseCase(new DrizzleTaskRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const r = await uc.exec({ taskId: asTaskId(parsed.data.taskId), done: parsed.data.done }, ctx.orgId);
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Task "${r.value.props.text}" ${parsed.data.done ? "marked done" : "reopened"}.` };
+  },
+};
+
+export const taskUpdateTool: AgentTool = {
+  name: "task_update",
+  description:
+    "Edit a task's wording, due date, or the customer it hangs off. Pass null to clear the due date or the customer link. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(taskUpdateInput),
+  input: taskUpdateInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(taskUpdateInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const t = await new DrizzleTaskRepository(ctx.tx, ctx.orgId).findById(asTaskId(parsed.data.taskId));
+    return t ? `task:${t.props.id}:${t.props.text}:${t.props.dueDate ?? "-"}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(taskUpdateInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const d = parsed.data;
+    const uc = new UpdateTaskUseCase(new DrizzleTaskRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const r = await uc.exec(
+      {
+        taskId: asTaskId(d.taskId),
+        // undefined leaves alone, null clears — forwarded distinctly, not collapsed.
+        ...(d.text !== undefined ? { text: d.text } : {}),
+        ...(d.dueDate !== undefined ? { dueDate: d.dueDate } : {}),
+        ...(d.leadId !== undefined ? { leadId: d.leadId === null ? null : asLeadId(d.leadId) } : {}),
+      },
+      ctx.orgId,
+    );
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Task updated — "${r.value.props.text}".` };
+  },
+};
+
+export const taskRemoveTool: AgentTool = {
+  name: "task_remove",
+  description:
+    "Delete a task. Prefer task_set_done for work that was actually finished — removing loses the record that it existed. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(taskRemoveInput),
+  input: taskRemoveInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(taskRemoveInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const t = await new DrizzleTaskRepository(ctx.tx, ctx.orgId).findById(asTaskId(parsed.data.taskId));
+    return t ? `task:${t.props.id}:${t.props.text}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(taskRemoveInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new RemoveTaskUseCase(new DrizzleTaskRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const r = await uc.exec({ taskId: asTaskId(parsed.data.taskId) }, ctx.orgId);
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: "Task deleted." };
+  },
 };
 
 // --- invoice_update: correct an OPEN invoice in place ---
