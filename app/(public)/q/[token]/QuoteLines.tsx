@@ -69,6 +69,9 @@ interface QuoteLinesBaseProps {
   readonly taxBps: number;
   readonly depBps: number;
   readonly token: string;
+  /** The shop's name — it appears in the authorisation sentence the customer signs, so the
+   *  document names a counterparty rather than "the contractor". */
+  readonly orgName: string;
   readonly changeAlreadyRequested: boolean;
   /**
    * The quote is already accepted or declined, so render it as a RECORD: lines, totals and terms
@@ -231,7 +234,7 @@ function resolveLines(props: QuoteLinesProps, selectedTier: QuoteTier | null): R
 // ---- island -----------------------------------------------------------------
 
 export function QuoteLines(props: QuoteLinesProps) {
-  const { discBps, taxBps, depBps, token, changeAlreadyRequested, settled = false } = props;
+  const { discBps, taxBps, depBps, token, orgName, changeAlreadyRequested, settled = false } = props;
   const tiered = props.tiers != null ? props : null;
 
   // Good/Better/Best: which option the customer is looking at. Defaults to the
@@ -246,7 +249,15 @@ export function QuoteLines(props: QuoteLinesProps) {
   const [phase, setPhase] = useState<QuotePhase>("idle");
   // `settled` locks a quote that was already settled on an EARLIER visit (the phase states only
   // cover this one). A declined quote still lists its add-ons — read-only, as what was on offer.
-  const locked = settled || phase === "busy" || phase === "approved" || phase === "declined";
+  // "signing" locks too: the sentence in the signature panel names a specific amount, so a toggle
+  // that changed the total while the pad was open would have the customer sign for a number that
+  // is no longer on screen.
+  const locked =
+    settled ||
+    phase === "busy" ||
+    phase === "signing" ||
+    phase === "approved" ||
+    phase === "declined";
 
   const { activeTier, optionalLines, fixedSubtotalCents } = resolveLines(props, selectedTier);
 
@@ -325,6 +336,8 @@ export function QuoteLines(props: QuoteLinesProps) {
         <QuoteActions
           token={token}
           totalCents={totals.totalCents}
+          orgName={orgName}
+          depositCents={totals.depositCents}
           changeAlreadyRequested={changeAlreadyRequested}
           selectedLineIds={[...selectedIds]}
           chosenTier={selectedTier}

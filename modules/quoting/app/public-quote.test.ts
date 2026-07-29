@@ -666,6 +666,39 @@ describe("classifyAcceptValidationFailure — status classification", () => {
   it("missing row → not_found", () => {
     expect(classifyAcceptValidationFailure(null).kind).toBe("not_found");
   });
+
+  it("a signature-tagged failure is invalid_signature, NOT not_ready", () => {
+    // The trap this exists to close: a blank name fails on an estimate that is still "sent" —
+    // exactly the shape that otherwise falls through to not_ready. Telling a customer whose name
+    // box is empty that "this quote isn't ready to approve" sends them to the shop over a
+    // problem they could fix in two seconds.
+    const sent = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+    const r = classifyAcceptValidationFailure(sent, {
+      message: "please type your name to sign",
+      field: "signerName",
+    });
+    expect(r.kind).toBe("invalid_signature");
+    if (r.kind === "invalid_signature") {
+      expect(r.message).toBe("please type your name to sign");
+      expect(r.field).toBe("signerName");
+    }
+  });
+
+  it("a signature failure is classified even when the row cannot be re-read", () => {
+    // The estimate is irrelevant to a signature problem, and a token that resolved a moment ago
+    // is not suddenly missing — reporting not_found here would blame the wrong thing.
+    expect(
+      classifyAcceptValidationFailure(null, { message: "please type your name to sign", field: "signerName" }).kind,
+    ).toBe("invalid_signature");
+  });
+
+  it("a NON-signature validation failure still classifies on status", () => {
+    // Guards the field allow-list: an unrelated tagged error must not be reported as a signature
+    // problem, which would tell the customer to fix something that is already fine.
+    const sent = makeSentEstimate(estimateIdA, ORG_A, LEAD_A, KNOWN_TOKEN);
+    expect(classifyAcceptValidationFailure(sent, { message: "nope", field: "chosenTier" }).kind).toBe("not_ready");
+    expect(classifyAcceptValidationFailure(sent, { message: "nope" }).kind).toBe("not_ready");
+  });
 });
 
 // ---------------------------------------------------------------------------

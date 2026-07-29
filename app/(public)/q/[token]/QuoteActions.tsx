@@ -15,11 +15,14 @@
 import { useState } from "react";
 import { fmt$ } from "@/lib/format";
 import type { QuoteTier } from "@/modules/quoting/domain/estimate";
+import { authorizationText } from "@/modules/quoting/domain/authorization-text";
+import { SignaturePad } from "./SignaturePad";
 
 /** Interaction phase — owned by QuoteLines so the add-on toggles above the
  *  actions lock while an accept is in flight and stay locked once terminal. */
 export type QuotePhase =
   | "idle"
+  | "signing"
   | "declining"
   | "requesting_change"
   | "busy"
@@ -34,6 +37,12 @@ const MAX_CHANGE_MESSAGE = 2000;
 interface QuoteActionsProps {
   readonly token: string;
   readonly totalCents: number;
+  /** The shop's name and the deposit, so the page renders the SAME sentence the server stores.
+   *  Both sides call one function (authorizationText), so what is displayed and what is recorded
+   *  cannot drift into being different sentences. The server renders its own copy from stored
+   *  data — this one is display only and is never sent. */
+  readonly orgName: string;
+  readonly depositCents: number;
   /** If the customer already submitted a change request, show the received state immediately. */
   readonly changeAlreadyRequested?: boolean;
   /** Optional add-on line IDs the customer toggled ON — sent with the accept so the
@@ -52,6 +61,8 @@ interface QuoteActionsProps {
 export function QuoteActions({
   token,
   totalCents,
+  orgName,
+  depositCents,
   changeAlreadyRequested,
   selectedLineIds,
   chosenTier,
@@ -60,12 +71,14 @@ export function QuoteActions({
 }: QuoteActionsProps) {
   const [error, setError] = useState<string | null>(null);
   const [changeMessage, setChangeMessage] = useState("");
+  const [signerName, setSignerName] = useState("");
+  const [signatureSvg, setSignatureSvg] = useState("");
 
   // Show the "request sent" banner when the server says a change was already submitted
   // OR when the customer just submitted one in this session.
   const showChangeBanner = changeAlreadyRequested || phase === "change_sent";
 
-  async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string; selectedLineIds?: string[]; chosenTier?: QuoteTier }): Promise<void> {
+  async function callApi(action: "accept" | "decline" | "request_change", payload?: { reason?: string; message?: string; selectedLineIds?: string[]; chosenTier?: QuoteTier; signerName?: string; signatureSvg?: string }): Promise<void> {
     onPhaseChange("busy");
     setError(null);
     try {
@@ -85,7 +98,23 @@ export function QuoteActions({
         } else {
           setError(serverError ?? "Something went wrong. Please try again.");
         }
-        onPhaseChange(action === "request_change" ? "requesting_change" : "idle");
+        // Where a rejected accept lands depends on WHAT was rejected, and getting this wrong
+        // traps the customer either way:
+        //
+        //   the signature  → stay in the panel. Their name and mark are still on screen and
+        //                    still fine; sending them back would mean drawing it again to fix
+        //                    a typo. The server tags these with a field.
+        //   anything else  → back to idle. A rejected tier or add-on selection has to be
+        //                    CHANGED to succeed, and the signing panel locks exactly those
+        //                    controls — leaving them there is a dead end with no way out.
+        const signatureRejected = typeof (data as { field?: unknown }).field === "string";
+        onPhaseChange(
+          action === "request_change"
+            ? "requesting_change"
+            : action === "accept" && signatureRejected
+              ? "signing"
+              : "idle",
+        );
         return;
       }
       if (action === "accept") {
@@ -96,16 +125,37 @@ export function QuoteActions({
       else onPhaseChange("change_sent");
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
-      onPhaseChange(action === "request_change" ? "requesting_change" : "idle");
+      onPhaseChange(
+        action === "request_change" ? "requesting_change" : action === "accept" ? "signing" : "idle",
+      );
     }
   }
 
-  function handleApprove() {
+  /**
+   * Submit the signed approval.
+   *
+   * Only the NAME is required. The drawing is genuinely optional — see the note in
+   * modules/quoting/domain/signature.ts: a typed name is a signature under Texas law, while the
+   * drawn mark is the one form the Texas Supreme Court declined to rule on. Requiring it would
+   * gate approval on the weakest evidence in the record and lock out anyone without a pointer.
+   *
+   * Checked here for an instant message; the server checks again, because a client-side check is
+   * a courtesy and not a guarantee.
+   */
+  function handleSign() {
+    if (!signerName.trim()) {
+      setError("Type your name to sign.");
+      return;
+    }
     void callApi("accept", {
       ...(selectedLineIds && selectedLineIds.length > 0
         ? { selectedLineIds: [...selectedLineIds] }
         : {}),
       ...(chosenTier ? { chosenTier } : {}),
+      signerName: signerName.trim(),
+      // Omitted entirely when nothing was drawn — the route's schema rejects an empty string, and
+      // "they signed by typing their name" is a different record from "they drew nothing".
+      ...(signatureSvg ? { signatureSvg } : {}),
     });
   }
   function handleDecline(reason: string) { void callApi("decline", { reason }); }
@@ -156,23 +206,137 @@ export function QuoteActions({
         </div>
       )}
 
-      {/* Primary approve button */}
-      <button
-        className="btn primary"
-        style={{
-          width: "100%",
-          padding: "var(--space-3)",
-          fontSize: "var(--type-md)",
-          marginTop: "var(--space-2)",
-          opacity: phase === "busy" ? 0.6 : 1,
-          cursor: phase === "busy" ? "not-allowed" : "pointer",
-        }}
-        onClick={handleApprove}
-        disabled={phase === "busy"}
-        aria-busy={phase === "busy"}
-      >
-        {phase === "busy" ? "Sending…" : `Approve — ${fmt$(totalCents / 100)}`}
-      </button>
+      {/* Primary approve button. Opens the signing panel rather than approving outright —
+          the second, deliberate act is the point: a click proves somebody held the link, a
+          typed name and a drawn mark say who, and to what. */}
+      {phase !== "signing" && phase !== "busy" && (
+        <button
+          className="btn primary"
+          style={{
+            width: "100%",
+            padding: "var(--space-3)",
+            fontSize: "var(--type-md)",
+            marginTop: "var(--space-2)",
+          }}
+          onClick={() => {
+            setError(null);
+            onPhaseChange("signing");
+          }}
+        >
+          {`Approve — ${fmt$(totalCents / 100)}`}
+        </button>
+      )}
+
+      {/* Signing panel — in-flow and anchored, never a modal or a popover. */}
+      {(phase === "signing" || phase === "busy") && (
+        <div
+          style={{
+            marginTop: "var(--space-3)",
+            border: "1.5px solid var(--line)",
+            borderRadius: "var(--radius-md)",
+            padding: "var(--space-4)",
+            background: "var(--card)",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              marginBottom: "var(--space-3)",
+              fontSize: "var(--type-base)",
+              lineHeight: 1.55,
+              color: "var(--ink)",
+            }}
+          >
+            {authorizationText({ totalCents, depositCents, orgName })}
+          </p>
+
+          <label
+            htmlFor="signer-name"
+            style={{
+              display: "block",
+              fontSize: "var(--type-sm)",
+              color: "var(--ink-2)",
+              marginBottom: "var(--space-1)",
+            }}
+          >
+            Your full name — typing it here is your signature
+          </label>
+          <input
+            id="signer-name"
+            type="text"
+            value={signerName}
+            maxLength={120}
+            autoComplete="name"
+            disabled={phase === "busy"}
+            onChange={(e) => {
+              setSignerName(e.target.value);
+              if (error) setError(null);
+            }}
+            style={{
+              width: "100%",
+              border: "1.5px solid var(--line)",
+              borderRadius: "var(--radius-sm)",
+              padding: "var(--space-2) var(--space-3)",
+              fontFamily: "inherit",
+              fontSize: "var(--type-base)",
+              background: "var(--bg)",
+              color: "var(--ink)",
+              boxSizing: "border-box",
+              marginBottom: "var(--space-3)",
+            }}
+          />
+
+          <SignaturePad
+            value={signatureSvg}
+            disabled={phase === "busy"}
+            aria-label="Draw your signature"
+            onChange={(svg) => {
+              setSignatureSvg(svg);
+              if (error) setError(null);
+            }}
+          />
+
+          <button
+            className="btn primary"
+            style={{
+              width: "100%",
+              padding: "var(--space-3)",
+              fontSize: "var(--type-md)",
+              marginTop: "var(--space-3)",
+              opacity: phase === "busy" ? 0.6 : 1,
+              cursor: phase === "busy" ? "not-allowed" : "pointer",
+            }}
+            onClick={handleSign}
+            disabled={phase === "busy"}
+            aria-busy={phase === "busy"}
+          >
+            {phase === "busy" ? "Sending…" : `Sign & approve — ${fmt$(totalCents / 100)}`}
+          </button>
+
+          {phase !== "busy" && (
+            <button
+              onClick={() => {
+                setError(null);
+                onPhaseChange("idle");
+              }}
+              style={{
+                display: "block",
+                margin: "var(--space-2) auto 0",
+                border: "none",
+                background: "none",
+                padding: 0,
+                fontFamily: "inherit",
+                fontSize: "var(--type-sm)",
+                color: "var(--ink-2)",
+                textDecoration: "underline",
+                cursor: "pointer",
+              }}
+            >
+              Back
+            </button>
+          )}
+        </div>
+      )}
 
       {/* "Request a change" in-flow reveal */}
       {phase === "requesting_change" ? (

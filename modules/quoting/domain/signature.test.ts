@@ -41,8 +41,18 @@ describe("createSignature", () => {
     expect(isOk(createSignature(input({ signerName: "   " })))).toBe(false);
   });
 
-  it("REQUIRES a drawn mark — a name alone is the click-to-approve this replaces", () => {
-    expect(isOk(createSignature(input({ signatureSvg: "" })))).toBe(false);
+  it("ACCEPTS a name with no drawn mark — the typed name IS the signature", () => {
+    // Reversed deliberately from the first cut of this feature, which required the drawing.
+    // Aerotek v. Boyd, 624 S.W.3d 199 (Tex. 2021) slip op. 13-14 holds a printed name qualifies
+    // as a signature, while fn. 22 expressly declines to say how a finger-drawn mark is
+    // authenticated at all. Requiring the drawing gated approval on the weakest thing in the
+    // record and locked out every customer without a pointer.
+    expect(isOk(createSignature(input({ signatureSvg: "" })))).toBe(true);
+  });
+
+  it("still refuses an oversized mark", () => {
+    // A real pen stroke is a few kB. Far past that is a payload aimed at a public endpoint.
+    expect(isOk(createSignature(input({ signatureSvg: "M1,1 " + "L2,2 ".repeat(30_000) })))).toBe(false);
   });
 
   it("refuses a signature with no record of what was authorized", () => {

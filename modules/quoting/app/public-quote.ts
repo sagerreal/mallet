@@ -13,6 +13,7 @@ import { classifyAcceptValidationFailure, validateTierChoice } from "./public-ac
 import type { AcceptPublicQuoteResult } from "./public-accept-policy";
 import type { PublicQuoteView } from "../infra/drizzle-public-estimate-reader";
 import type { Estimate, QuoteTier } from "../domain/estimate";
+import type { SignatureDraft } from "../domain/signature";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase } from "@mallet/jobs";
 import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { DrizzleLeadRepository } from "@mallet/customers";
@@ -132,12 +133,13 @@ export async function acceptPublicQuote(
   token: string,
   selectedOptionalLineIds?: readonly string[],
   chosenTier?: QuoteTier,
+  signature?: SignatureDraft,
 ): Promise<AcceptPublicQuoteResult> {
   const reader = new DrizzlePublicEstimateReader();
   const resolved = await reader.resolveOrgByToken(token);
   if (!resolved) return { kind: "not_found" };
 
-  const { estimateId, orgId } = resolved;
+  const { estimateId, orgId, orgName } = resolved;
 
   return withTenant(orgId, async (tx) => {
     // Construct the per-tx outbox bus INSIDE withTenant so emitted events land in the outbox
@@ -167,6 +169,9 @@ export async function acceptPublicQuote(
       estimateId: asEstimateId(estimateId),
       ...(resolved.lines ? { lines: resolved.lines } : {}),
       ...(resolved.chosenTier ? { chosenTier: resolved.chosenTier } : {}),
+      // orgName rides along with the signature only: it exists to fill the authorisation
+      // sentence, and the sentence is only rendered when something is actually being signed.
+      ...(signature ? { signature, orgName } : {}),
     });
 
     if (!result.ok) {
@@ -176,7 +181,7 @@ export async function acceptPublicQuote(
       // route can answer honestly instead of faking an approval.
       if (result.error.kind === "validation") {
         const current = await repo.findById(asEstimateId(estimateId));
-        const classified = classifyAcceptValidationFailure(current);
+        const classified = classifyAcceptValidationFailure(current, result.error);
         if (classified.kind === "not_ready") {
           logger.warn(
             { estimateId, orgId, status: current?.props.status },

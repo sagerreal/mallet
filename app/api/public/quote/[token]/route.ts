@@ -7,6 +7,7 @@ import type { AcceptPublicQuoteResult, RequestChangeResult } from "@/modules/quo
 import type { TierChoiceRejection } from "@/modules/quoting/app/public-accept-policy";
 import { QUOTE_TIERS } from "@/modules/quoting/domain/estimate";
 import type { Estimate, QuoteTier } from "@/modules/quoting/domain/estimate";
+import type { SignatureDraft } from "@/modules/quoting/domain/signature";
 
 // Public, unauthenticated route handlers for the customer-facing quote page.
 // Security model: the unguessable public_token (64 hex chars, 256 bits of entropy) is the
@@ -32,7 +33,26 @@ const postBodySchema = z.object({
   // Good/Better/Best choice. Required when the quote is tiered, rejected when it isn't
   // (validated against the STORED estimate — the enum here only bounds the value set).
   chosenTier: z.enum(["good", "better", "best"]).optional(),
+  // Signature evidence. Only these two fields are accepted from the client: the IP, the user
+  // agent, the timestamp and the document snapshot are all taken server-side, because a
+  // client-declared value is worthless as evidence and worse than absent — it looks like proof.
+  // Bounds mirror the domain's so a payload is rejected at the edge, before it reaches a tx.
+  signerName: z.string().trim().min(1).max(120).optional(),
+  signatureSvg: z.string().trim().min(1).max(100_000).optional(),
 });
+
+/**
+ * The client's IP, best effort.
+ *
+ * Vercel sets `x-forwarded-for` and it is not spoofable by the browser — the platform overwrites
+ * whatever the caller sent. Behind any other proxy it could be forged, which is why this is
+ * corroborating evidence next to the name and the drawn mark rather than an identity claim.
+ * The leftmost entry is the original client; the rest are proxies.
+ */
+const clientIp = (req: NextRequest): string | null =>
+  req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+  req.headers.get("x-real-ip")?.trim() ||
+  null;
 
 // --- Serialisation helpers -------------------------------------------------
 
@@ -153,11 +173,13 @@ async function handleAccept(
   token: string,
   selectedLineIds: string[] | undefined,
   chosenTier: QuoteTier | undefined,
+  signature: SignatureDraft | undefined,
 ): Promise<NextResponse> {
   const acceptResult: AcceptPublicQuoteResult = await acceptPublicQuote(
     token,
     selectedLineIds,
     chosenTier,
+    signature,
   );
   if (acceptResult.kind === "not_found") {
     return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -173,6 +195,14 @@ async function handleAccept(
   if (acceptResult.kind === "invalid_tier") {
     return NextResponse.json(
       { error: TIER_REJECTION_COPY[acceptResult.reason] },
+      { status: 400 },
+    );
+  }
+  if (acceptResult.kind === "invalid_signature") {
+    // The domain's own wording ("please type your name to sign") — it already names the problem
+    // and the next step, so rewriting it here would only let the two drift apart.
+    return NextResponse.json(
+      { error: acceptResult.message, field: acceptResult.field },
       { status: 400 },
     );
   }
@@ -209,11 +239,24 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const { action, reason, message, selectedLineIds, chosenTier } = parsed.data;
+  const { action, reason, message, selectedLineIds, chosenTier, signerName, signatureSvg } =
+    parsed.data;
 
   try {
     if (action === "accept") {
-      return await handleAccept(token, selectedLineIds, chosenTier);
+      // Half a signature is not a signature. If either field is present, BOTH must be — sending
+      // only one through would let the domain reject it with a field error the page can act on,
+      // but sending neither is the office-style unsigned accept, which stays legal.
+      const signature: SignatureDraft | undefined =
+        signerName !== undefined || signatureSvg !== undefined
+          ? {
+              signerName: signerName ?? "",
+              signatureSvg: signatureSvg ?? "",
+              signerIp: clientIp(req),
+              signerUserAgent: req.headers.get("user-agent"),
+            }
+          : undefined;
+      return await handleAccept(token, selectedLineIds, chosenTier, signature);
     }
 
     if (action === "decline") {

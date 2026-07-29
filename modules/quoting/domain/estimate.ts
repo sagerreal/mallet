@@ -8,7 +8,9 @@ import type {
   ValidationError,
 } from "@mallet/shared/types";
 import { money, zeroMoney, addMoney, validation, ok, err } from "@mallet/shared/types";
-import type { Signature, SignedSnapshot } from "./signature";
+import type { SignatureDraft, SignedSnapshot } from "./signature";
+import { createSignature } from "./signature";
+import { authorizationText } from "./authorization-text";
 
 const MAX_CHANGE_REQUEST_LENGTH = 2_000;
 
@@ -322,7 +324,12 @@ export class Estimate {
    * either lie or become impossible. Null means "accepted without a signature", which the UI must
    * present as a materially weaker thing than "signed" rather than conflating the two.
    */
-  accept(now: Date, chosenTier?: QuoteTier, signature?: Signature): Result<Estimate, ValidationError> {
+  accept(
+    now: Date,
+    chosenTier?: QuoteTier,
+    signature?: SignatureDraft,
+    orgName?: string,
+  ): Result<Estimate, ValidationError> {
     if (!this.canAccept()) return err(validation("only a sent estimate can be accepted", "status"));
     const tiered = this.p.recommendedTier !== null;
     if (tiered && !chosenTier) {
@@ -345,21 +352,71 @@ export class Estimate {
       acceptedAt: now,
       acceptedTier: chosenTier ?? null,
       lines,
-      // Evidence is written in the SAME transition that flips the status, so an accepted estimate
-      // can never exist alongside a half-written signature.
-      ...(signature
-        ? {
-            signerName: signature.signerName,
-            signatureSvg: signature.signatureSvg,
-            signerIp: signature.signerIp,
-            signerUserAgent: signature.signerUserAgent,
-            signedAt: signature.signedAt,
-            signedSnapshot: signature.snapshot,
-          }
-        : {}),
       updatedAt: now,
     });
-    return ok(new Estimate({ ...resolved.p, depPaid: resolved.depositDue() }));
+    const priced = new Estimate({ ...resolved.p, depPaid: resolved.depositDue() });
+    if (!signature) return ok(priced);
+
+    // The snapshot is built from `priced` — the FINAL resolved state, after the tier is committed
+    // and the deposit derived. Building it any earlier would freeze a document the customer never
+    // saw; letting the caller supply it would let the two disagree.
+    const snapshot = priced.toSignedSnapshot(orgName ?? "");
+    const built = createSignature({ ...signature, signedAt: now, snapshot });
+    if (!built.ok) return built;
+
+    // Evidence is written in the SAME transition that flips the status, so an accepted estimate
+    // can never exist alongside a half-written signature.
+    return ok(
+      new Estimate({
+        ...priced.p,
+        signerName: built.value.signerName,
+        signatureSvg: built.value.signatureSvg,
+        signerIp: built.value.signerIp,
+        signerUserAgent: built.value.signerUserAgent,
+        signedAt: built.value.signedAt,
+        signedSnapshot: built.value.snapshot,
+      }),
+    );
+  }
+
+  /**
+   * Freeze this estimate into the document a signature refers to.
+   *
+   * Reads only from `this`, so the frozen copy is by construction the same numbers the page
+   * rendered — the totals come from the same methods the view calls, not a second calculation
+   * that could drift from them.
+   *
+   * Optional lines are included with `included: false` rather than dropped: "the add-on I was
+   * shown and did not take" is part of what was agreed, and a customer who later claims a service
+   * was promised is answered by its presence, unticked, in the record.
+   */
+  toSignedSnapshot(orgName: string): SignedSnapshot {
+    const total = this.total();
+    const deposit = this.depositDue();
+    return {
+      estimateNum: this.p.num,
+      lines: this.p.lines.map((l) => ({
+        description: l.props.description,
+        quantity: l.props.quantity,
+        rateCents: l.props.rate,
+        isOptional: l.props.isOptional,
+        tier: l.props.tier,
+        // By accept time the committed line set IS the selection, so every surviving line is in.
+        included: true,
+      })),
+      subtotalCents: this.subtotal(),
+      discountCents: this.discountAmount(),
+      taxCents: this.taxAmount(),
+      totalCents: total,
+      depositCents: deposit,
+      chosenTier: this.p.acceptedTier,
+      termsText: this.p.termsSnapshot,
+      authorizationText: authorizationText({
+        totalCents: total,
+        depositCents: deposit,
+        orgName,
+      }),
+    };
   }
 
   // Sent → declined, capturing the reason.

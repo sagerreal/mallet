@@ -258,6 +258,7 @@ export default async function PublicQuotePage({
               taxBps={p.taxBps}
               depBps={p.depBps}
               token={token}
+              orgName={orgName}
               changeAlreadyRequested={Boolean(p.changeRequestedAt)}
               settled={isDone}
             />
@@ -293,6 +294,7 @@ export default async function PublicQuotePage({
                 taxBps={p.taxBps}
                 depBps={p.depBps}
                 token={token}
+              orgName={orgName}
                 changeAlreadyRequested={Boolean(p.changeRequestedAt)}
                 settled={isDone}
               />
