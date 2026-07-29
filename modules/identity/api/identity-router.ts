@@ -158,7 +158,7 @@ export const createIdentityRouter = () =>
         // AFTER Twilio had already charged for the number.
         if (ctx.deps.numberProvisioner) {
           try {
-            const provision = new ProvisionOrgNumberUseCase(ctx.deps.numberProvisioner);
+            const provision = new ProvisionOrgNumberUseCase(ctx.deps.numberProvisioner, ctx.deps.voiceRegistrar);
             await provision.exec({
               orgId: asOrgId(provisioned.orgId),
               postalCode: input.postalCode ?? null,

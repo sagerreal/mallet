@@ -33,3 +33,5 @@ export { ProvisionOrgNumberUseCase } from "./app/provision-org-number";
 export type { ProvisionOrgNumberCommand, ProvisionOutcome } from "./app/provision-org-number";
 export { TwilioNumberProvisioner } from "./infra/twilio-number-provisioner";
 export type { NumberProvisioner, ProvisionedNumber } from "./domain/number-provisioner";
+export { VapiVoiceRegistrar } from "./infra/vapi-voice-registrar";
+export type { VoiceRegistrar } from "./domain/voice-registrar";

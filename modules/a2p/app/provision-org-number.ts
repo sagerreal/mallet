@@ -5,6 +5,7 @@ import type { OrgId } from "@mallet/shared/types";
 import { isOk } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { NumberProvisioner } from "../domain/number-provisioner";
+import type { VoiceRegistrar } from "../domain/voice-registrar";
 
 export interface ProvisionOrgNumberCommand {
   readonly orgId: OrgId;
@@ -13,7 +14,14 @@ export interface ProvisionOrgNumberCommand {
 }
 
 export type ProvisionOutcome =
-  | { readonly kind: "provisioned"; readonly phoneNumber: string; readonly phoneNumberSid: string }
+  | {
+      readonly kind: "provisioned";
+      readonly phoneNumber: string;
+      readonly phoneNumberSid: string;
+      /** False when the line was bought but voice could not be connected — it can text, and a
+       *  caller would hear Twilio's "not configured" recording until somebody fixes it. */
+      readonly voiceReady: boolean;
+    }
   /** Already had one — signup retried, or an admin set it by hand. */
   | { readonly kind: "already_had_one" }
   /** Twilio could not sell us one. The org exists and works; it just has no line yet. */
@@ -33,7 +41,11 @@ export type ProvisionOutcome =
  * on the bill.
  */
 export class ProvisionOrgNumberUseCase {
-  constructor(private readonly provisioner: NumberProvisioner) {}
+  constructor(
+    private readonly provisioner: NumberProvisioner,
+    /** Absent → the number is bought and left unconnected for voice, logged loudly. */
+    private readonly voice?: VoiceRegistrar,
+  ) {}
 
   async exec(cmd: ProvisionOrgNumberCommand): Promise<ProvisionOutcome> {
     const existing = await withTenant(cmd.orgId, async (tx) => {
@@ -68,6 +80,31 @@ export class ProvisionOrgNumberUseCase {
       return { kind: "already_had_one" };
     }
 
-    return { kind: "provisioned", phoneNumber: bought.value.phoneNumber, phoneNumberSid: bought.value.phoneNumberSid };
+    // Voice is connected AFTER the number is claimed, and its failure does NOT undo the purchase.
+    // A shop that can text while somebody fixes voice is far better off than one whose signup
+    // rolled back over an outage at a second provider.
+    let voiceReady = false;
+    if (this.voice) {
+      const wired = await this.voice.register({ phoneNumber: bought.value.phoneNumber });
+      voiceReady = isOk(wired);
+      if (!voiceReady) {
+        logger.error(
+          { orgId: cmd.orgId, phoneNumber: bought.value.phoneNumber },
+          "a2p.number.voice_not_connected — callers will hear Twilio's default recording",
+        );
+      }
+    } else {
+      logger.error(
+        { orgId: cmd.orgId, phoneNumber: bought.value.phoneNumber },
+        "a2p.number.no_voice_registrar — number bought with no front desk attached",
+      );
+    }
+
+    return {
+      kind: "provisioned",
+      phoneNumber: bought.value.phoneNumber,
+      phoneNumberSid: bought.value.phoneNumberSid,
+      voiceReady,
+    };
   }
 }

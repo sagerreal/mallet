@@ -11,8 +11,8 @@ import {
   ChannelRouterNotificationSender,
 } from "@mallet/notifications";
 import { AnthropicLlmClient } from "@mallet/ai";
-import { TwilioA2pGateway, TwilioNumberProvisioner } from "@mallet/a2p";
-import type { NumberProvisioner } from "@mallet/a2p";
+import { TwilioA2pGateway, TwilioNumberProvisioner, VapiVoiceRegistrar } from "@mallet/a2p";
+import type { NumberProvisioner, VoiceRegistrar } from "@mallet/a2p";
 import type { A2pGateway } from "@mallet/a2p";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
@@ -51,6 +51,24 @@ function buildNumberProvisioner(config: Config): NumberProvisioner | undefined {
     );
   }
   logger.warn("a2p: number provisioning unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN or public URL missing) — new orgs get no phone number");
+  return undefined;
+}
+
+// Connecting a bought number to the AI front desk. Self-disables without a Vapi key, in which
+// case the number is still bought and still texts — it just answers with Twilio's default
+// recording until somebody wires it, which is logged loudly at provision time.
+function buildVoiceRegistrar(config: Config): VoiceRegistrar | undefined {
+  const origin = resolvePublicAppOrigin(config);
+  if (config.VAPI_API_KEY && config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && origin) {
+    return new VapiVoiceRegistrar(
+      config.VAPI_API_KEY,
+      `${origin}/api/frontdesk/vapi`,
+      config.TWILIO_ACCOUNT_SID,
+      config.TWILIO_AUTH_TOKEN,
+      config.VAPI_WEBHOOK_SECRET,
+    );
+  }
+  logger.warn("a2p: voice registrar unconfigured (VAPI_API_KEY/TWILIO creds/public URL missing) — new numbers will not answer calls");
   return undefined;
 }
 
@@ -173,6 +191,7 @@ export const getAppDeps = (): AppDeps => {
 
   const a2pGateway = buildA2pGateway(config);
   const numberProvisioner = buildNumberProvisioner(config);
+  const voiceRegistrar = buildVoiceRegistrar(config);
   const callOriginator = buildCallOriginator(config);
   const voiceTokenIssuer = buildVoiceTokenIssuer(config);
 
@@ -218,6 +237,7 @@ export const getAppDeps = (): AppDeps => {
     llmClient,
     a2pGateway,
     numberProvisioner,
+    voiceRegistrar,
     callOriginator,
     voiceTokenIssuer,
   };
