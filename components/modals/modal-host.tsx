@@ -153,6 +153,12 @@ const ImportServicesModalContent = dynamic(
   { ssr: false, loading: () => <ModalLoading size="lg" /> },
 );
 
+const RoomCardModalContent = dynamic(
+  () => import("./room-card-modal").then((m) => ({ default: m.RoomCardModalContent })),
+
+  { ssr: false, loading: () => <ModalLoading size="md" /> },
+);
+
 // ---------------------------------------------------------------------------
 
 export function ModalHost() {
@@ -248,6 +254,10 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.COMPANY} onClose={close} wide>
         <CompanyViewModalContent />
+      </Modal>
+
+      <Modal open={id === MODAL.ROOM_CARD} onClose={close}>
+        <RoomCardModalContent />
       </Modal>
     </>
   );
