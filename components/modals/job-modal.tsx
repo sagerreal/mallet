@@ -47,6 +47,7 @@ import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
 import { dayLoad } from "@/features/jobs/jobs-helpers";
 import { Field, FieldGroup } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -213,23 +214,18 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
           />
         </Field>
         <Field label="Crew" style={{ margin: "0" }}>
-          <select
+          <SelectMenu
             value={visit.techId ?? ""}
-            onChange={(e) => onUpdate({ techId: e.target.value || null })}
-          >
-            {/* When a requirement exists: qualified techs first (roster order within
-                each group), unqualified get a "— missing {certs}" suffix.
-                When no requirement: render exactly as before (no reordering, no suffix). */}
-            {(() => {
+            onChange={(v) => onUpdate({ techId: v || null })}
+            options={(() => {
+              // When a requirement exists: qualified techs first (roster order within each
+              // group), unqualified get a "— missing {certs}" suffix. When no requirement:
+              // roster order, no suffix. Unchanged from the <option> version — a tech who
+              // cannot legally do the work must still be pickable, just visibly flagged.
               const req = job.requiredCerts ?? null;
               if (req == null || req.length === 0) {
-                return techs.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ));
+                return techs.map((t) => ({ value: t.id, label: t.name }));
               }
-              // Partition — preserve within-group roster order.
               const qualified: Tech[] = [];
               const unqualified: Tech[] = [];
               for (const t of techs) {
@@ -237,22 +233,14 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
                 else unqualified.push(t);
               }
               return [
-                ...qualified.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                )),
-                ...unqualified.map((t) => {
-                  const lacks = missingCerts(t.skills, req).join(", ");
-                  return (
-                    <option key={t.id} value={t.id}>
-                      {t.name} — missing {lacks}
-                    </option>
-                  );
-                }),
+                ...qualified.map((t) => ({ value: t.id, label: t.name })),
+                ...unqualified.map((t) => ({
+                  value: t.id,
+                  label: `${t.name} — missing ${missingCerts(t.skills, req).join(", ")}`,
+                })),
               ];
             })()}
-          </select>
+          />
         </Field>
       </div>
 

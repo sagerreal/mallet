@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
 
 /**
@@ -26,6 +26,15 @@ export interface SelectOption {
   readonly value: string;
   readonly label: string;
   readonly disabled?: boolean;
+  /**
+   * Optional heading this option sits under, the `<optgroup label>` equivalent.
+   *
+   * Grouping is sometimes load-bearing rather than decorative — the QuickBooks people picker
+   * groups Employees apart from 1099 subs precisely so the common case is not buried — so
+   * dropping it on conversion would be a regression, not a simplification. Consecutive options
+   * sharing a group render under one heading; options with no group render bare.
+   */
+  readonly group?: string;
 }
 
 export interface SelectMenuProps {
@@ -246,8 +255,25 @@ export function SelectMenu({
           }}
         >
           {options.map((o, i) => (
+            <Fragment key={o.value}>
+            {o.group && o.group !== options[i - 1]?.group && (
+              // Presentational: the heading is not selectable and must not be announced as an
+              // option, so it carries no role and sits outside the option's own element.
+              <li
+                role="presentation"
+                style={{
+                  padding: "var(--space-2) var(--space-3) var(--space-1)",
+                  fontSize: "var(--type-xs)",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: ".5px",
+                  color: "var(--ink-3)",
+                }}
+              >
+                {o.group}
+              </li>
+            )}
             <li
-              key={o.value}
               id={`${listboxId}-${i}`}
               role="option"
               aria-selected={o.value === value}
@@ -276,6 +302,7 @@ export function SelectMenu({
               </span>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
             </li>
+            </Fragment>
           ))}
         </ul>
       )}

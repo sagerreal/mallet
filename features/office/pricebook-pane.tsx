@@ -29,6 +29,7 @@ import { CategoryManager } from "@/app/(office)/settings/category-manager";
 import { EstimatorMemoryRow } from "@/app/(office)/settings/estimator-memory-card";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 function sortServices(services: Service[]): Service[] {
   return [...services].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
@@ -245,15 +246,16 @@ export function PricebookPane() {
                     <input type="number" inputMode="decimal" defaultValue={lr.rate}
                       onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
                       className="field-compact" style={{ width: 72 }} />
-                    <select
+                    <SelectMenu
                       aria-label={`Unit for ${lr.name}`}
                       value={lr.kind}
-                      onChange={(e) => updateLaborRate(lr.id, "kind", e.target.value)}
-                      className="tsel"
-                    >
-                      <option value="hourly">/hr</option>
-                      <option value="flat_fee">flat</option>
-                    </select>
+                      onChange={(v) => updateLaborRate(lr.id, "kind", v)}
+                      options={[
+                        { value: "hourly", label: "/hr" },
+                        { value: "flat", label: "flat" },
+                      ]}
+                      compact
+                    />
                   </span>
                   {laborRates.length > 1 && (
                     <button className="btn sm ghost" onClick={() => removeLaborRate(lr.id)}>✕</button>

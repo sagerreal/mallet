@@ -25,6 +25,7 @@ import { hasPhone, PhoneAddInput } from "@/lib/phone";
 import { useMe } from "@/features/identity/hooks";
 import { browserCallingSupported } from "@/lib/calls/browser-device";
 import { Field, FieldGroup } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 export function CallModalContent() {
   const activeModal = useActiveModal();
@@ -202,10 +203,14 @@ export function CallModalContent() {
           </FieldGroup>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "var(--space-3)" }}>
             <Field label="Direction" style={{ marginBottom: "0" }}>
-              <select value={dir} onChange={(e) => setDir(e.target.value)}>
-                <option value="out">I called them</option>
-                <option value="in">They called me</option>
-              </select>
+              <SelectMenu
+                value={dir}
+                onChange={setDir}
+                options={[
+                  { value: "out", label: "I called them" },
+                  { value: "in", label: "They called me" },
+                ]}
+              />
             </Field>
             <Field label="How long" style={{ marginBottom: "0" }}>
               <input
@@ -215,11 +220,15 @@ export function CallModalContent() {
               />
             </Field>
             <Field label="When" style={{ marginBottom: "0" }}>
-              <select value={when} onChange={(e) => setWhen(e.target.value)}>
-                <option>Just now</option>
-                <option>Earlier today</option>
-                <option>Yesterday</option>
-              </select>
+              <SelectMenu
+                value={when}
+                onChange={setWhen}
+                options={[
+                  { value: "Just now", label: "Just now" },
+                  { value: "Earlier today", label: "Earlier today" },
+                  { value: "Yesterday", label: "Yesterday" },
+                ]}
+              />
             </Field>
           </div>
           <Field label="Notes" style={{ marginTop: "var(--space-3)" }}>

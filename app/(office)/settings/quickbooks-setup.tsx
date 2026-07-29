@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/trpc/client";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 const label = { fontSize: "var(--type-base)", color: "var(--ink-2)" } as const;
 const note = { fontSize: "var(--type-sm)", color: "var(--ink-3)" } as const;
@@ -74,27 +75,20 @@ export function QuickbooksSetup() {
           QuickBooks puts every time entry against a service. Pick the one your crew’s labour
           belongs to.
         </div>
-        <select
-          className="field"
+        <SelectMenu
           value={s.defaultItemQboId ?? ""}
           disabled={setItem.isPending}
-          onChange={(e) => {
-            const item = s.items.find((i) => i.id === e.target.value);
+          placeholder="Choose a service…"
+          aria-label="QuickBooks service"
+          onChange={(v) => {
+            const item = s.items.find((i) => i.id === v);
             if (item) {
               setError(null);
               setItem.mutate({ qboId: item.id, name: item.name });
             }
           }}
-        >
-          <option value="" disabled>
-            Choose a service…
-          </option>
-          {s.items.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </select>
+          options={s.items.map((i) => ({ value: i.id, label: i.name }))}
+        />
       </section>
 
       <section>
@@ -127,14 +121,13 @@ export function QuickbooksSetup() {
                       not set to use time for pay
                     </span>
                   )}
-                  <select
-                    className="field"
+                  <SelectMenu
                     aria-label={`QuickBooks match for ${c.name}`}
                     value={c.qboId ?? ""}
                     disabled={linkPerson.isPending}
-                    onChange={(e) => {
+                    onChange={(v) => {
                       setError(null);
-                      const picked = s.people.find((p) => p.id === e.target.value);
+                      const picked = s.people.find((p) => p.id === v);
                       linkPerson.mutate({
                         userId: c.userId,
                         qboId: picked?.id ?? null,
@@ -142,30 +135,18 @@ export function QuickbooksSetup() {
                         qboKind: picked?.kind ?? null,
                       });
                     }}
-                  >
-                    <option value="">Not matched</option>
-                    {/* Grouped so employees — the common case — are not buried among 1099 subs. */}
-                    <optgroup label="Employees">
-                      {s.people
+                    options={[
+                      { value: "", label: "Not matched" },
+                      // Grouped so employees — the common case — are not buried among 1099 subs.
+                      ...s.people
                         .filter((p) => p.kind === "Employee")
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.displayName}
-                          </option>
-                        ))}
-                    </optgroup>
-                    {s.people.some((p) => p.kind === "Vendor") && (
-                      <optgroup label="Contractors (1099)">
-                        {s.people
-                          .filter((p) => p.kind === "Vendor")
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.displayName}
-                            </option>
-                          ))}
-                      </optgroup>
-                    )}
-                  </select>
+                        .map((p) => ({ value: p.id, label: p.displayName, group: "Employees" })),
+                      ...s.people
+                        .filter((p) => p.kind === "Vendor")
+                        .map((p) => ({ value: p.id, label: p.displayName, group: "Contractors (1099)" })),
+                    ]}
+                    compact
+                  />
                 </span>
               </div>
             );
@@ -179,27 +160,20 @@ export function QuickbooksSetup() {
           QuickBooks puts every invoice line against a service too. This is separate from the one
           above — that one is your crew&apos;s labour, this one is what you bill.
         </div>
-        <select
-          className="field"
+        <SelectMenu
           value={s.defaultInvoiceItemQboId ?? ""}
           disabled={setInvItem.isPending}
-          onChange={(e) => {
-            const item = s.items.find((i) => i.id === e.target.value);
+          placeholder="Choose a service…"
+          aria-label="QuickBooks service"
+          onChange={(v) => {
+            const item = s.items.find((i) => i.id === v);
             if (item) {
               setError(null);
               setInvItem.mutate({ qboId: item.id, name: item.name });
             }
           }}
-        >
-          <option value="" disabled>
-            Choose a service…
-          </option>
-          {s.items.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </select>
+          options={s.items.map((i) => ({ value: i.id, label: i.name }))}
+        />
         <div style={{ ...note, marginTop: "var(--space-2)" }}>
           Every line goes under this one item for now. Mallet&apos;s invoice lines don&apos;t name a
           pricebook item, so there is nothing to match them against yet.
