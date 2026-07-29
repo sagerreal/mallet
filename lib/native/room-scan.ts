@@ -22,6 +22,7 @@
  * `attempt()` — a scan the user explicitly started must not silently do nothing.
  */
 
+import { useEffect, useState } from "react";
 import { nativePlugin } from "@/lib/native-bridge";
 
 const PLUGIN_NAME = "MalletRoomScan";
@@ -63,6 +64,50 @@ export async function roomScanAvailable(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// Module-level cache: the plugin's availability (LiDAR present, permission granted)
+// does not change mid-session, so the probe runs once for the app's lifetime rather
+// than once per mount — every JobMeasureBlock/room-card-modal instance shares the
+// same in-flight promise instead of firing its own native round trip.
+let cachedRoomScanAvailable: boolean | null = null;
+let roomScanAvailableProbe: Promise<boolean> | null = null;
+
+/** Test-only: clears the module-level availability cache between test cases. */
+export function resetRoomScanAvailableCache(): void {
+  cachedRoomScanAvailable = null;
+  roomScanAvailableProbe = null;
+}
+
+/**
+ * React hook wrapping `roomScanAvailable()`. Starts `false` (hide the scan entry
+ * point) until the one-time probe resolves — a control that flashes in and then
+ * has to disappear again reads worse than one that simply appears once ready.
+ * UI callers MUST gate the scan entry point on this, not on `roomScanPlugin()`
+ * presence alone (see module doc above).
+ */
+export function useRoomScanAvailable(): boolean {
+  const [available, setAvailable] = useState(cachedRoomScanAvailable ?? false);
+
+  useEffect(() => {
+    if (cachedRoomScanAvailable !== null) {
+      setAvailable(cachedRoomScanAvailable);
+      return;
+    }
+    if (!roomScanAvailableProbe) {
+      roomScanAvailableProbe = roomScanAvailable();
+    }
+    let cancelled = false;
+    roomScanAvailableProbe.then((result) => {
+      cachedRoomScanAvailable = result;
+      if (!cancelled) setAvailable(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return available;
 }
 
 /** Parsed, typed scan outcome — the JSON strings the plugin returns are parsed here. */

@@ -1,4 +1,6 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
 
 const nativePlugin = vi.fn();
 
@@ -7,7 +9,14 @@ vi.mock("@/lib/native-bridge", () => ({
 }));
 
 // Import after the mock so the module under test picks up the mocked nativePlugin.
-import { roomScanPlugin, roomScanAvailable, captureRoom, RoomScanPayloadError } from "./room-scan";
+import {
+  roomScanPlugin,
+  roomScanAvailable,
+  captureRoom,
+  RoomScanPayloadError,
+  useRoomScanAvailable,
+  resetRoomScanAvailableCache,
+} from "./room-scan";
 
 describe("roomScanPlugin", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -115,5 +124,40 @@ describe("captureRoom", () => {
     await captureRoom("Primary Bedroom");
 
     expect(pluginCaptureRoom).toHaveBeenCalledWith({ roomName: "Primary Bedroom" });
+  });
+});
+
+describe("useRoomScanAvailable", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetRoomScanAvailableCache();
+  });
+
+  it("starts false and resolves true once the plugin reports available", async () => {
+    nativePlugin.mockReturnValue({ available: vi.fn().mockResolvedValue({ available: true }) });
+
+    const { result } = renderHook(() => useRoomScanAvailable());
+    expect(result.current).toBe(false);
+
+    await waitFor(() => expect(result.current).toBe(true));
+  });
+
+  it("resolves false when the plugin is absent", async () => {
+    nativePlugin.mockReturnValue(null);
+
+    const { result } = renderHook(() => useRoomScanAvailable());
+    await waitFor(() => expect(result.current).toBe(false));
+  });
+
+  it("probes the plugin only once across multiple mounted hooks", async () => {
+    const available = vi.fn().mockResolvedValue({ available: true });
+    nativePlugin.mockReturnValue({ available });
+
+    const first = renderHook(() => useRoomScanAvailable());
+    const second = renderHook(() => useRoomScanAvailable());
+
+    await waitFor(() => expect(first.result.current).toBe(true));
+    await waitFor(() => expect(second.result.current).toBe(true));
+    expect(available).toHaveBeenCalledTimes(1);
   });
 });
