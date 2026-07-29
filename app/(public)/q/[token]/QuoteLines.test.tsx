@@ -37,6 +37,7 @@ function renderLines() {
       taxBps={0}
       depBps={0}
       token={TOKEN}
+      orgName="Bay Plumbing"
       changeAlreadyRequested={false}
     />,
   );
@@ -44,6 +45,37 @@ function renderLines() {
 
 function checkboxes(): HTMLInputElement[] {
   return screen.getAllByRole("checkbox") as HTMLInputElement[];
+}
+
+/**
+ * Walk the full approve flow: press Approve, fill in the signature panel, submit.
+ *
+ * Approve no longer POSTs — it reveals the signing panel, and the POST happens on "Sign &
+ * approve". Every accept test goes through here so the two-step is exercised rather than
+ * stubbed around.
+ *
+ * The drawn mark is two pointer events. jsdom reports a zero-size box so every coordinate is
+ * 0,0 — the path still contains an "L", which is all the pad requires to treat it as a stroke
+ * rather than a stray tap.
+ */
+function drawSignature() {
+  const pad = screen.getByRole("img", { name: "Draw your signature" });
+  // jsdom does no layout, so every box is 0x0 and the pad correctly refuses to record points it
+  // cannot scale. Give it a real box so the coordinate maths has something to divide by.
+  pad.getBoundingClientRect = () =>
+    ({ left: 0, top: 0, width: 600, height: 180, right: 600, bottom: 180, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  fireEvent.pointerDown(pad, { clientX: 10, clientY: 10 });
+  fireEvent.pointerMove(pad, { clientX: 40, clientY: 30 });
+  fireEvent.pointerUp(pad);
+}
+
+function fillSignature(name = "Dave Chen") {
+  fireEvent.change(screen.getByLabelText(/Your full name/), { target: { value: name } });
+  drawSignature();
+}
+
+function signButton(): HTMLElement {
+  return screen.getByRole("button", { name: /Sign & approve/ });
 }
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -74,6 +106,11 @@ describe("QuoteLines — accept locks the toggles", () => {
     renderLines();
     fireEvent.click(checkboxes()[0]!);
     fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,250/ }));
+    // Locked from the moment the panel opens, before anything is in flight: the sentence in the
+    // panel names $1,250 and a toggle would silently change what is being signed.
+    for (const box of checkboxes()) expect(box.disabled).toBe(true);
+    fillSignature();
+    fireEvent.click(signButton());
 
     // In flight: every toggle is locked.
     for (const box of checkboxes()) expect(box.disabled).toBe(true);
@@ -87,8 +124,10 @@ describe("QuoteLines — accept locks the toggles", () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     renderLines();
     fireEvent.click(checkboxes()[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,250/ }));
+    fillSignature();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,250/ }));
+      fireEvent.click(signButton());
     });
 
     expect(screen.getByText(/Approved — thank you!/)).toBeTruthy();
@@ -97,10 +136,13 @@ describe("QuoteLines — accept locks the toggles", () => {
     expect(screen.getByText(/Total \$1,250/)).toBeTruthy();
     // The selection sent with the POST is the click-time selection.
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       action: "accept",
       selectedLineIds: [OPTIONAL_LINES[0]!.id],
+      signerName: "Dave Chen",
     });
+    // The mark is real path data, not an empty string the server would reject.
+    expect(body.signatureSvg).toMatch(/^M[\d.,]+ L/);
   });
 
   it("a failed accept unlocks the toggles for a retry and shows the server's copy", async () => {
@@ -110,12 +152,19 @@ describe("QuoteLines — accept locks the toggles", () => {
       json: async () => ({ error: "This quote isn't ready to approve yet." }),
     });
     renderLines();
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    fillSignature();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+      fireEvent.click(signButton());
     });
 
     expect(screen.getByText("This quote isn't ready to approve yet.")).toBeTruthy();
+    // Not a signature problem, so the panel closes and the selection is editable again — there is
+    // nothing to fix inside the panel when the quote itself isn't approvable.
     for (const box of checkboxes()) expect(box.disabled).toBe(false);
+    // ...but reopening it finds the name and mark still there, so nothing is redrawn.
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    expect((screen.getByLabelText(/Your full name/) as HTMLInputElement).value).toBe("Dave Chen");
   });
 });
 
@@ -166,6 +215,7 @@ function renderTiered() {
       taxBps={0}
       depBps={0}
       token={TOKEN}
+      orgName="Bay Plumbing"
       changeAlreadyRequested={false}
     />,
   );
@@ -213,14 +263,17 @@ describe("QuoteLines — Good/Better/Best picker", () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
     renderTiered();
     fireEvent.click(checkboxes()[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$400/ }));
+    fillSignature();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Approve — \$400/ }));
+      fireEvent.click(signButton());
     });
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       action: "accept",
       chosenTier: "better",
       selectedLineIds: [OPT_ID],
+      signerName: "Dave Chen",
     });
     expect(screen.getByText(/Approved — thank you!/)).toBeTruthy();
   });
@@ -230,6 +283,10 @@ describe("QuoteLines — Good/Better/Best picker", () => {
     fetchMock.mockImplementation(() => new Promise((res) => { resolveFetch = res; }));
     renderTiered();
     fireEvent.click(screen.getByRole("button", { name: /Approve — \$350/ }));
+    // Locked as soon as the panel opens — switching tier would change the amount being signed.
+    for (const card of tierCards()) expect(card.disabled).toBe(true);
+    fillSignature();
+    fireEvent.click(signButton());
 
     for (const card of tierCards()) expect(card.disabled).toBe(true);
 
@@ -249,6 +306,7 @@ describe("QuoteLines — Good/Better/Best picker", () => {
         taxBps={0}
         depBps={0}
         token={TOKEN}
+        orgName="Bay Plumbing"
         changeAlreadyRequested={false}
       />,
     );
@@ -262,11 +320,13 @@ describe("QuoteLines — Good/Better/Best picker", () => {
 
     // Accept still names the tier — the server requires a tier choice to
     // resolve a tiered estimate.
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$350/ }));
+    fillSignature();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Approve — \$350/ }));
+      fireEvent.click(signButton());
     });
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body).toEqual({ action: "accept", chosenTier: "better" });
+    expect(body).toMatchObject({ action: "accept", chosenTier: "better", signerName: "Dave Chen" });
   });
 
   it("surfaces the server's tier-error copy inline and unlocks for a retry", async () => {
@@ -276,11 +336,80 @@ describe("QuoteLines — Good/Better/Best picker", () => {
       json: async () => ({ error: "Choose an option to approve this quote." }),
     });
     renderTiered();
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$350/ }));
+    fillSignature();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Approve — \$350/ }));
+      fireEvent.click(signButton());
     });
     expect(screen.getByText("Choose an option to approve this quote.")).toBeTruthy();
+    // The tier cards unlock so the customer can pick a different option and retry — a server
+    // rejection of the CHOICE has to give the choice back.
     for (const card of tierCards()) expect(card.disabled).toBe(false);
+  });
+});
+
+describe("QuoteLines — signing", () => {
+  it("approves with a TYPED NAME ONLY — no drawing required", async () => {
+    // The path most customers will actually take, and the one that has to work for anyone who
+    // cannot draw at all. Requiring the squiggle would block them; the typed name is the
+    // signature (see modules/quoting/domain/signature.ts).
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    renderLines();
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    fireEvent.change(screen.getByLabelText(/Your full name/), { target: { value: "Dave Chen" } });
+
+    await act(async () => {
+      fireEvent.click(signButton());
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.signerName).toBe("Dave Chen");
+    // Omitted entirely, not sent as "" — "signed by typing their name" is a different record
+    // from "drew nothing", and the route's schema rejects an empty string outright.
+    expect(body).not.toHaveProperty("signatureSvg");
+    expect(screen.getByText(/Approved — thank you!/)).toBeTruthy();
+  });
+
+  it("refuses to submit with an empty name and never calls the server", () => {
+    renderLines();
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    fireEvent.click(signButton());
+
+    expect(screen.getByText("Type your name to sign.")).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the amount and the shop inside the sentence being signed", () => {
+    // The sentence is the thing under dispute, so it has to name both — and it must match what
+    // the server stores, which is why both sides call the same function.
+    renderLines();
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    expect(screen.getByText(/I authorize Bay Plumbing to perform the work/)).toBeTruthy();
+    expect(screen.getByText(/\$1,000\.00/)).toBeTruthy();
+    expect(screen.getByText(/both the quote and the final bill/)).toBeTruthy();
+  });
+
+  it("Approve alone does NOT approve — it opens the panel and posts nothing", () => {
+    // The two-step is the deliberate act. A single click that both opened and submitted would be
+    // the click-to-approve this feature replaces.
+    renderLines();
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(signButton()).toBeTruthy();
+  });
+
+  it("Back closes the panel and keeps what was already typed", () => {
+    renderLines();
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    fireEvent.change(screen.getByLabelText(/Your full name/), { target: { value: "Dave Chen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    // Toggles usable again...
+    for (const box of checkboxes()) expect(box.disabled).toBe(false);
+    // ...and reopening finds the name still there.
+    fireEvent.click(screen.getByRole("button", { name: /Approve — \$1,000/ }));
+    expect((screen.getByLabelText(/Your full name/) as HTMLInputElement).value).toBe("Dave Chen");
   });
 });
 
@@ -294,6 +423,7 @@ describe("QuoteLines — a settled quote is a record, not an offer", () => {
         taxBps={0}
         depBps={0}
         token={TOKEN}
+        orgName="Bay Plumbing"
         changeAlreadyRequested={false}
         settled
       />,
@@ -318,6 +448,7 @@ describe("QuoteLines — a settled quote is a record, not an offer", () => {
         taxBps={0}
         depBps={0}
         token={TOKEN}
+        orgName="Bay Plumbing"
         changeAlreadyRequested={false}
         settled
       />,
@@ -337,6 +468,7 @@ describe("QuoteLines — a settled quote is a record, not an offer", () => {
         taxBps={0}
         depBps={0}
         token={TOKEN}
+        orgName="Bay Plumbing"
         changeAlreadyRequested={false}
         settled
       />,

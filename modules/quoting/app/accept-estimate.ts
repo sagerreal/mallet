@@ -4,6 +4,7 @@ import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { EstimateLine } from "../domain/estimate";
 import type { Estimate, QuoteTier } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
+import type { SignatureDraft } from "../domain/signature";
 
 export interface AcceptLineInput {
   readonly description: string;
@@ -25,6 +26,11 @@ export interface AcceptEstimateCommand {
    *  here it defaults to the RECOMMENDED tier (the office accept path). Rejected by
    *  the domain on single-format estimates. */
   readonly chosenTier?: QuoteTier;
+  /** Signature evidence from the public page. Absent on the office path — an office user marking
+   *  a phone approval accepted has no signature, and that is a real, weaker state, not an error. */
+  readonly signature?: SignatureDraft;
+  /** Shop name, so the authorisation sentence names a counterparty. Required with a signature. */
+  readonly orgName?: string;
 }
 
 // Customer accepts the quote. Emits estimate.accepted for the audit outbox — note the event has
@@ -78,7 +84,7 @@ export class AcceptEstimateUseCase {
     // recommended tier. The public path always passes an explicit choice (validated
     // upstream). Single-format estimates pass nothing — the domain rejects a stray tier.
     const chosenTier = cmd.chosenTier ?? estimate.props.recommendedTier ?? undefined;
-    const accepted = current.accept(now, chosenTier);
+    const accepted = current.accept(now, chosenTier, cmd.signature, cmd.orgName);
     if (!isOk(accepted)) return accepted;
 
     await this.repo.save(accepted.value);

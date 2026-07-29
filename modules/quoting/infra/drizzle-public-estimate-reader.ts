@@ -102,12 +102,18 @@ export class DrizzlePublicEstimateReader {
     };
   }
 
-  // Resolve just the orgId from a token — used by accept/decline to open a withTenant session.
+  // Resolve the orgId (and the shop's name) from a token — used by accept/decline to open a
+  // withTenant session. The name comes back because the authorisation sentence names the shop,
+  // and it must come from the DB rather than from the page: a client-supplied counterparty name
+  // on a signed document is a hole, not a convenience.
   // Returns null if the token does not match any non-deleted estimate.
-  async resolveOrgByToken(token: string): Promise<{ estimateId: string; orgId: OrgId } | null> {
+  async resolveOrgByToken(
+    token: string,
+  ): Promise<{ estimateId: string; orgId: OrgId; orgName: string } | null> {
     const rows = await ownerDb
-      .select({ id: estimates.id, orgId: estimates.orgId })
+      .select({ id: estimates.id, orgId: estimates.orgId, orgName: orgs.name })
       .from(estimates)
+      .innerJoin(orgs, eq(orgs.id, estimates.orgId))
       .where(
         and(
           eq(estimates.publicToken, token),
@@ -118,6 +124,6 @@ export class DrizzlePublicEstimateReader {
 
     const row = rows[0];
     if (!row) return null;
-    return { estimateId: row.id, orgId: asOrgId(row.orgId) };
+    return { estimateId: row.id, orgId: asOrgId(row.orgId), orgName: row.orgName };
   }
 }

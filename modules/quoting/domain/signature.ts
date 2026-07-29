@@ -10,8 +10,8 @@ import { ok, err, validation } from "@mallet/shared/types";
  *
  * Four things are captured together because each covers a different denial:
  *
- *   "that wasn't me"            → signerName + ip + userAgent
- *   "I didn't mean to agree"    → a drawn mark, which is a deliberate act a click is not
+ *   "that wasn't me"            → signerName + ip + userAgent + the per-quote token
+ *   "I didn't mean to agree"    → the authorization text, typed name, and (optionally) a mark
  *   "that's not the price"      → snapshot, frozen at the moment of signing
  *   "I signed something else"   → snapshot, again — it IS the document
  *
@@ -78,12 +78,57 @@ export interface SignatureInput {
 }
 
 /**
+ * Everything a signature needs EXCEPT the snapshot.
+ *
+ * The split matters. A caller supplies who signed and what they drew; only the estimate can say
+ * what the document was. If a route could hand over both halves, the two could disagree — a
+ * snapshot claiming $500 attached to a $19,500 estimate — and the record would be worse than
+ * useless, because it would look authoritative while being wrong.
+ *
+ * So the estimate builds its own snapshot from its own resolved state at the moment of accepting,
+ * and this is the only part that crosses the wire. The invariant is structural, not a rule someone
+ * has to remember.
+ *
+ * `signerIp` and `signerUserAgent` are read off the request server-side and are NOT client fields.
+ */
+export interface SignatureDraft {
+  readonly signerName: string;
+  readonly signatureSvg: string;
+  readonly signerIp: string | null;
+  readonly signerUserAgent: string | null;
+}
+
+/**
  * Validate captured signature evidence.
  *
- * Both a NAME and a MARK are required. Either alone is materially weaker: a name with no mark is
- * indistinguishable from the click-to-approve this replaces, and a mark with no name attributes
- * the act to nobody. Refusing the pair is the whole point of the feature, so it refuses loudly
- * rather than storing half of it.
+ * The TYPED NAME is required. The DRAWN MARK is optional.
+ *
+ * That split is deliberate and it is the opposite of the intuitive one, so it is worth writing
+ * down why. Texas law is unusually clear on both halves:
+ *
+ *   The typed name is a real signature. Aerotek, Inc. v. Boyd, 624 S.W.3d 199 (Tex. 2021), slip
+ *   op. 13-14, rejected the argument that a printed name "cannot qualify as a signature of any
+ *   kind", and fn. 34 restates the long-standing rule that "to sign, in the primary sense of the
+ *   word, is to make any mark". Tex. Bus. & Com. Code §322.002(8) turns on intent, not on form.
+ *
+ *   The drawn mark is the one method the court expressly refused to rule on. Aerotek fn. 22:
+ *   "We express no opinion on how to authenticate a handwritten signature created electronically
+ *   with a stylus, finger, or mouse." The court's reasoning at slip op. 9 is that the ordinary
+ *   ways of proving a handwritten signature — an eyewitness, someone who knows the handwriting,
+ *   an expert comparing a genuine specimen — do not carry over, and a finger squiggle on a phone
+ *   is not a handwriting exemplar in any case.
+ *
+ * So requiring the drawing would have gated every approval on the weakest piece of evidence in
+ * the record, and would have locked out anyone who cannot use a pointer at all. It is kept
+ * because customers expect it and the act of drawing reads as deliberate — but it sits on top of
+ * the load-bearing evidence rather than being it.
+ *
+ * What actually carries the weight is the combination the rest of this record captures: the typed
+ * name, the unguessable per-quote token, the IP and user agent, the timestamp, and the frozen
+ * snapshot of what was on screen.
+ *
+ * NOT LEGAL ADVICE, and none of the above is a promise of enforceability — ESIGN §7001(a) and
+ * §322.007 only stop a record being rejected SOLELY for being electronic. See docs.
  */
 export function createSignature(input: SignatureInput): Result<Signature, ValidationError> {
   const name = input.signerName.trim();
@@ -91,7 +136,6 @@ export function createSignature(input: SignatureInput): Result<Signature, Valida
   if (name.length > NAME_MAX) return err(validation("that name is too long", "signerName"));
 
   const svg = input.signatureSvg.trim();
-  if (svg.length === 0) return err(validation("please draw your signature", "signatureSvg"));
   if (svg.length > SVG_MAX) return err(validation("that signature could not be read", "signatureSvg"));
 
   if (input.snapshot.authorizationText.trim().length === 0) {
