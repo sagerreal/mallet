@@ -43,6 +43,25 @@ public enum RoomPlanExtractor {
 }
 
 @available(iOS 17.0, *)
+extension CaptureCoaching {
+    /// Maps a RoomPlan `RoomCaptureSession.Instruction` to a `CaptureCoaching` state if the
+    /// instruction is a user-facing coaching hint (not a transient motion hint). Returns `nil`
+    /// for transient hints like `.normal`, `.moveCloseToWall`, `.moveAwayFromWall`, `.slowDown`.
+    public init?(instruction: RoomCaptureSession.Instruction) {
+        switch instruction {
+        case .lowTexture:
+            self = .lowTexture
+        case .turnOnLight:
+            self = .turnOnLight
+        case .normal, .moveCloseToWall, .moveAwayFromWall, .slowDown:
+            return nil
+        @unknown default:
+            return nil
+        }
+    }
+}
+
+@available(iOS 17.0, *)
 extension Transform4 {
     /// `simd_float4x4` is column-major (`columns.0` … `columns.3`, each a full column
     /// top-to-bottom); `Transform4` stores row-major. Delegates to the Core-side
