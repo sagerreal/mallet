@@ -1,0 +1,62 @@
+import type { NormalizedGeometry } from "./normalized-geometry";
+import { polygonArea, polygonPerimeter } from "./normalized-geometry";
+
+// SI -> imperial. Exact conversion constants (never round these, only the final values).
+const SQ_METERS_TO_SQFT = 10.763910417;
+const METERS_TO_FEET = 3.280839895;
+
+export type PaintingQuantityKind =
+  | "walls_sqft"
+  | "ceiling_sqft"
+  | "baseboard_lnft"
+  | "crown_lnft"
+  | "doors_count"
+  | "windows_count";
+
+export interface PaintingQuantity {
+  readonly kind: PaintingQuantityKind;
+  readonly value: number | null;
+  readonly status: "derived" | "needs_confirm";
+}
+
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+/**
+ * Pure derivation of painting quantities from captured geometry. Laws (binding, do not change
+ * without re-reading the phase-1 plan):
+ *  - walls are GROSS — openings are never deducted from wall area.
+ *  - a null/vaulted ceiling never gets a guessed value — it comes back needs_confirm.
+ *  - baseboard deducts only door widths (not windows), and is floored at 0.
+ *  - crown uses the flat-ceiling convention: ceiling perimeter === floor perimeter.
+ *  - 'opening' kind counts as neither a door nor a window.
+ */
+export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantity[] {
+  const floorPerimeterM = polygonPerimeter(g.floorPolygon.vertices);
+
+  const wallsAreaM2 = g.walls.reduce((sum, wall) => sum + polygonArea(wall.polygon.vertices), 0);
+  const wallsSqft = round1(wallsAreaM2 * SQ_METERS_TO_SQFT);
+
+  const ceilingNeedsConfirm = g.ceiling === null || g.ceiling.isVaulted || g.ceiling.area === null;
+  const ceilingSqft = ceilingNeedsConfirm ? null : round1((g.ceiling as { area: number }).area * SQ_METERS_TO_SQFT);
+
+  const doorWidthSumM = g.openings
+    .filter((o) => o.kind === "door")
+    .reduce((sum, o) => sum + o.width, 0);
+  const baseboardM = Math.max(0, floorPerimeterM - doorWidthSumM);
+  const baseboardLnft = round1(baseboardM * METERS_TO_FEET);
+
+  // Flat-ceiling convention: crown molding runs the same perimeter as the floor.
+  const crownLnft = round1(floorPerimeterM * METERS_TO_FEET);
+
+  const doorsCount = g.openings.filter((o) => o.kind === "door").length;
+  const windowsCount = g.openings.filter((o) => o.kind === "window").length;
+
+  return [
+    { kind: "walls_sqft", value: wallsSqft, status: "derived" },
+    { kind: "ceiling_sqft", value: ceilingSqft, status: ceilingNeedsConfirm ? "needs_confirm" : "derived" },
+    { kind: "baseboard_lnft", value: baseboardLnft, status: "derived" },
+    { kind: "crown_lnft", value: crownLnft, status: "derived" },
+    { kind: "doors_count", value: doorsCount, status: "derived" },
+    { kind: "windows_count", value: windowsCount, status: "derived" },
+  ];
+}
