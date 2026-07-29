@@ -119,6 +119,42 @@ export function parseNormalizedGeometry(input: unknown): Result<NormalizedGeomet
   });
 }
 
+// The wire-format shape produced by `toWireGeometry` — snake_case, matching what
+// `parseNormalizedGeometry` accepts. Used to persist a NormalizedGeometry (e.g. into the
+// `geometry` jsonb column) so it can round-trip back through the same parser on read.
+export interface NormalizedGeometryWire {
+  readonly floor_polygon: Polygon3;
+  readonly walls: readonly Wall[];
+  readonly openings: readonly { kind: OpeningKind; width: number; height: number; wall_index: number | null }[];
+  readonly ceiling:
+    | { area: number | null; is_vaulted: boolean; wall_top_spread: number | null; provenance: string | null }
+    | null;
+}
+
+/** Serializes a NormalizedGeometry back to the snake_case wire shape — the exact inverse of
+ * `parseNormalizedGeometry`. Storage boundaries must round-trip through both functions rather
+ * than persist the camelCase domain shape directly. */
+export function toWireGeometry(g: NormalizedGeometry): NormalizedGeometryWire {
+  return {
+    floor_polygon: g.floorPolygon,
+    walls: g.walls,
+    openings: g.openings.map((o) => ({
+      kind: o.kind,
+      width: o.width,
+      height: o.height,
+      wall_index: o.wallIndex,
+    })),
+    ceiling: g.ceiling
+      ? {
+          area: g.ceiling.area,
+          is_vaulted: g.ceiling.isVaulted,
+          wall_top_spread: g.ceiling.wallTopSpread,
+          provenance: g.ceiling.provenance,
+        }
+      : null,
+  };
+}
+
 // Newell's method: |Σ vᵢ × vᵢ₊₁| / 2 — plane-true area for any planar polygon, including
 // tilted walls. Ported exactly from
 // mallet-ios/capture/MalletCapture/Sources/MalletCaptureCore/Geometry.swift.
