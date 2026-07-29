@@ -40,6 +40,15 @@ public enum RoomPlanExtractor {
     public static func rawPayload(from room: CapturedRoom) throws -> Data {
         try JSONEncoder().encode(room)   // CapturedRoom is Codable — verbatim layer-1 payload
     }
+
+    /// INSTRUMENT-ONLY. Sum of each wall's `dimensions` bounding-box area (width × height,
+    /// square metres), never the true polygon outline. Exists solely so the scanner UI can show
+    /// the polygon-vs-bounding-box comparison side by side on a real room — that gap IS what the
+    /// ten-room validation walk is checking. Never use this for a takeoff or a bid: use
+    /// `SurfaceMapper.geometry(from:).grossWallArea`, which is derived from `polygonCorners`.
+    public static func boundingBoxWallArea(from room: CapturedRoom) -> Double {
+        room.walls.reduce(0.0) { $0 + Double($1.dimensions.x * $1.dimensions.y) }
+    }
 }
 
 @available(iOS 17.0, *)
@@ -54,6 +63,32 @@ extension CaptureCoaching {
         case .turnOnLight:
             self = .turnOnLight
         case .normal, .moveCloseToWall, .moveAwayFromWall, .slowDown:
+            return nil
+        @unknown default:
+            return nil
+        }
+    }
+}
+
+@available(iOS 17.0, *)
+extension CaptureCoaching {
+    /// Maps a RoomPlan `RoomCaptureSession.CaptureError` to a `CaptureCoaching` state when the
+    /// error is one the scanner UI should present as in-scan coaching rather than a hard
+    /// failure. Checked against the iOS 17 SDK's `RoomPlan.swiftinterface`
+    /// (`RoomPlan.framework/Modules/RoomPlan.swiftmodule/arm64e-apple-ios.swiftinterface`),
+    /// which declares `CaptureError` with six cases: `exceedSceneSizeLimit`,
+    /// `worldTrackingFailure`, `invalidARConfiguration`, `deviceTooHot`, `deviceNotSupported`,
+    /// `internalError`. The SDK carries its own `deviceTooHot` case directly — no
+    /// `ProcessInfo.processInfo.thermalState` fallback is needed here. Returns `nil` for the
+    /// other four, which are hard scan failures with no coaching equivalent and should stay on
+    /// the caller's existing error-message path.
+    public init?(captureError: RoomCaptureSession.CaptureError) {
+        switch captureError {
+        case .exceedSceneSizeLimit:
+            self = .sceneTooLarge
+        case .deviceTooHot:
+            self = .deviceTooHot
+        case .worldTrackingFailure, .invalidARConfiguration, .deviceNotSupported, .internalError:
             return nil
         @unknown default:
             return nil

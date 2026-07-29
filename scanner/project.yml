@@ -1,0 +1,17 @@
+name: MalletScanner
+options: { bundleIdPrefix: com.trymallet, deploymentTarget: { iOS: "17.0" } }
+packages:
+  MalletCapture: { path: ../capture/MalletCapture }
+targets:
+  MalletScanner:
+    type: application
+    platform: iOS
+    sources: [MalletScanner]
+    dependencies:
+      - package: MalletCapture
+        products: [MalletCaptureCore, MalletCaptureRoomPlan]
+    info:
+      path: MalletScanner/Info.plist
+      properties:
+        NSCameraUsageDescription: "Mallet measures the room with the camera to price the work."
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
