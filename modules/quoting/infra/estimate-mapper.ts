@@ -1,6 +1,7 @@
 import { asEstimateId, asEstimateLineId, asOrgId, asLeadId, money } from "@mallet/shared/types";
 import { estimates, estimateLines } from "@mallet/shared/db/schema";
 import { Estimate, EstimateLine, isEstimateStatus, type QuoteTier, type TierNames } from "../domain/estimate";
+import type { SignedSnapshot } from "../domain/signature";
 
 export type EstimateRow = typeof estimates.$inferSelect;
 export type EstimateLineRow = typeof estimateLines.$inferSelect;
@@ -56,6 +57,14 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     acceptedTier: row.acceptedTier as QuoteTier | null,
     tierNames: row.tierNames as TierNames | null,
     termsSnapshot: row.termsSnapshot,
+    signerName: row.signerName,
+    signatureSvg: row.signatureSvg,
+    signerIp: row.signerIp,
+    signerUserAgent: row.signerUserAgent,
+    signedAt: row.signedAt,
+    // jsonb comes back as unknown; the shape is ours on the way in, so this is a read-back cast
+    // rather than untrusted input.
+    signedSnapshot: (row.signedSnapshot as SignedSnapshot | null) ?? null,
     lines,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

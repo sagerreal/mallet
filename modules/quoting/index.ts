@@ -24,3 +24,7 @@ export { DrizzleQuotingRuleRepository } from "./infra/drizzle-quoting-rule-repos
 // Non-fatal savepoint isolation for the accept path: a failed job creation must not roll back a
 // successful acceptance. Shared so the agent tool and the office route cannot drift apart.
 export { runInSavepoint } from "./api/savepoint";
+// Signature evidence on an accepted quote: who signed, and a frozen copy of exactly what they
+// signed. coveredBySignature answers whether a final invoice still falls under it.
+export { createSignature, coveredBySignature } from "./domain/signature";
+export type { Signature, SignedSnapshot, SignedLine } from "./domain/signature";

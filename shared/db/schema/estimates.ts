@@ -72,6 +72,34 @@ export const estimates = pgTable(
     // Snapshot of the selected job terms TEXT at draft time (no live reference — later term
     // edits must not rewrite sent quotes). Rendered on the public quote page and the modal.
     termsSnapshot: text("terms_snapshot"),
+
+    // ---- Signature evidence -------------------------------------------------------------------
+    //
+    // acceptedAt alone proves only that SOMEBODY HOLDING THE LINK clicked at a moment in time. It
+    // names nobody. A customer who later says "I never agreed to that" is arguing against a
+    // timestamp, and a shop chasing $19,500 has nothing to put in front of them.
+    //
+    // All nullable: the office can still mark an estimate accepted itself (a phone approval), and
+    // that path legitimately has no signature. Null here means "accepted without a signature",
+    // which is a real and different thing from "signed" — the UI must not conflate them.
+
+    /** Typed name, as the signer entered it. The attribution — without it a drawn squiggle names nobody. */
+    signerName: text("signer_name"),
+    /** The drawn mark, an SVG path. Evidence of a deliberate act, not of identity. */
+    signatureSvg: text("signature_svg"),
+    /** Captured server-side from the request, never from the client — a client-supplied IP is worthless. */
+    signerIp: text("signer_ip"),
+    signerUserAgent: text("signer_user_agent"),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    /**
+     * Frozen copy of EXACTLY what the signer saw: every line, the totals, the chosen tier, the
+     * terms text.
+     *
+     * Without this the signature refers to a live row that can be edited afterwards, so it proves
+     * nothing about the amount — which is the whole dispute. termsSnapshot already froze the terms
+     * for the same reason; this extends that to the money.
+     */
+    signedSnapshot: jsonb("signed_snapshot"),
     // Unguessable URL-safe token for the customer-facing public quote page (no login required).
     // Generated at draft time; null only for estimates created before the migration (backfilled).
     publicToken: text("public_token"),

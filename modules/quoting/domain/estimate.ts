@@ -8,6 +8,7 @@ import type {
   ValidationError,
 } from "@mallet/shared/types";
 import { money, zeroMoney, addMoney, validation, ok, err } from "@mallet/shared/types";
+import type { Signature, SignedSnapshot } from "./signature";
 
 const MAX_CHANGE_REQUEST_LENGTH = 2_000;
 
@@ -131,6 +132,14 @@ export interface EstimateProps {
   readonly tierNames: TierNames | null;
   // Snapshot of the selected job terms text at draft time (no live reference).
   readonly termsSnapshot: string | null;
+  // Signature evidence. All nullable: an office-side acceptance has none, and that is a real state
+  // rather than a missing one.
+  readonly signerName?: string | null;
+  readonly signatureSvg?: string | null;
+  readonly signerIp?: string | null;
+  readonly signerUserAgent?: string | null;
+  readonly signedAt?: Date | null;
+  readonly signedSnapshot?: SignedSnapshot | null;
   readonly lines: readonly EstimateLine[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -305,7 +314,15 @@ export class Estimate {
   // (plus any already-resolved untiered lines the accept use-case committed), tags clear, and
   // acceptedTier records the choice — the accepted estimate is a single quote from here on.
   // Single-format estimates reject a chosenTier.
-  accept(now: Date, chosenTier?: QuoteTier): Result<Estimate, ValidationError> {
+  /**
+   * Accept, recording WHO signed and exactly what they signed.
+   *
+   * `signature` is optional because the office can still mark an estimate accepted itself — a
+   * phone approval legitimately has no signature, and forcing one would make the office path
+   * either lie or become impossible. Null means "accepted without a signature", which the UI must
+   * present as a materially weaker thing than "signed" rather than conflating the two.
+   */
+  accept(now: Date, chosenTier?: QuoteTier, signature?: Signature): Result<Estimate, ValidationError> {
     if (!this.canAccept()) return err(validation("only a sent estimate can be accepted", "status"));
     const tiered = this.p.recommendedTier !== null;
     if (tiered && !chosenTier) {
@@ -328,6 +345,18 @@ export class Estimate {
       acceptedAt: now,
       acceptedTier: chosenTier ?? null,
       lines,
+      // Evidence is written in the SAME transition that flips the status, so an accepted estimate
+      // can never exist alongside a half-written signature.
+      ...(signature
+        ? {
+            signerName: signature.signerName,
+            signatureSvg: signature.signatureSvg,
+            signerIp: signature.signerIp,
+            signerUserAgent: signature.signerUserAgent,
+            signedAt: signature.signedAt,
+            signedSnapshot: signature.snapshot,
+          }
+        : {}),
       updatedAt: now,
     });
     return ok(new Estimate({ ...resolved.p, depPaid: resolved.depositDue() }));
