@@ -56,7 +56,7 @@ vi.mock("@/lib/native/room-scan", async () => {
 });
 
 import { RoomCardModalContent, quantityDisplay, parseQuantityInput, formatQuantity } from "./room-card-modal";
-import { RoomScanPayloadError } from "@/lib/native/room-scan";
+import { RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
 
 function job(overrides: Partial<Job> = {}): Job {
   return { id: JOB_ID, title: "Repaint job", leadId: "l1", svc: null, origin: "manual", addr: "", phone: "", status: "unscheduled", archived: false, lines: [], addons: [], photos: [], notes: "", acts: [], visits: [], ...overrides } as Job;
@@ -420,7 +420,26 @@ describe("RoomCardModalContent — view mode rescan row", () => {
     expect(closeMock).not.toHaveBeenCalled();
   });
 
-  it("shows a generic save-error copy on any other rescan failure", async () => {
+  it("capture-phase failure (RoomScanCaptureError) surfaces the native message verbatim, not the connection copy", async () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    storeState.rescanRoom.mockRejectedValue(
+      new RoomScanCaptureError(new Error("The scan didn't capture a floor — walk the room's perimeter and scan again.")),
+    );
+    render(<RoomCardModalContent />);
+
+    fireEvent.click(screen.getByText("Re-scan room"));
+    fireEvent.click(screen.getByText(/Replaces these numbers and clears edits/));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("The scan didn't capture a floor — walk the room's perimeter and scan again."),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText(/Couldn't save this scan/)).toBeNull();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("ingest-phase failure (generic Error from the mutate call) still shows the connection copy", async () => {
     useRoomScanAvailableMock.mockReturnValue(true);
     storeState.rescanRoom.mockRejectedValue(new Error("network down"));
     render(<RoomCardModalContent />);
@@ -497,7 +516,19 @@ describe("RoomCardModalContent — scan mode", () => {
     expect(closeMock).not.toHaveBeenCalled();
   });
 
-  it("shows a generic save-error copy on any other scan failure, form stays open", async () => {
+  it("capture-phase failure (RoomScanCaptureError) surfaces the native message verbatim, not the connection copy", async () => {
+    storeState.scanRoom.mockRejectedValue(new RoomScanCaptureError(new Error("A room scan is already open.")));
+    render(<RoomCardModalContent />);
+
+    fireEvent.change(screen.getByLabelText("Room name"), { target: { value: "Kitchen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start scanning" }));
+
+    await waitFor(() => expect(screen.getByText("A room scan is already open.")).toBeTruthy());
+    expect(screen.queryByText(/Couldn't save this scan/)).toBeNull();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("ingest-phase failure (generic Error from the mutate call) still shows the connection copy, form stays open", async () => {
     storeState.scanRoom.mockRejectedValue(new Error("network down"));
     render(<RoomCardModalContent />);
 
