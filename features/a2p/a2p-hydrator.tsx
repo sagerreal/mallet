@@ -13,7 +13,9 @@
  * store action here), but a focus refetch clobbering an in-progress registration
  * poll would still be surprising; matches every other hydrator's convention.
  *
- * Where this mounts in the app tree is Task 13's concern.
+ * Mounted in app/(office)/layout.tsx alongside every other hydrator. It was written without
+ * a mount for a while, which left the Texting card showing a permanent "…" and no controls —
+ * the registration flow existed and was simply unreachable.
  */
 
 import { useEffect } from "react";
