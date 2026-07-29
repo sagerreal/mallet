@@ -11,12 +11,18 @@ import UIKit
 /// `RoomCaptureView`'s built-in wireframe overlay.
 ///
 /// All Apple-type interpretation happens downstream in `MalletCaptureRoomPlan`/`MalletCaptureCore`
-/// — this controller only drives the session and reports outcomes via its three closures.
+/// — this controller only drives the session and reports outcomes via its three closures. Every
+/// exit path — Done, Cancel, a hard failure, or the screen simply disappearing for any other
+/// reason — is guaranteed to call exactly one of those closures exactly once: the web promise this
+/// eventually resolves/rejects must never be left hanging.
 @available(iOS 17.0, *)
 final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
-    /// Called once, after the user taps Done and RoomPlan finishes post-processing.
+    /// Called once, after the user taps Done and a `CapturedRoom` is available (either from
+    /// RoomPlan's own post-processing, or built explicitly via `RoomBuilder` after a recoverable
+    /// mid-scan error).
     var onFinished: ((CapturedRoom) -> Void)?
-    /// Called when the user taps Cancel before a result is delivered.
+    /// Called when the user taps Cancel before a result is delivered, or as the last-resort net
+    /// if this screen disappears without ever delivering an outcome.
     var onCancelled: (() -> Void)?
     /// Called on a hard, unrecoverable failure (no coaching equivalent).
     var onFailed: ((String) -> Void)?
@@ -33,26 +39,32 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
     private let topBar = UIView()
     private let cancelButton = UIButton(type: .system)
     private let doneButton = UIButton(type: .system)
-    private let coachingLabel = UILabel()
-    private var coachingBottomConstraint: NSLayoutConstraint!
+    private let coachingLabel = PaddedLabel()
 
-    /// Drives the Done/Cancel handshake against RoomPlan's async post-processing. `.scanning` is
-    /// the live state; `.recoverableStopped` is entered when RoomPlan itself ends the session for
-    /// a coaching-mapped reason (overheating, scene too large) — the user still has to explicitly
-    /// choose Done or Cancel from there, this is a UI state, not an auto-completion. `.finishing`
-    /// means the user has committed to Done and we're only waiting on RoomPlan's delegate to hand
-    /// back the processed `CapturedRoom`.
+    /// Drives the Done/Cancel handshake against RoomPlan's async post-processing.
+    /// - `.scanning`: the live state.
+    /// - `.recoverableStopped`: RoomPlan itself ended the session for a coaching-mapped reason
+    ///   (overheating, scene too large) — this is a UI state, not an auto-completion. The user
+    ///   still has to explicitly choose Done (finish with what was captured) or Cancel.
+    /// - `.finishing`: the user has committed to Done; Done/Cancel are disabled and we're only
+    ///   waiting on a `CapturedRoom` — either from RoomPlan's own delegate, or (since RoomPlan's
+    ///   behavior after a self-terminated session is undocumented) from an explicit `RoomBuilder`
+    ///   pass over the retained `CapturedRoomData`.
     private enum Stage: Equatable {
         case scanning
         case recoverableStopped
         case finishing
     }
     private var stage: Stage = .scanning
-    /// The processed room, if RoomPlan finished post-processing before the user tapped Done
-    /// (the `.recoverableStopped` path — the session already ended on its own).
+    /// The processed room, if RoomPlan's delegate handed one back before the user tapped Done.
     private var pendingRoom: CapturedRoom?
-    /// Guards against delivering a result twice — RoomPlan's delegates can each fire once for
-    /// the same terminal event.
+    /// The raw capture data retained from a recoverable `didEndWith` error, so Done can build the
+    /// room explicitly instead of betting on `RoomCaptureViewDelegate` firing after a
+    /// self-terminated session.
+    private var pendingData: CapturedRoomData?
+    /// Guards against delivering a result twice — RoomPlan's delegates can each fire once for the
+    /// same terminal event, and the last-resort net in `viewDidDisappear`/`deinit` must not
+    /// re-fire after a normal delivery already happened.
     private var didDeliverResult = false
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
@@ -81,6 +93,29 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         captureView.captureSession.run(configuration: config)
+    }
+
+    /// Belt-and-suspenders session stop on every exit path, mirroring the scanner reference —
+    /// `deliver(_:)` already stops the session before dismissing, but this catches any path that
+    /// removes this screen from the hierarchy without going through `deliver(_:)` first.
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        captureView.captureSession.stop(pauseARSession: true)
+    }
+
+    /// Settle-of-last-resort: if this screen has fully disappeared (dismissed or removed) without
+    /// ever calling one of the three outcome closures, treat it as a cancel rather than leaving
+    /// the web promise hanging forever. Deliberately permissive about *why* — every
+    /// unknown-unknown here becomes a recoverable cancel, never a silent hang.
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || isMovingFromParent {
+            deliverCancelledIfUndelivered()
+        }
+    }
+
+    deinit {
+        deliverCancelledIfUndelivered()
     }
 
     // MARK: - Chrome
@@ -134,29 +169,35 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
         coachingLabel.isHidden = true
         view.addSubview(coachingLabel)
 
-        coachingBottomConstraint = coachingLabel.bottomAnchor.constraint(
-            equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24
-        )
-
         NSLayoutConstraint.activate([
             coachingLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             coachingLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            coachingBottomConstraint,
+            coachingLabel.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24
+            ),
         ])
     }
 
-    /// Updates the coaching label. `nil` hides it — a blank/dark/overheating/oversized-scene hint
-    /// is only ever shown while it's actively true.
+    /// Updates the coaching label with a `CaptureCoaching` guidance string, or hides it for `nil`
+    /// — called unconditionally from the live instruction stream so a resolved hint (e.g. the user
+    /// turned the light back on) actually clears the label instead of leaving stale copy up.
     private func updateCoaching(_ coaching: CaptureCoaching?) {
         guard let coaching else {
             coachingLabel.isHidden = true
             return
         }
-        // Padding is baked into the label's own insets via attributed text below, but UILabel has
-        // no built-in content insets — approximate with leading/trailing spaces would be a hack,
-        // so instead grow via a container-less label and rely on layer.cornerRadius + generous
-        // leading/trailing anchors already set for horizontal breathing room.
-        coachingLabel.text = "  \(coaching.guidance)  "
+        coachingLabel.text = coaching.guidance
+        coachingLabel.isHidden = false
+    }
+
+    /// Locks the UI once the user has committed to Done: RoomPlan's post-processing (or our own
+    /// explicit `RoomBuilder` pass) takes a few seconds, and a Cancel tap in that window would
+    /// silently discard an otherwise-complete scan.
+    private func enterFinishing() {
+        stage = .finishing
+        cancelButton.isEnabled = false
+        doneButton.isEnabled = false
+        coachingLabel.text = "Finishing scan…"
         coachingLabel.isHidden = false
     }
 
@@ -169,19 +210,45 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
     @objc private func didTapDone() {
         switch stage {
         case .scanning:
-            stage = .finishing
-            updateCoaching(nil)
+            if let pendingRoom {
+                deliver(.done(pendingRoom))
+                return
+            }
+            enterFinishing()
             captureView.captureSession.stop(pauseARSession: true)
         case .recoverableStopped:
             if let pendingRoom {
                 deliver(.done(pendingRoom))
-            } else {
-                // RoomPlan hasn't finished post-processing yet — commit to finishing so the
-                // delegate callback below delivers as soon as it arrives.
-                stage = .finishing
+                return
             }
+            enterFinishing()
+            if let pendingData {
+                buildRoomManually(from: pendingData)
+            }
+            // If `pendingData` is somehow nil here there is nothing left to try — the delegate
+            // callbacks below remain the only possible source of a result, and the
+            // viewDidDisappear/deinit net still guarantees this never hangs.
         case .finishing:
             break
+        }
+    }
+
+    /// Builds a `CapturedRoom` directly from retained `CapturedRoomData`, for the path where
+    /// RoomPlan ended the session itself (overheating, scene too large) and its own
+    /// `RoomCaptureViewDelegate` post-processing may never fire — never bet the web promise on an
+    /// undocumented callback after a `CaptureError`.
+    private func buildRoomManually(from data: CapturedRoomData) {
+        Task { [weak self] in
+            do {
+                let room = try await RoomBuilder(options: []).capturedRoom(from: data)
+                await MainActor.run {
+                    self?.deliver(.done(room))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.deliver(.error(Self.describe(error)))
+                }
+            }
         }
     }
 
@@ -201,13 +268,15 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
                 deliver(.error(Self.describe(error)))
                 return
             }
+            if stage == .scanning {
+                stage = .recoverableStopped
+            }
             updateCoaching(coaching)
         }
 
-        switch stage {
-        case .finishing:
+        if stage == .finishing {
             deliver(.done(processedResult))
-        case .scanning, .recoverableStopped:
+        } else {
             pendingRoom = processedResult
         }
     }
@@ -215,14 +284,15 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
     // MARK: - RoomCaptureSessionDelegate
 
     func captureSession(_ session: RoomCaptureSession, didProvide instruction: RoomCaptureSession.Instruction) {
-        guard stage == .scanning, let coaching = CaptureCoaching(instruction: instruction) else { return }
-        updateCoaching(coaching)
+        guard stage == .scanning else { return }
+        updateCoaching(CaptureCoaching(instruction: instruction))
     }
 
     /// RoomPlan's own end-of-run callback. A coaching-mapped error (overheating, scene too large)
-    /// means RoomPlan stopped the session itself — that's a UI state, not a failure: show the
-    /// guidance and leave Done/Cancel live for the user to choose. Any other error is a hard,
-    /// unrecoverable failure.
+    /// means RoomPlan stopped the session itself — that's a UI state, not a failure: retain the
+    /// raw `data` (post-processing after a self-terminated session is undocumented — Done builds
+    /// the room explicitly rather than betting on it), show the guidance, and leave Done/Cancel
+    /// live for the user to choose. Any other error is a hard, unrecoverable failure.
     func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
         guard let error else { return }
 
@@ -234,6 +304,7 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
 
         if stage == .scanning {
             stage = .recoverableStopped
+            pendingData = data
         }
         updateCoaching(coaching)
     }
@@ -246,31 +317,55 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
         case error(String)
     }
 
+    /// Delivers exactly one outcome, exactly once. The closures are captured into a local `settle`
+    /// value up front — NOT via `[weak self]` inside the `dismiss` completion — so that if this
+    /// view controller is deallocated during the dismiss animation, the web promise this call
+    /// eventually resolves/rejects still settles instead of silently dropping.
     private func deliver(_ outcome: Outcome) {
         guard !didDeliverResult else { return }
         didDeliverResult = true
 
-        captureView.captureSession.stop(pauseARSession: true)
+        captureView?.captureSession.stop(pauseARSession: true)
 
-        dismiss(animated: true) { [weak self] in
-            guard let self else { return }
+        let onFinished = self.onFinished
+        let onCancelled = self.onCancelled
+        let onFailed = self.onFailed
+        let settle: () -> Void = {
             switch outcome {
             case .done(let room):
-                self.onFinished?(room)
+                onFinished?(room)
             case .cancelled:
-                self.onCancelled?()
+                onCancelled?()
             case .error(let message):
-                self.onFailed?(message)
+                onFailed?(message)
             }
+        }
+
+        if presentingViewController != nil {
+            dismiss(animated: true, completion: settle)
+        } else {
+            settle()
         }
     }
 
-    /// Turns an unrecoverable `RoomCaptureSession.CaptureError` into user-facing copy. Coaching
-    /// states are handled before this is ever reached — this is the one place hard-failure copy
-    /// is authored, mirroring `scanner/MalletScanner/RoomScanner.swift`'s `describe(_:)`.
+    /// The last-resort net (`viewDidDisappear`/`deinit`): if nothing has delivered a result by the
+    /// time this screen is gone, resolve as cancelled rather than hang the web promise forever.
+    /// Deliberately does not call `dismiss` again — by the time this runs the screen is already
+    /// disappearing or deallocating.
+    private func deliverCancelledIfUndelivered() {
+        guard !didDeliverResult else { return }
+        didDeliverResult = true
+        onCancelled?()
+    }
+
+    /// Turns an unrecoverable `RoomCaptureSession.CaptureError` (or a `RoomBuilder` failure) into
+    /// user-facing copy. Coaching states are handled before this is ever reached — this is the one
+    /// place hard-failure copy is authored, mirroring
+    /// `scanner/MalletScanner/RoomScanner.swift`'s `describe(_:)`. Never interpolates the raw
+    /// Swift error into copy shown to a tech.
     static func describe(_ error: Error) -> String {
         guard let captureError = error as? RoomCaptureSession.CaptureError else {
-            return error.localizedDescription
+            return "The scan could not be finished. Try scanning the room again."
         }
         switch captureError {
         case .deviceNotSupported:
@@ -285,9 +380,27 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
             // Unreachable: both are coaching-mapped and handled before this is called. Kept
             // exhaustive so a future SDK case triggers a compile error here, not a silent
             // fallthrough.
-            return error.localizedDescription
+            return "The scan could not be finished. Try scanning the room again."
         @unknown default:
-            return error.localizedDescription
+            return "The scan could not be finished. Try scanning the room again."
         }
+    }
+}
+
+/// A `UILabel` with padded text — replaces manually padding the string with leading/trailing
+/// spaces, which breaks for multi-line coaching copy and reads oddly to VoiceOver.
+private final class PaddedLabel: UILabel {
+    var insets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: insets))
+    }
+
+    override var intrinsicContentSize: CGSize {
+        let size = super.intrinsicContentSize
+        return CGSize(
+            width: size.width + insets.left + insets.right,
+            height: size.height + insets.top + insets.bottom
+        )
     }
 }
