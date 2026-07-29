@@ -83,7 +83,7 @@ describe("measurementsSlice", () => {
         ],
       }));
 
-      const created = store.getState().addManualRoom(JOB, "Kitchen", [
+      const { room: created, persisted } = store.getState().addManualRoom(JOB, "Kitchen", [
         { kind: "walls_sqft", value: 100 },
       ]);
 
@@ -92,21 +92,26 @@ describe("measurementsSlice", () => {
       expect(store.getState().roomsByJob[JOB]![0]!.id).toBe(created.id);
       expect(created.id).toMatch(/[0-9a-f-]{36}/);
 
-      await flush();
+      const reconciled = await persisted;
 
-      // Reconciled: adopts the server's canonical (fuller) quantities.
-      const reconciled = store.getState().roomsByJob[JOB]![0]!;
+      // persisted resolves with the reconciled (server-canonical) room.
       expect(reconciled.id).toBe(created.id);
       expect(reconciled.quantities).toHaveLength(2);
+
+      // Store adopts the same reconciled room.
+      const stored = store.getState().roomsByJob[JOB]![0]!;
+      expect(stored.id).toBe(created.id);
+      expect(stored.quantities).toHaveLength(2);
     });
 
-    it("rolls back the optimistic room on persist failure", async () => {
+    it("rolls back the optimistic room AND rejects persisted on failure", async () => {
       mutate.createManualRoom.mockRejectedValue(new Error("boom"));
-      const created = store.getState().addManualRoom(JOB, "Kitchen", [
+      const { room: created, persisted } = store.getState().addManualRoom(JOB, "Kitchen", [
         { kind: "walls_sqft", value: 100 },
       ]);
       expect(store.getState().roomsByJob[JOB]).toHaveLength(1);
 
+      await expect(persisted).rejects.toThrow("boom");
       await flush();
 
       expect(store.getState().roomsByJob[JOB]!.some((r) => r.id === created.id)).toBe(false);

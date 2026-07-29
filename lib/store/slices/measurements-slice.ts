@@ -28,11 +28,16 @@ export interface MeasurementsSlice {
   roomsByJob: Record<string, RoomCard[]>;
   /** Replace one job's rooms — called by useJobRooms on hydration/reconcile. */
   setJobRooms: (jobId: string, rooms: RoomCard[]) => void;
+  /**
+   * `persisted` resolves with the reconciled (server-canonical) room, and REJECTS
+   * on failure after rolling back — callers must surface the error (no silent
+   * failures). Mirrors addLead (leads-slice.ts) / addChecklist (checklists-slice.ts).
+   */
   addManualRoom: (
     jobId: string,
     roomName: string,
     quantities: readonly { kind: RoomQuantityKind; value: number }[],
-  ) => RoomCard;
+  ) => { room: RoomCard; persisted: Promise<RoomCard> };
   overrideQuantity: (jobId: string, captureId: string, kind: RoomQuantityKind, value: number) => void;
   confirmQuantity: (jobId: string, captureId: string, kind: RoomQuantityKind, value: number) => void;
   /** Routes to overrideQuantity or confirmQuantity based on the quantity's current status. */
@@ -97,7 +102,8 @@ export const createMeasurementsSlice: StateCreator<
     }));
 
     // Persist; reconcile with the server-canonical room (all quantity kinds, derived values).
-    trpcVanilla.v1.measurements.createManualRoom
+    // Resolves with the reconciled room, REJECTS on failure after rolling back.
+    const persisted: Promise<RoomCard> = trpcVanilla.v1.measurements.createManualRoom
       .mutate({
         id,
         jobId,
@@ -112,19 +118,21 @@ export const createMeasurementsSlice: StateCreator<
             [jobId]: (s.roomsByJob[jobId] ?? []).map((r) => (r.id === id ? reconciled : r)),
           },
         }));
+        return reconciled;
       })
       .catch((err: unknown) => {
         reportWriteError("addManualRoom", err);
-        // Rollback: remove the optimistic room.
+        // Rollback: remove the optimistic room, then rethrow so the caller can tell the user.
         set((s) => ({
           roomsByJob: {
             ...s.roomsByJob,
             [jobId]: (s.roomsByJob[jobId] ?? []).filter((r) => r.id !== id),
           },
         }));
+        throw err instanceof Error ? err : new Error("addManualRoom failed");
       });
 
-    return room;
+    return { room, persisted };
   },
 
   overrideQuantity: (jobId, captureId, kind, value) => {
