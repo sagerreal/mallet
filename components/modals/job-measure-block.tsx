@@ -24,6 +24,15 @@ import { Row } from "@/components/ui/row";
 import { Badge } from "@/components/ui/badge";
 import type { RoomCard, RoomQuantity, RoomQuantityKind } from "@/lib/store/types";
 
+// Stable empty-array fallback — MUST live outside the selector. A selector that
+// returns a fresh `[]` literal when the job has no roomsByJob entry hands
+// useSyncExternalStore a new reference on every getSnapshot call; React sees
+// the snapshot as "changed" on every render and infinite-loops until the error
+// boundary trips ("Maximum update depth exceeded"). Select the raw value,
+// apply the fallback to it outside the selector, same as job-modal.tsx's
+// `rooms` selector.
+const EMPTY_ROOMS: readonly RoomCard[] = [];
+
 /** A quantity's value: an office override/confirm wins over the derived scan value. */
 function quantityValue(q: RoomQuantity | undefined): number | null {
   if (!q) return null;
@@ -59,7 +68,7 @@ export function roomNeedsConfirm(room: RoomCard): boolean {
 
 export function JobMeasureBlock({ jobId }: { jobId: string }) {
   useJobRooms(jobId);
-  const rooms = useAppStore((s) => s.roomsByJob[jobId] ?? []);
+  const rooms = useAppStore((s) => s.roomsByJob[jobId]) ?? EMPTY_ROOMS;
   const pushModal = usePushModal();
 
   return (
