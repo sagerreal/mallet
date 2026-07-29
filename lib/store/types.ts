@@ -452,3 +452,33 @@ export interface ActiveCall {
   // Our microphone is silenced. Browser calls only — on a bridged call the handset owns this.
   muted: boolean;
 }
+
+// ---- Measurements (room captures) ------------------------------------------
+// No money in this domain. Dates stay ISO strings in-store (matches dto-mapper's
+// `receivedAt` convention) — nothing here needs Date arithmetic client-side.
+
+export type RoomQuantityKind =
+  | "walls_sqft"
+  | "ceiling_sqft"
+  | "baseboard_lnft"
+  | "crown_lnft"
+  | "doors_count"
+  | "windows_count";
+
+export type RoomQuantityStatus = "derived" | "override" | "confirmed" | "needs_confirm";
+
+export interface RoomQuantity {
+  kind: RoomQuantityKind;
+  value: number | null;
+  derivedValue: number | null;
+  status: RoomQuantityStatus;
+}
+
+export interface RoomCard {
+  id: string;
+  jobId: string;
+  roomName: string;
+  source: "roomplan_v1" | "manual";
+  capturedAt: string; // ISO string
+  quantities: RoomQuantity[];
+}
