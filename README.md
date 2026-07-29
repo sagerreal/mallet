@@ -129,10 +129,11 @@ installed **npm** packages only. `MalletRoomScan` isn't an npm package (it's a l
 the target registers nothing on its own. Instead `MalletViewController` (a
 `CAPBridgeViewController` subclass, wired into `Main.storyboard` via `customClass`) overrides
 `capacitorDidLoad()` and calls `bridge?.registerPluginInstance(RoomScanPlugin())` directly. This
-means `cap sync` can never break plugin registration — it only touches `public/` and the
-generated `capacitor.config.json`, neither of which registration depends on. Verified: running
-`npm run sync` leaves `RoomScanPlugin.swift`, `RoomScanViewController.swift`,
-`MalletViewController.swift`, and `App.xcodeproj/project.pbxproj` byte-for-byte untouched.
+means `cap sync` can never break plugin registration — it only touches `public/`, the generated
+`capacitor.config.json`, and `CapApp-SPM/Package.swift` (see the deployment-target note below),
+none of which registration depends on. Verified: running `npm run sync` leaves
+`RoomScanPlugin.swift`, `RoomScanViewController.swift`, `MalletViewController.swift`, and
+`App.xcodeproj/project.pbxproj` byte-for-byte untouched.
 
 **MalletCapture is a project-level SPM reference, not a `CapApp-SPM` dependency.**
 `ios/App/CapApp-SPM/Package.swift` is stamped "DO NOT MODIFY — managed by Capacitor CLI" and is
