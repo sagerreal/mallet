@@ -34,6 +34,28 @@ export class SupersedeTargetError extends Error {
   }
 }
 
+// Thrown by `createCapture` (and the new-capture leg of `supersede`) when the capture id
+// collides with an existing row's primary key (Postgres 23505 on room_captures_pkey). Retrying
+// a scan upload with the same client-authored id is expected (flaky network, app relaunch) —
+// the app-layer use-case catches this and returns the ALREADY-PERSISTED capture instead of a
+// throw, so a retry is truly idempotent rather than a duplicate error.
+export class DuplicateCaptureError extends Error {
+  constructor(public readonly id: string) {
+    super(`room capture ${id} already exists`);
+    this.name = "DuplicateCaptureError";
+  }
+}
+
+// Thrown by `createCapture` when the FK to jobs (room_captures_job_fk) is violated (Postgres
+// 23503) — the given jobId doesn't resolve for this org. The app-layer use-case catches this
+// and maps it to a typed not-found Result error instead of letting a raw FK violation surface.
+export class JobNotFoundError extends Error {
+  constructor(public readonly jobId: string) {
+    super(`job ${jobId} not found`);
+    this.name = "JobNotFoundError";
+  }
+}
+
 // The org is NEVER a parameter — it is implicit in the org-scoped transaction the repository
 // is constructed with, so a caller physically cannot address another tenant's captures.
 export interface MeasurementRepository {

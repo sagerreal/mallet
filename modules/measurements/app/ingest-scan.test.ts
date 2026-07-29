@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { asJobId, FixedClock, isOk, isErr, type JobId } from "@mallet/shared/types";
-import type { RoomCapture } from "../domain/room-capture";
+import { asJobId, asOrgId, FixedClock, isOk, isErr, type JobId } from "@mallet/shared/types";
+import { RoomCapture } from "../domain/room-capture";
 import type { PaintingQuantity } from "../domain/derive-painting";
 import {
   SupersedeTargetError,
+  DuplicateCaptureError,
+  JobNotFoundError,
   type MeasurementRepository,
   type RoomCaptureWithQuantities,
 } from "../domain/measurement-repository";
@@ -45,17 +47,24 @@ const wireGeometry = {
 
 class FakeMeasurementRepository implements MeasurementRepository {
   createCaptureCalls: { capture: RoomCapture; quantities: readonly PaintingQuantity[] }[] = [];
+  throwOnCreate: Error | null = null;
+  private byId = new Map<string, RoomCaptureWithQuantities>();
+
+  seed(entry: RoomCaptureWithQuantities): void {
+    this.byId.set(entry.capture.props.id, entry);
+  }
 
   async createCapture(capture: RoomCapture, quantities: readonly PaintingQuantity[]): Promise<void> {
     this.createCaptureCalls.push({ capture, quantities });
+    if (this.throwOnCreate) throw this.throwOnCreate;
   }
 
   async listByJob(): Promise<RoomCaptureWithQuantities[]> {
     throw new Error("listByJob not used in ingest tests");
   }
 
-  async getCapture(): Promise<RoomCaptureWithQuantities | null> {
-    throw new Error("getCapture not used in ingest tests");
+  async getCapture(id: string): Promise<RoomCaptureWithQuantities | null> {
+    return this.byId.get(id) ?? null;
   }
 
   async supersede(): Promise<void> {
@@ -193,5 +202,56 @@ describe("IngestScanUseCase", () => {
       expect(result.value.capture.props.jobId).toBe(JOB);
       expect(result.value.capture.props.capturedAt.toISOString()).toBe("2026-07-09T11:00:00.000Z");
     }
+  });
+
+  // ── duplicate id → true idempotency, not a throw ──────────────────────────
+
+  it("returns the existing capture (ok) when the repo throws DuplicateCaptureError for the id", async () => {
+    repo.throwOnCreate = new DuplicateCaptureError(CLIENT_ID);
+    const existingResult = RoomCapture.create({
+      id: CLIENT_ID,
+      orgId: asOrgId(ORG),
+      jobId: JOB,
+      roomName: "Already There",
+      source: "manual",
+      rawPayload: null,
+      geometry: null,
+      capturedAt: new Date("2026-07-01T00:00:00Z"),
+      supersededById: null,
+      createdAt: new Date("2026-07-01T00:00:00Z"),
+      updatedAt: new Date("2026-07-01T00:00:00Z"),
+      deletedAt: null,
+    });
+    if (!existingResult.ok) throw new Error("fixture setup failed");
+    repo.seed({ capture: existingResult.value, quantities: [] });
+
+    const result = await useCase.exec(baseCmd({ id: CLIENT_ID }), ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.capture.props.id).toBe(CLIENT_ID);
+      expect(result.value.capture.props.roomName).toBe("Already There");
+    }
+  });
+
+  it("returns a conflict result (not a throw) when DuplicateCaptureError fires but getCapture then finds nothing", async () => {
+    repo.throwOnCreate = new DuplicateCaptureError(CLIENT_ID);
+    // No seed(): getCapture(id) returns null — freak race / cross-org id collision.
+
+    const result = await useCase.exec(baseCmd({ id: CLIENT_ID }), ORG);
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) expect(result.error.kind).toBe("conflict");
+  });
+
+  // ── foreign job id → typed not_found, not a throw ─────────────────────────
+
+  it("returns a not_found result (not a throw) when the repo throws JobNotFoundError", async () => {
+    repo.throwOnCreate = new JobNotFoundError(JOB);
+
+    const result = await useCase.exec(baseCmd(), ORG);
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) expect(result.error.kind).toBe("not_found");
   });
 });

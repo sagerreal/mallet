@@ -238,4 +238,50 @@ suite("measurements tRPC router (full stack, live RLS)", () => {
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  // ── retry-safe ingest: duplicate id is idempotent, foreign jobId is NOT_FOUND ─────────────
+
+  it("double-ingesting the same client-authored id returns the same capture twice and persists exactly one row", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const clientId = randomUUID();
+    const cmd = {
+      id: clientId,
+      jobId: jobAId,
+      roomName: "Sunroom",
+      capturedAt: new Date("2026-07-06T00:00:00Z").toISOString(),
+      rawPayload: { raw: "payload" },
+      geometry,
+    };
+
+    const first = await caller.v1.measurements.ingestScan(cmd);
+    const second = await caller.v1.measurements.ingestScan(cmd);
+
+    expect(first.id).toBe(clientId);
+    expect(second.id).toBe(clientId);
+    expect(second.roomName).toBe(first.roomName);
+    expect(second.quantities).toEqual(first.quantities);
+
+    const rows = await admin<{ id: string }[]>`select id from room_captures where id = ${clientId}`;
+    expect(rows).toHaveLength(1);
+  });
+
+  it("ingesting with a jobId that doesn't exist for this org returns NOT_FOUND and persists no row", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const ghostJobId = randomUUID();
+    const attemptedId = randomUUID();
+
+    await expect(
+      caller.v1.measurements.ingestScan({
+        id: attemptedId,
+        jobId: ghostJobId,
+        roomName: "Ghost Job Room",
+        capturedAt: new Date("2026-07-07T00:00:00Z").toISOString(),
+        rawPayload: null,
+        geometry,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const rows = await admin<{ id: string }[]>`select id from room_captures where id = ${attemptedId}`;
+    expect(rows).toHaveLength(0);
+  });
 });

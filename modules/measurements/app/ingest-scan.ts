@@ -1,12 +1,18 @@
 import type { JobId, Result, AppError } from "@mallet/shared/types";
-import { asOrgId, ok, err } from "@mallet/shared/types";
+import { asOrgId, conflict, notFound, ok, err } from "@mallet/shared/types";
 import type { Clock } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import { RoomCapture } from "../domain/room-capture";
 import { parseNormalizedGeometry } from "../domain/normalized-geometry";
 import { derivePaintingQuantities } from "../domain/derive-painting";
-import type { MeasurementRepository, RoomCaptureWithQuantities, StoredQuantity } from "../domain/measurement-repository";
+import {
+  DuplicateCaptureError,
+  JobNotFoundError,
+  type MeasurementRepository,
+  type RoomCaptureWithQuantities,
+  type StoredQuantity,
+} from "../domain/measurement-repository";
 
 export interface IngestScanCommand {
   readonly id?: string; // client-authored id; a new one is minted when absent
@@ -50,7 +56,28 @@ export class IngestScanUseCase {
     const capture = captureResult.value;
 
     const quantities = derivePaintingQuantities(geometry);
-    await this.repo.createCapture(capture, quantities);
+
+    try {
+      await this.repo.createCapture(capture, quantities);
+    } catch (e) {
+      if (e instanceof DuplicateCaptureError) {
+        // Retry-safe ingest: the same client-authored id was already persisted (flaky network,
+        // app relaunch resubmitting) — return the existing capture instead of failing, so a
+        // retry is truly idempotent (same DTO shape, not a second write).
+        const existing = await this.repo.getCapture(e.id);
+        if (existing === null) {
+          // Freak race (concurrent archive) or an id collision with an unrelated org's capture
+          // that RLS hides from getCapture — never silently succeed with no data to return.
+          return err(conflict("room capture could not be retrieved after a duplicate id conflict"));
+        }
+        logger.info({ captureId: e.id, jobId: cmd.jobId, orgId }, "measurements.scan_ingest_deduped");
+        return ok(existing);
+      }
+      if (e instanceof JobNotFoundError) {
+        return err(notFound("job not found"));
+      }
+      throw e;
+    }
 
     // Mirror what the repository does at persistence time: a derived quantity's derivedValue
     // starts equal to its value; a needs_confirm row (no confident derivation) starts null.

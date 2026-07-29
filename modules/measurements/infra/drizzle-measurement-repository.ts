@@ -7,10 +7,34 @@ import { toWireGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantity, PaintingQuantityKind } from "../domain/derive-painting";
 import {
   SupersedeTargetError,
+  DuplicateCaptureError,
+  JobNotFoundError,
   type MeasurementRepository,
   type RoomCaptureWithQuantities,
   type QuantityStatus,
 } from "../domain/measurement-repository";
+
+// The `postgres` driver (postgres.js) throws a `PostgresError` whose enumerable own properties
+// mirror the Postgres error-response fields: `code` (SQLSTATE, e.g. "23505"/"23503") and
+// `constraint_name` (the violated constraint, when the error is constraint-scoped). Neither is
+// typed by the driver's public types, so we narrow through `unknown` rather than trust a cast.
+// Drizzle never lets that PostgresError surface directly, though: `postgres-js/session.ts`
+// catches it and rethrows a `DrizzleQueryError` (message "Failed query: ...") with the original
+// error attached as `.cause` — so `code`/`constraint_name` have to be read off `e.cause`, not `e`
+// itself (confirmed against node_modules/drizzle-orm/errors.js — no other precedent for reading
+// this driver's error shape exists in shared/ or modules/, so this walk is new).
+// Constraining on `constraint_name` (not just the SQLSTATE) matters: 23505 is the generic
+// unique-violation code, so an unrelated unique constraint on the same statement must not be
+// misclassified as a duplicate capture id.
+function pgErrorInfo(e: unknown): { code: string | null; constraint: string | null } {
+  const cause = e instanceof Error && e.cause !== undefined ? e.cause : e;
+  if (!(cause instanceof Error)) return { code: null, constraint: null };
+  const withPgFields = cause as { code?: unknown; constraint_name?: unknown };
+  return {
+    code: typeof withPgFields.code === "string" ? withPgFields.code : null,
+    constraint: typeof withPgFields.constraint_name === "string" ? withPgFields.constraint_name : null,
+  };
+}
 import { toCaptureWithQuantities, type RoomCaptureRow } from "./measurement-mapper";
 
 // Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
@@ -143,22 +167,46 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     quantities: readonly PaintingQuantity[],
   ): Promise<void> {
     const p = capture.props;
-    const rows = await this.tx
-      .insert(roomCaptures)
-      .values({
-        id: p.id,
-        orgId: this.orgId,
-        jobId: p.jobId,
-        roomName: p.roomName,
-        source: p.source,
-        rawPayload: p.rawPayload,
-        geometry: p.geometry ? toWireGeometry(p.geometry) : null,
-        capturedAt: p.capturedAt,
-        supersededById: p.supersededById,
-      })
-      .returning();
+    let rows: RoomCaptureRow[];
+    try {
+      rows = await this.tx
+        .insert(roomCaptures)
+        .values({
+          id: p.id,
+          orgId: this.orgId,
+          jobId: p.jobId,
+          roomName: p.roomName,
+          source: p.source,
+          rawPayload: p.rawPayload,
+          geometry: p.geometry ? toWireGeometry(p.geometry) : null,
+          capturedAt: p.capturedAt,
+          supersededById: p.supersededById,
+        })
+        // A Postgres transaction is poisoned after ANY statement error — every later statement
+        // on the same tx (including the getCapture the app layer needs for true idempotency)
+        // fails with "current transaction is aborted" until rollback. So the duplicate-id case
+        // is handled WITHOUT ever raising a unique_violation: ON CONFLICT (id) DO NOTHING turns
+        // a colliding insert into a silent no-op (0 rows returned) instead of an error, keeping
+        // the tx alive so the caller can still query inside it. `id` is room_captures' PK, so
+        // this target also covers the composite room_captures_org_id_uq (org_id, id) — that
+        // constraint can never fire without `id` alone already colliding on the PK first.
+        .onConflictDoNothing({ target: roomCaptures.id })
+        .returning();
+    } catch (e) {
+      // Only a genuine hard error reaches here now — the id-collision case above no longer
+      // throws. 23503 = foreign_key_violation; scoped to the jobs FK by name so an unrelated FK
+      // violation on this statement (e.g. the orgs FK) isn't misclassified as JobNotFound.
+      const { code, constraint } = pgErrorInfo(e);
+      if (code === "23503" && (constraint === null || constraint === "room_captures_job_fk")) {
+        throw new JobNotFoundError(p.jobId);
+      }
+      throw e;
+    }
     const row = rows[0];
-    if (!row) throw new Error("room_capture insert returned no row");
+    // onConflictDoNothing skipped the insert — id already exists. Throw BEFORE the quantities
+    // insert below: quantities are keyed (org_id, capture_id, kind), so inserting them against
+    // an id that already has quantities would raise a second, unhandled unique violation.
+    if (!row) throw new DuplicateCaptureError(p.id);
 
     if (quantities.length > 0) {
       await this.tx.insert(paintingRoomQuantities).values(
