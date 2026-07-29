@@ -30,6 +30,15 @@ describe("parseNormalizedGeometry", () => {
     expect(r.value.ceiling).toEqual({ area: 12, isVaulted: false, wallTopSpread: 0, provenance: "roomplan" });
   });
 
+  it("accepts an explicit null wall_index on an opening (non-Swift producers may send null)", () => {
+    const r = parseNormalizedGeometry({
+      ...validWirePayload,
+      openings: [{ kind: "door", width: 0.9, height: 2.0, wall_index: null }],
+    });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.openings[0]?.wallIndex).toBeNull();
+  });
+
   it("accepts a null ceiling", () => {
     const r = parseNormalizedGeometry({ ...validWirePayload, ceiling: null });
     expect(isOk(r)).toBe(true);

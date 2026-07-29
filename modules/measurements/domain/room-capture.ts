@@ -39,8 +39,26 @@ export class RoomCapture {
       return err(validation(`invalid source: "${props.source}"`, "source"));
     }
 
-    if (props.rawPayload !== null) {
-      const byteLength = Buffer.byteLength(JSON.stringify(props.rawPayload), "utf8");
+    // The wire value may arrive as `undefined` (absent JSON key) — normalize to null so the
+    // rest of this factory only ever deals with one "no payload" representation.
+    const rawPayload = props.rawPayload === undefined ? null : props.rawPayload;
+
+    if (rawPayload !== null) {
+      let serialized: string | undefined;
+      try {
+        serialized = JSON.stringify(rawPayload);
+      } catch {
+        // JSON.stringify throws on circular structures (and on BigInt); an untrusted payload
+        // that can't be serialized is invalid input, not a crash.
+        return err(validation("raw payload is not serializable", "rawPayload"));
+      }
+      // JSON.stringify itself returns undefined for values like a bare function or symbol —
+      // treat that the same as "not serializable" rather than let byte-length math blow up.
+      if (serialized === undefined) {
+        return err(validation("raw payload is not serializable", "rawPayload"));
+      }
+      // TextEncoder (not Buffer) — the domain layer must stay runtime-agnostic.
+      const byteLength = new TextEncoder().encode(serialized).length;
       if (byteLength > MAX_RAW_PAYLOAD_BYTES) {
         return err(validation(`raw payload exceeds ${MAX_RAW_PAYLOAD_BYTES} bytes`, "rawPayload"));
       }
@@ -53,7 +71,7 @@ export class RoomCapture {
       return err(validation("geometry must be absent for a manual capture", "geometry"));
     }
 
-    return ok(new RoomCapture({ ...props, roomName }));
+    return ok(new RoomCapture({ ...props, roomName, rawPayload }));
   }
 
   get props(): RoomCaptureProps {

@@ -101,4 +101,21 @@ describe("RoomCapture.create", () => {
     expect(isErr(r)).toBe(true);
     if (isErr(r)) expect(r.error.field).toBe("geometry");
   });
+
+  it("treats an undefined raw payload the same as null (valid for a manual capture)", () => {
+    const r = RoomCapture.create(
+      baseProps({ source: "manual", geometry: null, rawPayload: undefined as unknown as null }),
+    );
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.rawPayload).toBeNull();
+  });
+
+  it("returns a validation error (never throws) for a circular raw payload", () => {
+    const circular: Record<string, unknown> = { a: 1 };
+    circular.self = circular;
+    expect(() => RoomCapture.create(baseProps({ rawPayload: circular }))).not.toThrow();
+    const r = RoomCapture.create(baseProps({ rawPayload: circular }));
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.field).toBe("rawPayload");
+  });
 });

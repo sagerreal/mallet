@@ -107,6 +107,51 @@ describe("derivePaintingQuantities", () => {
     expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").value).toBe(45.9);
   });
 
+  it("returns walls_sqft needs_confirm/null when there are no wall polygons, but still derives baseboard/crown from the floor", () => {
+    const g = room4x3x2p4({ walls: [] });
+    const qs = derivePaintingQuantities(g);
+    expect(findQuantity(qs, "walls_sqft")).toEqual({ kind: "walls_sqft", value: null, status: "needs_confirm" });
+    // Floor polygon is schema-required, so perimeter-derived quantities stay meaningful even
+    // with zero usable walls.
+    expect(findQuantity(qs, "baseboard_lnft")).toEqual({ kind: "baseboard_lnft", value: 43.0, status: "derived" });
+    expect(findQuantity(qs, "crown_lnft")).toEqual({ kind: "crown_lnft", value: 45.9, status: "derived" });
+  });
+
+  it("returns walls_sqft needs_confirm/null when every wall polygon is degenerate (< 3 vertices)", () => {
+    const g = room4x3x2p4({
+      walls: [
+        { polygon: { vertices: [{ x: 0, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }] } },
+        { polygon: { vertices: [{ x: 4, y: 0, z: 0 }] } },
+      ],
+    });
+    expect(findQuantity(derivePaintingQuantities(g), "walls_sqft")).toEqual({
+      kind: "walls_sqft",
+      value: null,
+      status: "needs_confirm",
+    });
+  });
+
+  it("rounds only at the end (13.9498m perimeter -> 45.8 lnft, not 45.9 which intermediate meter-rounding would give)", () => {
+    // 4 x 2.9749m floor: perimeter = 2*(4 + 2.9749) = 13.9498m exactly.
+    // Correct: round1(13.9498 * 3.280839895) = round1(45.767060367...) = 45.8.
+    // Wrong (rounds meters to the nearest whole meter first, i.e. 14m): round1(14 * 3.280839895)
+    // = round1(45.93175853) = 45.9 — a different, wrong, answer. This test fails if intermediate
+    // rounding creeps in anywhere before the final round-to-1-decimal step.
+    const g = room4x3x2p4({
+      floorPolygon: {
+        vertices: [
+          { x: 0, y: 0, z: 0 },
+          { x: 4, y: 0, z: 0 },
+          { x: 4, y: 0, z: 2.9749 },
+          { x: 0, y: 0, z: 2.9749 },
+        ],
+      },
+      openings: [],
+    });
+    expect(findQuantity(derivePaintingQuantities(g), "crown_lnft").value).toBe(45.8);
+    expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").value).toBe(45.8);
+  });
+
   it("counts 'opening' kind as neither a door nor a window", () => {
     const g = room4x3x2p4({
       openings: [

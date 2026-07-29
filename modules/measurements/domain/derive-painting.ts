@@ -19,6 +19,8 @@ export interface PaintingQuantity {
   readonly status: "derived" | "needs_confirm";
 }
 
+const MIN_WALL_POLYGON_VERTICES = 3;
+
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 /**
@@ -26,6 +28,8 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
  * without re-reading the phase-1 plan):
  *  - walls are GROSS — openings are never deducted from wall area.
  *  - a null/vaulted ceiling never gets a guessed value — it comes back needs_confirm.
+ *  - zero usable wall polygons never gets a guessed value either — a confident $0 wall line
+ *    would violate the same never-guess law, so walls_sqft comes back needs_confirm too.
  *  - baseboard deducts only door widths (not windows), and is floored at 0.
  *  - crown uses the flat-ceiling convention: ceiling perimeter === floor perimeter.
  *  - 'opening' kind counts as neither a door nor a window.
@@ -33,8 +37,10 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantity[] {
   const floorPerimeterM = polygonPerimeter(g.floorPolygon.vertices);
 
-  const wallsAreaM2 = g.walls.reduce((sum, wall) => sum + polygonArea(wall.polygon.vertices), 0);
-  const wallsSqft = round1(wallsAreaM2 * SQ_METERS_TO_SQFT);
+  const usableWalls = g.walls.filter((wall) => wall.polygon.vertices.length >= MIN_WALL_POLYGON_VERTICES);
+  const wallsNeedConfirm = usableWalls.length === 0;
+  const wallsAreaM2 = usableWalls.reduce((sum, wall) => sum + polygonArea(wall.polygon.vertices), 0);
+  const wallsSqft = wallsNeedConfirm ? null : round1(wallsAreaM2 * SQ_METERS_TO_SQFT);
 
   const ceilingNeedsConfirm = g.ceiling === null || g.ceiling.isVaulted || g.ceiling.area === null;
   const ceilingSqft = ceilingNeedsConfirm ? null : round1((g.ceiling as { area: number }).area * SQ_METERS_TO_SQFT);
@@ -52,7 +58,7 @@ export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantit
   const windowsCount = g.openings.filter((o) => o.kind === "window").length;
 
   return [
-    { kind: "walls_sqft", value: wallsSqft, status: "derived" },
+    { kind: "walls_sqft", value: wallsSqft, status: wallsNeedConfirm ? "needs_confirm" : "derived" },
     { kind: "ceiling_sqft", value: ceilingSqft, status: ceilingNeedsConfirm ? "needs_confirm" : "derived" },
     { kind: "baseboard_lnft", value: baseboardLnft, status: "derived" },
     { kind: "crown_lnft", value: crownLnft, status: "derived" },

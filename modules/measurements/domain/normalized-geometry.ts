@@ -60,7 +60,7 @@ const openingSchema = z.object({
   kind: z.enum(["door", "window", "opening"]),
   width: finite().nonnegative(),
   height: finite().nonnegative(),
-  wall_index: z.number().int().nonnegative().optional(),
+  wall_index: z.number().int().nonnegative().nullish(),
 });
 
 const wallSchema = z.object({
