@@ -81,12 +81,18 @@ export class IngestScanUseCase {
 
     // Mirror what the repository does at persistence time: a derived quantity's derivedValue
     // starts equal to its value; a needs_confirm row (no confident derivation) starts null.
-    const storedQuantities: StoredQuantity[] = quantities.map((q) => ({
-      kind: q.kind,
-      value: q.value,
-      derivedValue: q.status === "needs_confirm" ? null : q.value,
-      status: q.status,
-    }));
+    // Sorted alphabetically by kind to match the repo's read-path ordering (`ORDER BY kind` in
+    // attachQuantities) — this response is built in-memory, never re-read from the DB, so
+    // without an explicit sort it would disagree with what a later getCapture() returns for the
+    // same capture (e.g. the duplicate-id retry path below).
+    const storedQuantities: StoredQuantity[] = quantities
+      .map((q) => ({
+        kind: q.kind,
+        value: q.value,
+        derivedValue: q.status === "needs_confirm" ? null : q.value,
+        status: q.status,
+      }))
+      .sort((a, b) => a.kind.localeCompare(b.kind));
 
     logger.info({ captureId: capture.props.id, jobId: cmd.jobId, orgId }, "measurements.scan_ingested");
 

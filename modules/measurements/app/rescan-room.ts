@@ -86,12 +86,16 @@ export class RescanRoomUseCase {
       throw e;
     }
 
-    const storedQuantities: StoredQuantity[] = quantities.map((q) => ({
-      kind: q.kind,
-      value: q.value,
-      derivedValue: q.status === "needs_confirm" ? null : q.value,
-      status: q.status,
-    }));
+    // Sorted alphabetically by kind to match the repo's read-path ordering (`ORDER BY kind` in
+    // attachQuantities) — see the identical comment in ingest-scan.ts.
+    const storedQuantities: StoredQuantity[] = quantities
+      .map((q) => ({
+        kind: q.kind,
+        value: q.value,
+        derivedValue: q.status === "needs_confirm" ? null : q.value,
+        status: q.status,
+      }))
+      .sort((a, b) => a.kind.localeCompare(b.kind));
 
     logger.info({ captureId: next.props.id, supersedes: cmd.captureId, orgId }, "measurements.room_rescanned");
 

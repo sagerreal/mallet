@@ -236,7 +236,12 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     const quantityRows = await this.tx
       .select()
       .from(paintingRoomQuantities)
-      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)));
+      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)))
+      // Deterministic order (alphabetical by kind) — without this Postgres is free to return
+      // quantity rows in any order, so the same capture's `quantities` array could differ
+      // between two reads (e.g. a duplicate-ingest retry's getCapture vs. the original
+      // createCapture response). API stability for every consumer, not just tests.
+      .orderBy(paintingRoomQuantities.kind);
 
     const byCapture = new Map<string, typeof quantityRows>();
     for (const q of quantityRows) {
@@ -268,7 +273,9 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     const quantityRows = await this.tx
       .select()
       .from(paintingRoomQuantities)
-      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)));
+      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)))
+      // Same deterministic ordering as attachQuantities above — keep both read paths consistent.
+      .orderBy(paintingRoomQuantities.kind);
 
     const byCapture = new Map<string, typeof quantityRows>();
     for (const q of quantityRows) {
