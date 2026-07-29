@@ -290,7 +290,7 @@ describe("settings-slice persistence", () => {
       booking: store.get().booking,
       markup: 40,
       trade: "hvac",
-      toggles: { techSeesPrice: false, frontDesk: false },
+      toggles: { techSeesPrice: false, frontDesk: false, measurementEstimating: false },
     };
     store.get().setSettings(snap);
     expect(store.get().markup).toBe(40);
@@ -503,6 +503,15 @@ describe("settings-slice persistence", () => {
     expect(store.get().toggles.techSeesPrice).toBe(false);
     await Promise.resolve();
     expect(mockUpdateConfig).toHaveBeenCalledWith({ techSeesPrice: false });
+  });
+
+  it("measurementEstimating defaults off and setToggle maps it to the correct updateConfig field", async () => {
+    const store = makeStore();
+    expect(store.get().toggles.measurementEstimating).toBe(false);
+    store.get().setToggle("measurementEstimating", true);
+    expect(store.get().toggles.measurementEstimating).toBe(true);
+    await Promise.resolve();
+    expect(mockUpdateConfig).toHaveBeenCalledWith({ measurementEstimating: true });
   });
 
   // --- collections start empty -----------------------------------------------

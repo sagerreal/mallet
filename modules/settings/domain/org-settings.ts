@@ -72,6 +72,12 @@ export interface OrgSettingsProps {
   readonly frontDesk: boolean;
   readonly scopeOn: boolean;
   /**
+   * Org-level gate for the Measurements section on jobs (room captures + pricing from them).
+   * Only measurement-priced trades (painting etc.) turn this on; a plumbing org leaves it off and
+   * the job modal's Measurements row does not render at all.
+   */
+  readonly measurementEstimating: boolean;
+  /**
    * Weekday open/close, retained so a rollback still reads real hours. NOTHING derives
    * availability from these any more — the per-day fields below do. Kept in sync on write so the
    * two never disagree if something old reads them.
@@ -324,6 +330,10 @@ export class OrgSettings {
       techTexts: fields.techTexts !== undefined ? fields.techTexts : this.p.techTexts,
       frontDesk: fields.frontDesk !== undefined ? fields.frontDesk : this.p.frontDesk,
       scopeOn: fields.scopeOn !== undefined ? fields.scopeOn : this.p.scopeOn,
+      measurementEstimating:
+        fields.measurementEstimating !== undefined
+          ? fields.measurementEstimating
+          : this.p.measurementEstimating,
       hoursWdOpen: fields.hoursWdOpen !== undefined ? fields.hoursWdOpen : this.p.hoursWdOpen,
       hoursWdClose: fields.hoursWdClose !== undefined ? fields.hoursWdClose : this.p.hoursWdClose,
       hoursSatOpen:

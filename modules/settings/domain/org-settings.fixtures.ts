@@ -25,6 +25,7 @@ export const baseSettingsProps = (o: Partial<OrgSettingsProps> = {}): OrgSetting
   techTexts: true,
   frontDesk: true,
   scopeOn: false,
+  measurementEstimating: false,
   hoursWdOpen: 8,
   hoursWdClose: 17,
   hoursMonOpen: 8,
