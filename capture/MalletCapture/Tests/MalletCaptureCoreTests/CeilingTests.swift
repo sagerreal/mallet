@@ -29,4 +29,50 @@ final class CeilingTests: XCTestCase {
         XCTAssertEqual(estimate.wallTopSpread, 0.6, accuracy: 1e-9)
         XCTAssertEqual(estimate.provenance, "vaulted_needs_confirmation")
     }
+
+    /// A wall with a sloped/gabled top edge (two distinct top-vertex heights, all other
+    /// walls level) must flip `isVaulted` even though the cross-wall max-height spread
+    /// alone could be masked by the midpoint-per-vertex heuristic this replaces.
+    func testGabledWallTopIsFlaggedVaultedEvenWithLevelOtherWalls() throws {
+        let g = try TestFixtures.rectRoom(w: 4, d: 3, h: 2.4, openings: [])
+        var walls = g.walls
+        let gabled = walls[0]
+        var gabledVertices = gabled.polygon.vertices
+        // Slope the top edge just slightly: one top vertex stays at h, the other rises
+        // to h + 0.05 — well under flatnessTolerance (0.15), so the cross-wall spread
+        // signal alone would NOT flag this vaulted. This wall now has 3 distinct
+        // vertex heights (0, 2.4, 2.45), isolating the gable signal as the sole cause.
+        gabledVertices[2].z += 0.05
+        walls[0] = WallGeometry(polygon: Polygon3(vertices: gabledVertices))
+
+        let estimate = CeilingEstimate.derive(floorPolygon: g.floorPolygon, walls: walls)
+        XCTAssertTrue(estimate.isVaulted)
+        XCTAssertNil(estimate.area)
+        XCTAssertEqual(estimate.provenance, "vaulted_needs_confirmation")
+    }
+
+    /// A degenerate (zero-extent) wall polygon — every vertex collapsed onto the same
+    /// height as the room's other wall tops — must not crash or produce NaN, must not
+    /// register as gabled (it has only one distinct height, not more than two), and
+    /// must not perturb an otherwise-flat result: its own "top" trivially agrees with
+    /// every other level wall.
+    func testDegenerateZeroHeightWallDoesNotCrashOrAffectResult() throws {
+        let roomHeight = 2.4
+        let g = try TestFixtures.rectRoom(w: 4, d: 3, h: roomHeight, openings: [])
+        var walls = g.walls
+        // A wall whose all four vertices sit at the same height as every other wall's
+        // top — e.g. a mis-fit RoomPlan wall with no measurable vertical extent.
+        let flat = walls[0].polygon.vertices
+        let zeroHeightVertices = flat.map { Point3(x: $0.x, y: $0.y, z: roomHeight) }
+        walls[0] = WallGeometry(polygon: Polygon3(vertices: zeroHeightVertices))
+
+        let estimate = CeilingEstimate.derive(floorPolygon: g.floorPolygon, walls: walls)
+        XCTAssertFalse(estimate.wallTopSpread.isNaN)
+        XCTAssertFalse(estimate.isVaulted)
+        let area = try XCTUnwrap(estimate.area)
+        XCTAssertFalse(area.isNaN)
+        XCTAssertEqual(area, g.floorPolygon.area, accuracy: 1e-9)
+        XCTAssertEqual(estimate.wallTopSpread, 0, accuracy: 1e-9)
+        XCTAssertEqual(estimate.provenance, "derived_flat_from_floor")
+    }
 }
