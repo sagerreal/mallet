@@ -10,6 +10,7 @@ import { createIdentityRouter } from "@mallet/identity";
 import { createTaskRouter } from "@mallet/tasks";
 import { createTimesheetRouter } from "@mallet/timesheets";
 import { createCompanyRouter } from "@mallet/companies";
+import { createMeasurementRouter } from "@mallet/measurements";
 import { createMessagingRouter } from "@mallet/messaging";
 import { createSettingsRouter } from "@mallet/settings";
 import { createChecklistRouter } from "@mallet/checklists";
@@ -36,6 +37,7 @@ export const appRouter = router({
     tasks: createTaskRouter(),
     timesheets: createTimesheetRouter(),
     companies: createCompanyRouter(),
+    measurements: createMeasurementRouter(),
     messaging: createMessagingRouter(),
     calls: createCallRouter(),
     settings: createSettingsRouter(),

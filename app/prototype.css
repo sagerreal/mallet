@@ -503,9 +503,9 @@
   .uirow:last-child{border-bottom:none}
   .uirow-clickable{cursor:pointer;border-left:none;border-right:none;border-top:none}
   .uirow-clickable:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
-  .uirow-label{flex:1;font-weight:600;min-width:0}
-  .uirow-value{font-family:var(--font-mono);font-size:var(--type-base);color:var(--ink-2);font-variant-numeric:tabular-nums}
-  .uirow-trailing{color:var(--ink-3);display:inline-flex;align-items:center}
+  .uirow-label{flex-shrink:0;max-width:60%;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .uirow-value{flex-shrink:1;min-width:0;font-family:var(--font-mono);font-size:var(--type-base);color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .uirow-trailing{color:var(--ink-3);display:inline-flex;align-items:center;flex-shrink:0}
 
   /* Row-open control: a real, focusable button styled as plain row text. Lets a
      clickable row stay mouse-click-anywhere WITHOUT the row being role=button

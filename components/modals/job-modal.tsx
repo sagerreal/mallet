@@ -43,6 +43,7 @@ import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { SheetRow } from "./sheet-row";
 import { JobChecklistBlock } from "./job-checklist-block";
+import { JobMeasureBlock } from "./job-measure-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
 import { dayLoad } from "@/features/jobs/jobs-helpers";
@@ -661,6 +662,7 @@ export function JobModalContent() {
   const [deleteArmed, setDeleteArmed] = useState(false);
 
   const jobId = activeModal?.params?.jobId as string | undefined;
+  const rooms = useAppStore((s) => (jobId ? s.roomsByJob[jobId] : undefined)) ?? [];
   const job = jobs.find((j) => j.id === jobId);
   if (!job) return null;
 
@@ -903,6 +905,19 @@ export function JobModalContent() {
           expandable
         >
           <JobChecklistBlock job={job} />
+        </SheetRow>
+
+        {/* Measurements — room captures (RoomPlan scans or manual rooms).
+            Rooms hydrate lazily inside JobMeasureBlock (useJobRooms), so this
+            row's count reflects whatever the store already has for this job
+            until the accordion is opened. */}
+        <SheetRow
+          label="Measurements"
+          value={rooms.length > 0 ? `${rooms.length} room${rooms.length === 1 ? "" : "s"}` : "Add"}
+          valueIsHint={rooms.length === 0}
+          expandable
+        >
+          <JobMeasureBlock jobId={job.id} />
         </SheetRow>
       </div>
 
