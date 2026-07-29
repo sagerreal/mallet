@@ -671,6 +671,7 @@ export function JobModalContent() {
 
   const jobId = activeModal?.params?.jobId as string | undefined;
   const rooms = useAppStore((s) => (jobId ? s.roomsByJob[jobId] : undefined)) ?? [];
+  const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
   const job = jobs.find((j) => j.id === jobId);
   if (!job) return null;
 
@@ -942,15 +943,19 @@ export function JobModalContent() {
         {/* Measurements — room captures (RoomPlan scans or manual rooms).
             Rooms hydrate lazily inside JobMeasureBlock (useJobRooms), so this
             row's count reflects whatever the store already has for this job
-            until the accordion is opened. */}
-        <SheetRow
-          label="Measurements"
-          value={rooms.length > 0 ? `${rooms.length} room${rooms.length === 1 ? "" : "s"}` : "Add"}
-          valueIsHint={rooms.length === 0}
-          expandable
-        >
-          <JobMeasureBlock jobId={job.id} />
-        </SheetRow>
+            until the accordion is opened. Org-gated: only shops that price from
+            measurements (painting etc.) see this row at all — a plumbing org
+            with measurementEstimating off gets no row, not an empty one. */}
+        {measurementEstimating && (
+          <SheetRow
+            label="Measurements"
+            value={rooms.length > 0 ? `${rooms.length} room${rooms.length === 1 ? "" : "s"}` : "Add"}
+            valueIsHint={rooms.length === 0}
+            expandable
+          >
+            <JobMeasureBlock jobId={job.id} />
+          </SheetRow>
+        )}
       </div>
 
       {/* Money pointer — ONE anchored pointer, never the P&L. */}

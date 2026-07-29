@@ -96,6 +96,23 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     expect(snap.config.booking.notServices).toBe("septic");
   });
 
+  // ── measurementEstimating gate ────────────────────────────────────────────
+  // NOTE: requires the `measurement_estimating` column, added via migration
+  // slot 0107 which is deferred until PR #263 merges (single-writer migration
+  // constraint). This test cannot pass against the live DB until that
+  // migration is generated and applied — see gating-report.md.
+  it("updateConfig persists measurementEstimating; defaults off on a fresh org", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const fresh = await caller.v1.settings.get();
+    expect(fresh.config.measurementEstimating).toBe(false);
+
+    const cfg = await caller.v1.settings.updateConfig({ measurementEstimating: true });
+    expect(cfg.measurementEstimating).toBe(true);
+
+    const snap = await caller.v1.settings.get();
+    expect(snap.config.measurementEstimating).toBe(true);
+  });
+
   // ── T3: requiredCerts round-trip ──────────────────────────────────────────
   // This test MUST FAIL before bookingServiceDTO gains the requiredCerts field
   // (zod silently strips unknown keys), and PASS after the DTO edit.

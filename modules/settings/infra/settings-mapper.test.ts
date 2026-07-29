@@ -26,6 +26,7 @@ const baseRow = (): OrgSettingsRow => ({
   techTexts: true,
   frontDesk: true,
   scopeOn: false,
+  measurementEstimating: false,
   hoursWdOpen: 8,
   hoursWdClose: 17,
   hoursMonOpen: 8,
@@ -85,6 +86,7 @@ describe("toOrgSettings (settings mapper)", () => {
     expect(p.techTexts).toBe(true);
     expect(p.frontDesk).toBe(true);
     expect(p.scopeOn).toBe(false);
+    expect(p.measurementEstimating).toBe(false);
     expect(p.hoursWdOpen).toBe(8);
     expect(p.hoursWdClose).toBe(17);
     expect(p.areaCities).toBe("Pleasanton");

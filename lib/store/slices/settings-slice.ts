@@ -104,6 +104,8 @@ export interface BookingCfg {
 export interface SettingsToggles {
   techSeesPrice: boolean;
   frontDesk: boolean;
+  /** Org-level gate for the job modal's Measurements section (measurement-priced trades only). */
+  measurementEstimating: boolean;
 }
 
 // ---- pre-hydration placeholders (NOT a source of truth) --------------------
@@ -137,6 +139,7 @@ const EMPTY_TRADE = "plumbing";
 const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
   frontDesk: true,
+  measurementEstimating: false,
 };
 
 // ---- helpers ---------------------------------------------------------------
@@ -570,6 +573,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     const toggleToField: Record<keyof SettingsToggles, string> = {
       techSeesPrice: "techSeesPrice",
       frontDesk: "frontDesk",
+      measurementEstimating: "measurementEstimating",
     };
     const col = toggleToField[key];
     void trpcVanilla.v1.settings.updateConfig

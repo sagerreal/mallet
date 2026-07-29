@@ -31,6 +31,10 @@ export const orgSettings = pgTable(
     techTexts: boolean("tech_texts").notNull().default(true),
     frontDesk: boolean("front_desk").notNull().default(true),
     scopeOn: boolean("scope_on").notNull().default(false),
+    // Org-level gate for the Measurements section (job modal room captures + pricing-from-measurements).
+    // Only measurement-priced trades (painting etc.) opt in — plumbing and similar trades never see the
+    // section at all when this is false. Defaults off so existing orgs are unaffected.
+    measurementEstimating: boolean("measurement_estimating").notNull().default(false),
     // Kept for one release so a rollback still reads real hours; NOTHING reads these any more.
     // Per-day columns below replaced them — "weekdays" could not express a shop that closes early
     // on Friday, which is most of them.

@@ -56,6 +56,7 @@ const updateConfigInput = z.object({
   techTexts: z.boolean().optional(),
   frontDesk: z.boolean().optional(),
   scopeOn: z.boolean().optional(),
+  measurementEstimating: z.boolean().optional(),
   hoursWdOpen: z.number().int().min(0).max(24).optional(),
   hoursWdClose: z.number().int().min(0).max(24).optional(),
   hoursMonOpen: z.number().int().min(0).max(24).optional(),
