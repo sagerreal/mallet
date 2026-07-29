@@ -63,7 +63,10 @@ function CustHead({ brand }: { brand: Brand }) {
         {brand.initials}
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 800, fontSize: "var(--type-lg)" }}>{brand.name}</div>
+        {/* A heading, not a styled div: the business name IS this surface's title, so
+            it should be one for assistive tech and for anything that asks "does this
+            modal have a title?". Same type/weight, so nothing moves. */}
+        <h2 style={{ fontWeight: 800, fontSize: "var(--type-lg)", margin: 0, letterSpacing: "inherit", fontFamily: "inherit" }}>{brand.name}</h2>
         <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>{brand.tagline}</div>
       </div>
       {/* ModalHost provides close — no duplicate custCloseBtn() ✕ here. */}
@@ -209,8 +212,13 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
             style={{ marginTop: "var(--space-2xs)" }}
           />{" "}
           <span>
-            Save my card so {brand.name} can settle any remaining balance — you&rsquo;ll get a
-            receipt for every charge.
+            {/* The {" "} is load-bearing. The space that is plainly there in the
+                source does not survive JSX's whitespace handling on a text child that
+                follows an expression and wraps to a second line — the rendered nodes
+                were "Save my card so ", "E2E Plumbing", "can settle…", so a CUSTOMER
+                read "E2E Plumbingcan settle". Verified in the DOM, not just on screen. */}
+            Save my card so {brand.name}{" "}
+            can settle any remaining balance — you&rsquo;ll get a receipt for every charge.
           </span>
         </label>
       ) : null}

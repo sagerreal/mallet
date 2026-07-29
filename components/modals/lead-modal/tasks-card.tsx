@@ -239,13 +239,12 @@ export function TasksCard({ lead }: TasksCardProps) {
       <div className="cfrow" style={{ marginTop: "var(--space-3)", gap: "var(--space-2)" }}>
         <input
           type="text"
-          placeholder="Add a task — e.g. First call, send quote…"
+          placeholder="Add a task…"
           value={taskText}
           onChange={(e) => setTaskText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") handleAddTask();
           }}
-          style={{ flex: 1 }}
         />
         <input
           type="date"

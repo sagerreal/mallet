@@ -5,6 +5,15 @@
      the JS inline styles adopts the new identity in one move. Dark theme
      overrides the same tokens under [data-theme="dark"]. ============================================================ */
   :root{
+    /* Device safe areas, behind tokens rather than raw env().
+       Two reasons. One: a test can override these to simulate a notch —
+       `env(safe-area-inset-*)` cannot be set, and headless Chromium reports it as 0,
+       which is exactly why a modal cut off under the iPhone status bar passed a
+       390×844 audit. Two: it makes "did this surface account for the notch?" a
+       greppable question instead of something each rule remembers or forgets.
+       `viewportFit:"cover"` (app/layout.tsx) is what puts content under the notch. */
+    --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+    --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
     /* monochrome / professional. --green-* kept as the neutral "fill" ramp; --accent==--pri-bg (near-black, warmed so it reads as INK on the manila chrome, not cool-black). --dot retired as a color → now warm ink (no green anywhere). */
     --green-900:#1A1510; --green-700:#3A352D; --green-600:#1A1510; --green-100:#ECE7DC; --green-50:#F4F1EA;
     --accent:#1A1510; --accent-2:#3A352D; --dot:var(--manila-ink); --pri-bg:#1A1510; --pri-fg:#FFFFFF;
@@ -1361,6 +1370,16 @@
   .msg-snip{color:var(--ink-2);font-size:var(--type-base);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:var(--space-2xs)}
   .msg-tm{color:var(--ink-3);font-size:var(--type-sm);white-space:nowrap;font-variant-numeric:tabular-nums}
   /* customer-record: editable header + unified notes feed */
+  /* The resting title. A heading, not a control — so #237's
+     `input,select,textarea{border-color:var(--line-strong)!important}` floor cannot
+     paint a box around it, and the modal has a real anchor instead of a text field.
+     The <button> inside carries no chrome of its own; it exists so renaming is
+     reachable by keyboard and announces itself, rather than being a click target
+     that looks like static text. Geometry matches .lead-name (same padding and
+     negative margin) so switching between the two does not shift the row. */
+  .lead-title{font-size:var(--type-2xl);font-weight:680;letter-spacing:-.3px;color:var(--ink);margin:0;padding:0;min-width:0}
+  .lead-title-edit{display:block;width:100%;border:0;background:none;padding:calc(var(--space-2xs) + 1px) calc(var(--space-2) + 1px);margin:-2px -6px;font:inherit;color:inherit;letter-spacing:inherit;text-align:left;cursor:text;border-radius:var(--radius-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lead-title-edit:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
   .lead-name{font-size:var(--type-2xl);font-weight:680;letter-spacing:-.3px;color:var(--ink);border:1px solid transparent;border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-2);margin:-2px -6px;width:100%;background:transparent;font-family:inherit}
   .lead-name:hover{border-color:var(--line)} .lead-name:focus{border-color:var(--ink);background:var(--card);outline:none}
   .lead-phone{border:1px solid transparent;border-radius:var(--radius-xs);padding:var(--space-2xs) var(--space-1);font-size:var(--type-base);color:var(--ink-2);background:transparent;font-family:inherit;min-width:120px}
@@ -1869,7 +1888,7 @@
        field into view" lands that field flush against the viewport bottom — which on this app
        is underneath 113px of fixed chrome: #mobiletabs (60px) plus the .cmdline Ask Mallet bar
        (53px, sitting at bottom:60px). You tap a field and it is behind the keyboard toolbar. */
-    html{scroll-padding-bottom:calc(113px + env(safe-area-inset-bottom));scroll-padding-top:0}
+    html{scroll-padding-bottom:calc(113px + var(--safe-b));scroll-padding-top:0}
     .cmdline{position:fixed;left:0;right:0;bottom:60px;z-index:55;padding:0 var(--space-2) 0 var(--space-4);border-top:1px solid var(--manila-line);max-height:72vh}
     .clockcard .clock-head{flex-direction:column;align-items:stretch;gap:var(--space-3)}
     .clock-acts{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:var(--space-2)}
@@ -1898,10 +1917,28 @@
     .board .col{flex:0 0 88%;min-width:88%;scroll-snap-align:start}
     .toolbar{flex-wrap:wrap}
     html,body{overflow-x:hidden;max-width:100%}
-    .overlay{padding:var(--space-4) var(--space-3);right:0;left:0}
+    /* The notch. `.overlay` was the ONE mobile surface with no safe-area padding —
+       .topbar, #mobiletabs, .cmdline and main all have it — so with
+       `viewportFit:"cover"` a tall modal pinned itself under the iPhone status bar
+       and its first field collided with the clock. `align-items:flex-start` on the
+       overlay is what pins it there, so the padding is the whole fix. */
+    .overlay{padding:calc(var(--space-4) + var(--safe-t)) calc(var(--space-3) + var(--safe-r)) calc(var(--space-4) + var(--safe-b)) calc(var(--space-3) + var(--safe-l));right:0;left:0}
+    /* `.cfrow` puts a text field, sometimes a date field, and a button on one line.
+       That works at 620px and not at 393px: the task row left its text input 75px
+       wide, so a placeholder needing 325px showed "Add a tasl", and the empty date
+       field beside it read as an unlabelled blank box. The text field takes its own
+       line on a phone; the date and the button share the next one. */
+    .cfrow{flex-wrap:wrap;row-gap:var(--space-2)}
+    .cfrow>input[type=text],.cfrow>input:not([type]),.cfrow>select{flex:1 1 100%}
+    .cfrow>input[type=date]{flex:1 1 auto}
     /* Setting the pad VARIABLES (not `padding` directly) is what moves the ✕ with
        the padding — see the .modal rule. */
-    .modal,.modal.wide,.custmodal{--modal-pad-x:var(--space-4);--modal-pad-y:var(--space-5);max-width:100% !important;width:100% !important;padding:var(--modal-pad-y) var(--modal-pad-x);max-height:86vh;overflow-y:auto;margin:0}
+    /* max-height was 86vh. `vh` counts the area UNDER the notch and home indicator,
+       so on a device the panel was allowed to be taller than the space it actually
+       had. `dvh` also tracks the URL bar / keyboard instead of the largest viewport.
+       Subtracting the insets and the overlay's own padding makes the cap the real
+       available height, which is what keeps the top edge on screen. */
+    .modal,.modal.wide,.custmodal{--modal-pad-x:var(--space-4);--modal-pad-y:var(--space-5);max-width:100% !important;width:100% !important;padding:var(--modal-pad-y) var(--modal-pad-x);max-height:calc(100dvh - var(--safe-t) - var(--safe-b) - (var(--space-4) * 2));overflow-y:auto;margin:0}
     /* A 5-column sweep row genuinely does not fit 390px — checkbox + quote title +
        customer + status + amount overflowed the panel by 9px.
        Truncating instead of wrapping is NOT the fix: the title is `flex:1`, i.e.
@@ -1947,12 +1984,12 @@
     .field-shell .appmain{height:auto}
     .field-shell .sidebar{display:none}
     /* bottom tab bar — clears the iPhone home indicator via the safe-area inset */
-    #mobiletabs{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(60px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:var(--card);border-top:1px solid var(--line);z-index:60;box-shadow:0 -2px 16px rgba(0,0,0,.06)}
+    #mobiletabs{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(60px + var(--safe-b));padding-bottom:var(--safe-b);background:var(--card);border-top:1px solid var(--line);z-index:60;box-shadow:0 -2px 16px rgba(0,0,0,.06)}
     /* command bar sits above the tabs (+ inset); main clears both */
-    .cmdline{bottom:calc(60px + env(safe-area-inset-bottom))}
-    main{padding-bottom:calc(132px + env(safe-area-inset-bottom))}
+    .cmdline{bottom:calc(60px + var(--safe-b))}
+    main{padding-bottom:calc(132px + var(--safe-b))}
     /* topbar clears the notch/status bar */
-    .topbar{padding-top:env(safe-area-inset-top);height:calc(54px + env(safe-area-inset-top))}
+    .topbar{padding-top:var(--safe-t);height:calc(54px + var(--safe-t))}
     /* second-level section tabs — a sub-nav bar under the app bar (mobile) */
     .sectiontabs{display:flex;flex:0 0 auto;padding:0 var(--space-4);background:var(--bg);border-bottom:1px solid var(--line);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .sectiontabs::-webkit-scrollbar{display:none}
@@ -2053,10 +2090,13 @@
   @keyframes overlayin{from{opacity:0}to{opacity:1}}
   .overlay.open{animation:overlayin .15s ease}
 
-  /* Phones: backdrop blur is GPU-expensive mid-range jank — a slightly deeper flat scrim
-     reads the same and composites free. */
+  /* Phones: backdrop blur is GPU-expensive mid-range jank — a deeper flat scrim
+     composites free. It has to be deeper than the desktop value, not equal to it:
+     the blur is what stopped background text being READABLE, and without it .55
+     left the command line ("Ask Mallet — or just say what you…") and the tab bar
+     legible behind the panel, which reads as clutter rather than as a background. */
   @media(max-width:760px){
-    .overlay{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(10,12,20,.55)}
+    .overlay{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(10,12,20,.78)}
   }
 
   /* Skeleton primitives (P3 wires these in place of "Loading…" text). Manila-toned so

@@ -35,17 +35,41 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
 
   const [nameVal, setNameVal] = useState(lead.name);
   const [addrVal, setAddrVal] = useState(lead.address ?? "");
+  // The name is a HEADING until you ask to change it.
+  //
+  // It used to be a permanently-mounted <input> styled to look like a heading
+  // (`border:1px solid transparent`, box on hover/focus). Two things went wrong with
+  // that. The modal then had no heading at all — its only anchor was an editable
+  // field, so nothing told you what the screen was. And #237's control-border floor
+  // (`input,select,textarea{border-color:var(--line-strong)!important}`) forces a
+  // visible boundary on every input, so the "invisible" border was painted anyway
+  // and the title read as one more box in a stack of them.
+  //
+  // Rendering a real <h2> and mounting the input only while editing fixes both, and
+  // keeps the a11y floor honest: the control is bounded exactly when it IS a control.
+  const [editingName, setEditingName] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   // Re-sync if the lead prop changes (modal reopening with a different lead).
   useEffect(() => {
     setAddrVal(lead.address ?? "");
   }, [lead.id, lead.address]);
 
+  useEffect(() => {
+    setNameVal(lead.name);
+    setEditingName(false);
+  }, [lead.id, lead.name]);
+
+  useEffect(() => {
+    if (editingName) nameRef.current?.focus();
+  }, [editingName]);
+
   function saveName() {
     const trimmed = nameVal.trim();
     if (trimmed && trimmed !== lead.name) {
       updateLead(lead.id, { name: trimmed });
     }
+    setEditingName(false);
   }
 
   const stageCls = STAGE_PILL_CLS[lead.stage] ?? "ink";
@@ -79,18 +103,34 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
           {initials}
         </div>
         <div style={{ flex: 1, minWidth: 0, paddingRight: "var(--space-8)" }}>
-          <input
-            className="lead-name"
-            value={nameVal}
-            onChange={(e) => setNameVal(e.target.value)}
-            onBlur={saveName}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                (e.currentTarget as HTMLInputElement).blur();
-              }
-            }}
-            aria-label="Customer name"
-          />
+          {editingName ? (
+            <input
+              ref={nameRef}
+              className="lead-name"
+              value={nameVal}
+              onChange={(e) => setNameVal(e.target.value)}
+              onBlur={saveName}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                if (e.key === "Escape") {
+                  setNameVal(lead.name);
+                  setEditingName(false);
+                }
+              }}
+              aria-label="Customer name"
+            />
+          ) : (
+            <h2 className="lead-title">
+              <button
+                type="button"
+                className="lead-title-edit"
+                onClick={() => setEditingName(true)}
+                aria-label={`${lead.name} — rename`}
+              >
+                {lead.name}
+              </button>
+            </h2>
+          )}
 
           {/* Metadata line: soft stage pill (dot carries the color) · source · phone */}
           <div className="lead-meta" style={{ marginTop: "var(--space-2)" }}>
