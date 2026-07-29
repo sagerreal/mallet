@@ -104,10 +104,16 @@ with `next dev -H 0.0.0.0`.
 
 ## `scanner/` — the RoomPlan accuracy instrument
 
-⚠️ **Not yet compiled.** Written before Xcode existed on this machine. Ready-to-build, not
-verified-to-build. There is no `.xcodeproj` yet; create one as an iOS App (SwiftUI, Swift, no
-storage, no tests), add the four files from `scanner/MalletScanner/`, set
-`NSCameraUsageDescription`, and set **Minimum Deployments → iOS 17.0**.
+**It builds.** `project.yml` is the source of truth; the `.xcodeproj` is generated from it and
+committed so the repo builds without XcodeGen installed. If you edit `project.yml` (add a file,
+change a setting), regenerate:
+
+```bash
+cd scanner && xcodegen generate   # xcodegen 2.46
+```
+
+To run: open `scanner/MalletScanner.xcodeproj`, set your signing team under **Signing &
+Capabilities**, and run on an iPhone Pro (12 Pro or later) or a LiDAR iPad Pro.
 
 RoomPlan itself is iOS 16+, but `polygonCorners` is iOS 17 — and that is the whole point.
 `dimensions` is a **bounding box**; every "RoomPlan only makes rectangles" complaint online is
@@ -121,20 +127,33 @@ a LiDAR iPad Pro.
 
 ### The validation gate — do this before any more scanning work
 
-**Ten real rooms, RoomPlan vs a tape measure.** Record error on wall length, wall height and
-opening dimensions.
+**The ten-room validation walk.** Ten real rooms, RoomPlan vs a laser distance meter. For each
+room:
 
-A tape is accurate to ~1/8″ over 15 ft. We are looking for 2% error, which on a 12 ft wall is
-~3 inches — far larger than tape error, so a tape settles this.
+1. Scan the room with the instrument.
+2. Measure the **same** walls and openings with a laser distance meter.
+3. Enter the laser numbers into the app's laser-entry fields.
+4. Export `validation-<room>.json` via the share sheet — it combines the scan geometry and the
+   laser numbers in one file.
+
+Default convention: laser the room's **longest wall** and its **entry door**. If you measure
+something else, say so in the "Which wall (label)" field — the exported `wall_label` is what
+lets the offline comparison know which wall/opening the numbers belong to.
+
+A laser meter is accurate to a few millimeters at these ranges — far tighter than the 2% error
+band we're measuring, so it settles this cleanly (a tape would too, but the app is built around
+typed laser entry, not tape reads).
 
 Published RoomPlan accuracy spans *half an inch* to *37 cm on a 6.45 m wall*: a 30× spread with
 zero peer-reviewed measurements. **Nobody has published this number.** Ours will be the real one.
 
-- error **< 2%** → a scan can be the price basis
-- error **> 2%** → a scan is a *draft* the estimator confirms, and confirm-and-edit becomes the
-  core UX rather than a nicety
+The decision rule, verbatim from the plan:
 
-Either way we ship, but we design differently — so measure first.
+- error **< 2%** → the scan can be the price basis
+- error **> 2%** → the scan is a *draft* the estimator confirms, and the confirm-and-edit step
+  becomes the core UX
+
+Either way we ship — but we design differently, so measure first.
 
 Also try to break it deliberately: a blank white wall (this should trip RoomPlan's `lowTexture`
 state — **LiDAR does not remove the blank-wall problem**), an unlit room, a room with a large
@@ -144,3 +163,63 @@ Two numbers on the results screen are **derived, not measured**, and are labelle
 the app: ceiling area (RoomPlan has no ceiling concept at all — `Surface.Category` has exactly
 five cases, and deriving from the floor is wrong for exactly the vaulted rooms worth the most),
 and baseboard run (subtracts door widths only, not cased openings).
+
+---
+
+## `capture/` — the MalletCapture package
+
+The real (non-instrument) capture pipeline. A local SPM package, `capture/MalletCapture`,
+consumed by `shell/` via a RoomPlan Capacitor plugin — not by `scanner/`, which stays a
+standalone accuracy probe.
+
+| Target | Platform | What it is |
+|---|---|---|
+| `MalletCaptureCore` | iOS 17 + **macOS 14** | All geometry, mapping, coaching copy, and the crash-safe capture store. No RoomPlan import. |
+| `MalletCaptureRoomPlan` | iOS 17 only, `#if canImport(RoomPlan)` | A thin adapter: pulls `CapturedRoom.Surface` data out of RoomPlan's Apple types and hands it to Core as plain DTOs. No mapping logic lives here. |
+
+### The port/adapter boundary
+
+All coordinate math, wall/opening derivation, and ceiling estimation lives in
+`MalletCaptureCore` and is exercised by `swift test` **on macOS** — no device, no RoomPlan
+entitlement, no simulator needed to change or verify this logic. `MalletCaptureRoomPlan` only
+extracts RoomPlan's own struct fields (`polygonCorners`, never `dimensions` — same reasoning as
+`scanner/`) into `SurfaceDTO` and calls into Core. Because it touches Apple's RoomPlan types it
+can't run on macOS; it's compile-checked instead:
+
+```bash
+xcodebuild -scheme MalletCapture-Package -destination "generic/platform=iOS" build
+```
+
+That split is deliberate: the target that's hard to unit-test (RoomPlan) does as little as
+possible, and the target that does the real work (Core) is fully testable without a device.
+
+### Axis convention
+
+Core is **z-up**: `x`/`y` are the horizontal plane, `z` is height. RoomPlan's world space is
+**Y-up**. The remap happens once, in `SurfaceMapper.worldVertices(of:)`
+(`MalletCaptureCore/SurfaceMapper.swift`):
+
+```swift
+// RoomPlan world (wx, wy, wz) → Core Point3(x: wx, y: -wz, z: wy)
+```
+
+Everything downstream of the mapper — walls, openings, `CeilingEstimate`'s 5mm height
+clustering — assumes z-up. Get this remap backwards and every derived number is silently wrong
+in a way no compiler will catch.
+
+### The immutable 2-layer store
+
+`CaptureStore` persists two layers per capture, both immutable once written:
+
+- **Layer 1 — raw** (`raw.json`): the verbatim scanner payload plus capture metadata, exactly
+  as it came off-device.
+- **Layer 2 — normalized** (`geometry.json`): the trade-neutral `NormalizedGeometry` — floor
+  polygon, walls, openings, ceiling — in snake_case JSON.
+
+Per-trade derivation (paint gallons, drywall sheets, flooring waste factor, and so on) is
+**layer 3, and it is server-side** — out of this repo entirely. Nothing in `capture/` knows
+what trade it's being used for; that's the point of the trade-neutral model.
+
+The store writes atomically to a staging path and renames into place, so a crash mid-write
+never leaves a corrupt or partial capture on disk. A filesystem-backed upload queue (a
+`.uploaded` marker file per capture) tracks what's already been sent.
