@@ -192,6 +192,20 @@ describe("JobMeasureBlock — Scan room button", () => {
     expect(screen.queryByText("Scan room")).toBeNull();
   });
 
+  it("renders '+ Add room' as a lone button with no wrapper div when scanning is unavailable — byte-identical to the pre-scan markup for the visual net", () => {
+    useRoomScanAvailableMock.mockReturnValue(false);
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    const btn = screen.getByText("+ Add room") as HTMLButtonElement;
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn.parentElement?.tagName).toBe("DIV");
+    // The button's own parent must be the block's root container, not a flex wrapper
+    // introduced for the two-button (scan-available) layout.
+    expect(btn.parentElement?.className).toBe("");
+    expect(btn.parentElement?.getAttribute("style")).toBeNull();
+    expect(btn.style.marginTop).toBe("var(--space-2)");
+  });
+
   it("is rendered beside '+ Add room' when scanning is available", () => {
     useRoomScanAvailableMock.mockReturnValue(true);
     render(<JobMeasureBlock jobId={JOB_ID} />);

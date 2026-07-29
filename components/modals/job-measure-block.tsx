@@ -117,16 +117,16 @@ export function JobMeasureBlock({ jobId }: { jobId: string }) {
         </>
       )}
 
-      <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
-        <button
-          type="button"
-          className="btn sm"
-          onClick={() => pushModal(MODAL.ROOM_CARD, { jobId })}
-        >
-          + Add room
-        </button>
+      {scanAvailable ? (
+        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() => pushModal(MODAL.ROOM_CARD, { jobId })}
+          >
+            + Add room
+          </button>
 
-        {scanAvailable && (
           <button
             type="button"
             className="btn sm"
@@ -134,8 +134,17 @@ export function JobMeasureBlock({ jobId }: { jobId: string }) {
           >
             Scan room
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn sm"
+          style={{ marginTop: "var(--space-2)" }}
+          onClick={() => pushModal(MODAL.ROOM_CARD, { jobId })}
+        >
+          + Add room
+        </button>
+      )}
     </div>
   );
 }
