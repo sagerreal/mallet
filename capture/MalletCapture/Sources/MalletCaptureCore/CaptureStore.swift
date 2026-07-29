@@ -64,15 +64,24 @@ public enum CaptureStoreError: Error, Equatable {
 public final class CaptureStore {
     private let root: URL
     private let fileManager: FileManager
+    private static let stagingPrefix = ".staging-"
 
     public init(root: URL, fileManager: FileManager = .default) {
         self.root = root
         self.fileManager = fileManager
+        cleanupStaleStagingDirectories()
     }
 
     /// Persists a capture and its derived geometry under `<root>/<id>/`. Throws
     /// `CaptureStoreError.alreadyExists` if the id has already been saved — captures
     /// are write-once.
+    ///
+    /// Writes go to a same-volume staging directory first, then are moved into place
+    /// with a single `rename(2)`-backed `moveItem`, which is atomic on APFS. This
+    /// means a hard kill (not just a thrown error) between "directory created" and
+    /// "files written" can never leave a zombie `<root>/<id>/` — either the staging
+    /// directory is orphaned (harmless garbage, invisible to list/pendingUploads, and
+    /// swept up on the next `init`) or the final directory exists complete.
     public func save(_ capture: RawCapture, geometry: NormalizedGeometry) throws {
         let dir = captureDirectory(for: capture.id)
 
@@ -80,20 +89,31 @@ public final class CaptureStore {
             throw CaptureStoreError.alreadyExists(capture.id)
         }
 
+        let staging = stagingDirectory()
+
         do {
-            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
 
             let rawData = try makeRawEncoder().encode(capture)
-            try writeAtomically(rawData, to: rawURL(in: dir))
+            try writeAtomically(rawData, to: rawURL(in: staging))
 
             let geometryData = try geometry.encodeJSON()
-            try writeAtomically(geometryData, to: geometryURL(in: dir))
-        } catch let error as CaptureStoreError {
-            throw error
+            try writeAtomically(geometryData, to: geometryURL(in: staging))
         } catch {
-            // Roll back a partial directory rather than leave a half-written capture.
-            try? fileManager.removeItem(at: dir)
-            throw CaptureStoreError.corrupt(capture.id, "save failed: \(error)")
+            try? fileManager.removeItem(at: staging)
+            throw CaptureStoreError.corrupt(capture.id, "save failed while staging: \(error)")
+        }
+
+        do {
+            try fileManager.moveItem(at: staging, to: dir)
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            // The only expected concurrent-move failure is the destination having
+            // appeared in the meantime (another save/process won the race).
+            if fileManager.fileExists(atPath: dir.path) {
+                throw CaptureStoreError.alreadyExists(capture.id)
+            }
+            throw CaptureStoreError.corrupt(capture.id, "save failed while finalizing: \(error)")
         }
     }
 
@@ -215,7 +235,35 @@ public final class CaptureStore {
         dir.appendingPathComponent(".uploaded")
     }
 
+    /// A same-volume-as-`root` scratch directory for `save`'s staging step. Living
+    /// under `root` (not `FileManager.default.temporaryDirectory`) guarantees the
+    /// final `moveItem` is a same-volume `rename(2)` — atomic on APFS — rather than a
+    /// cross-volume copy+delete.
+    private func stagingDirectory() -> URL {
+        root.appendingPathComponent("\(Self.stagingPrefix)\(UUID().uuidString)", isDirectory: true)
+    }
+
     // MARK: - Helpers
+
+    /// Best-effort removal of any `.staging-*` directories left behind by a `save`
+    /// that was killed before its final `moveItem`. They are garbage by definition —
+    /// nothing ever reads from them — so failures here are swallowed rather than
+    /// surfaced; a store that can't clean up stale staging dirs should still be usable.
+    private func cleanupStaleStagingDirectories() {
+        guard fileManager.fileExists(atPath: root.path) else { return }
+
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: []
+        ) else {
+            return
+        }
+
+        for entry in entries where entry.lastPathComponent.hasPrefix(Self.stagingPrefix) {
+            try? fileManager.removeItem(at: entry)
+        }
+    }
 
     private func captureIds() throws -> [UUID] {
         guard fileManager.fileExists(atPath: root.path) else {
@@ -233,7 +281,9 @@ public final class CaptureStore {
             throw CaptureStoreError.corrupt(UUID(), "unreadable store root: \(error)")
         }
 
-        return entries.compactMap { UUID(uuidString: $0.lastPathComponent) }
+        return entries
+            .filter { !$0.lastPathComponent.hasPrefix(Self.stagingPrefix) }
+            .compactMap { UUID(uuidString: $0.lastPathComponent) }
     }
 
     /// Reads only what's needed for `list`/`pendingUploads`: the raw metadata, not geometry.

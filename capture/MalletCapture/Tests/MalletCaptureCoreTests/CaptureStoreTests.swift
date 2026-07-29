@@ -165,4 +165,56 @@ import Testing
 
         #expect(summaries.map(\.id) == expectedOrder)
     }
+
+    /// Simulates a `save` that was hard-killed after staging its files but before the
+    /// final `moveItem` — i.e. a leftover `<root>/.staging-<uuid>/raw.json` with no
+    /// corresponding `<root>/<id>/` directory ever created.
+    private static func simulateCrashedStagingDirectory(
+        for capture: RawCapture,
+        in root: URL
+    ) throws -> URL {
+        let staging = root.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        let rawData = try encoder.encode(capture)
+        try rawData.write(to: staging.appendingPathComponent("raw.json"), options: .atomic)
+
+        return staging
+    }
+
+    @Test func staleStagingDirectoryIsInvisibleToListingAndRemovedOnInit() throws {
+        let root = TempRoot()
+        let capture = Self.makeCapture()
+
+        let staging = try Self.simulateCrashedStagingDirectory(for: capture, in: root.url)
+        #expect(FileManager.default.fileExists(atPath: staging.path))
+
+        let store = CaptureStore(root: root.url)
+
+        #expect(try store.list().isEmpty)
+        #expect(try store.pendingUploads().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: staging.path))
+    }
+
+    @Test func saveSucceedsForSameIdAfterSimulatedCrashLeavesStagingDirectory() throws {
+        let root = TempRoot()
+        let capture = Self.makeCapture()
+        let geometry = try TestFixtures.rectRoom(w: 3, d: 4, h: 2.4, openings: [])
+
+        _ = try Self.simulateCrashedStagingDirectory(for: capture, in: root.url)
+
+        // A fresh CaptureStore init should sweep the stale staging dir, and the
+        // capture id must not have become a permanent zombie: no directory was ever
+        // finalized at <root>/<id>/, so `save` for the same id must succeed.
+        let store = CaptureStore(root: root.url)
+
+        try store.save(capture, geometry: geometry)
+
+        let (loaded, _) = try store.load(capture.id)
+        #expect(loaded.id == capture.id)
+        #expect(loaded.payload == capture.payload)
+    }
 }
