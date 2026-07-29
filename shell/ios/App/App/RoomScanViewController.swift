@@ -12,9 +12,13 @@ import UIKit
 ///
 /// All Apple-type interpretation happens downstream in `MalletCaptureRoomPlan`/`MalletCaptureCore`
 /// — this controller only drives the session and reports outcomes via its three closures. Every
-/// exit path — Done, Cancel, a hard failure, or the screen simply disappearing for any other
-/// reason — is guaranteed to call exactly one of those closures exactly once: the web promise this
-/// eventually resolves/rejects must never be left hanging.
+/// exit path — Done, Cancel, a hard failure, a `.finishing` state that never resolves within the
+/// watchdog window, or the screen simply disappearing for any other reason — is guaranteed to call
+/// exactly one of those closures exactly once: the web promise this eventually resolves/rejects
+/// must never be left hanging. Note the `.finishing` UI (below) disables Done/Cancel and this is a
+/// non-interactively-dismissible `.fullScreen` modal, so `viewDidDisappear`/`deinit` CANNOT fire
+/// while stuck in `.finishing` — that specific case is covered only by the watchdog in
+/// `enterFinishing()`, not by the disappearance net.
 @available(iOS 17.0, *)
 final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
     /// Called once, after the user taps Done and a `CapturedRoom` is available (either from
@@ -63,9 +67,16 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
     /// self-terminated session.
     private var pendingData: CapturedRoomData?
     /// Guards against delivering a result twice — RoomPlan's delegates can each fire once for the
-    /// same terminal event, and the last-resort net in `viewDidDisappear`/`deinit` must not
-    /// re-fire after a normal delivery already happened.
+    /// same terminal event, and the last-resort nets (disappearance + the `.finishing` watchdog)
+    /// must not re-fire after a normal delivery already happened.
     private var didDeliverResult = false
+    /// Fires 30s after `enterFinishing()` if nothing has delivered a result by then. Required
+    /// because `.finishing` disables Done/Cancel on a non-interactively-dismissible `.fullScreen`
+    /// modal — the `viewDidDisappear`/`deinit` net can never run while stuck here, since the
+    /// screen has no way to disappear. Without this, a `didPresent` that never arrives (or a
+    /// `.recoverableStopped` Done with no `pendingData` to build from) would leave the user on a
+    /// dead screen and the web promise hanging forever.
+    private var finishingWatchdog: DispatchWorkItem?
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
 
@@ -100,7 +111,7 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
     /// removes this screen from the hierarchy without going through `deliver(_:)` first.
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        captureView.captureSession.stop(pauseARSession: true)
+        captureView?.captureSession.stop(pauseARSession: true)
     }
 
     /// Settle-of-last-resort: if this screen has fully disappeared (dismissed or removed) without
@@ -192,13 +203,22 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
 
     /// Locks the UI once the user has committed to Done: RoomPlan's post-processing (or our own
     /// explicit `RoomBuilder` pass) takes a few seconds, and a Cancel tap in that window would
-    /// silently discard an otherwise-complete scan.
+    /// silently discard an otherwise-complete scan. Also arms a 30s watchdog — with Done/Cancel
+    /// disabled and this screen not interactively dismissible, a `CapturedRoom` that never arrives
+    /// would otherwise strand the user on a dead screen with no way to escape and the web promise
+    /// hanging forever.
     private func enterFinishing() {
         stage = .finishing
         cancelButton.isEnabled = false
         doneButton.isEnabled = false
         coachingLabel.text = "Finishing scan…"
         coachingLabel.isHidden = false
+
+        let watchdog = DispatchWorkItem { [weak self] in
+            self?.deliver(.error("The scan couldn't finish. Scan the room again."))
+        }
+        finishingWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: watchdog)
     }
 
     // MARK: - Actions
@@ -221,13 +241,17 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
                 deliver(.done(pendingRoom))
                 return
             }
-            enterFinishing()
-            if let pendingData {
-                buildRoomManually(from: pendingData)
+            guard let pendingData else {
+                // Nothing to build from and no pending room — `didEndWith` always sets
+                // `pendingData` together with `.recoverableStopped`, so this should be
+                // unreachable, but if it ever happens, fail immediately rather than entering an
+                // unwinnable `.finishing` state with no user escape (Done/Cancel would be
+                // disabled on a non-dismissible screen with nothing left to wait for).
+                deliver(.error("The scan couldn't finish. Scan the room again."))
+                return
             }
-            // If `pendingData` is somehow nil here there is nothing left to try — the delegate
-            // callbacks below remain the only possible source of a result, and the
-            // viewDidDisappear/deinit net still guarantees this never hangs.
+            enterFinishing()
+            buildRoomManually(from: pendingData)
         case .finishing:
             break
         }
@@ -325,6 +349,9 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
         guard !didDeliverResult else { return }
         didDeliverResult = true
 
+        finishingWatchdog?.cancel()
+        finishingWatchdog = nil
+
         captureView?.captureSession.stop(pauseARSession: true)
 
         let onFinished = self.onFinished
@@ -348,10 +375,13 @@ final class RoomScanViewController: UIViewController, RoomCaptureViewDelegate, R
         }
     }
 
-    /// The last-resort net (`viewDidDisappear`/`deinit`): if nothing has delivered a result by the
-    /// time this screen is gone, resolve as cancelled rather than hang the web promise forever.
-    /// Deliberately does not call `dismiss` again — by the time this runs the screen is already
-    /// disappearing or deallocating.
+    /// The disappearance-side last-resort net (`viewDidDisappear`/`deinit`): if nothing has
+    /// delivered a result by the time this screen is actually gone, resolve as cancelled rather
+    /// than hang the web promise forever. Deliberately does not call `dismiss` again — by the time
+    /// this runs the screen is already disappearing or deallocating. NOTE: this cannot fire while
+    /// stuck in `.finishing` — Done/Cancel are disabled and the modal isn't interactively
+    /// dismissible, so the screen has no way to disappear on its own. That case is covered by the
+    /// watchdog armed in `enterFinishing()` instead, which calls `deliver(_:)` directly.
     private func deliverCancelledIfUndelivered() {
         guard !didDeliverResult else { return }
         didDeliverResult = true
@@ -402,5 +432,20 @@ private final class PaddedLabel: UILabel {
             width: size.width + insets.left + insets.right,
             height: size.height + insets.top + insets.bottom
         )
+    }
+
+    /// Without this, Auto Layout sizes the label's height from the FULL (uninset) width — so a
+    /// multi-line coaching string (e.g. the `exceedSceneSizeLimit` copy) that actually wraps into
+    /// the narrower inset width clips its last line. Compute the text rect against the inset
+    /// bounds, then re-outset the result by the same insets so the label's frame still fully
+    /// contains the padding.
+    override func textRect(forBounds bounds: CGRect, limitedToNumberOfLines numberOfLines: Int) -> CGRect {
+        let insetBounds = bounds.inset(by: insets)
+        var rect = super.textRect(forBounds: insetBounds, limitedToNumberOfLines: numberOfLines)
+        rect.origin.x -= insets.left
+        rect.origin.y -= insets.top
+        rect.size.width += insets.left + insets.right
+        rect.size.height += insets.top + insets.bottom
+        return rect
     }
 }

@@ -154,8 +154,10 @@ public class RoomScanPlugin: CAPPlugin, CAPBridgedPlugin {
     /// the webview mid-return). This is a deliberate, scoped deviation from "never silently
     /// swallow errors": the web ingest call is the system of record, so a failure to write this
     /// local backup copy must not fail the `captureRoom()` call the tech is waiting on — it only
-    /// means the crash-safety net for this one capture is missing, which is logged (with the
-    /// capture id, so it's correlatable against the resolved payload), not silent.
+    /// means the crash-safety net for this one capture is missing, which is logged, not silent.
+    /// The log line carries the capture id, but the resolved payload does NOT — the only field
+    /// shared between the two is `capturedAt`, so that's what correlates a resolved capture back
+    /// to its on-disk backup (the id itself lives only in this log line and the local store).
     private func persistBackup(
         id: UUID,
         capturedAt: Date,
