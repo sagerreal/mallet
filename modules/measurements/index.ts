@@ -18,3 +18,5 @@ export { ListRoomsUseCase } from "./app/list-rooms";
 export { RenameRoomUseCase } from "./app/rename-room";
 export { ArchiveRoomUseCase } from "./app/archive-room";
 export { DrizzleMeasurementRepository } from "./infra/drizzle-measurement-repository";
+export type { RoomQuantitiesReader, RoomQuantitiesForJob, RoomQuantity } from "./domain/room-quantities-reader";
+export { MeasurementRoomQuantitiesReader } from "./domain/room-quantities-reader";
