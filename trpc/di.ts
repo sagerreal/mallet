@@ -1,4 +1,4 @@
-import { loadConfig } from "@mallet/shared/config";
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { db } from "@mallet/shared/db/client";
 import { createAuthProvider, createApiKeyAuthenticator, createSupabaseTokenVerifier, SignupStore } from "@mallet/identity";
 import { StripePaymentLinkGateway } from "@mallet/invoicing";
@@ -11,7 +11,8 @@ import {
   ChannelRouterNotificationSender,
 } from "@mallet/notifications";
 import { AnthropicLlmClient } from "@mallet/ai";
-import { TwilioA2pGateway } from "@mallet/a2p";
+import { TwilioA2pGateway, TwilioNumberProvisioner } from "@mallet/a2p";
+import type { NumberProvisioner } from "@mallet/a2p";
 import type { A2pGateway } from "@mallet/a2p";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
@@ -37,6 +38,22 @@ import type { LlmClient } from "@mallet/ai";
 // A2P 10DLC registration self-disables (→ LoggingA2pGateway fallback, applied at the point of use
 // in a2p-router.ts) unless the full Twilio A2P config is present. Extracted from getAppDeps to keep
 // its complexity down.
+// Number buying needs only the Twilio credentials and a public URL for the SMS webhook — NOT the
+// A2P profile config, because a number works for voice the day it is bought while texting waits on
+// carrier vetting. Gating them together would leave a new shop unable to take calls.
+function buildNumberProvisioner(config: Config): NumberProvisioner | undefined {
+  const origin = resolvePublicAppOrigin(config);
+  if (config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && origin) {
+    return new TwilioNumberProvisioner(
+      config.TWILIO_ACCOUNT_SID,
+      config.TWILIO_AUTH_TOKEN,
+      `${origin}/api/webhooks/twilio`,
+    );
+  }
+  logger.warn("a2p: number provisioning unconfigured (TWILIO_ACCOUNT_SID/AUTH_TOKEN or public URL missing) — new orgs get no phone number");
+  return undefined;
+}
+
 function buildA2pGateway(config: Config): A2pGateway | undefined {
   if (config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN && config.TWILIO_PRIMARY_PROFILE_SID && config.TWILIO_A2P_STATUS_CALLBACK_URL) {
     return new TwilioA2pGateway(
@@ -155,6 +172,7 @@ export const getAppDeps = (): AppDeps => {
   const llmClient: LlmClient | null = config.ANTHROPIC_API_KEY ? new AnthropicLlmClient(config.ANTHROPIC_API_KEY) : null;
 
   const a2pGateway = buildA2pGateway(config);
+  const numberProvisioner = buildNumberProvisioner(config);
   const callOriginator = buildCallOriginator(config);
   const voiceTokenIssuer = buildVoiceTokenIssuer(config);
 
@@ -199,6 +217,7 @@ export const getAppDeps = (): AppDeps => {
     notificationSender,
     llmClient,
     a2pGateway,
+    numberProvisioner,
     callOriginator,
     voiceTokenIssuer,
   };

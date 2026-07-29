@@ -27,3 +27,9 @@ export {
   previewConsentInputDTO,
   consentPreviewDTO,
 } from "./api/a2p-dto";
+// Buying a shop its business line at signup. Separate from the A2P registration flow above: a
+// number works for VOICE the day it is bought, while texting waits on carrier vetting.
+export { ProvisionOrgNumberUseCase } from "./app/provision-org-number";
+export type { ProvisionOrgNumberCommand, ProvisionOutcome } from "./app/provision-org-number";
+export { TwilioNumberProvisioner } from "./infra/twilio-number-provisioner";
+export type { NumberProvisioner, ProvisionedNumber } from "./domain/number-provisioner";
