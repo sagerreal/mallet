@@ -91,6 +91,27 @@ export function Modal({ open, onClose, children, wide, maxWidth, label }: ModalP
 
   if (!open) return null;
 
+  // Swipe-down dismisses the sheet on touch (mobile renders modals as bottom
+  // sheets). Only when the panel is scrolled to the top — otherwise the gesture is
+  // scrolling — and only a deliberate pull (>72px) closes, so a sloppy scroll can't
+  // eat the modal. This is what makes the grabber an affordance instead of
+  // decoration, which the house rules would otherwise require deleting.
+  let touchStartY = 0;
+  let pulling = false;
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const panel = panelRef.current;
+    pulling = panel != null && panel.scrollTop <= 0;
+    touchStartY = e.touches[0]?.clientY ?? 0;
+  };
+  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!pulling) return;
+    const dy = (e.touches[0]?.clientY ?? 0) - touchStartY;
+    if (dy > 72) {
+      pulling = false;
+      onClose();
+    }
+  };
+
   return (
     <div
       className="overlay open"
@@ -106,6 +127,8 @@ export function Modal({ open, onClose, children, wide, maxWidth, label }: ModalP
         aria-modal="true"
         aria-label={label ?? "Dialog"}
         tabIndex={-1}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
       >
         <button className="x" aria-label="Close" onClick={onClose}>
           ✕

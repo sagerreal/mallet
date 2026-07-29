@@ -47,42 +47,58 @@ function VisitRow({ visit, leadId, techName }: VisitRowProps) {
     router.push(`/composer?lead=${leadId}`);
   }
 
+  // Photos ride the subtitle as a count — information, not decoration: a tech
+  // checking the slab-leak photo should not have to tap in blind to learn it exists.
+  const sub = [
+    visit.scopeNotes,
+    visit.photos && visit.photos.length > 0
+      ? `${visit.photos.length} photo${visit.photos.length !== 1 ? "s" : ""}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="stage-row">
-      <span className={`pill ${statusPillCls(visit.status)}`}>{visit.status}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: "var(--type-base)" }}>
-          {formatDay(visit)} · {techName}
-        </div>
-        {visit.scopeNotes && (
-          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
-            {visit.scopeNotes}
-          </div>
-        )}
-        {visit.photos && visit.photos.length > 0 && (
-          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
-            {visit.photos.length} photo{visit.photos.length !== 1 ? "s" : ""}
-          </div>
-        )}
+    <button
+      type="button"
+      className="sheet-workrow"
+      onClick={() => pushModal(MODAL.EVISIT, { leadId, visitId: visit.id })}
+    >
+      <div className="t">
+        <b>Site visit — {formatDay(visit)} · {techName}</b>
+        {sub && <span>{sub}</span>}
       </div>
-      <div className="trig" style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }}>
-        <button
-          className="btn sm ghost"
-          onClick={() => pushModal(MODAL.EVISIT, { leadId, visitId: visit.id })}
+      <span className={`pill ${statusPillCls(visit.status)}`}>{sentenceCase(visit.status)}</span>
+      {visit.status !== "done" && (
+        <span
+          className="btn sm"
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            quote();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              quote();
+            }
+          }}
         >
-          Open
-        </button>
-        {visit.status !== "done" && (
-          <button className="btn sm" onClick={quote}>
-            Quote
-          </button>
-        )}
-      </div>
-    </div>
+          Quote
+        </span>
+      )}
+      <span className="chev" style={{ color: "var(--ink-3)" }} aria-hidden="true">›</span>
+    </button>
   );
 }
 
-export function VisitCard({ lead }: VisitCardProps) {
+function sentenceCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export function VisitRows({ lead }: VisitCardProps) {
   const techs = useAppStore((s) => s.techs);
 
   const evisits = lead.evisits ?? [];
@@ -94,14 +110,7 @@ export function VisitCard({ lead }: VisitCardProps) {
   }
 
   return (
-    <div className="card">
-      <h3>
-        Site visit{evisits.length !== 1 ? "s" : ""}{" "}
-        <span className="muted" style={{ fontWeight: 400, fontSize: "var(--type-sm)" }}>
-          — look-first, on this lead until a quote is accepted
-        </span>
-      </h3>
-
+    <>
       {evisits.map((v) => (
         <VisitRow
           key={v.id}
@@ -110,6 +119,6 @@ export function VisitCard({ lead }: VisitCardProps) {
           techName={techName(v.techId)}
         />
       ))}
-    </div>
+    </>
   );
 }

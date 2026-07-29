@@ -1,9 +1,10 @@
 /**
  * components/modals/lead-modal/more-details.tsx
- * Faithful port of prototype "More details" reveal + footer.
- * .reveal collapsible: Email + Service address inputs, Business input,
- * custom fields, + Add custom field.
- * Footer: "Clean up — mark Lost or Archive" (ghost, left) + "Delete" (red, right).
+ * Two accordion bodies for the sheet:
+ *   DetailsBody — email, business, custom fields (+ add custom field)
+ *   CleanUpBody — mark Lost / archive (opens the Clean-up picker) and Delete
+ *                 (two-step, ARCHIVES — recoverable), the only red on the sheet.
+ * The reveal chrome and the footer are gone; SheetRow owns the disclosure now.
  */
 
 "use client";
@@ -24,29 +25,12 @@ interface CustomField {
   value: string;
 }
 
-export function MoreDetails({ lead }: MoreDetailsProps) {
+export function DetailsBody({ lead }: MoreDetailsProps) {
   const updateLead = useAppStore((s) => s.updateLead);
-  const deleteLead = useAppStore((s) => s.deleteLead);
-  const openModal = useOpenModal();
-  const closeModal = useCloseModal();
 
-  const [open, setOpen] = useState(false);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [showAddField, setShowAddField] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState("");
-  const [deleteArmed, setDeleteArmed] = useState(false);
-
-  // "Delete" here ARCHIVES the customer (deleteLead → archiveLead, a soft-delete): they're
-  // recoverable from the Archived filter, never hard-deleted. Two-step arm-then-confirm (matches the
-  // job modal) instead of a native browser dialog, with copy that tells the truth about what happens.
-  function handleDelete() {
-    if (!deleteArmed) {
-      setDeleteArmed(true);
-      return;
-    }
-    deleteLead(lead.id);
-    closeModal();
-  }
 
   function addCustomField() {
     const label = newFieldLabel.trim();
@@ -67,18 +51,6 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
 
   return (
     <>
-      {/* More details reveal */}
-      <div className={`reveal${open ? " open" : ""}`} style={{ marginBottom: "var(--space-5)" }}>
-        <div
-          className="reveal-head"
-          onClick={() => setOpen((o) => !o)}
-          role="button"
-          aria-expanded={open}
-        >
-          <span className="caret">&#9658;</span>
-          More details — email, business
-        </div>
-        <div className="reveal-body">
           {/* Email (service address now lives up top in the header) */}
           <Field label="Email">
             <input
@@ -155,36 +127,50 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
               + Add a custom field
             </button>
           )}
-        </div>
-      </div>
-
-      {/* Footer — both "get rid of it" paths grouped on the LEFT, away from the
-          bottom-right corner where the eye expects a confirm/primary action.
-          "Clean up" opens the Lost/Archive picker; "Delete" is a de-emphasized red
-          link that ARCHIVES (soft-delete, recoverable) after a two-step confirm. */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", paddingTop: "var(--space-2)", borderTop: "1px solid var(--line-2)" }}>
-        <button
-          className="btn ghost sm"
-          onClick={() => openModal(MODAL.CLEAN_UP, { leadId: lead.id })}
-        >
-          Clean up — mark Lost or Archive
-        </button>
-        {/* Same shape and size as "Clean up" beside it — one grammar for the two
-            get-rid-of-it paths, with red carrying the difference in meaning. It was a
-            <span role="button"> styled as bare red text next to a bordered button, so
-            two destructive actions read as two unrelated kinds of thing, and the
-            keyboard handling had to be hand-rolled. A real <button> gets Enter/Space,
-            focus and disabled semantics for free. */}
-        <button
-          type="button"
-          className="btn ghost sm"
-          aria-label={deleteArmed ? `Confirm — archive ${lead.name}` : `Delete ${lead.name}`}
-          style={{ color: "var(--red)", fontWeight: deleteArmed ? 700 : undefined }}
-          onClick={handleDelete}
-        >
-          {deleteArmed ? "Confirm — archives, recoverable" : "Delete"}
-        </button>
-      </div>
     </>
+  );
+}
+
+/**
+ * The Clean-up accordion body. The level-0 row above it is NEUTRAL ink — the
+ * hierarchy critic found a red row label was the second-loudest thing on the sheet,
+ * shouting about a rare end-of-relationship action. Red lives here, on Delete only,
+ * which is also the truthful place: "Delete" ARCHIVES (deleteLead → archiveLead,
+ * recoverable), two-step arm-then-confirm.
+ */
+export function CleanUpBody({ lead }: MoreDetailsProps) {
+  const deleteLead = useAppStore((s) => s.deleteLead);
+  const openModal = useOpenModal();
+  const closeModal = useCloseModal();
+  const [deleteArmed, setDeleteArmed] = useState(false);
+
+  function handleDelete() {
+    if (!deleteArmed) {
+      setDeleteArmed(true);
+      return;
+    }
+    deleteLead(lead.id);
+    closeModal();
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+      <button
+        className="btn"
+        style={{ minHeight: 44 }}
+        onClick={() => openModal(MODAL.CLEAN_UP, { leadId: lead.id })}
+      >
+        Mark Lost or archive
+      </button>
+      <button
+        type="button"
+        className="btn ghost"
+        style={{ minHeight: 44, color: "var(--red)", fontWeight: deleteArmed ? 700 : undefined }}
+        aria-label={deleteArmed ? `Confirm — archive ${lead.name}` : `Delete ${lead.name}`}
+        onClick={handleDelete}
+      >
+        {deleteArmed ? "Confirm — archives, recoverable" : "Delete"}
+      </button>
+    </div>
   );
 }

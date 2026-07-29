@@ -1,9 +1,9 @@
 /**
  * components/modals/lead-modal/tasks-card.tsx
- * The lead's Tasks area — add and track what needs to happen. Replaces the old
- * "NEXT STEP" nudge (the stage-aware first action now lives on the header's
- * primary button). Open tasks first (check to complete), completed ones below
- * (muted / struck, check to reopen), plus an inline add row.
+ * The Tasks accordion body — open tasks first (check to complete), completed below
+ * (muted, check to reopen), plus the inline add row (text + due date + Add). No card
+ * chrome: the SheetRow above it is the header, and the collapsed row carries the
+ * open count.
  *
  * Clicking a task's TEXT activates inline editing: a text input + compact date
  * input replace the label in-row. Enter or blur commits; Escape cancels.
@@ -18,19 +18,21 @@ import { useAppStore } from "@/lib/store/app-store";
 import { todayISO } from "@/lib/clock";
 import { dueLabel } from "@/lib/task-dates";
 
-interface TasksCardProps {
-  lead: Lead;
-}
+
 
 /** The same round check control the Tasks page uses (.tchk) — one styling system. */
 function TaskCheck({ done, onToggle }: { done: boolean; onToggle: () => void }) {
+  // The visible circle stays 19px; the BUTTON is a full-row-height 44px column.
+  // An 18px target 4px from a tappable row is a state-changing mis-tap in gloves.
   return (
     <button
       type="button"
-      className={done ? "tchk done" : "tchk"}
+      className="sheet-chkzone"
       onClick={onToggle}
       aria-label={done ? "Reopen task" : "Mark task done"}
-    />
+    >
+      <span className={done ? "tchk done" : "tchk"} aria-hidden="true" />
+    </button>
   );
 }
 
@@ -182,7 +184,12 @@ function TaskRow({ task, onToggle, onUpdate }: TaskRowProps) {
   );
 }
 
-export function TasksCard({ lead }: TasksCardProps) {
+/** Trailing text for the collapsed Tasks row. */
+export function openTaskLabel(openCount: number): string | null {
+  return openCount > 0 ? `${openCount} open` : null;
+}
+
+export function TasksBody({ lead }: { lead: Lead }) {
   const tasks = useAppStore((s) => s.tasks);
   const toggleTask = useAppStore((s) => s.toggleTask);
   const addTask = useAppStore((s) => s.addTask);
@@ -210,9 +217,7 @@ export function TasksCard({ lead }: TasksCardProps) {
   }
 
   return (
-    <div className="card">
-      <h3>Tasks</h3>
-
+    <>
       {openTasks.map((t) => (
         <TaskRow
           key={t.id}
@@ -267,10 +272,10 @@ export function TasksCard({ lead }: TasksCardProps) {
             color: taskDue ? "var(--ink)" : "var(--ink-3)",
           }}
         />
-        <button className="btn sm primary" onClick={handleAddTask} disabled={!taskText.trim()}>
+        <button className="btn" onClick={handleAddTask} disabled={!taskText.trim()}>
           Add task
         </button>
       </div>
-    </div>
+    </>
   );
 }

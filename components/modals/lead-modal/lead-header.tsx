@@ -1,59 +1,30 @@
 /**
  * components/modals/lead-modal/lead-header.tsx
- * Faithful port of prototype openLead header row (lines 6137-6160).
- * Avatar (46px, initials) + editable name input + pill row (stage+src+phone) + action buttons.
- * NO emojis on buttons. NO "Move stage" bar.
+ * The sheet header: the customer's name as a real <h2> (tap to rename) over one
+ * calm metadata line (stage pill · source). Sticky, so the record you are looking
+ * at never scrolls away — the old header put an avatar, an always-mounted name
+ * input, an inline phone input and four buttons here; every one of those now has a
+ * single home further down the sheet.
+ *
+ * The name is a HEADING until you ask to change it. As a permanently-mounted input
+ * it gave the modal no title, and #237's control-border floor
+ * (`input…{border-color:var(--line-strong)!important}`) painted a box around it —
+ * mounting the input only while editing keeps that floor honest: the thing is
+ * bounded exactly when it IS a control.
  */
 
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import type { Lead } from "@/lib/store/types";
-import { STAGE_PILL_CLS, leadInitials } from "@/lib/prototype-sample";
-import { useAppStore, usePushModal, useCloseModal } from "@/lib/store/app-store";
-import { MODAL } from "@/lib/store/modal-ids";
-import { AddressInput } from "@/components/ui/address-input";
+import { useAppStore } from "@/lib/store/app-store";
 
-interface LeadHeaderProps {
-  lead: Lead;
-}
-
-export function LeadHeader({ lead }: LeadHeaderProps) {
+export function LeadSheetHeader({ lead }: { lead: Lead }) {
   const updateLead = useAppStore((s) => s.updateLead);
-  const pushModal = usePushModal();
-  const closeModal = useCloseModal();
-  const router = useRouter();
-
-  // "New quote" → the real quote composer, pre-populated with this customer
-  // (the /composer route seeds its customer from ?lead=). Close the modal first
-  // so it doesn't float over the composer page.
-  function newQuote() {
-    closeModal();
-    router.push(`/composer?lead=${lead.id}`);
-  }
 
   const [nameVal, setNameVal] = useState(lead.name);
-  const [addrVal, setAddrVal] = useState(lead.address ?? "");
-  // The name is a HEADING until you ask to change it.
-  //
-  // It used to be a permanently-mounted <input> styled to look like a heading
-  // (`border:1px solid transparent`, box on hover/focus). Two things went wrong with
-  // that. The modal then had no heading at all — its only anchor was an editable
-  // field, so nothing told you what the screen was. And #237's control-border floor
-  // (`input,select,textarea{border-color:var(--line-strong)!important}`) forces a
-  // visible boundary on every input, so the "invisible" border was painted anyway
-  // and the title read as one more box in a stack of them.
-  //
-  // Rendering a real <h2> and mounting the input only while editing fixes both, and
-  // keeps the a11y floor honest: the control is bounded exactly when it IS a control.
   const [editingName, setEditingName] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
-
-  // Re-sync if the lead prop changes (modal reopening with a different lead).
-  useEffect(() => {
-    setAddrVal(lead.address ?? "");
-  }, [lead.id, lead.address]);
 
   useEffect(() => {
     setNameVal(lead.name);
@@ -72,224 +43,61 @@ export function LeadHeader({ lead }: LeadHeaderProps) {
     setEditingName(false);
   }
 
-  const stageCls = STAGE_PILL_CLS[lead.stage] ?? "ink";
-  const initials = leadInitials(lead.name);
-
-  // Stage-aware primary action: a brand-new lead you haven't reached → the first
-  // move is to Call; once you're past that, quoting is the money action.
-  const callIsPrimary = lead.stage === "New customer";
-
   return (
-    <div style={{ marginBottom: "var(--space-5)" }}>
-      {/* Header: avatar beside a column of name + metadata, both left-aligned
-          to each other; right padding keeps the editable name clear of the ✕. */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
-        <div
-          className="avatar"
-          style={{
-            width: 46,
-            height: 46,
-            borderRadius: "50%",
-            background: "var(--green-100)",
-            color: "var(--green-900)",
-            fontSize: "var(--type-md)",
-            fontWeight: 700,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
+    <div className="sheet-head">
+      {editingName ? (
+        <input
+          ref={nameRef}
+          className="lead-name"
+          value={nameVal}
+          onChange={(e) => setNameVal(e.target.value)}
+          onBlur={saveName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+            if (e.key === "Escape") {
+              setNameVal(lead.name);
+              setEditingName(false);
+            }
           }}
-        >
-          {initials}
-        </div>
-        <div style={{ flex: 1, minWidth: 0, paddingRight: "var(--space-8)" }}>
-          {editingName ? (
-            <input
-              ref={nameRef}
-              className="lead-name"
-              value={nameVal}
-              onChange={(e) => setNameVal(e.target.value)}
-              onBlur={saveName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-                if (e.key === "Escape") {
-                  setNameVal(lead.name);
-                  setEditingName(false);
-                }
-              }}
-              aria-label="Customer name"
-            />
-          ) : (
-            <h2 className="lead-title">
-              <button
-                type="button"
-                className="lead-title-edit"
-                onClick={() => setEditingName(true)}
-                aria-label={`${lead.name} — rename`}
-              >
-                {lead.name}
-              </button>
-            </h2>
-          )}
-
-          {/* Metadata line: soft stage pill (dot carries the color) · source · phone */}
-          <div className="lead-meta" style={{ marginTop: "var(--space-2)" }}>
-            <span className={`stage-pill ${stageCls}`}>
-              <span className="dot" aria-hidden="true" />
-              {lead.stage}
-            </span>
-            {lead.source && (
-              <>
-                <span className="lead-meta-dot" aria-hidden="true">·</span>
-                <span className="lead-meta-src">{lead.source}</span>
-              </>
-            )}
-            {lead.companyId && lead.role && (
-              <>
-                <span className="lead-meta-dot" aria-hidden="true">·</span>
-                <span className="lead-meta-src">{lead.role}</span>
-              </>
-            )}
-            <span className="lead-meta-dot" aria-hidden="true">·</span>
-            <PhoneCell
-              value={lead.phone ?? ""}
-              onCommit={(phone) => updateLead(lead.id, { phone })}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Service address — surfaced up top (field service lives or dies on the
-          address); editable inline, not buried under "More details". */}
-      <label
-        className="lead-addr-row"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--space-2)",
-          marginBottom: "var(--space-4)",
-          border: "1.5px solid var(--line)",
-          borderRadius: "var(--radius-md)",
-          padding: "var(--space-2) var(--space-3)",
-        }}
-      >
-        <svg
-          viewBox="0 0 24 24"
-          width="15"
-          height="15"
-          fill="none"
-          stroke="var(--ink-3)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ flexShrink: 0 }}
-          aria-hidden="true"
-        >
-          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-          <circle cx="12" cy="10" r="3" />
-        </svg>
-        <AddressInput
-          value={addrVal}
-          onChange={setAddrVal}
-          onSelect={(v) => updateLead(lead.id, { address: v })}
-          onBlur={() => updateLead(lead.id, { address: addrVal })}
-          placeholder="Add service address"
-          aria-label="Service address"
-          inputStyle={{
-            flex: 1,
-            border: "none",
-            background: "transparent",
-            fontFamily: "inherit",
-            fontSize: "var(--type-base)",
-            color: "var(--ink)",
-            outline: "none",
-            padding: "0",
-          }}
+          aria-label="Customer name"
         />
-      </label>
-
-      {/* Action buttons — grouped by intent so it doesn't read as a flat wall:
-          CONTACT (Call / Text — quiet utilities) on the left, ADVANCE THE DEAL
-          (Book site visit / New quote — the workflow) on the right. One clear
-          stage-aware primary: Call for a brand-new lead, else New quote. */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-        {/* Contact cluster — Call/Text stay TAPPABLE. Without a number on file
-            the call sheet / thread each prompt to add one in-flow (and the header
-            input above also adds it), so no dead button and no blank sheet. */}
-        <button
-          className={`btn sm${callIsPrimary ? " primary" : " ghost"}`}
-          onClick={() => pushModal(MODAL.CALL, { leadId: lead.id })}
-        >
-          <PhoneIcon /> Call
-        </button>
-        <button
-          className="btn sm ghost"
-          onClick={() => pushModal(MODAL.THREAD, { leadId: lead.id })}
-        >
-          <ChatIcon /> Text
-          {lead.unread ? (
-            <span className="pill blue" style={{ marginLeft: "var(--space-2)", padding: "var(--space-2xs) var(--space-2)", fontSize: "var(--type-xs)" }}>new</span>
-          ) : null}
-        </button>
-
-        {/* Thin divider between contact and advance-the-deal clusters */}
-        <span
-          style={{ width: 1, alignSelf: "stretch", background: "var(--line)", margin: "var(--space-1) var(--space-1)" }}
-          aria-hidden="true"
-        />
-        {lead.stage !== "Won" && lead.stage !== "Lost" && (
+      ) : (
+        <h2 className="lead-title">
           <button
-            className="btn sm"
-            onClick={() => pushModal(MODAL.VISIT, { leadId: lead.id })}
+            type="button"
+            className="lead-title-edit"
+            onClick={() => setEditingName(true)}
+            aria-label={`${lead.name} — rename`}
           >
-            Book site visit
+            {lead.name}
           </button>
-        )}
-        <button
-          className={`btn sm${callIsPrimary ? "" : " primary"}`}
-          onClick={newQuote}
-        >
-          New quote
-        </button>
+        </h2>
+      )}
+      {/* One constant-weight meta line: stage + source. The phone number does NOT
+          live here — it had two homes (header meta when filled, quiet row when
+          empty), which left nowhere obvious to edit it. The Phone row below is its
+          only home in every state. */}
+      <div className="sheet-meta">
+        <span className={`stage-pill ${stagePillCls(lead.stage)}`}>
+          <span className="dot" aria-hidden="true" />
+          {lead.stage}
+        </span>
+        {lead.source && <span>{lead.source}</span>}
       </div>
     </div>
   );
 }
 
-// Small inline icons so Call / Text read as quick utilities, not heavy buttons.
-function PhoneIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "var(--space-1)", verticalAlign: "-2px" }} aria-hidden="true">
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
-    </svg>
-  );
+import { STAGE_PILL_CLS } from "@/lib/prototype-sample";
+function stagePillCls(stage: string): string {
+  return STAGE_PILL_CLS[stage] ?? "ink";
 }
 
-function ChatIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "var(--space-1)", verticalAlign: "-2px" }} aria-hidden="true">
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-    </svg>
-  );
-}
-
-/**
- * The inline phone field.
- *
- * CONTROLLED, deliberately. It was an uncontrolled input with `defaultValue`, which loses whatever
- * has been typed the moment anything re-renders the header — and since switching to another window
- * does not move focus inside the document, `onBlur` never fires either. Typing a number, going
- * away and coming back lost it silently, every time.
- *
- * It also only commits when the value actually CHANGED. The old handler fired on every blur, so
- * tabbing through the field wrote an empty string and wiped a number nobody touched.
- */
+/** Inline phone editor — commit on blur/Enter, adopt outside changes when unfocused. */
 export function PhoneCell({ value, onCommit }: { value: string; onCommit: (phone: string) => void }) {
   const [draft, setDraft] = useState(value);
   const committed = useRef(value);
 
-  // Adopt a value that changed underneath us (a reconcile, another surface) — but never while the
-  // field is focused, which would yank the number out from under someone mid-edit.
   const [focused, setFocused] = useState(false);
   useEffect(() => {
     if (!focused && value !== committed.current) {
@@ -309,26 +117,25 @@ export function PhoneCell({ value, onCommit }: { value: string; onCommit: (phone
     <input
       className="lead-phone"
       type="tel"
+      inputMode="tel"
+      autoComplete="tel"
       value={draft}
-      placeholder="Add phone"
+      placeholder="(925) 555-0123"
       onChange={(e) => setDraft(e.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {
         setFocused(false);
         commit();
       }}
-      // Enter commits without needing to click away — the field is one line in a busy header and
-      // "press tab to save" is not something anybody guesses.
       onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          // Commit directly rather than relying on blur() to trigger onBlur as a side effect.
-          // The follow-up blur re-enters commit(), which no-ops once the value is unchanged.
           commit();
           e.currentTarget.blur();
         }
       }}
       aria-label="Customer phone"
+      style={{ width: "100%", minHeight: 44, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "0 var(--space-3)", fontSize: "var(--type-md)" }}
     />
   );
 }
