@@ -36,7 +36,13 @@ function pgErrorInfo(e: unknown): { code: string | null; constraint: string | nu
     constraint: typeof withPgFields.constraint_name === "string" ? withPgFields.constraint_name : null,
   };
 }
-import { toDomainCapture, toStoredQuantity, toCaptureWithQuantities, type RoomCaptureRow } from "./measurement-mapper";
+import {
+  toDomainCapture,
+  toStoredQuantity,
+  toCaptureWithQuantities,
+  CorruptCaptureError,
+  type RoomCaptureRow,
+} from "./measurement-mapper";
 
 // Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
 // app.current_org_id), so RLS appends `org_id = current_org_id()` to every statement. orgId is
@@ -263,7 +269,10 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     for (const row of rows) {
       try {
         healthy.push({ row, capture: toDomainCapture(row) });
-      } catch {
+      } catch (e) {
+        // Narrowed to the mapper's own "this row is unreadable" signal — anything else (a real
+        // bug elsewhere in toDomainCapture) rethrows instead of being silently swallowed here.
+        if (!(e instanceof CorruptCaptureError)) throw e;
         logger.warn({ captureId: row.id }, "measurements.capture.unreadable");
       }
     }

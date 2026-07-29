@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
-import { toDomainCapture, type RoomCaptureRow } from "./measurement-mapper";
+import { toDomainCapture, CorruptCaptureError, type RoomCaptureRow } from "./measurement-mapper";
 
 // toDomainCapture is a pure row -> domain seam (no IO) — the mapper's own contract comment
 // documents the asymmetry this exercises: it throws on corrupt geometry, which is exactly what
@@ -29,19 +29,21 @@ describe("toDomainCapture", () => {
     expect(capture.props.geometry).toBeNull();
   });
 
-  it("throws on a row whose geometry jsonb fails schema parsing", () => {
+  it("throws CorruptCaptureError on a row whose geometry jsonb fails schema parsing", () => {
     const corruptRow: RoomCaptureRow = {
       ...baseRow,
       geometry: { walls: "not-an-array" } as unknown as RoomCaptureRow["geometry"],
     };
     expect(() => toDomainCapture(corruptRow)).toThrow(/corrupt room_capture/);
+    expect(() => toDomainCapture(corruptRow)).toThrow(CorruptCaptureError);
   });
 
-  it("throws on a row whose props fail domain validation (invalid source)", () => {
+  it("throws CorruptCaptureError on a row whose props fail domain validation (invalid source)", () => {
     const corruptRow: RoomCaptureRow = {
       ...baseRow,
       source: "not_a_real_source",
     };
     expect(() => toDomainCapture(corruptRow)).toThrow(/corrupt room_capture/);
+    expect(() => toDomainCapture(corruptRow)).toThrow(CorruptCaptureError);
   });
 });

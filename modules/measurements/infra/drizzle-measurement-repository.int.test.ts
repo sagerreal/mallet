@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
@@ -376,6 +376,13 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
       )
     `;
 
+    // logger is a module-level singleton (@mallet/shared/observability), not injected into the
+    // repository — spy on it directly, same pattern as remove-time-entry.test.ts, so a future
+    // regression (warn silently downgraded to debug, or captureId dropped from the payload)
+    // fails this test instead of passing unnoticed.
+    const { logger } = await import("@mallet/shared/observability");
+    const warnSpy = vi.spyOn(logger, "warn");
+
     const list = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleMeasurementRepository(tx, orgA);
       return repo.listByJob(jobA);
@@ -384,6 +391,12 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     expect(list).toHaveLength(1);
     expect(list[0]!.capture.props.id).toBe(healthy.props.id);
     expect(list.map((r) => r.capture.props.id)).not.toContain(corruptId);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ captureId: corruptId }),
+      "measurements.capture.unreadable",
+    );
+    warnSpy.mockRestore();
 
     await expect(
       withTenant(orgA, async (tx) => {
