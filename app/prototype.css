@@ -855,7 +855,17 @@
      breakpoint drops the padding to 16px without touching the ✕, so on every one of
      the 22 modals the close glyph sat 7.5px inside the content column (measured).
      Deriving one from the other is what stops that drifting apart again. */
-  .modal{--modal-pad-x:var(--space-6);--modal-pad-y:var(--space-6);background:var(--card);border-radius:var(--radius-xl);width:100%;max-width:620px;padding:var(--modal-pad-y) var(--modal-pad-x);position:relative;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:modalin .2s ease}
+  /* THE MODAL IS THE SCROLLER, not the overlay.
+     .sheet-head and .sheet-foot are position:sticky, and sticky resolves against the nearest
+     SCROLLING ancestor. With no max-height here the modal grew to its content and only .overlay
+     scrolled — so the sticky footer stuck to a box that never scrolls and ended up at the true
+     bottom of a taller-than-viewport modal, off-screen. The header did the same going up.
+     max-height + overflow-y makes this element the scroll container the sticky offsets were
+     written against, so head and foot pin to the visible edges and the ROWS scroll between them.
+     The overlay's own 40px/16px padding is subtracted so the modal never touches the viewport edge.
+     min-height:0 because the overlay is a flex container and a flex item will otherwise refuse to
+     shrink below its content, which silently defeats the max-height. */
+  .modal{--modal-pad-x:var(--space-6);--modal-pad-y:var(--space-6);background:var(--card);border-radius:var(--radius-xl);width:100%;max-width:620px;padding:var(--modal-pad-y) var(--modal-pad-x);position:relative;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:modalin .2s ease;max-height:calc(100dvh - (var(--space-10) * 2));min-height:0;overflow-y:auto;overscroll-behavior:contain}
   @keyframes modalin{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:none}}
   @keyframes sheetin{from{opacity:.6;transform:translateY(28px)}to{opacity:1;transform:none}}
   .modal.wide{max-width:760px}

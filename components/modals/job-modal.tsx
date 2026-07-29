@@ -37,6 +37,8 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { api } from "@/lib/trpc/client";
+import { userMessage } from "@/lib/trpc/error-map";
 import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { todayISO } from "@/lib/clock";
@@ -561,11 +563,14 @@ function NoteFeed({ job }: { job: Job }) {
 interface MoneyPointerProps {
   job: Job;
   invoice: Invoice | undefined;
-  onGoToMoney: () => void;
+  /** Creates the invoice and opens it. Null while the request is in flight. */
+  onBill: () => void;
+  billing: boolean;
+  billError: string | null;
   onOpenInvoice: (invoiceId: string) => void;
 }
 
-function MoneyPointer({ job, invoice, onGoToMoney, onOpenInvoice }: MoneyPointerProps) {
+function MoneyPointer({ job, invoice, onBill, billing, billError, onOpenInvoice }: MoneyPointerProps) {
   if (invoice && (invoice.total ?? 0) > 0) {
     const due = invDue(invoice);
     return (
@@ -579,12 +584,15 @@ function MoneyPointer({ job, invoice, onGoToMoney, onOpenInvoice }: MoneyPointer
   }
 
   if (job.status === "done") {
+    // BILLS IT, rather than pointing at where billing happens. This modal is opened FROM the Money
+    // ledger's "ready to bill" rows, so "Bill it in Money →" navigated the user to the page they
+    // had just come from — a link whose only effect was to close the thing they were reading.
     return (
       <div className="jmoney">
-        <span>✓ Work done — not billed yet</span>
-        <span className="linklike" onClick={onGoToMoney}>
-          Bill it in Money →
-        </span>
+        <span>{billError ? billError : "✓ Work done — not billed yet"}</span>
+        <button type="button" className="linklike" onClick={onBill} disabled={billing}>
+          {billing ? "Creating invoice…" : "Create the invoice →"}
+        </button>
       </div>
     );
   }
@@ -694,9 +702,33 @@ export function JobModalContent() {
     );
   }
 
-  function goToMoney() {
-    close();
-    router.push("/money");
+  const [billError, setBillError] = useState<string | null>(null);
+  const utils = api.useUtils();
+  const createInvoice = api.v1.invoicing.createFromJob.useMutation();
+
+  /**
+   * Turn finished work into an invoice, here, and open it.
+   *
+   * Replaces a link to /money. This modal is opened FROM the Money ledger's "ready to bill" rows,
+   * so that link navigated to the page the user had just come from — its only real effect was to
+   * close what they were reading.
+   */
+  function bill() {
+    if (!job || createInvoice.isPending) return;
+    setBillError(null);
+    createInvoice.mutate(
+      { jobId: job.id },
+      {
+        onSuccess: (inv: { id: string }) => {
+          void utils.v1.invoicing.list.invalidate();
+          close();
+          openModal(MODAL.INVOICE, { invoiceId: inv.id });
+        },
+        // Named in place rather than as a toast: the sentence sits where the action was, so the
+        // user is not left wondering whether the invoice exists.
+        onError: (e: unknown) => setBillError(userMessage(e)),
+      },
+    );
   }
 
   function goToSchedule() {
@@ -925,7 +957,9 @@ export function JobModalContent() {
       <MoneyPointer
         job={job}
         invoice={invoice}
-        onGoToMoney={goToMoney}
+        onBill={bill}
+        billing={createInvoice.isPending}
+        billError={billError}
         onOpenInvoice={(invId) => { close(); openModal(MODAL.INVOICE, { invoiceId: invId }); }}
       />
 
