@@ -80,19 +80,25 @@ export function quantityDisplay(
   source: RoomCard["source"],
   unit: QuantityUnit,
 ): QuantityDisplay {
+  const effective = q.value ?? q.derivedValue;
+
+  // Manual rooms are typed by definition — this check runs BEFORE the
+  // needs_confirm/override/confirmed branches below so "no badges on manual
+  // rooms" holds for every status, not just the "confirmed" shape
+  // addManualRoom happens to seed. A manual room is always a plain value.
+  if (source === "manual") {
+    if (effective == null) return { value: "Add", valueIsHint: true, badge: null, measured: null };
+    return { value: formatQuantity(effective, unit), valueIsHint: false, badge: null, measured: null };
+  }
+
   if (q.status === "needs_confirm") {
     return { value: "Add", valueIsHint: true, badge: { tone: "amber", text: "Confirm" }, measured: null };
   }
 
-  const effective = q.value ?? q.derivedValue;
   if (effective == null) {
     return { value: "Add", valueIsHint: true, badge: null, measured: null };
   }
   const formatted = formatQuantity(effective, unit);
-
-  if (source === "manual") {
-    return { value: formatted, valueIsHint: false, badge: null, measured: null };
-  }
 
   if (q.status === "override") {
     const measured = q.derivedValue != null ? `measured ${formatQuantity(q.derivedValue, unit)}` : null;
@@ -176,7 +182,7 @@ function QuantityRow({
       valueIsHint={display.valueIsHint}
       after={
         (display.badge || display.measured) && (
-          <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
             {display.measured && <span className="muted">{display.measured}</span>}
             {display.badge && <Badge tone={display.badge.tone}>{display.badge.text}</Badge>}
           </span>

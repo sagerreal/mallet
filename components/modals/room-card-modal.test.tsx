@@ -161,6 +161,14 @@ describe("quantityDisplay", () => {
     const d = quantityDisplay(quantity({ status: "confirmed", value: 100, derivedValue: null }), "manual", "sqft");
     expect(d.badge).toBeNull();
   });
+
+  it("manual-source rooms never show a badge, even when status is needs_confirm — plain rendering, not Confirm/Add", () => {
+    const d = quantityDisplay(quantity({ status: "needs_confirm", value: 100, derivedValue: null }), "manual", "sqft");
+    expect(d.badge).toBeNull();
+    expect(d.measured).toBeNull();
+    expect(d.value).toBe("100.0");
+    expect(d.valueIsHint).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
