@@ -13,3 +13,6 @@ node_modules/
 # there is no Podfile. shell/ios/.gitignore, written by `cap add ios`, already covers
 # the generated files inside that tree (App/App/public, capacitor.config.json, config.xml).
 .swiftpm/
+
+# Swift Package Manager build artifacts
+.build/
