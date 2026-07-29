@@ -40,4 +40,21 @@ public struct Transform4: Codable, Sendable {
                y: m[1][0]*p.x + m[1][1]*p.y + m[1][2]*p.z + m[1][3],
                z: m[2][0]*p.x + m[2][1]*p.y + m[2][2]*p.z + m[2][3])
     }
+
+    /// Builds a Transform4 from 4 COLUMN vectors — the layout `simd_float4x4` uses
+    /// (`columns.0` … `columns.3`, each a full column top-to-bottom). Transform4 itself
+    /// stores row-major, so this transposes. Kept Core-side (rather than only in the
+    /// RoomPlan target's `Transform4(simd:)` convenience init) so the transpose math is
+    /// pinned by a macOS-runnable unit test — the RoomPlan target can't be tested here,
+    /// and getting this transpose wrong silently corrupts every captured room.
+    public init(columnMajor columns: [[Double]]) {
+        precondition(columns.count == 4 && columns.allSatisfy { $0.count == 4 })
+        var rows = [[Double]](repeating: [Double](repeating: 0, count: 4), count: 4)
+        for col in 0..<4 {
+            for row in 0..<4 {
+                rows[row][col] = columns[col][row]
+            }
+        }
+        self.init(m: rows)
+    }
 }
