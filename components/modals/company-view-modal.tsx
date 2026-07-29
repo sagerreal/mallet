@@ -172,7 +172,16 @@ export function CompanyViewModalContent() {
   const company = companies.find((c) => c.id === companyId);
 
   if (!company) {
-    return <p className="muted">Company not found.</p>;
+    // Titled like every other state. A bare sentence in a panel gave no indication
+    // of what had been opened, which is worse precisely when something is wrong.
+    return (
+      <>
+        <h2>Company</h2>
+        <p className="muted">
+          This company record is no longer available — it may have been archived.
+        </p>
+      </>
+    );
   }
 
   const contacts = leads.filter(

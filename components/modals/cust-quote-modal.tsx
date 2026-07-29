@@ -108,7 +108,8 @@ function CustHead({ brand }: { brand: Brand }) {
         {brand.initials}
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 800, fontSize: "var(--type-lg)" }}>{brand.name}</div>
+        {/* A heading, not a styled div — see cust-invoice-modal. Same type/weight. */}
+        <h2 style={{ fontWeight: 800, fontSize: "var(--type-lg)", margin: 0, letterSpacing: "inherit", fontFamily: "inherit" }}>{brand.name}</h2>
         <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>{brand.tagline}</div>
       </div>
       {/* ModalHost provides close — no duplicate custCloseBtn() ✕ here. */}

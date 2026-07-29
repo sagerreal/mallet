@@ -169,22 +169,21 @@ export function MoreDetails({ lead }: MoreDetailsProps) {
         >
           Clean up — mark Lost or Archive
         </button>
-        <span
-          className="linklike"
-          role="button"
-          tabIndex={0}
+        {/* Same shape and size as "Clean up" beside it — one grammar for the two
+            get-rid-of-it paths, with red carrying the difference in meaning. It was a
+            <span role="button"> styled as bare red text next to a bordered button, so
+            two destructive actions read as two unrelated kinds of thing, and the
+            keyboard handling had to be hand-rolled. A real <button> gets Enter/Space,
+            focus and disabled semantics for free. */}
+        <button
+          type="button"
+          className="btn ghost sm"
           aria-label={deleteArmed ? `Confirm — archive ${lead.name}` : `Delete ${lead.name}`}
-          style={{ color: "var(--red)", fontSize: "var(--type-base)", cursor: "pointer", fontWeight: deleteArmed ? 700 : undefined }}
+          style={{ color: "var(--red)", fontWeight: deleteArmed ? 700 : undefined }}
           onClick={handleDelete}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              handleDelete();
-            }
-          }}
         >
           {deleteArmed ? "Confirm — archives, recoverable" : "Delete"}
-        </span>
+        </button>
       </div>
     </>
   );

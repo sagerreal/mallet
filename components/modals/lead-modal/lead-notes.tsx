@@ -37,11 +37,10 @@ export function LeadNotes({ lead }: LeadNotesProps) {
     <div className="card">
       <h3>Notes</h3>
 
-      {entries.length === 0 ? (
-        <p className="muted" style={{ fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}>
-          No notes yet — add the first below.
-        </p>
-      ) : (
+      {/* No "No notes yet — add the first below." line. The composer directly beneath
+          it already says to add one, and on a phone that sentence plus its margin was
+          pure height in a card that was already the tallest empty thing on screen. */}
+      {entries.length > 0 && (
         <div className="nfeed" style={{ marginBottom: "var(--space-3)" }}>
           {entries.map((entry) => (
             <NoteRow key={entry.key} entry={entry} />
@@ -53,7 +52,7 @@ export function LeadNotes({ lead }: LeadNotesProps) {
       <div className="cfrow">
         <input
           type="text"
-          placeholder="gate code, what they want, what happened…"
+          placeholder="gate code, what happened…"
           value={noteText}
           onChange={(e) => setNoteText(e.target.value)}
           onKeyDown={(e) => {
