@@ -117,7 +117,9 @@ export function ImportCustomersModalContent() {
 
   return (
     <div>
-      <h2>Import customers</h2>
+      <div className="sheet-head">
+        <h2>Import customers</h2>
+      </div>
 
       {phase === "upload" && (
         <>
@@ -170,9 +172,10 @@ export function ImportCustomersModalContent() {
 
           {error && <p className="auth-error" style={{ marginTop: "var(--space-4)", marginBottom: "0" }}>{error}</p>}
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "var(--space-5)" }}>
+          {/* The step-terminal action, docked where the thumb is (sheet grammar). */}
+          <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
             <button type="button" className="btn ghost" onClick={reset}>← Choose a different file</button>
-            <button type="button" className="btn primary"
+            <button type="button" className="sheet-pri" style={{ flex: 1, width: "auto" }}
               disabled={built.rows.length === 0 || importMut.isPending}
               onClick={runImport}>
               {progress.done > 0

@@ -83,8 +83,10 @@ export function SweepModalContent() {
   }
 
   return (
-    <div>
-      <h2>Clean up leads</h2>
+    <>
+      <div className="sheet-head">
+        <h2>Clean up leads</h2>
+      </div>
       <p className="muted" style={{ marginBottom: "var(--space-3)" }}>
         Check anything you want out of the way.{" "}
         <span className="linklike" onClick={selectAll}>
@@ -103,7 +105,10 @@ export function SweepModalContent() {
         )}
         {rest.length > 0 && (
           <>
-            <div className="navlabel" style={{ padding: `${stale.length ? 12 : 2}px 0 6px` }}>
+            <div
+              className="navlabel"
+              style={{ padding: `${stale.length ? "var(--space-3)" : "var(--space-2xs)"} 0 var(--space-2)` }}
+            >
               Everything else
             </div>
             {rest.map(row)}
@@ -114,15 +119,10 @@ export function SweepModalContent() {
         )}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: "var(--space-2)",
-          marginTop: "var(--space-4)",
-          flexWrap: "wrap",
-        }}
-      >
+      {/* Sticky foot: Archive is the terminal, recoverable action → the one
+          filled primary. Delete stays quiet red (armed two-tap); Mark Lost
+          stays quiet. */}
+      <div className="sheet-foot" style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
         <button
           className="btn ghost"
           style={{ color: "var(--red)", borderColor: deleteArmed ? "var(--red)" : undefined }}
@@ -130,13 +130,13 @@ export function SweepModalContent() {
         >
           {deleteArmed ? `⚠ Really delete ${checked.size}? Tap again` : "Delete checked"}
         </button>
-        <button className="btn ghost" onClick={() => apply("archive")}>
+        <button className="btn ghost" onClick={() => apply("lost")}>
+          Mark checked Lost
+        </button>
+        <button className="sheet-pri" onClick={() => apply("archive")}>
           Archive checked
         </button>
-        <button className="btn" onClick={() => apply("lost")}>
-          ✕ Mark checked Lost — no response
-        </button>
       </div>
-    </div>
+    </>
   );
 }
