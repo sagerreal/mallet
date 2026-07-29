@@ -8,6 +8,7 @@ import { closeDb } from "@mallet/shared/db/client";
 import { RoomCapture } from "../domain/room-capture";
 import { derivePaintingQuantities, type PaintingQuantity } from "../domain/derive-painting";
 import type { NormalizedGeometry } from "../domain/normalized-geometry";
+import { SupersedeTargetError } from "../domain/measurement-repository";
 import { DrizzleMeasurementRepository } from "./drizzle-measurement-repository";
 
 // Live RLS integration: proves the createCapture/supersede/listByJob/setQuantity contract
@@ -68,6 +69,7 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
   let orgBId = "";
   let leadAId = "";
   let jobAId = "";
+  let jobA2Id = "";
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
@@ -81,8 +83,12 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     // its own lead, a lead from org A cannot satisfy org B's job FK.
     const [lb] = await admin<{ id: string }[]>`insert into leads (org_id, name) values (${orgBId}, 'Lead B') returning id`;
     const [ja] = await admin<{ id: string }[]>`insert into jobs (org_id, num, lead_id, status) values (${orgAId}, 'JOB-MR-A1', ${leadAId}, 'complete') returning id`;
+    // A second job under org A — used to prove supersede refuses to chain a next-capture onto
+    // an old capture that belongs to a different job.
+    const [ja2] = await admin<{ id: string }[]>`insert into jobs (org_id, num, lead_id, status) values (${orgAId}, 'JOB-MR-A2', ${leadAId}, 'complete') returning id`;
     await admin<{ id: string }[]>`insert into jobs (org_id, num, lead_id, status) values (${orgBId}, 'JOB-MR-B1', ${lb!.id}, 'complete') returning id`;
     jobAId = ja!.id;
+    jobA2Id = ja2!.id;
   });
 
   afterAll(async () => {
@@ -163,6 +169,60 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     expect(oldRow?.capture.props.supersededById).toBe(second.props.id);
   });
 
+  it("supersede with a nonexistent oldId throws and creates no new capture row", async () => {
+    const orgA = asOrgId(orgAId);
+    const jobA = asJobId(jobAId);
+    const { capture: next, quantities } = buildCapture(orgA, jobA, { roomName: "Ghost re-scan" });
+    const ghostOldId = randomUUID();
+
+    await expect(
+      withTenant(orgA, async (tx) => {
+        const repo = new DrizzleMeasurementRepository(tx, orgA);
+        await repo.supersede(ghostOldId, next, quantities);
+      }),
+    ).rejects.toBeInstanceOf(SupersedeTargetError);
+
+    const found = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      return repo.getCapture(next.props.id);
+    });
+    expect(found).toBeNull();
+  });
+
+  it("supersede where next belongs to a different job than the old capture throws, creates nothing", async () => {
+    const orgA = asOrgId(orgAId);
+    const jobA = asJobId(jobAId);
+    const jobA2 = asJobId(jobA2Id);
+    const { capture: old, quantities: qOld } = buildCapture(orgA, jobA, { roomName: "Kitchen" });
+
+    await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      await repo.createCapture(old, qOld);
+    });
+
+    // `next` is scoped to job A2 while `old` belongs to job A — a supersede must never cross jobs.
+    const { capture: next, quantities: qNext } = buildCapture(orgA, jobA2, { roomName: "Kitchen re-scan" });
+
+    await expect(
+      withTenant(orgA, async (tx) => {
+        const repo = new DrizzleMeasurementRepository(tx, orgA);
+        await repo.supersede(old.props.id, next, qNext);
+      }),
+    ).rejects.toBeInstanceOf(SupersedeTargetError);
+
+    const oldStillCurrent = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      return repo.getCapture(old.props.id);
+    });
+    expect(oldStillCurrent?.capture.props.supersededById).toBeNull();
+
+    const nextRow = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      return repo.getCapture(next.props.id);
+    });
+    expect(nextRow).toBeNull();
+  });
+
   it("listByJob returns current captures newest-first", async () => {
     const orgA = asOrgId(orgAId);
     const jobA = asJobId(jobAId);
@@ -197,11 +257,12 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     const { capture, quantities } = buildCapture(orgA, jobA, { roomName: "Office" });
     const wallsQuantity = quantities.find((q) => q.kind === "walls_sqft")!;
 
-    await withTenant(orgA, async (tx) => {
+    const affected = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleMeasurementRepository(tx, orgA);
       await repo.createCapture(capture, quantities);
-      await repo.setQuantity(capture.props.id, "walls_sqft", { value: 999.9, status: "override" });
+      return repo.setQuantity(capture.props.id, "walls_sqft", { value: 999.9, status: "override" });
     });
+    expect(affected).toBe(1);
 
     const after = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleMeasurementRepository(tx, orgA);
@@ -214,16 +275,31 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     expect(stored.derivedValue).toBe(wallsQuantity.value);
   });
 
+  it("setQuantity on a kind that doesn't exist for the capture returns 0 (no silent no-op)", async () => {
+    const orgA = asOrgId(orgAId);
+    const jobA = asJobId(jobAId);
+    const { capture, quantities } = buildCapture(orgA, jobA, { roomName: "Office 2" });
+
+    const affected = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      await repo.createCapture(capture, quantities);
+      // "windows_count" exists on this capture; a nonexistent capture id can never match.
+      return repo.setQuantity(randomUUID(), "windows_count", { value: 3, status: "confirmed" });
+    });
+    expect(affected).toBe(0);
+  });
+
   it("renameRoom and archive mutate/soft-delete only within the owning org", async () => {
     const orgA = asOrgId(orgAId);
     const jobA = asJobId(jobAId);
     const { capture, quantities } = buildCapture(orgA, jobA, { roomName: "Den" });
 
-    await withTenant(orgA, async (tx) => {
+    const renameAffected = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleMeasurementRepository(tx, orgA);
       await repo.createCapture(capture, quantities);
-      await repo.renameRoom(capture.props.id, "Den (renamed)");
+      return repo.renameRoom(capture.props.id, "Den (renamed)");
     });
+    expect(renameAffected).toBe(1);
 
     const renamed = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleMeasurementRepository(tx, orgA);
@@ -231,10 +307,11 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     });
     expect(renamed?.capture.props.roomName).toBe("Den (renamed)");
 
-    await withTenant(orgA, async (tx) => {
+    const archiveAffected = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleMeasurementRepository(tx, orgA);
-      await repo.archive(capture.props.id);
+      return repo.archive(capture.props.id);
     });
+    expect(archiveAffected).toBe(1);
 
     const archived = await withTenant(orgA, async (tx) => {
       const repo = new DrizzleMeasurementRepository(tx, orgA);

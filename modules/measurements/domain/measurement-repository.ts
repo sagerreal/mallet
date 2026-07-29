@@ -22,34 +22,52 @@ export interface RoomCaptureWithQuantities {
   readonly quantities: readonly StoredQuantity[];
 }
 
+// Thrown by `supersede` instead of silently no-op'ing: an unconditional UPDATE-then-INSERT
+// would create an unlinked "current" capture if the old id doesn't resolve (wrong org,
+// already deleted, already superseded, or belongs to a different job). Task-4 use-cases catch
+// this and map it to a typed Result error (notFound/conflict from @mallet/shared/types) at
+// the app boundary — the repo itself only needs to fail loudly, not choose the AppError kind.
+export class SupersedeTargetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SupersedeTargetError";
+  }
+}
+
 // The org is NEVER a parameter — it is implicit in the org-scoped transaction the repository
 // is constructed with, so a caller physically cannot address another tenant's captures.
 export interface MeasurementRepository {
   // One tx: inserts the capture row and its quantity rows atomically.
   createCapture(capture: RoomCapture, quantities: readonly PaintingQuantity[]): Promise<void>;
 
-  // Current (not superseded, not deleted) captures for a job, newest capturedAt first.
+  // Current (not superseded, not deleted) captures for a job, newest capturedAt (then id) first.
   listByJob(jobId: string): Promise<RoomCaptureWithQuantities[]>;
 
   getCapture(id: string): Promise<RoomCaptureWithQuantities | null>;
 
-  // Re-scan chain: sets old.supersededById = next.id and inserts next + its quantities.
-  // One tx — the old capture is never left pointing nowhere if the insert fails.
+  // Re-scan chain: sets old.supersededById = next.id and inserts next + its quantities. One
+  // tx — the old-row UPDATE runs first; if it affects 0 rows (missing/wrong-org/deleted/
+  // already-superseded/wrong-job old id) this throws SupersedeTargetError BEFORE the insert,
+  // so an unlinked "current" capture can never be created. Success is implied by not throwing.
   supersede(
     oldId: string,
     next: RoomCapture,
     quantities: readonly PaintingQuantity[],
   ): Promise<void>;
 
-  // Patches value + status only — derivedValue is immutable once persisted.
+  // Patches value + status only — derivedValue is immutable once persisted. Returns the number
+  // of rows affected (0 = no matching kind/capture in this org, or the parent capture is
+  // soft-deleted) — same no-silent-fail contract as CompanyRepository.archive.
   setQuantity(
     captureId: string,
     kind: PaintingQuantityKind,
     patch: { value: number | null; status: QuantityStatus },
-  ): Promise<void>;
+  ): Promise<number>;
 
-  renameRoom(captureId: string, roomName: string): Promise<void>;
+  // Returns the number of rows affected (0 = not found / wrong org / already deleted).
+  renameRoom(captureId: string, roomName: string): Promise<number>;
 
-  // Soft-delete.
-  archive(captureId: string): Promise<void>;
+  // Soft-delete. Returns the number of rows affected (0 = not found / wrong org / already
+  // deleted) — same contract as CompanyRepository.archive.
+  archive(captureId: string): Promise<number>;
 }

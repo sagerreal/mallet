@@ -5,10 +5,11 @@ import type { OrgId } from "@mallet/shared/types";
 import type { RoomCapture } from "../domain/room-capture";
 import { toWireGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantity, PaintingQuantityKind } from "../domain/derive-painting";
-import type {
-  MeasurementRepository,
-  RoomCaptureWithQuantities,
-  QuantityStatus,
+import {
+  SupersedeTargetError,
+  type MeasurementRepository,
+  type RoomCaptureWithQuantities,
+  type QuantityStatus,
 } from "../domain/measurement-repository";
 import { toCaptureWithQuantities, type RoomCaptureRow } from "./measurement-mapper";
 
@@ -38,7 +39,9 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
           isNull(roomCaptures.deletedAt),
         ),
       )
-      .orderBy(desc(roomCaptures.capturedAt));
+      // capturedAt is client-supplied (device clock), so ties are possible — desc(id) as a
+      // deterministic secondary key, same pattern as drizzle-company-repository's list().
+      .orderBy(desc(roomCaptures.capturedAt), desc(roomCaptures.id));
 
     if (rows.length === 0) return [];
     return this.attachQuantities(rows);
@@ -57,10 +60,29 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
   }
 
   async supersede(oldId: string, next: RoomCapture, quantities: readonly PaintingQuantity[]): Promise<void> {
-    await this.tx
+    // The old-row UPDATE runs FIRST and is checked before the insert — an unconditional
+    // UPDATE-then-INSERT would create an unlinked "current" capture if oldId doesn't resolve
+    // (wrong org, already deleted, already superseded) or belongs to a different job than
+    // `next`. Zero affected rows means the guard failed, and we throw before ever inserting.
+    const updated = await this.tx
       .update(roomCaptures)
       .set({ supersededById: next.props.id, updatedAt: new Date() })
-      .where(and(eq(roomCaptures.id, oldId), eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)));
+      .where(
+        and(
+          eq(roomCaptures.id, oldId),
+          eq(roomCaptures.orgId, this.orgId),
+          eq(roomCaptures.jobId, next.props.jobId),
+          isNull(roomCaptures.deletedAt),
+          isNull(roomCaptures.supersededById),
+        ),
+      )
+      .returning();
+
+    if (updated.length === 0) {
+      throw new SupersedeTargetError(
+        `room capture ${oldId} was not found, already deleted, already superseded, or does not belong to job ${next.props.jobId}`,
+      );
+    }
 
     await this.insertCaptureWithQuantities(next, quantities);
   }
@@ -69,9 +91,17 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     captureId: string,
     kind: PaintingQuantityKind,
     patch: { value: number | null; status: QuantityStatus },
-  ): Promise<void> {
+  ): Promise<number> {
     // derivedValue is deliberately absent from the SET clause — it is immutable once persisted.
-    await this.tx
+    // The captureId subquery excludes quantities whose parent capture is soft-deleted (or
+    // belongs to another org) — a quantity row itself has no deletedAt, so without this the
+    // UPDATE would silently "succeed" against an archived room.
+    const liveCaptureIds = this.tx
+      .select({ id: roomCaptures.id })
+      .from(roomCaptures)
+      .where(and(eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)));
+
+    const rows = await this.tx
       .update(paintingRoomQuantities)
       .set({ value: patch.value, status: patch.status, updatedAt: new Date() })
       .where(
@@ -79,23 +109,30 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
           eq(paintingRoomQuantities.captureId, captureId),
           eq(paintingRoomQuantities.kind, kind),
           eq(paintingRoomQuantities.orgId, this.orgId),
+          inArray(paintingRoomQuantities.captureId, liveCaptureIds),
         ),
-      );
+      )
+      .returning();
+    return rows.length;
   }
 
-  async renameRoom(captureId: string, roomName: string): Promise<void> {
-    await this.tx
+  async renameRoom(captureId: string, roomName: string): Promise<number> {
+    const rows = await this.tx
       .update(roomCaptures)
       .set({ roomName, updatedAt: new Date() })
-      .where(and(eq(roomCaptures.id, captureId), eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)));
+      .where(and(eq(roomCaptures.id, captureId), eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)))
+      .returning();
+    return rows.length;
   }
 
-  async archive(captureId: string): Promise<void> {
+  async archive(captureId: string): Promise<number> {
     const now = new Date();
-    await this.tx
+    const rows = await this.tx
       .update(roomCaptures)
       .set({ deletedAt: now, updatedAt: now })
-      .where(and(eq(roomCaptures.id, captureId), eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)));
+      .where(and(eq(roomCaptures.id, captureId), eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)))
+      .returning();
+    return rows.length;
   }
 
   // Inserts a capture row and its quantity rows on `this.tx` — the caller (createCapture /
