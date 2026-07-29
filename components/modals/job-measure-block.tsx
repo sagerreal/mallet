@@ -3,16 +3,21 @@
  * The job modal's "Measurements" block — room captures (RoomPlan scans or
  * manual rooms) for this job. Mirrors job-checklist-block.tsx: a card-free
  * list of tap rows inside the accordion body, plus a trailing "+ Add room"
- * control that drills into the room-card modal (Task 8 builds that sheet).
+ * control that drills into the room-card modal.
  *
  * Rooms hydrate lazily via useJobRooms(jobId) (features/measurements) — the
- * hook itself returns the react-query result; rooms are read back from the
- * store's roomsByJob slice, matching how the hook is documented to be used.
+ * hook returns the react-query result, which this block reads directly for
+ * its error state (house rule: no silent failures on interactive paths). A
+ * FAILED list fetch must never render as "no rooms": shouldShowLoadFailed
+ * (lib/first-run.ts) fires only when the query errored AND the store has
+ * nothing cached for this job, same predicate + LoadFailed pairing
+ * checklists-panel.tsx uses for its list query. Rooms themselves are read
+ * back from the store's roomsByJob slice.
  *
  * The room-card modal is a drill-in from an already-open sheet (the job
  * modal), so it PUSHES onto the modal back-stack like the other in-modal
  * drill-ins (PRICE_BUILDER from PriceSummary, CALL/THREAD from the header) —
- * closing it returns to the job modal rather than dead-ending blank.
+ * closing it returns to the job modal instead of dead-ending blank.
  */
 
 "use client";
@@ -20,6 +25,8 @@
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { usePushModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
+import { shouldShowLoadFailed } from "@/lib/first-run";
+import { LoadFailed } from "@/components/shared/load-failed";
 import { Row } from "@/components/ui/row";
 import { Badge } from "@/components/ui/badge";
 import type { RoomCard, RoomQuantity, RoomQuantityKind } from "@/lib/store/types";
@@ -67,26 +74,45 @@ export function roomNeedsConfirm(room: RoomCard): boolean {
 }
 
 export function JobMeasureBlock({ jobId }: { jobId: string }) {
-  useJobRooms(jobId);
+  const query = useJobRooms(jobId);
   const rooms = useAppStore((s) => s.roomsByJob[jobId]) ?? EMPTY_ROOMS;
   const pushModal = usePushModal();
 
+  // A failed fetch must never be mistaken for "no rooms" — only render the
+  // friendly empty state once the query has genuinely succeeded (or the store
+  // already has rooms cached from an earlier successful load).
+  const loadFailed = shouldShowLoadFailed({
+    isFetched: query.isFetched,
+    isError: query.isError,
+    count: rooms.length,
+  });
+
   return (
     <div>
-      {rooms.map((room) => (
-        <Row
-          key={room.id}
-          label={room.roomName}
-          value={roomHeadline(room.quantities)}
-          trailing={roomNeedsConfirm(room) ? <Badge tone="amber">Confirm</Badge> : undefined}
-          onClick={() => pushModal(MODAL.ROOM_CARD, { captureId: room.id, jobId })}
+      {loadFailed ? (
+        <LoadFailed
+          noun="rooms"
+          onRetry={() => void query.refetch()}
+          retrying={query.isRefetching}
         />
-      ))}
+      ) : (
+        <>
+          {rooms.map((room) => (
+            <Row
+              key={room.id}
+              label={room.roomName}
+              value={roomHeadline(room.quantities)}
+              trailing={roomNeedsConfirm(room) ? <Badge tone="amber">Confirm</Badge> : undefined}
+              onClick={() => pushModal(MODAL.ROOM_CARD, { captureId: room.id, jobId })}
+            />
+          ))}
 
-      {rooms.length === 0 && (
-        <div className="empty-att" style={{ marginBottom: "var(--space-2)" }}>
-          No rooms measured yet.
-        </div>
+          {rooms.length === 0 && (
+            <div className="empty-att" style={{ marginBottom: "var(--space-2)" }}>
+              No rooms measured yet.
+            </div>
+          )}
+        </>
       )}
 
       <button

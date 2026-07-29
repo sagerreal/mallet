@@ -2,12 +2,16 @@
 /**
  * components/modals/job-measure-block.test.tsx
  *
- * Guards JobMeasureBlock (Task 7):
+ * Guards JobMeasureBlock (Task 7 + crash/error-state fixes):
  *  - room rows render a headline built from walls_sqft / doors_count
  *  - a Confirm badge shows when any quantity is needs_confirm
  *  - tapping a room pushes the room-card modal in edit mode ({ captureId, jobId })
  *  - "+ Add room" pushes the room-card modal in create mode ({ jobId })
  *  - the empty state shows the "Add" hint, never a dash
+ *  - a FAILED list query renders LoadFailed, never the empty state, and its
+ *    retry calls the query's refetch (house rule: no silent failures)
+ *  - a failed query with rooms already cached in the store still shows the
+ *    rooms (shouldShowLoadFailed's count>0 escape hatch)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -15,6 +19,23 @@ import { JobMeasureBlock, roomHeadline, roomNeedsConfirm } from "./job-measure-b
 import type { RoomCard } from "@/lib/store/types";
 
 const JOB_ID = "job-111";
+
+interface MockQuery {
+  isFetched: boolean;
+  isError: boolean;
+  isRefetching: boolean;
+  refetch: ReturnType<typeof vi.fn>;
+}
+
+function makeQuery(overrides: Partial<MockQuery> = {}): MockQuery {
+  return {
+    isFetched: true,
+    isError: false,
+    isRefetching: false,
+    refetch: vi.fn(),
+    ...overrides,
+  };
+}
 
 let mockRooms: RoomCard[] = [];
 const pushModalMock = vi.fn();
@@ -49,6 +70,7 @@ beforeEach(() => {
   mockRooms = [];
   pushModalMock.mockReset();
   useJobRoomsMock.mockReset();
+  useJobRoomsMock.mockReturnValue(makeQuery());
 });
 
 // ---------------------------------------------------------------------------
@@ -148,5 +170,58 @@ describe("JobMeasureBlock", () => {
     expect(screen.getByText("No rooms measured yet.")).toBeTruthy();
     expect(screen.getByText("+ Add room")).toBeTruthy();
     expect(screen.queryByText("—")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JobMeasureBlock — load-failed state (a failing query must never look like
+// an empty job: verified live, a failing list rendered indistinguishably
+// from a healthy empty one).
+// ---------------------------------------------------------------------------
+
+describe("JobMeasureBlock — load-failed state", () => {
+  it("renders LoadFailed, not the empty state, when the query errors with nothing cached", () => {
+    mockRooms = [];
+    useJobRoomsMock.mockReturnValue(makeQuery({ isFetched: true, isError: true }));
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    expect(screen.getByText("Couldn't load your rooms.")).toBeTruthy();
+    expect(screen.queryByText("No rooms measured yet.")).toBeNull();
+  });
+
+  it("retry calls the query's refetch", () => {
+    mockRooms = [];
+    const refetch = vi.fn();
+    useJobRoomsMock.mockReturnValue(makeQuery({ isFetched: true, isError: true, refetch }));
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("shows 'Retrying…' and disables the button while a retry is in flight", () => {
+    mockRooms = [];
+    useJobRoomsMock.mockReturnValue(makeQuery({ isFetched: true, isError: true, isRefetching: true }));
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    const btn = screen.getByRole("button", { name: "Retrying…" }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+  });
+
+  it("does NOT render LoadFailed while the query is still in flight (not yet fetched)", () => {
+    mockRooms = [];
+    useJobRoomsMock.mockReturnValue(makeQuery({ isFetched: false, isError: false }));
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    expect(screen.queryByText("Couldn't load your rooms.")).toBeNull();
+  });
+
+  it("still renders rooms already cached in the store even if the query later errors", () => {
+    mockRooms = [makeRoom()];
+    useJobRoomsMock.mockReturnValue(makeQuery({ isFetched: true, isError: true }));
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    expect(screen.getByText("Living room")).toBeTruthy();
+    expect(screen.queryByText("Couldn't load your rooms.")).toBeNull();
   });
 });

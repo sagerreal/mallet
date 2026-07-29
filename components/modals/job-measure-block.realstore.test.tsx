@@ -27,8 +27,10 @@ import { JobMeasureBlock } from "./job-measure-block";
 
 const JOB_ID = "job-real-store-1";
 
+const useJobRoomsMock = vi.fn();
+
 vi.mock("@/features/measurements/use-job-rooms", () => ({
-  useJobRooms: vi.fn(),
+  useJobRooms: (...args: unknown[]) => useJobRoomsMock(...args),
 }));
 
 beforeEach(() => {
@@ -36,6 +38,16 @@ beforeEach(() => {
   // reproducing the exact seam the bug lived in (`s.roomsByJob[jobId]` is
   // `undefined`, not `[]`).
   useAppStore.setState({ roomsByJob: {} });
+  // A settled, successful query with nothing cached — the empty-state branch,
+  // not the load-failed branch (that's covered against the real store too,
+  // in the test below).
+  useJobRoomsMock.mockReset();
+  useJobRoomsMock.mockReturnValue({
+    isFetched: true,
+    isError: false,
+    isRefetching: false,
+    refetch: vi.fn(),
+  });
 });
 
 describe("JobMeasureBlock — real zustand store, no roomsByJob entry", () => {
@@ -43,5 +55,18 @@ describe("JobMeasureBlock — real zustand store, no roomsByJob entry", () => {
     expect(() => render(<JobMeasureBlock jobId={JOB_ID} />)).not.toThrow();
     expect(screen.getByText("No rooms measured yet.")).toBeTruthy();
     expect(screen.getByText("+ Add room")).toBeTruthy();
+  });
+
+  it("renders the load-failed state (not the empty state) against the real store when the query errors", () => {
+    useJobRoomsMock.mockReturnValue({
+      isFetched: true,
+      isError: true,
+      isRefetching: false,
+      refetch: vi.fn(),
+    });
+
+    expect(() => render(<JobMeasureBlock jobId={JOB_ID} />)).not.toThrow();
+    expect(screen.getByText("Couldn't load your rooms.")).toBeTruthy();
+    expect(screen.queryByText("No rooms measured yet.")).toBeNull();
   });
 });
