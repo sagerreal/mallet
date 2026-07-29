@@ -33,6 +33,7 @@ import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { userMessage } from "@/lib/trpc/error-map";
 
 // ---- sample state values mirrored from prototype's state -------------------
 
@@ -49,21 +50,31 @@ function cap(s: string): string {
 // Section: Workspace
 // ============================================================================
 
-function SecWorkspace({ role }: { role: string }) {
+function SecWorkspace() {
+  // COMPANY only. Everything here is one shared value the whole shop sees; anything that differs
+  // per person lives under "You".
   return (
     <>
       <BrandingCard />
       <A2pRegistrationCard />
+    </>
+  );
+}
 
-      {(role === "owner" || role === "office") && (
-        <>
-          <h3 className="setgrp" style={{ margin: "var(--space-5) 0 var(--space-3)" }}>
-            Your account
-          </h3>
-          <YourNameField />
-          <CallbackNumberCard />
-        </>
-      )}
+// ============================================================================
+// Section: You — the only settings that are yours rather than the company's.
+// Split out of Workspace because a shared page of company settings with two
+// personal fields buried under a heading gave no signal about which was which.
+// ============================================================================
+
+function SecYou() {
+  return (
+    <>
+      <p className="muted" style={{ fontSize: "var(--type-base)", margin: "0 0 var(--space-4)" }}>
+        These are yours alone. Everyone else in the shop has their own.
+      </p>
+      <YourNameField />
+      <CallbackNumberCard />
     </>
   );
 }
@@ -156,6 +167,7 @@ type MemberItem = {
   role: "owner" | "office" | "tech";
   name: string | null;
   isFieldCrew: boolean;
+  takesCalls: boolean;
   skillTags: string[];
 };
 
@@ -285,6 +297,13 @@ function MemberRow({ member }: { member: MemberItem }) {
   const utils = api.useUtils();
   const [roleError, setRoleError] = useState<string | null>(null);
 
+  const [callsError, setCallsError] = useState<string | null>(null);
+  const setTakesCalls = api.v1.identity.setMemberTakesCalls.useMutation({
+    onSuccess: () => void utils.v1.identity.members.invalidate(),
+    // The server refuses this for anyone without a verified number, because accepting it would
+    // silently do nothing — the on-call reader skips them.
+    onError: (e) => setCallsError(userMessage(e)),
+  });
   const setFieldCrew = api.v1.identity.setMemberFieldCrew.useMutation({
     onSuccess: () => { utils.v1.identity.members.invalidate().catch(() => {}); },
   });
@@ -332,9 +351,26 @@ function MemberRow({ member }: { member: MemberItem }) {
           />
           <i />
         </label>
+        {/* Whether the front desk may put an urgent caller through to them. WHEN comes from their
+            crew hours, so this is only "may they be interrupted at all". */}
+        <label className="switch" title="Takes urgent calls from the front desk">
+          <input
+            type="checkbox"
+            checked={member.takesCalls}
+            disabled={setTakesCalls.isPending}
+            onChange={(e) => {
+              setCallsError(null);
+              setTakesCalls.mutate({ userId: member.id, takesCalls: e.target.checked });
+            }}
+          />
+          <i />
+        </label>
       </div>
       {roleError && (
         <div style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", paddingLeft: "var(--space-2xs)" }}>{roleError}</div>
+      )}
+      {callsError && (
+        <div role="alert" style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", paddingLeft: "var(--space-2xs)" }}>{callsError}</div>
       )}
       {member.isFieldCrew && (
         <CertChipsEditor memberId={member.id} skillTags={member.skillTags} />
@@ -655,7 +691,12 @@ function SecChannels() {
 // Single source of truth for tab ids. The deep-link parser derives its whitelist from this — a
 // duplicated literal previously let a new tab render in the nav but silently fall back to
 // Workspace when linked to directly.
-const SET_TABS = ["workspace", "team", "channels", "payments", "quickbooks"] as const;
+// "you" is last on purpose: everything before it belongs to the COMPANY and everyone in the shop
+// sees the same values, while "you" is the only tab whose contents differ per person. They used to
+// share the Workspace tab under a heading, so a new office hire opened Settings and saw the
+// company's branding, the company's texting registration and their own mobile stacked together
+// with nothing saying which of them they could safely change.
+const SET_TABS = ["workspace", "team", "channels", "payments", "quickbooks", "you"] as const;
 type SetTab = (typeof SET_TABS)[number];
 
 // Old deep-link tab names → their new homes (settings-IA regroup). ?tab=payments must keep
@@ -701,12 +742,13 @@ export default function SettingsPage() {
   const role = me?.role ?? "office";
 
   const allSections = [
-    { k: "workspace" as SetTab, label: "Workspace",  body: <SecWorkspace role={role} /> },
+    { k: "workspace" as SetTab, label: "Workspace",  body: <SecWorkspace /> },
     { k: "team"      as SetTab, label: "Team",       body: <SecTeam /> },
     { k: "channels"  as SetTab, label: "Channels",   body: <SecChannels /> },
     { k: "payments"  as SetTab, label: "Payments",   ownerOnly: true, body: <PaymentsCard /> },
     // ?tab=quickbooks must keep working verbatim — the OAuth callback redirects to it server-side.
     { k: "quickbooks" as SetTab, label: "QuickBooks", ownerOnly: true, body: <QuickbooksCard /> },
+    { k: "you" as SetTab, label: "You", body: <SecYou /> },
   ] satisfies SectionDef[];
   const sections: SectionDef[] = allSections.filter((s) => role === "owner" || role === "office" || !s.ownerOnly);
 

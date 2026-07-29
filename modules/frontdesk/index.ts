@@ -84,3 +84,7 @@ export type { CrewScheduleRepository } from "./domain/crew-schedule-repository";
 export { CrewScheduleEntry } from "./domain/crew-schedule";
 export { SetCrewScheduleUseCase } from "./app/set-crew-schedule";
 export { DrizzleCrewScheduleRepository } from "./infra/drizzle-crew-schedule-repository";
+// Who the front desk may put an urgent caller through to, and when.
+export { DrizzleOnCallReader } from "./infra/drizzle-on-call-reader";
+export { pickOnCall } from "./domain/on-call";
+export type { OnCallReader, OnCallCandidate } from "./domain/on-call";

@@ -13,6 +13,7 @@ import type {
 } from "../domain/assistant";
 import { VOICE_MODEL, VOICE, MAX_CALL_MINUTES } from "../infra/vapi-defaults";
 import { buildSystemPrompt, buildFirstMessage, type PromptFacts } from "./prompt";
+import { pickOnCall, type OnCallReader } from "../domain/on-call";
 
 const SECONDS_PER_MINUTE = 60;
 
@@ -33,10 +34,29 @@ export interface BuildAssistantDeps {
   readonly settings: SettingsReader;
   readonly leadByPhone: LeadByPhoneReader;
   readonly leadSummary: LeadSummaryReader;
+  /** Who may be interrupted by a caller, and their hours. Absent → escalation stays org-wide. */
+  readonly onCall?: OnCallReader;
 }
 
 // Projects the OrgSettings aggregate down to the narrow facts the prompt renders. No arithmetic
 // on money — serviceFee and flat prices are DOLLARS carried through verbatim for speech.
+// The org's own opening hours for one weekday — the fallback for anyone with no schedule row.
+// 0 = Sunday, matching JS getDay() and the crew_schedules convention.
+const orgHoursForWeekday = (s: OrgSettings, weekday: number): { openHour: number; closeHour: number } => {
+  const p = s.props;
+  if (weekday === 0) return { openHour: p.hoursSunOpen, closeHour: p.hoursSunClose };
+  if (weekday === 6) return { openHour: p.hoursSatOpen, closeHour: p.hoursSatClose };
+  const wd = [
+    null,
+    [p.hoursMonOpen, p.hoursMonClose],
+    [p.hoursTueOpen, p.hoursTueClose],
+    [p.hoursWedOpen, p.hoursWedClose],
+    [p.hoursThuOpen, p.hoursThuClose],
+    [p.hoursFriOpen, p.hoursFriClose],
+  ][weekday] as [number, number] | null;
+  return wd ? { openHour: wd[0], closeHour: wd[1] } : { openHour: p.hoursWdOpen, closeHour: p.hoursWdClose };
+};
+
 const toPromptFacts = (s: OrgSettings): PromptFacts => {
   const p = s.props;
   return {
@@ -92,7 +112,35 @@ export class BuildAssistantUseCase {
     }
 
     const caller = await this.resolveCaller(cmd.fromNumber);
-    return ok(this.fullAssistant(settings, caller));
+    const onCallNumber = await this.resolveOnCall(settings, cmd.orgId);
+    return ok(this.fullAssistant(settings, caller, onCallNumber));
+  }
+
+  /**
+   * The phone to put an urgent caller through to right now, or null to fall back to the org's own
+   * emergency number.
+   *
+   * "Today" and "now" are computed in the ORG's timezone. Using the server's would put a caller
+   * through at 3am to someone the shop thinks is off, because a US evening is already tomorrow in
+   * UTC — the same trap get_context had.
+   */
+  private async resolveOnCall(settings: OrgSettings, orgId: OrgId): Promise<string | null> {
+    if (!this.deps.onCall) return null;
+
+    const tz = settings.props.timezone;
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      weekday: "short",
+      hour: "numeric",
+      hour12: false,
+    }).formatToParts(new Date());
+    const hourNow = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+    const weekdayName = parts.find((p) => p.type === "weekday")?.value ?? "Sun";
+    const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekdayName);
+
+    const candidates = await this.deps.onCall.findAvailable(orgId, weekday === -1 ? 0 : weekday);
+    const orgHours = orgHoursForWeekday(settings, weekday === -1 ? 0 : weekday);
+    return pickOnCall({ candidates, orgHours, hourNow })?.phone ?? null;
   }
 
   // At most one query to each caller-recognition port; short-circuits early on any miss.
@@ -111,11 +159,12 @@ export class BuildAssistantUseCase {
     return { known: true, name: summary.name, openWork: summary.openWork };
   }
 
-  private fullAssistant(settings: OrgSettings, caller: CallerContext): VapiAssistantDTO {
+  private fullAssistant(settings: OrgSettings, caller: CallerContext, onCallNumber: string | null): VapiAssistantDTO {
     const facts = toPromptFacts(settings);
-    // The transfer tool is PER-ORG (its destination is the org's on-call number),
-    // so it can't live in the injected static list — appended here when configured.
-    const transferNumber = settings.props.booking.emergencyTransferNumber;
+    // The transfer tool is PER-CALL: its destination is whoever is on shift right now, falling
+    // back to the org's own emergency number when nobody is. Resolved per call rather than per org
+    // because "who is on" changes hour to hour — a number baked at org level cannot express that.
+    const transferNumber = onCallNumber ?? settings.props.booking.emergencyTransferNumber;
     const tools: readonly VoiceTool[] = transferNumber
       ? [...this.tools, emergencyTransferTool(transferNumber)]
       : this.tools;

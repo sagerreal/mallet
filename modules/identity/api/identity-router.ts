@@ -188,6 +188,7 @@ export const createIdentityRouter = () =>
               role: roleEnum,
               name: z.string().nullable(),
               isFieldCrew: z.boolean(),
+              takesCalls: z.boolean(),
               skillTags: z.array(z.string()),
             }),
           ),
@@ -195,7 +196,7 @@ export const createIdentityRouter = () =>
       )
       .query(async ({ ctx }) => {
         const rows = await ctx.tx
-          .select({ id: users.id, email: users.email, role: users.role, name: users.name, isFieldCrew: users.isFieldCrew, skillTags: users.skillTags })
+          .select({ id: users.id, email: users.email, role: users.role, name: users.name, isFieldCrew: users.isFieldCrew, takesCalls: users.takesCalls, skillTags: users.skillTags })
           .from(users)
           .where(eq(users.orgId, ctx.principal.orgId));
         return {
@@ -205,6 +206,7 @@ export const createIdentityRouter = () =>
             role: roleEnum.parse(r.role),
             name: r.name ?? null,
             isFieldCrew: r.isFieldCrew,
+            takesCalls: r.takesCalls,
             skillTags: r.skillTags ?? [],
           })),
         };
@@ -453,6 +455,36 @@ export const createIdentityRouter = () =>
 
     // Toggle whether a member appears on the schedule board as assignable crew.
     // Restricted to owner/office — field techs cannot flip their own flag.
+    // Whether the AI front desk may put an urgent caller through to this person. Their HOURS come
+    // from crew_schedules — this is only "may they be interrupted at all".
+    setMemberTakesCalls: ownerOrOffice
+      .input(z.object({ userId: z.string().uuid(), takesCalls: z.boolean() }))
+      .output(z.object({ id: z.string().uuid(), takesCalls: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const [updated] = await ctx.tx
+          .update(users)
+          .set({ takesCalls: input.takesCalls, updatedAt: new Date() })
+          .where(and(eq(users.id, asUserId(input.userId)), eq(users.orgId, ctx.principal.orgId)))
+          .returning({ id: users.id, takesCalls: users.takesCalls, callbackVerifiedAt: users.callbackVerifiedAt });
+
+        if (!updated) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "user not found in this org" });
+        }
+
+        // Turning it on for somebody with no VERIFIED number is a no-op the shop would never see:
+        // the reader excludes them, so the front desk would silently skip the person the owner just
+        // put on call. Refuse instead of accepting a setting that does nothing.
+        if (input.takesCalls && !updated.callbackVerifiedAt) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "they need a verified callback number before they can take calls",
+          });
+        }
+
+        logger.info({ userId: input.userId, takesCalls: input.takesCalls }, "identity.setMemberTakesCalls");
+        return { id: updated.id, takesCalls: updated.takesCalls };
+      }),
+
     setMemberFieldCrew: ownerOrOffice
       .input(z.object({ userId: z.string().uuid(), isFieldCrew: z.boolean() }))
       .output(
