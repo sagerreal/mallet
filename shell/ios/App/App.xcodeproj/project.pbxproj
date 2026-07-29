@@ -9,8 +9,13 @@
 /* Begin PBXBuildFile section */
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
+		EF33861294E694DCFEC7CAEE /* MalletCaptureCore in Frameworks */ = {isa = PBXBuildFile; productRef = FF0C2A0B31E65EED5CB5F44D /* MalletCaptureCore */; };
+		C2F560452A4C681F850887D6 /* MalletCaptureRoomPlan in Frameworks */ = {isa = PBXBuildFile; productRef = D167BFAEE60531C242EE3E3C /* MalletCaptureRoomPlan */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		B0D8E35D9CA79EC773DB1E4A /* RoomScanPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042488F31D369045860A2F45 /* RoomScanPlugin.swift */; };
+		40C48D8C61F251A284F2D95A /* RoomScanViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBE41390226AB4BD05455FB1 /* RoomScanViewController.swift */; };
+		EA44ED5F20ACD25D07B06C4B /* MalletViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED4FE52B72FC06E2C6ECE304 /* MalletViewController.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -22,6 +27,9 @@
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		042488F31D369045860A2F45 /* RoomScanPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomScanPlugin.swift; sourceTree = "<group>"; };
+		CBE41390226AB4BD05455FB1 /* RoomScanViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomScanViewController.swift; sourceTree = "<group>"; };
+		ED4FE52B72FC06E2C6ECE304 /* MalletViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MalletViewController.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -36,6 +44,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				EF33861294E694DCFEC7CAEE /* MalletCaptureCore in Frameworks */,
+				C2F560452A4C681F850887D6 /* MalletCaptureRoomPlan in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -64,6 +74,9 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				042488F31D369045860A2F45 /* RoomScanPlugin.swift */,
+				CBE41390226AB4BD05455FB1 /* RoomScanViewController.swift */,
+				ED4FE52B72FC06E2C6ECE304 /* MalletViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -92,6 +105,8 @@
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				FF0C2A0B31E65EED5CB5F44D /* MalletCaptureCore */,
+				D167BFAEE60531C242EE3E3C /* MalletCaptureRoomPlan */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -125,6 +140,7 @@
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
+				5EF5339D9E47F56E40D2C080 /* XCLocalSwiftPackageReference "MalletCapture" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
@@ -157,6 +173,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				B0D8E35D9CA79EC773DB1E4A /* RoomScanPlugin.swift in Sources */,
+				40C48D8C61F251A284F2D95A /* RoomScanViewController.swift in Sources */,
+				EA44ED5F20ACD25D07B06C4B /* MalletViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,7 +255,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -293,7 +312,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -311,7 +330,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -333,7 +352,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -375,6 +394,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "CapApp-SPM";
 		};
+		5EF5339D9E47F56E40D2C080 /* XCLocalSwiftPackageReference "MalletCapture" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../../capture/MalletCapture";
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -382,6 +405,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
 			productName = "CapApp-SPM";
+		};
+		FF0C2A0B31E65EED5CB5F44D /* MalletCaptureCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5EF5339D9E47F56E40D2C080 /* XCLocalSwiftPackageReference "MalletCapture" */;
+			productName = MalletCaptureCore;
+		};
+		D167BFAEE60531C242EE3E3C /* MalletCaptureRoomPlan */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5EF5339D9E47F56E40D2C080 /* XCLocalSwiftPackageReference "MalletCapture" */;
+			productName = MalletCaptureRoomPlan;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
