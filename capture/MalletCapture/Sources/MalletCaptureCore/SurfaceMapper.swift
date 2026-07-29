@@ -13,13 +13,6 @@ public enum MappingError: Error, Equatable {
 /// and is deliberately too thin to need iOS-only tests.
 public enum SurfaceMapper {
 
-    /// RoomPlan sensor noise produces near-equal but not-quite-equal vertex heights
-    /// (e.g. 2.399998 vs 2.400001 on what should be a level wall top). Task 4's gable
-    /// detection uses a 1e-6 tolerance meant only for float roundoff, not this kind of
-    /// sensor jitter — so floor/wall vertex heights are snapped to the nearest 5mm here,
-    /// before `CeilingEstimate.derive` ever sees them.
-    private static let heightQuantization = 0.005
-
     public static func geometry(from surfaces: [SurfaceDTO]) throws -> NormalizedGeometry {
         guard let floorSurface = surfaces.first(where: { $0.category == .floor }) else {
             throw MappingError.noFloor
@@ -27,9 +20,14 @@ public enum SurfaceMapper {
         let wallSurfaces = surfaces.filter { $0.category == .wall }
         guard !wallSurfaces.isEmpty else { throw MappingError.noWalls }
 
-        let floorPolygon = Polygon3(vertices: quantizedHeights(worldVertices(of: floorSurface)))
+        // RoomPlan sensor noise (near-equal but not-quite-equal vertex heights on what
+        // should be a level wall top) is handled downstream by `CeilingEstimate`'s
+        // tolerance-based height clustering, NOT by quantizing vertices here — a fixed
+        // grid-snap would corrupt the very vertices areas are computed from, and still
+        // mis-cluster two noisy heights that straddle a grid boundary.
+        let floorPolygon = Polygon3(vertices: worldVertices(of: floorSurface))
         let walls = wallSurfaces.map { surface in
-            WallGeometry(polygon: Polygon3(vertices: quantizedHeights(worldVertices(of: surface))))
+            WallGeometry(polygon: Polygon3(vertices: worldVertices(of: surface)))
         }
         let wallCentroids = walls.map { centroid(of: $0.polygon.vertices) }
 
@@ -67,12 +65,6 @@ public enum SurfaceMapper {
         surface.corners.map { local in
             let world = surface.transform.apply(local)
             return Point3(x: world.x, y: -world.z, z: world.y)
-        }
-    }
-
-    private static func quantizedHeights(_ vertices: [Point3]) -> [Point3] {
-        vertices.map {
-            Point3(x: $0.x, y: $0.y, z: ($0.z / heightQuantization).rounded() * heightQuantization)
         }
     }
 

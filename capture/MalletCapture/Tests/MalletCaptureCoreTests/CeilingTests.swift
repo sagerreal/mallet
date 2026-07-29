@@ -51,6 +51,44 @@ final class CeilingTests: XCTestCase {
         XCTAssertEqual(estimate.provenance, "vaulted_needs_confirmation")
     }
 
+    /// Two wall-top vertices that are really the same height (RoomPlan sensor noise:
+    /// 0.2mm apart in reality) but happen to straddle an arbitrary 5mm grid line
+    /// (2.4024 rounds down to 2.400, 2.4026 rounds up to 2.405 under naive fixed-grid
+    /// quantization). Tolerance-based clustering — comparing each sorted height only
+    /// to its immediate neighbor — merges them correctly regardless of any grid
+    /// boundary, so this wall must read as level, not gabled.
+    func testNearEqualHeightsStraddlingAGridBoundaryClusterTogetherAsFlat() throws {
+        let g = try TestFixtures.rectRoom(w: 4, d: 3, h: 2.4, openings: [])
+        var walls = g.walls
+        var vertices = walls[0].polygon.vertices
+        vertices[2].z = 2.4024
+        vertices[3].z = 2.4026
+        walls[0] = WallGeometry(polygon: Polygon3(vertices: vertices))
+
+        let estimate = CeilingEstimate.derive(floorPolygon: g.floorPolygon, walls: walls)
+        XCTAssertFalse(estimate.isVaulted)
+        let area = try XCTUnwrap(estimate.area)
+        XCTAssertEqual(area, g.floorPolygon.area, accuracy: 1e-9)
+        XCTAssertEqual(estimate.provenance, "derived_flat_from_floor")
+    }
+
+    /// Companion to the straddling-grid-boundary test above: two top-edge vertices on
+    /// the SAME wall that are genuinely 60cm apart (a real gable, not sensor noise)
+    /// must still be flagged vaulted — tolerance-based clustering must not swallow a
+    /// real height difference just because it's more forgiving than the old 1e-6.
+    func testGenuinelyDifferentTopHeights60cmApartStayFlaggedVaulted() throws {
+        let g = try TestFixtures.rectRoom(w: 4, d: 3, h: 2.4, openings: [])
+        var walls = g.walls
+        var vertices = walls[0].polygon.vertices
+        vertices[2].z = 3.0   // 0.6m higher than the other top vertex (still 2.4)
+        walls[0] = WallGeometry(polygon: Polygon3(vertices: vertices))
+
+        let estimate = CeilingEstimate.derive(floorPolygon: g.floorPolygon, walls: walls)
+        XCTAssertTrue(estimate.isVaulted)
+        XCTAssertNil(estimate.area)
+        XCTAssertEqual(estimate.provenance, "vaulted_needs_confirmation")
+    }
+
     /// A degenerate (zero-extent) wall polygon — every vertex collapsed onto the same
     /// height as the room's other wall tops — must not crash or produce NaN, must not
     /// register as gabled (it has only one distinct height, not more than two), and

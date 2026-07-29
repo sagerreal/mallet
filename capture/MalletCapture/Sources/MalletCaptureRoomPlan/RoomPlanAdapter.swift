@@ -1,3 +1,4 @@
+#if canImport(RoomPlan)
 import Foundation
 import RoomPlan
 import simd
@@ -12,7 +13,8 @@ public enum RoomPlanExtractor {
         // interpretation of that mapping (vs. falling back to nearest-wall-by-
         // centroid) lives in MalletCaptureCore's SurfaceMapper, never here.
         let wallIndexByIdentifier: [UUID: Int] = Dictionary(
-            uniqueKeysWithValues: room.walls.enumerated().map { ($1.identifier, $0) }
+            room.walls.enumerated().map { ($1.identifier, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
 
         var out: [SurfaceDTO] = []
@@ -55,3 +57,4 @@ extension Transform4 {
         ])
     }
 }
+#endif

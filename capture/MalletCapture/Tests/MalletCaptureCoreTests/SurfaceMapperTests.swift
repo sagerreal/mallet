@@ -200,18 +200,20 @@ final class SurfaceMapperTests: XCTestCase {
         }
     }
 
-    /// RoomPlan sensor noise: two wall-top vertices that should be exactly level (both
-    /// meant to be 2.4m) arrive as 2.4003 and 2.3997. Without quantization these would
-    /// register as 3 distinct heights on wall0 (0, 2.3997, 2.4003) and flip the gable
-    /// heuristic. After 5mm quantization both collapse to 2.400 and the room reads flat.
-    func testSensorNoiseHeightsAreQuantizedBeforeCeilingDerivation() throws {
+    /// RoomPlan sensor noise: the mapper no longer quantizes vertex heights (that step
+    /// was removed — it corrupted the very vertices areas are computed from, and still
+    /// mis-clustered heights straddling a fixed grid line). Noisy-but-should-be-level
+    /// wall-top vertices now pass through `SurfaceMapper` untouched, in raw meters, and
+    /// clustering is `CeilingEstimate`'s job — see `CeilingTests` for that coverage.
+    /// This test only pins that the mapper is NOT rounding/snapping heights itself.
+    func testMapperPassesRawUnquantizedHeightsThrough() throws {
         let noisyWall0 = SurfaceDTO(
             category: .wall,
             corners: [
                 Point3(x: 0, y: 0, z: 0),
-                Point3(x: 4, y: 0.0003, z: 0),      // world y = 0.0003 noise near 0
-                Point3(x: 4, y: 2.3997, z: 0),
-                Point3(x: 0, y: 2.4003, z: 0),
+                Point3(x: 4, y: 0.00031, z: 0),      // world y = 0.31mm noise near 0
+                Point3(x: 4, y: 2.39972, z: 0),
+                Point3(x: 0, y: 2.40031, z: 0),
             ],
             transform: .identity
         )
@@ -219,12 +221,52 @@ final class SurfaceMapperTests: XCTestCase {
 
         let mapped = try SurfaceMapper.geometry(from: surfaces)
 
-        // Quantized to the nearest 5mm grid: 0.0003 → 0.000, 2.3997/2.4003 → 2.400.
-        let heights = Set(mapped.walls[0].polygon.vertices.map { ($0.z / 0.005).rounded() * 0.005 })
-        XCTAssertEqual(mapped.walls[0].polygon.vertices.map(\.z).sorted(), [0.0, 0.0, 2.4, 2.4], accuracy: 1e-9)
-        XCTAssertEqual(heights, [0.0, 2.4])
-        XCTAssertFalse(mapped.ceiling.isVaulted)
-        XCTAssertEqual(mapped.ceiling.provenance, "derived_flat_from_floor")
+        XCTAssertEqual(
+            mapped.walls[0].polygon.vertices.map(\.z).sorted(),
+            [0.0, 0.00031, 2.39972, 2.40031],
+            accuracy: 1e-9
+        )
+    }
+
+    /// A wall at 45° in world XY: an axis-aligned-only formula (e.g. Δx or Δy alone)
+    /// would under-report this door's width by a factor of ~√2. Pins that width uses
+    /// the full horizontal (x,y) bounding diagonal, not a single-axis extent.
+    func testOpeningWidthHeightOnDiagonalWall() throws {
+        // A world-XY wall running from (0,0,0) to (√2, √2, 0) — i.e. 45° in the XY
+        // plane, 2m long — standing vertical (world Y up) to 2.4m. Identity transform;
+        // corners given directly in RoomPlan world space (style matches wall0/wall2/3).
+        let diagonalWall = SurfaceDTO(
+            category: .wall,
+            corners: [
+                Point3(x: 0, y: 0, z: 0),
+                Point3(x: 2.0.squareRoot(), y: 0, z: -(2.0.squareRoot())),
+                Point3(x: 2.0.squareRoot(), y: 2.4, z: -(2.0.squareRoot())),
+                Point3(x: 0, y: 2.4, z: 0),
+            ],
+            transform: .identity
+        )
+        // A 0.9m-wide × 2.0m door centered in that wall's plane. The wall's horizontal
+        // run direction in world (x,z) is (1,-1)/√2; moving 0.45m either side of the
+        // wall's midpoint along that direction covers the door's width.
+        let half = 0.45 / 2.0.squareRoot()
+        let midX = 2.0.squareRoot() / 2, midZ = -(2.0.squareRoot()) / 2
+        let door = SurfaceDTO(
+            category: .door,
+            corners: [
+                Point3(x: midX - half, y: 0.2, z: midZ + half),
+                Point3(x: midX + half, y: 0.2, z: midZ - half),
+                Point3(x: midX + half, y: 2.2, z: midZ - half),
+                Point3(x: midX - half, y: 2.2, z: midZ + half),
+            ],
+            transform: .identity,
+            parentWallIndex: 0
+        )
+
+        let mapped = try SurfaceMapper.geometry(from: [Self.floorSurface, diagonalWall, door])
+
+        let mappedDoor = try XCTUnwrap(mapped.openings.first)
+        XCTAssertEqual(mappedDoor.width, 0.9, accuracy: 1e-6)
+        XCTAssertEqual(mappedDoor.height, 2.0, accuracy: 1e-6)
     }
 
     // MARK: - Transform4(columnMajor:) transpose (pins the simd column-major fixture)

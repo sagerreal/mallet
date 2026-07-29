@@ -18,10 +18,14 @@ public struct CeilingEstimate: Codable, Sendable {
         self.provenance = provenance
     }
 
-    /// Tolerance (in the same units as `Point3.z`) below which two vertex heights are
-    /// treated as equal — used only to collapse floating-point noise, never to widen
-    /// the flatness judgement itself.
-    private static let heightEqualityTolerance = 1e-6
+    /// Tolerance (in the same units as `Point3.z`, meters) below which two vertex
+    /// heights are treated as equal. Sized to RoomPlan's own sensor noise (~5mm on a
+    /// wall top that should be perfectly level), not just floating-point roundoff —
+    /// this is what lets two noisy-but-intended-equal heights cluster together even
+    /// when they straddle an arbitrary grid boundary (e.g. 2.4024 vs 2.4026), which a
+    /// fixed-grid quantization step upstream cannot do. It never widens the flatness
+    /// judgement itself — `flatnessTolerance` alone controls that.
+    private static let heightEqualityTolerance = 0.005
 
     /// Derives the ceiling estimate from the floor polygon and the room's wall geometry.
     ///
