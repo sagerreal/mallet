@@ -9,6 +9,7 @@
 import { ViewToggle } from "@/components/shared/view-toggle";
 import { IST, type MoneyStatusKey } from "./money-derive";
 import { MONEY_COLS, MONEY_COL_ORDER, type MoneyColKey } from "./money-table";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 export type MoneySet = "active" | "archived";
 
@@ -111,14 +112,13 @@ export function MoneyFiltersPanel({
     <div className="fpanel">
       <div className="field">
         <label htmlFor="money-filter-status">Status</label>
-        <select id="money-filter-status" value={statusFilter} onChange={(e) => onStatus(e.target.value)}>
-          <option value="">Any</option>
-          {STATUS_FILTERS.map((k) => (
-            <option key={k} value={k}>
-              {IST[k]?.l ?? k}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          value={statusFilter}
+          onChange={onStatus}
+          options={[{ value: "", label: "Any" }, ...STATUS_FILTERS.map((k) => ({ value: k, label: IST[k]?.l ?? k }))]}
+          aria-label="Status"
+          compact
+        />
       </div>
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
         <span className="linklike" onClick={onClear}>

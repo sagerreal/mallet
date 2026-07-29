@@ -17,6 +17,8 @@ import { useState } from "react";
 import type { Lead, Task } from "@/lib/store/types";
 import { isOverdue, dueLabel } from "@/lib/task-dates";
 import { todayISO } from "@/lib/clock";
+import { SelectMenu } from "@/components/ui/select-menu";
+import { useFieldId } from "@/components/ui/input";
 
 export type TaskPatch = { t?: string; due?: string | null; leadId?: string | null };
 
@@ -142,6 +144,7 @@ function TaskEditor({
   onCancel: () => void;
   onRemove: () => void;
 }) {
+  const customerField = useFieldId();
   const [draft, setDraft] = useState<Draft>({ text: task.t, due: task.due ?? "", leadId: task.leadId ?? "" });
 
   const save = () => {
@@ -185,21 +188,19 @@ function TaskEditor({
             onKeyDown={onKey}
           />
         </label>
-        <label className="te-fld">
-          <span>Customer</span>
-          <select
-            className="te-input"
+        {/* Explicit association: the label wraps the control, but a static wrapper is not a
+            labelable descendant the label-association net can see through. An aria-label here
+            would also OVERRIDE the visible "Customer" — a name mismatch, not a fix. */}
+        <div className="te-fld">
+          <label {...customerField.labelProps}>Customer</label>
+          <SelectMenu
+            {...customerField.controlProps}
             value={draft.leadId}
-            aria-label="Attached customer"
-            onChange={(e) => setDraft({ ...draft, leadId: e.target.value })}
-            onKeyDown={onKey}
-          >
-            <option value="">No customer</option>
-            {leads.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
-        </label>
+            onChange={(v) => setDraft({ ...draft, leadId: v })}
+            options={[{ value: "", label: "No customer" }, ...leads.map((l) => ({ value: l.id, label: l.name }))]}
+            compact
+          />
+        </div>
       </div>
       <div className="te-foot">
         <button className="te-del" onClick={onRemove}>Delete</button>

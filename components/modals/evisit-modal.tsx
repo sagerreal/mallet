@@ -30,6 +30,7 @@ import type { Lead, Visit, Tech, Job } from "@/lib/store/types";
 import { hasPhone } from "@/lib/phone";
 import { todayISO } from "@/lib/clock";
 import { Field } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -142,19 +143,16 @@ function SchedFields({
           />
         </Field>
         <Field label="Crew" style={{ margin: "0" }}>
-          <select
+          <SelectMenu
             value={visit.techId ?? ""}
-            onChange={(e) => onSet("techId", e.target.value)}
-          >
-            {/* Unplaced placeholder — a bare "—" reads as broken data (register
-                rule), so the empty option names the move instead. */}
-            {!placed && <option value="">Choose crew</option>}
-            {techs.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => onSet("techId", v)}
+            options={[
+              // Unplaced placeholder — a bare "—" reads as broken data (register rule), so the
+              // empty option names the move instead.
+              ...(!placed ? [{ value: "", label: "Choose crew" }] : []),
+              ...techs.map((t) => ({ value: t.id, label: t.name })),
+            ]}
+          />
         </Field>
       </div>
 

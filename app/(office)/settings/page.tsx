@@ -32,6 +32,7 @@ import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 // ---- sample state values mirrored from prototype's state -------------------
 
@@ -307,21 +308,21 @@ function MemberRow({ member }: { member: MemberItem }) {
             {member.email}
           </div>
         </div>
-        <select
-          className="tsel"
+        <SelectMenu
           aria-label={`Role for ${member.name ?? member.email}`}
           value={member.role}
           disabled={setRole.isPending}
-          onChange={(e) => {
-            const role = e.target.value as "owner" | "office" | "tech";
+          onChange={(v) => {
             setRoleError(null);
-            setRole.mutate({ userId: member.id, role });
+            setRole.mutate({ userId: member.id, role: v as "owner" | "office" | "tech" });
           }}
-        >
-          <option value="owner">Owner</option>
-          <option value="office">Office</option>
-          <option value="tech">Tech</option>
-        </select>
+          options={[
+            { value: "owner", label: "Owner" },
+            { value: "office", label: "Office" },
+            { value: "tech", label: "Tech" },
+          ]}
+          compact
+        />
         <label className="switch" title="Schedulable field crew">
           <input
             type="checkbox"
@@ -420,16 +421,19 @@ function InviteForm() {
           onKeyDown={(e) => { if (e.key === "Enter") handleInvite(); }}
           style={{ flex: 1, minWidth: 180, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }}
         />
-        <select
-          className="tsel"
+        <SelectMenu
           aria-label="Role for the new teammate"
           value={role}
-          onChange={(e) => setRole(e.target.value as "owner" | "office" | "tech")}
-        >
-          <option value="tech">Tech</option>
-          <option value="office">Office</option>
-          <option value="owner">Owner</option>
-        </select>
+          onChange={(v) => setRole(v as "owner" | "office" | "tech")}
+          options={[
+            // Tech first here (not Owner, as in the member rows) — the common invite, and the
+            // order the form already used.
+            { value: "tech", label: "Tech" },
+            { value: "office", label: "Office" },
+            { value: "owner", label: "Owner" },
+          ]}
+          compact
+        />
         <button
           className="btn primary"
           disabled={!canSubmit}

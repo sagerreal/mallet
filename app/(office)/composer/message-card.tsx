@@ -16,6 +16,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
 import type { ComposerState } from "./composer-state";
 import { Field } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 // Keeps the composed SMS body comfortably under the 1600-char messaging cap
 // (intro + ~100 chars of fixed copy + the quote link). maxLength stops input
@@ -102,18 +103,12 @@ export function MessageCard({
               </span>
             }
           >
-            <select
+            <SelectMenu
               value={state.terms?.id ?? ""}
-              onChange={(e) => selectTerms(e.target.value)}
+              onChange={selectTerms}
+              options={[{ value: "", label: "None" }, ...terms.map((t) => ({ value: t.id, label: t.t }))]}
               style={{ maxWidth: 320 }}
-            >
-              <option value="">None</option>
-              {terms.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.t}
-                </option>
-              ))}
-            </select>
+            />
             {state.terms && (
               <p
                 className="muted"

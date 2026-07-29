@@ -5,6 +5,8 @@
 
 "use client";
 
+import { SelectMenu } from "@/components/ui/select-menu";
+
 interface FiltersProps {
   stageFilter: string;
   sourceFilter: string;
@@ -28,22 +30,24 @@ export function CustomersFilters({
     <div className="fpanel">
       <div className="field">
         <label htmlFor="cust-filter-stage">Stage</label>
-        <select id="cust-filter-stage" value={stageFilter} onChange={(e) => onStage(e.target.value)}>
-          <option value="">Any</option>
-          {stages.map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
+        <SelectMenu
+          value={stageFilter}
+          onChange={onStage}
+          options={[{ value: "", label: "Any" }, ...stages.map((s) => ({ value: s, label: s }))]}
+          aria-label="Stage"
+          compact
+        />
       </div>
 
       <div className="field">
         <label htmlFor="cust-filter-source">Source</label>
-        <select id="cust-filter-source" value={sourceFilter} onChange={(e) => onSource(e.target.value)}>
-          <option value="">Any</option>
-          {sources.map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
+        <SelectMenu
+          value={sourceFilter}
+          onChange={onSource}
+          options={[{ value: "", label: "Any" }, ...sources.map((s) => ({ value: s, label: s }))]}
+          aria-label="Source"
+          compact
+        />
       </div>
 
       <button

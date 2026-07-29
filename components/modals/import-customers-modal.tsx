@@ -13,6 +13,7 @@ import { useCloseModal } from "@/lib/store/app-store";
 import { parseCsv } from "@/lib/import/parse-csv";
 import { autoMap, buildImportRows, type MappingConfig, type BuildResult } from "@/lib/import/map-rows";
 import { ImportPill, IMPORT_SELECT_STYLE, CsvDropzone, ImportingLine, ImportDoneCard } from "./import-shared";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 const CHUNK = 500;
 const TARGETS: { key: keyof Omit<MappingConfig, "sourceTag">; label: string }[] = [
@@ -148,16 +149,23 @@ export function ImportCustomersModalContent() {
 
           <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius)", overflow: "hidden" }}>
             {TARGETS.map((t, i) => (
-              <label key={t.key} style={{
+              <div key={t.key} style={{
                 display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-3) var(--space-4)",
                 borderTop: i === 0 ? "none" : "1px solid var(--manila-line)",
               }}>
                 <span style={{ width: 96, fontSize: "var(--type-base)", fontWeight: 700, color: "var(--ink-2)" }}>{t.label}</span>
-                <select value={map[t.key] ?? ""} onChange={(e) => setField(t.key, e.target.value)} style={IMPORT_SELECT_STYLE}>
-                  <option value="">— skip —</option>
-                  {headers.map((h) => <option key={h} value={h}>{h}</option>)}
-                </select>
-              </label>
+                <SelectMenu
+                  value={map[t.key] ?? ""}
+                  onChange={(v) => setField(t.key, v)}
+                  options={[{ value: "", label: "— skip —" }, ...headers.map((h) => ({ value: h, label: h }))]}
+                  // Same words as the visible span beside it, so the accessible name and the
+                  // on-screen name agree. These rows are generated in a map, so a per-row
+                  // useFieldId is not available without extracting a component.
+                  aria-label={t.label}
+                  style={IMPORT_SELECT_STYLE}
+                  compact
+                />
+              </div>
             ))}
             <label style={{
               display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-3) var(--space-4)",

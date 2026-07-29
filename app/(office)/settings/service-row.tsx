@@ -17,6 +17,7 @@ import type { ServiceUpdateFields } from "@/lib/store/pricebook-mapper";
 import { fmt$ } from "@/lib/format";
 import { MaterialManager } from "./material-manager";
 import { useFieldId } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 export interface ServiceRowProps {
   service: Service;
@@ -74,17 +75,13 @@ export function ServiceRow({ service, categories, canSeeCost, onUpdate, onArchiv
         <div style={{ display: "grid", gap: "var(--space-3)", alignContent: "start" }}>
           <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
             <label {...categoryField.labelProps} style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)", minWidth: 66 }}>Category</label>
-            <select
-              {...categoryField.controlProps}
-              className="tsel"
+            <SelectMenu
               value={service.categoryId ?? ""}
-              onChange={(e) => onUpdate(service.id, { categoryId: e.target.value || null })}
-            >
-              <option value="">— none —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              onChange={(v) => onUpdate(service.id, { categoryId: v || null })}
+              options={[{ value: "", label: "— none —" }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
+              {...categoryField.controlProps}
+              compact
+            />
           </div>
 
           {canSeeCost && (

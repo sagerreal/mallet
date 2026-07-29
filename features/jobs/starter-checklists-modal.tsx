@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Modal } from "@/components/modals/modal";
 import { Field } from "@/components/ui/input";
 import { CHECKLIST_STARTERS, type StarterChecklist } from "@/app/(office)/jobs/checklist-starters";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 const CHIP: React.CSSProperties = {
   fontSize: "var(--type-sm)",
@@ -59,11 +60,12 @@ export function StarterChecklistsModal({
       </h3>
 
       <Field label="Your trade">
-        <select className="tsel" value={tradeKey} onChange={(e) => setTradeKey(e.target.value)}>
-          {CHECKLIST_STARTERS.map((t) => (
-            <option key={t.key} value={t.key}>{t.label}</option>
-          ))}
-        </select>
+        <SelectMenu
+          value={tradeKey}
+          onChange={setTradeKey}
+          options={CHECKLIST_STARTERS.map((t) => ({ value: t.key, label: t.label }))}
+          aria-label="Your trade"
+        />
       </Field>
 
       {/* Preview: the actual checklists this seeds */}
