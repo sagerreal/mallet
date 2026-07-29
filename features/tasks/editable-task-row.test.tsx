@@ -63,21 +63,27 @@ describe("EditableTaskRow — editing", () => {
     setup({}, true);
     expect(screen.getByRole("textbox", { name: "Task" })).toBeTruthy();
     expect(screen.getByLabelText("Due date")).toBeTruthy();
-    expect(screen.getByLabelText("Attached customer")).toBeTruthy();
+    expect(screen.getByLabelText("Customer")).toBeTruthy();
   });
 
   it("Save sends ONLY the changed fields and closes the editor", () => {
     const { onUpdate, onStopEdit } = setup({ due: "2026-07-20", leadId: "L1" }, true);
     fireEvent.change(screen.getByRole("textbox", { name: "Task" }), { target: { value: "Call client back" } });
-    fireEvent.change(screen.getByLabelText("Attached customer"), { target: { value: "L2" } });
+    // SelectMenu: open, then pick — fireEvent.change does not apply to a button+listbox.
+    fireEvent.click(screen.getByLabelText("Customer"));
+    fireEvent.mouseDown(screen.getAllByRole("option")[2]!);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onUpdate).toHaveBeenCalledWith("t1", { t: "Call client back", leadId: "L2" });
     expect(onStopEdit).toHaveBeenCalledTimes(1);
   });
 
   it("detaching the customer sends leadId ''", () => {
+    // The control is a SelectMenu now, not a native <select>: open it, then pick the row.
+    // Its accessible name is the visible "Customer" label — an aria-label saying anything else
+    // would be a name mismatch.
     const { onUpdate } = setup({ leadId: "L1" }, true);
-    fireEvent.change(screen.getByLabelText("Attached customer"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /customer/i }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "No customer" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onUpdate).toHaveBeenCalledWith("t1", { leadId: "" });
   });

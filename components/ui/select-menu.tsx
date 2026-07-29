@@ -39,6 +39,8 @@ export interface SelectMenuProps {
   readonly "aria-label"?: string;
   /** id of a visible label, for Field-wrapped call sites. */
   readonly "aria-labelledby"?: string;
+  /** Lands on the trigger button so an existing `<label htmlFor>` still names this control. */
+  readonly id?: string;
   /** Matches COMPACT_INPUT's tighter treatment for dense surfaces. */
   readonly compact?: boolean;
   readonly style?: CSSProperties;
@@ -54,6 +56,7 @@ export function SelectMenu({
   disabled = false,
   compact = false,
   style,
+  id,
   ...aria
 }: SelectMenuProps) {
   const [open, setOpen] = useState(false);
@@ -195,6 +198,7 @@ export function SelectMenu({
     <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
       <button
         type="button"
+        id={id}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openAt(selectedIdx >= 0 ? selectedIdx : firstEnabled()))}
         onKeyDown={onKeyDown}

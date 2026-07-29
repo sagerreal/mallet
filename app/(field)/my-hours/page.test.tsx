@@ -63,6 +63,7 @@ vi.mock("@/lib/trpc/client", () => ({
 }));
 
 import MyHoursPage from "./page";
+import { dayLabel } from "@/features/field/my-hours-derive";
 
 const withEntries = (items: MyHoursEntry[]): void => {
   listQuery = {
@@ -235,10 +236,14 @@ describe("adding a block the clock missed", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add hours you already worked" }));
 
-    const days = screen.getByLabelText("Day") as HTMLSelectElement;
-    expect(days.options).toHaveLength(7);
-    expect(days.options[0]?.value).toBe(TODAY);
-    expect(days.options[6]?.value).toBe("2026-06-25");
+    // Day is a SelectMenu now, so the choices live in a listbox that opens on click rather than
+    // in <option> children. The assertion is unchanged in substance: seven days, today first,
+    // the window's last day last.
+    fireEvent.click(screen.getByLabelText("Day"));
+    const days = screen.getAllByRole("option");
+    expect(days).toHaveLength(7);
+    expect(days[0]?.textContent).toContain(dayLabel(TODAY));
+    expect(days[6]?.textContent).toContain(dayLabel("2026-06-25"));
   });
 });
 

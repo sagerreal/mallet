@@ -180,8 +180,14 @@ export function useGroupLabel(): {
   };
 }
 
-/** The native elements a `<label for>` can actually name. */
-const LABELABLE = new Set(["input", "select", "textarea"]);
+/**
+ * The native elements a `<label for>` can actually name.
+ *
+ * `button` is on this list because SelectMenu renders one as its trigger — a button IS labelable
+ * per HTML, and without it a Field wrapping a SelectMenu would emit htmlFor={undefined}: a
+ * silently unassociated label, the defect this primitive exists to prevent.
+ */
+const LABELABLE = new Set(["input", "select", "textarea", "button"]);
 
 /**
  * Index of the child that should carry the generated id, or -1.

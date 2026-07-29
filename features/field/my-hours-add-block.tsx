@@ -15,6 +15,7 @@ import { Field, useGroupLabel } from "@/components/ui/input";
 import { KIND_LABELS, dayLabel, type MyHoursEntry } from "./my-hours-derive";
 import { editWindowDates, timesProblem } from "./my-hours-edit";
 import type { AddBlockInput } from "./use-my-hours-writes";
+import { SelectMenu } from "@/components/ui/select-menu";
 
 type Kind = MyHoursEntry["kind"];
 
@@ -77,13 +78,13 @@ export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel
         {/* No aria-label here or below: an aria-label outranks the <label> element,
             so it made each Field's visible label decorative and getByLabelText could
             not resolve these controls. The label is the name now. */}
-        <select value={workDate} onChange={(e) => setWorkDate(e.target.value)}>
-          {editWindowDates(today).map((date) => (
-            <option key={date} value={date}>
-              {dayLabel(date)}
-            </option>
-          ))}
-        </select>
+        <SelectMenu
+          value={workDate}
+          onChange={setWorkDate}
+          options={editWindowDates(today).map((date) => ({ value: date, label: dayLabel(date) }))}
+          aria-label="Work date"
+          compact
+        />
       </Field>
       <div className="ts-erow" {...kindGroup.groupProps}>
         <label {...kindGroup.labelProps}>Type</label>
