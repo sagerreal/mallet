@@ -10,6 +10,7 @@ import { router, authedNoPrincipal, anyRole, ownerOrOffice } from "@/trpc/init";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { ROLES, type Principal } from "../domain/principal";
+import { ProvisionOrgNumberUseCase } from "@mallet/a2p";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
 // `callbackNumber` is the mobile Mallet rings first on an outbound click-to-call. A call RECORD
@@ -111,7 +112,14 @@ export const createIdentityRouter = () =>
     // Idempotent provisioning: called once after any login. An unmapped (new) identity gets an org
     // created via the SECURITY DEFINER seam; an already-provisioned one gets its org back.
     signup: authedNoPrincipal
-      .input(z.object({ orgName: z.string().min(1).max(80).optional() }))
+      .input(
+        z.object({
+          orgName: z.string().min(1).max(80).optional(),
+          // Collected on the signup form purely so the shop's business number has a LOCAL area
+          // code. A plumber in Weymouth handing customers a 669 California number looks wrong.
+          postalCode: z.string().regex(/^\d{5}$/).optional(),
+        }),
+      )
       .output(meDTO)
       .mutation(async ({ ctx, input }) => {
         if (ctx.principal) {
@@ -139,6 +147,30 @@ export const createIdentityRouter = () =>
           return loadMeDTO(tx, { role, orgId: asOrgId(provisioned.orgId), userId: asUserId(row.id) });
         });
         if (!me) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "provisioned user not found" });
+
+        // Buy the shop its business line. AWAITED but never allowed to fail the signup: a Twilio
+        // outage must not read to a new customer as "Mallet is broken, I could not even sign up".
+        // The Front Desk header already renders "Getting your number — we'll email you when it's
+        // live" while orgs.twilio_number is null, so no-number-yet is a designed state.
+        //
+        // Awaited rather than fired-and-forgotten because a serverless function can be frozen the
+        // moment it responds — a detached promise here would be killed mid-purchase, sometimes
+        // AFTER Twilio had already charged for the number.
+        if (ctx.deps.numberProvisioner) {
+          try {
+            const provision = new ProvisionOrgNumberUseCase(ctx.deps.numberProvisioner, ctx.deps.voiceRegistrar);
+            await provision.exec({
+              orgId: asOrgId(provisioned.orgId),
+              postalCode: input.postalCode ?? null,
+            });
+          } catch (error) {
+            logger.error(
+              { err: error instanceof Error ? error.message : String(error), orgId: provisioned.orgId },
+              "signup.number_provision_threw",
+            );
+          }
+        }
+
         return { ...me, email: unmapped.email, name: me.name ?? unmapped.name ?? null };
       }),
 

@@ -4,7 +4,7 @@ import type { ConnectGateway } from "@mallet/settings";
 import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
-import type { A2pGateway } from "@mallet/a2p";
+import type { A2pGateway, NumberProvisioner, VoiceRegistrar } from "@mallet/a2p";
 import type { CallOriginator, VoiceTokenIssuer } from "@mallet/calls";
 import type { QboOauthGateway } from "@mallet/accounting-sync";
 import type { SecretBox } from "@mallet/platform/crypto/secret-box";
@@ -36,6 +36,11 @@ export interface AppDeps {
   // or when TWILIO_PRIMARY_PROFILE_SID/account creds are unset) callers fall back to
   // LoggingA2pGateway, so registration self-disables to a logged stub rather than an error.
   readonly a2pGateway?: A2pGateway;
+  /** Buys a new shop its business line at signup. Absent → the org is created without one and the
+   *  Front Desk header shows its "Getting your number" state. */
+  readonly numberProvisioner?: NumberProvisioner;
+  /** Connects a newly bought number to the AI front desk. Absent → it will not answer calls. */
+  readonly voiceRegistrar?: VoiceRegistrar;
   // Outbound voice origination (Twilio). null when the Twilio voice config is incomplete —
   // calls.place then returns PRECONDITION_FAILED. There is deliberately NO logging-stub
   // fallback: a call the office believes was placed but never happened is the exact bug this
