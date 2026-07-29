@@ -67,9 +67,12 @@ export class RescanRoomUseCase {
         return err(conflict("room capture is no longer current and cannot be superseded"));
       }
       if (e instanceof DuplicateCaptureError) {
-        // Same retry-safety as ingest: the minted new-capture id was already persisted by a
-        // prior attempt of this same rescan (client retried after a dropped response) — return
-        // the existing capture instead of failing.
+        // Defensive, NOT a retry path: `next.props.id` is freshly minted by `this.ids.newId()`
+        // on every call to exec(), so a genuine client retry can never collide with it — a
+        // real retry instead dies earlier, at `supersede`'s SupersedeTargetError CONFLICT
+        // (the old capture is already superseded by the first attempt's success). This branch
+        // exists only so an id-generator collision (or a future caller reusing an id) degrades
+        // to returning the existing row instead of an unhandled throw.
         const existing = await this.repo.getCapture(e.id);
         if (existing === null) {
           return err(conflict("room capture could not be retrieved after a duplicate id conflict"));

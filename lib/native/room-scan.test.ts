@@ -14,6 +14,7 @@ import {
   roomScanAvailable,
   captureRoom,
   RoomScanPayloadError,
+  RoomScanCaptureError,
   useRoomScanAvailable,
   resetRoomScanAvailableCache,
 } from "./room-scan";
@@ -124,6 +125,33 @@ describe("captureRoom", () => {
     await captureRoom("Primary Bedroom");
 
     expect(pluginCaptureRoom).toHaveBeenCalledWith({ roomName: "Primary Bedroom" });
+  });
+
+  it("wraps a native captureRoom rejection in a named RoomScanCaptureError carrying the native message verbatim", async () => {
+    nativePlugin.mockReturnValue({
+      captureRoom: vi
+        .fn()
+        .mockRejectedValue(new Error("The scan didn't capture a floor — walk the room's perimeter and scan again.")),
+    });
+
+    const rejection = captureRoom("Kitchen");
+    await expect(rejection).rejects.toBeInstanceOf(RoomScanCaptureError);
+    await expect(rejection).rejects.toThrow("The scan didn't capture a floor — walk the room's perimeter and scan again.");
+  });
+
+  it("does not wrap a post-resolve JSON parse failure in RoomScanCaptureError — that stays RoomScanPayloadError", async () => {
+    nativePlugin.mockReturnValue({
+      captureRoom: vi.fn().mockResolvedValue({
+        status: "done",
+        rawPayload: "{not json",
+        geometry: JSON.stringify({ walls: [] }),
+        capturedAt: "2026-07-29T00:00:00.000Z",
+      }),
+    });
+
+    const rejection = captureRoom("Kitchen");
+    await expect(rejection).rejects.toBeInstanceOf(RoomScanPayloadError);
+    await expect(rejection).rejects.not.toBeInstanceOf(RoomScanCaptureError);
   });
 });
 

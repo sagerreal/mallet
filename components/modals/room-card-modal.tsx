@@ -20,7 +20,7 @@ import { useState, type FormEvent } from "react";
 import { useActiveModal, useAppStore, useCloseModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
-import { useRoomScanAvailable, RoomScanPayloadError } from "@/lib/native/room-scan";
+import { useRoomScanAvailable, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
 import { SheetRow } from "./sheet-row";
 import { Field } from "@/components/ui/input";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -30,11 +30,26 @@ import type { RoomCard, RoomQuantity, RoomQuantityKind } from "@/lib/store/types
 
 /** Copy shared by the scan-mode form and the live re-scan control. */
 const SCAN_PAYLOAD_ERROR_COPY = "The scan returned unreadable data. Scan again.";
+/** ONLY for the ingest phase (the server mutate call) — never the capture phase, which has its
+ * own native-authored message via RoomScanCaptureError. */
 const SCAN_SAVE_ERROR_COPY = "Couldn't save this scan — check your connection and try again.";
 
-/** Maps a thrown scanRoom/rescanRoom error to its inline copy. */
+/**
+ * Maps a thrown scanRoom/rescanRoom error to its inline copy.
+ *  - RoomScanPayloadError (capture phase: the native plugin's JSON was unparseable) → the
+ *    named payload copy.
+ *  - RoomScanCaptureError (capture phase: the native `captureRoom` call itself rejected) →
+ *    the native message VERBATIM — it's already functional, user-facing copy ("The scan
+ *    didn't capture a floor…", "A room scan is already open.", a LiDAR-loss message) and
+ *    collapsing it into the generic connection copy would misattribute e.g. a no-floor scan
+ *    to a network problem.
+ *  - Anything else (ingest phase: the server `mutate` call failed) → the generic connection
+ *    copy — that failure mode genuinely IS "couldn't reach the server."
+ */
 function scanErrorCopy(err: unknown): string {
-  return err instanceof RoomScanPayloadError ? SCAN_PAYLOAD_ERROR_COPY : SCAN_SAVE_ERROR_COPY;
+  if (err instanceof RoomScanPayloadError) return SCAN_PAYLOAD_ERROR_COPY;
+  if (err instanceof RoomScanCaptureError) return err.message;
+  return SCAN_SAVE_ERROR_COPY;
 }
 
 // ---- quantity kinds: fixed order, trade labels, unit shape -----------------

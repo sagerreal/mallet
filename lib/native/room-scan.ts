@@ -146,10 +146,29 @@ function parseJsonField(field: "rawPayload" | "geometry", raw: string): unknown 
 }
 
 /**
+ * Thrown when the native `captureRoom` call itself rejects (as opposed to resolving with
+ * `{ status: "cancelled" }`, which is a normal outcome, not an error). The native side sends
+ * functional, user-facing copy in the rejection message — e.g. "The scan didn't capture a
+ * floor — walk the room's perimeter and scan again.", "A room scan is already open.", or a
+ * LiDAR-loss message — and this class carries that message through VERBATIM so UI callers can
+ * show it as-is instead of collapsing every capture failure into a generic "check your
+ * connection" copy that would misattribute e.g. a no-floor scan to a network problem.
+ */
+export class RoomScanCaptureError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : "MalletRoomScan capture failed");
+    this.name = "RoomScanCaptureError";
+    this.cause = cause;
+  }
+}
+
+/**
  * Run a native room scan. Throws if the plugin is absent — callers must gate on
  * `roomScanPlugin()` (presence) or, better, `roomScanAvailable()` (actually usable)
  * before calling this. Parses both JSON-string fields the plugin returns; invalid JSON
  * from the plugin surfaces as a named `RoomScanPayloadError` rather than being swallowed.
+ * A rejection from the native `captureRoom` call itself (as opposed to a JSON-parse failure
+ * on its result) surfaces as a named `RoomScanCaptureError` carrying the native message.
  */
 export async function captureRoom(roomName: string): Promise<ParsedRoomScanResult> {
   const plugin = roomScanPlugin();
@@ -157,7 +176,13 @@ export async function captureRoom(roomName: string): Promise<ParsedRoomScanResul
     throw new Error("MalletRoomScan plugin is not available — gate callers on roomScanAvailable()");
   }
 
-  const result = await plugin.captureRoom({ roomName });
+  let result: RoomScanResult;
+  try {
+    result = await plugin.captureRoom({ roomName });
+  } catch (e: unknown) {
+    throw new RoomScanCaptureError(e);
+  }
+
   if (result.status === "cancelled") {
     return { status: "cancelled" };
   }
