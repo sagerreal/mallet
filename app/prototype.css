@@ -45,9 +45,16 @@
   [data-theme="dark"]{
     --manila:#1E1B15; --manila-2:#262019; --manila-line:#3A3326; --manila-ink:#EAE2D0; --stamp-good:var(--ink);
     --green-900:#F4F5F7; --green-700:#C7CBD2; --green-600:#F4F5F7; --green-100:#2C2619; --green-50:#221E16;
-    --accent:#F4F5F7; --accent-2:#C7CBD2; --dot:var(--manila-ink); --pri-bg:#F4F5F7; --pri-fg:#111317;
+    /* --pri-bg/--pri-fg were #F4F5F7/#111317 — a COOL gray pair (B>G>R) on a warm
+       manila/ink product, so the filled primary — the most prominent element on a
+       dark screen — read as generic iOS instead of Mallet. The colour-sampling
+       critic caught it. Warm paper fill, warm ink label; same contrast class. */
+    --accent:#F4F5F7; --accent-2:#C7CBD2; --dot:var(--manila-ink); --pri-bg:#F6F1E7; --pri-fg:#1A1510;
     --ink:#F3F4F6; --ink-2:#A0A5AE; --ink-3:#9096A0;
-    --bg:#0F0D09; --card:#1B1813; --paper:#232019; --line:#332E25; --line-2:#272218;
+    /* --line-2 was #272218 — 1.12:1 against the dark card, so hairline-separated
+       lists lost their boundaries in exactly the dark-basement condition the app is
+       for. Raised to match the button-hairline weight (~1.3:1). */
+    --bg:#0F0D09; --card:#1B1813; --paper:#232019; --line:#332E25; --line-2:#332D21;
     /* Dark twin, solved against the dark surfaces independently rather than reused:
        worst 3.16:1 on --manila-2, best 3.80:1 on --bg. */
     --line-strong:#736D67;
@@ -850,6 +857,7 @@
      Deriving one from the other is what stops that drifting apart again. */
   .modal{--modal-pad-x:var(--space-6);--modal-pad-y:var(--space-6);background:var(--card);border-radius:var(--radius-xl);width:100%;max-width:620px;padding:var(--modal-pad-y) var(--modal-pad-x);position:relative;box-shadow:var(--shadow-lg);border:1px solid var(--line);animation:modalin .2s ease}
   @keyframes modalin{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:none}}
+  @keyframes sheetin{from{opacity:.6;transform:translateY(28px)}to{opacity:1;transform:none}}
   .modal.wide{max-width:760px}
   .modal h2{font-family:var(--font-display);font-size:var(--type-xl);font-weight:600;margin-bottom:var(--space-1);letter-spacing:-.02em}
   /* --x-optical is (button 34px - glyph 13px)/2 rounded to the 11px the desktop
@@ -857,10 +865,56 @@
      position EXACTLY (24 - 11 = 13) and yields 5px/9px on mobile, where the padding
      is 16/20. Desktop pixels are unchanged by construction. */
   .modal{--x-optical:11px}
-  .modal .x{position:absolute;top:calc(var(--modal-pad-y) - var(--x-optical));right:calc(var(--modal-pad-x) - var(--x-optical));width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;border-radius:var(--radius-sm);background:transparent;font-size:var(--type-lg);color:var(--ink-3);cursor:pointer;line-height:1;transition:background .12s,color .12s;z-index:2}
+  .modal .x{position:absolute;top:calc(var(--modal-pad-y) - var(--x-optical));right:calc(var(--modal-pad-x) - var(--x-optical));width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:none;border-radius:var(--radius-sm);background:transparent;font-size:var(--type-lg);color:var(--ink-3);cursor:pointer;line-height:1;transition:background .12s,color .12s;z-index:5}
   .modal .x:hover{background:rgba(21,17,11,.06);color:var(--ink)}
   .modal .x:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .modal .x:hover{color:var(--ink)}
+
+  /* ═══ SHEET GRAMMAR — the record-modal vocabulary (lead is the flagship). ═══
+     One loud action; everything else is a quiet level-0 row that expands in-flow.
+     Rows are 52px (glove target), hairline-separated, label left / value right;
+     accordion bodies open INSIDE the list, never floating. */
+  .sheet-head{position:sticky;top:calc(0px - var(--modal-pad-y));background:var(--card);z-index:4;margin:0 calc(0px - var(--modal-pad-x));padding:var(--space-2) var(--modal-pad-x) var(--space-3);border-radius:20px 20px 0 0}
+  .sheet-head h2{font-family:var(--font-display);font-size:var(--type-2xl);font-weight:680;letter-spacing:-.3px;margin:0;padding-right:var(--space-8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sheet-meta{margin-top:var(--space-2);display:flex;align-items:center;gap:var(--space-2);font-size:var(--type-sm);color:var(--ink-2);flex-wrap:wrap}
+  /* THE primary. Filled ink — a primary that is one border-width away from a
+     secondary is not a primary. 52px: a gloved-thumb target. It lives in a sticky
+     FOOTER, not under the header: on a tall sheet a header-anchored primary sits
+     ~74% up the screen, past one-handed reach exactly when the record is fullest
+     (the ergonomics critic measured it). The bottom edge is the one place a thumb
+     always owns, and a flush anchored footer honours the no-floating rule. */
+  .sheet-foot{position:sticky;bottom:calc(0px - var(--modal-pad-y) - var(--safe-b));background:var(--card);margin:var(--space-4) calc(0px - var(--modal-pad-x)) calc(0px - var(--modal-pad-y) - var(--safe-b));padding:var(--space-3) var(--modal-pad-x) calc(var(--space-3) + var(--safe-b));border-top:1px solid var(--line-2);z-index:3}
+  .sheet-pri{display:flex;align-items:center;justify-content:center;gap:var(--space-2);width:100%;min-height:52px;border:none;border-radius:var(--radius);background:var(--pri-bg);color:var(--pri-fg);font-family:inherit;font-size:var(--type-md);font-weight:700;letter-spacing:.1px;cursor:pointer;box-shadow:0 2px 8px rgba(26,21,16,.22);transition:transform .1s,filter .12s}
+  .sheet-pri:active{transform:translateY(1px) scale(.99);filter:brightness(.92)}
+  /* 48px: the ergonomics pass measured the first cut at 35pt — under the 44pt glove
+     floor for what are the highest-frequency actions on a working lead. */
+  .sheet-secrow{display:flex;gap:var(--space-2);margin-top:var(--space-3)}
+  .sheet-sec{flex:1;min-height:48px;border:1.5px solid var(--line);border-radius:var(--radius-md);background:transparent;color:var(--ink);font-family:inherit;font-size:var(--type-base);font-weight:600;display:flex;align-items:center;justify-content:center;gap:var(--space-1);cursor:pointer;padding:0 var(--space-2);white-space:nowrap}
+  .sheet-sec:active{background:var(--manila-2)}
+  /* Full-row-height 44px hit column for the task checkbox — an 18px circle 4px from
+     a tappable row is a state-changing mis-tap for a gloved thumb. */
+  .sheet-chkzone{display:flex;align-items:center;justify-content:flex-start;width:44px;min-height:44px;flex-shrink:0;border:none;background:none;padding:0;cursor:pointer}
+  .sheet-acc .cfrow input,.sheet-acc .cfrow .btn{min-height:44px}
+  .sheet-rows{margin-top:var(--space-4);border-top:1px solid var(--line-2)}
+  .sheet-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:52px;border:none;border-bottom:1px solid var(--line-2);background:none;padding:0;font-family:inherit;font-size:var(--type-md);color:var(--ink);text-align:left;cursor:pointer}
+  .sheet-row .lab{font-weight:600;flex-shrink:0}
+  .sheet-row .val{flex:1;text-align:right;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .sheet-row .val.add{color:var(--ink-3)}
+  .sheet-row .chev{color:var(--ink-3);flex-shrink:0;transition:transform .15s}
+  .sheet-row[aria-expanded="true"] .chev{transform:rotate(90deg)}
+  .sheet-row:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+  .sheet-acc{border-bottom:1px solid var(--line-2);padding:var(--space-1) 0 var(--space-4)}
+  .sheet-worklab{margin-top:var(--space-4);font-size:var(--type-xs);font-weight:700;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+  .sheet-workrow{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:52px;border:none;border-bottom:1px solid var(--line-2);background:none;padding:var(--space-2) 0;font-family:inherit;text-align:left;cursor:pointer}
+  .sheet-workrow .t{flex:1;min-width:0}
+  .sheet-workrow .t b{display:block;font-size:var(--type-base);font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sheet-workrow .t span{color:var(--ink-3);font-size:var(--type-sm)}
+  .sheet-workrow .amt{font-weight:700;font-size:var(--type-base);color:var(--ink);flex-shrink:0}
+  /* Inside a modal, `primary` MEANS primary — the footer confirm gets the filled
+     treatment so it stops matching its own Cancel button. Scoped to .modal (not
+     app-wide): the two-competing-primaries fork outside modals is still Owen's call. */
+  .modal .btn.primary{background:var(--pri-bg);color:var(--pri-fg);border-color:var(--pri-bg)}
+  .modal .btn.primary:hover{background:var(--pri-bg);color:var(--pri-fg);border-color:var(--pri-bg);filter:brightness(1.12)}
   .field{margin-bottom:var(--space-4)}
   .field label{display:block;font-size:var(--type-sm);font-weight:700;color:var(--ink-2);margin-bottom:var(--space-1)}
   .field input[type=text],.field input[type=number],.field input[type=tel],.field input[type=email],.field input[type=password],.field input[type=search],.field input[type=url],.field input[type=date],.field input[type=time],.field textarea,.field select{width:100%;border:1.5px solid var(--line);border-radius:var(--radius-md);padding:var(--space-3) var(--space-3);font-size:var(--type-md);font-family:inherit;background:var(--card);color:var(--ink);transition:border-color .12s,box-shadow .12s}
@@ -1917,12 +1971,16 @@
     .board .col{flex:0 0 88%;min-width:88%;scroll-snap-align:start}
     .toolbar{flex-wrap:wrap}
     html,body{overflow-x:hidden;max-width:100%}
-    /* The notch. `.overlay` was the ONE mobile surface with no safe-area padding —
-       .topbar, #mobiletabs, .cmdline and main all have it — so with
-       `viewportFit:"cover"` a tall modal pinned itself under the iPhone status bar
-       and its first field collided with the clock. `align-items:flex-start` on the
-       overlay is what pins it there, so the padding is the whole fix. */
-    .overlay{padding:calc(var(--space-4) + var(--safe-t)) calc(var(--space-3) + var(--safe-r)) calc(var(--space-4) + var(--safe-b)) calc(var(--space-3) + var(--safe-l));right:0;left:0}
+    /* ═══ Modals are BOTTOM SHEETS on a phone. ═══
+       A floating centered card is a desktop shape: on a 393px screen it pinned to the
+       top (under the notch, before the safe-area fix), left dead space beneath, and
+       put the ✕ in the hardest place a right thumb can reach. Anchoring to the bottom
+       edge is the native phone grammar — reachable, flush, and it gives tall modals a
+       natural place to grow from. The top safe-area padding stays so a full-height
+       sheet still cannot ride under the status bar; the sheet's own bottom padding
+       (below) absorbs the home indicator instead of the overlay, so the sheet is
+       truly flush with the screen edge. */
+    .overlay{padding:calc(var(--space-6) + var(--safe-t)) 0 0 0;right:0;left:0;align-items:flex-end}
     /* `.cfrow` puts a text field, sometimes a date field, and a button on one line.
        That works at 620px and not at 393px: the task row left its text input 75px
        wide, so a placeholder needing 325px showed "Add a tasl", and the empty date
@@ -1938,7 +1996,20 @@
        had. `dvh` also tracks the URL bar / keyboard instead of the largest viewport.
        Subtracting the insets and the overlay's own padding makes the cap the real
        available height, which is what keeps the top edge on screen. */
-    .modal,.modal.wide,.custmodal{--modal-pad-x:var(--space-4);--modal-pad-y:var(--space-5);max-width:100% !important;width:100% !important;padding:var(--modal-pad-y) var(--modal-pad-x);max-height:calc(100dvh - var(--safe-t) - var(--safe-b) - (var(--space-4) * 2));overflow-y:auto;margin:0}
+    .modal,.modal.wide,.custmodal{--modal-pad-x:var(--space-5);--modal-pad-y:var(--space-5);max-width:100% !important;width:100% !important;padding:var(--modal-pad-y) var(--modal-pad-x) calc(var(--modal-pad-y) + var(--safe-b));max-height:calc(100dvh - var(--safe-t) - var(--space-6));overflow-y:auto;margin:0;border-radius:20px 20px 0 0;border-left:none;border-right:none;border-bottom:none;animation:sheetin .24s cubic-bezier(.2,.8,.3,1)}
+    /* The grabber — the sheet affordance, and an honest one: dragging is not wired,
+       but it marks the panel as a sheet and gives the eye a top-center anchor. Drawn
+       by the shell so all 22 modals get it without touching a component. */
+    .modal::before{content:"";display:block;width:36px;height:5px;border-radius:var(--radius-2xs);background:var(--line-strong);opacity:.4;margin:calc(var(--space-2) - var(--modal-pad-y)) auto var(--space-3)}
+    /* The ✕ must survive scrolling — job scrolls 82px and tech-job 166px past it, and
+       an absolutely-positioned ✕ went with them, leaving no close affordance. sticky
+       + float keeps it in flow (so sticky works) at the top-right, and content wraps
+       around it instead of colliding. The manila chip keeps it legible over whatever
+       scrolls beneath. */
+    .modal .x{position:sticky;float:right;top:0;right:auto;margin:calc(0px - var(--x-optical)) calc(0px - var(--x-optical)) calc(0px - 34px + var(--x-optical)) 0;background:var(--manila);z-index:5}
+    /* 44pt hit target on a 34px visual — the visible chip stays quiet, the touch
+       zone meets the glove floor. */
+    .modal .x::after{content:"";position:absolute;inset:-5px}
     /* A 5-column sweep row genuinely does not fit 390px — checkbox + quote title +
        customer + status + amount overflowed the panel by 9px.
        Truncating instead of wrapping is NOT the fix: the title is `flex:1`, i.e.

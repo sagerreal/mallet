@@ -1,24 +1,44 @@
 /**
  * components/modals/lead-modal/lead-modal.tsx
- * Faithful port of prototype ovLead / openLead (lines 6137-6202).
- * Composes all 9 sections in exact prototype order.
- * NO "Move stage" bar — stage lives in the header pill only.
+ * The customer sheet — the flagship of the record-modal grammar.
+ *
+ * Shape (top to bottom): sticky header (name · stage · source), a row of quiet
+ * secondaries, WORK rows (quotes + site visits, only when they exist), then the
+ * quiet level-0 rows — Phone, Service address, Notes, Tasks, Details, Clean up —
+ * each expanding in-flow, and ONE filled primary docked in a sticky footer where a
+ * one-handed thumb actually is.
+ *
+ * The primary is stage-aware AND data-aware. Four of five design critics
+ * independently flagged the first cut, whose loudest element was "Call Sean" on a
+ * customer with no phone number: a promoted action that cannot run is worse than no
+ * promotion. Order of truth:
+ *   no phone on file      → "Add phone"   (opens the Phone row, keyboard up)
+ *   new customer w/ phone → "Call {name}" (first contact is the move)
+ *   otherwise             → "New quote"   (the money action)
  */
 
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "../modal";
-import { LeadHeader } from "./lead-header";
-import { LeadNotes } from "./lead-notes";
-import { VisitCard } from "./visit-card";
-import { TasksCard } from "./tasks-card";
-import { MoreDetails } from "./more-details";
-import { useCloseModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
-import { usePushModal } from "@/lib/store/app-store";
+import { SheetRow } from "../sheet-row";
+import { LeadSheetHeader, PhoneCell } from "./lead-header";
+import { NotesBody, latestNoteSnippet } from "./lead-notes";
+import { TasksBody, openTaskLabel } from "./tasks-card";
+import { VisitRows } from "./visit-card";
+import { DetailsBody, CleanUpBody } from "./more-details";
+import {
+  useCloseModal,
+  useActiveModal,
+  useAppStore,
+  usePushModal,
+} from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import type { Estimate } from "@/lib/store/types";
+import type { Estimate, Lead } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
-import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
+import { fmtPhone } from "@/lib/format";
+import { AddressInput } from "@/components/ui/address-input";
 
 function statusStamp(status: string): string {
   switch (status) {
@@ -26,109 +46,238 @@ function statusStamp(status: string): string {
     case "sent": return "Sent";
     case "draft": return "Draft";
     case "declined": return "Declined";
-    default: return status;
+    default: return status.charAt(0).toUpperCase() + status.slice(1);
   }
 }
 
 function statusStampCls(status: string): string {
   switch (status) {
-    case "accepted": return "good";
-    case "sent": return "info";
-    case "draft": return "ink";
-    case "declined": return "bad";
-    default: return "ink";
+    case "accepted": return "green";
+    case "sent": return "blue";
+    case "declined": return "red";
+    default: return "gray";
   }
 }
 
-interface QuotesCardProps {
-  estimates: Estimate[];
+/** Quote rows under the WORK label. One status statement per row: the pill carries
+ *  the status, the subtitle carries the document number — not both twice. */
+function QuoteRows({ estimates }: { estimates: Estimate[] }) {
+  const pushModal = usePushModal();
+  return (
+    <>
+      {estimates.map((e) => (
+        <button
+          key={e.id}
+          type="button"
+          className="sheet-workrow"
+          onClick={() => pushModal(MODAL.EST, { estId: e.id })}
+        >
+          <div className="t">
+            <b>{e.title}</b>
+            <span>Quote {e.num}</span>
+          </div>
+          <span className="amt">${estTotal(e).toLocaleString()}</span>
+          <span className={`pill ${statusStampCls(e.status)}`}>{statusStamp(e.status)}</span>
+          <span className="chev" style={{ color: "var(--ink-3)" }} aria-hidden="true">›</span>
+        </button>
+      ))}
+    </>
+  );
 }
 
-function QuotesCard({ estimates }: QuotesCardProps) {
-  const pushModal = usePushModal();
-
-  if (estimates.length === 0) return null;
-
-  const title = estimates.length === 1 ? "Quote" : `${estimates.length} quotes`;
-
-  return (
-    <div className="card">
-      <h3>{title}</h3>
-      {estimates.map((e) => {
-        const total = estTotal(e);
-        const isSigned = e.status === "accepted";
-        return (
-          <div
-            key={e.id}
-            className="stage-row"
-            style={{ cursor: "pointer" }}
-            onClick={() => pushModal(MODAL.EST, { estId: e.id })}
-          >
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "var(--type-base)", fontWeight: 600 }}>
-                {e.num} — {e.title}
-              </div>
-              <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
-                {isSigned
-                  ? `Signed — $${total.toLocaleString()}`
-                  : "Tap to open…"}
-              </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-              <span style={{ fontSize: "var(--type-base)", fontWeight: 700 }}>
-                ${total.toLocaleString()}
-              </span>
-              <SoftPill tone={statusStampCls(e.status) as PillTone}>
-                {statusStamp(e.status)}
-              </SoftPill>
-              <span style={{ color: "var(--ink-3)" }}>&#8594;</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+/** "Call Sean" only when the record is one person with a clean first name —
+ *  "Call Danville" (an LLC) or "Call Sean &" (a couple) would be worse than "Call". */
+function callLabel(lead: Lead): string {
+  const first = lead.name.trim().split(/\s+/)[0] ?? "";
+  const looksLikePerson =
+    /^[A-Z][a-z]+$/.test(first) && !/&|,|\bLLC\b|\bInc\b|\bCo\b/i.test(lead.name);
+  return looksLikePerson ? `Call ${first}` : "Call";
 }
 
 export function LeadModal({ open }: { open: boolean }) {
   const close = useCloseModal();
   const activeModal = useActiveModal();
+  const pushModal = usePushModal();
+  const router = useRouter();
   const leads = useAppStore((s) => s.leads);
   const estimates = useAppStore((s) => s.estimates);
+  const tasks = useAppStore((s) => s.tasks);
+  const updateLead = useAppStore((s) => s.updateLead);
+
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
 
-  // Estimates for this lead
-  const leadEstimates = lead
-    ? estimates.filter((e) => e.leadId === lead.id)
-    : [];
+  const leadEstimates = lead ? estimates.filter((e) => e.leadId === lead.id) : [];
+  const hasWork = leadEstimates.length > 0 || (lead?.evisits?.length ?? 0) > 0;
+
+  // "New quote" → the real composer, seeded with this customer. Close first so the
+  // sheet doesn't sit over the composer page.
+  function newQuote() {
+    if (!lead) return;
+    close();
+    router.push(`/composer?lead=${lead.id}`);
+  }
+
+  if (!lead) {
+    return (
+      <Modal open={open} onClose={close} wide label="Customer">
+        <h2>Customer</h2>
+        <p className="muted">This customer is no longer available — they may have been archived.</p>
+      </Modal>
+    );
+  }
+
+  const hasPhone = Boolean(lead.phone && lead.phone.trim());
+  const isNew = lead.stage === "New customer";
+  const canVisit = lead.stage !== "Won" && lead.stage !== "Lost";
+
+  // The one loud action — stage-aware AND data-aware (see the header comment).
+  type Action = "call" | "quote" | "addphone";
+  const primaryKind: Action = !hasPhone ? "addphone" : isNew ? "call" : "quote";
+  const primary =
+    primaryKind === "addphone"
+      ? { label: "Add phone", run: () => setPhoneOpen(true) }
+      : primaryKind === "call"
+        ? { label: callLabel(lead), run: () => pushModal(MODAL.CALL, { leadId: lead.id }) }
+        : { label: "New quote", run: newQuote };
+
+  const openTasks = tasks.filter((t) => t.leadId === lead.id && !t.done).length;
 
   return (
-    <Modal open={open} onClose={close} wide>
-      {lead ? (
+    <Modal open={open} onClose={close} wide label={lead.name}>
+      <LeadSheetHeader lead={lead} />
+
+      {/* Quiet secondaries — every contact/advance action that is NOT the primary.
+          Call and Text stay tappable even with no number: their sheets prompt to add
+          one in-flow (the #197/#198 behaviour), so nothing here is a dead button.
+          48px: the glove floor the first cut missed. */}
+      <div className="sheet-secrow">
+        {primaryKind !== "call" && (
+          <button className="sheet-sec" onClick={() => pushModal(MODAL.CALL, { leadId: lead.id })}>
+            Call
+          </button>
+        )}
+        <button className="sheet-sec" onClick={() => pushModal(MODAL.THREAD, { leadId: lead.id })}>
+          Text
+          {lead.unread ? (
+            <span className="pill blue" style={{ padding: "var(--space-2xs) var(--space-2)", fontSize: "var(--type-xs)" }}>
+              new
+            </span>
+          ) : null}
+        </button>
+        {canVisit && (
+          <button className="sheet-sec" onClick={() => pushModal(MODAL.VISIT, { leadId: lead.id })}>
+            Site visit
+          </button>
+        )}
+        {primaryKind !== "quote" && (
+          <button className="sheet-sec" onClick={newQuote}>
+            New quote
+          </button>
+        )}
+      </div>
+
+      {/* WORK — quotes and site visits, rows not cards, only when they exist. */}
+      {hasWork && (
         <>
-          {/* 1. Header: avatar + editable name + pill row + action buttons */}
-          <LeadHeader lead={lead} />
-
-          {/* 3. Quotes card — only if lead has estimates */}
-          <QuotesCard estimates={leadEstimates} />
-
-          {/* 4. Visit card — only if lead has evisits */}
-          <VisitCard lead={lead} />
-
-          {/* 5. Notes timeline (request note from l.job + acts + composer) */}
-          <LeadNotes lead={lead} />
-
-          {/* 6. Tasks — add & track what needs to happen */}
-          <TasksCard lead={lead} />
-
-          {/* 8. More details reveal + 9. Footer */}
-          <MoreDetails lead={lead} />
+          <div className="sheet-worklab">Work</div>
+          <QuoteRows estimates={leadEstimates} />
+          <VisitRows lead={lead} />
         </>
-      ) : (
-        <p className="muted">Customer not found.</p>
       )}
+
+      <div className="sheet-rows">
+        {/* Phone has ONE home in every state — it used to live here when empty and
+            in the header when filled, which left nowhere obvious to edit it. */}
+        <SheetRow
+          label="Phone"
+          value={hasPhone ? fmtPhone(lead.phone ?? "") : "Add"}
+          valueIsHint={!hasPhone}
+          expandable
+          open={phoneOpen}
+          onOpenChange={setPhoneOpen}
+        >
+          <PhoneCell
+            value={lead.phone ?? ""}
+            onCommit={(phone) => updateLead(lead.id, { phone })}
+          />
+        </SheetRow>
+
+        <SheetRow
+          label="Service address"
+          value={lead.address?.trim() ? lead.address : "Add"}
+          valueIsHint={!lead.address?.trim()}
+          expandable
+        >
+          <AddressBody lead={lead} />
+        </SheetRow>
+
+        <SheetRow
+          label="Notes"
+          value={latestNoteSnippet(lead) ?? "Add"}
+          valueIsHint={!latestNoteSnippet(lead)}
+          expandable
+          open={notesOpen}
+          onOpenChange={setNotesOpen}
+        >
+          <NotesBody lead={lead} autoFocus={notesOpen} />
+        </SheetRow>
+
+        <SheetRow
+          label="Tasks"
+          value={openTaskLabel(openTasks) ?? "Add"}
+          valueIsHint={openTasks === 0}
+          expandable
+        >
+          <TasksBody lead={lead} />
+        </SheetRow>
+
+        <SheetRow
+          label="Details"
+          value={lead.email?.trim() ? lead.email : "Add"}
+          valueIsHint={!lead.email?.trim()}
+          expandable
+        >
+          <DetailsBody lead={lead} />
+        </SheetRow>
+
+        {/* Neutral ink at level 0; red only on Delete inside. */}
+        <SheetRow label="Clean up" value="mark Lost or archive" valueIsHint expandable>
+          <CleanUpBody lead={lead} />
+        </SheetRow>
+      </div>
+
+      {/* THE primary — docked where the thumb is, whatever the sheet's height. */}
+      <div className="sheet-foot">
+        <button className="sheet-pri" onClick={primary.run}>
+          {primaryKind === "call" && (
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+            </svg>
+          )}
+          {primary.label}
+        </button>
+      </div>
     </Modal>
+  );
+}
+
+/** The Service-address accordion body — the full-width AddressInput with its
+ *  in-flow suggestion list, committing on select/blur. */
+function AddressBody({ lead }: { lead: Lead }) {
+  const updateLead = useAppStore((s) => s.updateLead);
+  const [addrVal, setAddrVal] = useState(lead.address ?? "");
+  return (
+    <AddressInput
+      value={addrVal}
+      onChange={setAddrVal}
+      onSelect={(v) => updateLead(lead.id, { address: v })}
+      onBlur={() => updateLead(lead.id, { address: addrVal })}
+      placeholder="123 Main St, Oakland CA 94601"
+      inputStyle={{ width: "100%", minHeight: 44, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "0 var(--space-3)", fontSize: "var(--type-md)" }}
+    />
   );
 }
