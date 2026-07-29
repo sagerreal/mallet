@@ -97,10 +97,8 @@ suite("settings tRPC router (full stack, live RLS)", () => {
   });
 
   // ── measurementEstimating gate ────────────────────────────────────────────
-  // NOTE: requires the `measurement_estimating` column, added via migration
-  // slot 0107 which is deferred until PR #263 merges (single-writer migration
-  // constraint). This test cannot pass against the live DB until that
-  // migration is generated and applied — see gating-report.md.
+  // Column added via migration 0108 (org_settings.measurement_estimating,
+  // NOT NULL DEFAULT false) after PR #263/#264 cleared migration slot 0107.
   it("updateConfig persists measurementEstimating; defaults off on a fresh org", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const fresh = await caller.v1.settings.get();

@@ -72,6 +72,21 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+// Bill-to-invoice affordance added in the sheet-clipping fix (#264) — not under test here,
+// so stub the tRPC surface it reads (api.useUtils / api.v1.invoicing.createFromJob.useMutation).
+vi.mock("@/lib/trpc/client", () => ({
+  api: {
+    useUtils: () => ({ v1: { invoicing: { list: { invalidate: vi.fn() } } } }),
+    v1: {
+      invoicing: {
+        createFromJob: {
+          useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+        },
+      },
+    },
+  },
+}));
+
 vi.mock("./dur-field", () => ({ DurField: () => null }));
 vi.mock("./job-checklist-block", () => ({ JobChecklistBlock: () => null }));
 vi.mock("./job-measure-block", () => ({ JobMeasureBlock: () => <div data-testid="job-measure-block" /> }));
