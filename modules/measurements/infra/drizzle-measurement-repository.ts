@@ -2,16 +2,47 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { roomCaptures, paintingRoomQuantities } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 import type { RoomCapture } from "../domain/room-capture";
 import { toWireGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantity, PaintingQuantityKind } from "../domain/derive-painting";
 import {
   SupersedeTargetError,
+  DuplicateCaptureError,
+  JobNotFoundError,
   type MeasurementRepository,
   type RoomCaptureWithQuantities,
   type QuantityStatus,
 } from "../domain/measurement-repository";
-import { toCaptureWithQuantities, type RoomCaptureRow } from "./measurement-mapper";
+
+// The `postgres` driver (postgres.js) throws a `PostgresError` whose enumerable own properties
+// mirror the Postgres error-response fields: `code` (SQLSTATE, e.g. "23505"/"23503") and
+// `constraint_name` (the violated constraint, when the error is constraint-scoped). Neither is
+// typed by the driver's public types, so we narrow through `unknown` rather than trust a cast.
+// Drizzle never lets that PostgresError surface directly, though: `postgres-js/session.ts`
+// catches it and rethrows a `DrizzleQueryError` (message "Failed query: ...") with the original
+// error attached as `.cause` — so `code`/`constraint_name` have to be read off `e.cause`, not `e`
+// itself (confirmed against node_modules/drizzle-orm/errors.js — no other precedent for reading
+// this driver's error shape exists in shared/ or modules/, so this walk is new).
+// Constraining on `constraint_name` (not just the SQLSTATE) matters: 23505 is the generic
+// unique-violation code, so an unrelated unique constraint on the same statement must not be
+// misclassified as a duplicate capture id.
+function pgErrorInfo(e: unknown): { code: string | null; constraint: string | null } {
+  const cause = e instanceof Error && e.cause !== undefined ? e.cause : e;
+  if (!(cause instanceof Error)) return { code: null, constraint: null };
+  const withPgFields = cause as { code?: unknown; constraint_name?: unknown };
+  return {
+    code: typeof withPgFields.code === "string" ? withPgFields.code : null,
+    constraint: typeof withPgFields.constraint_name === "string" ? withPgFields.constraint_name : null,
+  };
+}
+import {
+  toDomainCapture,
+  toStoredQuantity,
+  toCaptureWithQuantities,
+  CorruptCaptureError,
+  type RoomCaptureRow,
+} from "./measurement-mapper";
 
 // Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
 // app.current_org_id), so RLS appends `org_id = current_org_id()` to every statement. orgId is
@@ -44,9 +75,13 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
       .orderBy(desc(roomCaptures.capturedAt), desc(roomCaptures.id));
 
     if (rows.length === 0) return [];
-    return this.attachQuantities(rows);
+    return this.attachQuantitiesSkippingCorrupt(rows);
   }
 
+  // getCapture is a direct open of ONE capture — unlike listByJob, a corrupt row here must
+  // fail loudly (toDomainCapture, via toCaptureWithQuantities/attachQuantities, throws). This
+  // is a deliberate asymmetry with listByJob's skip-and-log: silently returning null would hide
+  // real corruption from whoever explicitly asked for this exact capture.
   async getCapture(id: string): Promise<RoomCaptureWithQuantities | null> {
     const rows = await this.tx
       .select()
@@ -143,22 +178,46 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     quantities: readonly PaintingQuantity[],
   ): Promise<void> {
     const p = capture.props;
-    const rows = await this.tx
-      .insert(roomCaptures)
-      .values({
-        id: p.id,
-        orgId: this.orgId,
-        jobId: p.jobId,
-        roomName: p.roomName,
-        source: p.source,
-        rawPayload: p.rawPayload,
-        geometry: p.geometry ? toWireGeometry(p.geometry) : null,
-        capturedAt: p.capturedAt,
-        supersededById: p.supersededById,
-      })
-      .returning();
+    let rows: RoomCaptureRow[];
+    try {
+      rows = await this.tx
+        .insert(roomCaptures)
+        .values({
+          id: p.id,
+          orgId: this.orgId,
+          jobId: p.jobId,
+          roomName: p.roomName,
+          source: p.source,
+          rawPayload: p.rawPayload,
+          geometry: p.geometry ? toWireGeometry(p.geometry) : null,
+          capturedAt: p.capturedAt,
+          supersededById: p.supersededById,
+        })
+        // A Postgres transaction is poisoned after ANY statement error — every later statement
+        // on the same tx (including the getCapture the app layer needs for true idempotency)
+        // fails with "current transaction is aborted" until rollback. So the duplicate-id case
+        // is handled WITHOUT ever raising a unique_violation: ON CONFLICT (id) DO NOTHING turns
+        // a colliding insert into a silent no-op (0 rows returned) instead of an error, keeping
+        // the tx alive so the caller can still query inside it. `id` is room_captures' PK, so
+        // this target also covers the composite room_captures_org_id_uq (org_id, id) — that
+        // constraint can never fire without `id` alone already colliding on the PK first.
+        .onConflictDoNothing({ target: roomCaptures.id })
+        .returning();
+    } catch (e) {
+      // Only a genuine hard error reaches here now — the id-collision case above no longer
+      // throws. 23503 = foreign_key_violation; scoped to the jobs FK by name so an unrelated FK
+      // violation on this statement (e.g. the orgs FK) isn't misclassified as JobNotFound.
+      const { code, constraint } = pgErrorInfo(e);
+      if (code === "23503" && (constraint === null || constraint === "room_captures_job_fk")) {
+        throw new JobNotFoundError(p.jobId);
+      }
+      throw e;
+    }
     const row = rows[0];
-    if (!row) throw new Error("room_capture insert returned no row");
+    // onConflictDoNothing skipped the insert — id already exists. Throw BEFORE the quantities
+    // insert below: quantities are keyed (org_id, capture_id, kind), so inserting them against
+    // an id that already has quantities would raise a second, unhandled unique violation.
+    if (!row) throw new DuplicateCaptureError(p.id);
 
     if (quantities.length > 0) {
       await this.tx.insert(paintingRoomQuantities).values(
@@ -183,7 +242,12 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     const quantityRows = await this.tx
       .select()
       .from(paintingRoomQuantities)
-      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)));
+      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)))
+      // Deterministic order (alphabetical by kind) — without this Postgres is free to return
+      // quantity rows in any order, so the same capture's `quantities` array could differ
+      // between two reads (e.g. a duplicate-ingest retry's getCapture vs. the original
+      // createCapture response). API stability for every consumer, not just tests.
+      .orderBy(paintingRoomQuantities.kind);
 
     const byCapture = new Map<string, typeof quantityRows>();
     for (const q of quantityRows) {
@@ -193,5 +257,45 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     }
 
     return rows.map((row) => toCaptureWithQuantities(row, byCapture.get(row.id) ?? []));
+  }
+
+  // listByJob's variant of attachQuantities: one unreadable capture (corrupt geometry/props —
+  // toDomainCapture throws) must not fail the whole job's room list. Each row is mapped
+  // individually so a bad row can be skipped and logged instead of aborting the page; getCapture
+  // deliberately keeps the throwing path (see its comment above) — this method exists only for
+  // the multi-row list.
+  private async attachQuantitiesSkippingCorrupt(rows: readonly RoomCaptureRow[]): Promise<RoomCaptureWithQuantities[]> {
+    const healthy: { row: RoomCaptureRow; capture: RoomCapture }[] = [];
+    for (const row of rows) {
+      try {
+        healthy.push({ row, capture: toDomainCapture(row) });
+      } catch (e) {
+        // Narrowed to the mapper's own "this row is unreadable" signal — anything else (a real
+        // bug elsewhere in toDomainCapture) rethrows instead of being silently swallowed here.
+        if (!(e instanceof CorruptCaptureError)) throw e;
+        logger.warn({ captureId: row.id }, "measurements.capture.unreadable");
+      }
+    }
+    if (healthy.length === 0) return [];
+
+    const captureIds = healthy.map((h) => h.row.id);
+    const quantityRows = await this.tx
+      .select()
+      .from(paintingRoomQuantities)
+      .where(and(eq(paintingRoomQuantities.orgId, this.orgId), inArray(paintingRoomQuantities.captureId, captureIds)))
+      // Same deterministic ordering as attachQuantities above — keep both read paths consistent.
+      .orderBy(paintingRoomQuantities.kind);
+
+    const byCapture = new Map<string, typeof quantityRows>();
+    for (const q of quantityRows) {
+      const arr = byCapture.get(q.captureId) ?? [];
+      arr.push(q);
+      byCapture.set(q.captureId, arr);
+    }
+
+    return healthy.map(({ row, capture }) => ({
+      capture,
+      quantities: (byCapture.get(row.id) ?? []).map(toStoredQuantity),
+    }));
   }
 }

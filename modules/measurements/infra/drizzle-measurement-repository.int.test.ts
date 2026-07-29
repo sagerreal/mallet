@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
@@ -348,5 +348,61 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
       return repo.listByJob(jobA);
     });
     expect(listFromOrgB).toEqual([]);
+  });
+
+  it("listByJob skips a capture with corrupt geometry and returns only the healthy one; getCapture on the corrupt id throws", async () => {
+    const orgA = asOrgId(orgAId);
+    // A dedicated job, isolated from the other captures already accumulated on jobAId by the
+    // earlier tests in this suite — so the length assertion below is unambiguous.
+    const [jc] = await admin<{ id: string }[]>`insert into jobs (org_id, num, lead_id, status) values (${orgAId}, 'JOB-MR-CORRUPT', ${leadAId}, 'complete') returning id`;
+    const jobCorruptId = jc!.id;
+    const jobA = asJobId(jobCorruptId);
+    const { capture: healthy, quantities } = buildCapture(orgA, jobA, { roomName: "Sunroom" });
+
+    await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      await repo.createCapture(healthy, quantities);
+    });
+
+    // Bypass the domain/repository write path entirely — insert a deliberately-corrupt geometry
+    // row (fails NormalizedGeometry's zod schema: `walls` must be an array) directly via the
+    // admin client, the only way to get unparseable jsonb past `toWireGeometry` into the table.
+    const corruptId = randomUUID();
+    await admin`
+      insert into room_captures (id, org_id, job_id, room_name, source, raw_payload, geometry, captured_at)
+      values (
+        ${corruptId}, ${orgAId}, ${jobCorruptId}, 'Corrupt Room', 'roomplan_v1',
+        ${admin.json({ raw: "payload" })}, ${admin.json({ walls: "not-an-array" })}, now()
+      )
+    `;
+
+    // logger is a module-level singleton (@mallet/shared/observability), not injected into the
+    // repository — spy on it directly, same pattern as remove-time-entry.test.ts, so a future
+    // regression (warn silently downgraded to debug, or captureId dropped from the payload)
+    // fails this test instead of passing unnoticed.
+    const { logger } = await import("@mallet/shared/observability");
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    const list = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      return repo.listByJob(jobA);
+    });
+
+    expect(list).toHaveLength(1);
+    expect(list[0]!.capture.props.id).toBe(healthy.props.id);
+    expect(list.map((r) => r.capture.props.id)).not.toContain(corruptId);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ captureId: corruptId }),
+      "measurements.capture.unreadable",
+    );
+    warnSpy.mockRestore();
+
+    await expect(
+      withTenant(orgA, async (tx) => {
+        const repo = new DrizzleMeasurementRepository(tx, orgA);
+        return repo.getCapture(corruptId);
+      }),
+    ).rejects.toThrow(/corrupt room_capture/);
   });
 });

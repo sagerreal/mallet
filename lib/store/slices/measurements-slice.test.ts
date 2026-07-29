@@ -9,6 +9,8 @@ const mutate = {
   confirmQuantity: vi.fn(),
   renameRoom: vi.fn(),
   archiveRoom: vi.fn(),
+  ingestScan: vi.fn(),
+  rescan: vi.fn(),
 };
 
 vi.mock("@/lib/trpc/vanilla", () => ({
@@ -20,9 +22,21 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         confirmQuantity: { mutate: (...a: unknown[]) => mutate.confirmQuantity(...a) },
         renameRoom: { mutate: (...a: unknown[]) => mutate.renameRoom(...a) },
         archiveRoom: { mutate: (...a: unknown[]) => mutate.archiveRoom(...a) },
+        ingestScan: { mutate: (...a: unknown[]) => mutate.ingestScan(...a) },
+        rescan: { mutate: (...a: unknown[]) => mutate.rescan(...a) },
       },
     },
   },
+}));
+
+const captureRoom = vi.fn();
+vi.mock("@/lib/native/room-scan", () => ({
+  captureRoom: (...a: unknown[]) => captureRoom(...a),
+}));
+
+const reportWriteError = vi.fn();
+vi.mock("../write-error", () => ({
+  reportWriteError: (...a: unknown[]) => reportWriteError(...a),
 }));
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -275,6 +289,136 @@ describe("measurementsSlice", () => {
 
       await flush();
       expect(store.getState().roomsByJob[JOB]!.map((r) => r.id)).toEqual(["room-1", "room-2"]);
+    });
+  });
+
+  describe("scanRoom", () => {
+    it("adopts the server DTO on a done scan — no optimistic row beforehand", async () => {
+      captureRoom.mockResolvedValue({
+        status: "done",
+        rawPayload: { raw: true },
+        geometry: { walls: [] },
+        capturedAt: "2026-07-01T00:00:00.000Z",
+      });
+      mutate.ingestScan.mockResolvedValue({
+        id: "scan-1",
+        jobId: JOB,
+        roomName: "Kitchen",
+        source: "roomplan_v1",
+        capturedAt: "2026-07-01T00:00:00.000Z",
+        quantities: [{ kind: "walls_sqft", value: 120, derivedValue: 120, status: "derived" }],
+      });
+
+      const result = await store.getState().scanRoom(JOB, "Kitchen");
+
+      expect(result?.id).toBe("scan-1");
+      expect(store.getState().roomsByJob[JOB]).toHaveLength(1);
+      expect(store.getState().roomsByJob[JOB]![0]!.id).toBe("scan-1");
+      expect(mutate.ingestScan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: JOB,
+          roomName: "Kitchen",
+          capturedAt: "2026-07-01T00:00:00.000Z",
+          rawPayload: { raw: true },
+          geometry: { walls: [] },
+        }),
+      );
+    });
+
+    it("is a no-op when the user cancels the scan", async () => {
+      captureRoom.mockResolvedValue({ status: "cancelled" });
+
+      const result = await store.getState().scanRoom(JOB, "Kitchen");
+
+      expect(result).toBeNull();
+      expect(store.getState().roomsByJob[JOB] ?? []).toHaveLength(0);
+      expect(mutate.ingestScan).not.toHaveBeenCalled();
+    });
+
+    it("reports and rethrows when the native capture itself fails", async () => {
+      captureRoom.mockRejectedValue(new Error("plugin exploded"));
+
+      await expect(store.getState().scanRoom(JOB, "Kitchen")).rejects.toThrow("plugin exploded");
+      expect(reportWriteError).toHaveBeenCalledWith("scanRoom", expect.any(Error));
+      expect(store.getState().roomsByJob[JOB] ?? []).toHaveLength(0);
+    });
+
+    it("reports and rethrows when the server mutation fails", async () => {
+      captureRoom.mockResolvedValue({
+        status: "done",
+        rawPayload: {},
+        geometry: {},
+        capturedAt: "2026-07-01T00:00:00.000Z",
+      });
+      mutate.ingestScan.mockRejectedValue(new Error("server boom"));
+
+      await expect(store.getState().scanRoom(JOB, "Kitchen")).rejects.toThrow("server boom");
+      expect(reportWriteError).toHaveBeenCalledWith("scanRoom", expect.any(Error));
+      expect(store.getState().roomsByJob[JOB] ?? []).toHaveLength(0);
+    });
+  });
+
+  describe("rescanRoom", () => {
+    beforeEach(() => {
+      store.getState().setJobRooms(JOB, [room({ id: "room-1", roomName: "Kitchen" })]);
+    });
+
+    it("REPLACES the old capture id with the new one (supersede)", async () => {
+      captureRoom.mockResolvedValue({
+        status: "done",
+        rawPayload: { raw: true },
+        geometry: { walls: [] },
+        capturedAt: "2026-07-02T00:00:00.000Z",
+      });
+      mutate.rescan.mockResolvedValue({
+        id: "room-2",
+        jobId: JOB,
+        roomName: "Kitchen",
+        source: "roomplan_v1",
+        capturedAt: "2026-07-02T00:00:00.000Z",
+        quantities: [{ kind: "walls_sqft", value: 130, derivedValue: 130, status: "derived" }],
+      });
+
+      const result = await store.getState().rescanRoom(JOB, "room-1", "Kitchen");
+
+      expect(result?.id).toBe("room-2");
+      const ids = store.getState().roomsByJob[JOB]!.map((r) => r.id);
+      expect(ids).toEqual(["room-2"]);
+      expect(ids).not.toContain("room-1");
+      expect(mutate.rescan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          captureId: "room-1",
+          rawPayload: { raw: true },
+          geometry: { walls: [] },
+          capturedAt: "2026-07-02T00:00:00.000Z",
+        }),
+      );
+    });
+
+    it("is a no-op when the user cancels the rescan", async () => {
+      captureRoom.mockResolvedValue({ status: "cancelled" });
+
+      const result = await store.getState().rescanRoom(JOB, "room-1", "Kitchen");
+
+      expect(result).toBeNull();
+      expect(store.getState().roomsByJob[JOB]!.map((r) => r.id)).toEqual(["room-1"]);
+      expect(mutate.rescan).not.toHaveBeenCalled();
+    });
+
+    it("reports and rethrows when the server mutation fails, leaving the old room in place", async () => {
+      captureRoom.mockResolvedValue({
+        status: "done",
+        rawPayload: {},
+        geometry: {},
+        capturedAt: "2026-07-02T00:00:00.000Z",
+      });
+      mutate.rescan.mockRejectedValue(new Error("supersede conflict"));
+
+      await expect(store.getState().rescanRoom(JOB, "room-1", "Kitchen")).rejects.toThrow(
+        "supersede conflict",
+      );
+      expect(reportWriteError).toHaveBeenCalledWith("rescanRoom", expect.any(Error));
+      expect(store.getState().roomsByJob[JOB]!.map((r) => r.id)).toEqual(["room-1"]);
     });
   });
 });

@@ -25,16 +25,21 @@ interface Store {
   renameRoom: ReturnType<typeof vi.fn>;
   archiveRoom: ReturnType<typeof vi.fn>;
   addManualRoom: ReturnType<typeof vi.fn>;
+  scanRoom: ReturnType<typeof vi.fn>;
+  rescanRoom: ReturnType<typeof vi.fn>;
 }
 
 let storeState: Store;
 let activeModalParams: Record<string, unknown>;
 const closeMock = vi.fn();
+const pushModalMock = vi.fn();
 const useJobRoomsMock = vi.fn();
+const useRoomScanAvailableMock = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "room-card", params: activeModalParams }),
   useCloseModal: () => closeMock,
+  usePushModal: () => pushModalMock,
   useAppStore: (selector: (s: Store) => unknown) => selector(storeState),
 }));
 
@@ -42,7 +47,16 @@ vi.mock("@/features/measurements/use-job-rooms", () => ({
   useJobRooms: (...args: unknown[]) => useJobRoomsMock(...args),
 }));
 
+vi.mock("@/lib/native/room-scan", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/native/room-scan")>("@/lib/native/room-scan");
+  return {
+    ...actual,
+    useRoomScanAvailable: () => useRoomScanAvailableMock(),
+  };
+});
+
 import { RoomCardModalContent, quantityDisplay, parseQuantityInput, formatQuantity } from "./room-card-modal";
+import { RoomScanPayloadError } from "@/lib/native/room-scan";
 
 function job(overrides: Partial<Job> = {}): Job {
   return { id: JOB_ID, title: "Repaint job", leadId: "l1", svc: null, origin: "manual", addr: "", phone: "", status: "unscheduled", archived: false, lines: [], addons: [], photos: [], notes: "", acts: [], visits: [], ...overrides } as Job;
@@ -67,7 +81,10 @@ function room(overrides: Partial<RoomCard> = {}): RoomCard {
 beforeEach(() => {
   activeModalParams = { captureId: CAPTURE_ID, jobId: JOB_ID };
   closeMock.mockReset();
+  pushModalMock.mockReset();
   useJobRoomsMock.mockReset();
+  useRoomScanAvailableMock.mockReset();
+  useRoomScanAvailableMock.mockReturnValue(false);
   storeState = {
     roomsByJob: { [JOB_ID]: [room()] },
     jobs: [job()],
@@ -75,6 +92,8 @@ beforeEach(() => {
     renameRoom: vi.fn(),
     archiveRoom: vi.fn(),
     addManualRoom: vi.fn(),
+    scanRoom: vi.fn(),
+    rescanRoom: vi.fn(),
   };
 });
 
@@ -322,5 +341,170 @@ describe("RoomCardModalContent — create mode", () => {
 
     expect(screen.getByText('"2..4" is not a number.')).toBeTruthy();
     expect(storeState.addManualRoom).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// View mode — live re-scan row (roomplan_v1 + roomScanAvailable() only)
+// ---------------------------------------------------------------------------
+
+describe("RoomCardModalContent — view mode rescan row", () => {
+  it("stays text-only when scanning is unavailable — web-unchanged, no diff", () => {
+    useRoomScanAvailableMock.mockReturnValue(false);
+    const { container } = render(<RoomCardModalContent />);
+
+    expect(screen.getByText("Re-scan replaces these numbers and clears edits.")).toBeTruthy();
+    expect(screen.queryByText("Re-scan room")).toBeNull();
+    expect(container.querySelector("button.linklike")).toBeNull();
+  });
+
+  it("does not show any rescan row for a manual room even when scanning is available", () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    storeState.roomsByJob[JOB_ID] = [room({ source: "manual" })];
+    render(<RoomCardModalContent />);
+
+    expect(screen.queryByText("Re-scan room")).toBeNull();
+    expect(screen.queryByText("Re-scan replaces these numbers and clears edits.")).toBeNull();
+  });
+
+  it("becomes a two-tap armed control when scanning is available", () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    render(<RoomCardModalContent />);
+
+    expect(screen.getByText("Re-scan room")).toBeTruthy();
+    expect(screen.queryByText("Re-scan replaces these numbers and clears edits.")).toBeNull();
+  });
+
+  it("arms on first tap, fires rescanRoom on second tap, and re-opens on the new capture id", async () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    storeState.rescanRoom.mockResolvedValue(room({ id: "room-2" }));
+    render(<RoomCardModalContent />);
+
+    fireEvent.click(screen.getByText("Re-scan room"));
+    expect(storeState.rescanRoom).not.toHaveBeenCalled();
+    expect(screen.getByText(/Replaces these numbers and clears edits/)).toBeTruthy();
+
+    fireEvent.click(screen.getByText(/Replaces these numbers and clears edits/));
+    await waitFor(() => expect(storeState.rescanRoom).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "Living room"));
+
+    await waitFor(() => expect(closeMock).toHaveBeenCalled());
+    expect(pushModalMock).toHaveBeenCalledWith("room-card", { captureId: "room-2", jobId: JOB_ID });
+  });
+
+  it("disarms silently (no error) when the native scan is cancelled", async () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    storeState.rescanRoom.mockResolvedValue(null);
+    render(<RoomCardModalContent />);
+
+    fireEvent.click(screen.getByText("Re-scan room"));
+    fireEvent.click(screen.getByText(/Replaces these numbers and clears edits/));
+
+    await waitFor(() => expect(screen.getByText("Re-scan room")).toBeTruthy());
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(pushModalMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/unreadable data/)).toBeNull();
+  });
+
+  it("shows the named payload-error copy and disarms on RoomScanPayloadError", async () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    storeState.rescanRoom.mockRejectedValue(new RoomScanPayloadError("geometry", new Error("bad json")));
+    render(<RoomCardModalContent />);
+
+    fireEvent.click(screen.getByText("Re-scan room"));
+    fireEvent.click(screen.getByText(/Replaces these numbers and clears edits/));
+
+    await waitFor(() =>
+      expect(screen.getByText("The scan returned unreadable data. Scan again.")).toBeTruthy(),
+    );
+    expect(screen.getByText("Re-scan room")).toBeTruthy();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a generic save-error copy on any other rescan failure", async () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    storeState.rescanRoom.mockRejectedValue(new Error("network down"));
+    render(<RoomCardModalContent />);
+
+    fireEvent.click(screen.getByText("Re-scan room"));
+    fireEvent.click(screen.getByText(/Replaces these numbers and clears edits/));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Couldn't save this scan/)).toBeTruthy(),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scan mode — { jobId, mode: "scan" }
+// ---------------------------------------------------------------------------
+
+describe("RoomCardModalContent — scan mode", () => {
+  beforeEach(() => {
+    activeModalParams = { jobId: JOB_ID, mode: "scan" };
+  });
+
+  it("shows the name field and ONE 'Start scanning' primary — no quantity fields", () => {
+    render(<RoomCardModalContent />);
+    expect(screen.getByLabelText("Room name")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start scanning" })).toBeTruthy();
+    expect(screen.queryByLabelText("Walls (sq ft)")).toBeNull();
+  });
+
+  it("requires a room name before scanning — does not call scanRoom", () => {
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: "Start scanning" }));
+
+    expect(screen.getByText("Name this room before scanning.")).toBeTruthy();
+    expect(storeState.scanRoom).not.toHaveBeenCalled();
+  });
+
+  it("calls scanRoom with the trimmed name and re-opens the card on the new capture", async () => {
+    storeState.scanRoom.mockResolvedValue(room({ id: "room-9", roomName: "Kitchen" }));
+    render(<RoomCardModalContent />);
+
+    fireEvent.change(screen.getByLabelText("Room name"), { target: { value: "  Kitchen  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Start scanning" }));
+
+    await waitFor(() => expect(storeState.scanRoom).toHaveBeenCalledWith(JOB_ID, "Kitchen"));
+    await waitFor(() => expect(closeMock).toHaveBeenCalled());
+    expect(pushModalMock).toHaveBeenCalledWith("room-card", { captureId: "room-9", jobId: JOB_ID });
+  });
+
+  it("keeps the form open with no error when the scan is cancelled", async () => {
+    storeState.scanRoom.mockResolvedValue(null);
+    render(<RoomCardModalContent />);
+
+    fireEvent.change(screen.getByLabelText("Room name"), { target: { value: "Kitchen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start scanning" }));
+
+    await waitFor(() => expect(storeState.scanRoom).toHaveBeenCalled());
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(pushModalMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Room name")).toBeTruthy();
+    expect(screen.queryByText(/unreadable data/)).toBeNull();
+  });
+
+  it("shows the named payload-error copy when the scan returns unreadable data", async () => {
+    storeState.scanRoom.mockRejectedValue(new RoomScanPayloadError("rawPayload", new Error("bad json")));
+    render(<RoomCardModalContent />);
+
+    fireEvent.change(screen.getByLabelText("Room name"), { target: { value: "Kitchen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start scanning" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("The scan returned unreadable data. Scan again.")).toBeTruthy(),
+    );
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a generic save-error copy on any other scan failure, form stays open", async () => {
+    storeState.scanRoom.mockRejectedValue(new Error("network down"));
+    render(<RoomCardModalContent />);
+
+    fireEvent.change(screen.getByLabelText("Room name"), { target: { value: "Kitchen" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start scanning" }));
+
+    await waitFor(() => expect(screen.getByText(/Couldn't save this scan/)).toBeTruthy());
+    expect(closeMock).not.toHaveBeenCalled();
   });
 });

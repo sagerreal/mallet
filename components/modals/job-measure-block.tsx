@@ -23,6 +23,7 @@
 "use client";
 
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
+import { useRoomScanAvailable } from "@/lib/native/room-scan";
 import { usePushModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { shouldShowLoadFailed } from "@/lib/first-run";
@@ -77,6 +78,7 @@ export function JobMeasureBlock({ jobId }: { jobId: string }) {
   const query = useJobRooms(jobId);
   const rooms = useAppStore((s) => s.roomsByJob[jobId]) ?? EMPTY_ROOMS;
   const pushModal = usePushModal();
+  const scanAvailable = useRoomScanAvailable();
 
   // A failed fetch must never be mistaken for "no rooms" — only render the
   // friendly empty state once the query has genuinely succeeded (or the store
@@ -115,14 +117,34 @@ export function JobMeasureBlock({ jobId }: { jobId: string }) {
         </>
       )}
 
-      <button
-        type="button"
-        className="btn sm"
-        style={{ marginTop: "var(--space-2)" }}
-        onClick={() => pushModal(MODAL.ROOM_CARD, { jobId })}
-      >
-        + Add room
-      </button>
+      {scanAvailable ? (
+        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() => pushModal(MODAL.ROOM_CARD, { jobId })}
+          >
+            + Add room
+          </button>
+
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() => pushModal(MODAL.ROOM_CARD, { jobId, mode: "scan" })}
+          >
+            Scan room
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn sm"
+          style={{ marginTop: "var(--space-2)" }}
+          onClick={() => pushModal(MODAL.ROOM_CARD, { jobId })}
+        >
+          + Add room
+        </button>
+      )}
     </div>
   );
 }

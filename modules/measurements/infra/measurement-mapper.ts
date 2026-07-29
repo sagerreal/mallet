@@ -8,14 +8,32 @@ import type { StoredQuantity, QuantityStatus, RoomCaptureWithQuantities } from "
 export type RoomCaptureRow = typeof roomCaptures.$inferSelect;
 export type PaintingRoomQuantityRow = typeof paintingRoomQuantities.$inferSelect;
 
+// Thrown by `toDomainCapture` when a row's geometry jsonb fails schema parsing or its props fail
+// domain validation — i.e. the row itself is unreadable, not a bug in the caller. A dedicated
+// class (rather than a bare Error) so `drizzle-measurement-repository.ts`'s listByJob can narrow
+// its catch to exactly this failure mode and skip the row, while any OTHER exception (a real
+// bug) still propagates instead of being silently swallowed.
+export class CorruptCaptureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CorruptCaptureError";
+  }
+}
+
 // Reconstruct a domain RoomCapture from a DB row. Corrupt data throws rather than silently
 // coercing — the same contract as company-mapper's toDomain.
+//
+// Deliberate asymmetry: this throw is what makes `getCapture` (a direct open of one capture)
+// fail loudly on corrupt geometry/props. `listByJob` (drizzle-measurement-repository.ts) does
+// NOT let this throw escape the page — it catches CorruptCaptureError specifically per-row,
+// skips the unreadable capture, and logs `measurements.capture.unreadable` so one bad row can't
+// blank a whole job's room list.
 export const toDomainCapture = (row: RoomCaptureRow): RoomCapture => {
   let geometry = null;
   if (row.geometry !== null) {
     const parsed = parseNormalizedGeometry(row.geometry);
     if (!parsed.ok) {
-      throw new Error(`corrupt room_capture ${row.id} geometry: ${parsed.error.message}`);
+      throw new CorruptCaptureError(`corrupt room_capture ${row.id} geometry: ${parsed.error.message}`);
     }
     geometry = parsed.value;
   }
@@ -35,7 +53,7 @@ export const toDomainCapture = (row: RoomCaptureRow): RoomCapture => {
     deletedAt: row.deletedAt,
   });
   if (!result.ok) {
-    throw new Error(`corrupt room_capture ${row.id}: ${result.error.message}`);
+    throw new CorruptCaptureError(`corrupt room_capture ${row.id}: ${result.error.message}`);
   }
   return result.value;
 };

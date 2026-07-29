@@ -4,6 +4,8 @@ import { RoomCapture, type RoomCaptureProps } from "../domain/room-capture";
 import type { PaintingQuantity } from "../domain/derive-painting";
 import {
   SupersedeTargetError,
+  DuplicateCaptureError,
+  JobNotFoundError,
   type MeasurementRepository,
   type RoomCaptureWithQuantities,
 } from "../domain/measurement-repository";
@@ -70,6 +72,7 @@ class FakeMeasurementRepository implements MeasurementRepository {
   private byId = new Map<string, RoomCaptureWithQuantities>();
   supersedeCalls: { oldId: string; next: RoomCapture; quantities: readonly PaintingQuantity[] }[] = [];
   throwOnSupersede = false;
+  throwOnSupersedeError: Error | null = null;
 
   seed(capture: RoomCapture, quantities: RoomCaptureWithQuantities["quantities"] = []): void {
     this.byId.set(capture.props.id, { capture, quantities });
@@ -90,6 +93,7 @@ class FakeMeasurementRepository implements MeasurementRepository {
   async supersede(oldId: string, next: RoomCapture, quantities: readonly PaintingQuantity[]): Promise<void> {
     this.supersedeCalls.push({ oldId, next, quantities });
     if (this.throwOnSupersede) throw new SupersedeTargetError("stale supersede target");
+    if (this.throwOnSupersedeError) throw this.throwOnSupersedeError;
   }
 
   async setQuantity(): Promise<number> {
@@ -196,5 +200,48 @@ describe("RescanRoomUseCase", () => {
       expect(walls?.status).toBe("derived");
       expect(walls?.value).not.toBe(999);
     }
+  });
+
+  // ── duplicate new-capture id → true idempotency, not a throw ──────────────
+
+  it("returns the existing capture (ok) when the repo throws DuplicateCaptureError for the minted id", async () => {
+    repo.seed(makeOldCapture());
+    repo.throwOnSupersedeError = new DuplicateCaptureError(MINTED_ID);
+    const existingResult = RoomCapture.create(
+      baseOldProps({ id: MINTED_ID, roomName: "Already Rescanned" }),
+    );
+    if (!existingResult.ok) throw new Error("fixture setup failed");
+    repo.seed(existingResult.value);
+
+    const result = await useCase.exec(baseCmd(), ORG);
+
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.capture.props.id).toBe(MINTED_ID);
+      expect(result.value.capture.props.roomName).toBe("Already Rescanned");
+    }
+  });
+
+  it("returns a conflict result (not a throw) when DuplicateCaptureError fires but getCapture then finds nothing", async () => {
+    repo.seed(makeOldCapture());
+    repo.throwOnSupersedeError = new DuplicateCaptureError(MINTED_ID);
+    // No second seed(): getCapture(MINTED_ID) returns null — freak race.
+
+    const result = await useCase.exec(baseCmd(), ORG);
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) expect(result.error.kind).toBe("conflict");
+  });
+
+  // ── defensive JobNotFoundError handling (cannot happen on rescan in practice) ─
+
+  it("maps a defensive JobNotFoundError thrown by the repo to a not_found result instead of throwing", async () => {
+    repo.seed(makeOldCapture());
+    repo.throwOnSupersedeError = new JobNotFoundError(JOB);
+
+    const result = await useCase.exec(baseCmd(), ORG);
+
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) expect(result.error.kind).toBe("not_found");
   });
 });

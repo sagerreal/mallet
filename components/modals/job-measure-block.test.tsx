@@ -51,6 +51,11 @@ vi.mock("@/features/measurements/use-job-rooms", () => ({
   useJobRooms: (...args: unknown[]) => useJobRoomsMock(...args),
 }));
 
+const useRoomScanAvailableMock = vi.fn();
+vi.mock("@/lib/native/room-scan", () => ({
+  useRoomScanAvailable: () => useRoomScanAvailableMock(),
+}));
+
 function makeRoom(overrides: Partial<RoomCard> = {}): RoomCard {
   return {
     id: "room-1",
@@ -71,6 +76,8 @@ beforeEach(() => {
   pushModalMock.mockReset();
   useJobRoomsMock.mockReset();
   useJobRoomsMock.mockReturnValue(makeQuery());
+  useRoomScanAvailableMock.mockReset();
+  useRoomScanAvailableMock.mockReturnValue(false);
 });
 
 // ---------------------------------------------------------------------------
@@ -170,6 +177,50 @@ describe("JobMeasureBlock", () => {
     expect(screen.getByText("No rooms measured yet.")).toBeTruthy();
     expect(screen.getByText("+ Add room")).toBeTruthy();
     expect(screen.queryByText("—")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Scan room" — gated on roomScanAvailable(), not mere plugin presence.
+// ---------------------------------------------------------------------------
+
+describe("JobMeasureBlock — Scan room button", () => {
+  it("is not rendered when scanning is unavailable", () => {
+    useRoomScanAvailableMock.mockReturnValue(false);
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    expect(screen.queryByText("Scan room")).toBeNull();
+  });
+
+  it("renders '+ Add room' as a lone button with no wrapper div when scanning is unavailable — byte-identical to the pre-scan markup for the visual net", () => {
+    useRoomScanAvailableMock.mockReturnValue(false);
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    const btn = screen.getByText("+ Add room") as HTMLButtonElement;
+    expect(btn.tagName).toBe("BUTTON");
+    expect(btn.parentElement?.tagName).toBe("DIV");
+    // The button's own parent must be the block's root container, not a flex wrapper
+    // introduced for the two-button (scan-available) layout.
+    expect(btn.parentElement?.className).toBe("");
+    expect(btn.parentElement?.getAttribute("style")).toBeNull();
+    expect(btn.style.marginTop).toBe("var(--space-2)");
+  });
+
+  it("is rendered beside '+ Add room' when scanning is available", () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    expect(screen.getByText("Scan room")).toBeTruthy();
+    expect(screen.getByText("+ Add room")).toBeTruthy();
+  });
+
+  it("pushes the room-card modal in scan mode when tapped", () => {
+    useRoomScanAvailableMock.mockReturnValue(true);
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    fireEvent.click(screen.getByText("Scan room"));
+
+    expect(pushModalMock).toHaveBeenCalledWith("room-card", { jobId: JOB_ID, mode: "scan" });
   });
 });
 

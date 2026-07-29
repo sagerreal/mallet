@@ -8,6 +8,8 @@ import { parseNormalizedGeometry } from "../domain/normalized-geometry";
 import { derivePaintingQuantities } from "../domain/derive-painting";
 import {
   SupersedeTargetError,
+  DuplicateCaptureError,
+  JobNotFoundError,
   type MeasurementRepository,
   type RoomCaptureWithQuantities,
   type StoredQuantity,
@@ -64,15 +66,36 @@ export class RescanRoomUseCase {
       if (e instanceof SupersedeTargetError) {
         return err(conflict("room capture is no longer current and cannot be superseded"));
       }
+      if (e instanceof DuplicateCaptureError) {
+        // Same retry-safety as ingest: the minted new-capture id was already persisted by a
+        // prior attempt of this same rescan (client retried after a dropped response) — return
+        // the existing capture instead of failing.
+        const existing = await this.repo.getCapture(e.id);
+        if (existing === null) {
+          return err(conflict("room capture could not be retrieved after a duplicate id conflict"));
+        }
+        logger.info({ captureId: e.id, supersedes: cmd.captureId, orgId }, "measurements.room_rescan_deduped");
+        return ok(existing);
+      }
+      // JobNotFound cannot happen on rescan in practice — the new capture's jobId is copied
+      // from the OLD capture, which already resolved via repo.getCapture above — but caught
+      // defensively so a future refactor can't turn this into an unhandled throw.
+      if (e instanceof JobNotFoundError) {
+        return err(notFound("job not found"));
+      }
       throw e;
     }
 
-    const storedQuantities: StoredQuantity[] = quantities.map((q) => ({
-      kind: q.kind,
-      value: q.value,
-      derivedValue: q.status === "needs_confirm" ? null : q.value,
-      status: q.status,
-    }));
+    // Sorted alphabetically by kind to match the repo's read-path ordering (`ORDER BY kind` in
+    // attachQuantities) — see the identical comment in ingest-scan.ts.
+    const storedQuantities: StoredQuantity[] = quantities
+      .map((q) => ({
+        kind: q.kind,
+        value: q.value,
+        derivedValue: q.status === "needs_confirm" ? null : q.value,
+        status: q.status,
+      }))
+      .sort((a, b) => a.kind.localeCompare(b.kind));
 
     logger.info({ captureId: next.props.id, supersedes: cmd.captureId, orgId }, "measurements.room_rescanned");
 

@@ -17,14 +17,25 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useActiveModal, useAppStore, useCloseModal } from "@/lib/store/app-store";
+import { useActiveModal, useAppStore, useCloseModal, usePushModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
+import { useRoomScanAvailable, RoomScanPayloadError } from "@/lib/native/room-scan";
 import { SheetRow } from "./sheet-row";
 import { Field } from "@/components/ui/input";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { SrcPill } from "@/components/shared/stage-pill";
 import { formatDate } from "@/lib/format";
 import type { RoomCard, RoomQuantity, RoomQuantityKind } from "@/lib/store/types";
+
+/** Copy shared by the scan-mode form and the live re-scan control. */
+const SCAN_PAYLOAD_ERROR_COPY = "The scan returned unreadable data. Scan again.";
+const SCAN_SAVE_ERROR_COPY = "Couldn't save this scan — check your connection and try again.";
+
+/** Maps a thrown scanRoom/rescanRoom error to its inline copy. */
+function scanErrorCopy(err: unknown): string {
+  return err instanceof RoomScanPayloadError ? SCAN_PAYLOAD_ERROR_COPY : SCAN_SAVE_ERROR_COPY;
+}
 
 // ---- quantity kinds: fixed order, trade labels, unit shape -----------------
 
@@ -278,6 +289,67 @@ function RemoveRoomRow({ onRemove }: { onRemove: () => void }) {
   );
 }
 
+// ---- live re-scan (two-tap armed control, roomplan_v1 + plugin available only) ---
+
+function RescanRow({
+  jobId,
+  captureId,
+  roomName,
+}: {
+  jobId: string;
+  captureId: string;
+  roomName: string;
+}) {
+  const pushModal = usePushModal();
+  const close = useCloseModal();
+  const rescanRoom = useAppStore((s) => s.rescanRoom);
+  const [armed, setArmed] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function fire() {
+    if (scanning) return;
+    setError(null);
+    setScanning(true);
+    try {
+      const room = await rescanRoom(jobId, captureId, roomName);
+      if (room) {
+        // Re-point the card onto the new capture id — old id is superseded.
+        close();
+        pushModal(MODAL.ROOM_CARD, { captureId: room.id, jobId });
+        return;
+      }
+      // null = user cancelled the native screen — disarm silently, no error.
+      setArmed(false);
+    } catch (err: unknown) {
+      setError(scanErrorCopy(err));
+      setArmed(false);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: "var(--space-3) 0" }}>
+      <button
+        type="button"
+        className="linklike"
+        disabled={scanning}
+        onClick={() => (armed ? void fire() : setArmed(true))}
+      >
+        {scanning
+          ? "Scanning…"
+          : armed
+            ? "Replaces these numbers and clears edits — tap again"
+            : "Re-scan room"}
+      </button>
+      {error && (
+        <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{error}</p>
+      )}
+    </div>
+  );
+}
+
 // ---- source pill (sheet-meta) -------------------------------------------------
 
 function sourceLabel(room: RoomCard): string {
@@ -292,6 +364,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
   const renameRoom = useAppStore((s) => s.renameRoom);
   const archiveRoom = useAppStore((s) => s.archiveRoom);
   const close = useCloseModal();
+  const scanAvailable = useRoomScanAvailable();
 
   function commitQuantity(kind: RoomQuantityKind, value: number) {
     setRoomQuantity(jobId, room.id, kind, value);
@@ -323,11 +396,14 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
           );
         })}
 
-        {room.source === "roomplan_v1" && (
-          <div className="muted" style={{ padding: "var(--space-3) 0" }}>
-            Re-scan replaces these numbers and clears edits.
-          </div>
-        )}
+        {room.source === "roomplan_v1" &&
+          (scanAvailable ? (
+            <RescanRow jobId={jobId} captureId={room.id} roomName={room.roomName} />
+          ) : (
+            <div className="muted" style={{ padding: "var(--space-3) 0" }}>
+              Re-scan replaces these numbers and clears edits.
+            </div>
+          ))}
       </div>
 
       <RemoveRoomRow onRemove={remove} />
@@ -432,12 +508,82 @@ function CreateRoom({ jobId, jobName }: { jobId: string; jobName: string | undef
   );
 }
 
+// ---- scan mode ----------------------------------------------------------------
+
+function ScanRoom({ jobId, jobName }: { jobId: string; jobName: string | undefined }) {
+  const pushModal = usePushModal();
+  const close = useCloseModal();
+  const scanRoom = useAppStore((s) => s.scanRoom);
+
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  async function startScanning() {
+    if (scanning) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Name this room before scanning.");
+      return;
+    }
+    setError(null);
+    setScanning(true);
+    try {
+      const room = await scanRoom(jobId, trimmed);
+      if (room) {
+        // Re-open the card on the real capture — back-stack to the job modal preserved.
+        close();
+        pushModal(MODAL.ROOM_CARD, { captureId: room.id, jobId });
+        return;
+      }
+      // null = user cancelled the native screen — form stays, no error.
+    } catch (err: unknown) {
+      setError(scanErrorCopy(err));
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="sheet-head">
+        <h2>Scan room</h2>
+        <div className="sheet-meta">
+          <SrcPill src="Scan" />
+          {jobName && <span>{jobName}</span>}
+        </div>
+      </div>
+
+      <Field label="Room name">
+        <input
+          type="text"
+          placeholder="e.g. Living room"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+        />
+      </Field>
+
+      {error && (
+        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
+      )}
+
+      <div className="sheet-foot">
+        <button type="button" className="sheet-pri" disabled={scanning} onClick={() => void startScanning()}>
+          {scanning ? "Scanning…" : "Start scanning"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---- entry point ----------------------------------------------------------------
 
 export function RoomCardModalContent() {
   const activeModal = useActiveModal();
   const jobId = activeModal?.params?.jobId as string | undefined;
   const captureId = activeModal?.params?.captureId as string | undefined;
+  const mode = activeModal?.params?.mode as string | undefined;
 
   useJobRooms(jobId);
 
@@ -458,6 +604,7 @@ export function RoomCardModalContent() {
   }
 
   if (!captureId) {
+    if (mode === "scan") return <ScanRoom jobId={jobId} jobName={job?.title} />;
     return <CreateRoom jobId={jobId} jobName={job?.title} />;
   }
 

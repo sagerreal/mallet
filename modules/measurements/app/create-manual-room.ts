@@ -97,12 +97,16 @@ export class CreateManualRoomUseCase {
       }
     }
 
+    // Sorted alphabetically by kind to match the repo's read-path ordering (`ORDER BY kind` in
+    // attachQuantities) — ALL_PAINTING_QUANTITY_KINDS is ordered for derivation readability, not
+    // alphabetically, so this in-memory response would otherwise disagree with a later
+    // getCapture()/list() read of the same capture.
     const storedQuantities: StoredQuantity[] = ALL_PAINTING_QUANTITY_KINDS.map((kind) => {
       const value = provided.get(kind);
       return value === undefined
         ? { kind, value: null, derivedValue: null, status: "needs_confirm" as const }
         : { kind, value, derivedValue: null, status: "confirmed" as const };
-    });
+    }).sort((a, b) => a.kind.localeCompare(b.kind));
 
     logger.info({ captureId: capture.props.id, jobId: cmd.jobId, orgId }, "measurements.manual_room_created");
 

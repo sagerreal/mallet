@@ -16,12 +16,22 @@
  * quantity's CURRENT status and routes to the correct mutation, so a single "type a
  * number" affordance works whether the room started as a needs-confirm scan value or
  * an already-derived one.
+ *
+ * scanRoom / rescanRoom are the ONE exception to the optimistic-first pattern above: a
+ * scan only exists once the native plugin has captured it and the server has parsed +
+ * derived quantities from the geometry, so there is nothing honest to render before the
+ * mutation resolves. They call the native bridge (lib/native/room-scan.ts), persist
+ * server-side FIRST, then ADOPT the returned DTO into roomsByJob — no optimistic row, no
+ * add*-style re-persist, per the store house rule for flows that already persisted
+ * server-side. rescanRoom additionally REPLACES the old capture id with the new one
+ * (supersede semantics) rather than patching in place.
  */
 
 import type { StateCreator } from "zustand";
 import type { RoomCard, RoomQuantity, RoomQuantityKind } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { roomCaptureDtoToStore } from "@/lib/store/measurements-mapper";
+import { captureRoom } from "@/lib/native/room-scan";
 import { reportWriteError } from "../write-error";
 
 export interface MeasurementsSlice {
@@ -44,6 +54,18 @@ export interface MeasurementsSlice {
   setRoomQuantity: (jobId: string, captureId: string, kind: RoomQuantityKind, value: number) => void;
   renameRoom: (jobId: string, captureId: string, roomName: string) => void;
   archiveRoom: (jobId: string, captureId: string) => void;
+  /**
+   * Runs a native RoomPlan scan, persists it server-side, and adopts the resulting
+   * RoomCard. Returns null (no-op) if the user cancelled the scan. Throws (after
+   * reportWriteError) on any capture or persistence failure — callers show inline.
+   */
+  scanRoom: (jobId: string, roomName: string) => Promise<RoomCard | null>;
+  /**
+   * Re-scans an existing room: the new capture REPLACES the old one (by id) in
+   * roomsByJob. Returns null (no-op) if the user cancelled the scan. Throws (after
+   * reportWriteError) on any capture or persistence failure — callers show inline.
+   */
+  rescanRoom: (jobId: string, captureId: string, roomName: string) => Promise<RoomCard | null>;
 }
 
 function findQuantity(
@@ -259,5 +281,77 @@ export const createMeasurementsSlice: StateCreator<
         // Rollback: restore the pre-archive snapshot (order preserved).
         set((s) => ({ roomsByJob: { ...s.roomsByJob, [jobId]: snapshot } }));
       });
+  },
+
+  scanRoom: async (jobId, roomName) => {
+    let result;
+    try {
+      result = await captureRoom(roomName);
+    } catch (err: unknown) {
+      reportWriteError("scanRoom", err);
+      throw err instanceof Error ? err : new Error("scanRoom failed");
+    }
+
+    if (result.status === "cancelled") return null;
+
+    try {
+      const dto = await trpcVanilla.v1.measurements.ingestScan.mutate({
+        id: crypto.randomUUID(),
+        jobId,
+        roomName,
+        capturedAt: result.capturedAt,
+        rawPayload: result.rawPayload,
+        geometry: result.geometry,
+      });
+      const room = roomCaptureDtoToStore(dto);
+
+      // Server-persisted-first: adopt the DTO directly, no optimistic row to reconcile.
+      set((s) => ({
+        roomsByJob: {
+          ...s.roomsByJob,
+          [jobId]: [...(s.roomsByJob[jobId] ?? []), room],
+        },
+      }));
+
+      return room;
+    } catch (err: unknown) {
+      reportWriteError("scanRoom", err);
+      throw err instanceof Error ? err : new Error("scanRoom failed");
+    }
+  },
+
+  rescanRoom: async (jobId, captureId, roomName) => {
+    let result;
+    try {
+      result = await captureRoom(roomName);
+    } catch (err: unknown) {
+      reportWriteError("rescanRoom", err);
+      throw err instanceof Error ? err : new Error("rescanRoom failed");
+    }
+
+    if (result.status === "cancelled") return null;
+
+    try {
+      const dto = await trpcVanilla.v1.measurements.rescan.mutate({
+        captureId,
+        rawPayload: result.rawPayload,
+        geometry: result.geometry,
+        capturedAt: result.capturedAt,
+      });
+      const room = roomCaptureDtoToStore(dto);
+
+      // Supersede semantics: the old capture id is gone, replaced by the new one.
+      set((s) => ({
+        roomsByJob: {
+          ...s.roomsByJob,
+          [jobId]: (s.roomsByJob[jobId] ?? []).filter((r) => r.id !== captureId).concat(room),
+        },
+      }));
+
+      return room;
+    } catch (err: unknown) {
+      reportWriteError("rescanRoom", err);
+      throw err instanceof Error ? err : new Error("rescanRoom failed");
+    }
   },
 });
