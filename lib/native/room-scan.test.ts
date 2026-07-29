@@ -1,0 +1,119 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const nativePlugin = vi.fn();
+
+vi.mock("@/lib/native-bridge", () => ({
+  nativePlugin: (...a: unknown[]) => nativePlugin(...a),
+}));
+
+// Import after the mock so the module under test picks up the mocked nativePlugin.
+import { roomScanPlugin, roomScanAvailable, captureRoom, RoomScanPayloadError } from "./room-scan";
+
+describe("roomScanPlugin", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns null when the plugin is absent", () => {
+    nativePlugin.mockReturnValue(null);
+    expect(roomScanPlugin()).toBeNull();
+    expect(nativePlugin).toHaveBeenCalledWith("MalletRoomScan");
+  });
+
+  it("returns the plugin when present", () => {
+    const plugin = { captureRoom: vi.fn(), available: vi.fn() };
+    nativePlugin.mockReturnValue(plugin);
+    expect(roomScanPlugin()).toBe(plugin);
+  });
+});
+
+describe("roomScanAvailable", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("is false when the plugin is absent", async () => {
+    nativePlugin.mockReturnValue(null);
+    await expect(roomScanAvailable()).resolves.toBe(false);
+  });
+
+  it("is true when the plugin reports available", async () => {
+    nativePlugin.mockReturnValue({ available: vi.fn().mockResolvedValue({ available: true }) });
+    await expect(roomScanAvailable()).resolves.toBe(true);
+  });
+
+  it("is false when the plugin reports unavailable (e.g. no LiDAR)", async () => {
+    nativePlugin.mockReturnValue({
+      available: vi.fn().mockResolvedValue({ available: false, reason: "no_lidar" }),
+    });
+    await expect(roomScanAvailable()).resolves.toBe(false);
+  });
+
+  it("is false when the availability check itself throws", async () => {
+    nativePlugin.mockReturnValue({ available: vi.fn().mockRejectedValue(new Error("boom")) });
+    await expect(roomScanAvailable()).resolves.toBe(false);
+  });
+});
+
+describe("captureRoom", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("throws when the plugin is absent", async () => {
+    nativePlugin.mockReturnValue(null);
+    await expect(captureRoom("Kitchen")).rejects.toThrow(/not available/);
+  });
+
+  it("returns cancelled as-is", async () => {
+    nativePlugin.mockReturnValue({ captureRoom: vi.fn().mockResolvedValue({ status: "cancelled" }) });
+    await expect(captureRoom("Kitchen")).resolves.toEqual({ status: "cancelled" });
+  });
+
+  it("parses both JSON strings on done", async () => {
+    nativePlugin.mockReturnValue({
+      captureRoom: vi.fn().mockResolvedValue({
+        status: "done",
+        rawPayload: JSON.stringify({ raw: true }),
+        geometry: JSON.stringify({ walls: [] }),
+        capturedAt: "2026-07-29T00:00:00.000Z",
+      }),
+    });
+
+    await expect(captureRoom("Kitchen")).resolves.toEqual({
+      status: "done",
+      rawPayload: { raw: true },
+      geometry: { walls: [] },
+      capturedAt: "2026-07-29T00:00:00.000Z",
+    });
+  });
+
+  it("throws a named RoomScanPayloadError on invalid rawPayload JSON", async () => {
+    nativePlugin.mockReturnValue({
+      captureRoom: vi.fn().mockResolvedValue({
+        status: "done",
+        rawPayload: "{not json",
+        geometry: JSON.stringify({ walls: [] }),
+        capturedAt: "2026-07-29T00:00:00.000Z",
+      }),
+    });
+
+    await expect(captureRoom("Kitchen")).rejects.toBeInstanceOf(RoomScanPayloadError);
+  });
+
+  it("throws a named RoomScanPayloadError on invalid geometry JSON", async () => {
+    nativePlugin.mockReturnValue({
+      captureRoom: vi.fn().mockResolvedValue({
+        status: "done",
+        rawPayload: JSON.stringify({ raw: true }),
+        geometry: "{not json",
+        capturedAt: "2026-07-29T00:00:00.000Z",
+      }),
+    });
+
+    await expect(captureRoom("Kitchen")).rejects.toBeInstanceOf(RoomScanPayloadError);
+  });
+
+  it("passes the room name through to the plugin", async () => {
+    const pluginCaptureRoom = vi.fn().mockResolvedValue({ status: "cancelled" });
+    nativePlugin.mockReturnValue({ captureRoom: pluginCaptureRoom });
+
+    await captureRoom("Primary Bedroom");
+
+    expect(pluginCaptureRoom).toHaveBeenCalledWith({ roomName: "Primary Bedroom" });
+  });
+});
