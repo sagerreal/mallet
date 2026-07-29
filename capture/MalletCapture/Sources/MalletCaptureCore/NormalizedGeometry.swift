@@ -40,22 +40,6 @@ public struct WallGeometry: Codable, Sendable {
     }
 }
 
-/// Minimal placeholder — Task 4 moves this to its own file and adds the `derive` function.
-/// Keep the stored properties exactly these so nothing breaks.
-public struct CeilingEstimate: Codable, Sendable {
-    public var area: Double?
-    public var isVaulted: Bool
-    public var wallTopSpread: Double
-    public var provenance: String
-
-    public init(area: Double?, isVaulted: Bool, wallTopSpread: Double, provenance: String) {
-        self.area = area
-        self.isVaulted = isVaulted
-        self.wallTopSpread = wallTopSpread
-        self.provenance = provenance
-    }
-}
-
 /// The trade-neutral layer-2 model: raw floor/wall/opening/ceiling geometry with no
 /// trade-specific interpretation (e.g. no opening deductions from wall area).
 public struct NormalizedGeometry: Codable, Sendable {
