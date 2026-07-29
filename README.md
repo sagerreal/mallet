@@ -136,6 +136,10 @@ room:
 4. Export `validation-<room>.json` via the share sheet — it combines the scan geometry and the
    laser numbers in one file.
 
+Default convention: laser the room's **longest wall** and its **entry door**. If you measure
+something else, say so in the "Which wall (label)" field — the exported `wall_label` is what
+lets the offline comparison know which wall/opening the numbers belong to.
+
 A laser meter is accurate to a few millimeters at these ranges — far tighter than the 2% error
 band we're measuring, so it settles this cleanly (a tape would too, but the app is built around
 typed laser entry, not tape reads).

@@ -115,6 +115,7 @@ struct ResultsView: View {
     @State private var laserWallHeightFt = ""
     @State private var laserOpeningWidthFt = ""
     @State private var laserOpeningHeightFt = ""
+    @State private var laserWallLabel = ""
     @State private var exportURL: URL?
     @State private var exportError: String?
 
@@ -156,6 +157,13 @@ struct ResultsView: View {
                 laserField("Wall height (ft)", text: $laserWallHeightFt)
                 laserField("Opening width (ft)", text: $laserOpeningWidthFt)
                 laserField("Opening height (ft)", text: $laserOpeningHeightFt)
+                HStack {
+                    Text("Which wall (label)")
+                    Spacer()
+                    TextField("longest wall", text: $laserWallLabel)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                }
 
                 Button("Export validation JSON") { export() }
                     .disabled(roomName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -217,18 +225,76 @@ struct ResultsView: View {
 
     // MARK: - Export
 
+    /// Every laser field has exactly three outcomes: empty means "skipped, fine" and exports as
+    /// null; a parseable number (accepting either "." or "," as the decimal separator) exports as
+    /// that number; anything else is a typo the tech needs to see and fix, not a silent null. The
+    /// field's text is never cleared here — the tech needs to see exactly what they typed.
+    private enum LaserFieldParse {
+        case empty
+        case value(Double)
+        case invalid
+    }
+
+    private func parseLaserField(_ raw: String) -> LaserFieldParse {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return .empty }
+        if let value = Double(trimmed.replacingOccurrences(of: ",", with: ".")) {
+            return .value(value)
+        }
+        return .invalid
+    }
+
+    /// Parses one field or records the exact field name and raw text against `firstError` so the
+    /// export can be blocked with a message that names the problem and the next step.
+    private func requireValidLaserField(
+        _ raw: String,
+        fieldLabel: String,
+        firstError: inout String?
+    ) -> Double? {
+        switch parseLaserField(raw) {
+        case .empty:
+            return nil
+        case .value(let value):
+            return value
+        case .invalid:
+            if firstError == nil {
+                firstError = "\(fieldLabel) \"\(raw)\" is not a number. Fix it or clear the field."
+            }
+            return nil
+        }
+    }
+
     private func export() {
         exportError = nil
+
+        var firstError: String?
+        let wallLengthFt = requireValidLaserField(
+            laserWallLengthFt, fieldLabel: "Wall length", firstError: &firstError)
+        let wallHeightFt = requireValidLaserField(
+            laserWallHeightFt, fieldLabel: "Wall height", firstError: &firstError)
+        let openingWidthFt = requireValidLaserField(
+            laserOpeningWidthFt, fieldLabel: "Opening width", firstError: &firstError)
+        let openingHeightFt = requireValidLaserField(
+            laserOpeningHeightFt, fieldLabel: "Opening height", firstError: &firstError)
+
+        if let firstError {
+            exportError = firstError
+            return
+        }
+
+        let trimmedLabel = laserWallLabel.trimmingCharacters(in: .whitespaces)
+
         do {
             let record = ValidationRecord(
                 roomName: roomName.trimmingCharacters(in: .whitespaces),
                 capturedAt: Date(),
                 scanGeometry: measurements.geometry,
                 laser: ValidationRecord.LaserMeasurements(
-                    wallLengthFt: Double(laserWallLengthFt),
-                    wallHeightFt: Double(laserWallHeightFt),
-                    openingWidthFt: Double(laserOpeningWidthFt),
-                    openingHeightFt: Double(laserOpeningHeightFt)
+                    wallLengthFt: wallLengthFt,
+                    wallHeightFt: wallHeightFt,
+                    openingWidthFt: openingWidthFt,
+                    openingHeightFt: openingHeightFt,
+                    wallLabel: trimmedLabel.isEmpty ? nil : trimmedLabel
                 )
             )
             let data = try record.encodeJSON()
@@ -256,6 +322,9 @@ struct ValidationRecord: Codable {
         var wallHeightFt: Double?
         var openingWidthFt: Double?
         var openingHeightFt: Double?
+        /// Free-text label naming which wall/opening the laser measured (e.g. "longest wall",
+        /// "entry door"), so the offline comparison isn't biased by guessing which one it was.
+        var wallLabel: String?
     }
 
     func encodeJSON() throws -> Data {
