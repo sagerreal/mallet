@@ -7,6 +7,16 @@
  * This is Finance — unlike the job modal, the invoice IS where money/margin
  * lives, so the cost column + "Your margin (only you)" ARE shown here.
  *
+ * Sheet grammar (the lead-modal shape): sticky .sheet-head (customer · status
+ * pill · num/title/phone), the edit-block or read-only body, a quiet
+ * "Record a payment" accordion row when a sent invoice is still owed, and a
+ * sticky .sheet-foot holding the quiet peers (Archive/Restore · Preview as
+ * customer · Done) over THE one filled primary:
+ *   draft with a bill      → "Send invoice — $X"   (finalizes; sheet re-renders sent)
+ *   sent and still owed    → "Charge a card — $X"  (real Stripe checkout)
+ *   settled / nothing billed → "Done"              (the old footer confirm)
+ * Archive is destructive: it stays quiet and red, never the primary.
+ *
  * Branches faithfully:
  *   - EDITABLE (hand-made draft: !jobId && status==='draft') → invEditBlock:
  *     bill-to picker, phone, email, terms, line items w/ qty/price/cost, +Add
@@ -35,6 +45,7 @@ import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
+import { SheetRow } from "./sheet-row";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
 
@@ -178,7 +189,8 @@ function EditBlock({
   const margin = (invoice.total || 0) - cost;
   const td = invoice.termsDays;
   // Collapsed row summary — the value IS the state (updates as the store writes).
-  const sendToSummary = [invoice.phone, invoice.email].filter(Boolean).join(" · ") || "—";
+  // Empty says "Add" (an affordance), never a bare dash — a dash reads as broken data.
+  const sendToSummary = [invoice.phone, invoice.email].filter(Boolean).join(" · ") || "Add";
 
   // ---- immutable line ops (map to a fresh array, never mutate a line) -------
 
@@ -208,7 +220,7 @@ function EditBlock({
           type="text"
           list="invCustList"
           defaultValue={invoice.cust || ""}
-          placeholder="search or add a customer"
+          placeholder="Search or add a customer"
           onChange={(e) => onPickCust(e.target.value)}
         />
         <datalist id="invCustList">
@@ -575,89 +587,13 @@ function ReadOnlyView({ invoice }: ReadOnlyViewProps) {
 
 // ===========================================================================
 //  GET PAID — Send (finalize) · Charge a card · Record cash/check
+//  Three verb-honest actions, re-housed in the sheet grammar: Send/Charge take
+//  the .sheet-pri slot in the foot; Record cash/check (money already collected)
+//  is a quiet accordion row in the body. "Card" is never a recordable method —
+//  a card always charges.
 // ===========================================================================
 
 type RecordMethod = "cash" | "check";
-
-interface GetPaidProps {
-  due: number;
-  sent: boolean;
-  busy: boolean;
-  error: string | null;
-  onSend: () => void;
-  onCharge: () => void;
-  onRecord: (method: RecordMethod) => void;
-}
-
-// One panel, three verb-honest actions. A draft's only action is Send (which finalizes it).
-// A sent, still-owed invoice offers Charge a card (real Stripe checkout) or Record for cash/check
-// already collected. "Card" is never a recordable method — a card always charges.
-function GetPaid({ due, sent, busy, error, onSend, onCharge, onRecord }: GetPaidProps) {
-  const [recOpen, setRecOpen] = useState(false);
-  const [method, setMethod] = useState<RecordMethod>("cash");
-
-  return (
-    <div className="card" style={{ marginTop: "var(--space-3)", background: "var(--paper)" }}>
-      <div className="muted" style={{ ...SEC_LABEL, margin: "0 0 var(--space-3)" }}>
-        Get paid
-      </div>
-      {error ? (
-        <div style={{ color: "var(--red)", fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}>{error}</div>
-      ) : null}
-      {!sent ? (
-        <button
-          className="btn primary"
-          style={{ minHeight: 46, width: "100%" }}
-          disabled={busy}
-          onClick={onSend}
-        >
-          Send invoice{due > 0 ? " — " + fmt$(due) : ""}
-        </button>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-          <button
-            className="btn primary"
-            style={{ minHeight: 46 }}
-            disabled={busy}
-            onClick={onCharge}
-          >
-            {busy ? "Opening…" : `Charge a card — ${fmt$(due)}`}
-          </button>
-          {recOpen ? (
-            <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius-md)", padding: "var(--space-3)", background: "var(--bg)" }}>
-              <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
-                <button className={`chip ${method === "cash" ? "sel" : ""}`} onClick={() => setMethod("cash")}>
-                  Cash
-                </button>
-                <button className={`chip ${method === "check" ? "sel" : ""}`} onClick={() => setMethod("check")}>
-                  Check
-                </button>
-              </div>
-              <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-                <button
-                  className="btn primary"
-                  onClick={() => {
-                    onRecord(method);
-                    setRecOpen(false);
-                  }}
-                >
-                  Record payment — {fmt$(due)}
-                </button>
-                <span className="linklike" onClick={() => setRecOpen(false)}>
-                  ← back
-                </span>
-              </div>
-            </div>
-          ) : (
-            <button className="btn ghost" onClick={() => setRecOpen(true)}>
-              Record cash or check
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ===========================================================================
 //  THE MODAL BODY
@@ -680,6 +616,8 @@ export function InvoiceModalContent() {
 
   const [busy, setBusy] = useState(false);
   const [payErr, setPayErr] = useState<string | null>(null);
+  const [recOpen, setRecOpen] = useState(false);
+  const [recMethod, setRecMethod] = useState<RecordMethod>("cash");
 
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
@@ -746,20 +684,23 @@ export function InvoiceModalContent() {
     }
   }
 
+  // THE primary — verb-honest per state. A draft with nothing billed has no
+  // send to promote (a promoted action that cannot run is worse than none), so
+  // Done — the old footer confirm — takes the slot until there is a bill.
+  type PriKind = "send" | "charge" | "done";
+  const priKind: PriKind = !sent && total > 0 ? "send" : sent && due > 0 ? "charge" : "done";
+
   return (
-    <div>
-      {/* Header — num · customer · title + phone · status pill. paddingRight clears the shell ✕. */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "var(--space-3)", paddingRight: "var(--space-8)" }}>
-        <div>
-          <div className="muted">{invoice.num}</div>
-          <h2>{custName}</h2>
-          <div className="muted">
-            {invoice.title}
-            {phone ? " · " + phone : ""}
-          </div>
-        </div>
-        <div>
+    <>
+      {/* Sticky head — customer as the title, one calm meta line under it.
+          The shell renders the ✕; .sheet-head's own padding clears it. */}
+      <div className="sheet-head">
+        <h2>{custName}</h2>
+        <div className="sheet-meta">
           <StatusPill invoice={invoice} />
+          <span>{invoice.num}</span>
+          {invoice.title && invoice.title !== custName ? <span>{invoice.title}</span> : null}
+          {phone ? <span>{phone}</span> : null}
         </div>
       </div>
 
@@ -799,57 +740,105 @@ export function InvoiceModalContent() {
         <ReadOnlyView invoice={invoice} />
       )}
 
-      {/* Get paid — Send (draft, finalizes) · Charge a card / Record cash-check (sent, owed) */}
-      {total > 0 && (due > 0 || !sent) ? (
-        <GetPaid
-          due={due}
-          sent={sent}
-          busy={busy}
-          error={payErr}
-          onSend={send}
-          onCharge={charge}
-          onRecord={(m) => record(due, m)}
-        />
+      {/* Record cash or check — the quiet peer of Charge (money already
+          collected), an in-flow accordion so a mis-tap costs nothing. */}
+      {sent && due > 0 ? (
+        <div className="sheet-rows">
+          <SheetRow
+            label="Record a payment"
+            value="Cash or check"
+            valueIsHint
+            expandable
+            open={recOpen}
+            onOpenChange={setRecOpen}
+          >
+            <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
+              <button
+                type="button"
+                className={`chip${recMethod === "cash" ? " sel" : ""}`}
+                onClick={() => setRecMethod("cash")}
+              >
+                Cash
+              </button>
+              <button
+                type="button"
+                className={`chip${recMethod === "check" ? " sel" : ""}`}
+                onClick={() => setRecMethod("check")}
+              >
+                Check
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn primary"
+              style={{ minHeight: 44 }}
+              onClick={() => {
+                record(due, recMethod);
+                setRecOpen(false);
+              }}
+            >
+              Record payment — {fmt$(due)}
+            </button>
+          </SheetRow>
+        </div>
       ) : null}
 
-      {/* Footer — Preview as customer + Done */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: "var(--space-3)",
-          marginTop: "var(--space-4)",
-          borderTop: "1px solid var(--line)",
-          paddingTop: "var(--space-3)",
-        }}
-      >
-        {invoice.archived ? (
+      {/* Sticky foot — quiet peers over THE one filled primary. Archive is
+          destructive: quiet and red, never the primary slot. */}
+      <div className="sheet-foot">
+        {payErr ? (
+          <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>
+            {payErr}
+          </div>
+        ) : null}
+        <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+          {invoice.archived ? (
+            <button
+              className="btn ghost"
+              style={{ flex: 1, minHeight: 44 }}
+              onClick={() => updateInvoice(invoice.id, { archived: false })}
+            >
+              Restore
+            </button>
+          ) : (
+            <button
+              className="btn ghost"
+              style={{ flex: 1, minHeight: 44, color: "var(--red)" }}
+              onClick={() => {
+                archiveInvoice(invoice.id);
+                close();
+              }}
+            >
+              Archive
+            </button>
+          )}
           <button
             className="btn ghost"
-            style={{ marginRight: "auto" }}
-            onClick={() => updateInvoice(invoice.id, { archived: false })}
+            style={{ flex: 1, minHeight: 44 }}
+            onClick={() => pushModal(MODAL.CUST_INVOICE, { invoiceId: invoice.id })}
           >
-            Restore
+            Preview as customer
+          </button>
+          {priKind !== "done" ? (
+            <button className="btn ghost" style={{ flex: 1, minHeight: 44 }} onClick={close}>
+              Done
+            </button>
+          ) : null}
+        </div>
+        {priKind === "send" ? (
+          <button className="sheet-pri" disabled={busy} onClick={send}>
+            Send invoice{due > 0 ? " — " + fmt$(due) : ""}
+          </button>
+        ) : priKind === "charge" ? (
+          <button className="sheet-pri" disabled={busy} onClick={charge}>
+            {busy ? "Opening…" : `Charge a card — ${fmt$(due)}`}
           </button>
         ) : (
-          <button
-            className="btn ghost"
-            style={{ marginRight: "auto" }}
-            onClick={() => {
-              archiveInvoice(invoice.id);
-              close();
-            }}
-          >
-            Archive
+          <button className="sheet-pri" onClick={close}>
+            Done
           </button>
         )}
-        <button className="btn ghost" onClick={() => pushModal(MODAL.CUST_INVOICE, { invoiceId: invoice.id })}>
-          Preview as customer
-        </button>
-        <button className="btn primary" onClick={close}>
-          Done
-        </button>
       </div>
-    </div>
+    </>
   );
 }

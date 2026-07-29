@@ -1,11 +1,15 @@
 /**
  * components/modals/tech-job-modal/done-block.tsx
- * On-site close-out HERO (prototype techDoneBlock, 5698-5760) — the "job done →
+ * On-site close-out card (prototype techDoneBlock, 5698-5760) — the "job done →
  * get paid on site" block, shown when the job is done. Branches on the invoice /
  * due / card-on-file (mirrors the prototype's non-install path; the
- * install-specific split is deferred). "Take payment" opens the CLOSE_OUT modal;
- * charge-on-file records straight through recordPayment; send-to-office flags
- * invRequested. A small Reopen affordance sits above the card.
+ * install-specific split is deferred).
+ *
+ * Sheet grammar: the SINGLE terminal action of each branch (charge on file /
+ * take payment / send to the office) is rendered by the modal's sticky
+ * .sheet-foot as the .sheet-pri — see doneFootAction below. This card carries
+ * the status line and the QUIET peers only. A small Reopen affordance sits
+ * above the card.
  */
 
 "use client";
@@ -42,13 +46,32 @@ export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boole
   );
 }
 
+export type DoneFootKind = "charge" | "collect" | "sendoffice";
+
+/**
+ * Which terminal action the modal's sticky .sheet-foot carries for a done job
+ * (office view). Mirrors the branch order of DoneBlockFn below — the two must
+ * stay in lockstep. Null = the job is settled or already with the office; the
+ * foot falls back to plain Done.
+ */
+export function doneFootAction(
+  job: Job,
+  lead: Lead | undefined,
+  invoice: Invoice | undefined,
+): DoneFootKind | null {
+  if (invoice && (invoice.total ?? 0) > 0 && invDue(invoice) <= 0) return null;
+  if (job.invRequested) return null;
+  const due = invoice ? invDue(invoice) : jobTotal(job);
+  if (due > 0) return lead?.card ? "charge" : "collect";
+  return "sendoffice";
+}
+
 function DoneBlockFn({
   job,
   lead,
   invoice,
   onOpenCloseOut,
   onOpenInvoice,
-  onChargeOnFile,
   onSendToOffice,
   onReopen,
 }: DoneBlockProps) {
@@ -104,7 +127,7 @@ function DoneBlockFn({
     );
   }
 
-  // Due + card on file — charge it, take another way, or hand to the office.
+  // Due + card on file — the CHARGE lives in the sheet foot; quiet peers here.
   if (due > 0 && card) {
     return (
       <>
@@ -114,9 +137,6 @@ function DoneBlockFn({
             <b>✓ Job done</b>
             <span className="tjpaid-amt fig">{fmt$(due)}</span>
           </div>
-          <button className="tjpaid-btn" onClick={onChargeOnFile}>
-            Charge {fmt$(due)} to {card.brand} ···· {card.last4}
-          </button>
           <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
             Take payment another way →
           </button>
@@ -128,7 +148,7 @@ function DoneBlockFn({
     );
   }
 
-  // Due, no card — take payment, or hand to the office.
+  // Due, no card — "Take payment" lives in the sheet foot; hand-off stays here.
   if (due > 0) {
     return (
       <>
@@ -138,9 +158,6 @@ function DoneBlockFn({
             <b>✓ Job done</b>
             <span className="tjpaid-amt fig">{fmt$(due)}</span>
           </div>
-          <button className="tjpaid-btn" onClick={onOpenCloseOut}>
-            Take payment →
-          </button>
           <button className="tjpaid-btn2" onClick={onSendToOffice}>
             Send to the office to bill
           </button>
@@ -149,7 +166,8 @@ function DoneBlockFn({
     );
   }
 
-  // No price yet — the office invoices it (opening close-out can set a bill).
+  // No price yet — "Send to the office" lives in the sheet foot; the set-a-bill
+  // alternative stays here (opening close-out can set a bill).
   return (
     <>
       {reopen}
@@ -160,9 +178,6 @@ function DoneBlockFn({
         <div className="tjpaid-sub" style={{ marginBottom: "var(--space-2)" }}>
           No price set — the office invoices it.
         </div>
-        <button className="tjpaid-btn" onClick={onSendToOffice}>
-          Send to the office to bill
-        </button>
         <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
           Set a bill &amp; take payment →
         </button>

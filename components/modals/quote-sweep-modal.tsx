@@ -3,6 +3,10 @@
  * Faithful port of openQuoteSweep / applyQuoteSweep (prototype 7833-7863).
  * Splits quotes into the "paper pile" (drafts/declined/superseded/expired) and
  * "live" (out the door or won); checkboxes + Select all + Delete / Archive.
+ *
+ * Sheet grammar: sticky .sheet-head + sticky .sheet-foot, matching sweep-modal.
+ * Archive is the terminal, recoverable action → the one filled primary; Delete
+ * stays quiet red (armed two-tap) and never takes the primary slot.
  */
 
 "use client";
@@ -110,8 +114,10 @@ export function QuoteSweepModalContent() {
   }
 
   return (
-    <div>
-      <h2>Clean up quotes</h2>
+    <>
+      <div className="sheet-head">
+        <h2>Clean up quotes</h2>
+      </div>
       <p className="muted" style={{ marginBottom: "var(--space-3)" }}>
         Check anything you want out of the way.{" "}
         <button type="button" className="linklike" onClick={selectAll}>
@@ -130,7 +136,10 @@ export function QuoteSweepModalContent() {
         )}
         {rest.length > 0 && (
           <>
-            <div className="navlabel" style={{ padding: `${clutter.length ? 12 : 2}px 0 6px` }}>
+            <div
+              className="navlabel"
+              style={{ padding: `${clutter.length ? "var(--space-3)" : "var(--space-2xs)"} 0 var(--space-2)` }}
+            >
               Live — out the door or won
             </div>
             {rest.map(row)}
@@ -139,7 +148,10 @@ export function QuoteSweepModalContent() {
         {live.length === 0 && <div className="empty-att">No quotes on file.</div>}
         {archived.length > 0 && (
           <>
-            <div className="navlabel" style={{ padding: `${live.length ? 12 : 2}px 0 6px` }}>
+            <div
+              className="navlabel"
+              style={{ padding: `${live.length ? "var(--space-3)" : "var(--space-2xs)"} 0 var(--space-2)` }}
+            >
               Archived — {archived.length}
             </div>
             {archived.map((e) => {
@@ -165,15 +177,7 @@ export function QuoteSweepModalContent() {
         )}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: "var(--space-2)",
-          marginTop: "var(--space-4)",
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="sheet-foot" style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
         <button
           className="btn ghost"
           style={{ color: "var(--red)", borderColor: deleteArmed ? "var(--red)" : undefined }}
@@ -181,10 +185,10 @@ export function QuoteSweepModalContent() {
         >
           {deleteArmed ? `⚠ Really delete ${checked.size}? Tap again` : "Delete checked"}
         </button>
-        <button className="btn ghost" onClick={() => apply("archive")}>
+        <button className="sheet-pri" onClick={() => apply("archive")}>
           Archive checked
         </button>
       </div>
-    </div>
+    </>
   );
 }

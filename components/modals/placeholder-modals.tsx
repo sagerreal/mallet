@@ -2,6 +2,12 @@
  * components/modals/placeholder-modals.tsx
  * The Clean-up (mark Lost / Archive) modal. (New quote → the /composer route;
  * the Visit booking modal is real — see visit-modal.tsx.)
+ *
+ * Sheet grammar (PR #253): sticky .sheet-head with the h2, and the terminal
+ * confirm — "Mark lost & archive" — docked as the one .sheet-pri in a sticky
+ * .sheet-foot. This is a confirm sheet, so the confirm IS the primary; archive
+ * is recoverable (archiveLead, not a hard delete), so it is not destructive in
+ * the Delete/Void sense. Cancel stays quiet beside it.
  */
 
 "use client";
@@ -26,22 +32,24 @@ export function CleanUpModalContent() {
 
   return (
     <div>
-      <h2 className="modal-title">Clean up{lead ? ` · ${lead.name}` : ""}</h2>
+      <div className="sheet-head">
+        <h2>Clean up{lead ? ` · ${lead.name}` : ""}</h2>
+      </div>
       <p className="muted" style={{ marginTop: "var(--space-2)" }}>
         {lead
           ? "Mark as lost or archive this customer."
           : "No customer selected — close and pick one to clean up."}
       </p>
-      <div style={{ marginTop: "var(--space-5)", display: "flex", gap: "var(--space-3)" }}>
+      <div className="sheet-foot" style={{ display: "flex", gap: "var(--space-3)" }}>
         <button
-          className="btn ghost bad"
+          className="sheet-pri"
           onClick={handleArchive}
           disabled={lead == null}
           style={lead == null ? { opacity: 0.45 } : undefined}
         >
           Mark lost &amp; archive
         </button>
-        <button className="btn ghost" onClick={close}>
+        <button className="btn ghost" onClick={close} style={{ flexShrink: 0 }}>
           Cancel
         </button>
       </div>

@@ -127,7 +127,9 @@ export function ImportServicesModalContent() {
 
   return (
     <div>
-      <h2>Import price book</h2>
+      <div className="sheet-head">
+        <h2>Import price book</h2>
+      </div>
 
       {phase === "upload" && (
         <>
@@ -183,17 +185,6 @@ export function ImportServicesModalContent() {
           </div>
 
           {error && <p className="auth-error" style={{ marginTop: "var(--space-4)", marginBottom: "0" }}>{error}</p>}
-
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "var(--space-5)" }}>
-            <button type="button" className="btn ghost" onClick={reset}>← Choose a different file</button>
-            <button type="button" className="btn primary"
-              disabled={built.rows.length === 0 || importMut.isPending}
-              onClick={runImport}>
-              {progress.done > 0
-                ? `Resume — ${built.rows.length - progress.done} left`
-                : `Import ${built.rows.length} service${built.rows.length === 1 ? "" : "s"}`}
-            </button>
-          </div>
         </>
       )}
 
@@ -215,6 +206,25 @@ export function ImportServicesModalContent() {
           }
           onClose={close}
         />
+      )}
+
+      {/* Step-terminal action docked in the thumb zone — only the map step has one.
+          Upload/importing/done have no single confirm, so the foot stays absent there. */}
+      {phase === "map" && built && (
+        <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+          <button type="button" className="btn ghost" onClick={reset}>← Choose a different file</button>
+          <button
+            type="button"
+            className="sheet-pri"
+            style={{ flex: 1 }}
+            disabled={built.rows.length === 0 || importMut.isPending}
+            onClick={runImport}
+          >
+            {progress.done > 0
+              ? `Resume — ${built.rows.length - progress.done} left`
+              : `Import ${built.rows.length} service${built.rows.length === 1 ? "" : "s"}`}
+          </button>
+        </div>
       )}
     </div>
   );

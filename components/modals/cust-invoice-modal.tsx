@@ -9,6 +9,13 @@
  * (invoice-modal.tsx) which shows cost/margin. Money helpers (fmt$/invPaid/
  * invDue) are ported 1:1 from money/page.tsx + invoice-modal.tsx.
  *
+ * Sheet grammar (PR #253): the brand banner IS the sticky .sheet-head (it keeps
+ * its .custhead branding — the later rule wins padding/background, sheet-head
+ * supplies stickiness and the edge bleed), and "Pay $X" is THE .sheet-pri, docked
+ * in a sticky .sheet-foot. Method chips and the editable amount stay quiet in the
+ * body; pay state lives at the modal level so the foot can fire it. A settled
+ * invoice has no terminal action, so it renders no foot.
+ *
  * ModalHost provides the outer shell + close affordance, so the `.custhead` is
  * rendered faithfully but WITHOUT a duplicate ✕ (the prototype's custCloseBtn()).
  *
@@ -53,12 +60,14 @@ function clampAmt(entered: number, due: number): number {
 }
 
 // ===========================================================================
-//  BRANDED HEADER (prototype renderCustInv §.custhead)
+//  BRANDED HEADER (prototype renderCustInv §.custhead) — now the sticky
+//  .sheet-head: sheet-head supplies stickiness + full-bleed margins, custhead
+//  (the later rule) keeps the brand padding/background/flex.
 // ===========================================================================
 
 function CustHead({ brand }: { brand: Brand }) {
   return (
-    <div className="custhead" style={{ background: brand.color }}>
+    <div className="sheet-head custhead" style={{ background: brand.color }}>
       <div className="custlogo" style={{ color: brand.color }}>
         {brand.initials}
       </div>
@@ -123,55 +132,64 @@ function CustTotals({ invoice, due, paid }: { invoice: Invoice; due: number; pai
 }
 
 // ===========================================================================
-//  PAY BLOCK — method chips + amount + Pay button + save-card (due > 0)
-//  (prototype renderCustInv §chips/input/pay + custPayNow)
+//  PAY BLOCK — method chips + amount + save-card (due > 0). CONTROLLED: the
+//  state lives in the modal body so the sheet-foot's Pay primary can fire with
+//  the chosen method/amount. (prototype renderCustInv §chips/input + custPayNow)
 // ===========================================================================
 
 interface PayBlockProps {
   invoice: Invoice;
   brand: Brand;
   leads: Lead[];
-  due: number;
-  onPay: (amt: number, method: CustMethod, save: boolean) => void;
+  method: CustMethod;
+  onMethodChange: (m: CustMethod) => void;
+  save: boolean;
+  onSaveChange: (v: boolean) => void;
+  amt: number;
+  onAmtChange: (v: number) => void;
 }
 
-function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
-  const [method, setMethod] = useState<CustMethod>("card");
-  const [save, setSave] = useState<boolean>(true);
-  const [amt, setAmt] = useState<number>(due);
-
+function PayBlock({
+  invoice,
+  brand,
+  leads,
+  method,
+  onMethodChange,
+  save,
+  onSaveChange,
+  amt,
+  onAmtChange,
+}: PayBlockProps) {
   const card = custCard(invoice, leads);
   const showSave = method === "card" && !card;
 
-  function pay() {
-    onPay(clampAmt(amt, due), method, save);
-  }
-
   return (
     <>
-      {/* method chips — Card / Apple Pay (default) · Bank transfer */}
+      {/* method chips — Card / Apple Pay (default) · Bank transfer (quiet, never
+          the primary — the foot's Pay button is the one loud action) */}
       <div className="chips" style={{ margin: "var(--space-3) 0 var(--space-2)", justifyContent: "center" }}>
         <button
           className={`chip ${method === "card" ? "sel" : ""}`}
-          onClick={() => setMethod("card")}
+          onClick={() => onMethodChange("card")}
         >
           Card / Apple Pay
         </button>
         <button
           className={`chip ${method === "ach" ? "sel" : ""}`}
-          onClick={() => setMethod("ach")}
+          onClick={() => onMethodChange("ach")}
         >
           Bank transfer
         </button>
       </div>
 
-      {/* amount (defaults to due, editable) + Pay button */}
-      <div style={{ display: "flex", gap: "var(--space-2)" }}>
+      {/* amount (defaults to due, editable; the Pay button lives in the sheet-foot) */}
+      <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "center" }}>
         <input
           type="number"
           inputMode="decimal"
           value={amt}
-          onChange={(e) => setAmt(Number(e.target.value) || 0)}
+          onChange={(e) => onAmtChange(Number(e.target.value) || 0)}
+          aria-label="Amount to pay"
           style={{
             flex: "0 0 110px",
             border: "1.5px solid var(--line)",
@@ -182,14 +200,6 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
             fontSize: "var(--type-md)",
           }}
         />
-        <button
-          className="btn primary"
-          style={{ flex: 1, padding: "var(--space-3)", fontSize: "var(--type-md)" }}
-          onClick={pay}
-        >
-          {" "}
-          Pay{due > 0 ? " " + fmt$(due) : ""}
-        </button>
       </div>
 
       {/* save-my-card — only when paying by card and no card on file */}
@@ -208,7 +218,7 @@ function PayBlock({ invoice, brand, leads, due, onPay }: PayBlockProps) {
           <input
             type="checkbox"
             checked={save}
-            onChange={() => setSave((v) => !v)}
+            onChange={() => onSaveChange(!save)}
             style={{ marginTop: "var(--space-2xs)" }}
           />{" "}
           <span>
@@ -248,18 +258,36 @@ export function CustInvoiceModalContent() {
 
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
+  const due = invoice ? invDue(invoice) : 0;
+
+  // Pay state lives HERE (not in PayBlock) so the sheet-foot primary can fire it.
+  // Hooks run before the missing-invoice return, per the rules of hooks.
+  const [method, setMethod] = useState<CustMethod>("card");
+  const [save, setSave] = useState<boolean>(true);
+  const [amt, setAmt] = useState<number>(due);
+
+  // Reset per invoice (render-time state reset): PayBlock's mount used to do
+  // this; with lifted state the sheet must not carry one invoice's amount or
+  // method into another's.
+  const [seenInvoiceId, setSeenInvoiceId] = useState(invoice?.id);
+  if (invoice && invoice.id !== seenInvoiceId) {
+    setSeenInvoiceId(invoice.id);
+    setMethod("card");
+    setSave(true);
+    setAmt(due);
+  }
+
   if (!invoice) return null;
 
   const job: Job | undefined =
     invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
-  const due = invDue(invoice);
   const paid = invPaid(invoice);
 
   // custPayNow (5656): record the payment, then optionally vault the card.
   // The store update re-renders this view; when due hits 0 the settled state shows.
-  function pay(amt: number, method: CustMethod, save: boolean) {
+  function pay() {
     if (!invoice) return;
-    recordPayment(invoice.id, { amt, when: "Just now", method });
+    recordPayment(invoice.id, { amt: clampAmt(amt, due), when: "Just now", method });
     if (method === "card" && save) {
       const lead = leads.find((l) => l.id === invoice.leadId);
       if (lead && !lead.card) {
@@ -269,7 +297,7 @@ export function CustInvoiceModalContent() {
   }
 
   return (
-    <div>
+    <>
       <CustHead brand={brand} />
       <div className="custbody">
         {/* intro + invoice number */}
@@ -298,7 +326,17 @@ export function CustInvoiceModalContent() {
         {/* deferred: photo proof — "Your work, verified" card (needs verify data) */}
 
         {due > 0 ? (
-          <PayBlock invoice={invoice} brand={brand} leads={leads} due={due} onPay={pay} />
+          <PayBlock
+            invoice={invoice}
+            brand={brand}
+            leads={leads}
+            method={method}
+            onMethodChange={setMethod}
+            save={save}
+            onSaveChange={setSave}
+            amt={amt}
+            onAmtChange={setAmt}
+          />
         ) : (
           <div className="deltabanner" style={{ textAlign: "center" }}>
             Settled — thank you! A receipt is in your texts.
@@ -312,6 +350,16 @@ export function CustInvoiceModalContent() {
           Powered by Mallet — licensed &amp; insured
         </p>
       </div>
-    </div>
+
+      {/* THE primary — the one terminal action, docked where the thumb is. A
+          settled invoice has no terminal action, so it gets no foot. */}
+      {due > 0 && (
+        <div className="sheet-foot">
+          <button className="sheet-pri" onClick={pay}>
+            Pay {fmt$(due)}
+          </button>
+        </div>
+      )}
+    </>
   );
 }

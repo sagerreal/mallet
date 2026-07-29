@@ -5,6 +5,11 @@
  * Customer type (Person/Biz chip toggle), Business name (hidden when Person), Lead source (chip dropdown),
  * Book a visit reveal, More details reveal, footer.
  * NO subtitle. Button label: "Add customer" → "Create job" / "Create estimate visit".
+ *
+ * Sheet frame (#253 grammar): sticky .sheet-head holds the title; the terminal
+ * create is THE .sheet-pri docked in a sticky .sheet-foot with Cancel quiet
+ * beside it. The foot lives inside the <form> so type="submit" keeps working —
+ * the form spans the whole sheet, so the sticky maths are unchanged.
  */
 
 "use client";
@@ -385,12 +390,15 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     notes.trim() ? "notes" : null,
     customFields.length > 0 ? `${customFields.length} custom` : null,
   ].filter(Boolean);
-  const moreSummary = moreParts.length ? moreParts.join(" · ") : "—";
+  const moreSummary = moreParts.length ? moreParts.join(" · ") : "Add";
 
   return (
     <Modal open={open} onClose={handleClose}>
-      <h2>New customer</h2>
-      {/* NO subtitle — prototype has none */}
+      {/* Sticky sheet header — the shell renders the ✕; .sheet-head's own
+          padding clears it. NO subtitle — prototype has none. */}
+      <div className="sheet-head">
+        <h2>New customer</h2>
+      </div>
 
       <form onSubmit={handleSubmit}>
         {/* 1. Name */}
@@ -469,7 +477,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
           <DisclosureRow
             label="Lead source"
-            value={source || "—"}
+            value={source || "Add"}
             open={openRow === "source"}
             onToggle={() => toggleRow("source")}
           >
@@ -689,12 +697,20 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           </div>
         )}
 
-        {/* 9. Footer */}
-        <div style={{ display: "flex", gap: "var(--space-3)", justifyContent: "flex-end" }}>
-          <button type="button" className="btn ghost" onClick={handleClose} disabled={createMutation.isPending}>
+        {/* 9. Sticky foot — ONE filled primary (the terminal create), Cancel
+            quiet beside it. Stays inside the form so type="submit" keeps
+            submit-on-Enter and the shared submit path intact. */}
+        <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ minHeight: 44 }}
+            onClick={handleClose}
+            disabled={createMutation.isPending}
+          >
             Cancel
           </button>
-          <button type="submit" className="btn primary" disabled={createMutation.isPending || Boolean(dedupLeadId)}>
+          <button type="submit" className="sheet-pri" disabled={createMutation.isPending || Boolean(dedupLeadId)}>
             {createMutation.isPending ? "Saving…" : submitLabel()}
           </button>
         </div>

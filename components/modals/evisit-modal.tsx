@@ -70,14 +70,6 @@ function timeToH(s: string): number {
   return (Number(p[0]) || 0) + (Number(p[1]) || 0) / 60;
 }
 
-function initialsOf(name: string): string {
-  return name
-    .split(" ")
-    .map((w) => w[0] ?? "")
-    .join("")
-    .slice(0, 2);
-}
-
 /** A visit is PLACED once it has a day + crew + start (prototype: v.date && v.techId!=null && v.start!=null). */
 function vPlaced(v: Visit): boolean {
   return !!(v.date && v.techId != null && v.start != null);
@@ -154,8 +146,9 @@ function SchedFields({
             value={visit.techId ?? ""}
             onChange={(e) => onSet("techId", e.target.value)}
           >
-            {/* Unplaced carries a leading "—" placeholder (prototype crewSel). */}
-            {!placed && <option value="">—</option>}
+            {/* Unplaced placeholder — a bare "—" reads as broken data (register
+                rule), so the empty option names the move instead. */}
+            {!placed && <option value="">Choose crew</option>}
             {techs.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
@@ -293,43 +286,31 @@ export function EvisitModalContent() {
   }
 
   return (
-    <div>
-      {/* 1. Header — avatar, name, Estimate-visit label, status, conflict, See customer */}
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-2)" }}>
-        <div
-          className="avatar"
-          style={{
-            width: 42,
-            height: 42,
-            background: "var(--green-100)",
-            color: "var(--green-900)",
-            fontSize: "var(--type-md)",
-          }}
-        >
-          {initialsOf(lead.name)}
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ marginBottom: "var(--space-2xs)" }}>{lead.name}</h2>
-          <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
-            <span
-              style={{
-                fontSize: "var(--type-xs)",
-                fontWeight: 800,
-                textTransform: "uppercase",
-                letterSpacing: ".05em",
-                color: ESTIMATE_ACCENT,
-              }}
-            >
-              Estimate visit
-            </span>
-            <span className="stpill" style={stpillStyle(visit.status)}>
-              {stpillLabel(visit.status)}
-            </span>
-            {conflict && <span className="pill red">⚠ double-booked</span>}
-            <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={seeCustomer}>
-              See customer →
-            </span>
-          </div>
+    <>
+      {/* 1. Sticky sheet header — name over one meta line (Estimate-visit label ·
+          status · conflict · See customer). The avatar was decoration duplicating
+          the name; the sheet grammar drops it, same as the lead sheet did. */}
+      <div className="sheet-head">
+        <h2>{lead.name}</h2>
+        <div className="sheet-meta">
+          <span
+            style={{
+              fontSize: "var(--type-xs)",
+              fontWeight: 800,
+              textTransform: "uppercase",
+              letterSpacing: ".05em",
+              color: ESTIMATE_ACCENT,
+            }}
+          >
+            Estimate visit
+          </span>
+          <span className="stpill" style={stpillStyle(visit.status)}>
+            {stpillLabel(visit.status)}
+          </span>
+          {conflict && <span className="pill red">⚠ double-booked</span>}
+          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={seeCustomer}>
+            See customer →
+          </span>
         </div>
       </div>
 
@@ -377,24 +358,17 @@ export function EvisitModalContent() {
       {/* 5. What the tech captured (read-only) */}
       <ScopePreview visit={visit} />
 
-      {/* 6. Footer — Remove visit + Done */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginTop: "var(--space-5)",
-          borderTop: "1px solid var(--line)",
-          paddingTop: "var(--space-4)",
-        }}
-      >
-        <span className="linklike" style={{ color: "var(--red)" }} onClick={removeVisit}>
+      {/* 6. Sticky foot — ONE filled primary (Done, the terminal confirm). Remove
+          visit is destructive, so it stays a quiet red ghost beside it, never the
+          primary slot. */}
+      <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <button className="btn ghost" style={{ color: "var(--red)", minHeight: 44 }} onClick={removeVisit}>
           Remove visit
-        </span>
-        <button className="btn primary" onClick={close}>
+        </button>
+        <button className="sheet-pri" onClick={close}>
           Done
         </button>
       </div>
-    </div>
+    </>
   );
 }

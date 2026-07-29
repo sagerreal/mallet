@@ -3,6 +3,11 @@
  * Faithful port of the prototype's openThread / threadRows / sendText / simReply
  * (lines 6492-6536). SMS thread with the business-number framing, bubble rows,
  * a composer, and real two-way SMS via v1.messaging.
+ *
+ * Sheet grammar (frame only): the customer name + business-number line live in a
+ * sticky .sheet-head so the record never scrolls away. There is NO .sheet-foot —
+ * the chat composer at the bottom already IS the footer, and promoting Send to a
+ * .sheet-pri would duplicate it.
  */
 
 "use client";
@@ -247,18 +252,25 @@ export function ThreadModalContent() {
   }
 
   return (
-    <div>
-      <h2 style={{ marginBottom: "var(--space-2xs)" }}>{lead.name}</h2>
-      {hasPhone(lead) ? (
-        <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-          {lead.phone} · texting from your <b>business number</b> — quote links and
-          reminders land in this same thread, marked ✦
-        </div>
-      ) : (
+    <>
+      <div className="sheet-head">
+        <h2>{lead.name}</h2>
+        {hasPhone(lead) && (
+          <div className="sheet-meta">
+            <span>
+              {lead.phone} · texting from your <b>business number</b> — quote links and
+              reminders land in this same thread, marked ✦
+            </span>
+          </div>
+        )}
+      </div>
+
+      {!hasPhone(lead) && (
         // No number on file — the modal becomes the add-a-phone prompt (big, legible). The
         // optimistic store write enables the composer immediately; unlike the call modal this
         // does NOT race its own save, because the send passes the fresh number forward rather
-        // than having the server look it up.
+        // than having the server look it up. Lives in the body flow, not the sticky head —
+        // a form pinned in the header would eat the thread on small screens.
         <PhoneAddInput
           label="No phone number yet"
           sub={`Add ${firstName(lead.name)}'s mobile and your text goes out from your business number.`}
@@ -284,7 +296,7 @@ export function ThreadModalContent() {
       </div>
 
       {sendError && (
-        <div className="muted" style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", padding: "var(--space-1) 0" }}>
+        <div className="muted" style={{ fontSize: "var(--type-sm)", color: "var(--red)", padding: "var(--space-1) 0" }}>
           {sendError}
         </div>
       )}
@@ -303,6 +315,6 @@ export function ThreadModalContent() {
           Send
         </button>
       </div>
-    </div>
+    </>
   );
 }

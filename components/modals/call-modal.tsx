@@ -1,8 +1,18 @@
 /**
  * components/modals/call-modal.tsx
- * Faithful port of openCallSheet + logCallForm (prototype 6415-6491).
+ * Faithful port of openCallSheet + logCallForm (prototype 6415-6491), framed in
+ * the sheet grammar: a sticky .sheet-head (customer name · number on file) and a
+ * sticky .sheet-foot whose one .sheet-pri is the call itself.
+ *
  * Two paths: "Call from Mallet" (hands off to the global call bar) and
  * "Log a call" (an inline form that records a past call to the timeline).
+ * The pathpick2 card stays tappable alongside the foot primary on purpose — the
+ * card is where the transport explanation lives (rings YOUR phone / through this
+ * computer, business-number caller ID), and the foot is where the thumb is.
+ *
+ * Phoneless state: PhoneAddInput IS the sheet — its own full-width "Save & call"
+ * is the terminal action (the draft lives inside the primitive), so no foot
+ * renders there; docking a second Save & call would race or duplicate it.
  */
 
 "use client";
@@ -97,13 +107,16 @@ export function CallModalContent() {
   }
 
   return (
-    <div>
-      <h2>{lead.name}</h2>
-      {phoneOnFile ? (
-        <p className="muted" style={{ marginBottom: "var(--space-2xs)" }}>
-          {lead.phone}
-        </p>
-      ) : (
+    <>
+      <div className="sheet-head">
+        <h2>{lead.name}</h2>
+        {phoneOnFile && (
+          <div className="sheet-meta">
+            <span>{lead.phone}</span>
+          </div>
+        )}
+      </div>
+      {!phoneOnFile && (
         // No number on file — the modal becomes the add-a-phone prompt (big,
         // legible). Saving persists + starts the call with the fresh number.
         <>
@@ -227,6 +240,18 @@ export function CallModalContent() {
           </div>
         </div>
       )}
-    </div>
+
+      {/* THE primary — the call itself, docked where a one-handed thumb is. */}
+      {phoneOnFile && (
+        <div className="sheet-foot">
+          <button className="sheet-pri" onClick={callFromMallet}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+            </svg>
+            Call
+          </button>
+        </div>
+      )}
+    </>
   );
 }

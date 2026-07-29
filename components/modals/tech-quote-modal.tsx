@@ -12,6 +12,14 @@
  *   (c) an "Approve & sign" step with a real on-glass signature canvas (tqSign /
  *       tqSigInit) — commits the chosen tier + approvedOnSite on accept.
  *
+ * Sheet grammar (#253): every mode renders under a sticky .sheet-head (the title
+ * as an <h2> over one "Price the repair · <customer>" .sheet-meta line — same
+ * frame as the office price-builder-modal) and docks its terminal action in a
+ * sticky .sheet-foot: edit → "Present to customer →" / "Present options →" as the
+ * one .sheet-pri; sign → "Accept & sign" as the .sheet-pri with a quiet ghost
+ * Back beside it. Present has NO single terminal action (the tier cards are
+ * peers), so it has no foot. The Modal shell renders the ✕.
+ *
  * All builder state is LOCAL React state (the prototype's global state.tq). The
  * store is read via raw selectors (jobs / leads / services / laborRates, never
  * derived in the selector); the only commit is updateJob at sign time.
@@ -186,28 +194,18 @@ function SignaturePad({ onClearRef }: SignaturePadProps) {
   );
 }
 
-// ---- eyebrow (prototype tqRender head, TECH mode) --------------------------
+// ---- sheet header (prototype tqRender head, TECH mode, re-housed #253) ------
+// The old uppercase eyebrow is now the .sheet-meta line under the mode's <h2>,
+// inside the sticky .sheet-head — identical frame to the office builder.
 
-interface EyebrowProps {
-  custName: string;
-}
-
-function Eyebrow({ custName }: EyebrowProps) {
+function SheetHead({ title, custName }: { title: string; custName: string }) {
   return (
-    <>
-      <div
-        className="muted"
-        style={{
-          fontSize: "var(--type-xs)",
-          fontWeight: 800,
-          letterSpacing: ".05em",
-          textTransform: "uppercase",
-          color: "var(--green-700)",
-        }}
-      >
-        Price the repair · {custName}
+    <div className="sheet-head">
+      <h2>{title}</h2>
+      <div className="sheet-meta">
+        <span>Price the repair · {custName}</span>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -395,9 +393,8 @@ export function TechQuoteModalContent() {
     const signLines = tiers[chosenTier];
     const total = tierTotal(chosenTier);
     return (
-      <div>
-        <Eyebrow custName={custName} />
-        <h2>Approve &amp; sign</h2>
+      <>
+        <SheetHead title="Approve & sign" custName={custName} />
 
         <div className="card" style={{ background: "var(--manila)" }}>
           {signLines.map((l, i) => (
@@ -450,15 +447,27 @@ export function TechQuoteModalContent() {
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{signError}</p>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "var(--space-4)", gap: "var(--space-2)" }}>
-          <button className="btn" onClick={() => setMode(offered.length > 1 ? "present" : "edit")} disabled={signing}>
+        {/* Sticky foot — ONE filled primary (the on-glass accept, the flow's
+            terminal confirm); Back stays a quiet ghost beside it. */}
+        <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <button
+            className="btn ghost"
+            onClick={() => setMode(offered.length > 1 ? "present" : "edit")}
+            disabled={signing}
+            style={{ flexShrink: 0 }}
+          >
             ← Back
           </button>
-          <button className="btn primary" onClick={sign} disabled={signing}>
+          <button
+            className="sheet-pri"
+            onClick={sign}
+            disabled={signing}
+            style={{ flex: 1, opacity: signing ? 0.45 : undefined }}
+          >
             {signing ? "Saving…" : `Accept & sign — ${fmt$(total)}`}
           </button>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -466,9 +475,8 @@ export function TechQuoteModalContent() {
   if (mode === "present") {
     const firstName = custName.split(" ")[0] ?? custName;
     return (
-      <div>
-        <Eyebrow custName={custName} />
-        <h2>Present — on glass</h2>
+      <>
+        <SheetHead title="Present — on glass" custName={custName} />
         <div className="muted" style={{ fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}>
           Hand {firstName} the tablet — they pick:
         </div>
@@ -493,7 +501,7 @@ export function TechQuoteModalContent() {
                 <b>{fmt$(tierTotal(k))}</b>
               </div>
               <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
-                {tiers[k].map((l) => l.d || "Repair").join(" · ") || "—"}
+                {tiers[k].map((l) => l.d || "Repair").join(" · ")}
               </div>
             </div>
           ))
@@ -501,12 +509,14 @@ export function TechQuoteModalContent() {
           <div className="muted">Nothing priced yet.</div>
         )}
 
+        {/* No .sheet-foot here on purpose: the tier cards above are equal peer
+            choices — there is no single terminal action to promote. */}
         <div style={{ textAlign: "right", marginTop: "var(--space-2)" }}>
           <button className="btn" onClick={() => setMode("edit")}>
             ← Back to edit
           </button>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -518,9 +528,8 @@ export function TechQuoteModalContent() {
   const showBestOpt = !use.best;
 
   return (
-    <div>
-      <Eyebrow custName={custName} />
-      <h2 style={{ marginBottom: "var(--space-4)" }}>Build the price</h2>
+    <>
+      <SheetHead title="Build the price" custName={custName} />
 
       {/* tier chips (only better + opted-in tiers; each shows label · $total) */}
       {multi ? (
@@ -621,10 +630,11 @@ export function TechQuoteModalContent() {
         </div>
       ) : null}
 
-      {/* Footer — present to customer (single) / present options (multi) */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "var(--space-5)" }}>
+      {/* Sticky foot — ONE filled primary docked where the thumb is: present to
+          customer (single) / present options (multi). */}
+      <div className="sheet-foot">
         <button
-          className="btn primary"
+          className="sheet-pri"
           onClick={present}
           disabled={!anyPriced}
           style={anyPriced ? undefined : { opacity: 0.45 }}
@@ -632,6 +642,6 @@ export function TechQuoteModalContent() {
           {multi ? "Present options →" : "Present to customer →"}
         </button>
       </div>
-    </div>
+    </>
   );
 }

@@ -148,11 +148,14 @@ export function VisitModalContent() {
   }
 
   return (
-    <div>
-      <h2 style={{ marginBottom: "var(--space-2xs)" }}>Book a visit</h2>
-      <p className="muted" style={{ marginBottom: "var(--space-4)", fontSize: "var(--type-base)" }}>
-        {lead.name}
-      </p>
+    <>
+      {/* Sticky sheet header — the title never scrolls away on a tall sheet. */}
+      <div className="sheet-head">
+        <h2>Book a visit</h2>
+        <div className="sheet-meta">
+          <span>{lead.name}</span>
+        </div>
+      </div>
 
       {/* Job description */}
       <Field label="Job">
@@ -226,15 +229,17 @@ export function VisitModalContent() {
         <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
       )}
 
-      {/* Footer */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)", marginTop: "var(--space-5)" }}>
+      {/* Sticky footer — ONE filled primary docked where the thumb is; Cancel
+          stays quiet beside it. The label follows the purpose chip so the button
+          states what it creates. */}
+      <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
         <button className="btn ghost" onClick={cancel}>
           Cancel
         </button>
-        <button className="btn primary" onClick={submit}>
+        <button className="sheet-pri" onClick={submit}>
           {purpose === "look" ? "Book the estimate visit →" : "Create the job →"}
         </button>
       </div>
-    </div>
+    </>
   );
 }
