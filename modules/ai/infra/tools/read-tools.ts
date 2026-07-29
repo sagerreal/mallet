@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { users, orgs } from "@mallet/shared/db/schema";
-import { toPage, asLeadId, asInvoiceId, asEstimateId, asJobId, asCompanyId } from "@mallet/shared/types";
+import { users, orgs, orgSettings } from "@mallet/shared/db/schema";
+import { toPage, isOk, Phone, asLeadId, asInvoiceId, asEstimateId, asJobId, asCompanyId, asUserId } from "@mallet/shared/types";
 import { ListLeadsUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { ListInvoicesUseCase, DrizzleInvoiceRepository } from "@mallet/invoicing";
 import { ListEstimatesUseCase, DrizzleEstimateRepository } from "@mallet/quoting";
@@ -21,6 +21,7 @@ import {
   invoiceListInput,
   estimateListInput,
   customerGetInput,
+  customerFindInput,
   estimateGetInput,
   invoiceGetInput,
   jobListInput,
@@ -47,15 +48,32 @@ const contextInput = z.object({});
 export const getContextTool: AgentTool = {
   name: "get_context",
   description:
-    "Returns the org's display name and today's ISO date. Call this at the start of a new conversation so you can address the team correctly and reason about dates.",
+    "Returns the org's display name, today's date IN THE ORG'S OWN TIMEZONE, and that timezone. Call this at the start of a new conversation so you can address the team correctly and reason about dates.",
   inputSchema: jsonSchema(contextInput),
   input: contextInput,
   mutating: false,
   async handle(_input, ctx): Promise<ToolOutcome> {
     const rows = await ctx.tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, ctx.orgId)).limit(1);
     const orgName = rows[0]?.name ?? "your organization";
-    const todayISO = ctx.deps.clock.now().toISOString().slice(0, 10);
-    return { ok: true, summary: JSON.stringify({ orgName, todayISO }) };
+
+    // The org's OWN timezone, not UTC. toISOString() rolls over at midnight UTC — 5pm Pacific —
+    // so every evening the agent believed it was already tomorrow and would schedule "today" onto
+    // the wrong day. org_settings.timezone is NOT NULL with a default, so a shop always has one.
+    const tzRows = await ctx.tx
+      .select({ timezone: orgSettings.timezone })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, ctx.orgId))
+      .limit(1);
+    const timezone = tzRows[0]?.timezone ?? "America/Los_Angeles";
+    // en-CA formats as YYYY-MM-DD, which is the ISO date shape without hand-assembling parts.
+    const todayISO = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(ctx.deps.clock.now());
+
+    return { ok: true, summary: JSON.stringify({ orgName, todayISO, timezone }) };
   },
 };
 
@@ -63,7 +81,7 @@ export const getContextTool: AgentTool = {
 
 export const customerListTool: AgentTool = {
   name: "customer_list",
-  description: "List the org's customers/leads (most recent first). Returns each customer's name, stage, and id. Use the id to reference a customer in other tools.",
+  description: "List the org's customers/leads (most recent first). Returns each customer's name, phone, email, stage and id. Use the id to reference a customer in other tools.",
   inputSchema: jsonSchema(listInput),
   input: listInput,
   mutating: false,
@@ -76,7 +94,18 @@ export const customerListTool: AgentTool = {
     if (page.items.length === 0) return { ok: true, summary: "No customers found." };
     return {
       ok: true,
-      summary: page.items.map((l) => `${l.props.name} — stage ${l.props.stage} [id: ${l.props.id}]`).join("\n"),
+      // Phone and email are on the row already. Omitting them meant "what's Dave's number" —
+      // about the most ordinary question a shop asks — had no answer, and the agent could not
+      // hand a number to click-to-call or a text without a second lookup that also lacked it.
+      summary: page.items
+        .map((l) => {
+          const q = l.props;
+          const bits = [`${q.name} — stage ${q.stage}`];
+          if (q.phone) bits.push(String(q.phone));
+          if (q.email) bits.push(q.email);
+          return `${bits.join(" | ")} [id: ${q.id}]`;
+        })
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -90,14 +119,33 @@ export const invoiceListTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = invoiceListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    const page = await new ListInvoicesUseCase(new DrizzleInvoiceRepository(ctx.tx, ctx.orgId)).exec({
-      page: toPage({ limit: parsed.data.limit ?? 20, cursor: null }),
-      filter: parsed.data.status ? { status: parsed.data.status } : undefined,
-    });
-    if (page.items.length === 0) return { ok: true, summary: "No invoices found." };
+    const invoiceRepo = new DrizzleInvoiceRepository(ctx.tx, ctx.orgId);
+    // findOverdue is a repository method, not a list filter — the use case only proxies list(),
+    // so the overdue path calls it directly rather than pretending it is a status.
+    const page = parsed.data.overdueOnly
+      ? await invoiceRepo.findOverdue(ctx.deps.clock.now(), toPage({ limit: parsed.data.limit ?? 20, cursor: null }))
+      : await new ListInvoicesUseCase(invoiceRepo).exec({
+          page: toPage({ limit: parsed.data.limit ?? 20, cursor: null }),
+          filter: parsed.data.status ? { status: parsed.data.status } : undefined,
+        });
+    if (page.items.length === 0) {
+      return { ok: true, summary: parsed.data.overdueOnly ? "Nothing is overdue." : "No invoices found." };
+    }
     return {
       ok: true,
-      summary: page.items.map((inv) => `${inv.props.num} — ${inv.props.status} — total ${money(inv.props.total)}, due ${money(inv.due())} [id: ${inv.props.id}]`).join("\n"),
+      // leadId, title and dueAt were all on the row and none were printed. Without leadId the
+      // agent can list invoices and list customers and has no way to connect the two; without
+      // dueAt it cannot answer "who is overdue" even by filtering client-side.
+      summary: page.items
+        .map((inv) => {
+          const q = inv.props;
+          const bits = [`${q.num} — ${q.status}`];
+          if (q.title) bits.push(`"${q.title}"`);
+          bits.push(`total ${money(q.total)}, balance ${money(inv.due())}`);
+          if (q.dueAt) bits.push(`due ${q.dueAt.toISOString().slice(0, 10)}`);
+          return `${bits.join(" — ")} [id: ${q.id}, customer: ${q.leadId}]`;
+        })
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -116,7 +164,22 @@ export const estimateListTool: AgentTool = {
       filter: parsed.data.status ? { status: parsed.data.status } : undefined,
     });
     if (page.items.length === 0) return { ok: true, summary: "No estimates found." };
-    return { ok: true, summary: page.items.map((e) => `${e.props.num} — ${e.props.status} — total ${money(e.total())} [id: ${e.props.id}]`).join("\n") };
+    return {
+      ok: true,
+      summary: page.items
+        .map((e) => {
+          const q = e.props;
+          const bits = [`${q.num} — ${q.status}`];
+          if (q.title) bits.push(`"${q.title}"`);
+          bits.push(`total ${money(e.total())}`);
+          // A tiered quote reported as a single total is a misleading answer, not a terse one.
+          if (q.recommendedTier) bits.push(`tiered (recommended: ${q.recommendedTier})`);
+          if (q.acceptedTier) bits.push(`accepted: ${q.acceptedTier}`);
+          if (q.changeRequestedAt) bits.push("CHANGES REQUESTED");
+          return `${bits.join(" — ")} [id: ${q.id}, customer: ${q.leadId}]`;
+        })
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
+    };
   },
 };
 
@@ -125,7 +188,7 @@ export const estimateListTool: AgentTool = {
 // --- customer_get: fetch one customer by id ---
 export const customerGetTool: AgentTool = {
   name: "customer_get",
-  description: "Fetch a single customer/lead by id (use customer_list to find ids). Returns the customer's name, stage, and any linked company id.",
+  description: "Fetch a single customer/lead by id (use customer_list to find ids). Returns name, phone, email, service address, stage, notes and any linked company.",
   inputSchema: jsonSchema(customerGetInput),
   input: customerGetInput,
   mutating: false,
@@ -135,9 +198,49 @@ export const customerGetTool: AgentTool = {
     const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.customerId));
     if (!lead) return { ok: false, error: `customer ${parsed.data.customerId} not found — use customer_list to find the right id` };
     const p = lead.props;
+    // Everything below was already on the record and simply not printed. A customer detail view
+    // that omits the phone number and the address is not a detail view.
     const parts = [`${p.name} — stage ${p.stage}`];
+    if (p.phone) parts.push(`phone: ${p.phone}`);
+    if (p.email) parts.push(`email: ${p.email}`);
+    if (p.address) parts.push(`address: ${p.address}`);
     if (p.companyId) parts.push(`company id: ${p.companyId}`);
     if (p.role) parts.push(`role: ${p.role}`);
+    if (p.notes) parts.push(`notes: ${p.notes}`);
+    parts.push(`[id: ${p.id}]`);
+    return { ok: true, summary: parts.join(" | ") };
+  },
+};
+
+// A page that was cut short must SAY so. Every reader computes nextCursor and every tool
+// discarded it, so a list capped at 20 read to the model as the complete set — and "you have 3
+// overdue invoices" was stated with total confidence about the first 20 rows of 300. There is no
+// cursor input to follow yet; until there is, the honest thing is to admit the cut rather than
+// imply completeness.
+const truncationNote = (hasMore: boolean, shown: number): string =>
+  hasMore ? `\n\n(Showing the first ${shown}. There are more — narrow the search or raise the limit.)` : "";
+
+// --- customer_find: look a customer up by phone number ---
+export const customerFindTool: AgentTool = {
+  name: "customer_find",
+  description:
+    "Find a customer by phone number, in any format ((781) 385-0591, 781-385-0591, +17813850591). Use this when you have a number rather than an id — for an inbound caller, a number read aloud, or before creating a customer who may already exist.",
+  inputSchema: jsonSchema(customerFindInput),
+  input: customerFindInput,
+  mutating: false,
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = customerFindInput.safeParse(input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    // Normalise first: leads.phone_e164 is stored +1XXXXXXXXXX, so a raw "(781) 385-0591" would
+    // match nothing and read back as "no such customer" — the most misleading possible answer.
+    const phone = Phone.parse(parsed.data.phone);
+    if (!isOk(phone)) return { ok: false, error: phone.error.message };
+    const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findByPhone(phone.value);
+    if (!lead) return { ok: true, summary: `No customer on file with ${phone.value}.` };
+    const p = lead.props;
+    const parts = [`${p.name} — stage ${p.stage}`, `phone: ${p.phone}`];
+    if (p.email) parts.push(`email: ${p.email}`);
+    if (p.address) parts.push(`address: ${p.address}`);
     parts.push(`[id: ${p.id}]`);
     return { ok: true, summary: parts.join(" | ") };
   },
@@ -155,9 +258,28 @@ export const estimateGetTool: AgentTool = {
     if (!parsed.success) return invalid(parsed.error.issues);
     const estimate = await new DrizzleEstimateRepository(ctx.tx, ctx.orgId).findById(asEstimateId(parsed.data.estimateId));
     if (!estimate) return { ok: false, error: `estimate ${parsed.data.estimateId} not found — use estimate_list to find the right id` };
+    // Good/Better/Best is a whole quote FORMAT, and flattening it to one list of lines next to
+    // one total misrepresents the document — the customer is choosing between tiers, not buying
+    // every line. isOptional matters for the same reason: an add-on read as included inflates
+    // the number the agent quotes out loud.
     const p = estimate.props;
-    const linesSummary = p.lines.map((l) => `  ${l.props.description} x${l.props.quantity} @ ${money(l.props.rate)}`).join("\n");
-    return { ok: true, summary: `${p.num} — ${p.status} — total ${money(estimate.total())} [id: ${p.id}]\nLines:\n${linesSummary}` };
+    const linesSummary = p.lines
+      .map((l) => {
+        const q = l.props;
+        const tags = [q.tier ? `[${q.tier}]` : "", q.isOptional ? "(optional)" : ""].filter(Boolean).join(" ");
+        return `  ${tags ? `${tags} ` : ""}${q.description} x${q.quantity} @ ${money(q.rate)}`;
+      })
+      .join("\n");
+    const head = [`${p.num} — ${p.status}`];
+    if (p.title) head.push(`"${p.title}"`);
+    head.push(`total ${money(estimate.total())}`);
+    if (p.recommendedTier) head.push(`TIERED — recommended: ${p.recommendedTier}`);
+    if (p.acceptedTier) head.push(`accepted: ${p.acceptedTier}`);
+    if (p.changeRequestedAt) head.push("CHANGES REQUESTED by the customer");
+    return {
+      ok: true,
+      summary: `${head.join(" — ")} [id: ${p.id}, customer: ${p.leadId}]\nLines:\n${linesSummary}`,
+    };
   },
 };
 
@@ -173,10 +295,23 @@ export const invoiceGetTool: AgentTool = {
     if (!parsed.success) return invalid(parsed.error.issues);
     const invoice = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
     if (!invoice) return { ok: false, error: `invoice ${parsed.data.invoiceId} not found — use invoice_list to find the right id` };
+    // A bill with no lines, no due date and no customer is a receipt total, not an invoice. Every
+    // field below was already loaded and simply not printed — so "what's on invoice 1042" and
+    // "who is it for" both went unanswered about a record holding both answers.
     const p = invoice.props;
+    const head = [`${p.num} — ${p.status}`];
+    if (p.title) head.push(`"${p.title}"`);
+    head.push(`total ${money(p.total)}, paid ${money(p.amountPaid)}, balance ${money(invoice.due())}`);
+    if (p.depositPaid) head.push(`deposit ${money(p.depositPaid)}`);
+    if (p.sentAt) head.push(`sent ${p.sentAt.toISOString().slice(0, 10)}`);
+    if (p.dueAt) head.push(`due ${p.dueAt.toISOString().slice(0, 10)}`);
+    if (p.termsDays !== null && p.termsDays !== undefined) head.push(`net ${p.termsDays}`);
+    const lines = p.lines.length
+      ? `\nLines:\n${p.lines.map((l) => `  ${l.props.description} x${l.props.quantity} @ ${money(l.props.rate)}`).join("\n")}`
+      : "";
     return {
       ok: true,
-      summary: `${p.num} — ${p.status} — total ${money(p.total)}, paid ${money(p.amountPaid)}, due ${money(invoice.due())} [id: ${p.id}]`,
+      summary: `${head.join(" — ")} [id: ${p.id}, customer: ${p.leadId}]${lines}`,
     };
   },
 };
@@ -202,10 +337,14 @@ export const jobListTool: AgentTool = {
         .map((j) => {
           const p = j.props;
           const title = p.title ? ` — ${p.title}` : "";
-          const assignee = p.assigneeUserId ? " — assigned" : "";
-          return `${p.num}${title} — ${p.status}${assignee} [id: ${p.id}]`;
+          // Assignment stays a flag, not a raw UUID — a deliberate earlier decision, and right:
+          // a bare user id is noise in a reply and means nothing to the reader. Use member_list to
+          // put a name to it. leadId below is different in kind: a HANDLE the agent needs to call
+          // the next tool, the same role the job's own id already plays here.
+          const assignee = p.assigneeUserId ? " — assigned" : " — unassigned";
+          return `${p.num}${title} — ${p.status}${assignee} [id: ${p.id}, customer: ${p.leadId}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -261,9 +400,12 @@ export const taskListTool: AgentTool = {
           const p = t.props;
           const due = p.dueDate ? ` due ${p.dueDate}` : "";
           const done = p.done ? " [done]" : "";
-          return `${p.text}${due}${done} [id: ${p.id}]`;
+          // A task attaches to a Lead; without leadId "what's outstanding for the Hendersons"
+          // cannot be answered from this list.
+          const who = p.leadId ? `, customer: ${p.leadId}` : "";
+          return `${p.text}${due}${done} [id: ${p.id}${who}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -280,7 +422,7 @@ export const memberListTool: AgentTool = {
   mutating: false,
   async handle(_input, ctx): Promise<ToolOutcome> {
     const rows = await ctx.tx
-      .select({ id: users.id, name: users.name, role: users.role, isFieldCrew: users.isFieldCrew })
+      .select({ id: users.id, name: users.name, role: users.role, isFieldCrew: users.isFieldCrew, email: users.email, skillTags: users.skillTags })
       .from(users)
       .where(eq(users.orgId, ctx.orgId));
     if (rows.length === 0) return { ok: true, summary: "No members found." };
@@ -290,7 +432,11 @@ export const memberListTool: AgentTool = {
         .map((r) => {
           const display = r.name ?? "(no name)";
           const crew = r.isFieldCrew ? " [field crew]" : "";
-          return `${display} — ${r.role}${crew} [id: ${r.id}]`;
+          // skillTags are the CERT TAGS dispatch is gated on — "who can do a gas job" is
+          // unanswerable without them, and it is the whole point of having them.
+          const certs = r.skillTags && r.skillTags.length > 0 ? ` — certs: ${r.skillTags.join(", ")}` : "";
+          const email = r.email ? ` — ${r.email}` : "";
+          return `${display} — ${r.role}${crew}${certs}${email} [id: ${r.id}]`;
         })
         .join("\n"),
     };
@@ -332,6 +478,10 @@ export const companyGetTool: AgentTool = {
     if (!company) return { ok: false, error: `company ${parsed.data.companyId} not found — use company_list to find the right id` };
     const p = company.props;
     const parts = [p.name];
+    // Phone and email are on the company record and were the two fields a person actually needs
+    // from it — an address and a website answer neither "call them" nor "email them".
+    if (p.phone) parts.push(`phone: ${p.phone}`);
+    if (p.email) parts.push(`email: ${p.email}`);
     if (p.address) parts.push(`address: ${p.address}`);
     if (p.website) parts.push(`website: ${p.website}`);
     if (p.notes) parts.push(`notes: ${p.notes}`);
@@ -355,6 +505,7 @@ export const timesheetListTool: AgentTool = {
       filter: {
         fromDate: parsed.data.fromDate,
         toDate: parsed.data.toDate,
+        ...(parsed.data.techUserId ? { techUserId: asUserId(parsed.data.techUserId) } : {}),
       },
     });
     if (page.items.length === 0) return { ok: true, summary: "No timesheet entries found." };
@@ -365,9 +516,13 @@ export const timesheetListTool: AgentTool = {
           const p = e.props;
           const hrs = e.hours();
           const duration = hrs !== null ? `${hrs.toFixed(2)}h` : `${p.startTime}–running`;
-          return `${p.workDate} — ${p.kind} — ${duration} — ${p.status} [id: ${p.id}]`;
+          // techUserId is the load-bearing field: without it the agent cannot say whose hours
+          // these are, and timesheet_approve_week takes a techUserId.
+          const note = p.note ? ` — ${p.note}` : "";
+          const job = p.jobId ? ` — job ${p.jobId}` : "";
+          return `${p.workDate} — ${p.kind} — ${duration} — ${p.status}${job}${note} [id: ${p.id}, tech: ${p.techUserId}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };

@@ -1,3 +1,5 @@
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
+import { Phone, type Phone as PhoneT } from "@mallet/shared/types";
 import { toPage, isOk, asLeadId, asInvoiceId, asEstimateId, asJobId, asTaskId, asCompanyId, asTimeEntryId, asUserId, asVisitId, money as asMoney } from "@mallet/shared/types";
 import { DrizzleLeadRepository, EnsureCustomerUseCase } from "@mallet/customers";
 import {
@@ -7,13 +9,16 @@ import {
   CreateInvoiceFromJobUseCase,
   RecordPaymentUseCase,
   VoidInvoiceUseCase,
+  UpdateInvoiceMetadataUseCase,
+  PatchInvoiceLinesUseCase,
 } from "@mallet/invoicing";
-import { DrizzleEstimateRepository, DraftEstimateUseCase, SendEstimateUseCase } from "@mallet/quoting";
-import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase } from "@mallet/jobs";
-import { DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
+import { DrizzleEstimateRepository, DraftEstimateUseCase, SendEstimateUseCase, AcceptEstimateUseCase, DeclineEstimateUseCase, runInSavepoint } from "@mallet/quoting";
+import { DrizzleJobRepository, ScheduleJobUseCase, AssignJobUseCase, PatchVisitScheduleUseCase, CreateJobFromEstimateUseCase, DrizzleEstimateReader, StartJobUseCase, CompleteJobUseCase, CancelJobUseCase, RescheduleJobUseCase } from "@mallet/jobs";
+import { DrizzleTaskRepository, CreateTaskUseCase, SetTaskDoneUseCase, UpdateTaskUseCase, RemoveTaskUseCase } from "@mallet/tasks";
 import { DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import {
-  SendInvoiceNotificationUseCase,
+  AdvanceReminderUseCase,
+  FollowUpPolicy,
   SendNotificationUseCase,
   DrizzleNotificationRepository,
   DrizzleReminderTargetReader,
@@ -35,6 +40,17 @@ import {
   notificationSendInvoiceReminderInput,
   jobScheduleInput,
   jobAssignInput,
+  visitPatchInput,
+  jobIdInput,
+  jobCancelInput,
+  jobRescheduleInput,
+  taskSetDoneInput,
+  taskUpdateInput,
+  taskRemoveInput,
+  invoiceUpdateInput,
+  customerUpdateInput,
+  quoteAcceptInput,
+  quoteDeclineInput,
   taskCreateInput,
   customerCreateInput,
   invoiceDraftInput,
@@ -80,11 +96,21 @@ export const quoteDraftTool: AgentTool = {
       orgId: ctx.orgId,
       leadId: asLeadId(parsed.data.leadId),
       title: parsed.data.title ?? null,
-      discBps: 0,
+      discBps: parsed.data.discBps ?? 0,
       taxBps: parsed.data.taxBps ?? 0,
       depBps: parsed.data.depBps ?? 0,
-      validDays: null,
-      lines: parsed.data.lines.map((l) => ({ description: l.description, quantity: l.quantity, rateCents: l.rateCents, costCents: 0, isOptional: l.isOptional ?? false, needsPhoto: false })),
+      validDays: parsed.data.validDays ?? null,
+      recommendedTier: parsed.data.recommendedTier ?? null,
+      tierNames: parsed.data.tierNames ?? null,
+      lines: parsed.data.lines.map((l) => ({
+        description: l.description,
+        quantity: l.quantity,
+        rateCents: l.rateCents,
+        costCents: l.costCents ?? 0,
+        isOptional: l.isOptional ?? false,
+        needsPhoto: false,
+        tier: l.tier ?? null,
+      })),
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     return { ok: true, summary: `Drafted estimate ${result.value.props.num} — total ${money(result.value.total())} (id: ${result.value.props.id}).` };
@@ -139,7 +165,14 @@ export const quoteSendTool: AgentTool = {
     const uc = new SendEstimateUseCase(new DrizzleEstimateRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({ estimateId: asEstimateId(parsed.data.estimateId) });
     if (!isOk(result)) return { ok: false, error: result.error.message };
-    return { ok: true, summary: `Sent estimate ${result.value.props.num} (id: ${result.value.props.id}).` };
+    // The link is the POINT of sending, and it was the one thing the summary left out — so the
+    // agent's next sentence ("here's the link to send them") was unanswerable, and nothing else
+    // returns it either: not estimate_get, not estimate_list. The model had no way to know the
+    // link existed at all.
+    const sent = result.value.props;
+    const origin = publicOrigin();
+    const link = sent.publicToken && origin ? ` — ${origin}/q/${sent.publicToken}` : "";
+    return { ok: true, summary: `Sent estimate ${sent.num}${link} (id: ${sent.id}).` };
   },
 };
 
@@ -186,9 +219,27 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
     const repo = new DrizzleNotificationRepository(ctx.tx, ctx.orgId);
     const reader = new DrizzleReminderTargetReader(ctx.tx, ctx.orgId);
     const sendUc = new SendNotificationUseCase(repo, ctx.deps.notificationSender, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
-    const uc = new SendInvoiceNotificationUseCase(reader, sendUc, ctx.deps.ids);
-    const result = await uc.exec({ orgId: ctx.orgId, invoiceId: parsed.data.invoiceId, channel: parsed.data.channel });
+
+    // AdvanceReminder, NOT SendInvoiceNotification. This tool is named "send invoice REMINDER" but
+    // called the first-contact path, which sends kind "invoice_sent" with `reminderStage: null`.
+    // Two consequences, both silent:
+    //
+    //   1. A customer 45 days overdue got the gentle "your invoice is ready" copy instead of the
+    //      stage-appropriate past-due wording.
+    //   2. Nothing recorded that a reminder went out. sentReminderStages never saw the row, so
+    //      notification_list_due_reminders kept reporting the SAME reminder as due — the read tool
+    //      leading the model into a loop it could not exit, re-proposing the same send every turn.
+    //
+    // AdvanceReminder resolves the due stage, sends that stage's copy, and keys idempotency on
+    // `reminder:<id>:<stage>` so the stage is recorded and cannot repeat.
+    const uc = new AdvanceReminderUseCase(reader, repo, sendUc, new FollowUpPolicy(), ctx.deps.clock);
+    const result = await uc.exec({ orgId: ctx.orgId, relatedType: "invoice", relatedId: parsed.data.invoiceId });
     if (!isOk(result)) return { ok: false, error: result.error.message };
+    // Null means the policy says nothing is due — a real answer, not a failure. Saying so stops the
+    // model inventing a reason or retrying.
+    if (result.value === null) {
+      return { ok: true, summary: "No reminder is due for that invoice yet — the follow-up sequence is up to date." };
+    }
     const p = result.value.props;
     // Delivery truth (mirrors the notification router's interactive guard): a stubbed
     // no-op or provider rejection must not read back to the agent as a sent reminder.
@@ -241,7 +292,7 @@ export const jobScheduleTool: AgentTool = {
 export const jobAssignTool: AgentTool = {
   name: "job_assign",
   description:
-    "Assign a job to a crew member (found via member_list). Pass assigneeUserId as null to unassign. TWO-STEP: first call proposes, second call with confirmToken executes.",
+    "Set the job-level owner for a crew member (found via member_list). NOT what changes who actually turns up — the dispatch board, the Jobs list and a tech's day all read the VISIT, so use visit_patch to change who is going or when. Use this only for overall ownership of a job with no visits yet. Pass assigneeUserId as null to unassign. TWO-STEP: first call proposes, second call with confirmToken executes.",
   inputSchema: jsonSchema(jobAssignInput),
   input: jobAssignInput,
   mutating: true,
@@ -263,6 +314,430 @@ export const jobAssignTool: AgentTool = {
     const p = result.value.props;
     const assignee = p.assigneeUserId ? "assigned ✓" : "unassigned";
     return { ok: true, summary: `Job ${p.num} ${assignee} (id: ${p.id}).` };
+  },
+};
+
+// The public quote origin, resolved once. Cached like the estimate router does it, and tolerant of
+// a missing config: a deployment (or a unit test) without a public URL should send the quote and
+// omit the link, not fail the send over a display detail.
+let cachedOrigin: string | null | undefined;
+const publicOrigin = (): string | null => {
+  if (cachedOrigin === undefined) {
+    try {
+      cachedOrigin = resolvePublicAppOrigin(loadConfig());
+    } catch {
+      cachedOrigin = null;
+    }
+  }
+  return cachedOrigin;
+};
+
+// --- job lifecycle: start / complete / cancel / reschedule ---
+// Every one of these wraps a use case that already existed and had no tool, so the agent could
+// create a job and never move or stop it. All fingerprint on job status so a concurrent
+// transition is caught at confirm rather than silently overwritten.
+export const jobStartTool: AgentTool = {
+  name: "job_start",
+  description:
+    "Mark a job as started/in progress. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobIdInput),
+  input: jobIdInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new StartJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId) });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} started.` };
+  },
+};
+
+export const jobCompleteTool: AgentTool = {
+  name: "job_complete",
+  description:
+    "Mark a job as complete/done — the work is finished. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobIdInput),
+  input: jobIdInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobIdInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new CompleteJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId) });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} marked complete.` };
+  },
+};
+
+export const jobCancelTool: AgentTool = {
+  name: "job_cancel",
+  description:
+    "Cancel a job, with the reason. Use job_complete for work that was finished — cancel is for work that will not happen. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobCancelInput),
+  input: jobCancelInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobCancelInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobCancelInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new CancelJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId), reason: parsed.data.reason });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} cancelled — reason recorded.` };
+  },
+};
+
+export const jobRescheduleTool: AgentTool = {
+  name: "job_reschedule",
+  description:
+    "Move a job to a new start and end time (ISO 8601). This moves the JOB's window; to move who is going or an individual visit on the board, use visit_patch. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(jobRescheduleInput),
+  input: jobRescheduleInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(jobRescheduleInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    return job ? `job:${job.props.id}:${job.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(jobRescheduleInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    // Reject an unparseable date here rather than passing Invalid Date into the domain, where it
+    // would land as a null timestamp and silently unschedule the job.
+    const start = new Date(parsed.data.scheduledStart);
+    const end = new Date(parsed.data.scheduledEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return { ok: false, error: "scheduledStart and scheduledEnd must be ISO 8601 date-times" };
+    }
+    const uc = new RescheduleJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId), scheduledStart: start, scheduledEnd: end });
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Job ${r.value.props.num} rescheduled.` };
+  },
+};
+
+// --- task lifecycle: done / update / remove ---
+// task_create was the only task write tool, so a to-do list could only grow.
+export const taskSetDoneTool: AgentTool = {
+  name: "task_set_done",
+  description:
+    "Mark a task done, or reopen it (pass done: false). TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(taskSetDoneInput),
+  input: taskSetDoneInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(taskSetDoneInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const t = await new DrizzleTaskRepository(ctx.tx, ctx.orgId).findById(asTaskId(parsed.data.taskId));
+    return t ? `task:${t.props.id}:${t.props.done}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(taskSetDoneInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new SetTaskDoneUseCase(new DrizzleTaskRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const r = await uc.exec({ taskId: asTaskId(parsed.data.taskId), done: parsed.data.done }, ctx.orgId);
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Task "${r.value.props.text}" ${parsed.data.done ? "marked done" : "reopened"}.` };
+  },
+};
+
+export const taskUpdateTool: AgentTool = {
+  name: "task_update",
+  description:
+    "Edit a task's wording, due date, or the customer it hangs off. Pass null to clear the due date or the customer link. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(taskUpdateInput),
+  input: taskUpdateInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(taskUpdateInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const t = await new DrizzleTaskRepository(ctx.tx, ctx.orgId).findById(asTaskId(parsed.data.taskId));
+    return t ? `task:${t.props.id}:${t.props.text}:${t.props.dueDate ?? "-"}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(taskUpdateInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const d = parsed.data;
+    const uc = new UpdateTaskUseCase(new DrizzleTaskRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const r = await uc.exec(
+      {
+        taskId: asTaskId(d.taskId),
+        // undefined leaves alone, null clears — forwarded distinctly, not collapsed.
+        ...(d.text !== undefined ? { text: d.text } : {}),
+        ...(d.dueDate !== undefined ? { dueDate: d.dueDate } : {}),
+        ...(d.leadId !== undefined ? { leadId: d.leadId === null ? null : asLeadId(d.leadId) } : {}),
+      },
+      ctx.orgId,
+    );
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: `Task updated — "${r.value.props.text}".` };
+  },
+};
+
+export const taskRemoveTool: AgentTool = {
+  name: "task_remove",
+  description:
+    "Delete a task. Prefer task_set_done for work that was actually finished — removing loses the record that it existed. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(taskRemoveInput),
+  input: taskRemoveInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(taskRemoveInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const t = await new DrizzleTaskRepository(ctx.tx, ctx.orgId).findById(asTaskId(parsed.data.taskId));
+    return t ? `task:${t.props.id}:${t.props.text}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(taskRemoveInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new RemoveTaskUseCase(new DrizzleTaskRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const r = await uc.exec({ taskId: asTaskId(parsed.data.taskId) }, ctx.orgId);
+    if (!isOk(r)) return { ok: false, error: r.error.message };
+    return { ok: true, summary: "Task deleted." };
+  },
+};
+
+// --- invoice_update: correct an OPEN invoice in place ---
+// Fingerprints on status + total so a concurrent payment or send is caught before the edit lands.
+export const invoiceUpdateTool: AgentTool = {
+  name: "invoice_update",
+  description:
+    "Correct an OPEN invoice (draft, sent or partial): its title, payment terms, deposit, or its line items. Use this instead of voiding and re-drafting — a void burns the invoice number and leaves a void row in the ledger. NOTE: `lines` REPLACES the whole set, so send every line you want kept, not just the changed one. Frozen once the invoice is paid or void. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(invoiceUpdateInput),
+  input: invoiceUpdateInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(invoiceUpdateInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const inv = await new DrizzleInvoiceRepository(ctx.tx, ctx.orgId).findById(asInvoiceId(parsed.data.invoiceId));
+    return inv ? `invoice:${inv.props.id}:${inv.props.status}:${inv.props.total}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(invoiceUpdateInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const d = parsed.data;
+    const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.orgId);
+    const invoiceId = asInvoiceId(d.invoiceId);
+
+    const wantsMeta = d.title !== undefined || d.termsDays !== undefined || d.depositPaidCents !== undefined;
+    if (!wantsMeta && !d.lines) {
+      return { ok: false, error: "nothing to change — supply a title, termsDays, depositPaidCents, or lines" };
+    }
+
+    if (wantsMeta) {
+      const meta = new UpdateInvoiceMetadataUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+      const r = await meta.exec({
+        invoiceId,
+        ...(d.title !== undefined ? { title: d.title } : {}),
+        ...(d.termsDays !== undefined ? { termsDays: d.termsDays } : {}),
+        ...(d.depositPaidCents !== undefined ? { depositPaidCents: d.depositPaidCents } : {}),
+      });
+      if (!isOk(r)) return { ok: false, error: r.error.message };
+    }
+
+    if (d.lines) {
+      const patch = new PatchInvoiceLinesUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+      const r = await patch.exec({ invoiceId, lines: d.lines.map((l) => ({ description: l.description, quantity: l.quantity, rateCents: l.rateCents, costCents: 0 })) });
+      if (!isOk(r)) return { ok: false, error: r.error.message };
+      const updated = r.value;
+      return { ok: true, summary: `Invoice ${updated.props.num} updated — total ${asMoney(updated.props.total)}, balance ${asMoney(updated.due())}.` };
+    }
+
+    const after = await repo.findById(invoiceId);
+    return after
+      ? { ok: true, summary: `Invoice ${after.props.num} updated — total ${asMoney(after.props.total)}.` }
+      : { ok: true, summary: "Invoice updated." };
+  },
+};
+
+// --- customer_update: edit an existing customer ---
+// Fingerprints on the customer's name + stage so a concurrent change is caught at confirm.
+export const customerUpdateTool: AgentTool = {
+  name: "customer_update",
+  description:
+    "Edit an existing customer: name, phone, email, service address, notes or role. Use customer_find or customer_list to get the id. Pass null to clear a field. Only the fields you supply change. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(customerUpdateInput),
+  input: customerUpdateInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(customerUpdateInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const lead = await new DrizzleLeadRepository(ctx.tx, ctx.orgId).findById(asLeadId(parsed.data.customerId));
+    return lead ? `lead:${lead.props.id}:${lead.props.name}:${lead.props.stage}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(customerUpdateInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const d = parsed.data;
+    const repo = new DrizzleLeadRepository(ctx.tx, ctx.orgId);
+    const lead = await repo.findById(asLeadId(d.customerId));
+    if (!lead) return { ok: false, error: `customer ${d.customerId} not found — use customer_find or customer_list` };
+
+    // Normalise before writing: leads_org_phone_uidx is keyed on E.164, so storing a raw
+    // "(781) 385-0591" would both break dedupe and make customer_find miss them afterwards.
+    const fields: Record<string, unknown> = {};
+    if (d.name !== undefined) fields.name = d.name;
+    if (d.email !== undefined) fields.email = d.email;
+    if (d.address !== undefined) fields.address = d.address;
+    if (d.notes !== undefined) fields.notes = d.notes;
+    if (d.role !== undefined) fields.role = d.role;
+    if (d.phone !== undefined) {
+      if (d.phone === null || d.phone.trim().length === 0) fields.phone = null;
+      else {
+        const ph = Phone.parse(d.phone);
+        if (!isOk(ph)) return { ok: false, error: ph.error.message };
+        fields.phone = ph.value;
+      }
+    }
+    if (Object.keys(fields).length === 0) return { ok: false, error: "nothing to change — supply at least one field" };
+
+    const patched = lead.patch(fields, ctx.deps.clock.now());
+    if (!isOk(patched)) return { ok: false, error: patched.error.message };
+    await repo.save(patched.value);
+    return { ok: true, summary: `Updated ${patched.value.props.name} — changed ${Object.keys(fields).join(", ")}.` };
+  },
+};
+
+// --- quote_accept / quote_decline: record the customer's answer ---
+// Accept is the conversion point: it also MINTS THE JOB. Without these two the agent could draft
+// and send a quote and then had no way to act on "they said yes" — the lead → quote → dispatch
+// chain was severed at exactly the step that matters.
+export const quoteAcceptTool: AgentTool = {
+  name: "quote_accept",
+  description:
+    "Record that the customer ACCEPTED a quote. This also creates the job, so it is how a won quote becomes work on the board. For a Good/Better/Best quote pass chosenTier; omitted, the recommended tier is used. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(quoteAcceptInput),
+  input: quoteAcceptInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(quoteAcceptInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const est = await new DrizzleEstimateRepository(ctx.tx, ctx.orgId).findById(asEstimateId(parsed.data.estimateId));
+    return est ? `estimate:${est.props.id}:${est.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(quoteAcceptInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const repo = new DrizzleEstimateRepository(ctx.tx, ctx.orgId);
+    const uc = new AcceptEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+    const result = await uc.exec({
+      estimateId: asEstimateId(parsed.data.estimateId),
+      ...(parsed.data.chosenTier ? { chosenTier: parsed.data.chosenTier } : {}),
+    });
+    if (!isOk(result)) return { ok: false, error: result.error.message };
+
+    // Job creation happens INLINE, exactly as the office accept route does it — estimate.accepted
+    // has no registered handler, so relying on the event would accept the quote and silently never
+    // produce the job. In a savepoint because a failed job creation must NOT roll back a
+    // successful acceptance: the customer really did say yes.
+    const jobNum = await runInSavepoint<string>(
+      ctx.tx,
+      async (sp) => {
+        const createJob = new CreateJobFromEstimateUseCase(
+          new DrizzleJobRepository(sp, ctx.orgId),
+          new DrizzleEstimateReader(sp, ctx.orgId),
+          ctx.deps.bus,
+          ctx.deps.clock,
+          ctx.deps.ids,
+        );
+        const job = await createJob.exec({ orgId: ctx.orgId, estimateId: asEstimateId(parsed.data.estimateId) });
+        return job.ok ? job.value.props.num : null;
+      },
+      () => undefined,
+    );
+
+    const e = result.value.props;
+    return {
+      ok: true,
+      summary: jobNum
+        ? `Quote ${e.num} accepted — job ${jobNum} created and ready to schedule.`
+        : `Quote ${e.num} accepted. The job was NOT created — create it manually and tell the user so.`,
+    };
+  },
+};
+
+export const quoteDeclineTool: AgentTool = {
+  name: "quote_decline",
+  description:
+    "Record that the customer DECLINED a quote, with their reason. Moves the lead to lost with the reason captured. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(quoteDeclineInput),
+  input: quoteDeclineInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(quoteDeclineInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const est = await new DrizzleEstimateRepository(ctx.tx, ctx.orgId).findById(asEstimateId(parsed.data.estimateId));
+    return est ? `estimate:${est.props.id}:${est.props.status}` : ENTITY_NOT_FOUND;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(quoteDeclineInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new DeclineEstimateUseCase(new DrizzleEstimateRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
+    const result = await uc.exec({ estimateId: asEstimateId(parsed.data.estimateId), reason: parsed.data.reason });
+    if (!isOk(result)) return { ok: false, error: result.error.message };
+    return { ok: true, summary: `Quote ${result.value.props.num} marked declined — reason recorded.` };
+  },
+};
+
+// --- visit_patch: reassign or re-time a VISIT (what the dispatch board reads) ---
+// Fingerprints on the visit's current assignee + slot so a concurrent change is caught at confirm.
+export const visitPatchTool: AgentTool = {
+  name: "visit_patch",
+  description:
+    "Reassign, move, re-time or unplace a scheduled VISIT. Use this — not job_assign — to change who is going or when: the dispatch board, the Jobs list and a tech's day all read the visit, not the job. Pass null to clear a field (unplacing a visit returns it to the unscheduled pile). Get jobId and visitId from job_get. TWO-STEP: first call proposes, second call with confirmToken executes.",
+  inputSchema: jsonSchema(visitPatchInput),
+  input: visitPatchInput,
+  mutating: true,
+  async fingerprint(input, ctx): Promise<string> {
+    const parsed = parseTool(visitPatchInput, input);
+    if (!parsed.success) return ENTITY_NOT_FOUND;
+    const job = await new DrizzleJobRepository(ctx.tx, ctx.orgId).findById(asJobId(parsed.data.jobId));
+    const visit = job?.props.visits.find((v) => v.props.id === parsed.data.visitId);
+    if (!visit) return ENTITY_NOT_FOUND;
+    const v = visit.props;
+    return `visit:${v.id}:${v.assigneeUserId ?? "unassigned"}:${v.scheduledDate ?? "unplaced"}:${v.scheduledStart ?? "-"}`;
+  },
+  async handle(input, ctx): Promise<ToolOutcome> {
+    const parsed = parseTool(visitPatchInput, input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const uc = new PatchVisitScheduleUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    const d = parsed.data;
+    const result = await uc.exec({
+      jobId: asJobId(d.jobId),
+      visitId: asVisitId(d.visitId),
+      // `undefined` means leave alone, `null` means clear — the use case distinguishes them, so
+      // these must be forwarded as-is rather than collapsed with `?? null`.
+      ...(d.assigneeUserId !== undefined ? { assigneeUserId: d.assigneeUserId === null ? null : asUserId(d.assigneeUserId) } : {}),
+      ...(d.scheduledDate !== undefined ? { scheduledDate: d.scheduledDate } : {}),
+      ...(d.scheduledStart !== undefined ? { scheduledStart: d.scheduledStart } : {}),
+      ...(d.scheduledEnd !== undefined ? { scheduledEnd: d.scheduledEnd } : {}),
+      ...(d.notes !== undefined ? { notes: d.notes } : {}),
+    });
+    if (!isOk(result)) return { ok: false, error: result.error.message };
+    const v = result.value.props.visits.find((x) => x.props.id === d.visitId)?.props;
+    if (!v) return { ok: true, summary: `Visit updated on job ${result.value.props.num}.` };
+    const when = v.scheduledDate ? `${v.scheduledDate}${v.scheduledStart ? ` ${v.scheduledStart}` : ""}` : "unplaced";
+    const who = v.assigneeUserId ? `assigned to ${v.assigneeUserId}` : "unassigned";
+    return { ok: true, summary: `Visit on job ${result.value.props.num} — ${when}, ${who}.` };
   },
 };
 
@@ -309,7 +784,7 @@ export const taskCreateTool: AgentTool = {
 export const customerCreateTool: AgentTool = {
   name: "customer_create",
   description:
-    "Create a new customer (or return the existing one with the same name). TWO-STEP: first call proposes, second call with confirmToken executes.",
+    "Create a new customer (or return the existing one with the same name). Accepts phone, email and service address — capture them when the user gives them. TWO-STEP: first call proposes, second call with confirmToken executes.",
   inputSchema: jsonSchema(customerCreateInput),
   input: customerCreateInput,
   mutating: true,
@@ -322,20 +797,67 @@ export const customerCreateTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = parseTool(customerCreateInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
+    // A phone typed by a human ("(781) 385-0591") must be normalised before it reaches the
+    // repository — leads_org_phone_uidx is keyed on E.164, so an unparsed string would create a
+    // duplicate customer instead of matching the existing one. Refuse a bad number rather than
+    // silently dropping it: a customer saved without the number the staffer just dictated is a
+    // worse outcome than being told it was wrong.
+    let phone: PhoneT | null = null;
+    if (parsed.data.phone && parsed.data.phone.trim().length > 0) {
+      const p = Phone.parse(parsed.data.phone);
+      if (!isOk(p)) return { ok: false, error: p.error.message };
+      phone = p.value;
+    }
+
     const uc = new EnsureCustomerUseCase(new DrizzleLeadRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
     const result = await uc.exec({
       name: parsed.data.name,
-      phone: null,
-      email: null,
+      phone,
+      email: parsed.data.email ?? null,
       source: parsed.data.source ?? null,
       companyId: parsed.data.companyId ? asCompanyId(parsed.data.companyId) : null,
       role: parsed.data.role ?? null,
-      notes: null,
-      address: null,
+      notes: parsed.data.notes ?? null,
+      address: parsed.data.address ?? null,
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
-    const p = result.value.lead.props;
-    return { ok: true, summary: `Customer "${p.name}" ready — stage ${p.stage} (id: ${p.id}).` };
+
+    // ensureCustomer DEDUPES on phone: a matching active customer comes back untouched
+    // (ON CONFLICT DO NOTHING), so every other supplied field is discarded. Before phone was
+    // accepted here that could never happen — phone was always null and a null never conflicts —
+    // so accepting phone turned a create-only tool into one that could silently swallow the
+    // address and email on the very request that motivated adding them.
+    //
+    // Fill only what is EMPTY on the existing record. A supplied value that DIFFERS from a value
+    // already on file is not applied: the agent has no way to know which is right, and quietly
+    // overwriting a customer's real address with one dictated over a noisy phone line is worse
+    // than saying so.
+    const repo2 = new DrizzleLeadRepository(ctx.tx, ctx.orgId);
+    let p = result.value.lead.props;
+    if (!result.value.created) {
+      const wanted = { email: parsed.data.email, address: parsed.data.address, notes: parsed.data.notes, role: parsed.data.role };
+      const fill: Record<string, string> = {};
+      const conflicts: string[] = [];
+      for (const [k, v] of Object.entries(wanted)) {
+        if (!v || v.trim().length === 0) continue;
+        const current = (p as unknown as Record<string, unknown>)[k];
+        if (current === null || current === undefined || current === "") fill[k] = v;
+        else if (String(current) !== v) conflicts.push(k);
+      }
+      if (Object.keys(fill).length > 0) {
+        const patched = result.value.lead.patch(fill, ctx.deps.clock.now());
+        if (!isOk(patched)) return { ok: false, error: patched.error.message };
+        await repo2.save(patched.value);
+        p = patched.value.props;
+      }
+      const added = Object.keys(fill);
+      const note =
+        (added.length ? ` Added ${added.join(", ")} to their existing record.` : "") +
+        (conflicts.length ? ` Left ${conflicts.join(", ")} unchanged — they already have different values on file.` : "");
+      return { ok: true, summary: `"${p.name}" already exists (id: ${p.id}).${note}` };
+    }
+
+    return { ok: true, summary: `Customer "${p.name}" created — stage ${p.stage} (id: ${p.id}).` };
   },
 };
 
@@ -558,7 +1080,15 @@ export const timesheetApproveWeekTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = parseTool(timesheetApproveWeekInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    const uc = new ApproveWeekUseCase(new DrizzleTimeEntryRepository(ctx.tx, ctx.orgId), ctx.deps.clock);
+    // The bus is NOT optional in practice. approve-week.ts calls approval "the only trigger for
+    // hours leaving Mallet": without it, `timeEntry.weekApproved` never fires, QboTimeSyncHandler
+    // never runs, and the hours an owner just approved never reach QuickBooks. The rows still flip
+    // to `approved` and the tool still answers "Approved 12 entries", so the failure is invisible
+    // until someone notices missing TimeActivity rows in QBO.
+    //
+    // Unrecoverable through this tool, too — re-approving returns count 0, and the emit is guarded
+    // on `count > 0`, so wiring the bus later would not re-fire the ones already approved.
+    const uc = new ApproveWeekUseCase(new DrizzleTimeEntryRepository(ctx.tx, ctx.orgId), ctx.deps.clock, ctx.deps.bus);
     const result = await uc.exec(
       {
         techUserId: asUserId(parsed.data.techUserId),

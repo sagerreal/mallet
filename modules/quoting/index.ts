@@ -21,3 +21,6 @@ export type { QuotingRuleProps, QuotingRuleStatus, QuotingRuleSource } from "./d
 export type { QuotingRuleRepository } from "./domain/quoting-rule-repository";
 export type { RuleCandidate } from "./domain/rule-match";
 export { DrizzleQuotingRuleRepository } from "./infra/drizzle-quoting-rule-repository";
+// Non-fatal savepoint isolation for the accept path: a failed job creation must not roll back a
+// successful acceptance. Shared so the agent tool and the office route cannot drift apart.
+export { runInSavepoint } from "./api/savepoint";

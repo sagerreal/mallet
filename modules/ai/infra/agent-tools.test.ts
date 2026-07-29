@@ -58,6 +58,7 @@ vi.mock("@mallet/notifications", () => ({
   FollowUpPolicy: vi.fn(),
   SendNotificationUseCase: vi.fn(),
   SendInvoiceNotificationUseCase: vi.fn(),
+  AdvanceReminderUseCase: vi.fn(),
   DrizzleNotificationRepository: vi.fn(),
   DrizzleReminderTargetReader: vi.fn(),
   STUB_EXTERNAL_ID: "stub:logged",
@@ -66,11 +67,13 @@ vi.mock("@mallet/a2p", () => ({
   GetA2pStatusUseCase: vi.fn(),
   DrizzleRegistrationRepository: vi.fn(),
 }));
-// The users table import is used directly in member_list, and orgs in get_context —
-// mock @mallet/shared/db/schema with both.
+// The users table import is used directly in member_list, and orgs + org_settings in
+// get_context — mock @mallet/shared/db/schema with all three.
 vi.mock("@mallet/shared/db/schema", () => ({
-  users: { id: "id", orgId: "orgId", name: "name", role: "role", isFieldCrew: "isFieldCrew" },
+  users: { id: "id", orgId: "orgId", name: "name", role: "role", isFieldCrew: "isFieldCrew", email: "email", skillTags: "skillTags" },
   orgs: { id: "id", name: "name" },
+  // get_context now reads the org's timezone so "today" is the shop's today, not UTC's.
+  orgSettings: { orgId: "orgId", timezone: "timezone" },
 }));
 
 // Import after mocks are hoisted so the vi.mock() factory captures the mocked modules.
@@ -81,7 +84,7 @@ import { ListJobsUseCase, DrizzleJobRepository, ScheduleJobUseCase, AssignJobUse
 import { ListTasksUseCase, DrizzleTaskRepository, CreateTaskUseCase } from "@mallet/tasks";
 import { ListTimeEntriesUseCase, DrizzleTimeEntryRepository, ApproveWeekUseCase } from "@mallet/timesheets";
 import { ListCompaniesUseCase, DrizzleCompanyRepository } from "@mallet/companies";
-import { NextRemindersDueUseCase, FollowUpPolicy, SendInvoiceNotificationUseCase, DrizzleNotificationRepository, DrizzleReminderTargetReader } from "@mallet/notifications";
+import { NextRemindersDueUseCase, FollowUpPolicy, SendInvoiceNotificationUseCase, AdvanceReminderUseCase, DrizzleNotificationRepository, DrizzleReminderTargetReader } from "@mallet/notifications";
 import { GetA2pStatusUseCase, DrizzleRegistrationRepository } from "@mallet/a2p";
 import { buildAgentTools } from "./agent-tools";
 
@@ -701,6 +704,7 @@ describe("notification_send_invoice_reminder", () => {
     vi.mocked(GetA2pStatusUseCase).mockClear();
     vi.mocked(DrizzleRegistrationRepository).mockClear();
     vi.mocked(SendInvoiceNotificationUseCase).mockClear();
+    vi.mocked(AdvanceReminderUseCase).mockClear();
     vi.mocked(DrizzleNotificationRepository).mockClear();
     vi.mocked(DrizzleReminderTargetReader).mockClear();
   });
@@ -728,7 +732,7 @@ describe("notification_send_invoice_reminder", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("10DLC");
     // No send attempt was made — the gate fires before any notification/sender work.
-    expect(vi.mocked(SendInvoiceNotificationUseCase)).not.toHaveBeenCalled();
+    expect(vi.mocked(AdvanceReminderUseCase)).not.toHaveBeenCalled();
   });
 
   it("does not block an email reminder when the org's A2P campaign isn't active", async () => {
@@ -738,7 +742,7 @@ describe("notification_send_invoice_reminder", () => {
     });
     mockClass(DrizzleNotificationRepository, {});
     mockClass(DrizzleReminderTargetReader, {});
-    mockClass(SendInvoiceNotificationUseCase, {
+    mockClass(AdvanceReminderUseCase, {
       exec: vi.fn().mockResolvedValue({
         ok: true,
         value: { props: { id: "notif-1", channel: "email", status: "sent", externalId: "real-ext-id" } },
@@ -761,7 +765,7 @@ describe("notification_send_invoice_reminder", () => {
     });
     mockClass(DrizzleNotificationRepository, {});
     mockClass(DrizzleReminderTargetReader, {});
-    mockClass(SendInvoiceNotificationUseCase, {
+    mockClass(AdvanceReminderUseCase, {
       exec: vi.fn().mockResolvedValue({
         ok: true,
         value: { props: { id: "notif-2", channel: "sms", status: "sent", externalId: "real-ext-id" } },
@@ -775,6 +779,28 @@ describe("notification_send_invoice_reminder", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.summary).toContain("sms");
+  });
+
+  it("says nothing is due instead of re-sending a reminder already sent", async () => {
+    // The loop this fixes: the tool used to call the first-contact path, which never recorded a
+    // reminderStage — so notification_list_due_reminders reported the SAME reminder as due on
+    // every turn and the agent re-proposed it forever. AdvanceReminder returns null when the
+    // policy says nothing is due, and that has to read as a real answer.
+    mockClass(DrizzleRegistrationRepository, {});
+    mockClass(GetA2pStatusUseCase, {
+      exec: vi.fn().mockResolvedValue({ status: "active", canText: true, needsInput: false, failureReason: null }),
+    });
+    mockClass(DrizzleNotificationRepository, {});
+    mockClass(DrizzleReminderTargetReader, {});
+    mockClass(AdvanceReminderUseCase, { exec: vi.fn().mockResolvedValue({ ok: true, value: null }) });
+
+    const result = await toolByName("notification_send_invoice_reminder").handle(
+      { invoiceId, channel: "email" },
+      ctxWithSender(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.summary).toMatch(/no reminder is due/i);
   });
 });
 
@@ -876,7 +902,20 @@ describe("invoice_get", () => {
     const invoiceId = randomUUID();
     mockClass(DrizzleInvoiceRepository, {
       findById: vi.fn().mockResolvedValue({
-        props: { id: invoiceId, num: "INV-011", status: "partial", total: 100000, amountPaid: 40000 },
+        // A real invoice from the repository always carries lines, a leadId and a due date —
+        // the fixture omitted them, which is why the tool could ship without returning any.
+        props: {
+          id: invoiceId,
+          num: "INV-011",
+          status: "partial",
+          total: 100000,
+          amountPaid: 40000,
+          leadId: "lead-77",
+          title: "Backflow test",
+          dueAt: new Date("2026-08-15T00:00:00Z"),
+          termsDays: 30,
+          lines: [{ props: { description: "Backflow test", quantity: 1, rate: 100000 } }],
+        },
         due: () => 60000,
       }),
     });
@@ -885,6 +924,10 @@ describe("invoice_get", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.summary).toContain("INV-011");
+      // The things a bill is useless without, and that this tool used to drop.
+      expect(result.summary).toContain("lead-77");
+      expect(result.summary).toContain("2026-08-15");
+      expect(result.summary).toContain("Backflow test");
       expect(result.summary).toContain("partial");
       expect(result.summary).toContain("$1000.00");
       expect(result.summary).toContain("$400.00");
