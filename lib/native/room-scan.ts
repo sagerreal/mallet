@@ -7,11 +7,14 @@
  * Availability is a TWO-PART question, not one:
  *   1. Is the plugin object present at all? (`roomScanPlugin() !== null`) — false on the
  *      web, and false in the brief window before Capacitor injects the bridge.
- *   2. Even when present, is scanning actually USABLE right now? A plugin object can
- *      exist on an iOS 17 phone with no LiDAR sensor while being permanently unusable,
- *      or on a LiDAR phone whose user denied Camera permission. `roomScanAvailable()`
- *      is the honest answer to "can I scan" — it awaits the plugin's own `available()`
- *      call, which returns `{ available: boolean, reason?: string }`.
+ *   2. Even when present, is scanning actually USABLE right now? `roomScanAvailable()`
+ *      awaits the plugin's own `available()` call, which returns
+ *      `{ available: boolean, reason?: string }` — but that call only reflects the
+ *      NATIVE device gate (`RoomCaptureSession.isSupported`, i.e. LiDAR/device support),
+ *      e.g. false on an iOS 17 phone with no LiDAR sensor. It does NOT check Camera
+ *      permission — a LiDAR phone whose user denied Camera can still report
+ *      `available: true` here; that denial only surfaces later, as a `captureRoom`
+ *      rejection when the native session actually tries to start.
  *
  * Task 4 (the UI) MUST gate the scan entry point on `roomScanAvailable()`, NOT on mere
  * plugin presence — showing a scan button that immediately fails `captureRoom` is worse
@@ -51,9 +54,12 @@ export function roomScanPlugin(): RoomScanPlugin | null {
 
 /**
  * Whether room scanning can actually be used right now. False when the plugin is absent
- * (web, or bridge not yet injected), false when the plugin itself reports it is
- * unusable (no LiDAR, permission denied, etc.), and false if the availability check
- * itself throws or rejects — an availability probe that fails is not a "yes".
+ * (web, or bridge not yet injected), false when the plugin itself reports the device
+ * doesn't support it (no LiDAR — `RoomCaptureSession.isSupported` is the native gate this
+ * reflects), and false if the availability check itself throws or rejects — an
+ * availability probe that fails is not a "yes". Does NOT cover Camera permission: a
+ * LiDAR device with permission denied can still report `available: true` here — that
+ * denial surfaces later as a `captureRoom` rejection instead.
  */
 export async function roomScanAvailable(): Promise<boolean> {
   const plugin = roomScanPlugin();
