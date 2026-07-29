@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { users, orgs, orgSettings } from "@mallet/shared/db/schema";
-import { toPage, isOk, Phone, asLeadId, asInvoiceId, asEstimateId, asJobId, asCompanyId } from "@mallet/shared/types";
+import { toPage, isOk, Phone, asLeadId, asInvoiceId, asEstimateId, asJobId, asCompanyId, asUserId } from "@mallet/shared/types";
 import { ListLeadsUseCase, DrizzleLeadRepository } from "@mallet/customers";
 import { ListInvoicesUseCase, DrizzleInvoiceRepository } from "@mallet/invoicing";
 import { ListEstimatesUseCase, DrizzleEstimateRepository } from "@mallet/quoting";
@@ -105,7 +105,7 @@ export const customerListTool: AgentTool = {
           if (q.email) bits.push(q.email);
           return `${bits.join(" | ")} [id: ${q.id}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -119,11 +119,18 @@ export const invoiceListTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = invoiceListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    const page = await new ListInvoicesUseCase(new DrizzleInvoiceRepository(ctx.tx, ctx.orgId)).exec({
-      page: toPage({ limit: parsed.data.limit ?? 20, cursor: null }),
-      filter: parsed.data.status ? { status: parsed.data.status } : undefined,
-    });
-    if (page.items.length === 0) return { ok: true, summary: "No invoices found." };
+    const invoiceRepo = new DrizzleInvoiceRepository(ctx.tx, ctx.orgId);
+    // findOverdue is a repository method, not a list filter — the use case only proxies list(),
+    // so the overdue path calls it directly rather than pretending it is a status.
+    const page = parsed.data.overdueOnly
+      ? await invoiceRepo.findOverdue(ctx.deps.clock.now(), toPage({ limit: parsed.data.limit ?? 20, cursor: null }))
+      : await new ListInvoicesUseCase(invoiceRepo).exec({
+          page: toPage({ limit: parsed.data.limit ?? 20, cursor: null }),
+          filter: parsed.data.status ? { status: parsed.data.status } : undefined,
+        });
+    if (page.items.length === 0) {
+      return { ok: true, summary: parsed.data.overdueOnly ? "Nothing is overdue." : "No invoices found." };
+    }
     return {
       ok: true,
       // leadId, title and dueAt were all on the row and none were printed. Without leadId the
@@ -138,7 +145,7 @@ export const invoiceListTool: AgentTool = {
           if (q.dueAt) bits.push(`due ${q.dueAt.toISOString().slice(0, 10)}`);
           return `${bits.join(" — ")} [id: ${q.id}, customer: ${q.leadId}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -171,7 +178,7 @@ export const estimateListTool: AgentTool = {
           if (q.changeRequestedAt) bits.push("CHANGES REQUESTED");
           return `${bits.join(" — ")} [id: ${q.id}, customer: ${q.leadId}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -204,6 +211,14 @@ export const customerGetTool: AgentTool = {
     return { ok: true, summary: parts.join(" | ") };
   },
 };
+
+// A page that was cut short must SAY so. Every reader computes nextCursor and every tool
+// discarded it, so a list capped at 20 read to the model as the complete set — and "you have 3
+// overdue invoices" was stated with total confidence about the first 20 rows of 300. There is no
+// cursor input to follow yet; until there is, the honest thing is to admit the cut rather than
+// imply completeness.
+const truncationNote = (hasMore: boolean, shown: number): string =>
+  hasMore ? `\n\n(Showing the first ${shown}. There are more — narrow the search or raise the limit.)` : "";
 
 // --- customer_find: look a customer up by phone number ---
 export const customerFindTool: AgentTool = {
@@ -329,7 +344,7 @@ export const jobListTool: AgentTool = {
           const assignee = p.assigneeUserId ? " — assigned" : " — unassigned";
           return `${p.num}${title} — ${p.status}${assignee} [id: ${p.id}, customer: ${p.leadId}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -390,7 +405,7 @@ export const taskListTool: AgentTool = {
           const who = p.leadId ? `, customer: ${p.leadId}` : "";
           return `${p.text}${due}${done} [id: ${p.id}${who}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };
@@ -490,6 +505,7 @@ export const timesheetListTool: AgentTool = {
       filter: {
         fromDate: parsed.data.fromDate,
         toDate: parsed.data.toDate,
+        ...(parsed.data.techUserId ? { techUserId: asUserId(parsed.data.techUserId) } : {}),
       },
     });
     if (page.items.length === 0) return { ok: true, summary: "No timesheet entries found." };
@@ -500,9 +516,13 @@ export const timesheetListTool: AgentTool = {
           const p = e.props;
           const hrs = e.hours();
           const duration = hrs !== null ? `${hrs.toFixed(2)}h` : `${p.startTime}–running`;
-          return `${p.workDate} — ${p.kind} — ${duration} — ${p.status} [id: ${p.id}]`;
+          // techUserId is the load-bearing field: without it the agent cannot say whose hours
+          // these are, and timesheet_approve_week takes a techUserId.
+          const note = p.note ? ` — ${p.note}` : "";
+          const job = p.jobId ? ` — job ${p.jobId}` : "";
+          return `${p.workDate} — ${p.kind} — ${duration} — ${p.status}${job}${note} [id: ${p.id}, tech: ${p.techUserId}]`;
         })
-        .join("\n"),
+        .join("\n") + truncationNote(page.nextCursor !== null, page.items.length),
     };
   },
 };

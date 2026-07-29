@@ -20,7 +20,13 @@ export const invalid = (issues: z.ZodError["issues"]): ToolOutcome => ({
 
 // --- shared base schemas ---
 export const listInput = z.object({ limit: z.number().int().min(1).max(50).optional() });
-export const invoiceListInput = listInput.extend({ status: z.enum(["draft", "sent", "partial", "paid", "void"]).optional() });
+export const invoiceListInput = listInput.extend({
+  status: z.enum(["draft", "sent", "partial", "paid", "void"]).optional(),
+  // "Who owes me money" is the most common money question a shop asks, and it had no answer:
+  // InvoiceRepository.findOverdue existed and no tool reached it, while invoice_list returned no
+  // dueAt either — so overdue could not even be computed from what came back.
+  overdueOnly: z.boolean().optional(),
+});
 export const estimateListInput = listInput.extend({ status: z.enum(["draft", "sent", "accepted", "declined"]).optional() });
 
 // --- read tool input schemas ---
@@ -63,6 +69,11 @@ export const memberListInput = z.object({});
 export const companyListInput = listInput;
 export const companyGetInput = z.object({ companyId: z.string().uuid() });
 export const timesheetListInput = listInput.extend({
+  // The repository filter has always accepted techUserId and the tool never exposed it — so the
+  // agent could not ask for one person's hours, and could not tell WHOSE hours it had just
+  // returned. That matters here more than elsewhere: timesheet_approve_week is what pushes
+  // payroll to QuickBooks, and approving the wrong person's week is not a recoverable mistake.
+  techUserId: z.string().uuid().optional(),
   fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
