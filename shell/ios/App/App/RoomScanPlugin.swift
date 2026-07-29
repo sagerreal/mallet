@@ -25,9 +25,18 @@ public class RoomScanPlugin: CAPPlugin, CAPBridgedPlugin {
     private let stateQueue = DispatchQueue(label: "com.trymallet.app.RoomScanPlugin.state")
     private var isScanning = false
 
+    /// The single source of truth for "can this device scan a room" — RoomCaptureSession's own
+    /// LiDAR gate. (The iOS-17 floor is satisfied statically by the app's deployment target, so
+    /// there is no separate version check here.) `captureRoom` below gates on this same check
+    /// first, so the two can never disagree.
+    private static let unsupportedReason =
+        "This phone can't scan rooms — it needs the Pro camera (LiDAR)."
+
     @objc public func available(_ call: CAPPluginCall) {
-        // Placeholder — real LiDAR/iOS-17 device gating lands in Task 3 (RoomCaptureSession.isSupported
-        // must also gate captureRoom itself once that lands — tracked there, not duplicated here).
+        guard RoomCaptureSession.isSupported else {
+            call.resolve(["available": false, "reason": Self.unsupportedReason])
+            return
+        }
         call.resolve(["available": true])
     }
 
@@ -36,6 +45,11 @@ public class RoomScanPlugin: CAPPlugin, CAPBridgedPlugin {
     /// rejects on hard errors (missing roomName, a scan already in progress, or an unrecoverable
     /// capture failure).
     @objc public func captureRoom(_ call: CAPPluginCall) {
+        guard RoomCaptureSession.isSupported else {
+            call.reject(Self.unsupportedReason)
+            return
+        }
+
         guard let roomName = call.getString("roomName")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !roomName.isEmpty else {
             call.reject("roomName is required to start a room scan")
