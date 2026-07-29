@@ -1204,6 +1204,10 @@
   .banner{background:var(--purple-bg);border:1px solid color-mix(in srgb,var(--purple) 30%,var(--line));border-radius:var(--radius);padding:var(--space-3) var(--space-4);font-size:var(--type-base);margin-bottom:var(--space-3);color:var(--purple)}
   .sweeprow{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-1);border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
   .sweeprow input[type=checkbox]{width:16px;height:16px;accent-color:var(--green-600)}
+  /* The row's identity column. This was an inline `style={{flex:1}}` on the <b>,
+     which no media query could override — inline styles outrank every selector — so
+     the mobile layout below could not take effect at all. */
+  .sweeprow>.sweeptitle{flex:1}
   /* ---- calls & texts ---- */
   #callbar{position:fixed;left:calc((100vw - var(--aiw))/2);transform:translateX(-50%);bottom:18px;z-index:300;display:none}
   #callbar.on{display:block}
@@ -1898,12 +1902,17 @@
     /* Setting the pad VARIABLES (not `padding` directly) is what moves the ✕ with
        the padding — see the .modal rule. */
     .modal,.modal.wide,.custmodal{--modal-pad-x:var(--space-4);--modal-pad-y:var(--space-5);max-width:100% !important;width:100% !important;padding:var(--modal-pad-y) var(--modal-pad-x);max-height:86vh;overflow-y:auto;margin:0}
-    /* A 5-column sweep row does not fit 390px. The flexible title is the only
-       element that can yield space, but a flex item's default min-width:auto floors
-       it at its longest word — so `flex:1` alone does not shrink it and the trailing
-       columns push past the panel edge (measured: +9px). Mobile-only, so desktop
-       rows are untouched. */
-    .sweeprow>b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    /* A 5-column sweep row genuinely does not fit 390px — checkbox + quote title +
+       customer + status + amount overflowed the panel by 9px.
+       Truncating instead of wrapping is NOT the fix: the title is `flex:1`, i.e.
+       flex-basis 0, so it only ever gets leftover space — and at this width there is
+       none. Merely unlocking it with min-width:0 collapsed the title to "E.." while
+       the less important customer name kept its full width, which reads as clean to an
+       overflow check and is useless to a human.
+       So: the title takes the rest of its own line (100% minus the 16px checkbox and
+       its 12px gap) and the metadata wraps beneath it, sharing the second line. */
+    .sweeprow{flex-wrap:wrap;row-gap:var(--space-1)}
+    .sweeprow>.sweeptitle{flex:1 1 calc(100% - 28px);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .sweeprow>.muted{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     #noteToggle{bottom:70px;left:10px;padding:var(--space-2) var(--space-3);font-size:var(--type-xs);z-index:61}
     /* ---- wide list tables → stacked cards on phones (each row is a card,

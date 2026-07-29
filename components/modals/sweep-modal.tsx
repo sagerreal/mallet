@@ -74,7 +74,7 @@ export function SweepModalContent() {
           checked={checked.has(l.id)}
           onChange={() => toggle(l.id)}
         />
-        <b style={{ flex: 1 }}>{l.name}</b>
+        <b className="sweeptitle">{l.name}</b>
         <span className="muted">{l.job || ""}</span>
         <StagePill stage={l.stage} />
         <span className="muted">{l.age}d</span>
