@@ -5,6 +5,7 @@ import { orThrow } from "@/trpc/errors";
 import { Phone, isOk, toPage, asLeadId, asCompanyId, money } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
+import { LEAD_SORTS } from "../infra/lead-sorts";
 import { DrizzleEstimateRepository } from "@mallet/quoting";
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
@@ -65,11 +66,21 @@ const importResultDTO = z.object({
 });
 
 const listInput = z.object({
-  // 500-row pilot ceiling: a single fetch is correct below this; above it, cursor iteration is needed.
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   stage: stageEnum.optional(),
   unreadOnly: z.boolean().optional(),
+  /** Named sort — never a column name. Absent keeps the historical newest-first ordering. */
+  sort: z.enum(LEAD_SORTS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
+  /** Free-text across name, phone, email and address. Runs in the database. */
+  search: z.string().trim().min(1).max(200).optional(),
+});
+
+const countInput = z.object({
+  stage: stageEnum.optional(),
+  unreadOnly: z.boolean().optional(),
+  search: z.string().trim().min(1).max(200).optional(),
 });
 
 const paginatedLeadDTO = z.object({
@@ -339,9 +350,31 @@ export const createLeadRouter = () =>
         const repo = new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new ListLeadsUseCase(repo);
         const page = await useCase.exec({
+          sort: input.sort,
+          sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { stage: input.stage, unreadOnly: input.unreadOnly },
+          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search },
         });
         return { items: page.items.map(toLeadDTO), nextCursor: page.nextCursor };
+      }),
+
+    /**
+     * The TRUE number of customers matching a filter.
+     *
+     * Shares its predicates with list() through the repository, so the "n of N" a header shows is
+     * two halves of one question rather than two questions that happen to look alike.
+     */
+    count: ownerOrOffice
+      .input(countInput)
+      .output(z.object({ total: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId);
+        return {
+          total: await repo.count({
+            stage: input.stage,
+            unreadOnly: input.unreadOnly,
+            search: input.search,
+          }),
+        };
       }),
   });

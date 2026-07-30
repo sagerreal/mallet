@@ -88,6 +88,8 @@ class FakeLeadRepository implements LeadRepository {
     return found;
   }
 
+  async count(): Promise<number> { return 0; }
+
   async list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>> {
     // Exclude soft-deleted rows.
     let rows = [...this.store.values()]

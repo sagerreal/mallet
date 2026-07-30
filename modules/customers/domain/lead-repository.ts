@@ -1,3 +1,4 @@
+import type { LeadSort } from "../infra/lead-sorts";
 import type { LeadId, CompanyId, Phone, CursorPage, Paginated } from "@mallet/shared/types";
 import type { Lead, LeadStage } from "./lead";
 
@@ -21,6 +22,8 @@ export interface EnsureCustomerResult {
 }
 
 export interface LeadFilter {
+  /** Free-text across name, phone, email and address — matched in the database, not over a page. */
+  readonly search?: string;
   readonly stage?: LeadStage;
   readonly unreadOnly?: boolean;
 }
@@ -39,7 +42,10 @@ export interface LeadRepository {
    * the user as "check your connection".
    */
   findByPhone(phone: Phone): Promise<Lead | null>;
-  list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>>;
+  list(page: CursorPage, filter?: LeadFilter, sort?: LeadSort, sortDir?: "asc" | "desc"): Promise<Paginated<Lead>>;
+
+  /** How many leads match the filter, ignoring pagination. Same predicates as list(). */
+  count(filter?: LeadFilter): Promise<number>;
   save(lead: Lead): Promise<void>;
   // Returns the number of rows affected (0 = not found or already archived).
   archive(id: LeadId, now: Date): Promise<number>;

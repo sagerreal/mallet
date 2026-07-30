@@ -112,6 +112,7 @@ class FakeLeadRepository implements LeadRepository {
     }
     return found;
   }
+  async count(): Promise<number> { return 0; }
   async list(_page: CursorPage, _filter?: LeadFilter): Promise<Paginated<Lead>> {
     return { items: [], nextCursor: null };
   }

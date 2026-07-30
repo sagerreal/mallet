@@ -49,6 +49,12 @@ export const leads = pgTable(
   (t) => [
     // Keyset pagination index: list a tenant's leads newest-first without OFFSET.
     index("leads_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
+    // Sort indexes — one per named sort in lead-sorts.ts. Column order mirrors the ORDER BY
+    // exactly (org, sort column, id tiebreaker); an index the planner will not choose is worse
+    // than none because it looks solved and is not.
+    index("leads_org_updated_idx").on(t.orgId, t.updatedAt.desc(), t.id.desc()),
+    index("leads_org_name_idx").on(t.orgId, t.name, t.id),
+    index("leads_org_value_idx").on(t.orgId, t.valueCents.desc(), t.id.desc()),
     // Partial keyset index: same order but only over non-deleted rows (active-list query perf).
     index("leads_org_created_active_idx")
       .on(t.orgId, t.createdAt.desc(), t.id.desc())
