@@ -130,6 +130,14 @@ export const jobs = pgTable(
     index("jobs_org_status_idx").on(t.orgId, t.status),
     index("jobs_org_lead_idx").on(t.orgId, t.leadId),
     index("jobs_org_assignee_idx").on(t.orgId, t.assigneeUserId),
+    // Sort indexes. Each named sort in job-sorts.ts needs one of these or the query degrades to a
+    // sequential scan over the whole tenant — invisible at 1,500 jobs, a timeout at 40,000.
+    // Column order mirrors the ORDER BY exactly (sort column, then id as the tiebreaker), because
+    // an index the planner will not choose is worse than none: it looks solved and is not.
+    index("jobs_org_scheduled_idx").on(t.orgId, t.scheduledStart.desc(), t.id.desc()),
+    index("jobs_org_total_idx").on(t.orgId, t.totalCents.desc(), t.id.desc()),
+    // The common combination: a status filter with the default scheduled sort.
+    index("jobs_org_status_scheduled_idx").on(t.orgId, t.status, t.scheduledStart.desc()),
     uniqueIndex("jobs_org_num_uidx")
       .on(t.orgId, t.num)
       .where(sql`${t.deletedAt} is null`),

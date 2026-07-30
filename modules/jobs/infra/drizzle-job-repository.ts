@@ -1,7 +1,9 @@
-import { and, desc, eq, exists, gte, inArray, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf } from "@mallet/shared/db/sort-page";
+import { jobSortSpec, jobSortValue, type JobSort } from "./job-sorts";
 import {
   buildPage,
   decodeCursor,
@@ -240,9 +242,23 @@ export class DrizzleJobRepository implements JobRepository {
     return toDomain(header, visitRows);
   }
 
-  list(page: CursorPage, filter?: JobFilter): Promise<Paginated<Job>> {
+  list(
+    page: CursorPage,
+    filter?: JobFilter,
+    sort?: JobSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Job>> {
     const conds: SQL[] = [isNull(jobs.deletedAt)];
     if (filter?.status) conds.push(eq(jobs.status, filter.status));
+    if (filter?.search) {
+      // Escape the LIKE wildcards before wrapping in our own. Without this a customer typing "%"
+      // matches every job in the org, and "_" matches any single character — the search silently
+      // stops filtering and nobody can tell why.
+      const term = filter.search.replace(/[\\%_]/g, (m) => `\\${m}`);
+      const like = `%${term}%`;
+      const cond = or(ilike(jobs.title, like), ilike(jobs.num, like));
+      if (cond) conds.push(cond);
+    }
     if (filter?.assigneeUserId) conds.push(eq(jobs.assigneeUserId, filter.assigneeUserId));
     if (filter?.leadId) conds.push(eq(jobs.leadId, filter.leadId));
     if (filter?.assignedUserId) {
@@ -267,7 +283,7 @@ export class DrizzleJobRepository implements JobRepository {
       );
       if (cond) conds.push(cond);
     }
-    return this.loadPage(conds, page);
+    return this.loadPage(conds, page, sort, sortDir);
   }
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>> {
@@ -666,12 +682,35 @@ export class DrizzleJobRepository implements JobRepository {
     }));
   }
 
-  private async loadPage(baseConds: SQL[], page: CursorPage): Promise<Paginated<Job>> {
+  /**
+   * One page of job headers, ordered by the requested sort.
+   *
+   * `sort` is optional so every existing caller keeps the old newest-first behaviour untouched;
+   * only callers that ask for a sort get the new path. The cursor MUST be built from the same
+   * sort that produced it — a created_at cursor means nothing in a scheduled-date ordering — so
+   * the two branches below never mix.
+   */
+  private async loadPage(
+    baseConds: SQL[],
+    page: CursorPage,
+    sort?: JobSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Job>> {
     const conds = [...baseConds];
+    const spec = sort ? jobSortSpec(sort, sortDir) : null;
+
     if (page.cursor) {
-      const cursor = decodeCursor(page.cursor);
-      if (isOk(cursor)) {
-        conds.push(keysetBefore(jobs.createdAt, jobs.id, cursor.value));
+      if (spec) {
+        const c = decodeSortCursor(page.cursor);
+        // A malformed cursor is ignored rather than fatal: the caller gets page one, which is
+        // wrong but harmless, where throwing would break a list on a stale bookmark.
+        if (c) {
+          const after = keysetAfterSort(spec, jobs.id, c);
+          if (after) conds.push(after);
+        }
+      } else {
+        const cursor = decodeCursor(page.cursor);
+        if (isOk(cursor)) conds.push(keysetBefore(jobs.createdAt, jobs.id, cursor.value));
       }
     }
 
@@ -680,7 +719,7 @@ export class DrizzleJobRepository implements JobRepository {
       .select()
       .from(jobs)
       .where(and(...conds))
-      .orderBy(desc(jobs.createdAt), desc(jobs.id))
+      .orderBy(...(spec ? orderFor(spec, jobs.id) : [desc(jobs.createdAt), desc(jobs.id)]))
       .limit(page.limit + 1);
 
     const ids = headers.map((h) => h.id);
@@ -699,9 +738,21 @@ export class DrizzleJobRepository implements JobRepository {
     }
 
     const rebuilt = headers.map((h) => toDomain(h, visitsByJob.get(h.id) ?? []));
-    return buildPage(rebuilt, page, (job) => ({
-      createdAt: job.props.createdAt,
-      id: job.props.id,
-    }));
+    if (!sort) {
+      return buildPage(rebuilt, page, (job) => ({ createdAt: job.props.createdAt, id: job.props.id }));
+    }
+    // Sorted path builds its own cursor from the SORT column, not created_at. Read it off the raw
+    // header row rather than the domain object so the value is exactly what the ORDER BY compared.
+    const hasMore = rebuilt.length > page.limit;
+    const items = hasMore ? rebuilt.slice(0, page.limit) : rebuilt;
+    const lastRow = hasMore ? headers[page.limit - 1] : headers[headers.length - 1];
+    const nextCursor =
+      hasMore && lastRow
+        ? encodeSortCursor({
+            value: sortValueOf(jobSortValue(sort, lastRow as Record<string, unknown>)),
+            id: lastRow.id,
+          })
+        : null;
+    return { items, nextCursor };
   }
 }
