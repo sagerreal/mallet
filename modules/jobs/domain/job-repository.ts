@@ -8,6 +8,7 @@ import type {
 } from "@mallet/shared/types";
 import type { Job, JobStatus, JobChecklistProps } from "./job";
 import type { JobSort } from "../infra/job-sorts";
+import type { JobView } from "../infra/job-views";
 import type { JobSignature } from "./job-signature";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "./job-execution";
 
@@ -58,6 +59,10 @@ export interface JobFilter {
    * was capped at the hydrator's page size.
    */
   readonly activeOnly?: boolean;
+  /** One of the scoped views (Needs a slot / Today / …). See infra/job-views.ts. */
+  readonly view?: JobView;
+  /** The client's local date, YYYY-MM-DD. Required alongside a date-relative view. */
+  readonly today?: string;
   /** Job-level assignee only (the office list's filter). */
   readonly assigneeUserId?: UserId;
   /**
@@ -102,6 +107,9 @@ export interface JobRepository {
 
   /** How many jobs match the filter, ignoring pagination. Same predicates as list(). */
   count(filter?: JobFilter): Promise<number>;
+
+  /** Every scoped view's count in one round trip. `today` is the client's local YYYY-MM-DD. */
+  viewCounts(today: string, base?: JobFilter): Promise<Record<JobView, number>>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>>;
 
   // ── job execution data (Phase 5) ─────────────────────────────────────────

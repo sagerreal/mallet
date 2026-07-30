@@ -4,6 +4,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { jobSortSpec, jobSortValue, type JobSort } from "./job-sorts";
+import { viewCondition, type JobView } from "./job-views";
 import {
   buildPage,
   decodeCursor,
@@ -249,6 +250,39 @@ export class DrizzleJobRepository implements JobRepository {
    * is a count that drifts from its list the first time a filter changes — and a header reading
    * "220 of 1,521" is only worth showing if the 1,521 is the same question as the 220.
    */
+  /**
+   * Every view's count in ONE round trip.
+   *
+   * Six correlated subqueries in a single SELECT rather than six queries: the Jobs screen shows
+   * all six numbers at once in the filter dropdown, and six sequential round trips on one pooled
+   * connection is the difference between the dropdown opening instantly and visibly filling in.
+   */
+  async viewCounts(today: string, base?: JobFilter): Promise<Record<JobView, number>> {
+    const baseConds = this.listConds({ ...base, view: undefined });
+    const one = (v: JobView) =>
+      sql<number>`count(*) filter (where ${viewCondition(v, this.tx, { today })})::int`;
+    const rows = await this.tx
+      .select({
+        needsSlot: one("needsSlot"),
+        today: one("today"),
+        week: one("week"),
+        upcoming: one("upcoming"),
+        needsInvoice: one("needsInvoice"),
+        done: one("done"),
+      })
+      .from(jobs)
+      .where(and(...baseConds));
+    const r = rows[0];
+    return {
+      needsSlot: r?.needsSlot ?? 0,
+      today: r?.today ?? 0,
+      week: r?.week ?? 0,
+      upcoming: r?.upcoming ?? 0,
+      needsInvoice: r?.needsInvoice ?? 0,
+      done: r?.done ?? 0,
+    };
+  }
+
   async count(filter?: JobFilter): Promise<number> {
     const rows = await this.tx
       .select({ n: sql<number>`count(*)::int` })
@@ -263,6 +297,9 @@ export class DrizzleJobRepository implements JobRepository {
     // The nav badge's "open jobs". Terminal statuses are excluded rather than a status matched,
     // because the badge means "still to do", not "in one particular state".
     if (filter?.activeOnly) conds.push(notInArray(jobs.status, ["complete", "canceled"]));
+    if (filter?.view && filter.today) {
+      conds.push(viewCondition(filter.view, this.tx, { today: filter.today }));
+    }
     if (filter?.search) {
       // Escape the LIKE wildcards before wrapping in our own. Without this a customer typing "%"
       // matches every job in the org, and "_" matches any single character — the search silently
