@@ -34,7 +34,8 @@ vi.mock("@/features/identity/hooks", () => ({
   useMe: () => ({ data: { role: "owner" } }),
 }));
 vi.mock("@/lib/trpc/client", () => ({
-  api: { v1: { pricebook: { service: { list: { useQuery: () => q } } } } },
+  // settings.get rides along since the rail now gates on the settings hydrator (rates/markup/terms).
+  api: { v1: { pricebook: { service: { list: { useQuery: () => q } } }, settings: { get: { useQuery: () => q } } } },
 }));
 vi.mock("@/app/(office)/settings/service-row", () => ({
   ServiceRow: () => <div data-testid="svc-row" />,

@@ -24,6 +24,9 @@ import { TagInput } from "@/app/(office)/settings/tag-input";
 import { HourSelect } from "@/app/(office)/settings/hour-select";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { ListLoading } from "@/components/shared/list-loading";
 import { fmtPhone } from "@/lib/format";
 import { Field } from "@/components/ui/input";
 
@@ -230,6 +233,16 @@ export function FrontDeskPane() {
 
   const toggleRule = (k: RuleKey) => setOpenRule((prev) => (prev === k ? null : k));
   const wdLabel = `${timeLabel(bk.hours.wdOpen)}–${timeLabel(bk.hours.wdClose)} M–F`;
+
+  // Cold reload: everything on this pane reads settings-slice state whose pre-hydration values
+  // are plausible DEFAULTS, not empties — rendering them claims another shop's configuration
+  // ("Answering" for a shop whose Front Desk is off, "Services 0", an $89 fee). Same query key
+  // as SettingsHydrator, so React Query dedupes; until the first load lands, show the same
+  // shimmer the code-split fallback uses rather than any default-derived claim.
+  const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  if (!settingsQ.isFetched && !settingsQ.isError) {
+    return <ListLoading label="Loading Front Desk…" />;
+  }
 
 
 

@@ -28,6 +28,9 @@ import { pipeSum } from "@/lib/estimates";
 import { pressable } from "@/lib/a11y";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
 import { ViewToggle } from "@/components/shared/view-toggle";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { isFirstLoad } from "@/lib/first-run";
 
 function contactsOf(company: Company, leads: Lead[]): Lead[] {
   return leads.filter((l) => l.companyId === company.id && !l.archived);
@@ -69,6 +72,20 @@ export function CompaniesView() {
   const [q, setQ] = useState("");
   const [archiveSet, setArchiveSet] = useState<CustomerArchiveSet>("active");
 
+  // This segment sat entirely outside customers-view's gate (the early return happens above
+  // it), so a fast tab-tap on a slow connection showed "0 of 0", "Nothing matches." and dashes
+  // in the money columns for a shop with real companies. Same keys as the hydrators (deduped).
+  const companiesQ = api.v1.companies.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const estimatesQ = api.v1.quoting.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const listLoading = isFirstLoad({ isFetched: companiesQ.isFetched, isError: companiesQ.isError, count: companies.length });
+  const moneyLoading = isFirstLoad({ isFetched: estimatesQ.isFetched, isError: estimatesQ.isError, count: estimates.length });
+
   const setTotal = companies.filter((c) => (archiveSet === "active" ? !c.archived : Boolean(c.archived))).length;
 
   const rows = useMemo<CompanyRow[]>(() => {
@@ -105,8 +122,10 @@ export function CompaniesView() {
       case "phone":
         return row.phone || <span className="muted">—</span>;
       case "pipe":
+        if (moneyLoading) return <span className="sk" style={{ display: "inline-block", width: 48, height: 10 }} aria-hidden="true" />;
         return row.openPipe ? fmt$(row.openPipe) : "—";
       case "revenue":
+        if (moneyLoading) return <span className="sk" style={{ display: "inline-block", width: 48, height: 10 }} aria-hidden="true" />;
         return row.revenueWon ? fmt$(row.revenueWon) : "—";
       case "sites":
         return row.sites || "—";
@@ -177,6 +196,7 @@ export function CompaniesView() {
         activeFilterCount={0}
         total={setTotal}
         filtered={rows.length}
+        countsLoading={listLoading}
         searchPlaceholder="Search businesses…"
         showControls={false}
       />
@@ -193,7 +213,16 @@ export function CompaniesView() {
             </tr>
           </thead>
           <tbody>
-            {rows.length > 0 ? (
+            {listLoading ? (
+              <tr>
+                <td colSpan={CO_COLS.length + 1}>
+                  <div className="empty-att" aria-hidden="true">
+                    <span className="sk" style={{ display: "inline-block", width: 180, height: 12 }} />
+                  </div>
+                  <span className="sr-only">Loading companies…</span>
+                </td>
+              </tr>
+            ) : rows.length > 0 ? (
               rows.map((row) => (
                 <tr
                   key={row.company.id}
