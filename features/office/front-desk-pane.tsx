@@ -239,30 +239,39 @@ export function FrontDeskPane() {
   return (
     <div style={{ maxWidth: 980 }}>
       {/* slim status header — the org's REAL number; a quiet provisioning line until it lands */}
+      {/* Two semantic groups so the ≤760px grid can re-flow deliberately (title+number+toggle
+          on the first row, action links on their own row) instead of the flex row wrapping
+          mid-list and stranding "· about your number" beside the toggle. */}
       <div className="fdstatus">
         <span className={frontDesk && bizNumber ? "odot" : "odot off"} aria-hidden="true" />
-        <span className="fds">
-          {frontDesk
-            ? bizNumber
-              ? "Answering"
-              : "Will answer once your number is live"
-            : "Off — calls go to voicemail"}
-        </span>
-        {bizNumber ? (
-          <>
-            <span className="fdnum">{fmtPhone(bizNumber)}</span>
-            <span className="fdsep" aria-hidden="true">·</span>
-            <a className="tedit" href={`tel:${bizNumber.replace(/[^\d]/g, "")}`}>Test call</a>
-            <span className="fdsep" aria-hidden="true">·</span>
-            <button className="tedit" onClick={() => navigator.clipboard.writeText(fmtPhone(bizNumber))}>Copy</button>
-          </>
-        ) : (
-          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-            Getting your number — we&rsquo;ll email you when it&rsquo;s live.
+        <span className="fdt">
+          <span className="fds">
+            {frontDesk
+              ? bizNumber
+                ? "Answering"
+                : "Will answer once your number is live"
+              : "Off — calls go to voicemail"}
           </span>
-        )}
-        <span className="fdsep" aria-hidden="true">·</span>
-        <button className="tedit" onClick={() => setAboutOpen((v) => !v)}>{aboutOpen ? "close" : "about your number"}</button>
+          {bizNumber ? (
+            <span className="fdnum">{fmtPhone(bizNumber)}</span>
+          ) : (
+            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Getting your number — we&rsquo;ll email you when it&rsquo;s live.
+            </span>
+          )}
+        </span>
+        <span className="fdacts">
+          {bizNumber && (
+            <>
+              <span className="fdsep lead" aria-hidden="true">·</span>
+              <a className="tedit" href={`tel:${bizNumber.replace(/[^\d]/g, "")}`}>Test call</a>
+              <span className="fdsep" aria-hidden="true">·</span>
+              <button className="tedit" onClick={() => navigator.clipboard.writeText(fmtPhone(bizNumber))}>Copy</button>
+              <span className="fdsep" aria-hidden="true">·</span>
+            </>
+          )}
+          <button className="tedit" onClick={() => setAboutOpen((v) => !v)}>{aboutOpen ? "close" : "about your number"}</button>
+        </span>
         <span className="sp" />
         <label className="switch">
           <input type="checkbox" checked={frontDesk} onChange={(e) => setToggle("frontDesk", e.target.checked)} aria-label="Front Desk on/off" />

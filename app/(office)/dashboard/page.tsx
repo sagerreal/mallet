@@ -15,7 +15,10 @@ import { useAppStore } from "@/lib/store/app-store";
 import { deriveShiftReport, deriveOkQueue } from "@/features/home/derive";
 import { deriveHomePipe } from "@/features/home/pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
-import { HomePipe } from "@/features/home/home-pipe";
+import { HomePipe, HomePipeSkeleton } from "@/features/home/home-pipe";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { isFirstLoad } from "@/lib/first-run";
 import { OkQueue } from "@/features/home/ok-queue";
 import dynamic from "next/dynamic";
 import { useMe } from "@/features/identity/hooks";
@@ -109,6 +112,21 @@ function TodayPane() {
   const queueValue = queue.reduce((s, it) => s + it.value, 0);
   const pipe = deriveHomePipe({ leads, estimates, invoices, jobs, techs });
 
+  // Cold reload: the tiles derive from four store slices that hydrate client-side. Until every
+  // hydrator's FIRST load lands, the derived figures are zeros-from-an-empty-store — rendering
+  // them would state "$0 to bill" as fact for a beat (Owen saw exactly this in the iOS shell).
+  // Same query keys + options as the hydrators, so React Query dedupes — no extra fetches; we
+  // only read load state. Skeletons keep the exact tile metrics, so nothing shifts on arrival.
+  const leadsQ = api.v1.customers.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const jobsQ = api.v1.jobs.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const estimatesQ = api.v1.quoting.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const invoicesQ = api.v1.invoicing.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const loading =
+    isFirstLoad({ isFetched: leadsQ.isFetched, isError: leadsQ.isError, count: leads.length }) ||
+    isFirstLoad({ isFetched: jobsQ.isFetched, isError: jobsQ.isError, count: jobs.length }) ||
+    isFirstLoad({ isFetched: estimatesQ.isFetched, isError: estimatesQ.isError, count: estimates.length }) ||
+    isFirstLoad({ isFetched: invoicesQ.isFetched, isError: invoicesQ.isError, count: invoices.length });
+
   return (
     <div>
 
@@ -120,11 +138,12 @@ function TodayPane() {
         report={report}
         queueCount={queue.length}
         queueValue={queueValue}
+        loading={loading}
       />
 
-      <HomePipe stages={pipe} />
+      {loading ? <HomePipeSkeleton /> : <HomePipe stages={pipe} />}
 
-      <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />
+      {!loading && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
     </div>
   );
 }

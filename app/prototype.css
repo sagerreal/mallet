@@ -440,6 +440,19 @@
   .fdstatus .fds{font-family:var(--font-display);font-size:var(--type-lg);font-weight:700}
   .fdstatus .fdnum{font-family:var(--font-mono);font-size:var(--type-base);color:var(--ink-2)}
   .fdstatus .sp{flex:1}
+  .fdstatus .fdt,.fdstatus .fdacts{display:inline-flex;align-items:center;gap:var(--space-3);flex-wrap:wrap}
+  /* Phone: the single line can't fit — re-flow into two DELIBERATE rows (dot + title +
+     toggle, then the action links), instead of the flex wrap stranding "· about your
+     number" on its own line beside the toggle. */
+  @media (max-width:760px){
+    .fdstatus{display:grid;grid-template-columns:auto 1fr auto;row-gap:var(--space-2)}
+    .fdstatus .odot{grid-row:1;grid-column:1;align-self:start;margin-top:var(--space-2)}
+    .fdstatus .fdt{grid-row:1;grid-column:2}
+    .fdstatus .switch{grid-row:1;grid-column:3;align-self:start}
+    .fdstatus .fdacts{grid-row:2;grid-column:1 / -1}
+    .fdstatus .fdacts .fdsep.lead{display:none}
+    .fdstatus .sp{display:none}
+  }
   .fdabout{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);margin-bottom:var(--space-3)}
   .fdgrid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)}
   @media (max-width:760px){.fdgrid{grid-template-columns:1fr}}
