@@ -9,7 +9,7 @@
  * second create surface from quietly growing back.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 const push = vi.fn();
 
@@ -37,6 +37,12 @@ describe("Topbar", () => {
     expect(screen.getByText("Office")).toBeTruthy();
     expect(screen.getByTitle("Light / dark")).toBeTruthy();
     expect(screen.getByTitle("Notifications")).toBeTruthy();
+  });
+
+  it("carries the More overflow (phone-only via CSS) so dropping the More tab lost no reach", () => {
+    render(<Topbar />);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(push).toHaveBeenCalledWith("/more");
   });
 
   it("carries NO create trigger — creation lives in the tab bar's center button", () => {

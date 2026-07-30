@@ -130,8 +130,8 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
     },
     { href: "/jobs", label: "Jobs", icon: <JobsIcon />, active: pathname.startsWith("/jobs"), count: jobsCount },
     { href: "/money", label: "Money", icon: <MoneyIcon />, active: pathname.startsWith("/money"), count: moneyCount },
-    // "More" = the overflow: Settings + the Field surfaces + account (see /more).
-    { href: "/more", label: "More", icon: <MoreIcon />, active: pathname.startsWith("/more") || pathname.startsWith("/settings") },
+    // "More" (Settings + field surfaces + account) moved to the TOPBAR ⋯ button so the
+    // create button sits dead-center of an odd-count bar: Office · Customers · [+] · Jobs · Money.
   ];
 
   const fieldTabs: Tab[] = [

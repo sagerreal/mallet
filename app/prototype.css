@@ -311,6 +311,8 @@
   @media (prefers-reduced-motion:reduce){.ctl,.ct-sourced{animation:none}}
   #aidrawer{display:none!important}   /* AI moved to the command line; the old persistent side rail is retired */
   .iconbtn{background:none;border:1px solid transparent;color:var(--ink-2);width:34px;height:34px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:var(--type-md)}
+  /* Topbar ⋯ (More overflow) is phone-only — desktop reaches Settings via the sidebar. */
+  .topmore{display:none}
   .iconbtn:hover{background:var(--paper);color:var(--ink)}
   /* the topbar's create surface — MOBILE ONLY. Desktop creates from the sidebar's
      "+ New", which is display:none below 760px; this is its replacement, not a peer. */
@@ -2167,6 +2169,8 @@
     #mobiletabs{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(60px + var(--safe-b));padding-bottom:var(--safe-b);background:var(--card);border-top:1px solid var(--line);z-index:60;box-shadow:0 -2px 16px rgba(0,0,0,.06)}
     /* Center create button — the app's key action gets the Instagram slot. A filled
        square so it reads as THE action, not a fifth destination. */
+    /* The topbar ⋯ (More) is a phone affordance — desktop reaches Settings via the sidebar. */
+    .topmore{display:inline-flex}
     /* Label-less, so it can't share the neighbors' icon-over-label rhythm — center the
        pill on the bar's full height instead, aligned with the tabs' visual mass. */
     .mtab-create{background:none;border:none;font:inherit;justify-content:center;padding:0;align-self:stretch}

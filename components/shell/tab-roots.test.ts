@@ -29,13 +29,13 @@ describe("TAB_ROOTS stays in step with the actual tab bar", () => {
 
 describe("isTabRoot", () => {
   it("treats every bottom-tab destination as a root (no back control)", () => {
-    for (const route of ["/dashboard", "/customers", "/jobs", "/money", "/more", "/my-day", "/my-hours", "/messages", "/account"]) {
+    for (const route of ["/dashboard", "/customers", "/jobs", "/money", "/my-day", "/my-hours", "/messages", "/account"]) {
       expect(isTabRoot(route), route).toBe(true);
     }
   });
 
   it("treats the dead-end routes as non-roots (back control shown)", () => {
-    for (const route of ["/pipeline", "/tasks", "/composer", "/settings"]) {
+    for (const route of ["/pipeline", "/tasks", "/composer", "/settings", "/more"]) {
       expect(isTabRoot(route), route).toBe(false);
     }
   });
