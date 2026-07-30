@@ -1,5 +1,5 @@
 import { and, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
-import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos } from "@mallet/shared/db/schema";
+import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf } from "@mallet/shared/db/sort-page";
@@ -242,12 +242,22 @@ export class DrizzleJobRepository implements JobRepository {
     return toDomain(header, visitRows);
   }
 
-  list(
-    page: CursorPage,
-    filter?: JobFilter,
-    sort?: JobSort,
-    sortDir?: "asc" | "desc",
-  ): Promise<Paginated<Job>> {
+  /**
+   * How many jobs match, ignoring pagination.
+   *
+   * Shares listConds with list() deliberately. A count built from a second, hand-copied predicate
+   * is a count that drifts from its list the first time a filter changes — and a header reading
+   * "220 of 1,521" is only worth showing if the 1,521 is the same question as the 220.
+   */
+  async count(filter?: JobFilter): Promise<number> {
+    const rows = await this.tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(jobs)
+      .where(and(...this.listConds(filter)));
+    return rows[0]?.n ?? 0;
+  }
+
+  private listConds(filter?: JobFilter): SQL[] {
     const conds: SQL[] = [isNull(jobs.deletedAt)];
     if (filter?.status) conds.push(eq(jobs.status, filter.status));
     if (filter?.search) {
@@ -256,7 +266,21 @@ export class DrizzleJobRepository implements JobRepository {
       // stops filtering and nobody can tell why.
       const term = filter.search.replace(/[\\%_]/g, (m) => `\\${m}`);
       const like = `%${term}%`;
-      const cond = or(ilike(jobs.title, like), ilike(jobs.num, like));
+      // Customer name is searched through an EXISTS subquery rather than a join. A join would
+      // multiply job rows and break the keyset, whereas EXISTS is a filter and leaves the
+      // ordering — and therefore the cursor — untouched. It matters that this is here at all:
+      // the client-side search it replaces covered customer name, and dropping it would be a
+      // regression the office would notice on the first search.
+      const cond = or(
+        ilike(jobs.title, like),
+        ilike(jobs.num, like),
+        exists(
+          this.tx
+            .select({ one: sql`1` })
+            .from(leads)
+            .where(and(eq(leads.orgId, jobs.orgId), eq(leads.id, jobs.leadId), ilike(leads.name, like))),
+        ),
+      );
       if (cond) conds.push(cond);
     }
     if (filter?.assigneeUserId) conds.push(eq(jobs.assigneeUserId, filter.assigneeUserId));
@@ -283,7 +307,16 @@ export class DrizzleJobRepository implements JobRepository {
       );
       if (cond) conds.push(cond);
     }
-    return this.loadPage(conds, page, sort, sortDir);
+    return conds;
+  }
+
+  list(
+    page: CursorPage,
+    filter?: JobFilter,
+    sort?: JobSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Job>> {
+    return this.loadPage(this.listConds(filter), page, sort, sortDir);
   }
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>> {

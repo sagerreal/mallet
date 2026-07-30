@@ -240,6 +240,36 @@ export const createJobRouter = () =>
         return { items: page.items.map((j) => toJobSummaryDTO(j)), nextCursor: page.nextCursor };
       }),
 
+    /**
+     * The TRUE number of jobs matching a filter.
+     *
+     * Separate from list on purpose. The list returns one page; the header needs the whole count,
+     * and deriving it from a page is exactly the lie this fixes — the app was reporting
+     * "220 of 220" against 1,521 real jobs because 220 was all it had ever loaded.
+     *
+     * Its own query so a caller can ask for the count without paying for the rows, and so the
+     * count survives the client switching pages.
+     */
+    count: ownerOrOffice
+      .input(
+        z.object({
+          status: statusEnum.optional(),
+          assigneeUserId: z.string().uuid().optional(),
+          search: z.string().trim().min(1).max(200).optional(),
+        }),
+      )
+      .output(z.object({ total: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        return {
+          total: await repo.count({
+            status: input.status,
+            assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
+            search: input.search,
+          }),
+        };
+      }),
+
     listByLead: ownerOrOffice
       .input(listByLeadInput)
       .output(paginatedSummaryDTO)

@@ -91,6 +91,9 @@ export interface JobRepository {
   // Underpins createFromEstimate idempotency (one active job per accepted estimate).
   findBySourceEstimate(estimateId: EstimateId): Promise<Job | null>;
   list(page: CursorPage, filter?: JobFilter, sort?: JobSort, sortDir?: "asc" | "desc"): Promise<Paginated<Job>>;
+
+  /** How many jobs match the filter, ignoring pagination. Same predicates as list(). */
+  count(filter?: JobFilter): Promise<number>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>>;
 
   // ── job execution data (Phase 5) ─────────────────────────────────────────
