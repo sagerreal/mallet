@@ -22,7 +22,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
  * Not a security surface: the worst a forged date does is show you a different day of your own
  * jobs, which you can already see.
  */
-export const JOB_VIEWS = ["needsSlot", "today", "week", "upcoming", "needsInvoice", "done"] as const;
+export const JOB_VIEWS = ["needsSlot", "today", "week", "upcoming", "needsInvoice", "done", "archived"] as const;
 export type JobView = (typeof JOB_VIEWS)[number];
 
 /** Labels, matching the bands the screen already shows. */
@@ -33,7 +33,17 @@ export const JOB_VIEW_LABELS: Record<JobView, string> = {
   upcoming: "Upcoming",
   needsInvoice: "Done, not billed",
   done: "Done",
+  archived: "Archived",
 };
+
+/**
+ * How long a finished, billed job stays on the active list before it archives itself.
+ *
+ * MUST equal JOB_ARCHIVE_AFTER_DAYS in features/jobs/today-derive.ts (7). Duplicated rather than
+ * imported because a domain module must not reach into features/ — an integration test asserts
+ * the two agree, because a silent drift here moves jobs between Done and Archived.
+ */
+export const ARCHIVE_AFTER_DAYS = 7;
 
 const TERMINAL = ["complete", "canceled"] as const;
 
@@ -107,10 +117,32 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
             ),
         )}`,
       ) as SQL;
-    case "done":
-    default:
+    case "archived":
+      // Auto-archived: finished, billed, and old enough to have fallen off the working list.
+      // The client derived this from the loaded collection; in SQL it is a date predicate.
       return and(
         eq(jobs.status, "complete"),
+        sql`${jobs.completedAt} < (${p.today}::date - interval '${sql.raw(String(ARCHIVE_AFTER_DAYS))} days')`,
+        exists(
+          tx
+            .select({ one: sql`1` })
+            .from(invoices)
+            .where(
+              and(
+                eq(invoices.orgId, jobs.orgId),
+                eq(invoices.sourceJobId, jobs.id),
+                isNull(invoices.deletedAt),
+              ),
+            ),
+        ),
+      ) as SQL;
+    case "done":
+    default:
+      // Explicitly NOT the archived ones, or a finished job older than the cutoff is counted in
+      // both — the mutual-exclusivity property everything else on this screen depends on.
+      return and(
+        eq(jobs.status, "complete"),
+        sql`(${jobs.completedAt} IS NULL OR ${jobs.completedAt} >= (${p.today}::date - interval '${sql.raw(String(ARCHIVE_AFTER_DAYS))} days'))`,
         exists(
           tx
             .select({ one: sql`1` })

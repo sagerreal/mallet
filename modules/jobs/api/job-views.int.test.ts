@@ -8,6 +8,8 @@ import { closeDb } from "@mallet/shared/db/client";
 import type { AuthProvider, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
+import { ARCHIVE_AFTER_DAYS } from "../infra/job-views";
+import { JOB_ARCHIVE_AFTER_DAYS } from "@/features/jobs/today-derive";
 
 /**
  * The scoped views — the SQL twin of the lifecycle bands.
@@ -105,7 +107,7 @@ suite("jobs scoped views", () => {
 
     // And no id appears in two views.
     const seen = new Set<string>();
-    for (const view of ["needsSlot", "today", "week", "upcoming", "needsInvoice", "done"] as const) {
+    for (const view of ["needsSlot", "today", "week", "upcoming", "needsInvoice", "done", "archived"] as const) {
       const page = await caller.v1.jobs.list({ view, today: TODAY, limit: 50 });
       for (const j of page.items) {
         expect(seen.has(j.id), `${j.num} appears in more than one view`).toBe(false);
@@ -143,6 +145,12 @@ suite("jobs scoped views", () => {
     const c = await caller.v1.jobs.viewCounts({ today: TODAY, search: "V-TODAY" });
     expect(c.today).toBe(3);
     expect(c.needsSlot).toBe(0);
+  });
+
+  it("keeps the archive cutoff in step with the client's constant", () => {
+    // The rule lives in two places — a domain module must not import from features/ — so a silent
+    // drift here moves jobs between Done and Archived without anything failing.
+    expect(ARCHIVE_AFTER_DAYS).toBe(JOB_ARCHIVE_AFTER_DAYS);
   });
 
   it("does not leak across tenants", async () => {
