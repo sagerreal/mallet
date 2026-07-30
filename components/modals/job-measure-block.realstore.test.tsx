@@ -33,6 +33,13 @@ vi.mock("@/features/measurements/use-job-rooms", () => ({
   useJobRooms: (...args: unknown[]) => useJobRoomsMock(...args),
 }));
 
+// JobMeasureBlock calls useRouter() unconditionally (the "Build the price"
+// button's navigate-away action) — needs a router even though these tests
+// never hit an interactive path that pushes.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 beforeEach(() => {
   // Reset only the measurements slice — the job has NO roomsByJob entry,
   // reproducing the exact seam the bug lived in (`s.roomsByJob[jobId]` is
