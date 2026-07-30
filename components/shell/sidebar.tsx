@@ -162,7 +162,7 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
   const navCounts = useNavCounts();
   const customerCount = navCounts.customers;
   const jobsCount = navCounts.jobs;
-  const moneyCount = useAppStore(selectMoneyCount);
+  const moneyCount = navCounts.money ?? 0;
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
 
