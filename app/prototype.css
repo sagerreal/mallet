@@ -1837,11 +1837,17 @@
   .sched-vn{width:21px;height:21px;border-radius:50%;background:var(--green-100);color:var(--ink-2);font-size:var(--type-xs);font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
   .sched-vrow .vx{margin-left:auto;color:var(--ink-3);padding:var(--space-1) var(--space-2)}
   /* DAY = dispatch board: one ROW per crew member, the day's hours running left→right (scales to many techs via vertical scroll). */
-  .gv-scroll{border:1px solid var(--line);border-radius:var(--radius);overflow-x:auto;background:var(--card)}
+  .gv-scroll{position:relative;border:1px solid var(--line);border-radius:var(--radius);overflow-x:auto;background:var(--card)}
   .gv-row{display:flex;align-items:stretch;border-bottom:1px solid var(--line-2)}
   .gv-row:last-child{border-bottom:none}
   .gv-head{position:sticky;top:0;z-index:2}
   .gv-name{flex:0 0 148px;width:148px;padding:var(--space-2) var(--space-3);display:flex;align-items:center;gap:var(--space-2);border-right:1px solid var(--line);background:var(--card)}
+  /* toolbar above the board: Day/Week segmented + the Prev·Today·Next cluster. Two
+     atomic groups so the phone media query below can stack them WHOLE — without this,
+     the individual buttons wrap ragged (Next orphaned on its own line). */
+  .sched-toolbar{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap}
+  .sched-toolbar-gap{width:6px}
+  .sched-nav{display:inline-flex;align-items:center;gap:var(--space-2);flex-wrap:nowrap}
   .gv-head .gv-name,.gv-head .gv-lane{background:var(--paper)}
   .gv-nm{font-weight:700;font-size:var(--type-base);line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
   .gv-lane{position:relative;flex:0 0 auto}
@@ -2030,8 +2036,20 @@
     .ticket .thesis{font-size:var(--type-md)}
     .dash-grid{grid-template-columns:1fr}
     .board{gap:var(--space-3);scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-left:var(--space-2xs);padding-right:var(--space-4)}
-    .board .col{flex:0 0 88%;min-width:88%;scroll-snap-align:start}
+    /* Deliberate peek, not a clip: the next column sits ~48px into view, which
+       itself is the "there's more" affordance — no dots/arrows needed. */
+    .board .col{flex:0 0 calc(100% - 48px);min-width:calc(100% - 48px);scroll-snap-align:start}
     .toolbar{flex-wrap:wrap}
+    /* Schedule toolbar: stack the two groups WHOLE instead of letting individual
+       buttons wrap — [Day|Week] on its own row, [‹ Prev · Today · Next ›] on the next. */
+    .sched-toolbar{flex-direction:column;align-items:flex-start;gap:var(--space-2)}
+    .sched-toolbar-gap{display:none}
+    .sched-nav{width:100%;overflow-x:auto}
+    /* Crew×hours board: the CREW name column stays put while the hour lanes pan,
+       and a soft right-edge fade hints there's more to scroll. */
+    .gv-name{position:sticky;left:0;z-index:3}
+    .gv-scroll{-webkit-overflow-scrolling:touch}
+    .gv-scroll::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,var(--card))}
     html,body{overflow-x:hidden;max-width:100%}
     /* ═══ Modals are BOTTOM SHEETS on a phone. ═══
        A floating centered card is a desktop shape: on a 393px screen it pinned to the
@@ -2150,9 +2168,10 @@
     .toolbar{gap:var(--space-2);margin-bottom:var(--space-2)}
     .toolbar-search{max-width:none}
     .toolbar-search input{font-size:var(--type-md);padding:var(--space-3) 0}
-    /* To-schedule tray: horizontal scroll with snap on mobile */
+    /* To-schedule tray: horizontal scroll with snap on mobile. A deliberate peek —
+       the next card sits ~48px into view — IS the scroll affordance; no dots/arrows. */
     .tray-grid{display:flex !important;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:var(--space-2)}
-    .tray-grid > *{flex:0 0 88%;scroll-snap-align:start}
+    .tray-grid > *{flex:0 0 calc(100% - 48px);scroll-snap-align:start}
     /* Auth pages: hide brand panel, show mobile logo */
     .auth-brand{display:none}
     .auth-mob-logo{display:block}
