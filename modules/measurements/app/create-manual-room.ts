@@ -81,6 +81,7 @@ export class CreateManualRoomUseCase {
     const initialQuantities: PaintingQuantity[] = ALL_PAINTING_QUANTITY_KINDS.map((kind) => ({
       kind,
       value: null,
+      derivedValue: null, // a manual room has no derivation, so no suggestion either
       status: "needs_confirm",
     }));
     await this.repo.createCapture(capture, initialQuantities);

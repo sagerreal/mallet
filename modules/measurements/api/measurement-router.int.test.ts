@@ -120,9 +120,12 @@ suite("measurements tRPC router (full stack, live RLS)", () => {
     expect(walls?.status).toBe("derived");
     expect(walls?.value).toBeCloseTo(103.3, 1);
 
+    // Trim existence is unobservable — baseboard arrives as a needs_confirm SUGGESTION
+    // (derivedValue set, value null) and never prices until a human confirms.
     const baseboard = ingested.quantities.find((q) => q.kind === "baseboard_lnft");
-    expect(baseboard?.status).toBe("derived");
-    expect(baseboard?.value).toBeGreaterThan(0);
+    expect(baseboard?.status).toBe("needs_confirm");
+    expect(baseboard?.value).toBeNull();
+    expect(baseboard?.derivedValue).toBeGreaterThan(0);
 
     const listed = await caller.v1.measurements.list({ jobId: jobAId });
     const found = listed.find((r) => r.id === ingested.id);

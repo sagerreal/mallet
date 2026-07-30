@@ -124,7 +124,7 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
       const stored = found.quantities.find((s) => s.kind === q.kind);
       expect(stored).toBeDefined();
       expect(stored!.value).toBe(q.value);
-      expect(stored!.derivedValue).toBe(q.value);
+      expect(stored!.derivedValue).toBe(q.derivedValue);
       expect(stored!.status).toBe(q.status);
     }
   });
@@ -272,7 +272,7 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     const stored = after!.quantities.find((q) => q.kind === "walls_sqft")!;
     expect(stored.value).toBe(999.9);
     expect(stored.status).toBe("override");
-    expect(stored.derivedValue).toBe(wallsQuantity.value);
+    expect(stored.derivedValue).toBe(wallsQuantity.derivedValue);
   });
 
   it("setQuantity on a kind that doesn't exist for the capture returns 0 (no silent no-op)", async () => {

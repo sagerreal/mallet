@@ -38,20 +38,21 @@ describe("derivePaintingQuantities", () => {
     const qs = derivePaintingQuantities(room4x3x2p4());
 
     // Walls are GROSS: 33.6 m^2 * 10.763910417 = 361.6673900112 -> 361.7. Openings never deducted.
-    expect(findQuantity(qs, "walls_sqft")).toEqual({ kind: "walls_sqft", value: 361.7, status: "derived" });
+    expect(findQuantity(qs, "walls_sqft")).toEqual({ kind: "walls_sqft", value: 361.7, derivedValue: 361.7, status: "derived" });
 
     // Ceiling: 12 m^2 * 10.763910417 = 129.166925004 -> 129.2.
-    expect(findQuantity(qs, "ceiling_sqft")).toEqual({ kind: "ceiling_sqft", value: 129.2, status: "derived" });
+    expect(findQuantity(qs, "ceiling_sqft")).toEqual({ kind: "ceiling_sqft", value: 129.2, derivedValue: 129.2, status: "derived" });
 
     // Baseboard: (14 - 0.9 door width) * 3.280839895 = 13.1 * 3.280839895 = 42.9790026245 -> 43.0.
-    expect(findQuantity(qs, "baseboard_lnft")).toEqual({ kind: "baseboard_lnft", value: 43.0, status: "derived" });
+    // Trim EXISTENCE is unobservable — both ship as needs_confirm suggestions, never facts.
+    expect(findQuantity(qs, "baseboard_lnft")).toEqual({ kind: "baseboard_lnft", value: null, derivedValue: 43.0, status: "needs_confirm" });
 
     // Crown: flat convention, ceiling perimeter = floor perimeter = 14 m.
     // 14 * 3.280839895 = 45.93175853 -> 45.9.
-    expect(findQuantity(qs, "crown_lnft")).toEqual({ kind: "crown_lnft", value: 45.9, status: "derived" });
+    expect(findQuantity(qs, "crown_lnft")).toEqual({ kind: "crown_lnft", value: null, derivedValue: 45.9, status: "needs_confirm" });
 
-    expect(findQuantity(qs, "doors_count")).toEqual({ kind: "doors_count", value: 1, status: "derived" });
-    expect(findQuantity(qs, "windows_count")).toEqual({ kind: "windows_count", value: 1, status: "derived" });
+    expect(findQuantity(qs, "doors_count")).toEqual({ kind: "doors_count", value: 1, derivedValue: 1, status: "derived" });
+    expect(findQuantity(qs, "windows_count")).toEqual({ kind: "windows_count", value: 1, derivedValue: 1, status: "derived" });
   });
 
   it("never deducts opening area from gross wall area, even with many large openings", () => {
@@ -70,6 +71,7 @@ describe("derivePaintingQuantities", () => {
     expect(findQuantity(derivePaintingQuantities(g), "ceiling_sqft")).toEqual({
       kind: "ceiling_sqft",
       value: null,
+      derivedValue: null,
       status: "needs_confirm",
     });
   });
@@ -79,6 +81,7 @@ describe("derivePaintingQuantities", () => {
     expect(findQuantity(derivePaintingQuantities(g), "ceiling_sqft")).toEqual({
       kind: "ceiling_sqft",
       value: null,
+      derivedValue: null,
       status: "needs_confirm",
     });
   });
@@ -88,6 +91,7 @@ describe("derivePaintingQuantities", () => {
     expect(findQuantity(derivePaintingQuantities(g), "ceiling_sqft")).toEqual({
       kind: "ceiling_sqft",
       value: null,
+      derivedValue: null,
       status: "needs_confirm",
     });
   });
@@ -96,7 +100,7 @@ describe("derivePaintingQuantities", () => {
     const g = room4x3x2p4({
       openings: [{ kind: "door", width: 999, height: 2.0, wallIndex: 0 }],
     });
-    expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").value).toBe(0);
+    expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").derivedValue).toBe(0);
   });
 
   it("does not deduct window widths from baseboard, only doors", () => {
@@ -104,17 +108,17 @@ describe("derivePaintingQuantities", () => {
       openings: [{ kind: "window", width: 5, height: 1.0, wallIndex: 0 }],
     });
     // No doors: baseboard = full 14m perimeter * 3.280839895 = 45.93175853 -> 45.9.
-    expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").value).toBe(45.9);
+    expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").derivedValue).toBe(45.9);
   });
 
   it("returns walls_sqft needs_confirm/null when there are no wall polygons, but still derives baseboard/crown from the floor", () => {
     const g = room4x3x2p4({ walls: [] });
     const qs = derivePaintingQuantities(g);
-    expect(findQuantity(qs, "walls_sqft")).toEqual({ kind: "walls_sqft", value: null, status: "needs_confirm" });
+    expect(findQuantity(qs, "walls_sqft")).toEqual({ kind: "walls_sqft", value: null, derivedValue: null, status: "needs_confirm" });
     // Floor polygon is schema-required, so perimeter-derived quantities stay meaningful even
     // with zero usable walls.
-    expect(findQuantity(qs, "baseboard_lnft")).toEqual({ kind: "baseboard_lnft", value: 43.0, status: "derived" });
-    expect(findQuantity(qs, "crown_lnft")).toEqual({ kind: "crown_lnft", value: 45.9, status: "derived" });
+    expect(findQuantity(qs, "baseboard_lnft")).toEqual({ kind: "baseboard_lnft", value: null, derivedValue: 43.0, status: "needs_confirm" });
+    expect(findQuantity(qs, "crown_lnft")).toEqual({ kind: "crown_lnft", value: null, derivedValue: 45.9, status: "needs_confirm" });
   });
 
   it("returns walls_sqft needs_confirm/null when every wall polygon is degenerate (< 3 vertices)", () => {
@@ -127,6 +131,7 @@ describe("derivePaintingQuantities", () => {
     expect(findQuantity(derivePaintingQuantities(g), "walls_sqft")).toEqual({
       kind: "walls_sqft",
       value: null,
+      derivedValue: null,
       status: "needs_confirm",
     });
   });
@@ -139,6 +144,7 @@ describe("derivePaintingQuantities", () => {
     expect(findQuantity(derivePaintingQuantities(withOneEmpty), "walls_sqft")).toEqual({
       kind: "walls_sqft",
       value: null,
+      derivedValue: null,
       status: "needs_confirm",
     });
   });
@@ -160,8 +166,8 @@ describe("derivePaintingQuantities", () => {
       },
       openings: [],
     });
-    expect(findQuantity(derivePaintingQuantities(g), "crown_lnft").value).toBe(45.8);
-    expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").value).toBe(45.8);
+    expect(findQuantity(derivePaintingQuantities(g), "crown_lnft").derivedValue).toBe(45.8);
+    expect(findQuantity(derivePaintingQuantities(g), "baseboard_lnft").derivedValue).toBe(45.8);
   });
 
   it("counts 'opening' kind as neither a door nor a window", () => {
