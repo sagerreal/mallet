@@ -2306,3 +2306,28 @@
   .sk-row{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-1);border-bottom:1px solid var(--line-2)}
   /* Screen-reader-only: visually hidden, still announced (e.g. a skeleton's "Loading…"). */
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+  /* FEEL: post-Jul-17 surfaces — controls added after the FEEL KIT landed and
+     never got press feedback, so a tap on them was visually silent until the
+     network settled. Sweep per mobile-sweep Task 7. */
+
+  /* Sheet-grammar (#253/#254) rows: .sheet-row is both a plain action row
+     (SheetRow onPress) and every .sheet-acc accordion head — same button,
+     no :active at all. One shade deeper, matching .uirow-clickable below. */
+  .sheet-row:active{background:var(--manila-2)}
+
+  /* Text-link controls (RescanRow's "Re-scan room", the schedule panel's
+     "jump to today", the pipeline record links) — plain color, no feedback. */
+  .linklike:active{opacity:.6}
+
+  /* Mallet dropdown (#255 SelectMenu) — the trigger carried no className at
+     all (inline styles only) and the option rows set `background` inline
+     per-render, so neither could be reached by an external :active rule
+     (inline always wins over a stylesheet). Moved those two backgrounds
+     out to these classes so press feedback can land. */
+  .select-trigger{background:var(--card)}
+  .select-trigger:disabled{background:var(--bg)}
+  .select-trigger:active{background:var(--manila-2)}
+  .select-option{background:transparent}
+  .select-option.active{background:var(--manila-2)}
+  .select-option:active{background:color-mix(in srgb,var(--ink) 12%,var(--manila-2))}

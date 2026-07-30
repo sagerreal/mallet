@@ -197,7 +197,6 @@ export function SelectMenu({
     padding: compact ? "var(--space-2) var(--space-3)" : "var(--space-3) var(--space-3)",
     borderRadius: compact ? "var(--radius-sm)" : "var(--radius-md)",
     border: "1.5px solid var(--line)",
-    background: disabled ? "var(--bg)" : "var(--card)",
     color: selected ? "var(--ink)" : "var(--ink-3)",
     cursor: disabled ? "not-allowed" : "pointer",
     ...style,
@@ -208,6 +207,7 @@ export function SelectMenu({
       <button
         type="button"
         id={id}
+        className="select-trigger"
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openAt(selectedIdx >= 0 ? selectedIdx : firstEnabled()))}
         onKeyDown={onKeyDown}
@@ -275,6 +275,7 @@ export function SelectMenu({
             )}
             <li
               id={`${listboxId}-${i}`}
+              className={`select-option${i === activeIdx ? " active" : ""}`}
               role="option"
               aria-selected={o.value === value}
               aria-disabled={o.disabled || undefined}
@@ -290,7 +291,6 @@ export function SelectMenu({
                 fontSize: compact ? "var(--type-base)" : "var(--type-md)",
                 cursor: o.disabled ? "not-allowed" : "pointer",
                 color: o.disabled ? "var(--ink-3)" : "var(--ink)",
-                background: i === activeIdx ? "var(--manila-2)" : "transparent",
                 fontWeight: o.value === value ? 700 : 400,
                 display: "flex",
                 alignItems: "center",
