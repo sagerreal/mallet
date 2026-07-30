@@ -27,4 +27,8 @@ export { runInSavepoint } from "./api/savepoint";
 // Signature evidence on an accepted quote: who signed, and a frozen copy of exactly what they
 // signed. coveredBySignature answers whether a final invoice still falls under it.
 export { createSignature, coveredBySignature } from "./domain/signature";
+export type { SignatureDraft } from "./domain/signature";
+// The authorisation sentence is exported so the FIELD signing path renders and stores the same
+// words as the web one. Two copies of this sentence would be two different agreements.
+export { authorizationText, AUTHORIZATION_VERSION } from "./domain/authorization-text";
 export type { Signature, SignedSnapshot, SignedLine } from "./domain/signature";

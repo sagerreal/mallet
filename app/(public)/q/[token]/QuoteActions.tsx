@@ -16,7 +16,7 @@ import { useState } from "react";
 import { fmt$ } from "@/lib/format";
 import type { QuoteTier } from "@/modules/quoting/domain/estimate";
 import { authorizationText } from "@/modules/quoting/domain/authorization-text";
-import { SignaturePad } from "./SignaturePad";
+import { SignaturePad } from "@/components/shared/signature-pad";
 
 /** Interaction phase — owned by QuoteLines so the add-on toggles above the
  *  actions lock while an accept is in flight and stay locked once terminal. */

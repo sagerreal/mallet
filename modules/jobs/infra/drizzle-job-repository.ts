@@ -15,6 +15,7 @@ import {
   type Paginated,
 } from "@mallet/shared/types";
 import type { Job, JobChecklistProps } from "../domain/job";
+import type { JobSignature } from "../domain/job-signature";
 import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPairRow } from "../domain/job-repository";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
@@ -427,6 +428,36 @@ export class DrizzleJobRepository implements JobRepository {
         };
       }),
     );
+  }
+
+  /**
+   * Write the on-glass signature onto the job.
+   *
+   * Runs in the same tenant tx as the replaceLines call that precedes it, so a failed line write
+   * takes the signature down with it — a signature referring to prices that never persisted is
+   * worse than no signature, because it looks like proof of a number nobody agreed to.
+   *
+   * org-scoped by both RLS and the explicit eq(orgId), like every write here.
+   */
+  async saveOnSiteSignature(
+    jobId: JobId,
+    signature: JobSignature,
+    signedByUserId: string | null,
+    now: Date,
+  ): Promise<void> {
+    await this.tx
+      .update(jobs)
+      .set({
+        signerName: signature.signerName,
+        signatureSvg: signature.signatureSvg,
+        signerIp: signature.signerIp,
+        signerUserAgent: signature.signerUserAgent,
+        signedAt: signature.signedAt,
+        signedSnapshot: signature.snapshot,
+        signedByUserId,
+        updatedAt: now,
+      })
+      .where(and(eq(jobs.id, jobId), eq(jobs.orgId, this.orgId), isNull(jobs.deletedAt)));
   }
 
   async addAddon(addon: JobAddon, now: Date): Promise<void> {

@@ -144,6 +144,17 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
       .where(eq(orgSettings.orgId, this.orgId));
   }
 
+  /**
+   * Just the shop's display name.
+   *
+   * Exists so callers that need only the name (the on-glass authorisation sentence) do not have to
+   * load the whole settings aggregate and invent a BookingCfg default to do it.
+   */
+  async getOrgName(): Promise<string> {
+    const rows = await this.tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, this.orgId)).limit(1);
+    return rows[0]?.name ?? "My Business";
+  }
+
   async getTechSeesPrice(): Promise<boolean> {
     const rows = await this.tx
       .select({ techSeesPrice: orgSettings.techSeesPrice })

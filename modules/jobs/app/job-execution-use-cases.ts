@@ -4,6 +4,9 @@ import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import type { Job } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
+import { buildJobSignature } from "../domain/job-signature";
+import type { JobSignature } from "../domain/job-signature";
+import type { SignatureDraft } from "../../quoting/domain/signature";
 import {
   JobLine,
   JobAddon,
@@ -118,6 +121,16 @@ export interface SetJobLinesLine {
 export interface SetJobLinesCommand {
   readonly jobId: JobId;
   readonly lines: readonly SetJobLinesLine[];
+  /**
+   * On-glass signature captured with this price. Absent on every office path — pricing a job in
+   * the office is not a customer agreeing to anything, and forcing a signature there would make
+   * the office lie or become unusable.
+   */
+  readonly signature?: SignatureDraft;
+  /** Shop name for the authorisation sentence. Required alongside a signature. */
+  readonly orgName?: string;
+  /** The staff member whose device took it — the in-person witness. */
+  readonly signedByUserId?: string | null;
 }
 
 // Bulk-replace a job's lines in one atomic swap (soft-delete current + insert new). Used by
@@ -149,7 +162,31 @@ export class SetJobLinesUseCase {
       if (!line.ok) return line;
       built.push(line.value);
     }
-    await this.repo.replaceLines(cmd.jobId, built, this.clock.now());
+    const now = this.clock.now();
+
+    // Signature FIRST, before anything is written. buildJobSignature freezes the snapshot from
+    // `built` — the exact lines about to be persisted — and rejects a blank name. Validating after
+    // the write would leave the price saved and the signature refused, which is the state the
+    // customer least expects: they watched themselves sign and the shop holds only a number.
+    let signature: JobSignature | null = null;
+    if (cmd.signature) {
+      const result = buildJobSignature({
+        draft: cmd.signature,
+        lines: built,
+        orgName: cmd.orgName ?? "",
+        signedAt: now,
+      });
+      if (!result.ok) return result;
+      signature = result.value;
+    }
+
+    await this.repo.replaceLines(cmd.jobId, built, now);
+    if (signature) {
+      // Same tenant tx as the line write — the orgTx re-throw guard rolls both back together, so a
+      // signature can never outlive the prices it refers to.
+      await this.repo.saveOnSiteSignature(cmd.jobId, signature, cmd.signedByUserId ?? null, now);
+      logger.info({ jobId: cmd.jobId, orgId, totalCents: signature.snapshot.totalCents }, "job.signed_on_site");
+    }
     logger.info({ jobId: cmd.jobId, count: built.length, orgId }, "job_lines.replaced");
     return loadOrThrow(this.repo, cmd.jobId);
   }

@@ -984,4 +984,120 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       }
     });
   });
+
+  // -------------------------------------------------------------------------
+  // signQuote — on-glass sign-off. Before this endpoint existed the tech modal
+  // called v1.jobs.setLines (ownerOrOffice), so a technician got FORBIDDEN and
+  // was told to check their connection. Nothing about that flow worked.
+  // -------------------------------------------------------------------------
+  describe("signQuote", () => {
+    // Own fixtures, not the shared jobAId/jobBId: earlier tests in this suite COMPLETE those jobs,
+    // and a terminal job is correctly refused here. Sharing them made this test fail for a reason
+    // that had nothing to do with signing.
+    let sigJobA = "";
+    let sigJobB = "";
+
+    beforeAll(async () => {
+      const [a] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-SIG-A', 'scheduled', 0, ${techAId})
+        returning id
+      `;
+      sigJobA = a!.id;
+      const [b] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-SIG-B', 'scheduled', 0, ${techBId})
+        returning id
+      `;
+      sigJobB = b!.id;
+    });
+
+    it("a TECH can price and sign their own job — the whole point of this endpoint", async () => {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      const dto = await caller.v1.field.signQuote({
+        jobId: sigJobA,
+        lines: [
+          { description: "Water heater swap", quantity: 1, rateCents: 150_000, costCents: 0 },
+          { description: "Haul-away", quantity: 1, rateCents: 5_000, costCents: 0 },
+        ],
+        signerName: "Dave Chen",
+        signatureSvg: "M10,10 L40,30",
+      });
+      expect(dto.lines).toHaveLength(2);
+
+      const [row] = await admin<{
+        signer_name: string | null;
+        signature_svg: string | null;
+        signed_at: Date | null;
+        signed_by_user_id: string | null;
+        signed_snapshot: { totalCents: number; authorizationText: string } | null;
+      }[]>`
+        select signer_name, signature_svg, signed_at, signed_by_user_id, signed_snapshot
+        from jobs where id = ${sigJobA}
+      `;
+      expect(row!.signer_name).toBe("Dave Chen");
+      expect(row!.signature_svg).toBe("M10,10 L40,30");
+      expect(row!.signed_at).not.toBeNull();
+      // The witness: who was standing there. This is the in-person substitute for the customer's
+      // own IP on the web path, which on a tech's tablet would attest to nothing.
+      expect(row!.signed_by_user_id).toBe(techAId);
+      // The frozen document, built server-side from the lines actually written.
+      expect(row!.signed_snapshot!.totalCents).toBe(155_000);
+      expect(row!.signed_snapshot!.authorizationText).toMatch(/both the quote and the final bill/i);
+    });
+
+    it("a tech CANNOT sign a job assigned to someone else", async () => {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await expect(
+        caller.v1.field.signQuote({
+          jobId: sigJobB,
+          lines: [{ description: "sneaky", quantity: 1, rateCents: 100_000, costCents: 0 }],
+          signerName: "Dave Chen",
+        }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      const [row] = await admin<{ signer_name: string | null }[]>`
+        select signer_name from jobs where id = ${sigJobB}
+      `;
+      expect(row!.signer_name).toBeNull();
+    });
+
+    it("signs with a typed name and no drawing", async () => {
+      const caller = appRouter.createCaller(ctxFor(techBId, orgId, "tech"));
+      await caller.v1.field.signQuote({
+        jobId: sigJobB,
+        lines: [{ description: "Diagnostic", quantity: 1, rateCents: 9_500, costCents: 0 }],
+        signerName: "Marta Reyes",
+      });
+      const [row] = await admin<{ signer_name: string | null; signature_svg: string | null }[]>`
+        select signer_name, signature_svg from jobs where id = ${sigJobB}
+      `;
+      expect(row!.signer_name).toBe("Marta Reyes");
+      expect(row!.signature_svg).toBe("");
+    });
+
+    it("refuses a blank name and writes NOTHING — not even the lines", async () => {
+      // The price and the signature move together. Saving lines while refusing the signature
+      // would leave the customer having watched themselves sign and the shop holding a number.
+      const [j] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-SIG-BLANK', 'scheduled', 0, ${techAId})
+        returning id
+      `;
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await expect(
+        caller.v1.field.signQuote({
+          jobId: j!.id,
+          lines: [{ description: "Repair", quantity: 1, rateCents: 40_000, costCents: 0 }],
+          signerName: "   ",
+        }),
+      ).rejects.toBeTruthy();
+
+      const lines = await admin`select id from job_lines where job_id = ${j!.id} and deleted_at is null`;
+      expect(lines).toHaveLength(0);
+      const [row] = await admin<{ signed_at: Date | null }[]>`select signed_at from jobs where id = ${j!.id}`;
+      expect(row!.signed_at).toBeNull();
+      await admin`delete from jobs where id = ${j!.id}`;
+    });
+  });
 });

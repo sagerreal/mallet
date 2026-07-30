@@ -82,6 +82,27 @@ export const jobs = pgTable(
     // Null = no requirement (most jobs). Set by the AI front desk's book_visit tool via
     // resolveServiceRequirement; office-created and estimate-sourced jobs leave this null.
     requiredCerts: text("required_certs").array(),
+    /**
+     * On-glass signature: the customer approving a price at their kitchen table, on the tech's
+     * device. Mirrors the columns on `estimates` so one SignatureRecord renders both.
+     *
+     * The evidence is WEAKER here than on the web path, and the difference is worth writing down
+     * rather than papering over. On /q/<token> the IP and user agent belong to the customer's own
+     * phone, reached through a link only they were sent. Here they belong to the TECH's tablet, so
+     * they attest to which device took the signature, not to who held it — what carries weight
+     * in person is the tech standing there, the typed name, and the frozen price.
+     *
+     * All nullable: most jobs are never signed on site.
+     */
+    signerName: text("signer_name"),
+    signatureSvg: text("signature_svg"),
+    signerIp: text("signer_ip"),
+    signerUserAgent: text("signer_user_agent"),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    /** The lines and total exactly as shown when signed — see SignedSnapshot in quoting. */
+    signedSnapshot: jsonb("signed_snapshot"),
+    /** The staff member whose device took the signature — the in-person witness. */
+    signedByUserId: uuid("signed_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
