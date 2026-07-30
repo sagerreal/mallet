@@ -40,9 +40,21 @@ import { estTotal } from "@/lib/estimates";
 import { fmtPhone } from "@/lib/format";
 import { AddressInput } from "@/components/ui/address-input";
 
-function statusStamp(status: string): string {
+/**
+ * The pill on a quote row.
+ *
+ * "Signed" and "Accepted" are DIFFERENT and must not be conflated. This used to return "Signed"
+ * for every accepted quote, including one an office user marked accepted after a phone call with
+ * no signature behind it anywhere.
+ *
+ * That is worse than showing nothing. This is the row a shop reads before deciding whether to
+ * chase a balance, and "Signed" told them they held evidence when they held a status field.
+ * "Accepted" is the honest word for a phone approval — it is still a real acceptance, just not a
+ * signed one.
+ */
+function statusStamp(status: string, signed: boolean): string {
   switch (status) {
-    case "accepted": return "Signed";
+    case "accepted": return signed ? "Signed" : "Accepted";
     case "sent": return "Sent";
     case "draft": return "Draft";
     case "declined": return "Declined";
@@ -77,7 +89,7 @@ function QuoteRows({ estimates }: { estimates: Estimate[] }) {
             <span>Quote {e.num}</span>
           </div>
           <span className="amt">${estTotal(e).toLocaleString()}</span>
-          <span className={`pill ${statusStampCls(e.status)}`}>{statusStamp(e.status)}</span>
+          <span className={`pill ${statusStampCls(e.status)}`}>{statusStamp(e.status, Boolean(e.signed))}</span>
           <span className="chev" style={{ color: "var(--ink-3)" }} aria-hidden="true">›</span>
         </button>
       ))}

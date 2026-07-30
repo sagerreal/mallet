@@ -4,9 +4,13 @@
  * table + pricing rollup, status stamp, expiry banner, the follow-up trail for
  * sent quotes, Send-quote for drafts, and an armed two-tap Delete.
  *
+ * The signed agreement now renders here (SignatureRecord) whenever the customer actually signed
+ * — name, drawn mark, the sentence they agreed to, and the frozen snapshot of the quote as it
+ * stood. An accepted quote with no signature shows nothing, which is the honest state for a
+ * phone approval the office marked itself.
+ *
  * Deferred (need surfaces not built yet): "Preview as customer" (the customer
- * GBB page) and the signed-agreement / change-request banners (extended sample
- * states). The modal renders faithfully for the data the store carries today.
+ * GBB page) and the change-request banner.
  *
  * Send flow: draft quotes expand an inline send panel (channel toggle →
  * editable destination → confirm). Mirrors the composer's send semantics:
@@ -34,6 +38,7 @@ import type { Estimate } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { isExpired, gbbTierLine, effectiveEstLines } from "@/lib/estimates";
 import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
+import { SignatureRecord } from "@/components/shared/signature-record";
 import { Field } from "@/components/ui/input";
 import { api } from "@/lib/trpc/client";
 
@@ -448,6 +453,11 @@ export function EstimateModalContent() {
         </div>
       )}
       {e.status === "sent" && <FollowUpTrail e={e} />}
+
+      {/* The signed agreement. Renders ONLY when a signature actually exists — an accepted quote
+          with no signature (the office marking a phone approval) correctly shows nothing here
+          rather than an empty block implying evidence that was never captured. */}
+      {e.signature && <SignatureRecord signature={e.signature} />}
 
       {/* Inline send panel — expands in-flow; the confirm lives in the foot. */}
       {e.status === "draft" && sendOpen && (

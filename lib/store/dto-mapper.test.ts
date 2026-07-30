@@ -75,6 +75,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     termsSnapshot: null,
     publicToken: null,
     publicUrl: null,
+    signature: null,
     createdAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
   };

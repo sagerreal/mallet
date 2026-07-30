@@ -9,6 +9,7 @@ import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 import { acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
+import { GET as publicQuoteGET } from "@/app/api/public/quote/[token]/route";
 
 // Capstone: the whole quoting stack via createCaller — auth, RBAC, org-scoped tx, use-cases,
 // Drizzle repo, live RLS. Owner in org A drafts -> sends -> accepts; org B sees nothing; a tech
@@ -466,6 +467,98 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
       }
     }
     expect(jobTotalCents).toBe(44_000);
+  });
+
+  it("a signed accept reaches the OFFICE through quoting.get — the evidence is readable, not write-only", async () => {
+    // The gap that made the first cut of this feature useless: the signature landed in Postgres
+    // and no authenticated surface could read it back, so the only way to produce it was a SQL
+    // console. This asserts the whole round trip: public signature in, office DTO out.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Signature Readback Customer" });
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Water heater",
+      depBps: 2_500,
+      lines: [{ description: "Water heater swap", quantity: 1, rateCents: 2_000_000 }],
+    });
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+
+    const result = await acceptPublicQuote(sent.publicToken!, undefined, undefined, {
+      signerName: "Dave Chen",
+      signatureSvg: "M10,10 L40,30",
+      signerIp: "203.0.113.9",
+      signerUserAgent: "Mozilla/5.0 (iPhone)",
+    });
+    expect(result.kind).toBe("ok");
+
+    const fetched = await caller.v1.quoting.get({ estimateId: drafted.id });
+    expect(fetched.signature).not.toBeNull();
+    expect(fetched.signature!.signerName).toBe("Dave Chen");
+    expect(fetched.signature!.signatureSvg).toBe("M10,10 L40,30");
+    expect(fetched.signature!.signerIp).toBe("203.0.113.9");
+    expect(fetched.signature!.signedAt).toBeTruthy();
+
+    // The snapshot is the frozen document — the amount and the sentence a shop would produce.
+    expect(fetched.signature!.snapshot.totalCents).toBe(2_000_000);
+    expect(fetched.signature!.snapshot.depositCents).toBe(500_000);
+    expect(fetched.signature!.snapshot.estimateNum).toBe(fetched.num);
+    expect(fetched.signature!.snapshot.authorizationText).toMatch(/both the quote and the final bill/i);
+    expect(fetched.signature!.snapshot.lines).toHaveLength(1);
+  });
+
+  it("an OFFICE accept carries no signature — accepted is not the same as signed", async () => {
+    // A phone approval the office marked itself is a real acceptance with no evidence behind it.
+    // Returning a signature-shaped object here would let the UI print "Signed" over nothing, which
+    // is the failure mode that made the office pill lie before this change.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Phone Approval Customer" });
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Phone approval",
+      lines: [{ description: "Service call", quantity: 1, rateCents: 25_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.signature).toBeNull();
+    expect((await caller.v1.quoting.get({ estimateId: drafted.id })).signature).toBeNull();
+  });
+
+  it("the PUBLIC route never reflects the signature back to the token holder", async () => {
+    // The IP and user agent are captured ABOUT the customer. Handing them back to anyone holding
+    // the link would turn evidence into a disclosure — and the link is the only credential.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Public Readback Customer" });
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Leak repair",
+      lines: [{ description: "Repair", quantity: 1, rateCents: 40_000 }],
+    });
+    const sent = await caller.v1.quoting.send({ estimateId: drafted.id });
+    await acceptPublicQuote(sent.publicToken!, undefined, undefined, {
+      signerName: "Dave Chen",
+      signatureSvg: "M1,1 L2,2",
+      signerIp: "203.0.113.9",
+      signerUserAgent: "Mozilla/5.0",
+    });
+
+    // Assert on the HTTP RESPONSE, not on getPublicQuote's return. The app-layer read hands back
+    // the domain aggregate, which necessarily carries every column; what protects the customer is
+    // the route's serialiser choosing not to emit them. Testing the aggregate would fail while the
+    // product is safe, and — worse — a test that passed against the aggregate would say nothing
+    // about what actually crosses the wire.
+    const res = await publicQuoteGET(new Request("https://app.trymallet.com/x") as never, {
+      params: Promise.resolve({ token: sent.publicToken! }),
+    });
+    expect(res.status).toBe(200);
+    const body = JSON.stringify(await res.json());
+    expect(body).not.toContain("203.0.113.9");
+    expect(body).not.toContain("signerIp");
+    expect(body).not.toContain("signerUserAgent");
+    expect(body).not.toContain("signedSnapshot");
+    // Sanity: this really is the quote, so the absences above mean something.
+    expect(body).toContain("Leak repair");
   });
 
   it("GBB public accept without a chosenTier is refused and the quote stays sent", async () => {

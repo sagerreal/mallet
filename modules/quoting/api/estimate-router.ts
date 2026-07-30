@@ -92,6 +92,44 @@ const estimateDTO = z.object({
    * beats sending a broken link.
    */
   publicUrl: z.string().nullable(),
+  /**
+   * The customer's signature, or null when nobody signed.
+   *
+   * Null is a real and different state from "accepted": the office can mark a quote accepted after
+   * a phone call, and that is a legitimate acceptance with no signature behind it. The UI must
+   * present the two differently — telling a shop it holds evidence when it holds a status field is
+   * worse than showing nothing, because it is the screen they check before chasing a balance.
+   *
+   * Sent to AUTHENTICATED org users only. This route is `ownerOrOffice` and the estimate is
+   * org-scoped, so the shop receives evidence about its own customer. The customer-facing route
+   * (app/api/public/quote/[token]) does NOT carry any of this — a token holder must never be able
+   * to read back the IP and user agent captured about them.
+   */
+  signature: z
+    .object({
+      signerName: z.string(),
+      /** SVG path data, or null when they signed by typing their name only. */
+      signatureSvg: z.string().nullable(),
+      signerIp: z.string().nullable(),
+      signerUserAgent: z.string().nullable(),
+      signedAt: z.string(),
+      /** The document as it stood when signed — totals here, NOT the live ones. */
+      snapshot: z.object({
+        estimateNum: z.string(),
+        totalCents: z.number().int(),
+        depositCents: z.number().int(),
+        chosenTier: z.string().nullable(),
+        authorizationText: z.string(),
+        lines: z.array(
+          z.object({
+            description: z.string(),
+            quantity: z.number(),
+            rateCents: z.number().int(),
+          }),
+        ),
+      }),
+    })
+    .nullable(),
   createdAt: z.string(),
 });
 
@@ -116,6 +154,18 @@ const estimateSummaryDTO = z.object({
   acceptedTier: tierEnum.nullable(),
   tierNames: tierNamesDTO.nullable(),
   termsSnapshot: z.string().nullable(),
+  /**
+   * Whether a customer actually signed — a boolean, not the evidence.
+   *
+   * The list is what the quote rows in the lead modal render from, and those rows must be able to
+   * tell "Signed" from "Accepted" without waiting for a full fetch. Without this the pill would
+   * quietly say "Accepted" on every signed quote until the modal opened and hydrated, which is a
+   * safer error than the reverse but is still wrong on the screen a shop scans first.
+   *
+   * Deliberately NOT the signature itself: a list page would then carry the name, IP and frozen
+   * snapshot of every customer in one response, which is a lot of evidence to ship for a pill.
+   */
+  signed: z.boolean(),
 });
 
 const lineInput = z.object({
@@ -265,7 +315,48 @@ const toEstimateDTO = (estimate: Estimate) => {
     termsSnapshot: p.termsSnapshot,
     publicToken: p.publicToken ?? null,
     publicUrl: publicUrlFor(p.publicToken ?? null),
+    signature: toSignatureDTO(estimate),
     createdAt: p.createdAt.toISOString(),
+  };
+};
+
+/**
+ * The signature evidence, or null when the quote was accepted without one.
+ *
+ * Gated on signedAt AND the snapshot together. Either alone would be a half-record: a timestamp
+ * with no document says nothing about what was agreed, and a snapshot with no timestamp cannot be
+ * placed in time. The domain writes all of it in one transition, so a row with only one of them is
+ * corruption — and rendering it as a signature would put a confident-looking but empty block in
+ * front of a shop about to chase money.
+ *
+ * Totals come from the SNAPSHOT, never from the live estimate. That is the whole point: the live
+ * row can be edited afterwards, and the frozen copy is what the customer actually saw.
+ */
+const toSignatureDTO = (estimate: Estimate) => {
+  const p = estimate.props;
+  const snap = p.signedSnapshot;
+  if (!p.signedAt || !snap || !p.signerName) return null;
+  return {
+    signerName: p.signerName,
+    // Empty string means they signed by typing their name — a real signature under Texas law, and
+    // a different thing from a drawing that failed to save. Normalised to null so the UI branches
+    // on presence rather than on truthiness of a string.
+    signatureSvg: p.signatureSvg && p.signatureSvg.length > 0 ? p.signatureSvg : null,
+    signerIp: p.signerIp ?? null,
+    signerUserAgent: p.signerUserAgent ?? null,
+    signedAt: p.signedAt.toISOString(),
+    snapshot: {
+      estimateNum: snap.estimateNum,
+      totalCents: snap.totalCents,
+      depositCents: snap.depositCents,
+      chosenTier: snap.chosenTier,
+      authorizationText: snap.authorizationText,
+      lines: snap.lines.map((l) => ({
+        description: l.description,
+        quantity: l.quantity,
+        rateCents: l.rateCents,
+      })),
+    },
   };
 };
 
@@ -306,6 +397,9 @@ const toSummaryDTO = (estimate: Estimate) => {
     acceptedTier: p.acceptedTier,
     tierNames: p.tierNames,
     termsSnapshot: p.termsSnapshot,
+    // Same three-part gate as toSignatureDTO, so a row can never be flagged signed on the list
+    // and then render no signature when the record opens.
+    signed: Boolean(p.signedAt && p.signedSnapshot && p.signerName),
   };
 };
 

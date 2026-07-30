@@ -86,6 +86,9 @@ export function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
     acceptedTier: dto.acceptedTier ?? undefined,
     tierNames: dto.tierNames ?? undefined,
     termsSnapshot: dto.termsSnapshot ?? undefined,
+    // signed: the fact, not the evidence. The quote rows must not print "Signed" over an office
+    // phone approval, and they render from this list long before the full record is fetched.
+    signed: dto.signed,
     archived: false,
     trash: false,
   };
