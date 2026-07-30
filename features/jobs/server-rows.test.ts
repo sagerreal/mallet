@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { serverRowsToBands, SORT_COL_TO_SERVER } from "./server-rows";
-import type { JobDTO } from "@/lib/store/dto-mapper";
+import type { JobListRow } from "./server-rows";
 
-const dto = (over: Partial<JobDTO> = {}): JobDTO =>
+const dto = (over: Partial<JobListRow> = {}): JobListRow =>
   ({
     id: "j1",
     num: "JOB-1",
@@ -29,7 +29,7 @@ const dto = (over: Partial<JobDTO> = {}): JobDTO =>
     verifyAnswers: [],
     photos: [],
     ...over,
-  }) as unknown as JobDTO;
+  }) as unknown as JobListRow;
 
 describe("serverRowsToBands", () => {
   it("puts a whole page in ONE band when a view is active", () => {

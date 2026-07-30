@@ -109,7 +109,7 @@ export interface JobRepository {
   count(filter?: JobFilter): Promise<number>;
 
   /** Every scoped view's count in one round trip. `today` is the client's local YYYY-MM-DD. */
-  viewCounts(today: string, base?: JobFilter): Promise<Record<JobView, number>>;
+  viewCounts(today: string, base?: JobFilter): Promise<{ counts: Record<JobView, number>; todayCents: number }>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>>;
 
   // ── job execution data (Phase 5) ─────────────────────────────────────────

@@ -2,68 +2,41 @@
 
 /**
  * features/jobs/jobs-home.tsx
- * The Jobs surface — a flat, sortable, filterable list (JobsListView). Built from
- * the lifecycle bands so status + default order read by state. The toolbar mirrors
- * Customers: search + Filters (Status incl. Archived, Crew) + Columns. Done+billed
- * jobs auto-archive after a week and drop off here — reachable via Status → Archived.
- * Header verdict = today's scheduled dollars. State lives in the store; this reads + renders.
+ * The Jobs surface — a flat, sortable, filterable list served a page at a time by the DATABASE.
+ *
+ * It used to read the whole job collection out of the store and group, filter, sort and count it
+ * in the browser. That works until the shop has more jobs than one hydrator page: on 1,521 jobs it
+ * silently described 500 of them, and reported "220 of 220" while doing it.
+ *
+ * The shape follows Jobber's Jobs page, checked against their help documentation rather than
+ * assumed: a heading with a live count, ONE filter carrying per-value counts, and a flat sortable
+ * table. Not tabs — Jobber has none here — and no grouped sections, which they are explicitly
+ * retiring on their own schedule list.
+ *
+ * The labels stay Owen's ("Needs a slot", not "Unscheduled"). The pattern was worth borrowing; the
+ * vocabulary was not.
  */
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useAppStore } from "@/lib/store/app-store";
-import { api } from "@/lib/trpc/client";
-import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
+import { shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
-import type { Invoice, Job } from "@/lib/store/types";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
-import { custName } from "./jobs-helpers";
-import { jobCrewTech } from "./job-row";
-import { deriveOnTrucks, deriveJobBands, deriveArchivedBands, jobTotal, type JobBand } from "./today-derive";
-import type { Tech } from "@/lib/store/types";
 import { useJobsSort } from "./use-jobs-sort";
 import { JobsListView } from "./jobs-list-view";
 import { CallbackAutopsyCard } from "./callback-autopsy-card";
 import { JobsToolbar } from "./jobs-toolbar";
-import { JobsFilters } from "./jobs-filters";
 import { JobsColumns } from "./jobs-columns";
-import { JOB_STATUS_FILTERS, DEFAULT_JOB_COLS, JOB_COL_ORDER, type JobColKey, type JobsArchiveSet } from "./jobs-list-config";
+import { JobsViewFilter } from "./jobs-view-filter";
+import { DEFAULT_JOB_COLS, JOB_COL_ORDER, type JobColKey, type JobsArchiveSet } from "./jobs-list-config";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
+import { useJobsQuery, useJobsQueryState } from "./use-jobs-query";
+import { serverRowsToBands, SORT_COL_TO_SERVER } from "./server-rows";
 
 export interface JobsHomeProps {
   onOpenJob: (id: string) => void;
   onOpenNewJob: () => void;
-}
-
-/** The bands to render for the current set (active vs archived) + Status filter,
- *  plus the set total for the "N of M" count. */
-function selectBands(
-  filtered: Job[],
-  invoices: Invoice[],
-  archiveSet: JobsArchiveSet,
-  statusFilter: string
-): { bandsToShow: JobBand[]; total: number } {
-  if (archiveSet === "archived") {
-    const archived = deriveArchivedBands(filtered, invoices);
-    return { bandsToShow: archived, total: archived.reduce((s, b) => s + b.count, 0) };
-  }
-  const active = deriveJobBands(filtered, invoices);
-  const statusDef = JOB_STATUS_FILTERS.find((s) => s.value === statusFilter);
-  const bandsToShow = statusDef && statusDef.keys.length ? active.filter((b) => statusDef.keys.includes(b.key)) : active;
-  return { bandsToShow, total: active.reduce((s, b) => s + b.count, 0) };
-}
-
-/** Narrow each band's jobs to one crew (empty = all); drops emptied bands. */
-function applyCrew(bands: JobBand[], techs: Tech[], crewFilter: string): JobBand[] {
-  if (!crewFilter) return bands;
-  return bands
-    .map((b) => {
-      const jobs = b.jobs.filter((j) => jobCrewTech(b.key, j, techs)?.id === crewFilter);
-      return { ...b, jobs, count: jobs.length, sum: jobs.reduce((s, j) => s + jobTotal(j), 0) };
-    })
-    .filter((b) => b.jobs.length > 0);
 }
 
 // First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens Jobs
@@ -85,71 +58,56 @@ const FIRST_RUN = {
 
 export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const router = useRouter();
-  const jobs = useAppStore((s) => s.jobs);
-  const leads = useAppStore((s) => s.leads);
-  const invoices = useAppStore((s) => s.invoices);
-  const techs = useAppStore((s) => s.techs);
   const { sort, setSort } = useJobsSort();
 
   const [archiveSet, setArchiveSet] = useState<JobsArchiveSet>("active");
-  const [jobsQ, setJobsQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [crewFilter, setCrewFilter] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [colsOpen, setColsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<JobColKey[]>([...DEFAULT_JOB_COLS]);
 
-  const q = jobsQ.trim().toLowerCase();
-  const filtered = useMemo(
-    () =>
-      q
-        ? jobs.filter((j) =>
-            (custName(j, leads) + " " + (j.title ?? "") + " " + (j.addr ?? "")).toLowerCase().includes(q)
-          )
-        : jobs,
-    [jobs, leads, q]
-  );
+  const q = useJobsQueryState();
 
-  const trucksValue = useMemo(() => deriveOnTrucks(jobs), [jobs]);
-  const shownTrucks = useAnimatedNumber(trucksValue);
+  // Archived is now a server view like any other, so the Active/Archived toggle sets the view
+  // rather than switching to a second client-side derivation. It wins over the filter: asking for
+  // archived work and a live band at once is not a question the screen can answer.
+  const view = archiveSet === "archived" ? "archived" : q.view;
 
-  const { bandsToShow, total } = useMemo(
-    () => selectBands(filtered, invoices, archiveSet, statusFilter),
-    [filtered, invoices, archiveSet, statusFilter]
-  );
-  const finalBands = useMemo(
-    () => applyCrew(bandsToShow, techs, crewFilter),
-    [bandsToShow, techs, crewFilter]
-  );
-  const shown = finalBands.reduce((s, b) => s + b.jobs.length, 0);
-  const activeFilterCount = (archiveSet === "active" && statusFilter ? 1 : 0) + (crewFilter ? 1 : 0);
+  // The table's headers speak in display columns; the server in named sorts. A column with no
+  // server sort (Customer — it needs a joined ORDER BY the cursor would have to carry too) maps
+  // to null and is left inert rather than pointed at a different column.
+  const serverSort = SORT_COL_TO_SERVER[sort.col];
+  const list = useJobsQuery({
+    view,
+    search: q.search,
+    sort: serverSort,
+    sortDir: serverSort ? sort.dir : null,
+  });
+
+  const { bands } = useMemo(() => serverRowsToBands(list.rows, view), [list.rows, view]);
+
+  // Today's money, summed by the database in the same query as the view counts — not by adding up
+  // whichever rows the browser happens to be holding.
+  const shownTrucks = useAnimatedNumber(Math.round((list.counts?.todayCents ?? 0) / 100));
 
   function toggleCol(key: JobColKey) {
     setVisibleCols((prev) =>
-      prev.includes(key) ? prev.filter((c) => c !== key) : JOB_COL_ORDER.filter((c) => prev.includes(c) || c === key)
+      prev.includes(key) ? prev.filter((c) => c !== key) : JOB_COL_ORDER.filter((c) => prev.includes(c) || c === key),
     );
   }
 
   function clearFilters() {
-    setJobsQ("");
-    setStatusFilter("");
-    setCrewFilter("");
+    q.clear();
+    setArchiveSet("active");
   }
 
-  const empty = jobs.length === 0;
-  // Same query key + options as JobsHydrator → React Query dedupes it (no extra fetch). Gate the
-  // first-run screen on the TOTAL job count (never the filtered `shown`) so a no-match search on a
-  // populated shop still falls through to the list. Never flashes mid-fetch / on a failed load.
-  const { isFetched, isError, refetch, isRefetching } = api.v1.jobs.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  const firstRun = shouldShowFirstRun({ isFetched, isError, count: jobs.length });
-  const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: jobs.length });
-  // Cold reload: the store hasn't hydrated yet (query in flight, nothing cached). Render a loading
-  // line rather than falling through to the "No jobs yet" copy below — otherwise a shop that HAS
-  // jobs is told it has none for a beat before the rows (or the first-run screen) arrive.
-  const loading = isFirstLoad({ isFetched, isError, count: jobs.length });
+  // First-run gates on the SERVER's total, never on the loaded page — a no-match search on a
+  // populated shop must fall through to an empty list, not to "No jobs yet". `?? 1` while the
+  // count is in flight keeps the first-run screen from flashing before it lands.
+  const total = list.total;
+  const firstRun = shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: total ?? 1 });
+  const loadFailed = shouldShowLoadFailed({ isFetched: list.isFetched, isError: list.isError, count: total ?? 0 });
+  const loading = list.isLoading;
+  const activeFilterCount = (q.view ? 1 : 0) + (archiveSet === "archived" ? 1 : 0);
 
   return (
     <div className="jh-wrap">
@@ -160,8 +118,7 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
         <div>
           <h1>Jobs</h1>
           <div className="jh-verdict">
-            {/* Cold reload: jobs haven't hydrated yet, so the derived figure would state
-                "$0 scheduled today" as fact for a beat — skeleton until the first load lands. */}
+            {/* Cold load: the figure would state "$0 scheduled today" as fact for a beat. */}
             {loading ? (
               <span className="sk" style={{ display: "inline-block", width: 140, height: 22 }} aria-hidden="true" />
             ) : (
@@ -182,7 +139,7 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
       <CallbackAutopsyCard />
 
       {loadFailed ? (
-        <LoadFailed noun="jobs" onRetry={() => void refetch()} retrying={isRefetching} />
+        <LoadFailed noun="jobs" onRetry={list.refetch} retrying={list.isRefetching} />
       ) : firstRun ? (
         <FirstRunEmptyState
           heading={FIRST_RUN.heading}
@@ -199,43 +156,61 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
           <JobsToolbar
             archiveSet={archiveSet}
             onArchiveSet={setArchiveSet}
-            q={jobsQ}
-            onQ={setJobsQ}
+            q={q.search}
+            onQ={q.setSearch}
             filtersOpen={filtersOpen}
             onToggleFilters={() => setFiltersOpen((o) => !o)}
             colsOpen={colsOpen}
             onToggleCols={() => setColsOpen((o) => !o)}
             activeFilterCount={activeFilterCount}
-            total={total}
-            shown={shown}
+            total={total ?? 0}
+            shown={list.shown}
           />
 
           {colsOpen && <JobsColumns visible={visibleCols} onToggle={toggleCol} />}
 
           {filtersOpen && (
-            <JobsFilters
-              statusFilter={statusFilter}
-              crewFilter={crewFilter}
-              techs={techs}
-              onStatus={setStatusFilter}
-              onCrew={setCrewFilter}
+            <JobsViewFilter
+              view={q.view}
+              counts={list.counts?.counts}
+              onView={q.setView}
               onClear={clearFilters}
-              showStatus={archiveSet === "active"}
+              disabled={archiveSet === "archived"}
             />
           )}
 
-          {empty ? (
+          {list.rows.length === 0 ? (
             <div className="empty-att" style={{ padding: "var(--space-6) 0" }}>
-              No jobs yet — <span className="linklike" onClick={onOpenNewJob}>create one</span>
+              {q.search || view ? (
+                <>
+                  No jobs match that — <span className="linklike" onClick={clearFilters}>clear the filters</span>
+                </>
+              ) : (
+                <>
+                  No jobs yet — <span className="linklike" onClick={onOpenNewJob}>create one</span>
+                </>
+              )}
             </div>
           ) : (
-            <JobsListView
-              bands={finalBands}
-              sort={sort}
-              onSort={setSort}
-              onOpenJob={onOpenJob}
-              visibleCols={visibleCols}
-            />
+            <>
+              <JobsListView
+                bands={bands}
+                sort={sort}
+                onSort={setSort}
+                onOpenJob={onOpenJob}
+                visibleCols={visibleCols}
+              />
+
+              {/* Load-more, not infinite scroll: someone scanning a list wants to reach the bottom
+                  of it, and an auto-loading list has no bottom. */}
+              {list.hasMore && (
+                <div style={{ display: "flex", justifyContent: "center", padding: "var(--space-4) 0" }}>
+                  <button className="btn" onClick={list.loadMore} disabled={list.isLoadingMore}>
+                    {list.isLoadingMore ? "Loading…" : `Load more — showing ${list.shown} of ${total ?? "…"}`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </>
       )}

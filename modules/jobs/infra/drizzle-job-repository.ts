@@ -257,7 +257,7 @@ export class DrizzleJobRepository implements JobRepository {
    * all six numbers at once in the filter dropdown, and six sequential round trips on one pooled
    * connection is the difference between the dropdown opening instantly and visibly filling in.
    */
-  async viewCounts(today: string, base?: JobFilter): Promise<Record<JobView, number>> {
+  async viewCounts(today: string, base?: JobFilter): Promise<{ counts: Record<JobView, number>; todayCents: number }> {
     const baseConds = this.listConds({ ...base, view: undefined });
     const one = (v: JobView) =>
       sql<number>`count(*) filter (where ${viewCondition(v, this.tx, { today })})::int`;
@@ -270,11 +270,17 @@ export class DrizzleJobRepository implements JobRepository {
         needsInvoice: one("needsInvoice"),
         done: one("done"),
         archived: one("archived"),
+        // Today's money, summed in the same query rather than by adding up loaded rows. The
+        // headline figure read the store, so on a shop with more jobs than one page it stated a
+        // number derived from whichever 500 happened to be cached.
+        todayCents: sql<number>`coalesce(sum(${jobs.totalCents}) filter (where ${viewCondition("today", this.tx, { today })}), 0)::int`,
       })
       .from(jobs)
       .where(and(...baseConds));
     const r = rows[0];
     return {
+      todayCents: r?.todayCents ?? 0,
+      counts: {
       needsSlot: r?.needsSlot ?? 0,
       today: r?.today ?? 0,
       week: r?.week ?? 0,
@@ -282,6 +288,7 @@ export class DrizzleJobRepository implements JobRepository {
       needsInvoice: r?.needsInvoice ?? 0,
       done: r?.done ?? 0,
       archived: r?.archived ?? 0,
+      },
     };
   }
 

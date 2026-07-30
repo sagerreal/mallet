@@ -292,7 +292,7 @@ export const createJobRouter = () =>
           assigneeUserId: z.string().uuid().optional(),
         }),
       )
-      .output(z.record(z.enum(JOB_VIEWS), z.number().int()))
+      .output(z.object({ counts: z.record(z.enum(JOB_VIEWS), z.number().int()), todayCents: z.number().int() }))
       .query(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         return repo.viewCounts(input.today, {
