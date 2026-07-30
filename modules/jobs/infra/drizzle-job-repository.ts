@@ -214,7 +214,7 @@ export class DrizzleJobRepository implements JobRepository {
           isNull(jobVisits.deletedAt),
         ),
       )
-      .where(and(eq(jobs.id, id), isNull(jobs.deletedAt)));
+      .where(and(eq(jobs.id, id), eq(jobs.orgId, this.orgId), isNull(jobs.deletedAt)));
     const header = rows[0]?.job;
     if (!header) return null;
     const visitRows = rows.map((r) => r.visit).filter((v): v is JobVisitRow => v !== null);

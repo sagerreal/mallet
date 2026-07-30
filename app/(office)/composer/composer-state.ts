@@ -367,6 +367,59 @@ export function applyAiDraftLines(
   return { ...state, ...drafted, lines: cloneLines(lines) };
 }
 
+// ---- measurement seed (deterministic — the "Build the price" entry) --------
+// A measured job's ?job= boot calls v1.quoting.buildFromMeasurements and drops
+// the result straight into the single-format line table. Unlike an AI draft
+// this NEVER sets aiDrafted/aiOriginal — there is no ai_draft snapshot for a
+// deterministic seed (aiDraftForPayload only fires off aiDrafted), so a quote
+// sent from here carries no ai_draft on the wire.
+
+/** One line as v1.quoting.buildFromMeasurements returns it (cents, per-unit). */
+export interface MeasurementSeedLine {
+  description: string;
+  quantity: number;
+  rateCents: number;
+  costCents: number;
+}
+
+/** cents → dollars at the store boundary, same conversion the AI drafters use. */
+export function seedLinesToComposerLines(lines: MeasurementSeedLine[]): ComposerLine[] {
+  return lines.map((l) => ({ d: l.description, q: l.quantity, r: l.rateCents / 100, c: l.costCents / 100 }));
+}
+
+/**
+ * Seed the composer from a measured job: sets the lead context (the returned
+ * leadId) and the single-format line table. An empty seed (every room's only
+ * quantity was a gap or unconfirmed) falls back to one blank line — the empty
+ * line table would otherwise render with nothing to click into (quote-card's
+ * "no hero in the way" invariant).
+ */
+export function applyMeasurementSeed(
+  state: ComposerState,
+  leadId: string,
+  seedLines: ComposerLine[]
+): ComposerState {
+  const lines = seedLines.length > 0 ? cloneLines(seedLines) : [emptyLine()];
+  return { ...state, leadId, lines };
+}
+
+export interface MeasurementGap {
+  kind: string;
+  label: string;
+}
+
+/** Quiet inline notice copy for a pricebook gap — informational, no dead link v1. */
+export function gapNoticeText(gap: MeasurementGap): string {
+  return `No rate set for ${gap.label} — add one in the Pricebook.`;
+}
+
+/** Quiet inline notice copy for rooms whose only trace is "unconfirmed" (no line, no gap). */
+export function unconfirmedRoomsNoticeText(count: number): string | null {
+  if (count <= 0) return null;
+  const noun = count === 1 ? "room has" : "rooms have";
+  return `${count} ${noun} unconfirmed measurements — confirm them on the job before sending.`;
+}
+
 /** One AI-drafted tier: the display-only note + its lines (rates in dollars). */
 export interface AiTierDraft {
   note: string;

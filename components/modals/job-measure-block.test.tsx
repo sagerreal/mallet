@@ -39,12 +39,19 @@ function makeQuery(overrides: Partial<MockQuery> = {}): MockQuery {
 
 let mockRooms: RoomCard[] = [];
 const pushModalMock = vi.fn();
+const closeModalMock = vi.fn();
+const routerPushMock = vi.fn();
 const useJobRoomsMock = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   usePushModal: () => pushModalMock,
+  useCloseModal: () => closeModalMock,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ roomsByJob: { [JOB_ID]: mockRooms } }),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPushMock }),
 }));
 
 vi.mock("@/features/measurements/use-job-rooms", () => ({
@@ -74,6 +81,8 @@ function makeRoom(overrides: Partial<RoomCard> = {}): RoomCard {
 beforeEach(() => {
   mockRooms = [];
   pushModalMock.mockReset();
+  closeModalMock.mockReset();
+  routerPushMock.mockReset();
   useJobRoomsMock.mockReset();
   useJobRoomsMock.mockReturnValue(makeQuery());
   useRoomScanAvailableMock.mockReset();
@@ -177,6 +186,36 @@ describe("JobMeasureBlock", () => {
     expect(screen.getByText("No rooms measured yet.")).toBeTruthy();
     expect(screen.getByText("+ Add room")).toBeTruthy();
     expect(screen.queryByText("—")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Build the price" — routes a measured job into the composer seed (?job=).
+// ---------------------------------------------------------------------------
+
+describe("JobMeasureBlock — Build the price button", () => {
+  it("is not rendered when the job has no rooms", () => {
+    mockRooms = [];
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    expect(screen.queryByText("Build the price")).toBeNull();
+  });
+
+  it("is rendered when rooms.length > 0", () => {
+    mockRooms = [makeRoom()];
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    expect(screen.getByText("Build the price")).toBeTruthy();
+  });
+
+  it("closes the modal stack and routes to /composer?job=<jobId>", () => {
+    mockRooms = [makeRoom()];
+    render(<JobMeasureBlock jobId={JOB_ID} />);
+
+    fireEvent.click(screen.getByText("Build the price"));
+
+    expect(closeModalMock).toHaveBeenCalledOnce();
+    expect(routerPushMock).toHaveBeenCalledWith(`/composer?job=${JOB_ID}`);
   });
 });
 

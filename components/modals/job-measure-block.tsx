@@ -22,9 +22,10 @@
 
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useRoomScanAvailable } from "@/lib/native/room-scan";
-import { usePushModal, useAppStore } from "@/lib/store/app-store";
+import { usePushModal, useCloseModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -78,7 +79,17 @@ export function JobMeasureBlock({ jobId }: { jobId: string }) {
   const query = useJobRooms(jobId);
   const rooms = useAppStore((s) => s.roomsByJob[jobId]) ?? EMPTY_ROOMS;
   const pushModal = usePushModal();
+  const close = useCloseModal();
+  const router = useRouter();
   const scanAvailable = useRoomScanAvailable();
+
+  // "Build the price" — closes the modal stack the way other navigate-away job-modal
+  // actions do (mirrors MoneyPointer/goToSchedule's close() → router.push()) and routes
+  // to the composer, which seeds itself from v1.quoting.buildFromMeasurements on mount.
+  function buildThePrice() {
+    close();
+    router.push(`/composer?job=${jobId}`);
+  }
 
   // A failed fetch must never be mistaken for "no rooms" — only render the
   // friendly empty state once the query has genuinely succeeded (or the store
@@ -113,6 +124,17 @@ export function JobMeasureBlock({ jobId }: { jobId: string }) {
             <div className="empty-att" style={{ marginBottom: "var(--space-2)" }}>
               No rooms measured yet.
             </div>
+          )}
+
+          {rooms.length > 0 && (
+            <button
+              type="button"
+              className="btn sm"
+              style={{ marginBottom: "var(--space-2)" }}
+              onClick={buildThePrice}
+            >
+              Build the price
+            </button>
           )}
         </>
       )}

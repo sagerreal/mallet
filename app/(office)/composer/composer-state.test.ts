@@ -12,8 +12,10 @@ import {
   applyAiDraftLines,
   applyAiDraftTiers,
   applyComposerPatch,
+  applyMeasurementSeed,
   buildQuoteMessageBody,
   deliveryGateReason,
+  gapNoticeText,
   gbbTierTotal,
   hasRealLine,
   linesForSend,
@@ -21,11 +23,13 @@ import {
   realLines,
   realTierCount,
   recommendedTier,
+  seedLinesToComposerLines,
   sendGateReason,
   switchToGbb,
   switchToSingle,
   tierDisplayName,
   toEstimateLines,
+  unconfirmedRoomsNoticeText,
   updateTier,
   laborRulePayload,
   toProposalChips,
@@ -35,6 +39,7 @@ import {
   type ComposerState,
   type GBBDraft,
   type GBBTier,
+  type MeasurementSeedLine,
   type TierKey,
 } from "./composer-state";
 import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
@@ -751,5 +756,83 @@ describe("laborRulePayload", () => {
     const payload = laborRulePayload({ serviceName: long, hours: 3 });
     expect(payload.jobTag).toHaveLength(JOB_TAG_MAX_LENGTH);
     expect(payload.rule).toBe(`${long} takes 3h of labor`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Measurement seed — the "Build the price" composer entry (?job=). Cents from
+// v1.quoting.buildFromMeasurements convert to dollars at the store boundary,
+// same as the AI drafters, and land in the single-format line table WITHOUT
+// touching aiDrafted/aiOriginal — no ai_draft snapshot for this deterministic
+// lane.
+// ---------------------------------------------------------------------------
+
+describe("seedLinesToComposerLines", () => {
+  it("converts rateCents/costCents to dollars and carries description/quantity as-is", () => {
+    const seed: MeasurementSeedLine[] = [
+      { description: "Living room — Wall paint", quantity: 562, rateCents: 250, costCents: 90 },
+    ];
+    expect(seedLinesToComposerLines(seed)).toEqual([
+      { d: "Living room — Wall paint", q: 562, r: 2.5, c: 0.9 },
+    ]);
+  });
+
+  it("maps an empty list to an empty list", () => {
+    expect(seedLinesToComposerLines([])).toEqual([]);
+  });
+});
+
+describe("applyMeasurementSeed", () => {
+  it("sets the lead context and the line table from the seed", () => {
+    const lines: ComposerLine[] = [{ d: "Living room — Wall paint", q: 562, r: 2.5, c: 0.9 }];
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-42", lines);
+    expect(next.leadId).toBe("lead-42");
+    expect(next.lines).toEqual(lines);
+  });
+
+  it("does NOT mark the state as AI-drafted — no ai_draft snapshot for this lane", () => {
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-42", [{ d: "x", q: 1, r: 10 }]);
+    expect(next.aiDrafted).toBe(false);
+    expect(next.aiOriginal).toBeNull();
+    expect(aiDraftForPayload(next)).toBeNull();
+  });
+
+  it("falls back to one blank line when every room's only quantity was a gap or unconfirmed", () => {
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-42", []);
+    expect(next.lines).toEqual([{ d: "", q: 1, r: 0 }]);
+  });
+
+  it("does not mutate the seed lines array", () => {
+    const lines: ComposerLine[] = [{ d: "x", q: 1, r: 10 }];
+    const before = structuredClone(lines);
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-1", lines);
+    next.lines[0]!.d = "mutated";
+    expect(lines).toEqual(before);
+  });
+});
+
+describe("gapNoticeText", () => {
+  it("names the missing rate and points at the Pricebook", () => {
+    expect(gapNoticeText({ kind: "baseboard_lnft", label: "Baseboard" })).toBe(
+      "No rate set for Baseboard — add one in the Pricebook.",
+    );
+  });
+});
+
+describe("unconfirmedRoomsNoticeText", () => {
+  it("returns null when there are no unconfirmed rooms", () => {
+    expect(unconfirmedRoomsNoticeText(0)).toBeNull();
+  });
+
+  it("singularizes one unconfirmed room", () => {
+    expect(unconfirmedRoomsNoticeText(1)).toBe(
+      "1 room has unconfirmed measurements — confirm them on the job before sending.",
+    );
+  });
+
+  it("pluralizes multiple unconfirmed rooms", () => {
+    expect(unconfirmedRoomsNoticeText(2)).toBe(
+      "2 rooms have unconfirmed measurements — confirm them on the job before sending.",
+    );
   });
 });

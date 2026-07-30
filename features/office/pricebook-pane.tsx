@@ -55,6 +55,7 @@ export function PricebookPane() {
   const terms = useAppStore((s) => s.terms);
   const addTerm = useAppStore((s) => s.addTerm);
   const removeTerm = useAppStore((s) => s.removeTerm);
+  const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
 
   // Cost/margin are sensitive — hidden from tech role (fail closed until role loads).
   const me = useMe();
@@ -207,6 +208,7 @@ export function PricebookPane() {
                     service={s}
                     categories={categories}
                     canSeeCost={canSeeCost}
+                    measurementEstimating={measurementEstimating}
                     onUpdate={updateService}
                     onArchive={archiveService}
                   />

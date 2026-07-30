@@ -1,6 +1,6 @@
 import { asOrgId, asServiceId } from "@mallet/shared/types";
 import { pricebookItems } from "@mallet/shared/db/schema";
-import { Service } from "../domain/service";
+import { Service, type PaintingQuantityKind } from "../domain/service";
 
 // The persistence row shape, inferred from the schema. The `Service` domain aggregate maps to
 // the `pricebook_items` table (kept under its original name for additive-migration safety);
@@ -34,6 +34,9 @@ export const rowToService = (row: ServiceRow): Service => {
     isAddon: row.isAddon,
     active: row.active,
     position: row.position,
+    // DB CHECK constraint already enforces the 6-kind membership; Service.create re-validates
+    // it too (defense in depth) and throws below if a row is somehow corrupt.
+    measuredBy: row.measuredBy as PaintingQuantityKind | null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

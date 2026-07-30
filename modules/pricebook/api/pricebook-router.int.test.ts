@@ -88,6 +88,53 @@ suite("pricebook tRPC router (full stack, live RLS)", () => {
     expect(listed.items.some((s) => s.id === created.id)).toBe(true);
   });
 
+  it("create with measuredBy persists it and list returns it", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.pricebook.service.create({
+      name: "Wall painting (per sqft)",
+      unitPriceCents: 250,
+      costCents: 80,
+      measuredBy: "walls_sqft",
+    });
+    expect(created.measuredBy).toBe("walls_sqft");
+
+    const listed = await caller.v1.pricebook.service.list({ limit: 500 });
+    const found = listed.items.find((s) => s.id === created.id);
+    expect(found?.measuredBy).toBe("walls_sqft");
+  });
+
+  it("create without measuredBy defaults to null (flat price)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.pricebook.service.create({
+      name: "Flat-price service",
+      unitPriceCents: 5000,
+      costCents: 1000,
+    });
+    expect(created.measuredBy).toBeNull();
+  });
+
+  it("update can set and clear measuredBy", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.pricebook.service.create({
+      name: "Baseboard painting",
+      unitPriceCents: 300,
+      costCents: 100,
+    });
+    expect(created.measuredBy).toBeNull();
+
+    const updated = await caller.v1.pricebook.service.update({
+      serviceId: created.id,
+      measuredBy: "baseboard_lnft",
+    });
+    expect(updated.measuredBy).toBe("baseboard_lnft");
+
+    const cleared = await caller.v1.pricebook.service.update({
+      serviceId: created.id,
+      measuredBy: null,
+    });
+    expect(cleared.measuredBy).toBeNull();
+  });
+
   it("create with a client-authored id uses that id", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const myId = randomUUID();

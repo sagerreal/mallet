@@ -18,6 +18,7 @@ const baseProps = (overrides: Partial<ServiceProps> = {}): ServiceProps => ({
   isAddon: false,
   active: true,
   position: 0,
+  measuredBy: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
   ...overrides,
@@ -90,6 +91,35 @@ describe("Service.create", () => {
   });
 });
 
+describe("Service.create measuredBy", () => {
+  it("accepts null (flat price — unchanged semantics)", () => {
+    const service = unwrap(Service.create(baseProps({ measuredBy: null })));
+    expect(service.props.measuredBy).toBeNull();
+  });
+
+  it("accepts each of the 6 valid painting quantity kinds", () => {
+    const kinds = [
+      "walls_sqft",
+      "ceiling_sqft",
+      "baseboard_lnft",
+      "crown_lnft",
+      "doors_count",
+      "windows_count",
+    ] as const;
+    for (const kind of kinds) {
+      const r = Service.create(baseProps({ measuredBy: kind }));
+      expect(isOk(r)).toBe(true);
+      if (isOk(r)) expect(r.value.props.measuredBy).toBe(kind);
+    }
+  });
+
+  it("rejects a garbage measuredBy value", () => {
+    const r = Service.create(baseProps({ measuredBy: "square_footage" as never }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.field).toBe("measuredBy");
+  });
+});
+
 describe("Service.patch", () => {
   const now = new Date("2026-07-09T12:00:00Z");
 
@@ -140,5 +170,32 @@ describe("Service.patch", () => {
       expect(result.value.props.taxable).toBe(true);
       expect(result.value.props.isAddon).toBe(true);
     }
+  });
+
+  it("patches measuredBy to a valid kind", () => {
+    const service = unwrap(Service.create(baseProps({ measuredBy: null })));
+    const result = service.patch({ measuredBy: "walls_sqft" }, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) expect(result.value.props.measuredBy).toBe("walls_sqft");
+  });
+
+  it("patches measuredBy back to null", () => {
+    const service = unwrap(Service.create(baseProps({ measuredBy: "walls_sqft" })));
+    const result = service.patch({ measuredBy: null }, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) expect(result.value.props.measuredBy).toBeNull();
+  });
+
+  it("undefined measuredBy in patch keeps current value", () => {
+    const service = unwrap(Service.create(baseProps({ measuredBy: "crown_lnft" })));
+    const result = service.patch({ name: "New Name" }, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) expect(result.value.props.measuredBy).toBe("crown_lnft");
+  });
+
+  it("rejects a garbage measuredBy in patch", () => {
+    const service = unwrap(Service.create(baseProps({ measuredBy: null })));
+    const result = service.patch({ measuredBy: "bogus_kind" as never }, now);
+    expect(isOk(result)).toBe(false);
   });
 });

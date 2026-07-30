@@ -40,23 +40,28 @@ import {
   applyAiDraftLines,
   applyAiDraftTiers,
   applyComposerPatch,
+  applyMeasurementSeed,
   buildQuoteMessageBody,
   deliveryGateReason,
+  gapNoticeText,
   hasRealLine,
   laborRulePayload,
   linesForSend,
   matchServiceByName,
   realLines,
   recommendedTier,
+  seedLinesToComposerLines,
   sendGateReason,
   tierDisplayName,
   tieredLinesForPayload,
   tierNamesForPayload,
   toEstimateLines,
   toProposalChips,
+  unconfirmedRoomsNoticeText,
   type AiTiersDraft,
   type ComposerLine,
   type ComposerState,
+  type MeasurementGap,
   type ProposalChip,
   type TierKey,
 } from "./composer-state";
@@ -96,6 +101,36 @@ export default function ComposerPage() {
   // Invalidates the cached customer list so the leads hydrator picks up a
   // freshly-created customer (with its server-assigned id) into the store.
   const utils = api.useUtils();
+
+  // ---- ?job= boot: "Build the price" from a measured job --------------------
+  // A measured job's Build-the-price button lands here with ?job=<jobId>. The
+  // read-only query turns rooms × pricebook rates into seed lines; applied to
+  // ComposerState ONCE (a background refetch must never re-stomp office edits,
+  // same "seed once" contract as the ?lead= initializer above).
+  const jobId = searchParams.get("job");
+  const buildFromMeasurementsQuery = api.v1.quoting.buildFromMeasurements.useQuery(
+    { jobId: jobId ?? "" },
+    { enabled: Boolean(jobId), retry: false, refetchOnWindowFocus: false },
+  );
+  const [measurementNotice, setMeasurementNotice] = useState<{
+    gaps: MeasurementGap[];
+    unconfirmedRooms: string[];
+  } | null>(null);
+  // Keyed on the jobId itself (not a plain mounted-once flag) — a same-route param change
+  // (?job=A -> ?job=B on an already-mounted composer) must still seed B; StrictMode's
+  // double-invoke and a background refetch for the SAME jobId still no-op (ref.current
+  // already equals jobId).
+  const seededForJob = useRef<string | null>(null);
+  useEffect(() => {
+    if (!jobId || seededForJob.current === jobId || !buildFromMeasurementsQuery.data) return;
+    seededForJob.current = jobId;
+    const built = buildFromMeasurementsQuery.data;
+    // ?job= wins over ?lead= when both are present: the leadId here overwrites whatever
+    // ?lead= seeded into the initial state. Currently unreachable in practice (the
+    // Build-the-price button only ever sets ?job=), but intentional if that ever changes.
+    setCs((prev) => applyMeasurementSeed(prev, built.leadId, seedLinesToComposerLines(built.seedLines)));
+    setMeasurementNotice({ gaps: built.gaps, unconfirmedRooms: built.unconfirmedRooms });
+  }, [jobId, buildFromMeasurementsQuery.data]);
 
   // ---- tRPC mutations for the real send flow --------------------------------
 
@@ -640,6 +675,40 @@ export default function ComposerPage() {
           {custError}
         </p>
       )}
+
+      {jobId && buildFromMeasurementsQuery.isError && (
+        <p
+          role="alert"
+          style={{ color: "var(--red, #b42318)", fontSize: "var(--type-base)", margin: "-8px 0 var(--space-3)" }}
+        >
+          Couldn't build the price from this job's measurements — check your connection and try again.
+        </p>
+      )}
+
+      {measurementNotice &&
+        (measurementNotice.gaps.length > 0 || measurementNotice.unconfirmedRooms.length > 0) && (
+          <div
+            style={{
+              fontSize: "var(--type-base)",
+              color: "var(--ink-3)",
+              margin: "-8px 0 var(--space-3)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--space-1)",
+            }}
+          >
+            {measurementNotice.gaps.map((gap) => (
+              <p key={gap.kind} style={{ margin: 0 }}>
+                {gapNoticeText(gap)}
+              </p>
+            ))}
+            {unconfirmedRoomsNoticeText(measurementNotice.unconfirmedRooms.length) && (
+              <p style={{ margin: 0 }}>
+                {unconfirmedRoomsNoticeText(measurementNotice.unconfirmedRooms.length)}
+              </p>
+            )}
+          </div>
+        )}
 
       {/* The quote — format toggle, authoring tools, line editor / tier panels */}
       <QuoteCard

@@ -3,7 +3,7 @@ import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { asEstimateId, asLeadId, toPage } from "@mallet/shared/types";
+import { asEstimateId, asJobId, asLeadId, toPage } from "@mallet/shared/types";
 import { ESTIMATE_STATUSES, type Estimate, type EstimateStatus } from "../domain/estimate";
 import type { QuoteTier } from "../domain/estimate";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
@@ -20,6 +20,10 @@ import { createQuotingRulesRouter } from "./quoting-rules-router";
 import { MineEditDeltasUseCase } from "../app/mine-edit-deltas";
 import { DrizzleQuotingRuleRepository } from "../infra/drizzle-quoting-rule-repository";
 import { DrizzleServiceNameReader } from "../infra/drizzle-service-name-reader";
+import { DrizzleRateServicesReader } from "../infra/drizzle-rate-services-reader";
+import { DrizzleJobLeadReader } from "../infra/drizzle-job-lead-reader";
+import { BuildFromMeasurementsUseCase } from "../app/build-from-measurements";
+import { MeasurementRoomQuantitiesReader, DrizzleMeasurementRepository } from "@mallet/measurements";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -270,6 +274,35 @@ const paginatedSummaryDTO = z.object({
   nextCursor: z.string().nullable(),
 });
 
+const buildFromMeasurementsInput = z.object({ jobId: z.string().uuid() });
+// Mirrors modules/pricebook/api/pricebook-dto.ts's measuredByKindDTO — kept as its own literal
+// zod enum (rather than importing pricebook) so this boundary schema stays a leaf, same
+// rationale as that file's own comment.
+const measuredKindDTO = z.enum([
+  "walls_sqft",
+  "ceiling_sqft",
+  "baseboard_lnft",
+  "crown_lnft",
+  "doors_count",
+  "windows_count",
+]);
+const buildFromMeasurementsOutput = z.object({
+  leadId: z.string().uuid(),
+  seedLines: z.array(
+    z.object({
+      description: z.string(),
+      quantity: z.number(),
+      rateCents: z.number().int(),
+      costCents: z.number().int(),
+      measuredKind: measuredKindDTO,
+      roomName: z.string(),
+      serviceId: z.string().uuid(),
+    }),
+  ),
+  gaps: z.array(z.object({ kind: measuredKindDTO, label: z.string() })),
+  unconfirmedRooms: z.array(z.string()),
+});
+
 const money = (cents: number) => ({ cents, currency: "USD" as const });
 
 const toEstimateDTO = (estimate: Estimate) => {
@@ -480,6 +513,28 @@ export const createEstimateRouter = () =>
           toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         );
         return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+      }),
+
+    // "Build the price": turn a job's scanned rooms into estimate seed lines the composer can
+    // drop straight into a draft. Read-only (no estimate is created here) — the composer decides
+    // what to keep before calling v1.quoting.draft.
+    buildFromMeasurements: ownerOrOffice
+      .input(buildFromMeasurementsInput)
+      .output(buildFromMeasurementsOutput)
+      .query(async ({ ctx, input }) => {
+        const jobId = asJobId(input.jobId);
+        const useCase = new BuildFromMeasurementsUseCase(
+          new DrizzleJobLeadReader(ctx.tx, ctx.principal.orgId),
+          new MeasurementRoomQuantitiesReader(new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId)),
+          new DrizzleRateServicesReader(ctx.tx, ctx.principal.orgId),
+        );
+        const built = orThrow(await useCase.exec({ jobId }));
+        return {
+          leadId: built.leadId,
+          seedLines: built.seedLines.map((line) => ({ ...line })),
+          gaps: built.gaps.map((gap) => ({ ...gap })),
+          unconfirmedRooms: [...built.unconfirmedRooms],
+        };
       }),
 
     send: ownerOrOffice

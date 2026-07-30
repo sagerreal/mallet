@@ -296,6 +296,11 @@ export interface Service {
   isAddon: boolean;
   active: boolean;
   position: number;
+  // Plain string|null passthrough — when set, unitPrice is a PER-UNIT rate against this
+  // measured room quantity kind (e.g. painting walls priced per sqft) rather than a flat price.
+  // Null = today's flat-price semantics, unchanged. Kind values mirror
+  // modules/pricebook/domain/service.ts's PaintingQuantityKind.
+  measuredBy: string | null;
 }
 
 export interface Category {
