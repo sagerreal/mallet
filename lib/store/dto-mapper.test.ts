@@ -86,6 +86,7 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     id: "inv-222",
     num: "INV-0099",
     sourceJobId: "job-xyz",
+    authorization: null,
     leadId: "lead-abc",
     title: "Final bill",
     status: "sent",

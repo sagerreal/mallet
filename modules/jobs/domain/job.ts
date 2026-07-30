@@ -261,6 +261,19 @@ export interface JobProps {
   readonly callbackReason: CallbackReason | null; // 'callback' | 'new_issue' | 'found_work' (nullable)
   readonly checklist: JobChecklistProps | null; // optional before-you-leave checklist
   readonly requiredCerts: readonly string[] | null; // cert requirement from the booking playbook; null = no requirement
+  /**
+   * On-glass signature evidence, read back so the office can PRODUCE it.
+   *
+   * Optional rather than required: every existing construction site predates these columns, and a
+   * job that was never signed on site legitimately has none. Written only by
+   * saveOnSiteSignature — nothing in this aggregate mutates them, because they describe a moment
+   * that already happened.
+   */
+  readonly signerName?: string | null;
+  readonly signatureSvg?: string | null;
+  readonly signedAt?: Date | null;
+  readonly signedSnapshot?: unknown;
+  readonly signedByUserId?: string | null;
   readonly visits: readonly JobVisit[];
   readonly createdAt: Date;
   readonly updatedAt: Date;

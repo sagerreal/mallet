@@ -41,6 +41,7 @@ import { api } from "@/lib/trpc/client";
 import { userMessage } from "@/lib/trpc/error-map";
 import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { SignatureRecord } from "@/components/shared/signature-record";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { SheetRow } from "./sheet-row";
@@ -957,6 +958,10 @@ export function JobModalContent() {
           </SheetRow>
         )}
       </div>
+
+      {/* What the customer signed on site, when they did. Renders only when a signature exists —
+          a job priced in the office correctly shows nothing rather than an empty evidence block. */}
+      {job.signature && <SignatureRecord signature={job.signature} />}
 
       {/* Money pointer — ONE anchored pointer, never the P&L. */}
       <MoneyPointer

@@ -1,8 +1,12 @@
 import { z } from "zod";
+import type { TenantTx } from "@mallet/shared/db/tx";
+import { DrizzleAuthorizationReader } from "../infra/drizzle-authorization-reader";
+import { checkAuthorization } from "../domain/authorization";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asInvoiceId, asJobId, asLeadId, money, toPage } from "@mallet/shared/types";
+import type { OrgId } from "@mallet/shared/types";
 import { INVOICE_STATUSES, type Invoice, type InvoiceStatus } from "../domain/invoice";
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
@@ -41,6 +45,28 @@ const invoiceDTO = z.object({
   id: z.string().uuid(),
   num: z.string(),
   sourceJobId: z.string().uuid().nullable(),
+  /**
+   * What the customer signed, and whether this bill stays inside it. Null when nothing was signed.
+   *
+   * RESOLVED on read from invoice → job → estimate, never stored on the invoice. A copy would be a
+   * third place for the signed amount to live and a third place for it to drift.
+   *
+   * `overage` is set ONLY when a signature exists and the bill exceeds it. An unsigned invoice
+   * carries authorization: null and no overage — no signed amount means nothing to exceed, and
+   * warning there would train people to dismiss a banner that has to stay rare to mean anything.
+   */
+  authorization: z
+    .object({
+      source: z.enum(["job", "estimate"]),
+      signerName: z.string(),
+      signedAt: z.string(),
+      documentRef: z.string(),
+      authorizedCents: z.number().int(),
+      overage: z
+        .object({ authorizedCents: z.number().int(), invoicedCents: z.number().int(), excessCents: z.number().int() })
+        .nullable(),
+    })
+    .nullable(),
   leadId: z.string().uuid(),
   title: z.string().nullable(),
   status: statusEnum,
@@ -125,6 +151,53 @@ const cursorInput = z.object({
 const money$ = (cents: number) => ({ cents, currency: "USD" as const });
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 
+/**
+ * The invoice DTO plus its resolved authorisation.
+ *
+ * Every path that returns a FULL invoice goes through here, not just `get`. If a mutation returned
+ * the bare DTO the client would reconcile `authorization: null` over a real one and the overage
+ * banner would vanish the moment someone edited a line — which is exactly when it matters most.
+ *
+ * The list path does NOT use this: it returns a different summary shape, and resolving per row
+ * would be an N+1 across the whole page.
+ */
+const toInvoiceDTOWithAuth = async (
+  invoice: Invoice,
+  tx: TenantTx,
+  orgId: OrgId,
+): Promise<ReturnType<typeof toInvoiceDTO> & { authorization: InvoiceAuthorizationDTO }> => {
+  const base = toInvoiceDTO(invoice);
+  const jobId = invoice.props.sourceJobId;
+  if (!jobId) return { ...base, authorization: null };
+
+  const auth = await new DrizzleAuthorizationReader(tx, orgId).forJob(jobId);
+  const checked = checkAuthorization({
+    invoiceId: invoice.props.id,
+    invoiceTotalCents: invoice.props.total,
+    authorization: auth,
+  });
+  if (!checked.authorization) return { ...base, authorization: null };
+  return {
+    ...base,
+    authorization: {
+      source: checked.authorization.source,
+      signerName: checked.authorization.signerName,
+      signedAt: checked.authorization.signedAt.toISOString(),
+      documentRef: checked.authorization.documentRef,
+      authorizedCents: checked.authorization.authorizedCents,
+      overage: checked.overage
+        ? {
+            authorizedCents: checked.overage.authorizedCents,
+            invoicedCents: checked.overage.invoicedCents,
+            excessCents: checked.overage.excessCents,
+          }
+        : null,
+    },
+  };
+};
+
+type InvoiceAuthorizationDTO = z.infer<typeof invoiceDTO>["authorization"];
+
 const toInvoiceDTO = (invoice: Invoice) => {
   const p = invoice.props;
   return {
@@ -199,7 +272,7 @@ export const createInvoiceRouter = () =>
             costCents: l.costCents ?? 0,
           })),
         });
-        return toInvoiceDTO(orThrow(result));
+        return toInvoiceDTOWithAuth(orThrow(result), ctx.tx, ctx.principal.orgId);
       }),
 
     createFromJob: ownerOrOffice
@@ -215,8 +288,10 @@ export const createInvoiceRouter = () =>
           ctx.deps.clock,
           ctx.deps.ids,
         );
-        return toInvoiceDTO(
+        return toInvoiceDTOWithAuth(
           orThrow(await useCase.exec({ orgId: ctx.principal.orgId, jobId: asJobId(input.jobId) })),
+          ctx.tx,
+          ctx.principal.orgId,
         );
       }),
 
@@ -226,7 +301,7 @@ export const createInvoiceRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new SendInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toInvoiceDTO(orThrow(await useCase.exec({ invoiceId: asInvoiceId(input.invoiceId) })));
+        return toInvoiceDTOWithAuth(orThrow(await useCase.exec({ invoiceId: asInvoiceId(input.invoiceId) })), ctx.tx, ctx.principal.orgId);
       }),
 
     recordPayment: ownerOrOffice
@@ -236,7 +311,7 @@ export const createInvoiceRouter = () =>
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const gateway = new ManualPaymentGateway(ctx.deps.clock);
         const useCase = new RecordPaymentUseCase(repo, gateway, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
-        return toInvoiceDTO(
+        return toInvoiceDTOWithAuth(
           orThrow(
             await useCase.exec({
               orgId: ctx.principal.orgId,
@@ -246,6 +321,8 @@ export const createInvoiceRouter = () =>
               idempotencyKey: input.idempotencyKey,
             }),
           ),
+          ctx.tx,
+          ctx.principal.orgId,
         );
       }),
 
@@ -255,7 +332,7 @@ export const createInvoiceRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new VoidInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toInvoiceDTO(orThrow(await useCase.exec({ invoiceId: asInvoiceId(input.invoiceId) })));
+        return toInvoiceDTOWithAuth(orThrow(await useCase.exec({ invoiceId: asInvoiceId(input.invoiceId) })), ctx.tx, ctx.principal.orgId);
       }),
 
     updateMetadata: ownerOrOffice
@@ -264,7 +341,7 @@ export const createInvoiceRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new UpdateInvoiceMetadataUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toInvoiceDTO(
+        return toInvoiceDTOWithAuth(
           orThrow(
             await useCase.exec({
               invoiceId: asInvoiceId(input.invoiceId),
@@ -274,6 +351,8 @@ export const createInvoiceRouter = () =>
               depositPaidCents: input.depositPaidCents,
             }),
           ),
+          ctx.tx,
+          ctx.principal.orgId,
         );
       }),
 
@@ -283,7 +362,7 @@ export const createInvoiceRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new PatchInvoiceLinesUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
-        return toInvoiceDTO(
+        return toInvoiceDTOWithAuth(
           orThrow(
             await useCase.exec({
               invoiceId: asInvoiceId(input.invoiceId),
@@ -295,6 +374,8 @@ export const createInvoiceRouter = () =>
               })),
             }),
           ),
+          ctx.tx,
+          ctx.principal.orgId,
         );
       }),
 
@@ -323,7 +404,7 @@ export const createInvoiceRouter = () =>
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const invoice = await repo.findById(asInvoiceId(input.invoiceId));
         if (!invoice) throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
-        return toInvoiceDTO(invoice);
+        return toInvoiceDTOWithAuth(invoice, ctx.tx, ctx.principal.orgId);
       }),
 
     list: ownerOrOffice

@@ -43,6 +43,7 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { InvoiceAuthorizationNote } from "@/components/shared/invoice-authorization";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
 import { SheetRow } from "./sheet-row";
@@ -718,6 +719,10 @@ export function InvoiceModalContent() {
           )}
         </div>
       ) : null}
+
+      {/* What was signed — and, when the bill outgrew it, what nobody authorised. Sits ABOVE the
+          body and the money actions on purpose: a warning shown after Send is a post-mortem. */}
+      <InvoiceAuthorizationNote authorization={invoice.authorization} />
 
       {/* Body — editable edit-block vs read-only view */}
       {editable ? (

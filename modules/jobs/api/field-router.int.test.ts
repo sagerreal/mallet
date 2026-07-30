@@ -1076,6 +1076,68 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       expect(row!.signature_svg).toBe("");
     });
 
+    it("the signature reaches the OFFICE and governs the INVOICE — the whole chain", async () => {
+      // The end-to-end claim this feature makes: a customer signs on the tech's tablet, the office
+      // can produce that signature, and the invoice knows what was authorised. Each link was
+      // separately broken at some point; this asserts all of them at once.
+      const [j] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-SIG-CHAIN', 'scheduled', 0, ${techAId})
+        returning id
+      `;
+      const jobId = j!.id;
+      const tech = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await tech.v1.field.signQuote({
+        jobId,
+        lines: [{ description: "Water heater", quantity: 1, rateCents: 2_000_000, costCents: 0 }],
+        signerName: "Dave Chen",
+        signatureSvg: "M10,10 L40,30",
+      });
+
+      // 1. The OFFICE can read the signature back — not write-only.
+      const office = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const fetched = await office.v1.jobs.get({ jobId });
+      expect(fetched.signature).not.toBeNull();
+      expect(fetched.signature!.signerName).toBe("Dave Chen");
+      expect(fetched.signature!.snapshot.totalCents).toBe(2_000_000);
+      expect(fetched.signature!.snapshot.authorizationText).toMatch(/both the quote and the final bill/i);
+
+      // 2. An invoice for the signed amount cites the authorisation and does NOT warn.
+      await admin`update jobs set status = 'complete', total_cents = 2000000 where id = ${jobId}`;
+      const inv = await office.v1.invoicing.createFromJob({ jobId });
+      expect(inv.authorization).not.toBeNull();
+      expect(inv.authorization!.source).toBe("job");
+      expect(inv.authorization!.signerName).toBe("Dave Chen");
+      expect(inv.authorization!.authorizedCents).toBe(2_000_000);
+      expect(inv.authorization!.overage).toBeNull();
+
+      // 3. Push the bill ABOVE what was signed — the shop is warned, with the exact excess.
+      await admin`update invoices set total_cents = 3500000 where id = ${inv.id}`;
+      const over = await office.v1.invoicing.get({ invoiceId: inv.id });
+      expect(over.authorization!.overage).not.toBeNull();
+      expect(over.authorization!.overage!.excessCents).toBe(1_500_000);
+      expect(over.authorization!.overage!.authorizedCents).toBe(2_000_000);
+      expect(over.authorization!.overage!.invoicedCents).toBe(3_500_000);
+
+      await admin`delete from invoices where id = ${inv.id}`;
+      await admin`delete from jobs where id = ${jobId}`;
+    });
+
+    it("an UNSIGNED job's invoice carries no authorisation and no warning", async () => {
+      // No signed amount means nothing to exceed. Warning here would train people to dismiss the
+      // banner, and it only works while it stays rare.
+      const [j] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, 'JOB-UNSIGNED', 'complete', 900000, ${techAId})
+        returning id
+      `;
+      const office = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const inv = await office.v1.invoicing.createFromJob({ jobId: j!.id });
+      expect(inv.authorization).toBeNull();
+      await admin`delete from invoices where id = ${inv.id}`;
+      await admin`delete from jobs where id = ${j!.id}`;
+    });
+
     it("refuses a blank name and writes NOTHING — not even the lines", async () => {
       // The price and the signature move together. Saving lines while refusing the signature
       // would leave the customer having watched themselves sign and the shop holding a number.

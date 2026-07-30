@@ -73,6 +73,11 @@ export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): J
     // corrupt checklist data fails loud below rather than silently coercing.
     checklist: row.checklist ?? null,
     requiredCerts: (row.requiredCerts as string[] | null) ?? null,
+    signerName: row.signerName ?? null,
+    signatureSvg: row.signatureSvg ?? null,
+    signedAt: row.signedAt ?? null,
+    signedSnapshot: row.signedSnapshot ?? null,
+    signedByUserId: row.signedByUserId ?? null,
     visits,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
