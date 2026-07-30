@@ -131,6 +131,18 @@ describe("derivePaintingQuantities", () => {
     });
   });
 
+  it("returns walls_sqft needs_confirm when even ONE wall polygon is degenerate — a partial sum is a guaranteed undercount", () => {
+    // Owen's first real scan: 14 of 15 walls came back with empty polygons from RoomPlan,
+    // and the single usable wall produced a confident 26.4 sqft for a ~600 sqft room.
+    const g = room4x3x2p4();
+    const withOneEmpty = { ...g, walls: [...g.walls, { polygon: { vertices: [] } }] };
+    expect(findQuantity(derivePaintingQuantities(withOneEmpty), "walls_sqft")).toEqual({
+      kind: "walls_sqft",
+      value: null,
+      status: "needs_confirm",
+    });
+  });
+
   it("rounds only at the end (13.9498m perimeter -> 45.8 lnft, not 45.9 which intermediate meter-rounding would give)", () => {
     // 4 x 2.9749m floor: perimeter = 2*(4 + 2.9749) = 13.9498m exactly.
     // Correct: round1(13.9498 * 3.280839895) = round1(45.767060367...) = 45.8.

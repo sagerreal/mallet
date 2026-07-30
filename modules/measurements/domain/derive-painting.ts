@@ -28,8 +28,10 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
  * without re-reading the phase-1 plan):
  *  - walls are GROSS — openings are never deducted from wall area.
  *  - a null/vaulted ceiling never gets a guessed value — it comes back needs_confirm.
- *  - zero usable wall polygons never gets a guessed value either — a confident $0 wall line
- *    would violate the same never-guess law, so walls_sqft comes back needs_confirm too.
+ *  - ANY degenerate wall polygon (< 3 vertices) sends walls_sqft to needs_confirm — summing
+ *    only the usable walls guarantees an undercount presented as a confident number. (Owen's
+ *    first real scan had 14 of 15 walls come back empty from RoomPlan: 26 sqft "derived" for
+ *    a room that was really ~600.) A room with zero walls is the same law.
  *  - baseboard deducts only door widths (not windows), and is floored at 0.
  *  - crown uses the flat-ceiling convention: ceiling perimeter === floor perimeter.
  *  - 'opening' kind counts as neither a door nor a window.
@@ -38,7 +40,7 @@ export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantit
   const floorPerimeterM = polygonPerimeter(g.floorPolygon.vertices);
 
   const usableWalls = g.walls.filter((wall) => wall.polygon.vertices.length >= MIN_WALL_POLYGON_VERTICES);
-  const wallsNeedConfirm = usableWalls.length === 0;
+  const wallsNeedConfirm = usableWalls.length === 0 || usableWalls.length < g.walls.length;
   const wallsAreaM2 = usableWalls.reduce((sum, wall) => sum + polygonArea(wall.polygon.vertices), 0);
   const wallsSqft = wallsNeedConfirm ? null : round1(wallsAreaM2 * SQ_METERS_TO_SQFT);
 
