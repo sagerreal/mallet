@@ -269,6 +269,7 @@ export class DrizzleJobRepository implements JobRepository {
         upcoming: one("upcoming"),
         needsInvoice: one("needsInvoice"),
         done: one("done"),
+        archived: one("archived"),
       })
       .from(jobs)
       .where(and(...baseConds));
@@ -280,6 +281,7 @@ export class DrizzleJobRepository implements JobRepository {
       upcoming: r?.upcoming ?? 0,
       needsInvoice: r?.needsInvoice ?? 0,
       done: r?.done ?? 0,
+      archived: r?.archived ?? 0,
     };
   }
 

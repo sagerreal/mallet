@@ -28,6 +28,7 @@ const BAND_FOR_VIEW: Record<JobView, BandKey> = {
   upcoming: "later",
   needsInvoice: "doneUnbilled",
   done: "done",
+  archived: "archived",
 };
 
 /**
