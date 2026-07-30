@@ -10,12 +10,15 @@
  */
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { selectCustomerCount, selectJobsCount, selectMoneyCount } from "@/components/shell/shell-selectors";
 import { useNavCounts } from "@/components/shell/use-nav-counts";
+import { useNewMenuItems } from "@/components/shell/new-menu-items";
+import { Row } from "@/components/ui/row";
 
 const HomeIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -96,6 +99,16 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
   const jobsCount = navCounts.jobs ?? 0;
   const moneyCount = useAppStore(selectMoneyCount);
 
+  // The center create button — the app's key action, given the Instagram-pattern
+  // slot where the thumb already is. Opens the SAME four create actions as the
+  // desktop sidebar (shared items hook, so the surfaces cannot drift).
+  const [newOpen, setNewOpen] = useState(false);
+  const newItems = useNewMenuItems(() => setNewOpen(false));
+  // Collapse on navigation — otherwise the sheet outlives the page it opened on.
+  useEffect(() => {
+    setNewOpen(false);
+  }, [pathname]);
+
   // Don't decide the tab set until the role is known — else a tech doing a cold
   // load on a non-field route would flash the office tabs before role resolves.
   if (me.isLoading) return null;
@@ -130,15 +143,54 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
 
   const tabs = onField ? fieldTabs : officeTabs;
 
+  const tabLink = (t: Tab) => (
+    <Link key={t.href} href={t.href} className={`mtab${t.active ? " active" : ""}`} aria-current={t.active ? "page" : undefined}>
+      <span className="ic" aria-hidden="true">{t.icon}</span>
+      {t.label}
+      {t.count ? <span className="mb">{t.count}</span> : null}
+    </Link>
+  );
+
+  // Field techs don't create customers/quotes/jobs/invoices — their tab set has no
+  // create slot and renders exactly as before.
+  if (onField) {
+    return (
+      <nav id="mobiletabs" aria-label="Primary">
+        {tabs.map(tabLink)}
+      </nav>
+    );
+  }
+
   return (
-    <nav id="mobiletabs" aria-label="Primary">
-      {tabs.map((t) => (
-        <Link key={t.href} href={t.href} className={`mtab${t.active ? " active" : ""}`} aria-current={t.active ? "page" : undefined}>
-          <span className="ic" aria-hidden="true">{t.icon}</span>
-          {t.label}
-          {t.count ? <span className="mb">{t.count}</span> : null}
-        </Link>
-      ))}
-    </nav>
+    <>
+      {/* The create sheet: anchored flush ABOVE the tab bar (a sibling, never a
+          floating inset), same Row items as the desktop sidebar menu. */}
+      {newOpen && (
+        <div className="mobnewmenu">
+          {newItems.map((item) => (
+            <Row key={item.label} label={item.label} onClick={item.action} />
+          ))}
+        </div>
+      )}
+      <nav id="mobiletabs" aria-label="Primary">
+        {tabs.slice(0, 2).map(tabLink)}
+        <button
+          type="button"
+          className={`mtab mtab-create${newOpen ? " open" : ""}`}
+          onClick={() => setNewOpen((v) => !v)}
+          aria-label="Create — customer, quote, job, or invoice"
+          aria-haspopup="true"
+          aria-expanded={newOpen}
+        >
+          <span className="plus" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </span>
+        </button>
+        {tabs.slice(2).map(tabLink)}
+      </nav>
+    </>
   );
 }

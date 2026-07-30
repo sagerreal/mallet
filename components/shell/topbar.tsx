@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Row } from "@/components/ui/row";
-import { useNewMenuItems } from "@/components/shell/new-menu-items";
 import { isTabRoot, parentRouteOf } from "@/components/shell/tab-roots";
 import { THEME_STORAGE_KEY, nextTheme, type Theme } from "@/lib/theme";
 
@@ -59,13 +57,6 @@ const ChevronLeftIcon = () => (
   </svg>
 );
 
-const PlusIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <line x1="12" y1="5" x2="12" y2="19" />
-    <line x1="5" y1="12" x2="19" y2="12" />
-  </svg>
-);
-
 interface TopbarProps {
   section?: string;
   label?: string;
@@ -82,10 +73,6 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   const section = sectionProp ?? crumb?.section ?? "Customer";
   const label = labelProp ?? crumb?.label ?? "Home";
   const [theme, setTheme] = useState<Theme>("light");
-  // The sidebar's "+ New" is `display:none` below 760px, so the topbar carries the
-  // create actions on a phone. Same items, so the two surfaces cannot drift.
-  const [newOpen, setNewOpen] = useState(false);
-  const newItems = useNewMenuItems(() => setNewOpen(false));
 
   // The bottom tab bar is the only navigation on a phone and reaches nine routes.
   // Everything else (/pipeline, /tasks, /composer, /settings, /jobs/:id, /money/:id)
@@ -97,11 +84,6 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
     if (typeof window !== "undefined" && window.history.length > 1) router.back();
     else router.push(parentRouteOf(pathname));
   };
-
-  // Collapse on navigation — otherwise the panel outlives the page it opened on.
-  useEffect(() => {
-    setNewOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     // Adopt whatever is ALREADY on screen. The pre-paint script in app/layout.tsx has
@@ -123,8 +105,7 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   };
 
   return (
-    <>
-      <header className="topbar">
+    <header className="topbar">
         {showBack && (
           <button className="iconbtn topback" onClick={goBack} aria-label="Back" title="Back">
             <ChevronLeftIcon />
@@ -140,33 +121,14 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
           )}
         </div>
         <div className="spacer" />
-        <button
-          className="iconbtn topnew"
-          onClick={() => setNewOpen((o) => !o)}
-          aria-label="New"
-          title="New"
-          aria-haspopup="true"
-          aria-expanded={newOpen}
-        >
-          <PlusIcon />
-        </button>
+        {/* Create moved to the tab bar's center button (mobile) / the sidebar (desktop) —
+            an unlabeled 20px + in the corner was too small for the app's key action. */}
         <button className="iconbtn" onClick={toggleTheme} title="Light / dark">
           {theme === "light" ? <MoonIcon /> : <SunIcon />}
         </button>
         <button className="iconbtn" title="Notifications" style={{ position: "relative" }}>
           <BellIcon />
         </button>
-      </header>
-
-      {/* A SIBLING of the header, not a child — so it expands in flow and pushes the
-          page down, anchored and flush, rather than floating over the content. */}
-      {newOpen && (
-        <div className="topnewmenu">
-          {newItems.map((item) => (
-            <Row key={item.label} label={item.label} onClick={item.action} />
-          ))}
-        </div>
-      )}
-    </>
+    </header>
   );
 }
