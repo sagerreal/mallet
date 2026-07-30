@@ -469,7 +469,7 @@
   .ratechip b{font-family:var(--font-mono);color:var(--ink);font-weight:700}
   .pbtablewrap{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;padding:0 var(--space-3)}
   /* Front Desk quiet layout: services accordion main + definition-list rules rail */
-  .fdcols{display:grid;grid-template-columns:1fr 260px;gap:var(--space-8);margin-top:var(--space-2)}
+  .fdcols{display:grid;grid-template-columns:1fr 240px;gap:var(--space-6);margin-top:var(--space-2)}
   @media (max-width:760px){.fdcols{grid-template-columns:1fr}}
   .fdrail h3{font-size:var(--type-xs);font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0 0 var(--space-2xs)}
   .fdd{border-bottom:1px solid var(--line-2)}
@@ -533,7 +533,6 @@
   .svccard-h .m{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3)}
   .svccard-h .sp{flex:1}
   .svccard button:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:-2px}
-  .fdcols{grid-template-columns:1fr 240px;gap:var(--space-6)}
   /* Common region: the rules rail sits on the card surface like its Services
      neighbor — a bordered panel, not loose text floating on the page bg. */
   .fdrail{background:var(--card);border:1px solid var(--line-2);border-radius:var(--radius);padding:var(--space-2) var(--space-5) var(--space-3);align-self:start}
@@ -1036,6 +1035,58 @@
   .aibar .aibar-go:disabled{opacity:.35;cursor:default}
   .aibar-hint{font-size:var(--type-xs);color:var(--ink-3);margin:var(--space-2) var(--space-2xs) 0}
 
+  /* ============================================================
+     COMPOSER MOBILE (Task 2, mobile-sweep) — ≤760px only. Desktop
+     stays byte-identical; every rule below is media-query gated.
+     Fixes: the line-table header/columns collapsing into each
+     other at 393px, the footer toolbar ("+ Add line" / "From
+     pricebook" / "Show your cost") overflowing the card, the
+     bottom action row cramming 4 wrapping blocks. Selectors are
+     scoped to .lineedit / .composer-actions so nothing here can
+     reach the settings booking-service-card, which reuses the
+     bare .lineedit-tool button style outside a .lineedit table. */
+  @media (max-width:760px){
+    /* ---- line table: stack description, then qty/price/[cost]/amount,
+       then row actions — the fixed-width <colgroup> columns are what
+       squeezed DESCRIPTION/QTY into an unreadable overlap. */
+    /* The table must fully exit table layout, not just switch table-layout —
+       leaving <table>/<tbody> as display:table/table-row-group sized the
+       flexed <tr> from the auto-table column algorithm (a ~20px sliver)
+       instead of the card's width, which is what produced the empty-looking
+       bordered box beside the qty value. */
+    .lineedit table{display:block;table-layout:auto}
+    .lineedit thead{display:none}
+    .lineedit tbody{display:block}
+    .lineedit tfoot,.lineedit tfoot tr,.lineedit tfoot td{display:block}
+    .lineedit tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3)}
+    .lineedit tbody td{display:block;border-bottom:0;padding:0}
+    .lineedit tbody td:first-child{flex:1 1 100%}
+    .lineedit tbody td:has(>input.num){flex:0 1 4.5rem}
+    .lineedit tbody td:has(>input.num) input{width:100%}
+    .lineedit .amt{flex:1 1 auto;padding-right:0}
+    .lineedit .rowacts{flex:0 0 100%;padding-right:0}
+    /* Optional/✕ only reveal on hover/focus by default — touch has no
+       hover, so they'd stay invisible until a field is tapped into. */
+    .lineedit tbody tr .rowacts>*{opacity:1}
+
+    /* ---- footer toolbar (+ Add line / From pricebook / Show your cost) and
+       the GBB "Suggest Better & Best" toolbar — same class, same overflow
+       bug: buttons refused to wrap and ran past the card edge, clipping
+       "Show your cost" mid-word. */
+    .lineedit-bar{flex-wrap:wrap;row-gap:var(--space-2)}
+
+    /* ---- bottom action row: sheet grammar — helper text on its own line,
+       Preview + Save draft (quiet) on a row above, Send quote full-width
+       filled primary on the last line. DOM order already is helper →
+       Preview → Save draft → Send, so a plain wrap (no `order`) does it:
+       the helper's full-width basis pushes everything after it to line 2,
+       and Send's full-width basis pushes itself alone to the final line. */
+    .composer-actions{flex-wrap:wrap}
+    .composer-actions>.muted{flex:1 1 100%}
+    .composer-actions>.btn.ghost{flex:1 1 auto;min-width:0}
+    .composer-actions>.btn.primary{flex:1 1 100%}
+  }
+
   /* first-run intro under the bar: what the estimator reads, shown once */
 
   /* ---------- the draft run: contained stepper panel ---------- */
@@ -1167,7 +1218,7 @@
   .btn.approve{background:var(--amber);border-color:var(--amber);color:#FFF9EE;font-weight:700}
   .btn.approve:hover{filter:brightness(1.08)}
   /* the draft as a real outbound SMS bubble, ghost ink until it goes */
-  .okghost{border-radius:var(--radius-xl) 18px 18px 4px;background:var(--manila);border:1px solid var(--manila-line);padding:var(--space-3) var(--space-4);font-size:var(--type-base);line-height:1.55;color:color-mix(in srgb,var(--manila-ink) 62%,var(--manila));transition:color .15s ease,transform .18s ease-out}
+  .okghost{border-radius:var(--radius-xl) 18px 18px 4px;background:var(--manila);border:1px solid var(--manila-line);padding:var(--space-3) var(--space-4);font-size:var(--type-base);line-height:1.55;color:color-mix(in srgb,var(--manila-ink) 66%,var(--manila));transition:color .15s ease,transform .18s ease-out}
   .okcard:hover .okghost,.okcard:focus-within .okghost{color:var(--manila-ink)}
   /* send choreography: ink-in + nudge (180ms) → fold (260ms, delayed) */
   .okwrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows .26s ease-in .18s,opacity .22s ease-in .18s}
@@ -1785,11 +1836,17 @@
   .sched-vn{width:21px;height:21px;border-radius:50%;background:var(--green-100);color:var(--ink-2);font-size:var(--type-xs);font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
   .sched-vrow .vx{margin-left:auto;color:var(--ink-3);padding:var(--space-1) var(--space-2)}
   /* DAY = dispatch board: one ROW per crew member, the day's hours running left→right (scales to many techs via vertical scroll). */
-  .gv-scroll{border:1px solid var(--line);border-radius:var(--radius);overflow-x:auto;background:var(--card)}
+  .gv-scroll{position:relative;border:1px solid var(--line);border-radius:var(--radius);overflow-x:auto;background:var(--card)}
   .gv-row{display:flex;align-items:stretch;border-bottom:1px solid var(--line-2)}
   .gv-row:last-child{border-bottom:none}
   .gv-head{position:sticky;top:0;z-index:2}
   .gv-name{flex:0 0 148px;width:148px;padding:var(--space-2) var(--space-3);display:flex;align-items:center;gap:var(--space-2);border-right:1px solid var(--line);background:var(--card)}
+  /* toolbar above the board: Day/Week segmented + the Prev·Today·Next cluster. Two
+     atomic groups so the phone media query below can stack them WHOLE — without this,
+     the individual buttons wrap ragged (Next orphaned on its own line). */
+  .sched-toolbar{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap}
+  .sched-toolbar-gap{width:6px}
+  .sched-nav{display:inline-flex;align-items:center;gap:var(--space-2);flex-wrap:nowrap}
   .gv-head .gv-name,.gv-head .gv-lane{background:var(--paper)}
   .gv-nm{font-weight:700;font-size:var(--type-base);line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
   .gv-lane{position:relative;flex:0 0 auto}
@@ -1978,8 +2035,20 @@
     .ticket .thesis{font-size:var(--type-md)}
     .dash-grid{grid-template-columns:1fr}
     .board{gap:var(--space-3);scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-left:var(--space-2xs);padding-right:var(--space-4)}
-    .board .col{flex:0 0 88%;min-width:88%;scroll-snap-align:start}
+    /* Deliberate peek, not a clip: the next column sits ~48px into view, which
+       itself is the "there's more" affordance — no dots/arrows needed. */
+    .board .col{flex:0 0 calc(100% - 48px);min-width:calc(100% - 48px);scroll-snap-align:start}
     .toolbar{flex-wrap:wrap}
+    /* Schedule toolbar: stack the two groups WHOLE instead of letting individual
+       buttons wrap — [Day|Week] on its own row, [‹ Prev · Today · Next ›] on the next. */
+    .sched-toolbar{flex-direction:column;align-items:flex-start;gap:var(--space-2)}
+    .sched-toolbar-gap{display:none}
+    .sched-nav{width:100%;overflow-x:auto}
+    /* Crew×hours board: the CREW name column stays put while the hour lanes pan,
+       and a soft right-edge fade hints there's more to scroll. */
+    .gv-name{position:sticky;left:0;z-index:3}
+    .gv-scroll{-webkit-overflow-scrolling:touch}
+    .gv-scroll::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,var(--card))}
     html,body{overflow-x:hidden;max-width:100%}
     /* ═══ Modals are BOTTOM SHEETS on a phone. ═══
        A floating centered card is a desktop shape: on a 393px screen it pinned to the
@@ -2042,6 +2111,14 @@
     .list-tbl tbody tr,.jl tbody tr{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);margin:0 0 var(--space-3);background:var(--card)}
     .list-tbl tbody td,.jl tbody td{display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);padding:var(--space-1) 0 !important;border:none !important;text-align:right;white-space:normal;min-width:0}
     .list-tbl tbody td::before,.jl tbody td::before{content:attr(data-label);flex:0 0 auto;text-align:left;font-size:var(--type-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3)}
+    /* Ready-to-bill card, mobile: JOB label + job name + the italic "built from
+       what was sold…" helper were all flex siblings on one line, so the job name
+       wrapped mid-phrase beside the right-aligned helper. Let the row wrap: label
+       + job name share the first line, the helper drops to its own full-width
+       muted line underneath. */
+    .mjobcell{flex-wrap:wrap}
+    .mjobcell .mjobval{min-width:0;overflow-wrap:break-word}
+    .mjobcell .mwhy{flex:0 0 100%;text-align:right}
     /* primary/header cell = the card title: floats to the top, full width, no label */
     .list-tbl tbody td[data-primary],.jl tbody td.jl-cust{order:-2;display:block;text-align:left;padding:0 0 var(--space-2) !important;margin-bottom:var(--space-2);border-bottom:1px solid var(--line-2) !important}
     .list-tbl tbody td[data-primary]::before,.jl tbody td.jl-cust::before{content:none}
@@ -2098,13 +2175,60 @@
     .toolbar{gap:var(--space-2);margin-bottom:var(--space-2)}
     .toolbar-search{max-width:none}
     .toolbar-search input{font-size:var(--type-md);padding:var(--space-3) 0}
-    /* To-schedule tray: horizontal scroll with snap on mobile */
+    /* To-schedule tray: horizontal scroll with snap on mobile. A deliberate peek —
+       the next card sits ~48px into view — IS the scroll affordance; no dots/arrows. */
     .tray-grid{display:flex !important;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:var(--space-2)}
-    .tray-grid > *{flex:0 0 88%;scroll-snap-align:start}
+    .tray-grid > *{flex:0 0 calc(100% - 48px);scroll-snap-align:start}
+    .tray-grid > :only-child{flex-basis:100%}
     /* Auth pages: hide brand panel, show mobile logo */
     .auth-brand{display:none}
     .auth-mob-logo{display:block}
     .auth-panel{align-items:flex-start;padding:var(--space-10) var(--space-6) var(--space-10)}
+
+    /* ---- office pane header row: heading + [search + buttons], the checklists /
+       pricebook / frontdesk shape. At 393px the controls group cannot sit beside
+       the heading (search input + 2 buttons alone need ~330px), so it drops to its
+       own full-width line and its children wrap inside it instead of forcing the
+       document wider than the viewport. Desktop (space-between, one row) is
+       untouched — this rule only fires under 760px. */
+    /* The office tab strip scrolls instead of clipping — body overflow-x:hidden was
+       slicing the last tab's badge at 393px (body.scrollWidth 410 while the document
+       reported 393, which is why the overflow net's original assertion missed it). */
+    .otabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .otabs::-webkit-scrollbar{display:none}
+    .otab{white-space:nowrap;flex-shrink:0}
+    .panel-head{flex-wrap:wrap;row-gap:var(--space-3)}
+    .panel-head-ctrls{flex:1 1 100%;flex-wrap:wrap}
+    .panel-head-ctrls input{flex:1 1 100%}
+    .panel-head-ctrls .btn{flex:1 1 auto}
+
+    /* svccard-h: the pricebook/frontdesk "Services N [spacer] [buttons]" header.
+       The spacer collapses to a zero-height 100%-basis break so the action
+       buttons drop to their own line under the title instead of being squeezed
+       (or clipped) beside it. */
+    .svccard-h{flex-wrap:wrap;row-gap:var(--space-2)}
+    .svccard-h .sp{flex:0 0 100%;height:0}
+    .svccard-h .btn{flex:1 1 auto}
+
+    /* pricebook's bottom "+ Add service" row (name + price + button): the name
+       field takes its own full-width line, price + button share the next one —
+       same shape as .cfrow above, for the same reason (a fixed-width sibling
+       plus an unshrinkable text-input min-content overflow the pane). */
+    .addsvc-row{flex-wrap:wrap;row-gap:var(--space-2)}
+    .addsvc-row input[type=text]{flex:1 1 100%}
+    .addsvc-row input[type=number]{flex:1 1 auto}
+
+    /* settings → Team member row: role dropdown + 2 toggles beside the name/email
+       block. member-row-top gets minWidth:0 (page.tsx) so nothing forces past its
+       share; this wrap is a second line of defense for very long emails. */
+    .member-row-top{flex-wrap:wrap;row-gap:var(--space-2)}
+
+    /* Tasks quick-add row: text input + date picker + Add button crammed onto one
+       line left ~6ch of typing room. The text input takes its own full-width
+       line; the date and Add button share a compact second line. */
+    .taskadd{flex-wrap:wrap;row-gap:var(--space-2)}
+    .taskadd input[type=text]{flex:1 1 100%}
+    .taskadd input[type=date]{flex:1 1 auto;min-width:0}
   }
 
 /* ═══════════════ FEEL KIT (perf/feel Phase 1) ═══════════════
@@ -2188,3 +2312,28 @@
   .sk-row{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-1);border-bottom:1px solid var(--line-2)}
   /* Screen-reader-only: visually hidden, still announced (e.g. a skeleton's "Loading…"). */
   .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+  /* FEEL: post-Jul-17 surfaces — controls added after the FEEL KIT landed and
+     never got press feedback, so a tap on them was visually silent until the
+     network settled. Sweep per mobile-sweep Task 7. */
+
+  /* Sheet-grammar (#253/#254) rows: .sheet-row is both a plain action row
+     (SheetRow onPress) and every .sheet-acc accordion head — same button,
+     no :active at all. One shade deeper, matching .uirow-clickable below. */
+  .sheet-row:active{background:var(--manila-2)}
+
+  /* Text-link controls (RescanRow's "Re-scan room", the schedule panel's
+     "jump to today", the pipeline record links) — plain color, no feedback. */
+  .linklike:active{opacity:.6}
+
+  /* Mallet dropdown (#255 SelectMenu) — the trigger carried no className at
+     all (inline styles only) and the option rows set `background` inline
+     per-render, so neither could be reached by an external :active rule
+     (inline always wins over a stylesheet). Moved those two backgrounds
+     out to these classes so press feedback can land. */
+  .select-trigger{background:var(--card)}
+  .select-trigger:disabled{background:var(--bg)}
+  .select-trigger:active{background:var(--manila-2)}
+  .select-option{background:transparent}
+  .select-option.active{background:var(--manila-2)}
+  .select-option:active{background:color-mix(in srgb,var(--ink) 12%,var(--manila-2))}

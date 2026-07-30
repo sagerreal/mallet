@@ -81,10 +81,12 @@ export function ChecklistsPanel() {
 
   return (
     <div style={{ padding: "var(--space-5) var(--space-6)" }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-4)" }}>
+      {/* Header — wraps under 760px (panel-head/panel-head-ctrls in prototype.css) so
+          the heading, search, and two buttons never force the pane wider than the
+          viewport. Desktop keeps the row/space-between shape unchanged. */}
+      <div className="panel-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-4)" }}>
         <h2 style={{ margin: "0", fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.02em" }}>Checklists</h2>
-        <div style={{ display: "flex", gap: "var(--space-2)" }}>
+        <div className="panel-head-ctrls" style={{ display: "flex", gap: "var(--space-2)" }}>
           <input
             enterKeyHint="search"
             type="text"

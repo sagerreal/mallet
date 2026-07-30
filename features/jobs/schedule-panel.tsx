@@ -431,7 +431,7 @@ export function SchedulePanel() {
   );
 
   const nav = day ? (
-    <>
+    <div className="sched-nav">
       <button className="btn sm ghost" onClick={() => setSchedDay((d) => addDaysLocal(d, -1))}>
         ‹ Prev
       </button>
@@ -450,9 +450,9 @@ export function SchedulePanel() {
           jump to today
         </span>
       )}
-    </>
+    </div>
   ) : (
-    <>
+    <div className="sched-nav">
       <button className="btn sm ghost" onClick={() => setWeekStart((w) => addDaysLocal(w, -7))}>
         ‹ Prev
       </button>
@@ -465,7 +465,7 @@ export function SchedulePanel() {
           jump to today
         </span>
       )}
-    </>
+    </div>
   );
 
   // No-flash first-run gate. The board has nothing to place when there are no jobs AND no estimate
@@ -698,9 +698,9 @@ export function SchedulePanel() {
       <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "var(--space-2xs) 0 var(--space-2)" }}>
         On the board
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-2)", flexWrap: "wrap" }}>
+      <div className="sched-toolbar" style={{ marginBottom: "var(--space-2)" }}>
         {toggle}
-        <span style={{ width: 6 }} />
+        <span className="sched-toolbar-gap" />
         {nav}
       </div>
 

@@ -92,8 +92,8 @@ function MoneyCell({ row, col }: { row: MoneyRow; col: MoneyColKey }) {
   switch (col) {
     case "job":
       return (
-        <td data-label={label}>
-          {row.jobTitle}
+        <td data-label={label} className="mjobcell">
+          <span className="mjobval">{row.jobTitle}</span>
           {row.sub && <div className="mwhy">{row.sub}</div>}
         </td>
       );

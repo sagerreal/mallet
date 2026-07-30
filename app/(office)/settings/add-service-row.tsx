@@ -45,7 +45,10 @@ export function AddServiceRow({ onAdd, autoFocus = false }: AddServiceRowProps) 
 
   return (
     <div>
-      <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
+      {/* addsvc-row wraps under 760px (prototype.css) — the name field takes its own
+          full-width line and the price + button share the next one, instead of
+          forcing the pane wider than the viewport. */}
+      <div className="addsvc-row" style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
         <input
           type="text"
           placeholder="e.g. Hydro-jet kitchen drain"

@@ -25,6 +25,8 @@ import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { DEFAULT_SOURCES, mergeSources } from "@/features/customers/merge-sources";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { Field, FieldGroup } from "@/components/ui/input";
+import { phoneFieldError } from "@/lib/phone";
+import { userMessage } from "@/lib/trpc/error-map";
 
 type VisitPurpose = "job" | "look" | null;
 
@@ -112,6 +114,9 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const [showAddField, setShowAddField] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+  // Inline, field-level error — set before any network round trip so a bad
+  // number never reaches the server just to learn it's bad.
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   function reset() {
     // Invalidate any in-flight create's late response (see submitSeqRef above).
@@ -134,6 +139,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     setCfValue("");
     setShowAddField(false);
     setError(null);
+    setPhoneError(null);
     setDedupLeadId(null);
   }
 
@@ -220,8 +226,8 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       // Mirrors new-job-modal's awaited jobPersisted.
       try {
         await persisted;
-      } catch {
-        setError("The customer was saved, but the job wasn't — check your connection and try again.");
+      } catch (err) {
+        setError(userMessage(err, "The customer was saved, but the job wasn't — check your connection and try again."));
         return { ok: false, job: null };
       }
       // Every job starts with one editable unplaced visit (same default as
@@ -302,6 +308,11 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   async function submitCreate(openBuilder: boolean): Promise<void> {
     if (inFlightRef.current || createMutation.isPending) return;
     if (!name.trim()) { setError("Name is required."); return; }
+    // Client-side mirror of the server's Phone.parse rule — catch a bad number
+    // here, before it round-trips to the server just to bounce with a
+    // misleading "check your connection" message.
+    const badPhone = phoneFieldError(phone);
+    if (badPhone) { setPhoneError(badPhone); return; }
 
     inFlightRef.current = true;
     const submission = submitSeqRef.current;
@@ -311,8 +322,8 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       if (resolved?.persisted) {
         try {
           await resolved.persisted;
-        } catch {
-          setError("Couldn't save the business — check your connection and try again.");
+        } catch (err) {
+          setError(userMessage(err, "Couldn't save the business — check your connection and try again."));
           return;
         }
       }
@@ -322,7 +333,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       await handleCreated(data, openBuilder);
     } catch (err) {
       if (submission === submitSeqRef.current) {
-        setError(err instanceof Error ? err.message : "Couldn't save the customer — try again.");
+        setError(userMessage(err, "Couldn't save the customer — check your connection and try again."));
       }
     } finally {
       inFlightRef.current = false;
@@ -418,8 +429,16 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             type="tel"
             placeholder="(925) 555-0123"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              if (phoneError) setPhoneError(null);
+            }}
           />
+          {phoneError && (
+            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}>
+              {phoneError}
+            </p>
+          )}
           <div className="muted" id="qaDupHint" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }} />
         </Field>
 

@@ -254,7 +254,21 @@ export function EvisitModalContent() {
 
   const lead = leads.find((l) => l.id === leadId);
   const visit = lead?.evisits?.find((v) => v.id === visitId);
-  if (!lead || !visit) return null;
+  // Stale/mismatched params (a removed visit, a lead that lost the evisit
+  // under it) must not collapse the sheet to a bare grabber + ✕ — the modal-host
+  // already opened the Modal shell around whatever this component returns, so
+  // `return null` here silently renders "nothing" INSIDE an open dialog. Say
+  // why instead; the shell's ✕ is still there to close it.
+  if (!lead || !visit) {
+    return (
+      <div className="sheet-head">
+        <h2>Visit not found</h2>
+        <p className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-2)" }}>
+          This estimate visit no longer exists — it may have been removed or already turned into a job.
+        </p>
+      </div>
+    );
+  }
 
   const placed = vPlaced(visit);
   const allVisits = collectAllVisits(leads, jobs);

@@ -322,28 +322,33 @@ function MemberRow({ member }: { member: MemberItem }) {
 
   return (
     <div className="stage-row" style={{ flexDirection: "column", alignItems: "stretch", gap: "var(--space-1)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-        <div style={{ flex: 1 }}>
+      <div className="member-row-top" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <b style={{ fontWeight: 700 }}>{member.name ?? member.email}</b>
-          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)", overflow: "hidden", textOverflow: "ellipsis" }}>
             {member.email}
           </div>
         </div>
-        <SelectMenu
-          aria-label={`Role for ${member.name ?? member.email}`}
-          value={member.role}
-          disabled={setRole.isPending}
-          onChange={(v) => {
-            setRoleError(null);
-            setRole.mutate({ userId: member.id, role: v as "owner" | "office" | "tech" });
-          }}
-          options={[
-            { value: "owner", label: "Owner" },
-            { value: "office", label: "Office" },
-            { value: "tech", label: "Tech" },
-          ]}
-          compact
-        />
+        {/* Fixed-basis wrapper so SelectMenu's internal width:100% resolves against
+            this box, not the whole row — otherwise its flex-basis becomes the row's
+            full width and the dropdown fights the two toggles for space at 393px. */}
+        <div style={{ flex: "0 1 128px", minWidth: 0 }}>
+          <SelectMenu
+            aria-label={`Role for ${member.name ?? member.email}`}
+            value={member.role}
+            disabled={setRole.isPending}
+            onChange={(v) => {
+              setRoleError(null);
+              setRole.mutate({ userId: member.id, role: v as "owner" | "office" | "tech" });
+            }}
+            options={[
+              { value: "owner", label: "Owner" },
+              { value: "office", label: "Office" },
+              { value: "tech", label: "Tech" },
+            ]}
+            compact
+          />
+        </div>
         <label className="switch" title="Schedulable field crew">
           <input
             type="checkbox"

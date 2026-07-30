@@ -32,6 +32,8 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead, Visit } from "@/lib/store/types";
 import { Field, FieldGroup } from "@/components/ui/input";
+import { phoneFieldError } from "@/lib/phone";
+import { userMessage } from "@/lib/trpc/error-map";
 
 // A custom-checklist line mentioning a photo becomes a photo step (shared heuristic).
 const CHK_PHOTO_RE = /photo|picture/i;
@@ -117,6 +119,9 @@ export function NewJobModalContent() {
   const [chkDraft, setChkDraft] = useState("");
 
   const [error, setError] = useState<string | null>(null);
+  // Inline, field-level error — set before any network round trip so a bad
+  // number never reaches the server just to learn it's bad.
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   // Set when a submit created the job but the checklist attach failed — a retry
   // re-attaches to THIS job instead of minting a duplicate (mirrors
@@ -254,8 +259,10 @@ export function NewJobModalContent() {
       });
       try {
         lead = await persisted;
-      } catch {
-        setError("Couldn't save the customer — check your connection and try again.");
+      } catch (err) {
+        // The server's own reason (e.g. an invalid phone) outranks the generic
+        // connection line — that line is only for a genuine transport failure.
+        setError(userMessage(err, "Couldn't save the customer — check your connection and try again."));
         return false;
       }
     }
@@ -328,8 +335,8 @@ export function NewJobModalContent() {
       });
       try {
         lead = await leadPersisted;
-      } catch {
-        setError("Couldn't save the customer — check your connection and try again.");
+      } catch (err) {
+        setError(userMessage(err, "Couldn't save the customer — check your connection and try again."));
         return { ok: false, createdJob: null };
       }
     }
@@ -357,8 +364,8 @@ export function NewJobModalContent() {
     // skipped by addVisit's origin guard — they would be lost on a page refresh.
     try {
       await jobPersisted;
-    } catch {
-      setError("Couldn't save the job — check your connection and try again.");
+    } catch (err) {
+      setError(userMessage(err, "Couldn't save the job — check your connection and try again."));
       return { ok: false, createdJob: null };
     }
 
@@ -394,6 +401,14 @@ export function NewJobModalContent() {
     const job = title.trim();
     if (!job) {
       setError("Add what the job is.");
+      return { ok: false, job: null };
+    }
+    // Client-side mirror of the server's Phone.parse rule — catch a bad number
+    // here, before it round-trips to the server just to bounce with a
+    // misleading "check your connection" message.
+    const badPhone = phoneFieldError(phone);
+    if (badPhone) {
+      setPhoneError(badPhone);
       return { ok: false, job: null };
     }
     if (njType === "estimate") {
@@ -546,8 +561,16 @@ export function NewJobModalContent() {
               autoComplete="tel"
               placeholder="(925) 555-0123"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                if (phoneError) setPhoneError(null);
+              }}
             />
+            {phoneError && (
+              <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}>
+                {phoneError}
+              </p>
+            )}
           </Field>
         </div>
 
@@ -724,25 +747,47 @@ export function NewJobModalContent() {
           </DisclosureRow>
         </div>
 
+        {/* Build-the-price — a terminal action too (creates the job, then opens
+            the builder), so it lives here as its own full-width quiet row, NOT
+            crammed into the sticky foot beside Cancel/Create job (that crush
+            wrapped this button to 3 lines at 393px). Mirrors the same row in
+            visit-modal.tsx / new-customer-modal.tsx's Book-a-visit panel. Jobs
+            only: estimates are quoted by the office after the visit. */}
+        {njType !== "estimate" && (
+          <FieldGroup
+            label="Price"
+            hint={
+              <span
+                className="muted"
+                style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
+              >
+                (optional)
+              </span>
+            }
+          >
+            <button
+              type="button"
+              className="btn"
+              style={{ width: "100%", justifyContent: "center" }}
+              onClick={handleBuildPrice}
+              disabled={saving}
+            >
+              Build the price
+            </button>
+          </FieldGroup>
+        )}
+
         {error && (
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
         )}
 
-        {/* Sticky footer — ONE filled primary (Create job) docked where the
-            thumb is; Cancel and Build-the-price stay quiet beside it.
-            Build-the-price is a terminal action too (creates the job, then
-            opens the builder), so it belongs here, not as a form field. Jobs
-            only: estimates are quoted by the office after the visit. Stays
-            INSIDE the form so Enter-to-submit keeps working. */}
+        {/* Sticky footer — exactly Cancel (quiet) + Create job (.sheet-pri
+            full-width primary), the sheet-grammar shape. Stays INSIDE the
+            form so Enter-to-submit keeps working. */}
         <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <button type="button" className="btn ghost" onClick={close} disabled={saving}>
             Cancel
           </button>
-          {njType !== "estimate" && (
-            <button type="button" className="btn" onClick={handleBuildPrice} disabled={saving}>
-              Build the price
-            </button>
-          )}
           <button type="submit" className="sheet-pri" disabled={saving}>
             {saving ? "Creating…" : "Create job"}
           </button>

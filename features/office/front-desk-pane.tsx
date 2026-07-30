@@ -240,8 +240,14 @@ export function FrontDeskPane() {
     <div style={{ maxWidth: 980 }}>
       {/* slim status header — the org's REAL number; a quiet provisioning line until it lands */}
       <div className="fdstatus">
-        <span className={frontDesk ? "odot" : "odot off"} aria-hidden="true" />
-        <span className="fds">{frontDesk ? "Answering" : "Off — calls go to voicemail"}</span>
+        <span className={frontDesk && bizNumber ? "odot" : "odot off"} aria-hidden="true" />
+        <span className="fds">
+          {frontDesk
+            ? bizNumber
+              ? "Answering"
+              : "Will answer once your number is live"
+            : "Off — calls go to voicemail"}
+        </span>
         {bizNumber ? (
           <>
             <span className="fdnum">{fmtPhone(bizNumber)}</span>

@@ -220,8 +220,12 @@ export function SendCard({
         </div>
       )}
 
-      {/* Action row — disabled with the reason shown, never a silent no-op */}
+      {/* Action row — disabled with the reason shown, never a silent no-op.
+          "composer-actions" is a mobile-only styling hook (app/prototype.css,
+          the COMPOSER MOBILE block) — it changes nothing at desktop widths;
+          the inline styles below still own the desktop layout byte-for-byte. */}
       <div
+        className="composer-actions"
         style={{
           display: "flex",
           justifyContent: "flex-end",

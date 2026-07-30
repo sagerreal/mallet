@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hasPhone, ADD_PHONE_TITLE, formatPhone } from "./phone";
+import { hasPhone, ADD_PHONE_TITLE, formatPhone, phoneFieldError, PHONE_INVALID_MESSAGE } from "./phone";
 
 describe("formatPhone", () => {
   it("renders a US E.164 number the way a person reads it aloud", () => {
@@ -44,5 +44,29 @@ describe("hasPhone", () => {
 
   it("exports the shared disabled-control title", () => {
     expect(ADD_PHONE_TITLE).toBe("Add a phone number first");
+  });
+});
+
+describe("phoneFieldError", () => {
+  it("null for a blank value — the field is optional on every creation form", () => {
+    expect(phoneFieldError("")).toBeNull();
+    expect(phoneFieldError("   ")).toBeNull();
+  });
+
+  it("null for a valid 10-digit US number in any common typed form", () => {
+    expect(phoneFieldError("(925) 555-0123")).toBeNull();
+    expect(phoneFieldError("925-555-0123")).toBeNull();
+    expect(phoneFieldError("9255550123")).toBeNull();
+    expect(phoneFieldError("+19255550123")).toBeNull();
+    expect(phoneFieldError("19255550123")).toBeNull();
+  });
+
+  it("flags the exact defect Owen hit — an 8-digit number", () => {
+    expect(phoneFieldError("78138501")).toBe(PHONE_INVALID_MESSAGE);
+  });
+
+  it("flags any non-10-digit value with the same named message the server would reject with", () => {
+    expect(phoneFieldError("12345")).toBe(PHONE_INVALID_MESSAGE);
+    expect(phoneFieldError("not a phone number")).toBe(PHONE_INVALID_MESSAGE);
   });
 });
