@@ -79,8 +79,8 @@ export class IngestScanUseCase {
       throw e;
     }
 
-    // Mirror what the repository does at persistence time: a derived quantity's derivedValue
-    // starts equal to its value; a needs_confirm row (no confident derivation) starts null.
+    // Mirror what the repository persists: value and derivedValue are carried separately
+    // (a trim suggestion has derivedValue set while value stays null until confirmed).
     // Sorted alphabetically by kind to match the repo's read-path ordering (`ORDER BY kind` in
     // attachQuantities) — this response is built in-memory, never re-read from the DB, so
     // without an explicit sort it would disagree with what a later getCapture() returns for the
@@ -89,7 +89,7 @@ export class IngestScanUseCase {
       .map((q) => ({
         kind: q.kind,
         value: q.value,
-        derivedValue: q.status === "needs_confirm" ? null : q.value,
+        derivedValue: q.derivedValue,
         status: q.status,
       }))
       .sort((a, b) => a.kind.localeCompare(b.kind));

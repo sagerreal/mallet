@@ -95,7 +95,7 @@ export class RescanRoomUseCase {
       .map((q) => ({
         kind: q.kind,
         value: q.value,
-        derivedValue: q.status === "needs_confirm" ? null : q.value,
+        derivedValue: q.derivedValue,
         status: q.status,
       }))
       .sort((a, b) => a.kind.localeCompare(b.kind));

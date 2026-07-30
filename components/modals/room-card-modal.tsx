@@ -97,7 +97,8 @@ export interface QuantityDisplay {
 
 /**
  * Renders one quantity per the status law in the Task 8 brief:
- *  - needs_confirm → amber "Confirm" badge + "Add" hint (tap to fill in).
+ *  - needs_confirm → amber "Confirm" badge; the suggestion (derivedValue, e.g. the
+ *    perimeter-convention trim number) as a muted hint when present, "Add" otherwise.
  *  - manual-source rows are ALWAYS plain — everything on a manual room is
  *    typed by definition, so nothing there is ever "edited" or "confirmed".
  *  - override (scan source) → the edited value + a blue "edited" badge + the
@@ -123,6 +124,17 @@ export function quantityDisplay(
   }
 
   if (q.status === "needs_confirm") {
+    // A suggestion (trim conventions: perimeter-derived baseboard/crown) renders as a muted
+    // hint value behind the Confirm badge — visibly NOT a measurement. Tapping opens the
+    // editor prefilled with it; committing (or zeroing a not-present trim) confirms.
+    if (q.derivedValue != null) {
+      return {
+        value: formatQuantity(q.derivedValue, unit),
+        valueIsHint: true,
+        badge: { tone: "amber", text: "Confirm" },
+        measured: null,
+      };
+    }
     return { value: "Add", valueIsHint: true, badge: { tone: "amber", text: "Confirm" }, measured: null };
   }
 

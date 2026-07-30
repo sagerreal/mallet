@@ -15,7 +15,15 @@ export type PaintingQuantityKind =
 
 export interface PaintingQuantity {
   readonly kind: PaintingQuantityKind;
+  /** The working number. Null = not confirmed yet — a null value never prices. */
   readonly value: number | null;
+  /**
+   * The derivation's own number, kept separate from the working value. For measured kinds
+   * it equals `value`; for convention kinds (trim) it carries the SUGGESTION shown to the
+   * estimator while `value` stays null until a human confirms; null when nothing was
+   * derivable at all.
+   */
+  readonly derivedValue: number | null;
   readonly status: "derived" | "needs_confirm";
 }
 
@@ -34,6 +42,10 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
  *    a room that was really ~600.) A room with zero walls is the same law.
  *  - baseboard deducts only door widths (not windows), and is floored at 0.
  *  - crown uses the flat-ceiling convention: ceiling perimeter === floor perimeter.
+ *  - TRIM EXISTENCE IS NOT OBSERVABLE: the scanner cannot see whether a room has baseboard
+ *    or crown at all, so both ship as needs_confirm with the perimeter-convention number as
+ *    a suggestion (derivedValue) — never as a confident value. A bathroom with rubber cove
+ *    base and no crown must not show 29.3 lnft of crown as fact (Owen, Jul 30 2026).
  *  - 'opening' kind counts as neither a door nor a window.
  */
 export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantity[] {
@@ -60,11 +72,21 @@ export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantit
   const windowsCount = g.openings.filter((o) => o.kind === "window").length;
 
   return [
-    { kind: "walls_sqft", value: wallsSqft, status: wallsNeedConfirm ? "needs_confirm" : "derived" },
-    { kind: "ceiling_sqft", value: ceilingSqft, status: ceilingNeedsConfirm ? "needs_confirm" : "derived" },
-    { kind: "baseboard_lnft", value: baseboardLnft, status: "derived" },
-    { kind: "crown_lnft", value: crownLnft, status: "derived" },
-    { kind: "doors_count", value: doorsCount, status: "derived" },
-    { kind: "windows_count", value: windowsCount, status: "derived" },
+    {
+      kind: "walls_sqft",
+      value: wallsSqft,
+      derivedValue: wallsSqft,
+      status: wallsNeedConfirm ? "needs_confirm" : "derived",
+    },
+    {
+      kind: "ceiling_sqft",
+      value: ceilingSqft,
+      derivedValue: ceilingSqft,
+      status: ceilingNeedsConfirm ? "needs_confirm" : "derived",
+    },
+    { kind: "baseboard_lnft", value: null, derivedValue: baseboardLnft, status: "needs_confirm" },
+    { kind: "crown_lnft", value: null, derivedValue: crownLnft, status: "needs_confirm" },
+    { kind: "doors_count", value: doorsCount, derivedValue: doorsCount, status: "derived" },
+    { kind: "windows_count", value: windowsCount, derivedValue: windowsCount, status: "derived" },
   ];
 }

@@ -226,9 +226,10 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
           captureId: row.id,
           kind: q.kind,
           value: q.value,
-          // The initial persisted derivedValue is the freshly derived number — null when the
-          // derivation itself came back needs_confirm (nothing to preserve).
-          derivedValue: q.value,
+          // derivedValue is carried separately from value: for measured kinds they start
+          // equal; for convention kinds (trim) derivedValue holds the suggestion while
+          // value stays null until a human confirms.
+          derivedValue: q.derivedValue,
           status: q.status,
         })),
       );

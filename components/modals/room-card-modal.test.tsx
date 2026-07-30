@@ -170,6 +170,13 @@ describe("quantityDisplay", () => {
     expect(d.valueIsHint).toBe(true);
   });
 
+  it("needs_confirm WITH a suggestion (trim conventions): the suggestion as a muted hint + Confirm badge, never a plain fact", () => {
+    const d = quantityDisplay(quantity({ status: "needs_confirm", value: null, derivedValue: 29.3 }), "roomplan_v1", "lnft");
+    expect(d.badge).toEqual({ tone: "amber", text: "Confirm" });
+    expect(d.value).toBe("29.3");
+    expect(d.valueIsHint).toBe(true);
+  });
+
   it("manual-source rooms never show a badge, even when status is override", () => {
     const d = quantityDisplay(quantity({ status: "override", value: 600, derivedValue: null }), "manual", "sqft");
     expect(d.badge).toBeNull();
