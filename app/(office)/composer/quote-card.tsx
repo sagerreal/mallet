@@ -408,10 +408,10 @@ export function QuoteCard({
               }
               placeholder={
                 barMode === "refine"
-                  ? "Tell it what to change — “that's 5h of labor, not 10”…"
+                  ? "What should change?"
                   : barMode === "rebuild"
-                    ? "Describe the job — rebuilds this quote from your pricebook…"
-                    : "Type the job — the quote builds itself from your pricebook…"
+                    ? "Rebuild the quote…"
+                    : "Describe the job…"
               }
               disabled={isDrafting}
               onChange={(e) => {
