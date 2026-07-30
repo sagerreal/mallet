@@ -117,6 +117,34 @@ suite("customers list — server-side sort, search, count", () => {
     expect((await caller.v1.customers.list({ limit: 50 })).items).toHaveLength(7);
   });
 
+  it("pages MICROSECOND timestamps without repeating a row", async () => {
+    // Postgres timestamptz stores microseconds; a JS Date holds milliseconds. A cursor built from
+    // a driver-returned Date is strictly LESS than its own row, so `col > cursor` matches that row
+    // again and it reappears at the top of the next page.
+    //
+    // ASCENDING deliberately — the bug is directional. With `>` the row repeats; with `<` it
+    // silently skips same-millisecond rows instead, which is real but far harder to trigger.
+    const [o] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('LeadMicro ' || gen_random_uuid()) returning id`;
+    for (let i = 0; i < 7; i++) {
+      await admin`
+        insert into leads (org_id, name, updated_at)
+        values (${o!.id}, ${"Micro " + i}, now() + (${i} || ' minutes')::interval)`;
+    }
+    const caller = appRouter.createCaller(ctxFor(o!.id, "owner"));
+    const names: string[] = [];
+    let cursor: string | null = null;
+    for (let g = 0; g < 10; g++) {
+      const page = await caller.v1.customers.list({ sort: "lastActivity", sortDir: "asc", limit: 3, cursor });
+      names.push(...page.items.map((l) => l.name));
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+    expect(names).toHaveLength(7);
+    expect(new Set(names).size).toBe(7);
+    await admin`delete from orgs where id = ${o!.id}`;
+  });
+
   it("does not leak across tenants", async () => {
     const [other] = await admin<{ id: string }[]>`
       insert into orgs (name) values ('LeadSort Other ' || gen_random_uuid()) returning id`;
