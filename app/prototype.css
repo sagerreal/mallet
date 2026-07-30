@@ -469,7 +469,7 @@
   .ratechip b{font-family:var(--font-mono);color:var(--ink);font-weight:700}
   .pbtablewrap{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;padding:0 var(--space-3)}
   /* Front Desk quiet layout: services accordion main + definition-list rules rail */
-  .fdcols{display:grid;grid-template-columns:1fr 260px;gap:var(--space-8);margin-top:var(--space-2)}
+  .fdcols{display:grid;grid-template-columns:1fr 240px;gap:var(--space-6);margin-top:var(--space-2)}
   @media (max-width:760px){.fdcols{grid-template-columns:1fr}}
   .fdrail h3{font-size:var(--type-xs);font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0 0 var(--space-2xs)}
   .fdd{border-bottom:1px solid var(--line-2)}
@@ -533,7 +533,6 @@
   .svccard-h .m{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3)}
   .svccard-h .sp{flex:1}
   .svccard button:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:-2px}
-  .fdcols{grid-template-columns:1fr 240px;gap:var(--space-6)}
   /* Common region: the rules rail sits on the card surface like its Services
      neighbor — a bordered panel, not loose text floating on the page bg. */
   .fdrail{background:var(--card);border:1px solid var(--line-2);border-radius:var(--radius);padding:var(--space-2) var(--space-5) var(--space-3);align-self:start}
@@ -2180,6 +2179,7 @@
        the next card sits ~48px into view — IS the scroll affordance; no dots/arrows. */
     .tray-grid{display:flex !important;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:var(--space-2)}
     .tray-grid > *{flex:0 0 calc(100% - 48px);scroll-snap-align:start}
+    .tray-grid > :only-child{flex-basis:100%}
     /* Auth pages: hide brand panel, show mobile logo */
     .auth-brand{display:none}
     .auth-mob-logo{display:block}
