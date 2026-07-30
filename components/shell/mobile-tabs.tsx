@@ -97,7 +97,7 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
   const navCounts = useNavCounts();
   const customerCount = navCounts.customers ?? 0;
   const jobsCount = navCounts.jobs ?? 0;
-  const moneyCount = useAppStore(selectMoneyCount);
+  const moneyCount = navCounts.money ?? 0;
 
   // The center create button — the app's key action, given the Instagram-pattern
   // slot where the thumb already is. Opens the SAME four create actions as the

@@ -23,6 +23,8 @@ export interface NavCounts {
   readonly jobs: number | undefined;
   /** Active customers. */
   readonly customers: number | undefined;
+  /** Invoices with money still owed. */
+  readonly money: number | undefined;
 }
 
 export function useNavCounts(): NavCounts {
@@ -31,9 +33,14 @@ export function useNavCounts(): NavCounts {
   const opts = { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: true } as const;
   const jobs = api.v1.jobs.count.useQuery({ activeOnly: true }, opts);
   const customers = api.v1.customers.count.useQuery({}, opts);
+  // Money owed, counted in the database for the same reason as the other two: the store holds the
+  // NEWEST 500 invoices, and on this shop all three outstanding ones were raised early enough to
+  // fall outside that window — so the badge showed nothing while three invoices were unpaid.
+  const money = api.v1.invoicing.count.useQuery({ unpaidOnly: true }, opts);
 
   return {
     jobs: jobs.data?.total,
     customers: customers.data?.total,
+    money: money.data?.total,
   };
 }
