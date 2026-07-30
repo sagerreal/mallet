@@ -13,13 +13,14 @@
  * is added or removed there without updating TAB_ROOTS, tab-roots.test.ts fails.
  */
 
-/** Every destination reachable from the bottom tab bar (office tabs + field tabs). */
+/** Every destination reachable from the bottom tab bar (office tabs + field tabs).
+ * /more is NOT one anymore — it moved to the topbar ⋯ so the create button sits
+ * dead-center — so it now carries a back control like any other off-bar route. */
 export const TAB_ROOTS = [
   "/dashboard",
   "/customers",
   "/jobs",
   "/money",
-  "/more",
   "/my-day",
   "/my-hours",
   "/messages",

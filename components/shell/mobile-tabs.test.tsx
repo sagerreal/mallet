@@ -58,7 +58,7 @@ describe("MobileTabs center create button", () => {
     const { container } = render(<MobileTabs />);
     const nav = container.querySelector("#mobiletabs")!;
     const items = Array.from(nav.children);
-    expect(items).toHaveLength(6); // Office · Customers · [+] · Jobs · Money · More
+    expect(items).toHaveLength(5); // Office · Customers · [+] · Jobs · Money — dead center
     expect(items[2]!.getAttribute("aria-label")).toBe(CREATE_NAME);
   });
 

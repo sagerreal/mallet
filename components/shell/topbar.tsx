@@ -57,6 +57,14 @@ const ChevronLeftIcon = () => (
   </svg>
 );
 
+const MoreIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="5" cy="12" r="1.4" />
+    <circle cx="12" cy="12" r="1.4" />
+    <circle cx="19" cy="12" r="1.4" />
+  </svg>
+);
+
 interface TopbarProps {
   section?: string;
   label?: string;
@@ -128,6 +136,11 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
         </button>
         <button className="iconbtn" title="Notifications" style={{ position: "relative" }}>
           <BellIcon />
+        </button>
+        {/* Mobile-only (CSS-hidden on desktop, where the sidebar reaches Settings): the
+            "More" overflow moved up here so the tab bar's create button sits dead-center. */}
+        <button className="iconbtn topmore" onClick={() => router.push("/more")} aria-label="More" title="More">
+          <MoreIcon />
         </button>
     </header>
   );
