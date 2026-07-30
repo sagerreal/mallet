@@ -15,7 +15,7 @@ import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
 import { SetVisitStatusUseCase } from "../app/set-visit-status";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
-import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase } from "../app/job-execution-use-cases";
+import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
@@ -63,6 +63,35 @@ const noticeFor = (outcome: ClockTapOutcome): z.infer<typeof clockNoticeDTO> | n
 // Field-surface add-addon input: description 1..200, optional client-authored id for idempotent
 // retry (mirrors the office addAddonInput's optional id), optional rate (tech with !seesPrice has
 // it zeroed server-side; seesPrice techs and office callers may send a real rate).
+/**
+ * On-glass sign-off: the priced line set the customer is agreeing to, plus their signature.
+ *
+ * ONE call, not two. The price and the signature must land in the same transaction — a signature
+ * saved against lines that failed to write would point at a number nobody agreed to, and lines
+ * saved without the signature leave the customer having signed thin air.
+ *
+ * Only the name and the mark come from the client. The snapshot, the authorisation sentence, the
+ * timestamp, the IP and the witnessing user are all assembled server-side.
+ */
+const fieldSignQuoteInput = z.object({
+  jobId: z.string().uuid(),
+  lines: z
+    .array(
+      z.object({
+        description: z.string().trim().min(1).max(2000),
+        quantity: z.number().min(0),
+        rateCents: z.number().int().min(0),
+        costCents: z.number().int().min(0).default(0),
+      }),
+    )
+    .min(1, "add at least one line before signing")
+    .max(200),
+  signerName: z.string().trim().min(1, "type the customer's name to sign").max(120),
+  // Optional, exactly as on the web path: a typed name IS the signature, and requiring a drawing
+  // would gate approval on the weakest evidence and lock out anyone who cannot draw.
+  signatureSvg: z.string().trim().max(100_000).optional(),
+});
+
 const fieldAddAddonInput = z.object({
   jobId: z.string().uuid(),
   id: z.string().uuid().optional(),
@@ -391,6 +420,56 @@ export const createFieldRouter = () =>
     //   • quantity and costCents are forced to the office defaults (1, 0) — techs don't author
     //     cost; office callers should use the office addAddon endpoint for full control.
     //   • isOptional follows the office default (false) for field-created found work.
+    signQuote: anyRole
+      .input(fieldSignQuoteInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+
+        // Same assignment gate as every other field write: a tech may act only on jobs they are
+        // on. Without it this endpoint would let any technician price and sign any job in the org.
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        const job = techJob ?? (await repo.findById(jobId));
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+        if (job.isTerminal()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This job is closed — ask the office to change it.",
+          });
+        }
+
+        // The shop's name goes into the sentence the customer signs, read from the DB rather than
+        // sent by the tablet: a client-supplied counterparty on a signed document is a hole.
+        const orgName = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getOrgName();
+
+        const useCase = new SetJobLinesUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(
+          await useCase.exec(
+            {
+              jobId,
+              lines: input.lines,
+              signature: {
+                signerName: input.signerName,
+                signatureSvg: input.signatureSvg ?? "",
+                // NULL on purpose, and not an oversight to fix later. On the web path the IP and
+                // user agent belong to the customer's own phone and form part of the attribution.
+                // Here they would belong to the TECH's tablet — the same device on every signature
+                // that tech ever takes — so they attest to nothing about who signed. Recording
+                // them would pad the record with something that looks like evidence and is not.
+                // The in-person equivalent is signedByUserId: a named human who was standing there.
+                signerIp: null,
+                signerUserAgent: null,
+              },
+              orgName,
+              signedByUserId: ctx.principal.userId,
+            },
+            ctx.principal.orgId,
+          ),
+        );
+        return toJobDTO(r.job, r.execution);
+      }),
+
     addAddon: anyRole
       .input(fieldAddAddonInput)
       .output(jobDTO)

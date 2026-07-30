@@ -7,6 +7,7 @@ import type {
   Paginated,
 } from "@mallet/shared/types";
 import type { Job, JobStatus, JobChecklistProps } from "./job";
+import type { JobSignature } from "./job-signature";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "./job-execution";
 
 export interface AutopsyPairRow {
@@ -97,6 +98,20 @@ export interface JobRepository {
   // tenant tx, so a failure rolls back the whole swap). Powers on-site pricing which builds a
   // complete line set in one shot rather than diffing add/update/remove.
   replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date): Promise<void>;
+
+  /**
+   * Record an on-glass signature against a job.
+   *
+   * Separate from replaceLines but always called with it, inside the same transaction: the
+   * signature refers to a specific line set, and a signature that outlived a failed line write
+   * would point at prices the customer never saw.
+   */
+  saveOnSiteSignature(
+    jobId: JobId,
+    signature: JobSignature,
+    signedByUserId: string | null,
+    now: Date,
+  ): Promise<void>;
   addAddon(addon: JobAddon, now: Date): Promise<void>;
   setAddonStatus(jobId: JobId, addonId: string, status: AddonStatus, now: Date): Promise<number>;
   setAddonInvoiceSkip(jobId: JobId, addonId: string, invoiceSkip: boolean, now: Date): Promise<number>;

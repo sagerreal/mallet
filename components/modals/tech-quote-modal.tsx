@@ -27,7 +27,9 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { SignaturePad } from "@/components/shared/signature-pad";
+import { authorizationText } from "@/modules/quoting/domain/authorization-text";
 import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { JobLine, Service } from "@/lib/store/types";
@@ -74,129 +76,6 @@ function tierLabel(t: Tier): string {
 // the prototype pos()). On the first stroke it clears the hint. clear() redraws
 // the hint and resets signed. Listeners are cleaned up on unmount.
 
-const SIG_W = 560;
-const SIG_H = 150;
-
-interface SignaturePadProps {
-  onClearRef: (clear: () => void) => void;
-}
-
-function SignaturePad({ onClearRef }: SignaturePadProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const signedRef = useRef(false);
-
-  useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext("2d");
-    if (!ctx) return;
-
-    const W = c.width;
-    const H = c.height;
-
-    // hint — a light baseline near the bottom + "✕" + "Sign here" (tqSigHint).
-    const drawHint = () => {
-      ctx.clearRect(0, 0, W, H);
-      signedRef.current = false;
-      ctx.strokeStyle = "#D9CEB8";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(34, H - 30);
-      ctx.lineTo(W - 34, H - 30);
-      ctx.stroke();
-      ctx.fillStyle = "#B9AE93";
-      ctx.font = '600 15px "Space Mono",monospace';
-      ctx.fillText("✕", 34, H - 37);
-      ctx.fillStyle = "#C4B99E";
-      ctx.font = "13px Inter,system-ui,sans-serif";
-      ctx.fillText("Sign here", 56, H - 36);
-    };
-
-    drawHint();
-    ctx.lineWidth = 2.4;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    let drawing = false;
-
-    // map a mouse/touch event to canvas coordinates (prototype pos()).
-    const pos = (e: MouseEvent | TouchEvent) => {
-      const r = c.getBoundingClientRect();
-      const t = "touches" in e && e.touches.length ? e.touches[0]! : (e as MouseEvent);
-      return {
-        x: (t.clientX - r.left) * (W / (r.width || W)),
-        y: (t.clientY - r.top) * (H / (r.height || H)),
-      };
-    };
-
-    const start = (e: MouseEvent | TouchEvent) => {
-      if (!signedRef.current) {
-        ctx.clearRect(0, 0, W, H);
-        signedRef.current = true;
-      }
-      drawing = true;
-      ctx.strokeStyle = "#2B2720";
-      const p = pos(e);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      if (e.cancelable) e.preventDefault();
-    };
-
-    const move = (e: MouseEvent | TouchEvent) => {
-      if (!drawing) return;
-      const p = pos(e);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-      if (e.cancelable) e.preventDefault();
-    };
-
-    const end = () => {
-      drawing = false;
-    };
-
-    c.addEventListener("mousedown", start);
-    c.addEventListener("mousemove", move);
-    c.addEventListener("mouseup", end);
-    c.addEventListener("mouseleave", end);
-    c.addEventListener("touchstart", start, { passive: false });
-    c.addEventListener("touchmove", move, { passive: false });
-    c.addEventListener("touchend", end);
-
-    // expose clear() to the parent so the "Clear" link can reset the pad.
-    onClearRef(drawHint);
-
-    return () => {
-      c.removeEventListener("mousedown", start);
-      c.removeEventListener("mousemove", move);
-      c.removeEventListener("mouseup", end);
-      c.removeEventListener("mouseleave", end);
-      c.removeEventListener("touchstart", start);
-      c.removeEventListener("touchmove", move);
-      c.removeEventListener("touchend", end);
-    };
-  }, [onClearRef]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={SIG_W}
-      height={SIG_H}
-      style={{
-        display: "block",
-        width: "100%",
-        border: "1.5px solid var(--line)",
-        borderRadius: "var(--radius)",
-        background: "#fff",
-        touchAction: "none",
-        cursor: "crosshair",
-      }}
-    />
-  );
-}
-
-// ---- sheet header (prototype tqRender head, TECH mode, re-housed #253) ------
-// The old uppercase eyebrow is now the .sheet-meta line under the mode's <h2>,
-// inside the sticky .sheet-head — identical frame to the office builder.
 
 function SheetHead({ title, custName }: { title: string; custName: string }) {
   return (
@@ -216,7 +95,8 @@ export function TechQuoteModalContent() {
   const close = useCloseModal();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
-  const setJobLines = useAppStore((s) => s.setJobLines);
+  const signJobQuote = useAppStore((s) => s.signJobQuote);
+  const brand = useAppStore((s) => s.brand);
   const servicesRaw = useAppStore((s) => s.services);
   const laborRatesRaw = useAppStore((s) => s.laborRates);
 
@@ -257,11 +137,8 @@ export function TechQuoteModalContent() {
   const [signError, setSignError] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
 
-  // clear() handle from the signature pad — wired to the "Clear" link.
-  const sigClearRef = useRef<() => void>(() => {});
-  const setSigClear = (fn: () => void) => {
-    sigClearRef.current = fn;
-  };
+  const [signerName, setSignerName] = useState("");
+  const [signatureSvg, setSignatureSvg] = useState("");
 
   if (!job) return null;
 
@@ -370,17 +247,49 @@ export function TechQuoteModalContent() {
   // The lines are the on-site price; they must survive the post-"Mark done"
   // refetch, so we await the write and only return to the job on success —
   // "approved on site" is derived from the job carrying lines (no DB flag).
+  /**
+   * Take the signature and the price together.
+   *
+   * Was: setJobLines() and nothing else. The drawn mark was discarded, the screen promised the
+   * customer a texted copy that was never sent, and — because v1.jobs.setLines is ownerOrOffice
+   * and the field router had no equivalent — a technician got FORBIDDEN and was told to check
+   * their connection. Nothing about that flow worked.
+   *
+   * Now one call to v1.field.signQuote, which writes the lines and the signature in a single
+   * transaction: a signature can never reference prices that failed to save, and prices can never
+   * be recorded as signed when they were not.
+   */
   async function sign() {
     if (!job || signing) return;
-    const jobLines: JobLine[] = tiers[chosenTier]
+    const name = signerName.trim();
+    if (!name) {
+      setSignError("Type the customer's name to sign.");
+      return;
+    }
+    const jobLines = tiers[chosenTier]
       .map((l) => ({ d: l.d || "Repair", q: 1, r: lineAmt(l) }))
       .filter((l) => (l.r ?? 0) > 0);
+    if (jobLines.length === 0) {
+      setSignError("Add a price before signing.");
+      return;
+    }
     setSigning(true);
     setSignError(null);
-    const { ok } = await setJobLines(job.id, jobLines);
+    const { ok, error } = await signJobQuote(job.id, {
+      lines: jobLines.map((l) => ({
+        description: l.d,
+        quantity: l.q ?? 1,
+        rateCents: Math.round((l.r ?? 0) * 100),
+        costCents: 0,
+      })),
+      signerName: name,
+      // Omitted when nothing was drawn: the typed name IS the signature, and "" would be a
+      // different, emptier record than "they signed without drawing".
+      ...(signatureSvg ? { signatureSvg } : {}),
+    });
     setSigning(false);
     if (!ok) {
-      setSignError("Couldn't save the price — check your connection and try again.");
+      setSignError(error ?? "Couldn't save the signature — check your connection and try again.");
       return;
     }
     returnToJob();
@@ -422,26 +331,60 @@ export function TechQuoteModalContent() {
           </div>
         </div>
 
+        {/* The sentence the customer is agreeing to — rendered from the SAME function the server
+            stores, so the words on the tablet and the words in the record cannot diverge. */}
         <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            margin: "var(--space-4) 0 var(--space-1)",
-          }}
+          className="muted"
+          style={{ fontSize: "var(--type-sm)", margin: "var(--space-4) 0 var(--space-3)", lineHeight: 1.55 }}
         >
-          <span style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>Customer signature</span>
-          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={() => sigClearRef.current()}>
-            Clear
-          </span>
+          {authorizationText({ totalCents: Math.round(total * 100), orgName: brand.name })}
         </div>
 
-        <SignaturePad onClearRef={setSigClear} />
+        <label
+          htmlFor="tq-signer-name"
+          style={{ display: "block", fontSize: "var(--type-sm)", fontWeight: 700, marginBottom: "var(--space-1)" }}
+        >
+          Customer&rsquo;s full name
+        </label>
+        <input
+          id="tq-signer-name"
+          type="text"
+          value={signerName}
+          maxLength={120}
+          autoComplete="off"
+          disabled={signing}
+          onChange={(ev) => {
+            setSignerName(ev.target.value);
+            if (signError) setSignError(null);
+          }}
+          style={{
+            width: "100%",
+            border: "1.5px solid var(--line)",
+            borderRadius: "var(--radius-sm)",
+            padding: "var(--space-2) var(--space-3)",
+            fontFamily: "inherit",
+            fontSize: "var(--type-base)",
+            background: "var(--card)",
+            color: "var(--ink)",
+            boxSizing: "border-box",
+            marginBottom: "var(--space-3)",
+          }}
+        />
 
-        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)", lineHeight: 1.5 }}>
-          <b>{custName}</b> — by signing, you approve the work above and authorize{" "}
-          <b className="fig">{fmt$(total)}</b> on this visit. A copy is texted to you on the spot.
-        </div>
+        <span style={{ display: "block", fontSize: "var(--type-sm)", fontWeight: 700, marginBottom: "var(--space-1)" }}>
+          Customer signature
+        </span>
+        {/* The same pad the web quote page uses, so one stored format renders in one viewer. The
+            canvas that used to live here could not emit what it drew — it was a drawing toy. */}
+        <SignaturePad
+          value={signatureSvg}
+          disabled={signing}
+          aria-label="Customer signature"
+          onChange={(svg) => {
+            setSignatureSvg(svg);
+            if (signError) setSignError(null);
+          }}
+        />
 
         {signError ? (
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{signError}</p>

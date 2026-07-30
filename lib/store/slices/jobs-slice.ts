@@ -77,6 +77,7 @@ import { persistVisitStatus, visitWriteName, type VisitWriteSurface } from "@/li
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { reportWriteError } from "../write-error";
+import { userMessage } from "@/lib/trpc/error-map";
 
 /** Narrow type for the job summary embedded in the accept response. */
 type AcceptJobDTO = NonNullable<RouterOutputs["v1"]["quoting"]["accept"]["job"]>;
@@ -291,6 +292,26 @@ export interface JobsSlice {
    * rejects — so interactive callers can surface a failure.
    */
   setJobLines: (jobId: string, lines: JobLine[]) => Promise<{ ok: boolean }>;
+  /**
+   * On-glass sign-off from the FIELD surface: the priced lines and the customer's signature, in
+   * one assignment-gated call.
+   *
+   * Separate from setJobLines rather than an optional argument on it, because they are different
+   * endpoints for different callers. setJobLines writes v1.jobs.setLines, which is ownerOrOffice —
+   * a technician calling it gets FORBIDDEN, which is exactly what used to happen here and was
+   * reported to the tech as a connection problem.
+   *
+   * Resolves { ok, error } and never rejects; `error` carries the server's own sentence so a
+   * refusal ("type the customer's name to sign") reaches the tech instead of a generic retry.
+   */
+  signJobQuote: (
+    jobId: string,
+    input: {
+      lines: { description: string; quantity: number; rateCents: number; costCents: number }[];
+      signerName: string;
+      signatureSvg?: string;
+    },
+  ) => Promise<{ ok: boolean; error?: string }>;
   setJobSvc: (id: string, svc: string | null) => void;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
@@ -647,6 +668,36 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
         reportWriteError("setJobLines", err);
         return { ok: false };
+      });
+  },
+
+  // ---------------------------------------------------------------------------
+  // signJobQuote — the FIELD money+signature path. One call so the price and the
+  // signature land in the same transaction; see the interface note for why this is
+  // not just setJobLines with an extra argument.
+  // ---------------------------------------------------------------------------
+  signJobQuote: (jobId, input) => {
+    const prior = snapshot(get().jobs, jobId);
+    // Optimistic lines in STORE units (dollars) so the job reads correctly the moment the modal
+    // closes, mirroring setJobLines.
+    const optimistic = input.lines.map((l) => ({ d: l.description, q: l.quantity, r: l.rateCents / 100 }));
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: optimistic } : j)) }));
+    _recentLineWrites.set(jobId, Date.now());
+
+    return trpcVanilla.v1.field.signQuote
+      .mutate(input.signatureSvg ? { jobId, ...input } : { jobId, lines: input.lines, signerName: input.signerName })
+      .then((dto) => {
+        _recentLineWrites.set(jobId, Date.now());
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        _recentLineWrites.delete(jobId);
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        reportWriteError("signJobQuote", err);
+        // Surface the server's wording. A signature refusal names something the tech can fix on
+        // the spot; replacing it with "check your connection" is what sent them home empty.
+        return { ok: false, error: userMessage(err) };
       });
   },
 
