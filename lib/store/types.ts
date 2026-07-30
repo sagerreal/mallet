@@ -337,6 +337,14 @@ export interface Job {
   leadId: string;
   /** UUID of the accepted estimate this job was created from, or null/undefined. */
   sourceEstimateId?: string | null;
+  /**
+   * On-glass signature captured at the customer's door, absent when the job was never signed
+   * on site. Shares EstimateSignature so one SignatureRecord renders both paths.
+   *
+   * Full-record only: the summary DTO omits it, because a board of thirty jobs does not need
+   * thirty frozen documents to draw a card.
+   */
+  signature?: EstimateSignature;
   svc: string | null;
   origin: string;
   title: string;
@@ -417,6 +425,29 @@ export interface Invoice {
    * Set to "db" on reconcile from a backend DTO.
    */
   origin?: "db" | "manual";
+  /**
+   * What the customer signed for this work, resolved server-side from job → estimate.
+   *
+   * Absent when nothing was signed, which is a real state and NOT a warning condition: no signed
+   * amount means there is nothing to exceed. `overage` is present only when a signature exists AND
+   * this bill is larger than it.
+   *
+   * CENTS, not dollars, unlike the rest of this interface — it is a frozen legal figure, and a
+   * number this app divided by 100 is no longer the number on the signed document.
+   */
+  authorization?: InvoiceAuthorization;
+}
+
+/** Read-only. Resolved on every full-invoice read; never stored on the invoice row. */
+export interface InvoiceAuthorization {
+  source: "job" | "estimate";
+  signerName: string;
+  signedAt: string;
+  /** "EST-1042" or a job number — the document the shop can point at. */
+  documentRef: string;
+  authorizedCents: number;
+  /** Set ONLY when this bill exceeds what was signed. The part nobody authorised. */
+  overage: { authorizedCents: number; invoicedCents: number; excessCents: number } | null;
 }
 
 // ---- Time entry (Timesheets) -----------------------------------------------

@@ -154,6 +154,35 @@ export const jobDTO = z.object({
   callbackReason: callbackReasonEnum.nullable(),
   checklist: jobChecklistDTO.nullable(),
   requiredCerts: z.array(z.string()).nullable(),
+  /**
+   * The on-glass signature, or null when nobody signed on site.
+   *
+   * Same shape the estimate DTO uses, so ONE SignatureRecord renders both. Gated on name AND
+   * timestamp AND snapshot together — a row with only some of them is corruption, and rendering
+   * it would put a confident-looking empty block in front of a shop about to chase money.
+   *
+   * Full DTO only. The summary omits it: a board of thirty jobs does not need thirty frozen
+   * documents to draw a card.
+   */
+  signature: z
+    .object({
+      signerName: z.string(),
+      signatureSvg: z.string().nullable(),
+      signerIp: z.string().nullable(),
+      signerUserAgent: z.string().nullable(),
+      signedAt: z.string(),
+      snapshot: z.object({
+        estimateNum: z.string(),
+        totalCents: z.number().int(),
+        depositCents: z.number().int(),
+        chosenTier: z.string().nullable(),
+        authorizationText: z.string(),
+        lines: z.array(
+          z.object({ description: z.string(), quantity: z.number(), rateCents: z.number().int() }),
+        ),
+      }),
+    })
+    .nullable(),
   visits: z.array(visitDTO),
   createdAt: z.string(),
   lines: z.array(jobLineDTO),
@@ -270,6 +299,48 @@ export const toVisitDTO = (visit: import("../domain/job").JobVisit) => {
   };
 };
 
+/**
+ * The on-glass signature for the wire, or null.
+ *
+ * Same three-part gate as the estimate side (name AND timestamp AND snapshot): the domain writes
+ * all of them in one transition, so a row with only some is corruption rather than a partial
+ * record, and it must not render as evidence.
+ */
+const toJobSignatureDTO = (job: Job) => {
+  const p = job.props;
+  const snap = p.signedSnapshot as
+    | {
+        estimateNum: string;
+        totalCents: number;
+        depositCents: number;
+        chosenTier: string | null;
+        authorizationText: string;
+        lines: { description: string; quantity: number; rateCents: number }[];
+      }
+    | null
+    | undefined;
+  if (!p.signedAt || !p.signerName || !snap) return null;
+  return {
+    signerName: p.signerName,
+    // "" means they signed by typing their name — a real signature, and a different record from a
+    // drawing that failed to save. Normalised so the UI branches on presence.
+    signatureSvg: p.signatureSvg && p.signatureSvg.length > 0 ? p.signatureSvg : null,
+    // Always null on this path, and deliberately so: on a tech's tablet the IP would be the same
+    // device for every signature that tech ever takes. See modules/jobs/domain/job-signature.ts.
+    signerIp: null,
+    signerUserAgent: null,
+    signedAt: p.signedAt.toISOString(),
+    snapshot: {
+      estimateNum: snap.estimateNum,
+      totalCents: snap.totalCents,
+      depositCents: snap.depositCents,
+      chosenTier: snap.chosenTier,
+      authorizationText: snap.authorizationText,
+      lines: snap.lines.map((l) => ({ description: l.description, quantity: l.quantity, rateCents: l.rateCents })),
+    },
+  };
+};
+
 export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
   const p = job.props;
   return {
@@ -295,6 +366,7 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
     callbackReason: p.callbackReason,
     checklist: toChecklistDTO(p.checklist),
     requiredCerts: p.requiredCerts ? [...p.requiredCerts] : null,
+    signature: toJobSignatureDTO(job),
     visits: p.visits.map(toVisitDTO),
     createdAt: p.createdAt.toISOString(),
     ...executionFields(execution),

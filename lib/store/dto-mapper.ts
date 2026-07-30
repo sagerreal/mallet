@@ -296,6 +296,9 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     id: dto.id,
     leadId: dto.leadId,
     sourceEstimateId: dto.sourceEstimateId ?? null,
+    // Signature rides the FULL job DTO only; the summary omits it, so a list-hydrated job
+    // correctly has none until the record is opened.
+    signature: "signature" in dto ? (dto.signature ?? undefined) : undefined,
     svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
@@ -411,6 +414,9 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     id: dto.id,
     num: dto.num,
     jobId: dto.sourceJobId,
+    // Carried through in CENTS on purpose — see the note on InvoiceAuthorization. Every other
+    // money field on this mapper becomes dollars; a signed amount must not.
+    authorization: dto.authorization ?? undefined,
     leadId: dto.leadId,
     // cust/phone/email are not in the DTO; money-derive falls back to leads[leadId].name.
     cust: priorInv.cust,
