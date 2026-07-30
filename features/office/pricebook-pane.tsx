@@ -111,9 +111,14 @@ export function PricebookPane() {
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
+  // The rates/markup/terms rail reads settings-slice state whose pre-hydration values are
+  // DEFAULTS ("0 rates", 35% markup) — a shop running 22% must not see 35% for a beat. Same
+  // key as SettingsHydrator (deduped); folded into the same whole-pane loading gate.
+  const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
   const gate = { isFetched: svcQuery.isFetched, isError: svcQuery.isError, count: services.length };
 
-  if (isFirstLoad(gate)) {
+  if (isFirstLoad(gate) || settingsLoading) {
     return (
       <div style={{ maxWidth: 980 }}>
         <ListLoading label="Loading pricebook…" />

@@ -160,8 +160,16 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
         <div>
           <h1>Jobs</h1>
           <div className="jh-verdict">
-            <b className="jh-vfig mono">${shownTrucks.toLocaleString("en-US")}</b>
-            <span className="jh-vlbl">scheduled today</span>
+            {/* Cold reload: jobs haven't hydrated yet, so the derived figure would state
+                "$0 scheduled today" as fact for a beat — skeleton until the first load lands. */}
+            {loading ? (
+              <span className="sk" style={{ display: "inline-block", width: 140, height: 22 }} aria-hidden="true" />
+            ) : (
+              <>
+                <b className="jh-vfig mono">${shownTrucks.toLocaleString("en-US")}</b>
+                <span className="jh-vlbl">scheduled today</span>
+              </>
+            )}
           </div>
         </div>
         <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>

@@ -64,6 +64,13 @@ interface HandoffNoteProps {
   report: ShiftReport;
   queueCount: number;
   queueValue: number;
+  /**
+   * Cold reload: the report/queue derive from not-yet-hydrated store slices. While true, the
+   * thesis line renders as a skeleton — a derived-from-nothing "Quiet night" or "Nothing's
+   * waiting on you" would be a statement the app can't yet stand behind. Identity (org name,
+   * greeting) is server-seeded and stays.
+   */
+  loading?: boolean;
 }
 
 export function HandoffNote({
@@ -74,8 +81,26 @@ export function HandoffNote({
   report,
   queueCount,
   queueValue,
+  loading = false,
 }: HandoffNoteProps) {
   const shown = useAnimatedNumber(queueValue);
+
+  if (loading) {
+    return (
+      <div className="ticket">
+        <div className="eyebrow">
+          {orgName.toUpperCase()} · {dateLabel}
+        </div>
+        <h1 data-dynamic>
+          {timeGreeting()}, {ownerFirst}.
+        </h1>
+        <div className="thesis" style={{ maxWidth: 680 }} aria-hidden="true">
+          <span className="sk" style={{ display: "inline-block", width: "min(320px, 80%)", height: 14 }} />
+        </div>
+        <span className="sr-only">Loading today&rsquo;s summary…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="ticket">

@@ -16,7 +16,20 @@ vi.mock("@/features/identity/hooks", () => ({ useMe: () => ({ data: { orgName: "
 vi.mock("@/features/home/derive", () => ({ deriveShiftReport: () => ({}), deriveOkQueue: () => [] }));
 vi.mock("@/features/home/pipe", () => ({ deriveHomePipe: () => [] }));
 vi.mock("@/features/home/handoff-note", () => ({ HandoffNote: () => <div data-testid="handoff" /> }));
-vi.mock("@/features/home/home-pipe", () => ({ HomePipe: () => <div /> }));
+vi.mock("@/features/home/home-pipe", () => ({ HomePipe: () => <div />, HomePipeSkeleton: () => <div data-testid="pipe-skeleton" /> }));
+// The Today pane mirrors the four hydrator queries to gate the tiles on first load — the mock
+// reports a settled, empty load so the pane renders its real content in these routing tests.
+const settledQuery = { isFetched: true, isError: false };
+vi.mock("@/lib/trpc/client", () => ({
+  api: {
+    v1: {
+      customers: { list: { useQuery: () => settledQuery } },
+      jobs: { list: { useQuery: () => settledQuery } },
+      quoting: { list: { useQuery: () => settledQuery } },
+      invoicing: { list: { useQuery: () => settledQuery } },
+    },
+  },
+}));
 vi.mock("@/features/home/ok-queue", () => ({ OkQueue: () => <div /> }));
 vi.mock("@/features/office/front-desk-pane", () => ({ FrontDeskPane: () => <div data-testid="fd-pane" /> }));
 vi.mock("@/features/office/pricebook-pane", () => ({ PricebookPane: () => <div data-testid="pb-pane" /> }));

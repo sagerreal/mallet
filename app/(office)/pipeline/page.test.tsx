@@ -20,7 +20,8 @@ vi.mock("@/lib/store/app-store", () => ({
   useOpenModal: () => openModal,
 }));
 vi.mock("@/lib/trpc/client", () => ({
-  api: { v1: { customers: { list: { useQuery: () => queryState } } } },
+  // quoting.list rides along since the money strip now gates on the estimates hydrator.
+  api: { v1: { customers: { list: { useQuery: () => queryState } }, quoting: { list: { useQuery: () => queryState } } } },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/features/home/use-animated-number", () => ({ useAnimatedNumber: (n: number) => n }));

@@ -23,6 +23,8 @@ interface ToolbarProps {
   activeFilterCount: number;
   total: number;
   filtered: number;
+  /** True while the caller's backing list is on its first load — the count renders as a skeleton. */
+  countsLoading?: boolean;
   /** Search input placeholder (differs for People vs Companies). */
   searchPlaceholder?: string;
   /** Filters/Columns only apply to the People table — hidden for Companies. */
@@ -41,6 +43,7 @@ export function CustomersToolbar({
   activeFilterCount,
   total,
   filtered,
+  countsLoading = false,
   searchPlaceholder = "Search name, phone, job, email…",
   showControls = true,
 }: ToolbarProps) {
@@ -85,7 +88,12 @@ export function CustomersToolbar({
         </>
       )}
       <span className="muted" style={{ marginLeft: "auto" }}>
-        {filtered} of {total}
+        {/* countsLoading: the caller's list hasn't hydrated — "0 of 0" would be a false count. */}
+        {countsLoading ? (
+          <span className="sk" style={{ display: "inline-block", width: 44, height: 10 }} aria-hidden="true" />
+        ) : (
+          <>{filtered} of {total}</>
+        )}
       </span>
     </div>
   );

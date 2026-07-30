@@ -20,7 +20,8 @@ vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(storeState),
   useOpenModal: () => openModal,
 }));
-vi.mock("@/lib/trpc/client", () => ({ api: { v1: { invoicing: { list: { useQuery: () => q } } } } }));
+// jobs.list rides along since the ledger now also gates on the jobs hydrator (ready-to-bill rows).
+vi.mock("@/lib/trpc/client", () => ({ api: { v1: { invoicing: { list: { useQuery: () => q } }, jobs: { list: { useQuery: () => q } } } } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("./money-table", () => ({ MoneyTable: () => <div data-testid="table" />, MONEY_COL_ORDER: ["num"] }));
 vi.mock("./money-toolbar", () => ({

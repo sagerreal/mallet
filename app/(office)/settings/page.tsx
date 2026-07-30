@@ -32,6 +32,7 @@ import { JobFeaturesCard } from "./job-features-card";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
+import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { userMessage } from "@/lib/trpc/error-map";
@@ -574,6 +575,9 @@ function TeamRolesBlock() {
   const { data, isLoading, isError } = api.v1.identity.members.useQuery();
   const setToggle = useAppStore((s) => s.setToggle);
   const techSeesPrice = useAppStore((s) => s.toggles.techSeesPrice);
+  // Same key as SettingsHydrator (deduped) — read purely to know when toggles are real.
+  const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
 
   const memberCount = data?.items.length ?? 0;
   const fieldCrewCount = data?.items.filter((m) => m.isFieldCrew).length ?? 0;
@@ -606,8 +610,15 @@ function TeamRolesBlock() {
             <b>Techs can see job prices</b>
             <div className="muted" style={{ fontSize: "var(--type-sm)" }}>The job total only — your cost and margin stay office-only.</div>
           </div>
+          {/* Disabled until settings hydrate — the pre-hydration default is ON, and showing a
+              permissions switch in a state the org may have turned off is a false claim. */}
           <label className="switch">
-            <input type="checkbox" checked={techSeesPrice} onChange={(e) => setToggle("techSeesPrice", e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={techSeesPrice}
+              disabled={settingsLoading}
+              onChange={(e) => setToggle("techSeesPrice", e.target.checked)}
+            />
             <i />
           </label>
         </div>
@@ -629,6 +640,23 @@ function SecChannels() {
   const [srcName, setSrcName] = useState("");
   const [srcError, setSrcError] = useState<string | null>(null);
 
+  // Custom sources hydrate via settings.get, per-source lead counts via customers.list — both
+  // mirrored from their hydrators (deduped). Until they land, the summary under-counts and every
+  // source claims "0 leads", so those cells hold shape as skeletons instead.
+  const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
+  const leadsQ = api.v1.customers.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const leadsLoading = !leadsQ.isFetched && !leadsQ.isError && leads.length === 0;
+  const leadCountCell = (n: number) =>
+    leadsLoading ? (
+      <span className="sk" style={{ display: "inline-block", width: 48, height: 10 }} aria-hidden="true" />
+    ) : (
+      <>{n} lead{n === 1 ? "" : "s"}</>
+    );
+
   async function handleAddSource() {
     const result = await addSource(srcName);
     if (result.ok) {
@@ -649,7 +677,7 @@ function SecChannels() {
 
       <WebsiteFormCard />
 
-      <FoldCard title="Source list" summary={`${DEFAULT_SOURCES.length + sources.length} sources`}>
+      <FoldCard title="Source list" summary={settingsLoading ? "…" : `${DEFAULT_SOURCES.length + sources.length} sources`}>
         <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-1)" }}>
           Where your leads come from — tag each lead with one. Built-in sources are always available; add your own below.
         </p>
@@ -659,7 +687,7 @@ function SecChannels() {
             return (
               <div key={label} className="stage-row">
                 <span style={{ fontWeight: 600, flex: 1 }}>{label}</span>
-                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
+                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(n)}</span>
                 <span style={{ fontSize: "var(--type-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-3)", background: "var(--manila)", border: "1px solid var(--manila-line)", borderRadius: "var(--radius-pill)", padding: "var(--space-2xs) var(--space-2)" }}>
                   Built-in
                 </span>
@@ -671,7 +699,7 @@ function SecChannels() {
             return (
               <div key={s.id} className="stage-row">
                 <span style={{ fontWeight: 700, flex: 1 }}>{s.label}</span>
-                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{n} lead{n === 1 ? "" : "s"}</span>
+                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(n)}</span>
                 <button className="btn sm ghost" aria-label={`Remove ${s.label}`} onClick={() => removeSource(s.id)}>✕</button>
               </div>
             );

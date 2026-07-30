@@ -79,6 +79,15 @@ export default function PipelinePage() {
   const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: leads.length });
   const loading = isFirstLoad({ isFetched, isError, count: leads.length });
 
+  // The money strip and Out/Won columns derive from ESTIMATES, a different hydrator that can
+  // land after leads — without its own gate the strip animated up from $0 and printed
+  // "Nothing's sitting on anyone's phone." as fact. Same key as EstimatesHydrator (deduped).
+  const estimatesQ = api.v1.quoting.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const moneyLoading = isFirstLoad({ isFetched: estimatesQ.isFetched, isError: estimatesQ.isError, count: estimates.length });
+
   return (
     <div>
       <div className="pagehead">
@@ -120,17 +129,30 @@ export default function PipelinePage() {
         <>
       {/* the rail's verdict, as a strip above the board */}
       <div className="ticket qstrip">
-        <div>
-          <div className="herofig qstrip-fig" aria-label={`$${rail.outSum.toLocaleString("en-US")} out on quotes`}>
-            ${shownSum.toLocaleString("en-US")}
+        {moneyLoading ? (
+          <div aria-hidden="true">
+            <div className="herofig qstrip-fig">
+              <span className="sk" style={{ display: "inline-block", width: 120, height: 32 }} />
+            </div>
+            <div className="thesis">
+              <span className="sk" style={{ display: "inline-block", width: 200, height: 12 }} />
+            </div>
           </div>
-          <div className="thesis">
-            {rail.outSum > 0
-              ? "sitting on customers’ phones"
-              : "Nothing’s sitting on anyone’s phone."}
-          </div>
-        </div>
-        {rail.delta && <div className="qdelta qstrip-delta">{rail.delta}</div>}
+        ) : (
+          <>
+            <div>
+              <div className="herofig qstrip-fig" aria-label={`$${rail.outSum.toLocaleString("en-US")} out on quotes`}>
+                ${shownSum.toLocaleString("en-US")}
+              </div>
+              <div className="thesis">
+                {rail.outSum > 0
+                  ? "sitting on customers’ phones"
+                  : "Nothing’s sitting on anyone’s phone."}
+              </div>
+            </div>
+            {rail.delta && <div className="qdelta qstrip-delta">{rail.delta}</div>}
+          </>
+        )}
       </div>
 
       {/* the board */}
@@ -161,7 +183,7 @@ export default function PipelinePage() {
           <div className="col-head">
             <span>Out</span>
             <span className="sum fig">
-              {rail.outSum > 0 ? `$${rail.outSum.toLocaleString("en-US")}` : ""}
+              {moneyLoading ? "" : rail.outSum > 0 ? `$${rail.outSum.toLocaleString("en-US")}` : ""}
             </span>
           </div>
           {rail.out.map((row) => (

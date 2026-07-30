@@ -24,6 +24,9 @@ import { TagInput } from "@/app/(office)/settings/tag-input";
 import { HourSelect } from "@/app/(office)/settings/hour-select";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
+import { api } from "@/lib/trpc/client";
+import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { ListLoading } from "@/components/shared/list-loading";
 import { fmtPhone } from "@/lib/format";
 import { Field } from "@/components/ui/input";
 
@@ -231,6 +234,16 @@ export function FrontDeskPane() {
   const toggleRule = (k: RuleKey) => setOpenRule((prev) => (prev === k ? null : k));
   const wdLabel = `${timeLabel(bk.hours.wdOpen)}–${timeLabel(bk.hours.wdClose)} M–F`;
 
+  // Cold reload: everything on this pane reads settings-slice state whose pre-hydration values
+  // are plausible DEFAULTS, not empties — rendering them claims another shop's configuration
+  // ("Answering" for a shop whose Front Desk is off, "Services 0", an $89 fee). Same query key
+  // as SettingsHydrator, so React Query dedupes; until the first load lands, show the same
+  // shimmer the code-split fallback uses rather than any default-derived claim.
+  const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  if (!settingsQ.isFetched && !settingsQ.isError) {
+    return <ListLoading label="Loading Front Desk…" />;
+  }
+
 
 
   // One definition-list row: label over value; click toggles its editor in-flow
@@ -239,30 +252,39 @@ export function FrontDeskPane() {
   return (
     <div style={{ maxWidth: 980 }}>
       {/* slim status header — the org's REAL number; a quiet provisioning line until it lands */}
+      {/* Two semantic groups so the ≤760px grid can re-flow deliberately (title+number+toggle
+          on the first row, action links on their own row) instead of the flex row wrapping
+          mid-list and stranding "· about your number" beside the toggle. */}
       <div className="fdstatus">
         <span className={frontDesk && bizNumber ? "odot" : "odot off"} aria-hidden="true" />
-        <span className="fds">
-          {frontDesk
-            ? bizNumber
-              ? "Answering"
-              : "Will answer once your number is live"
-            : "Off — calls go to voicemail"}
-        </span>
-        {bizNumber ? (
-          <>
-            <span className="fdnum">{fmtPhone(bizNumber)}</span>
-            <span className="fdsep" aria-hidden="true">·</span>
-            <a className="tedit" href={`tel:${bizNumber.replace(/[^\d]/g, "")}`}>Test call</a>
-            <span className="fdsep" aria-hidden="true">·</span>
-            <button className="tedit" onClick={() => navigator.clipboard.writeText(fmtPhone(bizNumber))}>Copy</button>
-          </>
-        ) : (
-          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-            Getting your number — we&rsquo;ll email you when it&rsquo;s live.
+        <span className="fdt">
+          <span className="fds">
+            {frontDesk
+              ? bizNumber
+                ? "Answering"
+                : "Will answer once your number is live"
+              : "Off — calls go to voicemail"}
           </span>
-        )}
-        <span className="fdsep" aria-hidden="true">·</span>
-        <button className="tedit" onClick={() => setAboutOpen((v) => !v)}>{aboutOpen ? "close" : "about your number"}</button>
+          {bizNumber ? (
+            <span className="fdnum">{fmtPhone(bizNumber)}</span>
+          ) : (
+            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Getting your number — we&rsquo;ll email you when it&rsquo;s live.
+            </span>
+          )}
+        </span>
+        <span className="fdacts">
+          {bizNumber && (
+            <>
+              <span className="fdsep lead" aria-hidden="true">·</span>
+              <a className="tedit" href={`tel:${bizNumber.replace(/[^\d]/g, "")}`}>Test call</a>
+              <span className="fdsep" aria-hidden="true">·</span>
+              <button className="tedit" onClick={() => navigator.clipboard.writeText(fmtPhone(bizNumber))}>Copy</button>
+              <span className="fdsep" aria-hidden="true">·</span>
+            </>
+          )}
+          <button className="tedit" onClick={() => setAboutOpen((v) => !v)}>{aboutOpen ? "close" : "about your number"}</button>
+        </span>
         <span className="sp" />
         <label className="switch">
           <input type="checkbox" checked={frontDesk} onChange={(e) => setToggle("frontDesk", e.target.checked)} aria-label="Front Desk on/off" />

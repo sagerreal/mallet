@@ -227,9 +227,19 @@ export function MoneyLedger() {
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
-  const firstRun = shouldShowFirstRun({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
+  // The ledger's "ready to bill" rows come from JOBS (a different hydrator that can land after
+  // invoices) — without this second gate, a shop with finished-but-unbilled jobs was told
+  // "Nothing owed — every finished job is billed and paid." / "No invoices yet" for a beat.
+  const jobsQuery = api.v1.jobs.list.useQuery(
+    { limit: HYDRATOR_PAGE_LIMIT },
+    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
+  );
+  const jobsLoading = isFirstLoad({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: jobs.length });
+  const firstRun =
+    shouldShowFirstRun({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length }) && !jobsLoading;
   const loadFailed = shouldShowLoadFailed({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
-  const loading = isFirstLoad({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
+  const loading =
+    isFirstLoad({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length }) || jobsLoading;
 
   return (
     <>
