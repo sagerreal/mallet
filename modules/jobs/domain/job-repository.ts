@@ -7,6 +7,7 @@ import type {
   Paginated,
 } from "@mallet/shared/types";
 import type { Job, JobStatus, JobChecklistProps } from "./job";
+import type { JobSort } from "../infra/job-sorts";
 import type { JobSignature } from "./job-signature";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "./job-execution";
 
@@ -41,6 +42,14 @@ export interface CallbackScanRow {
 
 export interface JobFilter {
   readonly status?: JobStatus;
+  /**
+   * Free-text search across the job's own title and number.
+   *
+   * Deliberately NOT a customer-name search: that needs a join to leads, which changes the keyset
+   * and the index, and doing it badly is worse than not doing it. Customer search belongs with
+   * the customers list until the joined version is designed properly.
+   */
+  readonly search?: string;
   /** Job-level assignee only (the office list's filter). */
   readonly assigneeUserId?: UserId;
   /**
@@ -81,7 +90,7 @@ export interface JobRepository {
   findById(id: JobId): Promise<Job | null>;
   // Underpins createFromEstimate idempotency (one active job per accepted estimate).
   findBySourceEstimate(estimateId: EstimateId): Promise<Job | null>;
-  list(page: CursorPage, filter?: JobFilter): Promise<Paginated<Job>>;
+  list(page: CursorPage, filter?: JobFilter, sort?: JobSort, sortDir?: "asc" | "desc"): Promise<Paginated<Job>>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Job>>;
 
   // ── job execution data (Phase 5) ─────────────────────────────────────────

@@ -4,6 +4,7 @@ import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asJobId, asLeadId, asEstimateId, asUserId, toPage } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
+import { JOB_SORTS } from "../infra/job-sorts";
 import { DrizzleEstimateReader } from "../infra/drizzle-estimate-reader";
 import { ScheduleJobUseCase } from "../app/schedule-job";
 import { CreateJobFromEstimateUseCase } from "../app/create-job-from-estimate";
@@ -64,11 +65,19 @@ const jobIdInput = z.object({ jobId: z.string().uuid() });
 const cancelInput = z.object({ jobId: z.string().uuid(), reason: z.string().min(1) });
 const fromEstimateInput = z.object({ estimateId: z.string().uuid() });
 const listInput = z.object({
-  // 500 matches the leads endpoint cap and the frontend hydrator's pilot ceiling.
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   status: statusEnum.optional(),
   assigneeUserId: z.string().uuid().optional(),
+  /**
+   * Named sort — never a column name. A client-supplied column is an injection surface and it
+   * welds the public API to the table layout. Absent keeps the historical newest-first order, so
+   * every existing caller is unaffected.
+   */
+  sort: z.enum(JOB_SORTS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
+  /** Free-text over job title and number. Runs in the database, not over a loaded page. */
+  search: z.string().trim().min(1).max(200).optional(),
 });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
@@ -219,10 +228,13 @@ export const createJobRouter = () =>
       .query(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const page = await new ListJobsUseCase(repo).exec({
+          sort: input.sort,
+          sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
           filter: {
             status: input.status,
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
+            search: input.search,
           },
         });
         return { items: page.items.map((j) => toJobSummaryDTO(j)), nextCursor: page.nextCursor };
