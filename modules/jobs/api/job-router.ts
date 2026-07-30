@@ -4,6 +4,7 @@ import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asJobId, asLeadId, asEstimateId, asUserId, toPage } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
+import { DrizzleLeadRepository } from "@mallet/customers";
 import { JOB_SORTS } from "../infra/job-sorts";
 import { JOB_VIEWS } from "../infra/job-views";
 import { DrizzleEstimateReader } from "../infra/drizzle-estimate-reader";
@@ -244,7 +245,27 @@ export const createJobRouter = () =>
             today: input.today,
           },
         });
-        return { items: page.items.map((j) => toJobSummaryDTO(j)), nextCursor: page.nextCursor };
+        // Resolve the page's customer names in ONE batched read. The list cannot look them up in
+        // the store any more: leads hit the same page ceiling as jobs, so a paginated list would
+        // render "—" for every customer past the first page. Same pattern as loadCustomersFor in
+        // the field router — never a per-row query.
+        const names = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findByIds(
+          [...new Set(page.items.map((j) => j.props.leadId))],
+        );
+        const nameById = new Map<string, string>(names.map((l) => [String(l.props.id), l.props.name]));
+
+        // Execution data for the whole page in one batched read. Without it toJobSummaryDTO
+        // returns empty lines[], and the list's Amount column reads jobTotal() — which SUMS THE
+        // LINES. That is why every row showed $0 while the jobs carried real prices: the money was
+        // in the database and simply never fetched. The field router's myDay already does this
+        // for the same reason.
+        const execution = await repo.listExecutionForJobs(page.items.map((j) => j.props.id));
+        return {
+          items: page.items.map((j) =>
+            toJobSummaryDTO(j, execution.get(j.props.id), nameById.get(j.props.leadId) ?? null),
+          ),
+          nextCursor: page.nextCursor,
+        };
       }),
 
     /**
