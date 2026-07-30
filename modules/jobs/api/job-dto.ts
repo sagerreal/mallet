@@ -195,6 +195,15 @@ export const jobSummaryDTO = z.object({
   id: z.string().uuid(),
   num: z.string(),
   leadId: z.string().uuid(),
+  /**
+   * The customer's name, resolved SERVER-side.
+   *
+   * The list used to look this up in the store's leads collection. That works only while every
+   * lead is loaded — and leads hit the same 500-row page ceiling as jobs, so a paginated job list
+   * would render "—" for any customer past the first page. Null only when the join finds nothing,
+   * which a composite FK makes near-impossible.
+   */
+  customerName: z.string().nullable(),
   sourceEstimateId: z.string().uuid().nullable(),
   title: z.string().nullable(),
   svc: z.string().nullable(),
@@ -400,12 +409,13 @@ export const autopsyClusterDTO = z.object({
   topMiss: autopsyTopMissDTO.nullable(),
 });
 
-export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution) => {
+export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution, customerName: string | null = null) => {
   const p = job.props;
   return {
     id: p.id,
     num: p.num,
     leadId: p.leadId,
+    customerName,
     sourceEstimateId: p.sourceEstimateId,
     title: p.title,
     svc: p.svc,
