@@ -263,6 +263,67 @@ describe("NewCustomerModal — submit with the Estimate-visit purpose", () => {
   });
 });
 
+describe("NewCustomerModal — phone validation", () => {
+  it("blocks submit inline on an invalid 8-digit phone — no create call at all", () => {
+    render(<NewCustomerModal open />);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Gary Waters" } });
+    fireEvent.change(screen.getByPlaceholderText("(925) 555-0123"), {
+      target: { value: "78138501" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    expect(screen.getByText(/that phone number isn't valid/i)).toBeTruthy();
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("clears the inline phone error as soon as the field is edited", () => {
+    render(<NewCustomerModal open />);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Gary Waters" } });
+    const phoneInput = screen.getByPlaceholderText("(925) 555-0123");
+    fireEvent.change(phoneInput, { target: { value: "78138501" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+    expect(screen.getByText(/that phone number isn't valid/i)).toBeTruthy();
+
+    fireEvent.change(phoneInput, { target: { value: "9255550123" } });
+    expect(screen.queryByText(/that phone number isn't valid/i)).toBeNull();
+  });
+
+  it("a blank phone is fine — it's optional", async () => {
+    resolveCreateWith(createdDto());
+    render(<NewCustomerModal open />);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Gary Waters" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledOnce());
+    expect(screen.queryByText(/that phone number isn't valid/i)).toBeNull();
+  });
+
+  it("names the server's own validation reason instead of blaming the connection (BAD_REQUEST)", async () => {
+    mutateAsyncMock.mockRejectedValue({
+      message: 'invalid US phone number: "78138501"',
+      data: { code: "BAD_REQUEST" },
+    });
+    render(<NewCustomerModal open />);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Gary Waters" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/invalid US phone number/i)).toBeTruthy();
+    });
+    expect(screen.queryByText(/check your connection/i)).toBeNull();
+  });
+
+  it("still blames the connection for a genuine network failure (no server data shape)", async () => {
+    mutateAsyncMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<NewCustomerModal open />);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Gary Waters" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/check your connection/i)).toBeTruthy();
+    });
+  });
+});
+
 describe("NewCustomerModal — dedup hit", () => {
   it("creates NOTHING and keeps the modal open with the existing-record notice", async () => {
     resolveCreateWith(createdDto({ created: false, id: "existing-9" }));

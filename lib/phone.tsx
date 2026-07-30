@@ -6,6 +6,9 @@
  * Pure helpers (importable by non-React code + tests):
  *   - hasPhone — the ONE has-a-phone check (null/blank/"—" placeholder = no phone).
  *   - ADD_PHONE_TITLE — kept only as the fallback title on read-only field cases.
+ *   - phoneFieldError — client-side mirror of the server's Phone.parse rule, for
+ *     creation forms (new-job, new-customer) that must not round-trip an invalid
+ *     number just to learn it's invalid.
  *
  * JSX pieces:
  *   - PhoneAddInput — the shared in-flow "add a phone number" row (label + tel
@@ -42,6 +45,22 @@ interface PhoneBearer {
 export function hasPhone(bearer: PhoneBearer | null | undefined): boolean {
   const p = (bearer?.phone ?? "").trim();
   return p.length > 0 && p !== NO_PHONE_PLACEHOLDER;
+}
+
+/** The message shown next to a phone field that failed {@link phoneFieldError}. */
+export const PHONE_INVALID_MESSAGE = "That phone number isn't valid — use a 10-digit US number.";
+
+/**
+ * Validates a raw, user-typed phone number the same way the server does
+ * (`Phone.parse` — 10 US digits, an optional leading "1"). The phone field is
+ * OPTIONAL on every creation form that calls this, so a blank value is valid —
+ * only a NON-EMPTY value that fails the server's rule is an error. Returns the
+ * error message to show, or null when the value is fine to submit.
+ */
+export function phoneFieldError(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return Phone.parse(trimmed).ok ? null : PHONE_INVALID_MESSAGE;
 }
 
 /**

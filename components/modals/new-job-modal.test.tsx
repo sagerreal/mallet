@@ -192,6 +192,100 @@ describe("NewJobModalContent — createJob (Job type)", () => {
   });
 });
 
+describe("NewJobModalContent — phone validation", () => {
+  beforeEach(() => {
+    addLead.mockReset();
+    addJob.mockReset();
+    closeMock = vi.fn();
+  });
+
+  it("blocks submit inline on an invalid 8-digit phone — no network call at all", () => {
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "water heater repair" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("(925) 555-0123"), {
+      target: { value: "78138501" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    expect(screen.getByText(/that phone number isn't valid/i)).toBeTruthy();
+    // Neither addLead nor addJob should ever fire — the server never sees this.
+    expect(addLead).not.toHaveBeenCalled();
+    expect(addJob).not.toHaveBeenCalled();
+  });
+
+  it("clears the inline phone error as soon as the field is edited", () => {
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "water heater repair" },
+    });
+    const phoneInput = screen.getByPlaceholderText("(925) 555-0123");
+    fireEvent.change(phoneInput, { target: { value: "78138501" } });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+    expect(screen.getByText(/that phone number isn't valid/i)).toBeTruthy();
+
+    fireEvent.change(phoneInput, { target: { value: "9255550123" } });
+    expect(screen.queryByText(/that phone number isn't valid/i)).toBeNull();
+  });
+
+  it("a blank phone is fine — it's optional", async () => {
+    addLead.mockReturnValue({
+      lead: { id: "opt-1", name: "New customer", evisits: [] },
+      persisted: Promise.resolve({ id: "srv-1", name: "New customer", evisits: [] }),
+    });
+    addJob.mockReturnValue({
+      job: { id: "job-1", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-1", origin: "db", visits: [] }),
+    });
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "water heater repair" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+    await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
+    expect(screen.queryByText(/that phone number isn't valid/i)).toBeNull();
+  });
+
+  it("names the server's own validation reason instead of blaming the connection (BAD_REQUEST)", async () => {
+    // Simulates a TRPCClientError shape the leads-slice rethrows unchanged.
+    addLead.mockReturnValue({
+      lead: { id: "opt-2", name: "New customer", evisits: [] },
+      persisted: Promise.reject({
+        message: 'invalid US phone number: "78138501"',
+        data: { code: "BAD_REQUEST" },
+      }),
+    });
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "water heater repair" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/invalid US phone number/i)).toBeTruthy();
+    });
+    // The wrong, connection-blaming copy must NOT appear.
+    expect(screen.queryByText(/check your connection/i)).toBeNull();
+  });
+
+  it("still blames the connection for a genuine network failure (no server data shape)", async () => {
+    addLead.mockReturnValue({
+      lead: { id: "opt-3", name: "New customer", evisits: [] },
+      persisted: Promise.reject(new TypeError("Failed to fetch")),
+    });
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "water heater repair" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/check your connection/i)).toBeTruthy();
+    });
+  });
+});
+
 describe("NewJobModalContent — checklist wiring (Job type)", () => {
   beforeEach(() => {
     addLead.mockReset();
