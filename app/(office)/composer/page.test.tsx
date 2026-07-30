@@ -131,6 +131,71 @@ describe("ComposerPage — ?job= boot (Build the price)", () => {
     expect(lines).toEqual([{ d: "Living room — Wall paint", q: 562, r: 2.5, c: 0.9 }]);
   });
 
+  it("re-seeds when the ?job= param changes on an already-mounted composer (?job=A -> ?job=B)", () => {
+    searchParamsValue = { job: "job-A" };
+    buildFromMeasurementsState = {
+      data: {
+        leadId: "lead-A",
+        seedLines: [{ description: "Room A — Wall paint", quantity: 100, rateCents: 200, costCents: 50 }],
+        gaps: [],
+        unconfirmedRooms: [],
+      },
+      isError: false,
+    };
+    const { rerender } = render(<ComposerPage />);
+    expect(screen.getByTestId("lead-id").textContent).toBe("lead-A");
+
+    // Same-route param change, composer instance stays mounted — B's seed must still apply
+    // (the seed-once guard is keyed on jobId, not on "has this component ever seeded").
+    searchParamsValue = { job: "job-B" };
+    buildFromMeasurementsState = {
+      data: {
+        leadId: "lead-B",
+        seedLines: [{ description: "Room B — Ceiling paint", quantity: 200, rateCents: 300, costCents: 60 }],
+        gaps: [],
+        unconfirmedRooms: [],
+      },
+      isError: false,
+    };
+    rerender(<ComposerPage />);
+
+    expect(screen.getByTestId("lead-id").textContent).toBe("lead-B");
+    const lines = JSON.parse(screen.getByTestId("lines").textContent ?? "[]");
+    expect(lines).toEqual([{ d: "Room B — Ceiling paint", q: 200, r: 3, c: 0.6 }]);
+  });
+
+  it("does not re-seed on a re-render for the SAME jobId (StrictMode-safe no-op)", () => {
+    searchParamsValue = { job: "job-A" };
+    buildFromMeasurementsState = {
+      data: {
+        leadId: "lead-A",
+        seedLines: [{ description: "Room A — Wall paint", quantity: 100, rateCents: 200, costCents: 50 }],
+        gaps: [],
+        unconfirmedRooms: [],
+      },
+      isError: false,
+    };
+    const { rerender } = render(<ComposerPage />);
+    expect(screen.getByTestId("lead-id").textContent).toBe("lead-A");
+
+    // Same jobId, a background refetch lands DIFFERENT data — must NOT re-stomp the office's
+    // (possibly already-edited) lines/lead.
+    buildFromMeasurementsState = {
+      data: {
+        leadId: "lead-A-should-not-apply",
+        seedLines: [{ description: "should not apply", quantity: 1, rateCents: 100, costCents: 10 }],
+        gaps: [],
+        unconfirmedRooms: [],
+      },
+      isError: false,
+    };
+    rerender(<ComposerPage />);
+
+    expect(screen.getByTestId("lead-id").textContent).toBe("lead-A");
+    const lines = JSON.parse(screen.getByTestId("lines").textContent ?? "[]");
+    expect(lines).toEqual([{ d: "Room A — Wall paint", q: 100, r: 2, c: 0.5 }]);
+  });
+
   it("renders a gap notice with the exact functional copy", () => {
     searchParamsValue = { job: "job-1" };
     buildFromMeasurementsState = {

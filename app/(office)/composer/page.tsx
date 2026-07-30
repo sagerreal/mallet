@@ -116,11 +116,18 @@ export default function ComposerPage() {
     gaps: MeasurementGap[];
     unconfirmedRooms: string[];
   } | null>(null);
-  const seededFromJob = useRef(false);
+  // Keyed on the jobId itself (not a plain mounted-once flag) — a same-route param change
+  // (?job=A -> ?job=B on an already-mounted composer) must still seed B; StrictMode's
+  // double-invoke and a background refetch for the SAME jobId still no-op (ref.current
+  // already equals jobId).
+  const seededForJob = useRef<string | null>(null);
   useEffect(() => {
-    if (!jobId || seededFromJob.current || !buildFromMeasurementsQuery.data) return;
-    seededFromJob.current = true;
+    if (!jobId || seededForJob.current === jobId || !buildFromMeasurementsQuery.data) return;
+    seededForJob.current = jobId;
     const built = buildFromMeasurementsQuery.data;
+    // ?job= wins over ?lead= when both are present: the leadId here overwrites whatever
+    // ?lead= seeded into the initial state. Currently unreachable in practice (the
+    // Build-the-price button only ever sets ?job=), but intentional if that ever changes.
     setCs((prev) => applyMeasurementSeed(prev, built.leadId, seedLinesToComposerLines(built.seedLines)));
     setMeasurementNotice({ gaps: built.gaps, unconfirmedRooms: built.unconfirmedRooms });
   }, [jobId, buildFromMeasurementsQuery.data]);
@@ -681,7 +688,6 @@ export default function ComposerPage() {
       {measurementNotice &&
         (measurementNotice.gaps.length > 0 || measurementNotice.unconfirmedRooms.length > 0) && (
           <div
-            className="notice-block"
             style={{
               fontSize: "var(--type-base)",
               color: "var(--ink-3)",
