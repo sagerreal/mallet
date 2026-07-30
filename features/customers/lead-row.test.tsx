@@ -10,7 +10,7 @@ const renderRow = (onRestore?: (id: string) => void) => {
   const onOpen = vi.fn();
   render(
     <table><tbody>
-      <LeadRow lead={lead} visibleCols={["name"]} value={null} onOpen={onOpen} onRestore={onRestore} />
+      <LeadRow lead={lead} visibleCols={["name"]} onOpen={onOpen} onRestore={onRestore} />
     </tbody></table>,
   );
   return { onOpen };
