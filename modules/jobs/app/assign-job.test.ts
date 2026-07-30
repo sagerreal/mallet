@@ -91,6 +91,7 @@ class FakeJobRepository implements JobRepository {
   async removeLine() { return 0; }
   async replaceLines() {}
   async saveOnSiteSignature(): Promise<void> {}
+  async count(): Promise<number> { return 0; }
   async addAddon() {}
   async setAddonStatus() { return 0; }
   async setAddonInvoiceSkip() { return 0; }

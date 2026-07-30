@@ -149,6 +149,40 @@ suite("jobs list — server-side sort, search, keyset paging", () => {
     expect(page.items.length).toBe(10);
   });
 
+  it("finds jobs by CUSTOMER name — the search the client-side one did", async () => {
+    // The old in-browser search built its haystack from customer name + title + address. Moving
+    // search to the server without customer name would be a regression on the first search run.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const hits = await caller.v1.jobs.list({ search: "Sort Customer", limit: 50 });
+    expect(hits.items.length).toBe(10);
+  });
+
+  it("count reports the TRUE total, not the page size", async () => {
+    // The lie this fixes: the app said "220 of 220" against 1,521 real jobs, because 220 was all
+    // it had ever loaded.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const page = await caller.v1.jobs.list({ sort: "scheduled", limit: 4 });
+    expect(page.items.length).toBe(4);
+    expect((await caller.v1.jobs.count({})).total).toBe(10);
+  });
+
+  it("count honours the same filters as the list", async () => {
+    // A count built from a second hand-copied predicate drifts from its list the first time a
+    // filter changes, and "4 of 7" is only worth showing if both halves ask the same question.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const searched = await caller.v1.jobs.list({ search: "Drain", limit: 50 });
+    expect((await caller.v1.jobs.count({ search: "Drain" })).total).toBe(searched.items.length);
+    expect((await caller.v1.jobs.count({ search: "Drain" })).total).toBe(3);
+  });
+
+  it("count is org-scoped", async () => {
+    const [other] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('SortPage Count ' || gen_random_uuid()) returning id`;
+    const caller = appRouter.createCaller(ctxFor(other!.id, "owner"));
+    expect((await caller.v1.jobs.count({})).total).toBe(0);
+    await admin`delete from orgs where id = ${other!.id}`;
+  });
+
   it("does not leak across tenants", async () => {
     const [other] = await admin<{ id: string }[]>`
       insert into orgs (name) values ('SortPage Other ' || gen_random_uuid()) returning id`;
