@@ -16,7 +16,6 @@ import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
-import { useCallbackCandidates } from "@/features/jobs/hooks";
 import type { Invoice, Job } from "@/lib/store/types";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
 import { custName } from "./jobs-helpers";
@@ -86,7 +85,6 @@ const FIRST_RUN = {
 
 export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const router = useRouter();
-  const candidates = useCallbackCandidates();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const invoices = useAppStore((s) => s.invoices);
@@ -172,15 +170,6 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
       <div className="mob-new">
         <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>
       </div>
-
-      {(() => {
-        const count = candidates.data?.length ?? 0;
-        return count > 0 ? (
-          <div className="cb-review-bar">
-            <b>{count}</b> callback{count === 1 ? "" : "s"} to review
-          </div>
-        ) : null;
-      })()}
 
       <CallbackAutopsyCard />
 
