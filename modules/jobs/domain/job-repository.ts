@@ -50,6 +50,14 @@ export interface JobFilter {
    * the customers list until the joined version is designed properly.
    */
   readonly search?: string;
+  /**
+   * Exclude finished work — the "open jobs" the nav badge counts.
+   *
+   * Not expressible as `status`, which is a single value: this is "everything except complete and
+   * canceled". It mirrors selectJobsCount in the shell, which is what the badge showed before it
+   * was capped at the hydrator's page size.
+   */
+  readonly activeOnly?: boolean;
   /** Job-level assignee only (the office list's filter). */
   readonly assigneeUserId?: UserId;
   /**

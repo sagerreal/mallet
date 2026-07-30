@@ -18,6 +18,7 @@ import {
   selectJobsCount,
   selectUnscheduledCount,
 } from "@/components/shell/shell-selectors";
+import { useNavCounts } from "@/components/shell/use-nav-counts";
 
 interface SecTab {
   href: string;
@@ -36,9 +37,11 @@ export function SectionTabs() {
 
   // Primitive selectors — return numbers so referential equality suppresses
   // re-renders when unrelated store slices are written.
-  const customerCount = useAppStore(selectCustomerCount);
+  // Database counts, not what the browser loaded — see useNavCounts.
+  const navCounts = useNavCounts();
+  const customerCount = navCounts.customers ?? 0;
   const openTasks = useAppStore(selectOpenTaskCount);
-  const jobsCount = useAppStore(selectJobsCount);
+  const jobsCount = navCounts.jobs ?? 0;
   const unscheduled = useAppStore(selectUnscheduledCount);
 
   const inCustomers = CUSTOMER_AREA.some((r) => pathname.startsWith(r));

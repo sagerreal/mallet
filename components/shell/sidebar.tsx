@@ -7,6 +7,7 @@ import { useMe } from "@/features/identity/hooks";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { NewMenu } from "@/components/shell/new-menu";
+import { useNavCounts } from "@/components/shell/use-nav-counts";
 import { signOut } from "@/features/auth/hooks";
 import {
   selectOpenTaskCount,
@@ -157,8 +158,10 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
   // re-renders when unrelated slices (e.g. messages, timesheets) are written.
   const openTaskCount = useAppStore(selectOpenTaskCount);
   const unscheduledCount = useAppStore(selectUnscheduledCount);
-  const customerCount = useAppStore(selectCustomerCount);
-  const jobsCount = useAppStore(selectJobsCount);
+  // Counted by the database, not by what the browser has loaded — see useNavCounts.
+  const navCounts = useNavCounts();
+  const customerCount = navCounts.customers;
+  const jobsCount = navCounts.jobs;
   const moneyCount = useAppStore(selectMoneyCount);
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
@@ -209,7 +212,7 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
               href="/customers"
               icon={<PeopleIcon />}
               label="Customers"
-              count={customerCount > 0 ? customerCount : undefined}
+              count={customerCount ? customerCount : undefined}
               active={customersActive}
             />
             {customersActive && (
@@ -227,7 +230,7 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
               href="/jobs"
               icon={<JobsIcon />}
               label="Jobs"
-              count={jobsCount > 0 ? jobsCount : undefined}
+              count={jobsCount ? jobsCount : undefined}
               active={jobsActive}
             />
             {jobsActive && (

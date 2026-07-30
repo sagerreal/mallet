@@ -260,6 +260,9 @@ export class DrizzleJobRepository implements JobRepository {
   private listConds(filter?: JobFilter): SQL[] {
     const conds: SQL[] = [isNull(jobs.deletedAt)];
     if (filter?.status) conds.push(eq(jobs.status, filter.status));
+    // The nav badge's "open jobs". Terminal statuses are excluded rather than a status matched,
+    // because the badge means "still to do", not "in one particular state".
+    if (filter?.activeOnly) conds.push(notInArray(jobs.status, ["complete", "canceled"]));
     if (filter?.search) {
       // Escape the LIKE wildcards before wrapping in our own. Without this a customer typing "%"
       // matches every job in the org, and "_" matches any single character — the search silently
