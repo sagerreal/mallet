@@ -27,7 +27,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useActiveModal,
@@ -669,12 +669,51 @@ export function JobModalContent() {
   const deleteJob = useAppStore((s) => s.deleteJob);
 
   const [deleteArmed, setDeleteArmed] = useState(false);
+  // Billing hooks live ABOVE the fetch-on-miss early returns below — hook order must be
+  // identical across the loading → loaded transition of one mount.
+  const [billError, setBillError] = useState<string | null>(null);
+  const utils = api.useUtils();
+  const createInvoice = api.v1.invoicing.createFromJob.useMutation();
 
   const jobId = activeModal?.params?.jobId as string | undefined;
   const rooms = useAppStore((s) => (jobId ? s.roomsByJob[jobId] : undefined)) ?? [];
   const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
+  const adoptJob = useAppStore((s) => s.adoptJob);
   const job = jobs.find((j) => j.id === jobId);
-  if (!job) return null;
+
+  // The Jobs list is served by the DATABASE a page at a time, so it shows jobs the store
+  // never hydrated (the hydrator holds one page). Opening one of those used to render an
+  // EMPTY sheet (`return null` under an open shell). Fetch-on-miss: pull the job by id and
+  // adopt it into the store; loading/not-found render honestly meanwhile.
+  const missing = Boolean(jobId) && !job;
+  const jobQ = api.v1.jobs.get.useQuery(
+    { jobId: jobId ?? "" },
+    { enabled: missing, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (missing && jobQ.data) adoptJob(jobQ.data as unknown as Parameters<typeof adoptJob>[0]);
+  }, [missing, jobQ.data, adoptJob]);
+
+  if (!job) {
+    if (missing && jobQ.isError) {
+      return (
+        <div className="sheet-head">
+          <h2>Job not found</h2>
+          <p className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-2)" }}>
+            This job no longer exists — it may have been removed.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className="sheet-head" aria-busy="true">
+        <h2>
+          <span className="sk" style={{ display: "inline-block", width: 180, height: 22 }} aria-hidden="true" />
+        </h2>
+        <span className="sr-only">Loading job…</span>
+      </div>
+    );
+  }
 
   const lead: Lead | undefined = leads.find((l) => l.id === job.leadId);
   const custName = lead?.name ?? job.title ?? "Customer";
@@ -703,10 +742,6 @@ export function JobModalContent() {
         (o.start ?? 0) < (v.start ?? 0) + v.dur
     );
   }
-
-  const [billError, setBillError] = useState<string | null>(null);
-  const utils = api.useUtils();
-  const createInvoice = api.v1.invoicing.createFromJob.useMutation();
 
   /**
    * Turn finished work into an invoice, here, and open it.
