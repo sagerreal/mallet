@@ -87,7 +87,7 @@ suite("jobs scoped views", () => {
 
   it("counts each view correctly", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
-    const c = await caller.v1.jobs.viewCounts({ today: TODAY });
+    const { counts: c } = await caller.v1.jobs.viewCounts({ today: TODAY });
     expect(c.needsSlot).toBe(2);
     expect(c.today).toBe(3);
     expect(c.week).toBe(3);        // 2 within 7 days + 1 overdue
@@ -99,7 +99,7 @@ suite("jobs scoped views", () => {
   it("views are MUTUALLY EXCLUSIVE and account for every job", async () => {
     // The property the grouped list had for free. A job in two bands makes every number wrong.
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
-    const c = await caller.v1.jobs.viewCounts({ today: TODAY });
+    const { counts: c } = await caller.v1.jobs.viewCounts({ today: TODAY });
     const summed = Object.values(c).reduce((a, b) => a + b, 0);
     const [total] = await admin<{ n: number }[]>`
       select count(*)::int n from jobs where org_id = ${orgId} and deleted_at is null`;
@@ -142,7 +142,7 @@ suite("jobs scoped views", () => {
     // The dropdown must recount when the list is filtered, or the numbers describe a different
     // list than the one on screen.
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
-    const c = await caller.v1.jobs.viewCounts({ today: TODAY, search: "V-TODAY" });
+    const { counts: c } = await caller.v1.jobs.viewCounts({ today: TODAY, search: "V-TODAY" });
     expect(c.today).toBe(3);
     expect(c.needsSlot).toBe(0);
   });
@@ -153,11 +153,29 @@ suite("jobs scoped views", () => {
     expect(ARCHIVE_AFTER_DAYS).toBe(JOB_ARCHIVE_AFTER_DAYS);
   });
 
+  it("sums TODAY's money server-side, not from whatever the browser loaded", () => {
+    // The headline "$X scheduled today" read the store, so on a shop with more jobs than one page
+    // it stated a figure derived from whichever 500 rows happened to be cached.
+    return (async () => {
+      const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+      const { todayCents } = await caller.v1.jobs.viewCounts({ today: TODAY });
+      const [truth] = await admin<{ n: number }[]>`
+        select coalesce(sum(j.total_cents), 0)::int n from jobs j
+        where j.org_id = ${orgId} and j.deleted_at is null
+          and j.status not in ('complete','canceled')
+          and exists (select 1 from job_visits v where v.org_id = j.org_id and v.job_id = j.id
+                        and v.status <> 'canceled' and v.deleted_at is null
+                        and v.scheduled_date = ${TODAY})`;
+      expect(todayCents).toBe(truth!.n);
+      expect(todayCents).toBeGreaterThan(0);
+    })();
+  });
+
   it("does not leak across tenants", async () => {
     const [other] = await admin<{ id: string }[]>`
       insert into orgs (name) values ('JobViews Other ' || gen_random_uuid()) returning id`;
     const caller = appRouter.createCaller(ctxFor(other!.id, "owner"));
-    const c = await caller.v1.jobs.viewCounts({ today: TODAY });
+    const { counts: c } = await caller.v1.jobs.viewCounts({ today: TODAY });
     expect(Object.values(c).reduce((a, b) => a + b, 0)).toBe(0);
     await admin`delete from orgs where id = ${other!.id}`;
   });

@@ -1,6 +1,7 @@
 import { jobTotal, type JobBand, type BandKey } from "./today-derive";
 import type { Job } from "@/lib/store/types";
 import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
+import type { RouterOutputs } from "@/lib/trpc/client";
 
 import type { JobView } from "@/modules/jobs/infra/job-views";
 import type { JobsSortCol } from "./use-jobs-sort";
@@ -52,8 +53,27 @@ export interface ServerRowsResult {
  * Returns an empty array rather than an empty band when there are no rows: an empty band renders
  * a header with nothing under it, which reads as a loading failure rather than "no matches".
  */
-export function serverRowsToBands(dtos: readonly JobDTO[], view: JobView | null): ServerRowsResult {
-  const jobs = dtos.map((d) => dtoJobToStoreJob(d));
+/** A row as the LIST returns it — the summary shape, not the full job record. */
+export type JobListRow = RouterOutputs["v1"]["jobs"]["list"]["items"][number];
+
+/**
+ * The summary DTO omits the lifecycle timestamps the full record carries. The store mapper reads
+ * them, so they are supplied as null EXPLICITLY rather than cast away: null is the honest value —
+ * the list genuinely does not know them — and a cast would let a future field go missing silently.
+ */
+const asStoreJob = (row: JobListRow) =>
+  dtoJobToStoreJob({
+    scheduledEnd: null,
+    startedAt: null,
+    completedAt: null,
+    canceledAt: null,
+    enrouteAt: null,
+    cancelReason: null,
+    ...row,
+  } as unknown as JobDTO);
+
+export function serverRowsToBands(dtos: readonly JobListRow[], view: JobView | null): ServerRowsResult {
+  const jobs = dtos.map(asStoreJob);
   if (jobs.length === 0) return { bands: [], jobs };
 
   if (view) {

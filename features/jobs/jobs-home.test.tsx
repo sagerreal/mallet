@@ -2,26 +2,56 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 
-interface Store { jobs: unknown[]; leads: unknown[]; invoices: unknown[]; techs: unknown[] }
-let storeState: Store;
-let q = { isFetched: true, isError: false };
+// The screen no longer reads the job collection from the store — it queries the server a page at
+// a time — so the fixture is the QUERY's shape, not the store's.
+interface ListState {
+  rows: unknown[];
+  total: number | undefined;
+  isFetched: boolean;
+  isError: boolean;
+  isLoading: boolean;
+}
+let listState: ListState;
 const push = vi.fn();
 
-vi.mock("@/lib/store/app-store", () => ({ useAppStore: (sel: (s: Store) => unknown) => sel(storeState) }));
-vi.mock("@/lib/trpc/client", () => ({ api: { v1: { jobs: { list: { useQuery: () => q } } } } }));
+vi.mock("@/lib/store/app-store", () => ({ useAppStore: () => [] }));
+vi.mock("./use-jobs-query", () => ({
+  useJobsQuery: () => ({
+    ...listState,
+    shown: listState.rows.length,
+    counts: { counts: {}, todayCents: 0 },
+    hasMore: false,
+    loadMore: vi.fn(),
+    isLoadingMore: false,
+    refetch: vi.fn(),
+    isRefetching: false,
+  }),
+  useJobsQueryState: () => ({
+    view: null, setView: vi.fn(), search: "", setSearch: vi.fn(),
+    sort: null, sortDir: null, toggleSort: vi.fn(), clear: vi.fn(),
+  }),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/features/jobs/hooks", () => ({ useCallbackCandidates: () => ({ data: [] }) }));
 vi.mock("@/features/home/use-animated-number", () => ({ useAnimatedNumber: (n: number) => n }));
-vi.mock("./use-jobs-sort", () => ({ useJobsSort: () => ({ sort: null, setSort: vi.fn() }) }));
+vi.mock("./use-jobs-sort", () => ({ useJobsSort: () => ({ sort: { col: "when", dir: "asc" }, setSort: vi.fn() }) }));
 vi.mock("./jobs-list-view", () => ({ JobsListView: () => <div data-testid="list" /> }));
 vi.mock("./callback-autopsy-card", () => ({ CallbackAutopsyCard: () => null }));
 vi.mock("./jobs-toolbar", () => ({ JobsToolbar: () => <div data-testid="toolbar" /> }));
-vi.mock("./jobs-filters", () => ({ JobsFilters: () => <div /> }));
+vi.mock("./jobs-view-filter", () => ({ JobsViewFilter: () => <div /> }));
+// The row adapter has its own tests; here the fixture rows are bare ids, so it is stubbed to keep
+// this file about the screen's BRANCHING (first run / loading / failed / list) and nothing else.
+vi.mock("./server-rows", () => ({
+  serverRowsToBands: (rows: unknown[]) => ({ bands: rows.length ? [{ key: "today", jobs: rows }] : [], jobs: rows }),
+  SORT_COL_TO_SERVER: { when: "scheduled", amount: "amount", customer: null },
+}));
 vi.mock("./jobs-columns", () => ({ JobsColumns: () => <div /> }));
 
 import { JobsHome } from "./jobs-home";
 
-const store = (jobs: unknown[]): Store => ({ jobs, leads: [], invoices: [], techs: [] });
+const list = (rows: unknown[], over: Partial<ListState> = {}): ListState => ({
+  rows, total: rows.length, isFetched: true, isError: false, isLoading: false, ...over,
+});
 const setup = () => {
   const onOpenNewJob = vi.fn();
   render(<JobsHome onOpenJob={vi.fn()} onOpenNewJob={onOpenNewJob} />);
@@ -29,7 +59,7 @@ const setup = () => {
 };
 
 describe("JobsHome — first-run empty state", () => {
-  beforeEach(() => { storeState = store([]); q = { isFetched: true, isError: false }; vi.clearAllMocks(); });
+  beforeEach(() => { listState = list([]); vi.clearAllMocks(); });
 
   it("shows the first-run screen (not the toolbar/list) when loaded and empty", () => {
     setup();
@@ -48,7 +78,7 @@ describe("JobsHome — first-run empty state", () => {
   });
 
   it("shows the list chrome once jobs exist", () => {
-    storeState = store([{ id: "j1" }]);
+    listState = list([{ id: "j1" }]);
     setup();
     expect(screen.queryByText(/Jobs land here/)).toBeNull();
     expect(screen.getByTestId("toolbar")).toBeTruthy();
@@ -56,7 +86,7 @@ describe("JobsHome — first-run empty state", () => {
   });
 
   it("shows a loading line — not the first-run screen, toolbar, or 'No jobs yet' copy — while first-loading", () => {
-    q = { isFetched: false, isError: false };
+    listState = list([], { isFetched: false, isLoading: true, total: undefined });
     setup();
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(screen.queryByText(/Jobs land here/)).toBeNull(); // not the rich first-run
@@ -65,7 +95,7 @@ describe("JobsHome — first-run empty state", () => {
   });
 
   it("shows the load-failed state — not the first-run screen — when the load errored", () => {
-    q = { isFetched: true, isError: true };
+    listState = list([], { isError: true, total: 0 });
     setup();
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
@@ -73,8 +103,8 @@ describe("JobsHome — first-run empty state", () => {
   });
 
   it("does not show the loading line once jobs are present, even mid-refetch", () => {
-    storeState = store([{ id: "j1" }]);
-    q = { isFetched: false, isError: false };
+    // Rows already on screen: a refetch must not replace them with a loading line.
+    listState = list([{ id: "j1" }], { isFetched: false });
     setup();
     expect(screen.queryByText("Loading…")).toBeNull();
     expect(screen.getByTestId("toolbar")).toBeTruthy();

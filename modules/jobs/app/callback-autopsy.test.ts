@@ -110,7 +110,7 @@ class FakeRepo implements JobRepository {
   async replaceLines() {}
   async saveOnSiteSignature(): Promise<void> {}
   async count(): Promise<number> { return 0; }
-  async viewCounts(): Promise<Record<string, number>> { return {} as never; }
+  async viewCounts(): Promise<{ counts: Record<string, number>; todayCents: number }> { return { counts: {}, todayCents: 0 } as never; }
   async addAddon() {}
   async setAddonStatus(): Promise<number> { return 0; }
   async setAddonInvoiceSkip(): Promise<number> { return 0; }
