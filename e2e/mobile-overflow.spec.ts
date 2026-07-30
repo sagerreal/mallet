@@ -79,8 +79,8 @@ async function settleForOverflowCheck(page: import("@playwright/test").Page): Pr
 async function assertNoOverflow(page: import("@playwright/test").Page, route: string): Promise<void> {
   await page.goto(route);
   await settleForOverflowCheck(page);
-  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-  expect(scrollWidth, `${route} document.documentElement.scrollWidth (${scrollWidth}) overflows the ${VIEWPORT.width}px viewport`).toBeLessThanOrEqual(
+  const scrollWidth = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth));
+  expect(scrollWidth, `${route} Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) (${scrollWidth}) overflows the ${VIEWPORT.width}px viewport`).toBeLessThanOrEqual(
     VIEWPORT.width + TOLERANCE,
   );
 }

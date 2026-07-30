@@ -2191,6 +2191,12 @@
        own full-width line and its children wrap inside it instead of forcing the
        document wider than the viewport. Desktop (space-between, one row) is
        untouched — this rule only fires under 760px. */
+    /* The office tab strip scrolls instead of clipping — body overflow-x:hidden was
+       slicing the last tab's badge at 393px (body.scrollWidth 410 while the document
+       reported 393, which is why the overflow net's original assertion missed it). */
+    .otabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .otabs::-webkit-scrollbar{display:none}
+    .otab{white-space:nowrap;flex-shrink:0}
     .panel-head{flex-wrap:wrap;row-gap:var(--space-3)}
     .panel-head-ctrls{flex:1 1 100%;flex-wrap:wrap}
     .panel-head-ctrls input{flex:1 1 100%}
