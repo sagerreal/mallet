@@ -111,21 +111,30 @@ suite("v1.quoting.buildFromMeasurements (full stack, live RLS)", () => {
 
     expect(result.seedLines).toHaveLength(2);
     const wallsLine = result.seedLines.find((l) => l.measuredKind === "walls_sqft");
+    // Literal cents alongside the DTO comparison: pins the actual dollar amounts, not just that
+    // the endpoint echoes back whatever the create call happened to return.
     expect(wallsLine).toMatchObject({
       description: "Living Room — Paint walls",
       quantity: 240,
-      rateCents: wallsService.unitPriceCents,
-      costCents: wallsService.costCents,
+      rateCents: 250,
+      costCents: 90,
       roomName: "Living Room",
+      serviceId: wallsService.id,
     });
+    expect(wallsService.unitPriceCents).toBe(250);
+    expect(wallsService.costCents).toBe(90);
+
     const doorsLine = result.seedLines.find((l) => l.measuredKind === "doors_count");
     expect(doorsLine).toMatchObject({
       description: "Living Room — Paint door",
       quantity: 2,
-      rateCents: doorsService.unitPriceCents,
-      costCents: doorsService.costCents,
+      rateCents: 4_500,
+      costCents: 1_200,
       roomName: "Living Room",
+      serviceId: doorsService.id,
     });
+    expect(doorsService.unitPriceCents).toBe(4_500);
+    expect(doorsService.costCents).toBe(1_200);
 
     const gapKinds = result.gaps.map((g) => g.kind).sort();
     expect(gapKinds).toEqual(["baseboard_lnft", "ceiling_sqft", "crown_lnft", "windows_count"].sort());

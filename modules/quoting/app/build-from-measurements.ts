@@ -1,4 +1,4 @@
-import type { JobId, LeadId, Result, AppError } from "@mallet/shared/types";
+import type { JobId, LeadId, ServiceId, Result, AppError } from "@mallet/shared/types";
 import { notFound, ok, err } from "@mallet/shared/types";
 import type { RoomQuantitiesReader, PaintingQuantityKind } from "@mallet/measurements";
 import type { RateServicesReader, RateService } from "../domain/rate-services-reader";
@@ -21,6 +21,9 @@ export interface SeedLine {
   readonly costCents: number;
   readonly measuredKind: PaintingQuantityKind;
   readonly roomName: string;
+  // The pricebook service this line was priced from — free to carry now (the reader already
+  // selects it), future linkage (e.g. edit-delta mining, service-level reporting) needs it.
+  readonly serviceId: ServiceId;
 }
 
 export interface MeasuredGap {
@@ -45,16 +48,30 @@ const KIND_LABELS: Record<PaintingQuantityKind, string> = {
   windows_count: "Windows",
 };
 
-// Picks, for each measured kind, the lowest-position ACTIVE service priced against it — "first
-// active by position" mirrors how the pricebook list already orders services for display, so the
-// service an office sees at the top of a kind's group is the one that gets used.
+// Picks, for each measured kind, the lowest-position ACTIVE service priced against it — mirrors
+// how the pricebook list orders services for display: (position, then name) — see
+// drizzle-service-repository.ts's list() comment — so the service an office sees at the top of a
+// kind's group is the one that gets used.
+//
+// The tie-break is explicit here (position, then name, then id) rather than relying on the
+// reader returning services in that order: two UI-created services both default to position 0,
+// so a same-position tie is common, not an edge case, and the winner must be the SAME regardless
+// of which order the reader happens to hand them back in — this comparison is independent of
+// input order (verified in build-from-measurements.test.ts by feeding the same two services in
+// both array orders and asserting the same winner).
+const isLowerRanked = (a: RateService, b: RateService): boolean => {
+  if (a.position !== b.position) return a.position < b.position;
+  if (a.name !== b.name) return a.name < b.name;
+  return a.id < b.id;
+};
+
 const lowestPositionByKind = (
   services: readonly RateService[],
 ): Map<PaintingQuantityKind, RateService> => {
   const byKind = new Map<PaintingQuantityKind, RateService>();
   for (const svc of services) {
     const current = byKind.get(svc.measuredBy);
-    if (!current || svc.position < current.position) {
+    if (!current || isLowerRanked(svc, current)) {
       byKind.set(svc.measuredBy, svc);
     }
   }
@@ -118,6 +135,7 @@ export class BuildFromMeasurementsUseCase {
           costCents: service.costCents,
           measuredKind: quantity.kind,
           roomName: room.roomName,
+          serviceId: service.id,
         });
       }
     }

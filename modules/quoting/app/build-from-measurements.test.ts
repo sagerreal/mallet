@@ -75,6 +75,7 @@ describe("BuildFromMeasurementsUseCase", () => {
         costCents: 90,
         measuredKind: "walls_sqft",
         roomName: "Living Room",
+        serviceId: asServiceId("33333333-3333-3333-3333-333333333333"),
       },
     ]);
     expect(result.value.gaps).toEqual([]);
@@ -124,6 +125,53 @@ describe("BuildFromMeasurementsUseCase", () => {
     expect(result.value.seedLines).toHaveLength(1);
     expect(result.value.seedLines[0]?.description).toBe("Bedroom — Standard paint");
     expect(result.value.seedLines[0]?.rateCents).toBe(250);
+  });
+
+  it("same-position services: the winner is independent of reader array order", async () => {
+    // Two UI-created services both default to position 0 — a real, common tie, not an edge
+    // case. The winner must be deterministic (position, then name, then id) regardless of which
+    // order the reader happens to hand them back in — never dependent on Postgres heap order.
+    const rooms: RoomQuantitiesForJob[] = [
+      {
+        roomName: "Bedroom",
+        hasUnconfirmed: false,
+        quantities: [{ kind: "walls_sqft", value: 100, status: "derived" }],
+      },
+    ];
+    const svcA = service({
+      id: asServiceId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+      name: "Alpha paint",
+      position: 0,
+      unitPriceCents: 111,
+    });
+    const svcB = service({
+      id: asServiceId("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+      name: "Beta paint",
+      position: 0,
+      unitPriceCents: 222,
+    });
+
+    const forward = new BuildFromMeasurementsUseCase(
+      new FakeJobLeadReader(LEAD),
+      new FakeRoomQuantitiesReader(rooms),
+      new FakeRateServicesReader([svcA, svcB]),
+    );
+    const reversed = new BuildFromMeasurementsUseCase(
+      new FakeJobLeadReader(LEAD),
+      new FakeRoomQuantitiesReader(rooms),
+      new FakeRateServicesReader([svcB, svcA]),
+    );
+
+    const forwardResult = await forward.exec({ jobId: JOB });
+    const reversedResult = await reversed.exec({ jobId: JOB });
+    expect(isOk(forwardResult)).toBe(true);
+    expect(isOk(reversedResult)).toBe(true);
+    if (!isOk(forwardResult) || !isOk(reversedResult)) return;
+
+    // Alpha sorts before Beta by name — the deterministic tie-break, not array order.
+    expect(forwardResult.value.seedLines[0]?.description).toBe("Bedroom — Alpha paint");
+    expect(reversedResult.value.seedLines[0]?.description).toBe("Bedroom — Alpha paint");
+    expect(forwardResult.value.seedLines).toEqual(reversedResult.value.seedLines);
   });
 
   it("a zero-value quantity seeds nothing", async () => {

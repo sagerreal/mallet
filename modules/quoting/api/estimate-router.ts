@@ -296,6 +296,7 @@ const buildFromMeasurementsOutput = z.object({
       costCents: z.number().int(),
       measuredKind: measuredKindDTO,
       roomName: z.string(),
+      serviceId: z.string().uuid(),
     }),
   ),
   gaps: z.array(z.object({ kind: measuredKindDTO, label: z.string() })),
