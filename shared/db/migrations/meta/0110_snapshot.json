@@ -1,6 +1,6 @@
 {
-  "id": "ad0986d7-87dc-41f4-9b68-c964d16fe819",
-  "prevId": "35085b3b-e340-4d89-94ff-7437677cf261",
+  "id": "cd4249e4-2202-4d1c-94e5-8e263632f852",
+  "prevId": "ad0986d7-87dc-41f4-9b68-c964d16fe819",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5378,6 +5378,12 @@
           "notNull": true,
           "default": 0
         },
+        "measured_by": {
+          "name": "measured_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5506,7 +5512,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "pricebook_items_measured_by_check": {
+          "name": "pricebook_items_measured_by_check",
+          "value": "\"pricebook_items\".\"measured_by\" is null or \"pricebook_items\".\"measured_by\" in ('walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.pricebook_materials": {
