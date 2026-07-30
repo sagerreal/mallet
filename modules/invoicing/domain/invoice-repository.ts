@@ -1,3 +1,4 @@
+import type { InvoiceSort } from "../infra/invoice-sorts";
 import type {
   OrgId,
   InvoiceId,
@@ -11,6 +12,10 @@ import type { Payment } from "./payment";
 
 export interface InvoiceFilter {
   readonly status?: InvoiceStatus;
+  /** Restrict to money still owed — the collection queue. */
+  readonly unpaidOnly?: boolean;
+  /** Free-text over invoice number, title and customer name. Matched in the database. */
+  readonly search?: string;
 }
 
 // Outcome of an atomic applyPayment. `applied` is true iff the guarded UPDATE matched a payable
@@ -39,7 +44,10 @@ export interface InvoiceRepository {
   applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<ApplyResult>;
   findById(id: InvoiceId): Promise<Invoice | null>;
   findBySourceJob(jobId: JobId): Promise<Invoice | null>;
-  list(page: CursorPage, filter?: InvoiceFilter): Promise<Paginated<Invoice>>;
+  list(page: CursorPage, filter?: InvoiceFilter, sort?: InvoiceSort, sortDir?: "asc" | "desc"): Promise<Paginated<Invoice>>;
+
+  /** How many invoices match the filter, ignoring pagination. Same predicates as list(). */
+  count(filter?: InvoiceFilter): Promise<number>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Invoice>>;
   findOverdue(now: Date, page: CursorPage): Promise<Paginated<Invoice>>;
 }

@@ -1,7 +1,9 @@
-import { and, desc, eq, isNull, lt, inArray, notInArray, sql, type SQL } from "drizzle-orm";
-import { invoices, invoiceLines, payments } from "@mallet/shared/db/schema";
+import { and, desc, eq, exists, ilike, isNull, lt, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { invoices, invoiceLines, payments, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
+import { invoiceSortSpec, invoiceSortValue, type InvoiceSort } from "./invoice-sorts";
 import {
   buildPage,
   decodeCursor,
@@ -150,10 +152,47 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     return header ? this.hydrate(header) : null;
   }
 
-  list(page: CursorPage, filter?: InvoiceFilter): Promise<Paginated<Invoice>> {
+  /** Predicates shared by list() and count(), so the two can never answer different questions. */
+  private listConds(filter?: InvoiceFilter): SQL[] {
     const conds: SQL[] = [isNull(invoices.deletedAt)];
     if (filter?.status) conds.push(eq(invoices.status, filter.status));
-    return this.loadHeaderPage(conds, page);
+    if (filter?.unpaidOnly) conds.push(inArray(invoices.status, [...OPEN_STATUSES]));
+    if (filter?.search) {
+      // Escape LIKE wildcards: unescaped, "%" matches every invoice and the search silently
+      // stops filtering.
+      const term = filter.search.replace(/[\\%_]/g, (m) => `\\${m}`);
+      const like = `%${term}%`;
+      // Customer name via EXISTS, not a join — a join multiplies rows and breaks the keyset.
+      const cond = or(
+        ilike(invoices.num, like),
+        ilike(invoices.title, like),
+        exists(
+          this.tx
+            .select({ one: sql`1` })
+            .from(leads)
+            .where(and(eq(leads.orgId, invoices.orgId), eq(leads.id, invoices.leadId), ilike(leads.name, like))),
+        ),
+      );
+      if (cond) conds.push(cond);
+    }
+    return conds;
+  }
+
+  async count(filter?: InvoiceFilter): Promise<number> {
+    const rows = await this.tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(invoices)
+      .where(and(...this.listConds(filter)));
+    return rows[0]?.n ?? 0;
+  }
+
+  list(
+    page: CursorPage,
+    filter?: InvoiceFilter,
+    sort?: InvoiceSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Invoice>> {
+    return this.loadHeaderPage(this.listConds(filter), page, sort, sortDir);
   }
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Invoice>> {
@@ -231,25 +270,60 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       });
   }
 
-  private async loadHeaderPage(baseConds: SQL[], page: CursorPage): Promise<Paginated<Invoice>> {
+  private async loadHeaderPage(
+    baseConds: SQL[],
+    page: CursorPage,
+    sort?: InvoiceSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Invoice>> {
     const conds = [...baseConds];
+    const spec = sort ? invoiceSortSpec(sort, sortDir) : null;
     if (page.cursor) {
-      const cursor = decodeCursor(page.cursor);
-      if (isOk(cursor)) {
-        conds.push(keysetBefore(invoices.createdAt, invoices.id, cursor.value));
+      if (spec) {
+        const c = decodeSortCursor(page.cursor);
+        if (c) {
+          const after = keysetAfterSort(spec, invoices.id, c);
+          if (after) conds.push(after);
+        }
+      } else {
+        const cursor = decodeCursor(page.cursor);
+        if (isOk(cursor)) conds.push(keysetBefore(invoices.createdAt, invoices.id, cursor.value));
       }
     }
+    const order = spec ? orderFor(spec, invoices.id) : [desc(invoices.createdAt), desc(invoices.id)];
+
+    // Header-only: balance math uses denormalized amount_paid_cents, so lines/payments aren't loaded.
+    if (!spec) {
+      const rows = await this.tx
+        .select()
+        .from(invoices)
+        .where(and(...conds))
+        .orderBy(...order)
+        .limit(page.limit + 1);
+      return buildPage(
+        rows.map((row) => toDomain(row, [], [])),
+        page,
+        (invoice) => ({ createdAt: invoice.props.createdAt, id: invoice.props.id }),
+      );
+    }
+
+    // The sorted path selects the sort column a SECOND time, cast to text, and builds the cursor
+    // from that rather than from the mapped row. See sortValueColumn: a timestamptz round-tripped
+    // through a JS Date loses microseconds, and a cursor built from the truncated value matches
+    // its own row again — so every page repeated the previous page's last row.
     const rows = await this.tx
-      .select()
+      .select({ row: invoices, sortValue: sortValueColumn(spec) })
       .from(invoices)
       .where(and(...conds))
-      .orderBy(desc(invoices.createdAt), desc(invoices.id))
+      .orderBy(...order)
       .limit(page.limit + 1);
-    // Header-only: balance math uses denormalized amount_paid_cents, so lines/payments aren't loaded.
-    return buildPage(
-      rows.map((row) => toDomain(row, [], [])),
-      page,
-      (invoice) => ({ createdAt: invoice.props.createdAt, id: invoice.props.id }),
-    );
+
+    const hasMore = rows.length > page.limit;
+    const kept = hasMore ? rows.slice(0, page.limit) : rows;
+    const last = kept[kept.length - 1];
+    return {
+      items: kept.map((r) => toDomain(r.row, [], [])),
+      nextCursor: hasMore && last ? encodeSortCursor({ value: last.sortValue, id: last.row.id }) : null,
+    };
   }
 }

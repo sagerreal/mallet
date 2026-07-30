@@ -63,6 +63,10 @@ export const invoices = pgTable(
     }),
     index("invoices_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
     index("invoices_org_status_due_idx").on(t.orgId, t.status, t.dueAt),
+    // Sort indexes for invoice-sorts.ts. due/oldestUnpaid share the due-date index; the existing
+    // org_status_due_idx already covers the filtered collection queue.
+    index("invoices_org_due_idx").on(t.orgId, t.dueAt, t.id),
+    index("invoices_org_total_idx").on(t.orgId, t.totalCents.desc(), t.id.desc()),
     index("invoices_org_lead_idx").on(t.orgId, t.leadId),
     uniqueIndex("invoices_org_num_uidx")
       .on(t.orgId, t.num)
