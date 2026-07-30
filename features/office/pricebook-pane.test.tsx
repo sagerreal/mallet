@@ -9,6 +9,7 @@ interface Store {
   laborRates: unknown[];
   terms: unknown[];
   markup: number;
+  toggles: { measurementEstimating: boolean };
   addService: () => void;
   updateService: () => void;
   archiveService: () => void;
@@ -50,6 +51,7 @@ const store = (services: Store["services"]): Store => ({
   laborRates: [],
   terms: [],
   markup: 35,
+  toggles: { measurementEstimating: false },
   addService: vi.fn(),
   updateService: vi.fn(),
   archiveService: vi.fn(),
