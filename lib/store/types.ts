@@ -175,8 +175,55 @@ export interface Estimate {
   tierNames?: TierNames;
   /** Terms text frozen at draft time — later term edits never rewrite sent quotes. */
   termsSnapshot?: string;
+  /**
+   * The customer's signature, absent when nobody signed.
+   *
+   * Absent is a REAL state, not missing data: the office can mark a quote accepted after a phone
+   * call, and that acceptance carries no signature. Every surface that says "Signed" must branch
+   * on this rather than on `status === "accepted"` — see the note on EstimateSignature.
+   *
+   * Money stays in CENTS here, unlike the rest of the store, which is dollars. The snapshot is a
+   * frozen legal record: converting it would mean the number a shop reads off the screen is one
+   * this app computed rather than the one the customer signed, and rounding drift in an evidence
+   * record is exactly the kind of discrepancy a customer's lawyer points at.
+   */
+  signature?: EstimateSignature;
+  /**
+   * Whether a customer signed — available on LIST-hydrated records, where `signature` is not.
+   *
+   * The two are not redundant. Every quote row in the lead modal renders from list data, and those
+   * rows have to tell "Signed" from "Accepted" immediately; the full evidence only arrives when the
+   * modal opens and fetches the record. Anything that merely needs the fact branches on this,
+   * anything that displays the evidence branches on `signature`.
+   */
+  signed?: boolean;
   archived?: boolean;
   trash?: boolean;
+}
+
+/**
+ * Signature evidence as the office sees it.
+ *
+ * Read-only, and deliberately NOT normalised into the rest of the Estimate shape: these fields
+ * describe a moment that already happened, and merging them into the live quote would invite a
+ * later edit to overwrite them.
+ */
+export interface EstimateSignature {
+  signerName: string;
+  /** SVG path data, or null when the customer signed by typing their name only. */
+  signatureSvg: string | null;
+  signerIp: string | null;
+  signerUserAgent: string | null;
+  signedAt: string;
+  /** The document as it stood at signing. Totals here — never the live estimate's. */
+  snapshot: {
+    estimateNum: string;
+    totalCents: number;
+    depositCents: number;
+    chosenTier: string | null;
+    authorizationText: string;
+    lines: { description: string; quantity: number; rateCents: number }[];
+  };
 }
 
 // ---- Job -------------------------------------------------------------------

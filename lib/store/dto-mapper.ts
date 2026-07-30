@@ -372,6 +372,13 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     acceptedTier: dto.acceptedTier ?? undefined,
     tierNames: dto.tierNames ?? undefined,
     termsSnapshot: dto.termsSnapshot ?? undefined,
+    // Signature: carried through UNCONVERTED, cents and all. Every other money field on this
+    // mapper becomes dollars, and this one deliberately does not — the snapshot is a frozen record
+    // of what somebody signed, and a number this app divided by 100 is no longer the number on the
+    // document. See the note on Estimate.signature.
+    signature: dto.signature ?? undefined,
+    // Derived, never independently sourced — the flag and the evidence cannot disagree.
+    signed: Boolean(dto.signature),
     reads: [],                             // client-local — not persisted
     archived: false,
     trash: false,
