@@ -1,7 +1,9 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import { leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf } from "@mallet/shared/db/sort-page";
+import { leadSortSpec, leadSortValue, type LeadSort } from "./lead-sorts";
 import {
   buildPage,
   decodeCursor,
@@ -113,29 +115,89 @@ export class DrizzleLeadRepository implements LeadRepository {
     return rows.map(toDomain);
   }
 
-  async list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>> {
-    const conds = [isNull(leads.deletedAt)];
+  /** Predicates shared by list() and count(), so the two can never answer different questions. */
+  private listConds(filter?: LeadFilter): SQL[] {
+    const conds: SQL[] = [isNull(leads.deletedAt)];
     if (filter?.stage) conds.push(eq(leads.stage, filter.stage));
     if (filter?.unreadOnly) conds.push(eq(leads.unread, true));
+    if (filter?.search) {
+      // Escape LIKE wildcards first: unescaped, a customer typing "%" matches the entire book and
+      // the search silently stops filtering.
+      const term = filter.search.replace(/[\\%_]/g, (m) => `\\${m}`);
+      const like = `%${term}%`;
+      const cond = or(
+        ilike(leads.name, like),
+        ilike(leads.phoneE164, like),
+        ilike(leads.email, like),
+        ilike(leads.address, like),
+      );
+      if (cond) conds.push(cond);
+    }
+    return conds;
+  }
+
+  async count(filter?: LeadFilter): Promise<number> {
+    const rows = await this.tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(leads)
+      .where(and(...this.listConds(filter)));
+    return rows[0]?.n ?? 0;
+  }
+
+  async list(
+    page: CursorPage,
+    filter?: LeadFilter,
+    sort?: LeadSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Lead>> {
+    const conds = this.listConds(filter);
+    const spec = sort ? leadSortSpec(sort, sortDir) : null;
+
     if (page.cursor) {
-      const cursor = decodeCursor(page.cursor);
-      if (isOk(cursor)) {
+      if (spec) {
+        const c = decodeSortCursor(page.cursor);
+        // Malformed cursor → page one. Wrong, but harmless; throwing would break a list on a
+        // stale bookmark.
+        if (c) {
+          const after = keysetAfterSort(spec, leads.id, c);
+          if (after) conds.push(after);
+        }
+      } else {
+        const cursor = decodeCursor(page.cursor);
         // Keyset: rows strictly after the cursor in (created_at desc, id desc) order.
-        conds.push(keysetBefore(leads.createdAt, leads.id, cursor.value));
+        if (isOk(cursor)) conds.push(keysetBefore(leads.createdAt, leads.id, cursor.value));
       }
     }
-    // Fetch one extra row so buildPage can tell whether a next page exists.
+
+    // Fetch one extra row so we can tell whether a next page exists.
     const rows = await this.tx
       .select()
       .from(leads)
       .where(and(...conds))
-      .orderBy(desc(leads.createdAt), desc(leads.id))
+      .orderBy(...(spec ? orderFor(spec, leads.id) : [desc(leads.createdAt), desc(leads.id)]))
       .limit(page.limit + 1);
 
-    return buildPage(rows.map(toDomain), page, (lead) => ({
-      createdAt: lead.props.createdAt,
-      id: lead.props.id,
-    }));
+    if (!sort) {
+      return buildPage(rows.map(toDomain), page, (lead) => ({
+        createdAt: lead.props.createdAt,
+        id: lead.props.id,
+      }));
+    }
+    // Sorted path builds its cursor from the SORT column, read off the raw row so the value is
+    // exactly what the ORDER BY compared.
+    const hasMore = rows.length > page.limit;
+    const kept = hasMore ? rows.slice(0, page.limit) : rows;
+    const lastRow = kept[kept.length - 1];
+    return {
+      items: kept.map(toDomain),
+      nextCursor:
+        hasMore && lastRow
+          ? encodeSortCursor({
+              value: sortValueOf(leadSortValue(sort, lastRow as Record<string, unknown>)),
+              id: lastRow.id,
+            })
+          : null,
+    };
   }
 
   async save(lead: Lead): Promise<void> {
