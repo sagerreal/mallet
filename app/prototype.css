@@ -2167,9 +2167,11 @@
     #mobiletabs{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(60px + var(--safe-b));padding-bottom:var(--safe-b);background:var(--card);border-top:1px solid var(--line);z-index:60;box-shadow:0 -2px 16px rgba(0,0,0,.06)}
     /* Center create button — the app's key action gets the Instagram slot. A filled
        square so it reads as THE action, not a fifth destination. */
-    .mtab-create{background:none;border:none;font:inherit}
-    .mtab-create .plus{display:flex;align-items:center;justify-content:center;width:44px;height:30px;border-radius:var(--radius-sm);background:var(--ink);color:var(--card)}
-    .mtab-create .plus svg{width:18px;height:18px}
+    /* Label-less, so it can't share the neighbors' icon-over-label rhythm — center the
+       pill on the bar's full height instead, aligned with the tabs' visual mass. */
+    .mtab-create{background:none;border:none;font:inherit;justify-content:center;padding:0;align-self:stretch}
+    .mtab-create .plus{display:flex;align-items:center;justify-content:center;width:46px;height:34px;border-radius:var(--radius-md);background:var(--ink);color:var(--card)}
+    .mtab-create .plus svg{width:20px;height:20px}
     .mtab-create:active .plus,.mtab-create.open .plus{background:var(--ink-2)}
     /* The create sheet: fixed flush above the tab bar, full-width — anchored to the
        bar it belongs to, never a floating inset. Same Row items as the sidebar menu. */
