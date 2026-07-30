@@ -5,6 +5,7 @@ import { orThrow } from "@/trpc/errors";
 import { asJobId, asLeadId, asEstimateId, asUserId, toPage } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { JOB_SORTS } from "../infra/job-sorts";
+import { JOB_VIEWS } from "../infra/job-views";
 import { DrizzleEstimateReader } from "../infra/drizzle-estimate-reader";
 import { ScheduleJobUseCase } from "../app/schedule-job";
 import { CreateJobFromEstimateUseCase } from "../app/create-job-from-estimate";
@@ -78,6 +79,10 @@ const listInput = z.object({
   sortDir: z.enum(["asc", "desc"]).optional(),
   /** Free-text over job title and number. Runs in the database, not over a loaded page. */
   search: z.string().trim().min(1).max(200).optional(),
+  /** One scoped view (Needs a slot / Today / …). Requires `today` when date-relative. */
+  view: z.enum(JOB_VIEWS).optional(),
+  /** The CLIENT's local date, YYYY-MM-DD — see job-views.ts on why this is not server-derived. */
+  today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
@@ -235,6 +240,8 @@ export const createJobRouter = () =>
             status: input.status,
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
             search: input.search,
+            view: input.view,
+            today: input.today,
           },
         });
         return { items: page.items.map((j) => toJobSummaryDTO(j)), nextCursor: page.nextCursor };
@@ -250,6 +257,29 @@ export const createJobRouter = () =>
      * Its own query so a caller can ask for the count without paying for the rows, and so the
      * count survives the client switching pages.
      */
+    /**
+     * Every scoped view's count, in one query.
+     *
+     * This is what makes the filter dropdown honest: "Needs a slot (13)" counts thirteen jobs in
+     * the business, where the grouped list it replaces counted thirteen of whatever had loaded.
+     */
+    viewCounts: ownerOrOffice
+      .input(
+        z.object({
+          today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          search: z.string().trim().min(1).max(200).optional(),
+          assigneeUserId: z.string().uuid().optional(),
+        }),
+      )
+      .output(z.record(z.enum(JOB_VIEWS), z.number().int()))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        return repo.viewCounts(input.today, {
+          search: input.search,
+          assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
+        });
+      }),
+
     count: ownerOrOffice
       .input(
         z.object({
