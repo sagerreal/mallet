@@ -69,7 +69,12 @@ const wallSchema = z.object({
 
 const ceilingSchema = z
   .object({
-    area: finite().nonnegative().nullable(),
+    // Swift's JSONEncoder OMITS nil optionals rather than writing null — a real
+    // vaulted-room scan arrives with NO "area" key at all, which a required-but-
+    // nullable field rejects. This bit Owen's first on-device scan (Jul 29): the
+    // whole ingest failed on the missing key. nullish() accepts absent AND null;
+    // the mapper below normalizes to null.
+    area: finite().nonnegative().nullish(),
     is_vaulted: z.boolean(),
     wall_top_spread: finite().nullable().optional(),
     provenance: z.string().nullable().optional(),
@@ -91,7 +96,10 @@ export function parseNormalizedGeometry(input: unknown): Result<NormalizedGeomet
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const field = issue?.path.join(".") || undefined;
-    return err(validation(issue?.message ?? "invalid geometry payload", field));
+    // The message reaches the estimator's screen verbatim (BAD_REQUEST passes through the
+    // client error map) — a bare zod "Required" names nothing, so prefix the field path.
+    const reason = issue?.message ?? "invalid payload";
+    return err(validation(field ? `Scan data invalid (${field}: ${reason}) — retry the scan.` : `Scan data invalid (${reason}) — retry the scan.`, field));
   }
 
   const data = parsed.data;
@@ -110,7 +118,7 @@ export function parseNormalizedGeometry(input: unknown): Result<NormalizedGeomet
     })),
     ceiling: data.ceiling
       ? {
-          area: data.ceiling.area,
+          area: data.ceiling.area ?? null,
           isVaulted: data.ceiling.is_vaulted,
           wallTopSpread: data.ceiling.wall_top_spread ?? null,
           provenance: data.ceiling.provenance ?? null,

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { isOk, isErr } from "@mallet/shared/types";
 import { parseNormalizedGeometry, polygonArea, polygonPerimeter, type Point3 } from "./normalized-geometry";
+import realVaultedScan from "./__fixtures__/vaulted-scan-no-ceiling-area.json";
 
 // A flat 4x3m rectangle in the y=0 (floor) plane.
 const floorVertices: Point3[] = [
@@ -37,6 +38,33 @@ describe("parseNormalizedGeometry", () => {
     });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.openings[0]?.wallIndex).toBeNull();
+  });
+
+  it("accepts a vaulted ceiling with NO area key (Swift omits nil optionals)", () => {
+    const r = parseNormalizedGeometry({
+      ...validWirePayload,
+      ceiling: { is_vaulted: true, provenance: "vaulted_needs_confirmation", wall_top_spread: 0 },
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.ceiling).toEqual({
+      area: null,
+      isVaulted: true,
+      wallTopSpread: 0,
+      provenance: "vaulted_needs_confirmation",
+    });
+  });
+
+  it("parses the real on-device vaulted scan that ingest rejected on Jul 29 2026", () => {
+    // Byte-for-byte the geometry recovered from the phone's CaptureStore backup:
+    // 15 walls, 5 openings, vaulted ceiling with the "area" key absent entirely.
+    const r = parseNormalizedGeometry(realVaultedScan);
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.walls).toHaveLength(15);
+    expect(r.value.openings).toHaveLength(5);
+    expect(r.value.ceiling?.area).toBeNull();
+    expect(r.value.ceiling?.isVaulted).toBe(true);
   });
 
   it("accepts a null ceiling", () => {

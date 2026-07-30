@@ -26,6 +26,7 @@ import { Field } from "@/components/ui/input";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { SrcPill } from "@/components/shared/stage-pill";
 import { formatDate } from "@/lib/format";
+import { userMessage } from "@/lib/trpc/error-map";
 import type { RoomCard, RoomQuantity, RoomQuantityKind } from "@/lib/store/types";
 
 /** Copy shared by the scan-mode form and the live re-scan control. */
@@ -49,7 +50,11 @@ const SCAN_SAVE_ERROR_COPY = "Couldn't save this scan — check your connection 
 function scanErrorCopy(err: unknown): string {
   if (err instanceof RoomScanPayloadError) return SCAN_PAYLOAD_ERROR_COPY;
   if (err instanceof RoomScanCaptureError) return err.message;
-  return SCAN_SAVE_ERROR_COPY;
+  // Ingest phase: a server VALIDATION reject must name its real reason — the
+  // connection copy is only the fallback for genuine transport failures.
+  // (Owen's first on-device scan hit a wire-format reject and was told to
+  // check his wifi — same dishonesty class as the new-job phone bug.)
+  return userMessage(err, SCAN_SAVE_ERROR_COPY);
 }
 
 // ---- quantity kinds: fixed order, trade labels, unit shape -----------------
