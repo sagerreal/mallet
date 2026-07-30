@@ -2,7 +2,7 @@ import { and, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, ne, notI
 import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
-import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf } from "@mallet/shared/db/sort-page";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { jobSortSpec, jobSortValue, type JobSort } from "./job-sorts";
 import {
   buildPage,
@@ -748,12 +748,27 @@ export class DrizzleJobRepository implements JobRepository {
     }
 
     // Paginate job headers first, then batch-load their visits in one query (no N+1).
-    const headers = await this.tx
-      .select()
-      .from(jobs)
-      .where(and(...conds))
-      .orderBy(...(spec ? orderFor(spec, jobs.id) : [desc(jobs.createdAt), desc(jobs.id)]))
-      .limit(page.limit + 1);
+    //
+    // The sorted path selects the sort column a SECOND time, cast to text, and builds the cursor
+    // from that. A timestamptz round-tripped through a JS Date loses microseconds, and a cursor
+    // built from the truncated value matches its own row again — every page then repeats the
+    // previous page's last row. Invisible on whole-second seed data, guaranteed on real data.
+    const selected = spec
+      ? await this.tx
+          .select({ row: jobs, sortValue: sortValueColumn(spec) })
+          .from(jobs)
+          .where(and(...conds))
+          .orderBy(...orderFor(spec, jobs.id))
+          .limit(page.limit + 1)
+      : null;
+    const headers = selected
+      ? selected.map((r) => r.row)
+      : await this.tx
+          .select()
+          .from(jobs)
+          .where(and(...conds))
+          .orderBy(desc(jobs.createdAt), desc(jobs.id))
+          .limit(page.limit + 1);
 
     const ids = headers.map((h) => h.id);
     const visitRows: JobVisitRow[] = ids.length
@@ -778,14 +793,9 @@ export class DrizzleJobRepository implements JobRepository {
     // header row rather than the domain object so the value is exactly what the ORDER BY compared.
     const hasMore = rebuilt.length > page.limit;
     const items = hasMore ? rebuilt.slice(0, page.limit) : rebuilt;
-    const lastRow = hasMore ? headers[page.limit - 1] : headers[headers.length - 1];
+    const last = selected ? selected[items.length - 1] : null;
     const nextCursor =
-      hasMore && lastRow
-        ? encodeSortCursor({
-            value: sortValueOf(jobSortValue(sort, lastRow as Record<string, unknown>)),
-            id: lastRow.id,
-          })
-        : null;
+      hasMore && last ? encodeSortCursor({ value: last.sortValue, id: last.row.id }) : null;
     return { items, nextCursor };
   }
 }

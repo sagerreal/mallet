@@ -10,6 +10,7 @@ import type { OrgId } from "@mallet/shared/types";
 import { INVOICE_STATUSES, type Invoice, type InvoiceStatus } from "../domain/invoice";
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
+import { INVOICE_SORTS } from "../infra/invoice-sorts";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
@@ -137,6 +138,13 @@ const listInput = z.object({
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   status: statusEnum.optional(),
+  /** Named sort — never a column name. Absent keeps the historical newest-first ordering. */
+  sort: z.enum(INVOICE_SORTS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
+  /** Restrict to money still owed — the collection queue. */
+  unpaidOnly: z.boolean().optional(),
+  /** Free-text over invoice number, title and customer name. */
+  search: z.string().trim().min(1).max(200).optional(),
 });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
@@ -413,10 +421,33 @@ export const createInvoiceRouter = () =>
       .query(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const page = await new ListInvoicesUseCase(repo).exec({
+          sort: input.sort,
+          sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { status: input.status },
+          filter: { status: input.status, unpaidOnly: input.unpaidOnly, search: input.search },
         });
         return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+      }),
+
+    /** The TRUE number of invoices matching a filter — shares list()'s predicates. */
+    count: ownerOrOffice
+      .input(
+        z.object({
+          status: statusEnum.optional(),
+          unpaidOnly: z.boolean().optional(),
+          search: z.string().trim().min(1).max(200).optional(),
+        }),
+      )
+      .output(z.object({ total: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        return {
+          total: await repo.count({
+            status: input.status,
+            unpaidOnly: input.unpaidOnly,
+            search: input.search,
+          }),
+        };
       }),
 
     listByLead: ownerOrOffice

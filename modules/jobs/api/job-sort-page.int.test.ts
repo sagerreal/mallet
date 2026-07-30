@@ -183,6 +183,43 @@ suite("jobs list — server-side sort, search, keyset paging", () => {
     await admin`delete from orgs where id = ${other!.id}`;
   });
 
+  it("pages MICROSECOND timestamps without repeating a row", async () => {
+    // The bug this exists to catch, and the reason the rest of this suite missed it: Postgres
+    // timestamptz stores microseconds, a JS Date holds milliseconds. A cursor built from a
+    // driver-returned Date is strictly LESS than the row it came from, so `col > cursor` matches
+    // that same row again and every page repeats the previous page's last item.
+    //
+    // Every other test here seeds whole-second timestamps ('09:00:00Z') and pages perfectly.
+    // now() does not, and now() is what real data uses.
+    const [o] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('MicroSec ' || gen_random_uuid()) returning id`;
+    const [l] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name) values (${o!.id}, 'Micro Customer') returning id`;
+    for (let i = 0; i < 7; i++) {
+      await admin`
+        insert into jobs (org_id, lead_id, num, title, status, total_cents, scheduled_start)
+        values (${o!.id}, ${l!.id}, ${"JOB-M" + i}, 'Micro', 'scheduled', 1000,
+                now() + (${i} || ' minutes')::interval)`;
+    }
+
+    const caller = appRouter.createCaller(ctxFor(o!.id, "owner"));
+    const nums: string[] = [];
+    let cursor: string | null = null;
+    for (let g = 0; g < 10; g++) {
+      // ASCENDING deliberately. The truncation bug is DIRECTIONAL: with `>` a cursor rounded
+      // DOWN still matches the row it came from, so that row repeats on the next page. With `<`
+      // it silently SKIPS rows sharing the same millisecond instead — real, but far harder to
+      // trigger. Ascending is the direction that reproduces it every time.
+      const page = await caller.v1.jobs.list({ sort: "scheduled", sortDir: "asc", limit: 3, cursor });
+      nums.push(...page.items.map((j) => j.num));
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+    expect(nums).toHaveLength(7);
+    expect(new Set(nums).size).toBe(7);
+    await admin`delete from orgs where id = ${o!.id}`;
+  });
+
   it("does not leak across tenants", async () => {
     const [other] = await admin<{ id: string }[]>`
       insert into orgs (name) values ('SortPage Other ' || gen_random_uuid()) returning id`;
