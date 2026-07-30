@@ -2112,6 +2112,14 @@
     .list-tbl tbody tr,.jl tbody tr{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);margin:0 0 var(--space-3);background:var(--card)}
     .list-tbl tbody td,.jl tbody td{display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);padding:var(--space-1) 0 !important;border:none !important;text-align:right;white-space:normal;min-width:0}
     .list-tbl tbody td::before,.jl tbody td::before{content:attr(data-label);flex:0 0 auto;text-align:left;font-size:var(--type-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3)}
+    /* Ready-to-bill card, mobile: JOB label + job name + the italic "built from
+       what was sold…" helper were all flex siblings on one line, so the job name
+       wrapped mid-phrase beside the right-aligned helper. Let the row wrap: label
+       + job name share the first line, the helper drops to its own full-width
+       muted line underneath. */
+    .mjobcell{flex-wrap:wrap}
+    .mjobcell .mjobval{min-width:0;overflow-wrap:break-word}
+    .mjobcell .mwhy{flex:0 0 100%;text-align:right}
     /* primary/header cell = the card title: floats to the top, full width, no label */
     .list-tbl tbody td[data-primary],.jl tbody td.jl-cust{order:-2;display:block;text-align:left;padding:0 0 var(--space-2) !important;margin-bottom:var(--space-2);border-bottom:1px solid var(--line-2) !important}
     .list-tbl tbody td[data-primary]::before,.jl tbody td.jl-cust::before{content:none}
@@ -2208,6 +2216,13 @@
        block. member-row-top gets minWidth:0 (page.tsx) so nothing forces past its
        share; this wrap is a second line of defense for very long emails. */
     .member-row-top{flex-wrap:wrap;row-gap:var(--space-2)}
+
+    /* Tasks quick-add row: text input + date picker + Add button crammed onto one
+       line left ~6ch of typing room. The text input takes its own full-width
+       line; the date and Add button share a compact second line. */
+    .taskadd{flex-wrap:wrap;row-gap:var(--space-2)}
+    .taskadd input[type=text]{flex:1 1 100%}
+    .taskadd input[type=date]{flex:1 1 auto;min-width:0}
   }
 
 /* ═══════════════ FEEL KIT (perf/feel Phase 1) ═══════════════
