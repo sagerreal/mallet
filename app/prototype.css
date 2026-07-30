@@ -441,6 +441,17 @@
   .fdstatus .fdnum{font-family:var(--font-mono);font-size:var(--type-base);color:var(--ink-2)}
   .fdstatus .sp{flex:1}
   .fdstatus .fdt,.fdstatus .fdacts{display:inline-flex;align-items:center;gap:var(--space-3);flex-wrap:wrap}
+
+  /* Checklist editor step row: input + Check/Photo + remove on one line; at phone width the
+     fixed-width type control can't fit beside the input, so the row wraps deliberately —
+     full-width input, controls on the line below (remove pushed right). */
+  .clstep{display:flex;align-items:center;gap:var(--space-2)}
+  .clstep .clstep-input{flex:1}
+  @media (max-width:760px){
+    .clstep{flex-wrap:wrap}
+    .clstep .clstep-input{flex:1 1 100%}
+    .clstep > button:last-child{margin-left:auto}
+  }
   /* Phone: the single line can't fit — re-flow into two DELIBERATE rows (dot + title +
      toggle, then the action links), instead of the flex wrap stranding "· about your
      number" on its own line beside the toggle. */

@@ -197,14 +197,18 @@ function ExpandedEditor({
             <label {...stepsGroup.labelProps} style={{ display: "block", fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>Steps</label>
             <div {...stepsGroup.groupProps} style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
               {draftItems.map((item, stepIdx) => (
-                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                // Layout lives in .clstep (prototype.css): one line on desktop; at phone width
+                // the row wraps — full-width input, then Check/Photo + remove beneath — instead
+                // of pushing the type control off the right edge of the screen.
+                <div key={item.id} className="clstep">
                   <input
                     type="text"
                     value={item.text}
                     onChange={(e) => handleStepText(item.id, e.target.value)}
                     placeholder="Step description"
                     aria-label={`Step ${stepIdx + 1} description`}
-                    style={{ ...COMPACT_INPUT, flex: 1 }}
+                    className="clstep-input"
+                    style={COMPACT_INPUT}
                   />
                   <Segmented
                     value={item.type}
