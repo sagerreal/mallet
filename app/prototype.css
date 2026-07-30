@@ -1219,7 +1219,7 @@
   .btn.approve{background:var(--amber);border-color:var(--amber);color:#FFF9EE;font-weight:700}
   .btn.approve:hover{filter:brightness(1.08)}
   /* the draft as a real outbound SMS bubble, ghost ink until it goes */
-  .okghost{border-radius:var(--radius-xl) 18px 18px 4px;background:var(--manila);border:1px solid var(--manila-line);padding:var(--space-3) var(--space-4);font-size:var(--type-base);line-height:1.55;color:color-mix(in srgb,var(--manila-ink) 62%,var(--manila));transition:color .15s ease,transform .18s ease-out}
+  .okghost{border-radius:var(--radius-xl) 18px 18px 4px;background:var(--manila);border:1px solid var(--manila-line);padding:var(--space-3) var(--space-4);font-size:var(--type-base);line-height:1.55;color:color-mix(in srgb,var(--manila-ink) 66%,var(--manila));transition:color .15s ease,transform .18s ease-out}
   .okcard:hover .okghost,.okcard:focus-within .okghost{color:var(--manila-ink)}
   /* send choreography: ink-in + nudge (180ms) → fold (260ms, delayed) */
   .okwrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows .26s ease-in .18s,opacity .22s ease-in .18s}
