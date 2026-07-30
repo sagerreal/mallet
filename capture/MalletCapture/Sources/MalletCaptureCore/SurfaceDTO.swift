@@ -19,16 +19,24 @@ public struct SurfaceDTO: Codable, Sendable {
     /// walls, or when unresolved — `SurfaceMapper` falls back to nearest-wall-by-
     /// centroid in that case.
     public var parentWallIndex: Int?
+    /// RoomPlan's `dimensions` for the surface (x = width, y = height, z = depth), in the
+    /// surface's local axes. Carried so `SurfaceMapper` can synthesize a rectangular outline
+    /// when RoomPlan returns an EMPTY `polygonCorners` — observed on-device (Jul 29 2026):
+    /// 14 of 15 walls in a real scan had no polygon corners at all. Optional so DTOs stored
+    /// before this field existed still decode.
+    public var dimensions: Point3?
 
     public init(
         category: SurfaceCategory,
         corners: [Point3],
         transform: Transform4,
-        parentWallIndex: Int? = nil
+        parentWallIndex: Int? = nil,
+        dimensions: Point3? = nil
     ) {
         self.category = category
         self.corners = corners
         self.transform = transform
         self.parentWallIndex = parentWallIndex
+        self.dimensions = dimensions
     }
 }

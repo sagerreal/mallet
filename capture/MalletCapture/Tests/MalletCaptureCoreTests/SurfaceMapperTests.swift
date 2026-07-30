@@ -186,6 +186,66 @@ final class SurfaceMapperTests: XCTestCase {
         XCTAssertEqual(window.wallIndex, 1)   // via nearest-wall-by-centroid fallback
     }
 
+    /// The dimensions fallback: a wall whose `polygonCorners` came back EMPTY (routine on
+    /// real devices — 14 of 15 walls in the Jul 29 2026 on-device scan) but which carries
+    /// `dimensions` must synthesize the SAME world polygon the explicit corners would have
+    /// produced. Uses wall1's hand-derived rotation+translation transform: a 3×2.4
+    /// rectangle centered at the local origin is exactly wall1's explicit local corners.
+    func testEmptyCornersWallFallsBackToDimensionsRectangle() throws {
+        let wall1FromDimensions = SurfaceDTO(
+            category: .wall,
+            corners: [],
+            transform: Self.wall1Transform,
+            dimensions: Point3(x: 3, y: 2.4, z: 0.1)
+        )
+        var surfaces = Self.fullRoomSurfaces
+        let idx = try XCTUnwrap(surfaces.firstIndex { $0.category == .wall && $0.transform.m == Self.wall1Transform.m })
+        surfaces[idx] = wall1FromDimensions
+
+        let mapped = try SurfaceMapper.geometry(from: surfaces)
+        let expectedWall1 = [
+            Point3(x: 4, y: 0, z: 0),
+            Point3(x: 4, y: 3, z: 0),
+            Point3(x: 4, y: 3, z: 2.4),
+            Point3(x: 4, y: 0, z: 2.4),
+        ]
+        let actual = mapped.walls[1].polygon.vertices
+        XCTAssertEqual(actual.count, 4)
+        for (a, e) in zip(actual, expectedWall1) {
+            XCTAssertEqual(a.x, e.x, accuracy: 1e-9)
+            XCTAssertEqual(a.y, e.y, accuracy: 1e-9)
+            XCTAssertEqual(a.z, e.z, accuracy: 1e-9)
+        }
+        XCTAssertEqual(mapped.grossWallArea, 2 * (4 * 2.4) + 2 * (3 * 2.4), accuracy: 1e-9)
+    }
+
+    /// A degenerate wall with no usable dimensions passes through untouched — the server's
+    /// derivation marks the room needs_confirm instead of the mapper inventing geometry.
+    func testEmptyCornersWallWithoutDimensionsStaysEmpty() throws {
+        var surfaces = Self.fullRoomSurfaces
+        surfaces.append(SurfaceDTO(category: .wall, corners: [], transform: .identity))
+        let mapped = try SurfaceMapper.geometry(from: surfaces)
+        XCTAssertEqual(mapped.walls.count, 5)
+        XCTAssertTrue(mapped.walls[4].polygon.vertices.isEmpty)
+    }
+
+    /// A door with empty corners + dimensions gets a real width/height via the same fallback.
+    func testEmptyCornersDoorFallsBackToDimensions() throws {
+        var surfaces = Self.fullRoomSurfaces.filter { !($0.category == .door) }
+        surfaces.append(SurfaceDTO(
+            category: .door,
+            corners: [],
+            transform: .identity,
+            parentWallIndex: 0,
+            dimensions: Point3(x: 0.9, y: 2.0, z: 0.1)
+        ))
+        let mapped = try SurfaceMapper.geometry(from: surfaces)
+        let door = try XCTUnwrap(mapped.openings.first { $0.kind == .door })
+        XCTAssertEqual(door.width, 0.9, accuracy: 1e-9)
+        XCTAssertEqual(door.height, 2.0, accuracy: 1e-9)
+        XCTAssertEqual(door.wallIndex, 0)
+    }
+
     func testNoFloorThrows() {
         let surfacesWithoutFloor = Self.fullRoomSurfaces.filter { $0.category != .floor }
         XCTAssertThrowsError(try SurfaceMapper.geometry(from: surfacesWithoutFloor)) { error in

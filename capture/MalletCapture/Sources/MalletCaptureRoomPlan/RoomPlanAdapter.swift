@@ -6,7 +6,9 @@ import MalletCaptureCore
 
 @available(iOS 17.0, *)
 public enum RoomPlanExtractor {
-    /// The ONLY code that touches Apple types. polygonCorners, never dimensions.
+    /// The ONLY code that touches Apple types. polygonCorners is the primary outline;
+    /// dimensions rides along ONLY as SurfaceMapper's fallback for surfaces where RoomPlan
+    /// returns an empty polygon (routine for walls on real devices).
     public static func surfaces(from room: CapturedRoom) -> [SurfaceDTO] {
         // Maps each wall's identifier to its position in `room.walls` so door/window/
         // opening surfaces can resolve `parentIdentifier` → `parentWallIndex`. All
@@ -34,7 +36,8 @@ public enum RoomPlanExtractor {
         SurfaceDTO(category: c,
                    corners: s.polygonCorners.map { Point3(x: Double($0.x), y: Double($0.y), z: Double($0.z)) },
                    transform: Transform4(simd: s.transform),
-                   parentWallIndex: s.parentIdentifier.flatMap { wallIndexByIdentifier[$0] })
+                   parentWallIndex: s.parentIdentifier.flatMap { wallIndexByIdentifier[$0] },
+                   dimensions: Point3(x: Double(s.dimensions.x), y: Double(s.dimensions.y), z: Double(s.dimensions.z)))
     }
 
     public static func rawPayload(from room: CapturedRoom) throws -> Data {

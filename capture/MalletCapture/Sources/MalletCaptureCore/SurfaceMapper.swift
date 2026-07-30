@@ -62,10 +62,30 @@ public enum SurfaceMapper {
     /// the convention `CeilingEstimate` and the Task-3 fixtures already assume):
     /// RoomPlan world (wx, wy, wz) → Core Point3(x: wx, y: -wz, z: wy).
     private static func worldVertices(of surface: SurfaceDTO) -> [Point3] {
-        surface.corners.map { local in
+        effectiveLocalCorners(of: surface).map { local in
             let world = surface.transform.apply(local)
             return Point3(x: world.x, y: -world.z, z: world.y)
         }
+    }
+
+    /// RoomPlan's `polygonCorners` is routinely EMPTY for wall (and sometimes opening)
+    /// surfaces on real devices — a Jul 29 2026 on-device scan returned 14 of 15 walls with
+    /// no corners. When that happens, fall back to a rectangle synthesized from the
+    /// surface's `dimensions`, centered at the local origin in the local x (width) /
+    /// y (height) plane at z = 0 — exactly the plane RoomPlan's own polygon corners live
+    /// in, so the local→world transform applies unchanged. A degenerate polygon with no
+    /// usable dimensions passes through as-is; the server's derivation marks the room
+    /// needs_confirm rather than guessing.
+    private static func effectiveLocalCorners(of surface: SurfaceDTO) -> [Point3] {
+        if surface.corners.count >= 3 { return surface.corners }
+        guard let d = surface.dimensions, d.x > 0, d.y > 0 else { return surface.corners }
+        let hw = d.x / 2, hh = d.y / 2
+        return [
+            Point3(x: -hw, y: -hh, z: 0),
+            Point3(x: hw, y: -hh, z: 0),
+            Point3(x: hw, y: hh, z: 0),
+            Point3(x: -hw, y: hh, z: 0),
+        ]
     }
 
     private static func centroid(of vertices: [Point3]) -> Point3 {
