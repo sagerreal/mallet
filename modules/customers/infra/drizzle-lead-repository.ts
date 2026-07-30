@@ -2,7 +2,7 @@ import { and, desc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } f
 import { leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
-import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf } from "@mallet/shared/db/sort-page";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { leadSortSpec, leadSortValue, type LeadSort } from "./lead-sorts";
 import {
   buildPage,
@@ -170,33 +170,36 @@ export class DrizzleLeadRepository implements LeadRepository {
     }
 
     // Fetch one extra row so we can tell whether a next page exists.
-    const rows = await this.tx
-      .select()
-      .from(leads)
-      .where(and(...conds))
-      .orderBy(...(spec ? orderFor(spec, leads.id) : [desc(leads.createdAt), desc(leads.id)]))
-      .limit(page.limit + 1);
-
-    if (!sort) {
+    if (!spec) {
+      const rows = await this.tx
+        .select()
+        .from(leads)
+        .where(and(...conds))
+        .orderBy(desc(leads.createdAt), desc(leads.id))
+        .limit(page.limit + 1);
       return buildPage(rows.map(toDomain), page, (lead) => ({
         createdAt: lead.props.createdAt,
         id: lead.props.id,
       }));
     }
-    // Sorted path builds its cursor from the SORT column, read off the raw row so the value is
-    // exactly what the ORDER BY compared.
+
+    // Sorted path selects the sort column a SECOND time as ::text and builds the cursor from that.
+    // A timestamptz round-tripped through a JS Date loses microseconds, and a cursor built from
+    // the truncated value still matches its own row — repeating it on the next page. See
+    // sortValueColumn.
+    const rows = await this.tx
+      .select({ row: leads, sortValue: sortValueColumn(spec) })
+      .from(leads)
+      .where(and(...conds))
+      .orderBy(...orderFor(spec, leads.id))
+      .limit(page.limit + 1);
+
     const hasMore = rows.length > page.limit;
     const kept = hasMore ? rows.slice(0, page.limit) : rows;
-    const lastRow = kept[kept.length - 1];
+    const last = kept[kept.length - 1];
     return {
-      items: kept.map(toDomain),
-      nextCursor:
-        hasMore && lastRow
-          ? encodeSortCursor({
-              value: sortValueOf(leadSortValue(sort, lastRow as Record<string, unknown>)),
-              id: lastRow.id,
-            })
-          : null,
+      items: kept.map((r) => toDomain(r.row)),
+      nextCursor: hasMore && last ? encodeSortCursor({ value: last.sortValue, id: last.row.id }) : null,
     };
   }
 
