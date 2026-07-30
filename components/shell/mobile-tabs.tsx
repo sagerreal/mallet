@@ -15,6 +15,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { selectCustomerCount, selectJobsCount, selectMoneyCount } from "@/components/shell/shell-selectors";
+import { useNavCounts } from "@/components/shell/use-nav-counts";
 
 const HomeIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -89,8 +90,10 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
   const me = useMe(initialMe);
   // Primitive selectors — return numbers so referential equality suppresses
   // re-renders when unrelated store slices are written.
-  const customerCount = useAppStore(selectCustomerCount);
-  const jobsCount = useAppStore(selectJobsCount);
+  // Database counts, not what the browser loaded — see useNavCounts.
+  const navCounts = useNavCounts();
+  const customerCount = navCounts.customers ?? 0;
+  const jobsCount = navCounts.jobs ?? 0;
   const moneyCount = useAppStore(selectMoneyCount);
 
   // Don't decide the tab set until the role is known — else a tech doing a cold

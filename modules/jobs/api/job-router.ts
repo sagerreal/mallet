@@ -256,6 +256,8 @@ export const createJobRouter = () =>
           status: statusEnum.optional(),
           assigneeUserId: z.string().uuid().optional(),
           search: z.string().trim().min(1).max(200).optional(),
+          /** Open jobs only — excludes complete and canceled. What the nav badge means. */
+          activeOnly: z.boolean().optional(),
         }),
       )
       .output(z.object({ total: z.number().int() }))
@@ -266,6 +268,7 @@ export const createJobRouter = () =>
             status: input.status,
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
             search: input.search,
+            activeOnly: input.activeOnly,
           }),
         };
       }),
