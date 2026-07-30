@@ -73,8 +73,10 @@ suite("customers list — server-side sort, search, count", () => {
     expect(ids.length).toBe(NAMES.length);
   });
 
-  it("sorts by value across a page boundary", async () => {
-    const ids = await walkAll({ sort: "value", sortDir: "desc" });
+  it("sorts by created across a page boundary", async () => {
+    // Replaces a `value` sort removed alongside the Value column: it ordered by leads.value_cents,
+    // a field nothing writes, under a column showing an estimate-derived number. They never agreed.
+    const ids = await walkAll({ sort: "created", sortDir: "desc" });
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.length).toBe(NAMES.length);
   });
@@ -143,6 +145,25 @@ suite("customers list — server-side sort, search, count", () => {
     expect(names).toHaveLength(7);
     expect(new Set(names).size).toBe(7);
     await admin`delete from orgs where id = ${o!.id}`;
+  });
+
+  it("facets describe the BOOK, not a page", async () => {
+    // The dropdown derived its options from the loaded collection, so on a book bigger than one
+    // page it silently offered only the stages and sources present in the first 500 rows.
+    await admin`update leads set stage = 'won' where org_id = ${orgId} and name = 'Abbott'`;
+    await admin`update leads set source = 'Website form' where org_id = ${orgId} and name = 'Brennan'`;
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const f = await caller.v1.customers.facets();
+    expect(f.stages.won).toBe(1);
+    expect(f.stages.new).toBe(NAMES.length - 1);
+    expect(f.sources.find((x) => x.source === "Website form")?.n).toBe(1);
+  });
+
+  it("filters by source", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const hits = await caller.v1.customers.list({ source: "Website form", limit: 50 });
+    expect(hits.items).toHaveLength(1);
+    expect((await caller.v1.customers.count({ source: "Website form" })).total).toBe(1);
   });
 
   it("does not leak across tenants", async () => {

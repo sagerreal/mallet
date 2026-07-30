@@ -4,9 +4,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import type { Lead } from "@/lib/store/types";
 
 // --- injectable test state ---
+// The view no longer reads the lead collection from the store — it queries the server a page at a
+// time — so the fixture is the QUERY's shape, not the store's.
 let leads: Lead[] = [];
 let custSeg = "people";
-let queryState = { isFetched: true, isError: false };
+// total defaults to the fixture's row count — the view gates first-run on the SERVER total,
+// so a fixture with rows but total 0 would render the first-run screen and prove nothing.
+let listState = { total: undefined as number | undefined, isFetched: true, isError: false, isLoading: false, isRefetching: false };
 const openModal = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
@@ -18,10 +22,27 @@ vi.mock("@/lib/store/app-store", () => ({
   useSetCustSeg: () => vi.fn(),
 }));
 
-// api.v1.customers.list.useQuery — dedupes the hydrator's query; we only read {isFetched,isError}.
-vi.mock("@/lib/trpc/client", () => ({
-  api: { v1: { customers: { list: { useQuery: () => queryState } } } },
+vi.mock("./use-customers-query", () => ({
+  useCustomersQuery: () => ({
+    rows: leads,
+    shown: leads.length,
+    ...listState,
+    total: listState.total ?? leads.length,
+    stageCounts: {},
+    sources: [],
+    hasMore: false,
+    loadMore: vi.fn(),
+    isLoadingMore: false,
+    refetch: vi.fn(),
+  }),
+  useCustomersQueryState: () => ({
+    search: "", setSearch: vi.fn(), stage: "", setStage: vi.fn(), source: "", setSource: vi.fn(),
+    sortCol: null, sortDir: null, toggleSortCol: vi.fn(), clear: vi.fn(),
+  }),
+  CUSTOMER_COL_TO_SORT: { name: "name", latest: "lastActivity", age: "created" },
 }));
+// The DTO -> store mapper has its own coverage; here the fixture rows are already store shaped.
+vi.mock("./leads-hydrator", () => ({ toStoreLead: (l: unknown) => l }));
 
 // Stub heavy children so the view renders in isolation (mirrors the branding-card test approach).
 vi.mock("./customers-toolbar", () => ({ CustomersToolbar: () => <div data-testid="toolbar" /> }));
@@ -46,7 +67,9 @@ describe("CustomersView — first-run empty state", () => {
   beforeEach(() => {
     leads = [];
     custSeg = "people";
-    queryState = { isFetched: true, isError: false };
+    // A full reset, not a spread of the previous value — spreading leaked isLoading and total
+    // from one test into the next.
+    listState = { total: undefined, isFetched: true, isError: false, isLoading: false, isRefetching: false };
     vi.clearAllMocks();
   });
 
@@ -66,10 +89,10 @@ describe("CustomersView — first-run empty state", () => {
   });
 
   it("shows the quiet loading state on cold load — not the first-run flash, not the list chrome", () => {
-    // isFirstLoad window: the hydrator's first fetch is in flight and the store is
-    // empty. A shop that HAS customers must not see "No customers yet" for ~1s on
-    // reload, and the toolbar shouldn't render over an empty table either.
-    queryState = { isFetched: false, isError: false };
+    // Cold load: the first page is in flight and nothing has arrived. A shop that HAS customers
+    // must not see "No customers yet" for ~1s on reload, and the toolbar should not render over an
+    // empty table either. isLoading is now the signal — the query owns it, not the store.
+    listState = { ...listState, isFetched: false, isError: false, isLoading: true, total: undefined };
     render(<CustomersView />);
     expect(screen.queryByText("No customers yet")).toBeNull();
     expect(screen.queryByTestId("toolbar")).toBeNull();
@@ -79,7 +102,7 @@ describe("CustomersView — first-run empty state", () => {
   it("shows the load-failed state — not the first-run screen — when the load errored", () => {
     // A failed load is not "no customers". Previously this rendered the toolbar over an
     // empty table, which read to a shop with 400 customers as though they had none.
-    queryState = { isFetched: true, isError: true };
+    listState = { ...listState, isFetched: true, isError: true };
     render(<CustomersView />);
     expect(screen.queryByText("No customers yet")).toBeNull();
     expect(screen.getByRole("alert")).toBeTruthy();
@@ -89,7 +112,7 @@ describe("CustomersView — first-run empty state", () => {
 
   it("keeps showing cached rows when a refetch fails (stale data beats an error screen)", () => {
     leads = [aLead()];
-    queryState = { isFetched: true, isError: true };
+    listState = { ...listState, isFetched: true, isError: true };
     render(<CustomersView />);
     expect(screen.queryByText(/Couldn.t load your customers/)).toBeNull();
     expect(screen.getByTestId("toolbar")).toBeTruthy();

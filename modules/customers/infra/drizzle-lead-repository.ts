@@ -120,6 +120,7 @@ export class DrizzleLeadRepository implements LeadRepository {
     const conds: SQL[] = [isNull(leads.deletedAt)];
     if (filter?.stage) conds.push(eq(leads.stage, filter.stage));
     if (filter?.unreadOnly) conds.push(eq(leads.unread, true));
+    if (filter?.source) conds.push(eq(leads.source, filter.source));
     if (filter?.search) {
       // Escape LIKE wildcards first: unescaped, a customer typing "%" matches the entire book and
       // the search silently stops filtering.
@@ -134,6 +135,32 @@ export class DrizzleLeadRepository implements LeadRepository {
       if (cond) conds.push(cond);
     }
     return conds;
+  }
+
+  async facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }> {
+    // Two grouped reads rather than one page scanned in the browser. The screen derived both from
+    // the loaded collection, so on a book bigger than one page the dropdown silently offered only
+    // the stages and sources present in the first 500 rows.
+    const [stageRows, sourceRows] = await Promise.all([
+      this.tx
+        .select({ stage: leads.stage, n: sql<number>`count(*)::int` })
+        .from(leads)
+        .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt)))
+        .groupBy(leads.stage),
+      this.tx
+        .select({ source: leads.source, n: sql<number>`count(*)::int` })
+        .from(leads)
+        .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt), isNotNull(leads.source)))
+        .groupBy(leads.source)
+        // Bounded: source is free text, so a bad import could otherwise put thousands of options
+        // in a dropdown. The long tail is not worth offering.
+        .orderBy(desc(sql`count(*)`))
+        .limit(25),
+    ]);
+    return {
+      stages: Object.fromEntries(stageRows.map((r) => [r.stage, r.n])),
+      sources: sourceRows.filter((r) => r.source).map((r) => ({ source: r.source as string, n: r.n })),
+    };
   }
 
   async count(filter?: LeadFilter): Promise<number> {

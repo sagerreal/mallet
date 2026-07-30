@@ -119,6 +119,7 @@ export class FakeLeadRepository implements LeadRepository {
     return found;
   }
   async count(): Promise<number> { return 0; }
+  async facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }> { return { stages: {}, sources: [] }; }
   async viewCounts(): Promise<{ counts: Record<string, number>; todayCents: number }> { return { counts: {}, todayCents: 0 } as never; }
   async list(_page: CursorPage, _filter?: LeadFilter): Promise<Paginated<Lead>> {
     return { items: [], nextCursor: null };
