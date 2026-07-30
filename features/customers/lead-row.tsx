@@ -16,10 +16,9 @@ import { pressable } from "@/lib/a11y";
 interface LeadCellProps {
   lead: Lead;
   col: string;
-  value: number | null;
 }
 
-function LeadCell({ lead, col, value }: LeadCellProps) {
+function LeadCell({ lead, col }: LeadCellProps) {
   switch (col) {
     case "name":
       return (
@@ -38,12 +37,6 @@ function LeadCell({ lead, col, value }: LeadCellProps) {
       return <SrcPill src={lead.source} />;
     case "stage":
       return <StagePill stage={lead.stage} />;
-    case "value":
-      return value != null ? (
-        <b className="fig">{fmt$(value)}</b>
-      ) : (
-        <span className="muted">—</span>
-      );
     case "latest":
       return <span className="muted">{lead.last ?? ""}</span>;
     case "age":
@@ -60,19 +53,18 @@ function LeadCell({ lead, col, value }: LeadCellProps) {
 interface LeadRowProps {
   lead: Lead;
   visibleCols: string[];
-  value: number | null;
   onOpen: (id: string) => void;
   /** Present on the Archived view only — renders a Restore cell (archive is a state
       on this list, not a place; restore moved here from the retired Settings tab). */
   onRestore?: (id: string) => void;
 }
 
-export function LeadRow({ lead, visibleCols, value, onOpen, onRestore }: LeadRowProps) {
+export function LeadRow({ lead, visibleCols, onOpen, onRestore }: LeadRowProps) {
   return (
     <tr className="clickable" onClick={() => onOpen(lead.id)} {...pressable(() => onOpen(lead.id))}>
       {visibleCols.map((col) => (
         <td key={col} data-label={ALL_COL_DEFS[col]?.l} data-primary={col === "name" ? "" : undefined}>
-          <LeadCell lead={lead} col={col} value={value} />
+          <LeadCell lead={lead} col={col} />
         </td>
       ))}
       {onRestore && (

@@ -23,12 +23,11 @@ import { CustomersFilters } from "./customers-filters";
 import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS } from "./customers-columns";
 import { LeadRow } from "./lead-row";
 import { CompaniesView } from "./companies-view";
-import { estTotal } from "@/lib/estimates";
 import { pressable } from "@/lib/a11y";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 
-const SORTABLE_COLS = new Set(["name", "age", "stage", "value"]);
+const SORTABLE_COLS = new Set(["name", "age", "stage"]);
 
 // First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens
 // Customers with zero people (see shouldShowFirstRun). Both actions open existing modals.
@@ -49,7 +48,6 @@ const FIRST_RUN = {
 
 export function CustomersView() {
   const leads = useLeads();
-  const estimates = useEstimates();
   const openModal = useOpenModal();
   const custSeg = useCustSeg();
   const setCustSeg = useSetCustSeg();
@@ -68,17 +66,6 @@ export function CustomersView() {
 
   // $ on the table per customer: open (sent) quotes for active pipeline, else
   // the won total once accepted, else nothing. Derived in the body (not a selector).
-  const valueByLead = useMemo(() => {
-    const m = new Map<string, number | null>();
-    for (const lead of leads) {
-      const es = estimates.filter((e) => e.leadId === lead.id);
-      const open = es.filter((e) => e.status === "sent").reduce((s, e) => s + estTotal(e), 0);
-      const won = es.filter((e) => e.status === "accepted").reduce((s, e) => s + estTotal(e), 0);
-      m.set(lead.id, open > 0 ? open : won > 0 ? won : null);
-    }
-    return m;
-  }, [leads, estimates]);
-
   const [archiveSet, setArchiveSet] = useState<CustomerArchiveSet>("active");
   const [q, setQ] = useState("");
   const [stageFilter, setStageFilter] = useState("");
@@ -92,12 +79,7 @@ export function CustomersView() {
   const activeLeads = leads.filter((l) => !l.archived);
   const shownSet = archiveSet === "active" ? activeLeads : leads.filter((l) => l.archived);
   const filtered = filterLeads(shownSet, q, stageFilter, sourceFilter);
-  const sorted =
-    sortCol === "value"
-      ? [...filtered].sort(
-          (a, b) => ((valueByLead.get(a.id) ?? -1) - (valueByLead.get(b.id) ?? -1)) * sortDir
-        )
-      : sortLeads(filtered, sortCol, sortDir);
+  const sorted = sortLeads(filtered, sortCol, sortDir);
 
   const staleCount = activeLeads.filter(isStaleLead).length;
   const allStages = [...new Set(shownSet.map((l) => l.stage))];
@@ -259,7 +241,6 @@ export function CustomersView() {
                   key={lead.id}
                   lead={lead}
                   visibleCols={visible}
-                  value={valueByLead.get(lead.id) ?? null}
                   onOpen={(id) => openModal(MODAL.LEAD, { leadId: id })}
                   onRestore={archiveSet === "archived" ? restoreLead : undefined}
                 />

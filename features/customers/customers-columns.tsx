@@ -19,7 +19,7 @@ export const ALL_COL_DEFS: Record<string, { l: string }> = {
 
 // Default view = "work the list": who · where in the pipeline · $ on the table ·
 // what's latest · how to reach them. Source (marketing analytics) is opt-in.
-export const DEFAULT_COLS = ["name", "stage", "value", "latest", "phone"] as const;
+export const DEFAULT_COLS = ["name", "stage", "latest", "phone"] as const;
 
 interface ColumnsProps {
   visible: string[];
