@@ -25,7 +25,6 @@ import { intakeRowOf, byStalledThenAge } from "@/features/pipeline/working";
 import { IntakeCard, GettingCard, OutCard, WonCard } from "@/features/pipeline/board-cards";
 import type { Snap } from "@/features/counter/types";
 import { LoadFailed } from "@/components/shared/load-failed";
-import { ListLoading } from "@/components/shared/list-loading";
 
 // First-run empty-state copy (functional, not chatty). Shown when a brand-new shop opens Pipeline
 // with zero leads (see shouldShowFirstRun) — the board would otherwise be four empty columns.
@@ -59,6 +58,45 @@ function ColCount({ server, shown }: { server: number | undefined; shown: number
     <span className="sum">
       {shown < server ? `${shown} of ${server}` : server}
     </span>
+  );
+}
+
+/**
+ * The board's first paint. Five queries feed this page (intake cards, quoting
+ * customers, drafts, sent, accepted) and they land at different times — rendered
+ * live, the columns popped in one by one. One skeleton, one reveal: nothing
+ * shows until every column's first fetch has landed.
+ */
+function BoardSkeleton() {
+  const cols = ["New leads", "Quoting", "Out", "Won"];
+  return (
+    <div role="status" aria-busy="true">
+      <span className="sr-only">Loading…</span>
+      <div className="ticket qstrip" aria-hidden="true">
+        <div className="herofig qstrip-fig">
+          <span className="sk" style={{ display: "inline-block", width: 120, height: 32 }} />
+        </div>
+        <div className="thesis">
+          <span className="sk" style={{ display: "inline-block", width: 200, height: 12 }} />
+        </div>
+      </div>
+      <div className="board" aria-hidden="true">
+        {cols.map((label) => (
+          <div className="col" key={label}>
+            <div className="col-head">
+              <span>{label}</span>
+              <span className="sum" />
+            </div>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div className="kcard" key={i}>
+                <div className="sk" style={{ width: "56%", height: 14, marginBottom: "var(--space-2)" }} />
+                <div className="sk" style={{ width: "78%", height: 11 }} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -121,11 +159,11 @@ export default function PipelinePage() {
   const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: leads.length });
   const loading = isFirstLoad({ isFetched, isError, count: leads.length });
 
-  // The money strip and Out/Won columns derive from ESTIMATES, a different hydrator that can
-  // land after leads — without its own gate the strip animated up from $0 and printed
-  // "Nothing's sitting on anyone's phone." as fact. Gated on the COLUMNS' own fetch now: they are
-  // what the strip is a summary of, so they are the read that says whether it is safe to print.
-  const moneyLoading = isFirstLoad({ isFetched: rail.isFetched, isError: rail.isError, count: rail.out.length });
+  // ONE first paint for the whole board. Five reads feed this page and they land at different
+  // times — gated individually, the strip and each column popped in one after another. Nothing
+  // renders until every column's FIRST fetch is in; after that, refetches update in place.
+  const boardLoading =
+    loading || !rail.isFetched || !intakeRows.isFetched || (rail.isError && rail.out.length === 0);
 
   return (
     <div>
@@ -151,9 +189,7 @@ export default function PipelinePage() {
         </button>
       </div>
 
-      {loading ? (
-        <ListLoading />
-      ) : loadFailed ? (
+      {loadFailed ? (
         <LoadFailed noun="pipeline" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : firstRun ? (
         <FirstRunEmptyState
@@ -164,36 +200,25 @@ export default function PipelinePage() {
             { ...FIRST_RUN.quote, onAction: () => router.push("/composer") },
           ]}
         />
+      ) : boardLoading ? (
+        <BoardSkeleton />
       ) : (
         <>
       {/* the rail's verdict, as a strip above the board */}
       <div className="ticket qstrip">
-        {moneyLoading ? (
-          <div aria-hidden="true">
-            <div className="herofig qstrip-fig">
-              <span className="sk" style={{ display: "inline-block", width: 120, height: 32 }} />
-            </div>
-            <div className="thesis">
-              <span className="sk" style={{ display: "inline-block", width: 200, height: 12 }} />
-            </div>
+        <div>
+          <div className="herofig qstrip-fig" aria-label={`$${rail.outSum.toLocaleString("en-US")} out on quotes`}>
+            ${shownSum.toLocaleString("en-US")}
           </div>
-        ) : (
-          <>
-            <div>
-              <div className="herofig qstrip-fig" aria-label={`$${rail.outSum.toLocaleString("en-US")} out on quotes`}>
-                ${shownSum.toLocaleString("en-US")}
-              </div>
-              <div className="thesis">
-                {rail.outSum > 0
-                  ? rail.outTruncated
-                    ? `sitting on customers’ phones — first ${rail.outCount} quotes`
-                    : "sitting on customers’ phones"
-                  : "Nothing’s sitting on anyone’s phone."}
-              </div>
-            </div>
-            {rail.delta && <div className="qdelta qstrip-delta">{rail.delta}</div>}
-          </>
-        )}
+          <div className="thesis">
+            {rail.outSum > 0
+              ? rail.outTruncated
+                ? `sitting on customers’ phones — first ${rail.outCount} quotes`
+                : "sitting on customers’ phones"
+              : "Nothing’s sitting on anyone’s phone."}
+          </div>
+        </div>
+        {rail.delta && <div className="qdelta qstrip-delta">{rail.delta}</div>}
       </div>
 
       {/* the board */}
@@ -224,7 +249,7 @@ export default function PipelinePage() {
           <div className="col-head">
             <span>Out</span>
             <span className="sum fig">
-              {moneyLoading ? "" : rail.outSum > 0 ? `$${rail.outSum.toLocaleString("en-US")}` : ""}
+              {rail.outSum > 0 ? `$${rail.outSum.toLocaleString("en-US")}` : ""}
             </span>
           </div>
           {rail.out.map((row) => (

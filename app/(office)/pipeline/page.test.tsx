@@ -39,11 +39,12 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/features/home/use-animated-number", () => ({ useAnimatedNumber: (n: number) => n }));
 // Out and Won are fetched for their columns now, not derived from the loaded book — a quote whose
 // customer had not loaded used to be dropped from the column with no trace.
+let railFetched = true;
 vi.mock("@/features/pipeline/use-rail-columns", () => ({
   useRailColumns: () => ({
     getting: [], out: [], won: [], outSum: 0, outCount: 0,
     outTruncated: false, wonTruncated: false, delta: null,
-    isFetched: true, isError: false,
+    isFetched: railFetched, isError: false,
   }),
 }));
 // intakeRowOf shapes one card; the SET is chosen by the server query above.
@@ -69,6 +70,7 @@ describe("PipelinePage — first-run empty state", () => {
   beforeEach(() => {
     storeState = store([]);
     queryState = { isFetched: true, isError: false };
+    railFetched = true;
     vi.clearAllMocks();
   });
 
@@ -90,6 +92,15 @@ describe("PipelinePage — first-run empty state", () => {
     render(<PipelinePage />);
     expect(screen.queryByText("Your pipeline is empty")).toBeNull();
     expect(screen.getByText("Loading…")).toBeTruthy();
+  });
+
+  it("holds one skeleton until every column's first fetch lands — columns never pop in", () => {
+    storeState = store([{ id: "1", archived: false, stage: "New customer" }]);
+    railFetched = false;
+    render(<PipelinePage />);
+    // The board-shaped skeleton, not a half-populated board.
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.queryByText("Nothing’s sitting on anyone’s phone.")).toBeNull();
   });
 
   it("shows the load-failed state — not the first-run screen — when the load errored", () => {
