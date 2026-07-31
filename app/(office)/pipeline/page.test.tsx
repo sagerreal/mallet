@@ -35,7 +35,15 @@ vi.mock("@/lib/trpc/client", () => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/features/home/use-animated-number", () => ({ useAnimatedNumber: (n: number) => n }));
-vi.mock("@/features/quotes/derive", () => ({ deriveRail: () => ({ outSum: 0, out: [], won: [], delta: null }) }));
+// Out and Won are fetched for their columns now, not derived from the loaded book — a quote whose
+// customer had not loaded used to be dropped from the column with no trace.
+vi.mock("@/features/pipeline/use-rail-columns", () => ({
+  useRailColumns: () => ({
+    getting: [], out: [], won: [], outSum: 0, outCount: 0,
+    outTruncated: false, wonTruncated: false, delta: null,
+    isFetched: true, isError: false,
+  }),
+}));
 // intakeRowOf shapes one card; the SET is chosen by the server query above.
 vi.mock("@/features/pipeline/working", () => ({
   intakeRowOf: (lead: unknown) => ({ lead, stalled: false, stamp: "today" }),

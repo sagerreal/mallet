@@ -15,6 +15,15 @@ export const WON_WINDOW_DAYS = 30;
 
 export interface RailRow {
   est: Estimate;
+  /**
+   * The customer's name, for display.
+   *
+   * Separate from `lead` because the two answer different questions. This always has a value when
+   * the server sent one, so a card can name its customer without that customer being loaded.
+   * `lead` is the full record, present only when it happens to be in the store, and is used for
+   * the interactive extras (drafting a message needs the phone, not just the name).
+   */
+  customerName: string;
   lead: Lead | null;
   total: number;
   /** Business days since the customer last touched it (Infinity = never). */
@@ -31,6 +40,8 @@ export interface RailRow {
 
 export interface WonRow {
   est: Estimate;
+  /** The customer's name, for display — see RailRow.customerName. */
+  customerName: string;
   lead: Lead | null;
   total: number;
   job: Job | null;
@@ -75,12 +86,16 @@ function sentStamp(est: Estimate): string {
   return n >= 2 ? `Read ×${n} · ${read.when}` : `Read ${read.when}`;
 }
 
-function toRailRow(est: Estimate, leads: Lead[]): RailRow {
+function toRailRow(est: Estimate, leads: Lead[], customerName?: string | null): RailRow {
   const quiet = quietDaysOf(est);
   const reads = est.reads ?? [];
+  const lead = leads.find((l) => l.id === est.leadId && !l.archived) ?? null;
   return {
     est,
-    lead: leads.find((l) => l.id === est.leadId && !l.archived) ?? null,
+    // The server's name first. Falling back to the store's copy keeps the in-memory callers
+    // (features/home/pipe.ts) working unchanged; "—" is the last resort, not the normal case.
+    customerName: customerName ?? lead?.name ?? "—",
+    lead,
     total: estTotal(est),
     quietDays: quiet,
     cool: est.status === "draft" ? 0.45 : coolOf(quiet),
@@ -90,7 +105,7 @@ function toRailRow(est: Estimate, leads: Lead[]): RailRow {
   };
 }
 
-function toWonRow(est: Estimate, leads: Lead[], jobs: Job[]): WonRow {
+function toWonRow(est: Estimate, leads: Lead[], jobs: Job[], customerName?: string | null): WonRow {
   const lead = leads.find((l) => l.id === est.leadId) ?? null;
   const job = lead
     ? jobs.find((j) => !j.archived && j.leadId === lead.id) ?? null
@@ -102,6 +117,7 @@ function toWonRow(est: Estimate, leads: Lead[], jobs: Job[]): WonRow {
   const agedYes = est.age >= 2 ? `Accepted ${est.age} days` : "Accepted";
   return {
     est,
+    customerName: customerName ?? lead?.name ?? "—",
     lead,
     total: estTotal(est),
     job,
@@ -114,8 +130,37 @@ function toWonRow(est: Estimate, leads: Lead[], jobs: Job[]): WonRow {
   };
 }
 
+/**
+ * Rail rows built from quotes the SERVER selected, each carrying its customer's name.
+ *
+ * No orphan filter, deliberately. deriveRail drops quotes whose customer is missing from the
+ * loaded set — which was meant to hide quotes belonging to archived customers, but also hid every
+ * quote whose customer simply had not loaded. Archiving cascades to quotes server-side, so rows
+ * that reach here are live by construction and dropping any of them would only lose real work.
+ */
+export function railRowsFor(
+  rows: readonly { est: Estimate; customerName: string | null }[],
+  leads: Lead[],
+): RailRow[] {
+  return rows
+    .map((r) => toRailRow(r.est, leads, r.customerName))
+    .sort((a, b) => a.quietDays - b.quietDays || b.total - a.total);
+}
+
+/** Won rows from server-selected quotes. Same reasoning as railRowsFor. */
+export function wonRowsFor(
+  rows: readonly { est: Estimate; customerName: string | null }[],
+  leads: Lead[],
+  jobs: Job[],
+): WonRow[] {
+  return rows
+    .filter((r) => r.est.age <= WON_WINDOW_DAYS)
+    .map((r) => toWonRow(r.est, leads, jobs, r.customerName))
+    .sort((a, b) => Number(b.unscheduled) - Number(a.unscheduled) || b.total - a.total);
+}
+
 /** The delta sentence — the newest customer act, named, or null for silence. */
-function deriveDelta(out: RailRow[]): string | null {
+export function deltaOf(out: RailRow[]): string | null {
   const withReads = out.filter((r) => (r.est.reads ?? []).length > 0 && r.lead);
   if (withReads.length === 0) return null;
   const newest = withReads.reduce((a, b) => (quietDaysOf(a.est) <= quietDaysOf(b.est) ? a : b));
@@ -154,7 +199,7 @@ export function deriveRail(estimates: Estimate[], leads: Lead[], jobs: Job[]): R
     out,
     won,
     outSum: out.reduce((s, r) => s + r.total, 0),
-    delta: deriveDelta(out),
+    delta: deltaOf(out),
   };
 }
 
