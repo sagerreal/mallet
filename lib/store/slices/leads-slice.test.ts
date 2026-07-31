@@ -70,7 +70,6 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     companyId: undefined,
     role: undefined,
     acts: [],
-    evisits: [],
     archived: false,
     ...overrides,
   };
@@ -295,11 +294,10 @@ describe("updateLead integration (with trpcVanilla mock)", () => {
     expect(call.valueCents).toBe(15000);
   });
 
-  it("preserves local-only fields (acts, evisits, age, address) on DTO reconciliation", async () => {
+  it("preserves local-only fields (acts, age, address) on DTO reconciliation", async () => {
     const slice = makeSlice();
     const lead = makeLead({
       acts: [{ type: "note", when: "today", t: "Called back" }],
-      evisits: [{ id: "ev-1", date: "2026-07-10", techId: "t1", start: 9, dur: 2, status: "scheduled" }],
       age: 7,
       address: "456 Oak Ave",
     });
@@ -329,7 +327,6 @@ describe("updateLead integration (with trpcVanilla mock)", () => {
     expect(updated?.name).toBe("Ada Updated");
     // Local-only fields must survive reconciliation.
     expect(updated?.acts).toHaveLength(1);
-    expect(updated?.evisits).toHaveLength(1);
     expect(updated?.age).toBe(7);
     expect(updated?.address).toBe("456 Oak Ave");
   });
@@ -576,10 +573,9 @@ describe("addLead (with trpcVanilla mock)", () => {
     expect(reconciled.id).toBe("srv-lead-999");
     expect(slice.state.leads.some((l: Lead) => l.id === optimisticId)).toBe(false);
     expect(slice.state.leads.some((l: Lead) => l.id === "srv-lead-999")).toBe(true);
-    // Local-only fields (acts, evisits) survive the id swap.
+    // Local-only fields (acts) survive the id swap.
     const row = slice.state.leads.find((l: Lead) => l.id === "srv-lead-999");
     expect(row?.acts).toEqual([]);
-    expect(row?.evisits).toEqual([]);
   });
 
   it("maps the reconciled DB enum stage back to a display string", async () => {

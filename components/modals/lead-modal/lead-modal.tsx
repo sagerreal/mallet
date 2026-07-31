@@ -29,7 +29,6 @@ import { SheetRow } from "../sheet-row";
 import { LeadSheetHeader, PhoneCell } from "./lead-header";
 import { NotesBody, latestNoteSnippet } from "./lead-notes";
 import { TasksBody, openTaskLabel } from "./tasks-card";
-import { VisitRows } from "./visit-card";
 import { DetailsBody, CleanUpBody } from "./more-details";
 import {
   useCloseModal,
@@ -160,7 +159,7 @@ export function LeadModal({ open }: { open: boolean }) {
       .map((dto) => dtoEstimateSummaryToStore(dto, { on: false, stage: 0 }));
     return [...fromStore, ...fromServer];
   }, [lead, estimates, workQ.data]);
-  const hasWork = leadEstimates.length > 0 || (lead?.evisits?.length ?? 0) > 0;
+  const hasWork = leadEstimates.length > 0;
 
   // "New quote" → the real composer, seeded with this customer. Close first so the
   // sheet doesn't sit over the composer page.
@@ -243,7 +242,6 @@ export function LeadModal({ open }: { open: boolean }) {
         <>
           <div className="sheet-worklab">Work</div>
           <QuoteRows estimates={leadEstimates} />
-          <VisitRows lead={lead} />
         </>
       )}
 

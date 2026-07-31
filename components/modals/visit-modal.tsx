@@ -40,7 +40,6 @@ export function VisitModalContent() {
   const pushModal = usePushModal();
 
   const leads = useAppStore((s) => s.leads);
-  const addEvisit = useAppStore((s) => s.addEvisit);
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
   const updateLead = useAppStore((s) => s.updateLead);

@@ -48,7 +48,6 @@ export function toStoreLead(dto: LeadDTO): Lead {
     notes: dto.notes ?? undefined,
     address: dto.address ?? undefined,
     acts: [],
-    evisits: [],
     archived: false,
   };
 }

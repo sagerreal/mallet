@@ -75,11 +75,6 @@ const NewJobModalContent = dynamic(
   { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
-const EvisitModalContent = dynamic(
-  () => import("./evisit-modal").then((m) => ({ default: m.EvisitModalContent })),
-
-  { ssr: false, loading: () => <ModalLoading size="md" /> },
-);
 
 const PriceBuilderModalContent = dynamic(
   () => import("./price-builder-modal").then((m) => ({ default: m.PriceBuilderModalContent })),
@@ -219,9 +214,6 @@ export function ModalHost() {
         <NewJobModalContent />
       </Modal>
 
-      <Modal open={id === MODAL.EVISIT} onClose={close}>
-        <EvisitModalContent />
-      </Modal>
 
       {/* 560px — the prototype's tq sheet width; keeps the add-a-line tiles a 2×2 grid */}
       <Modal open={id === MODAL.PRICE_BUILDER} onClose={close} maxWidth={560}>

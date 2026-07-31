@@ -11,7 +11,8 @@
 
 import { firstName } from "@/features/home/derive";
 import { estTotal } from "@/lib/estimates";
-import type { Estimate, EstimateLine, Lead } from "@/lib/store/types";
+import { scopedEstimateVisit, pendingEstimateVisit } from "@/features/pipeline/pipeline-utils";
+import type { Estimate, EstimateLine, Job, Lead } from "@/lib/store/types";
 import type { RunAside, Snap } from "./types";
 
 /** One planned draft: lines + the evidence line that justifies the price. */
@@ -88,18 +89,17 @@ function quotable(lead: Lead, estimates: Estimate[]): boolean {
   );
 }
 
-function scopedNotes(lead: Lead): string | null {
-  const done = (lead.evisits ?? []).find((v) => v.scopeNotes);
-  return done?.scopeNotes ?? null;
+function scopedNotes(lead: Lead, jobs: Job[]): string | null {
+  return scopedEstimateVisit(lead.id, jobs)?.scopeNotes ?? null;
 }
 
-function pendingVisit(lead: Lead): boolean {
-  return (lead.evisits ?? []).some((v) => v.status === "scheduled" && !v.scopeNotes);
+function pendingVisit(lead: Lead, jobs: Job[]): boolean {
+  return pendingEstimateVisit(lead.id, jobs) != null;
 }
 
 /** Price one lead, or null when there's nothing honest to price from. */
 function priceLead(lead: Lead, snap: Snap): Omit<EstPlanItem, "lead" | "pickupEstId"> | null {
-  const notes = scopedNotes(lead);
+  const notes = scopedNotes(lead, snap.jobs);
   const theme = THEMES.find((t) => t.match.test(lead.job))?.key ?? null;
 
   // History first — the shop's own numbers are the best estimator there is.
@@ -161,7 +161,7 @@ export function buildEstimateRun(snap: Snap): EstRunPlan {
     }
 
     // A walkthrough already on the books — hold, with the reason on camera.
-    if (pendingVisit(lead) && !scopedNotes(lead)) {
+    if (pendingVisit(lead, snap.jobs) && !scopedNotes(lead, snap.jobs)) {
       asides.push({
         leadId: lead.id,
         reason: `${lead.name} — walkthrough's already on the books; pricing after it happens`,
@@ -171,7 +171,7 @@ export function buildEstimateRun(snap: Snap): EstRunPlan {
     }
 
     // Never invent a number for a job nobody's seen.
-    if (NEEDS_EYES.test(lead.job) && !scopedNotes(lead)) {
+    if (NEEDS_EYES.test(lead.job) && !scopedNotes(lead, snap.jobs)) {
       asides.push({
         leadId: lead.id,
         reason: `${lead.name} — ${lead.job.toLowerCase()}: not pricing what nobody's seen`,
@@ -197,8 +197,8 @@ export function buildEstimateRun(snap: Snap): EstRunPlan {
 
   // Scoped-and-noted work leads the receipt; everything else follows by value.
   items.sort((a, b) => {
-    const an = scopedNotes(a.lead) ? 1 : 0;
-    const bn = scopedNotes(b.lead) ? 1 : 0;
+    const an = scopedNotes(a.lead, snap.jobs) ? 1 : 0;
+    const bn = scopedNotes(b.lead, snap.jobs) ? 1 : 0;
     if (an !== bn) return bn - an;
     const sum = (ls: EstimateLine[]) => ls.reduce((s, l) => s + l.q * l.r, 0);
     return sum(b.lines) - sum(a.lines);

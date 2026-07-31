@@ -11,7 +11,7 @@
  *
  * updateLead follows the same pattern for persistable scalar fields (name, phone,
  * email, source, stage, unread, companyId, role, value→valueCents).
- * Local-only fields (age, job, last, book, estId, acts, evisits) are
+ * Local-only fields (age, job, last, book, estId, acts) are
  * updated in the store only — they have no column in the DB contract.
  */
 
@@ -42,7 +42,7 @@ function dtoToTask(dto: { id: string; text: string; dueDate: string | null; lead
 
 // Fields in Lead that are ONLY local — they have no column in the DB contract
 // and must never be sent to v1.customers.update.
-const LOCAL_ONLY_KEYS = new Set<keyof Lead>(["age", "job", "last", "book", "estId", "acts", "evisits"]);
+const LOCAL_ONLY_KEYS = new Set<keyof Lead>(["age", "job", "last", "book", "estId", "acts"]);
 
 /** The shape expected by trpcVanilla.v1.customers.update.mutate */
 export type LeadUpdatePayload = CustomerUpdateInput;
@@ -122,7 +122,7 @@ function adoptCreatedLead(optimistic: Lead, dto: Parameters<typeof reconcileLead
 
 /**
  * Merges a leadDTO response back onto the current store lead, preserving all
- * local-only fields (acts, evisits, age, job, last, book, estId).
+ * local-only fields (acts, age, job, last, book, estId).
  * The DTO shape mirrors RouterOutputs["v1"]["customers"]["list"]["items"][number].
  */
 function reconcileLeadFromDTO(
@@ -170,7 +170,6 @@ function reconcileLeadFromDTO(
     book: current.book,
     estId: current.estId,
     acts: current.acts,
-    evisits: current.evisits,
   };
 }
 
@@ -186,7 +185,7 @@ export interface LeadsSlice {
   setTasks: (tasks: Task[]) => void;
 
   addLead: (
-    draft: Omit<Lead, "id" | "age" | "last" | "acts" | "evisits">,
+    draft: Omit<Lead, "id" | "age" | "last" | "acts">,
   ) => { lead: Lead; persisted: Promise<Lead> };
   /**
    * Optimistic + persist + reconcile. Resolves TRUE once the change is durable — or when the
@@ -203,12 +202,6 @@ export interface LeadsSlice {
   archiveLead: (id: string) => void;
   restoreLead: (id: string) => void;
   deleteLead: (id: string) => void;
-
-  // Estimate-visit (evisit) placement on the schedule board.
-  addEvisit: (leadId: string, draft: Omit<Visit, "id">) => Visit;
-  updateEvisit: (leadId: string, visitId: string, patch: Partial<Visit>) => void;
-  placeEvisit: (leadId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
-  removeEvisit: (leadId: string, visitId: string) => void;
 
   taskDone: (id: string) => void;
   toggleTask: (id: string) => void;
@@ -252,7 +245,6 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
       age: 0,
       last: "Just added",
       acts: [],
-      evisits: [],
     };
     // Snapshot BEFORE the optimistic insert so we can roll back on failure.
     const prior = get().leads.slice();
@@ -299,7 +291,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   //
   // Persistable fields (name, phone, email, source, stage, unread, companyId,
   // role, value) are written to the DB via v1.customers.update.  Local-only
-  // fields (age, job, last, book, estId, acts, evisits) are updated
+  // fields (age, job, last, book, estId, acts) are updated
   // in the store only — they have no column in the DB contract.
   // If the patch contains ONLY local-only fields the network call is skipped.
   // ---------------------------------------------------------------------------
@@ -423,43 +415,6 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
     get().archiveLead(id);
   },
 
-  addEvisit: (leadId, draft) => {
-    const visit: Visit = { ...draft, id: crypto.randomUUID() };
-    set((s) => ({
-      leads: s.leads.map((l) =>
-        l.id === leadId ? { ...l, evisits: [...(l.evisits ?? []), visit] } : l
-      ),
-    }));
-    return visit;
-  },
-
-  updateEvisit: (leadId, visitId, patch) =>
-    set((s) => ({
-      leads: s.leads.map((l) =>
-        l.id === leadId
-          ? { ...l, evisits: (l.evisits ?? []).map((v) => (v.id === visitId ? { ...v, ...patch } : v)) }
-          : l
-      ),
-    })),
-
-  placeEvisit: (leadId, visitId, at) =>
-    set((s) => ({
-      leads: s.leads.map((l) =>
-        l.id === leadId
-          ? { ...l, evisits: (l.evisits ?? []).map((v) => (v.id === visitId ? { ...v, ...at } : v)) }
-          : l
-      ),
-    })),
-
-  removeEvisit: (leadId, visitId) =>
-    set((s) => ({
-      leads: s.leads.map((l) =>
-        l.id === leadId
-          ? { ...l, evisits: (l.evisits ?? []).filter((v) => v.id !== visitId) }
-          : l
-      ),
-    })),
-
   // ---------------------------------------------------------------------------
   // taskDone — optimistic + persist + reconcile/rollback.
   // ---------------------------------------------------------------------------
@@ -479,6 +434,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         reportWriteError("taskDone", err);
       });
   },
+
 
   // ---------------------------------------------------------------------------
   // toggleTask — flip done state; optimistic + persist + reconcile/rollback.

@@ -145,12 +145,12 @@ function TodayPane() {
         report={report}
         queueCount={queue.length}
         queueValue={queueValue}
-        loading={loading || okQueue.isLoading}
+        loading={loading || !okQueue.isFetched}
       />
 
       {loading || pipe.isLoading ? <HomePipeSkeleton /> : <HomePipe stages={pipe.stages} />}
 
-      {!loading && !okQueue.isLoading && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
+      {!loading && okQueue.isFetched && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
     </div>
   );
 }

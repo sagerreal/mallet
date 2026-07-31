@@ -58,7 +58,6 @@ export interface Lead {
   role?: string;
   value?: number;
   lossReason?: string;
-  evisits?: Visit[];
   acts?: LeadNote[];
   notes?: string;
   card?: { brand: string; last4: string; via: string };

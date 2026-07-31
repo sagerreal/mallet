@@ -4,10 +4,9 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 
 interface Store {
   jobs: unknown[];
-  leads: { evisits?: unknown[] }[];
+  leads: unknown[];
   techs: unknown[];
   placeVisit: () => void;
-  placeEvisit: () => void;
   addVisit: () => void;
   updateVisit: () => void;
   removeVisit: () => void;
@@ -26,7 +25,7 @@ import { SchedulePanel } from "./schedule-panel";
 
 const store = (jobs: unknown[], leads: Store["leads"] = []): Store => ({
   jobs, leads, techs: [],
-  placeVisit: vi.fn(), placeEvisit: vi.fn(), addVisit: vi.fn(), updateVisit: vi.fn(), removeVisit: vi.fn(),
+  placeVisit: vi.fn(), addVisit: vi.fn(), updateVisit: vi.fn(), removeVisit: vi.fn(),
 });
 
 describe("SchedulePanel — first-run empty state (board untouched)", () => {
@@ -39,8 +38,8 @@ describe("SchedulePanel — first-run empty state (board untouched)", () => {
     expect(openModal).toHaveBeenCalledWith("new-job");
   });
 
-  it("does NOT show first-run when a lead carries an estimate visit (board has something to place)", () => {
-    storeState = store([], [{ evisits: [{ id: "v1" }] }]);
+  it("does NOT show first-run when an estimate job exists (board has something to place)", () => {
+    storeState = store([{ id: "j1", svc: "estimate", visits: [] }]);
     render(<SchedulePanel />);
     expect(screen.queryByText("Nothing to schedule yet")).toBeNull();
   });

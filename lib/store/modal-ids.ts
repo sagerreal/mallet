@@ -15,7 +15,6 @@ export const MODAL = {
   EST: "est",
   JOB: "job",
   NEW_JOB: "new-job",
-  EVISIT: "evisit",
   PRICE_BUILDER: "price-builder",
   INVOICE: "invoice",
   TECH_JOB: "tech-job",

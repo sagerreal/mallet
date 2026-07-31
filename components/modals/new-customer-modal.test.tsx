@@ -3,7 +3,7 @@
  * components/modals/new-customer-modal.test.tsx
  * The submit button must actually create the booked work it names:
  *   "Create job"            → addJob + one unplaced visit (after persist reconcile)
- *   "Create estimate visit" → a store evisit on the created lead
+ *   "Create estimate visit" → a real estimate job on the created lead
  *   dedup hit               → NO work created (the phone belongs to someone else)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -20,7 +20,7 @@ const updateLead = vi.fn();
 const setLeads = vi.fn();
 
 // Mutable store state — tests may push leads in to exercise the "already in
-// store" evisit path. Reset in beforeEach.
+// store" estimate path. Reset in beforeEach.
 const storeState = {
   addJob,
   addVisit,
@@ -30,7 +30,7 @@ const storeState = {
   setLeads,
   companies: [] as unknown[],
   sources: [] as unknown[],
-  leads: [] as { id: string; evisits?: unknown[] }[],
+  leads: [] as { id: string }[],
 };
 
 let closeMock = vi.fn();

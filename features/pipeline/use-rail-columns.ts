@@ -86,8 +86,8 @@ export function useRailColumns(): RailColumns {
     // deriveGetting pairs the two and shapes the card. Passing SERVER-selected sets is what makes
     // that safe: its "skip a draft whose customer is missing" guard used to fire whenever the
     // customer merely had not loaded.
-    return deriveGetting(leadRows, draftRows);
-  }, [quotingLeads.data, drafts.data]);
+    return deriveGetting(leadRows, draftRows, jobs);
+  }, [quotingLeads.data, drafts.data, jobs]);
 
   const sentItems = sent.data?.items;
   const acceptedItems = accepted.data?.items;
