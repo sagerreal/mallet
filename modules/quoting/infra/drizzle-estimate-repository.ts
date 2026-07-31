@@ -143,6 +143,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         needsPhoto: lp.needsPhoto,
         position: lp.position,
         tier: lp.tier,
+        materialId: lp.materialId,
         updatedAt,
         deletedAt: null as Date | null,
       };
@@ -161,6 +162,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           needsPhoto: sql`excluded.needs_photo`,
           position: sql`excluded.position`,
           tier: sql`excluded.tier`,
+          materialId: sql`excluded.material_id`,
           updatedAt: sql`excluded.updated_at`,
           deletedAt: sql`excluded.deleted_at`,
         },

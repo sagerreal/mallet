@@ -2,7 +2,8 @@ import type { MaterialId, Result, AppError, Clock } from "@mallet/shared/types";
 import { notFound, ok, err } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { Material } from "../domain/material";
-import type { MaterialRepository } from "../domain/material-repository";
+import type { MaterialRepository, MarkupBandsRepository } from "../domain/material-repository";
+import { deriveSellPriceCents } from "../domain/markup-bands";
 
 export interface UpdateMaterialCommand {
   readonly materialId: MaterialId;
@@ -11,6 +12,8 @@ export interface UpdateMaterialCommand {
   readonly code?: string | null;
   readonly description?: string | null;
   readonly unitCostCents?: number;
+  /** Direct price edit — flips the item to manual (HCP one-gesture override). */
+  readonly unitPriceCents?: number;
   readonly unitOfMeasure?: string;
   readonly markupBps?: number | null;
   readonly taxable?: boolean;
@@ -22,6 +25,7 @@ export interface UpdateMaterialCommand {
 export class UpdateMaterialUseCase {
   constructor(
     private readonly repo: MaterialRepository,
+    private readonly bands: MarkupBandsRepository,
     private readonly clock: Clock,
   ) {}
 
@@ -30,8 +34,23 @@ export class UpdateMaterialUseCase {
     if (!material) return err(notFound("material not found"));
 
     const now = this.clock.now();
+    // Sell-side interplay (locked spec): a direct price edit flips the item to MANUAL and
+    // sticks; a cost edit on a RULE item re-derives the sell price from the org's bands;
+    // a cost edit on a manual item touches cost only. Existing quotes never move (snapshot).
+    let sell: { unitPriceCents?: number; pricingMode?: "rule" | "manual" } = {};
+    if (cmd.unitPriceCents !== undefined) {
+      sell = { unitPriceCents: Math.max(0, Math.round(cmd.unitPriceCents)), pricingMode: "manual" };
+    } else if (cmd.unitCostCents !== undefined && material.props.pricingMode === "rule") {
+      sell = {
+        unitPriceCents: deriveSellPriceCents(
+          Math.max(0, Math.round(cmd.unitCostCents)),
+          await this.bands.list(),
+        ),
+      };
+    }
     const patched = material.patch(
       {
+        ...sell,
         categoryId: cmd.categoryId,
         code: cmd.code,
         name: cmd.name,

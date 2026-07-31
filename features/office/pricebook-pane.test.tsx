@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 // Narrow store shape — only what the pane selects.
 interface Store {
+  materials: { active: boolean }[];
   services: { id: string; name: string; position: number }[];
   categories: unknown[];
   laborRates: unknown[];
@@ -35,10 +36,25 @@ vi.mock("@/features/identity/hooks", () => ({
 }));
 vi.mock("@/lib/trpc/client", () => ({
   // settings.get rides along since the rail now gates on the settings hydrator (rates/markup/terms).
-  api: { v1: { pricebook: { service: { list: { useQuery: () => q } } }, settings: { get: { useQuery: () => q } } } },
+  api: {
+    v1: {
+      pricebook: {
+        service: { list: { useQuery: () => q } },
+        // markup bands rail row — settled default table for these routing tests
+        markupBands: { list: { useQuery: () => ({ data: { bands: [{ minCostCents: 0, markupBps: 3500 }], isDefault: true }, isFetched: true }) } },
+      },
+      settings: { get: { useQuery: () => q } },
+    },
+  },
 }));
 vi.mock("@/app/(office)/settings/service-row", () => ({
   ServiceRow: () => <div data-testid="svc-row" />,
+}));
+vi.mock("@/features/office/materials-panel", () => ({
+  MaterialsPanel: () => <div data-testid="materials-panel" />,
+}));
+vi.mock("@/features/office/markup-bands-editor", () => ({
+  MarkupBandsEditor: () => <div data-testid="bands-editor" />,
 }));
 vi.mock("@/app/(office)/settings/estimator-memory-card", () => ({
   EstimatorMemoryRow: () => <div data-testid="memory-row" />,
@@ -48,6 +64,7 @@ import { PricebookPane } from "./pricebook-pane";
 
 const store = (services: Store["services"]): Store => ({
   services,
+  materials: [],
   categories: [],
   laborRates: [],
   terms: [],

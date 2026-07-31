@@ -165,6 +165,11 @@ export const estimateLines = pgTable(
     position: integer("position").notNull().default(0),
     // Good/Better/Best tag. Null on single-format estimates and on resolved (accepted) ones.
     tier: text("tier"),
+    // Provenance pointer when this line came from a pricebook MATERIAL (the sellable-parts
+    // model). Values are snapshotted above (rate/cost never move with the catalog); the id
+    // survives for costing and future reprice-from-book actions. No FK — a deleted material
+    // must not constrain its historical lines.
+    materialId: uuid("material_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

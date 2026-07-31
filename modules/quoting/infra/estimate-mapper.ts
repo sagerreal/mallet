@@ -18,6 +18,7 @@ const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
     position: row.position,
     // DB CHECK constrains the value set; EstimateLine.create re-validates and fails loud.
     tier: row.tier as QuoteTier | null,
+    materialId: row.materialId ?? null,
   });
   if (!result.ok) throw new Error(`corrupt estimate_line ${row.id}: ${result.error.message}`);
   return result.value;

@@ -3,9 +3,12 @@ import { validation, conflict, ok, err, toPage } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import type { Material } from "../domain/material";
-import type { MaterialRepository } from "../domain/material-repository";
+import type { MaterialRepository, MarkupBandsRepository } from "../domain/material-repository";
+import { deriveSellPriceCents } from "../domain/markup-bands";
 
 export interface CreateMaterialCommand {
+  /** Explicit sell price = manual mode from birth. Absent → rule mode, derived from cost. */
+  readonly unitPriceCents?: number;
   readonly id?: string; // client-authored id; a new one is minted when absent
   readonly name: string;
   readonly categoryId?: string | null;
@@ -23,6 +26,7 @@ export interface CreateMaterialCommand {
 export class CreateMaterialUseCase {
   constructor(
     private readonly repo: MaterialRepository,
+    private readonly bands: MarkupBandsRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
   ) {}
@@ -52,6 +56,13 @@ export class CreateMaterialUseCase {
       name,
       description: cmd.description ?? null,
       unitCostCents: Math.max(0, Math.round(cmd.unitCostCents)),
+      // Sell side: an explicit price is the shop's number (manual); otherwise the org's
+      // banded markup rule derives it from cost — stored, never quote-time-computed.
+      unitPriceCents:
+        cmd.unitPriceCents !== undefined
+          ? Math.max(0, Math.round(cmd.unitPriceCents))
+          : deriveSellPriceCents(Math.max(0, Math.round(cmd.unitCostCents)), await this.bands.list()),
+      pricingMode: cmd.unitPriceCents !== undefined ? "manual" : "rule",
       unitOfMeasure: cmd.unitOfMeasure ?? "each",
       markupBps,
       taxable: cmd.taxable ?? false,

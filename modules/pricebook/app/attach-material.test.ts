@@ -63,6 +63,8 @@ const baseMaterialProps = (overrides: Partial<MaterialProps> = {}): MaterialProp
   name: "1/2in Copper Pipe",
   description: null,
   unitCostCents: 250,
+  unitPriceCents: 0,
+  pricingMode: "rule" as const,
   unitOfMeasure: "each",
   markupBps: null,
   taxable: false,

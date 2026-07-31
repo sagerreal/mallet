@@ -66,6 +66,9 @@ export interface EstimateLineProps {
   readonly position: number;
   // Good/Better/Best tag. Null on single-format estimates and on resolved (accepted) ones.
   readonly tier: QuoteTier | null;
+  /** Provenance pointer when the line came from a pricebook MATERIAL (sellable parts).
+   * Values above are snapshots — the id survives for costing, never for live repricing. */
+  readonly materialId: string | null;
 }
 
 // A single priced line on an estimate. Immutable value object; its extended amount is derived,

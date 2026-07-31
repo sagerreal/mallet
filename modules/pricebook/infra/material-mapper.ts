@@ -18,6 +18,8 @@ export const rowToMaterial = (row: MaterialRow): Material => {
     name: row.name,
     description: row.description,
     unitCostCents: row.unitCostCents,
+    unitPriceCents: row.unitPriceCents,
+    pricingMode: row.pricingMode === "manual" ? "manual" : "rule",
     unitOfMeasure: row.unitOfMeasure,
     markupBps: row.markupBps,
     taxable: row.taxable,

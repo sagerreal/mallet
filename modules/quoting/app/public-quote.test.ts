@@ -151,6 +151,7 @@ const makeTestLine = (): EstimateLine => {
     needsPhoto: false,
     position: 0,
     tier: null,
+    materialId: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -173,6 +174,7 @@ const makeLineWith = (
     needsPhoto: false,
     position,
     tier: null,
+    materialId: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -718,6 +720,7 @@ describe("validateTierChoice — tier gate for public accept", () => {
         needsPhoto: false,
         position: 0,
         tier,
+        materialId: null,
       });
       if (!r.ok) throw new Error(r.error.message);
       return r.value;

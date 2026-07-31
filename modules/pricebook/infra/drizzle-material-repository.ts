@@ -38,6 +38,8 @@ export class DrizzleMaterialRepository implements MaterialRepository {
     name: string;
     description: string | null;
     unitCostCents: number;
+    unitPriceCents: number;
+    pricingMode: "rule" | "manual";
     unitOfMeasure: string;
     markupBps: number | null;
     taxable: boolean;
@@ -55,6 +57,8 @@ export class DrizzleMaterialRepository implements MaterialRepository {
         name: input.name,
         description: input.description,
         unitCostCents: input.unitCostCents,
+        unitPriceCents: input.unitPriceCents,
+        pricingMode: input.pricingMode,
         unitOfMeasure: input.unitOfMeasure,
         markupBps: input.markupBps,
         taxable: input.taxable,
@@ -135,6 +139,8 @@ export class DrizzleMaterialRepository implements MaterialRepository {
         name: p.name,
         description: p.description,
         unitCostCents: p.unitCostCents,
+        unitPriceCents: p.unitPriceCents,
+        pricingMode: p.pricingMode,
         unitOfMeasure: p.unitOfMeasure,
         markupBps: p.markupBps,
         taxable: p.taxable,

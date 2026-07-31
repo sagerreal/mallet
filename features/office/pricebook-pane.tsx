@@ -24,6 +24,8 @@ import { MODAL } from "@/lib/store/modal-ids";
 import type { Service } from "@/lib/store/types";
 import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { ServiceRow } from "@/app/(office)/settings/service-row";
+import { MaterialsPanel } from "@/features/office/materials-panel";
+import { MarkupBandsEditor } from "@/features/office/markup-bands-editor";
 import { AddServiceRow } from "@/app/(office)/settings/add-service-row";
 import { EstimatorMemoryRow } from "@/app/(office)/settings/estimator-memory-card";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
@@ -61,6 +63,8 @@ export function PricebookPane() {
   const openModal = useOpenModal();
 
   const [query, setQuery] = useState("");
+  // Services | Materials — one catalog, two sellable item kinds.
+  const [pbSeg, setPbSeg] = useState<"services" | "materials">("services");
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
   const [openRail, setOpenRail] = useState<RailKey | null>(null);
@@ -112,6 +116,14 @@ export function PricebookPane() {
   // DEFAULTS ("0 rates", 35% markup) — a shop running 22% must not see 35% for a beat. Same
   // key as SettingsHydrator (deduped); folded into the same whole-pane loading gate.
   const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
+  const materialsAll = useAppStore((s) => s.materials);
+  const activeMaterials = materialsAll.filter((m) => m.active);
+  const bandsQ = api.v1.pricebook.markupBands.list.useQuery();
+  const bandsSummary = !bandsQ.data
+    ? "…"
+    : bandsQ.data.bands.length === 1
+      ? `${(bandsQ.data.bands[0]?.markupBps ?? 0) / 100}% flat`
+      : `${bandsQ.data.bands.length} bands`;
   const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
   const gate = { isFetched: svcQuery.isFetched, isError: svcQuery.isError, count: services.length };
 
@@ -177,17 +189,25 @@ export function PricebookPane() {
         <div>
           <div className="svccard">
             <div className="svccard-h">
-              <b>Services</b>
-              <span className="m">{services.length}</span>
+              {/* Services | Materials — one catalog, two item kinds (the ST/HCP model:
+                  a quote is built from any mix; materials are the sellable parts side). */}
+              <div className="segctl pbseg" role="group" aria-label="Pricebook section">
+                <button className={pbSeg === "services" ? "on" : ""} onClick={() => setPbSeg("services")}>
+                  Services <span className="m">{services.length}</span>
+                </button>
+                <button className={pbSeg === "materials" ? "on" : ""} onClick={() => setPbSeg("materials")}>
+                  Materials <span className="m">{activeMaterials.length}</span>
+                </button>
+              </div>
               <span className="sp" />
-              {canSeeCost && (
+              {canSeeCost && pbSeg === "services" && (
                 <button className="btn sm ghost" onClick={() => openModal(MODAL.IMPORT_SERVICES)}>
                   Import CSV
                 </button>
               )}
             </div>
 
-            {services.length > 0 && (
+            {pbSeg === "services" && services.length > 0 && (
               <div style={{ padding: "var(--space-3) var(--space-4) var(--space-1)" }}>
                 <input
                   enterKeyHint="search"
@@ -202,7 +222,7 @@ export function PricebookPane() {
               </div>
             )}
 
-            {services.length > 0 && (
+            {pbSeg === "services" && services.length > 0 && (
               <div style={{ padding: "0 var(--space-4)" }}>
                 {visible.map((s) => (
                   <ServiceRow
@@ -223,9 +243,14 @@ export function PricebookPane() {
 
             {/* Inline add — anchored at the card's foot, never a stray row on the page.
                 Autofocused when arriving via first-run's "Build your own". */}
-            <div style={{ padding: "0 var(--space-4) var(--space-3)" }}>
-              <AddServiceRow onAdd={addService} autoFocus={building && services.length === 0} />
-            </div>
+            {pbSeg === "services" && (
+              <div style={{ padding: "0 var(--space-4) var(--space-3)" }}>
+                <AddServiceRow onAdd={addService} autoFocus={building && services.length === 0} />
+              </div>
+            )}
+            {pbSeg === "materials" && (
+              <MaterialsPanel canSeeCost={canSeeCost} />
+            )}
           </div>
         </div>
 
@@ -290,16 +315,11 @@ export function PricebookPane() {
 
           <DisclosureRow
             label="Parts markup"
-            value={<span className="mono">{markup}%</span>}
+            value={<span className="mono">{bandsSummary}</span>}
             open={openRail === "markup"}
             onToggle={() => toggleRail("markup")}
           >
-            <Field label="Markup on new parts (%)" style={{ maxWidth: 160, margin: "0" }}>
-              <input type="number" inputMode="decimal" defaultValue={markup} onChange={(e) => setMarkup(Number(e.target.value))} />
-            </Field>
-            <p className="muted" style={{ marginTop: "var(--space-2)", fontSize: "var(--type-sm)" }}>
-              Applied to found-work / T&amp;M parts a tech adds on site — each pricebook line keeps its own price.
-            </p>
+            <MarkupBandsEditor />
           </DisclosureRow>
 
           <DisclosureRow

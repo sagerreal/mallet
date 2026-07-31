@@ -26,6 +26,9 @@ export interface ComposerLine {
   c?: number;
   opt?: boolean;
   photo?: boolean;
+  /** Provenance: set when the line came from a pricebook MATERIAL (sellable part/equipment).
+   * Values are snapshots — this id rides to the server for costing, never live repricing. */
+  materialId?: string;
 }
 
 export type QuoteFormat = "single" | "gbb";

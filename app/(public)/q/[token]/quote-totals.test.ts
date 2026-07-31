@@ -49,6 +49,7 @@ const makeLine = (spec: LineSpec, position: number): EstimateLine => {
     needsPhoto: false,
     position,
     tier: spec.tier ?? null,
+    materialId: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -273,6 +274,7 @@ describe("per-tier totals — parity with the domain's totalsForTier (odd cents)
         ...l,
         isOptional: false,
         tier: undefined,
+        materialId: null,
       })),
       PRICING,
     );

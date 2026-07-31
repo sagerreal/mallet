@@ -48,6 +48,7 @@ const makeLine = (
     needsPhoto,
     position,
     tier: null,
+    materialId: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;
@@ -179,6 +180,7 @@ const makeTierLine = (
     needsPhoto: false,
     position,
     tier,
+    materialId: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;

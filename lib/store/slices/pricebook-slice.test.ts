@@ -118,6 +118,8 @@ function baseMaterial(overrides: Partial<Material> = {}): Material {
     name: "PVC coupling 2in",
     description: null,
     unitCost: 3.5,
+    unitPrice: 0,
+    pricingMode: "rule" as const,
     unitOfMeasure: "each",
     markupBps: null,
     taxable: false,

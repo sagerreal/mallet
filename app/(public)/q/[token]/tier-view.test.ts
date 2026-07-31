@@ -45,6 +45,7 @@ const makeLine = (spec: LineSpec, position: number): EstimateLine => {
     needsPhoto: false,
     position,
     tier: spec.tier ?? null,
+    materialId: null,
   });
   if (!r.ok) throw new Error(r.error.message);
   return r.value;

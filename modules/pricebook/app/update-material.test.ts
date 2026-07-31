@@ -29,6 +29,8 @@ const baseProps = (overrides: Partial<MaterialProps> = {}): MaterialProps => ({
   name: "1/2in Copper Pipe",
   description: null,
   unitCostCents: 250,
+  unitPriceCents: 0,
+  pricingMode: "rule" as const,
   unitOfMeasure: "each",
   markupBps: null,
   taxable: false,
@@ -84,6 +86,8 @@ class FakeMaterialRepository implements MaterialRepository {
 
 // ── UpdateMaterialUseCase ─────────────────────────────────────────────────────
 
+const fakeBands = { list: async () => [], replaceAll: async () => {} };
+
 describe("UpdateMaterialUseCase", () => {
   let clock: FixedClock;
   let repo: FakeMaterialRepository;
@@ -92,7 +96,7 @@ describe("UpdateMaterialUseCase", () => {
   beforeEach(() => {
     clock = new FixedClock(new Date("2026-07-12T12:00:00Z"));
     repo = new FakeMaterialRepository();
-    useCase = new UpdateMaterialUseCase(repo, clock);
+    useCase = new UpdateMaterialUseCase(repo, fakeBands, clock);
   });
 
   // ── not_found ─────────────────────────────────────────────────────────────
@@ -246,5 +250,44 @@ describe("UpdateMaterialUseCase", () => {
     await useCase.exec(cmd, ORG);
 
     expect(original.props.name).toBe("1/2in Copper Pipe");
+  });
+});
+
+describe("sell-side interplay (locked spec)", () => {
+  it("a direct price edit flips the item to MANUAL and sticks", async () => {
+    const clock = new FixedClock(new Date("2026-07-30T12:00:00Z"));
+    const repo = new FakeMaterialRepository();
+    const bands = { list: async () => [{ minCostCents: 0, markupBps: 10_000 }], replaceAll: async () => {} };
+    const useCase = new UpdateMaterialUseCase(repo, bands, clock);
+    const m = makeMaterial({});
+    await repo.save(m);
+
+    const r = await useCase.exec({ materialId: m.props.id, unitPriceCents: 300_000 }, String(m.props.orgId));
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.unitPriceCents).toBe(300_000);
+    expect(r.value.props.pricingMode).toBe("manual");
+
+    // A later cost edit must NOT touch the manual price.
+    const r2 = await useCase.exec({ materialId: m.props.id, unitCostCents: 120_000 }, String(m.props.orgId));
+    expect(isOk(r2)).toBe(true);
+    if (!isOk(r2)) return;
+    expect(r2.value.props.unitPriceCents).toBe(300_000);
+    expect(r2.value.props.unitCostCents).toBe(120_000);
+  });
+
+  it("a cost edit on a RULE item re-derives the sell price from the bands", async () => {
+    const clock = new FixedClock(new Date("2026-07-30T12:00:00Z"));
+    const repo = new FakeMaterialRepository();
+    const bands = { list: async () => [{ minCostCents: 0, markupBps: 10_000 }], replaceAll: async () => {} };
+    const useCase = new UpdateMaterialUseCase(repo, bands, clock);
+    const m = makeMaterial({});
+    await repo.save(m);
+
+    const r = await useCase.exec({ materialId: m.props.id, unitCostCents: 100_000 }, String(m.props.orgId));
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.unitPriceCents).toBe(200_000); // cost + 100%
+    expect(r.value.props.pricingMode).toBe("rule");
   });
 });

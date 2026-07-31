@@ -14,6 +14,8 @@ const baseRow = (): MaterialRow => ({
   name: "1/2in Copper Pipe",
   description: null,
   unitCostCents: 350,
+  unitPriceCents: 0,
+  pricingMode: "rule" as const,
   unitOfMeasure: "each",
   markupBps: null,
   taxable: false,
