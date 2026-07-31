@@ -77,10 +77,9 @@ export default function PipelinePage() {
   // trace — so the header count and the cards under it could disagree. See useRailColumns.
   const rail = useRailColumns();
 
-  const lostCount = useMemo(
-    () => leads.filter((l) => !l.archived && l.stage === "Lost").length,
-    [leads]
-  );
+  // Lost customers are the OLDEST rows — exactly what the newest-first page drops.
+  const lostQ = api.v1.customers.count.useQuery({ stage: "lost" }, { refetchOnWindowFocus: true });
+  const lostCount = lostQ.data?.total ?? 0;
   const snap: Snap = useMemo(
     () => ({ leads, estimates, invoices, jobs, techs, brandName: brand.name }),
     [leads, estimates, invoices, jobs, techs, brand.name]

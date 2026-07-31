@@ -73,6 +73,10 @@ export default function TasksPage() {
   // Same query key + options as TasksHydrator → React Query dedupes it (no extra fetch). Lets us
   // tell a brand-new shop (never had a task) apart from a shop that has cleared its list, and never
   // flash the first-run copy mid-load.
+  // Whole-book count — "Done — N" was counting one loaded page (done tasks are the
+  // oldest rows, the first thing a page loses).
+  const doneCountQ = api.v1.tasks.count.useQuery({ done: true }, { refetchOnWindowFocus: false });
+  const doneTotal = doneCountQ.data?.total;
   const { isFetched, isError, refetch, isRefetching } = api.v1.tasks.list.useQuery(
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
@@ -189,7 +193,7 @@ export default function TasksPage() {
             {...pressable(() => setDoneOpen((v) => !v))}
           >
             <span className="caret">▸</span> Done{" "}
-            <span className="muted" style={{ fontWeight: 500 }}>— {done.length}</span>
+            <span className="muted" style={{ fontWeight: 500 }}>— {doneTotal ?? done.length}</span>
           </div>
           <div className="reveal-body">
             <div className="tasklist">

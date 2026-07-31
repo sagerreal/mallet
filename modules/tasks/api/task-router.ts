@@ -15,6 +15,10 @@ const paginatedTaskDTO = z.object({
   nextCursor: z.string().nullable(),
 });
 
+const countInput = z.object({
+  done: z.boolean().optional(),
+});
+
 const listInput = z.object({
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
@@ -64,6 +68,16 @@ export const createTaskRouter = () =>
           },
         });
         return { items: page.items.map(toTaskDTO), nextCursor: page.nextCursor };
+      }),
+
+    // The whole book's answer — "Done — N" was counting one loaded page.
+    count: ownerOrOffice
+      .input(countInput)
+      .output(z.object({ total: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleTaskRepository(ctx.tx, ctx.principal.orgId);
+        const total = await repo.count({ done: input.done });
+        return { total };
       }),
 
     create: ownerOrOffice

@@ -20,7 +20,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(storeState),
   useOpenModal: () => openModal,
 }));
-vi.mock("@/lib/trpc/client", () => ({ api: { v1: { jobs: { list: { useQuery: () => q } } } } }));
+vi.mock("@/lib/trpc/client", () => ({ api: { v1: { jobs: { list: { useQuery: () => q }, viewCounts: { useQuery: () => ({ data: undefined, isFetched: true }) } } } } }));
 
 import { SchedulePanel } from "./schedule-panel";
 

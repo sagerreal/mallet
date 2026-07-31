@@ -85,6 +85,9 @@ export function SchedulePanel() {
     { view: "needsSlot", today: localToday(), limit: 50 },
     { refetchOnWindowFocus: true },
   );
+  // The tray caps at 50 cards; the COUNT must still be the book's ("50 of 63"), never
+  // the cap wearing the label of a business fact.
+  const needsSlotCountQ = api.v1.jobs.viewCounts.useQuery({ today: localToday() }, { refetchOnWindowFocus: true });
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
 
@@ -547,7 +550,13 @@ export function SchedulePanel() {
       {trayCards.length > 0 ? (
         <div className="rail" style={{ marginBottom: "var(--space-4)" }}>
           <b style={{ fontSize: "var(--type-base)" }}>
-            To schedule <span className="muted" style={{ fontWeight: 600 }}>· {trayCards.length}</span>
+            To schedule{" "}
+            <span className="muted" style={{ fontWeight: 600 }}>
+              · {(() => {
+                const serverTotal = (needsSlotCountQ.data?.counts?.needsSlot ?? 0) + (trayCards.length - trayJobs.length);
+                return serverTotal > trayCards.length ? `${trayCards.length} of ${serverTotal}` : trayCards.length;
+              })()}
+            </span>
           </b>
           <div className="tray-grid" style={{ marginTop: "var(--space-3)", display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: "var(--space-2)" }}>
             {trayCards.map((card) => {

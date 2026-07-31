@@ -122,6 +122,7 @@ class FakeLeadRepository implements LeadRepository {
 }
 
 class FakeTaskRepository implements TaskRepository {
+  async count(): Promise<number> { return 0; }
   readonly created: TaskProps[] = [];
 
   async create(input: {
@@ -311,6 +312,7 @@ describe("takeMessageTool", () => {
       async findById() {
         return null;
       },
+      async count() { return 0; },
       async list() {
         return { items: [], nextCursor: null };
       },
