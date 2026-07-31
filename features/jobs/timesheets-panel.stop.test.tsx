@@ -22,13 +22,23 @@ interface Store {
   deleteTimeEntry: () => void;
   approveTechWeek: () => Promise<ApproveWeekOutcome>;
   reopenEntry: () => void;
+  setTimeEntries: (entries: unknown[]) => void;
 }
 
 let storeState: Store;
 
 vi.mock("@/lib/store/app-store", () => ({ useAppStore: (sel: (s: Store) => unknown) => sel(storeState) }));
 vi.mock("@/lib/trpc/client", () => ({
-  api: { v1: { timesheets: { list: { useQuery: () => ({ isFetched: true, isError: false }) } } } },
+  api: {
+    v1: {
+      timesheets: {
+        list: { useQuery: () => ({ isFetched: true, isError: false, data: { items: [] } }) },
+        // A non-zero all-time count: the grid renders, rather than the first-run screen. The rows
+        // under test come from the store, which is what the panel reads and what its edits write.
+        count: { useQuery: () => ({ isFetched: true, isError: false, data: { total: 1 } }) },
+      },
+    },
+  },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
@@ -47,6 +57,7 @@ const store = (timeEntries: TimeEntry[], jobs: Job[] = []): Store => ({
   deleteTimeEntry: vi.fn(),
   approveTechWeek: vi.fn().mockResolvedValue({ status: "approved" } as ApproveWeekOutcome),
   reopenEntry: vi.fn(),
+  setTimeEntries: vi.fn(),
 });
 
 describe("stopping a running entry from the office grid", () => {

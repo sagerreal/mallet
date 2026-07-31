@@ -4,7 +4,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { leadSortSpec, leadSortValue, type LeadSort } from "./lead-sorts";
-import { leadViewCondition, type LeadView } from "./lead-views";
+import { leadViewCondition, leadScopeCondition, type LeadView } from "./lead-views";
 import {
   buildPage,
   decodeCursor,
@@ -123,6 +123,7 @@ export class DrizzleLeadRepository implements LeadRepository {
     if (filter?.unreadOnly) conds.push(eq(leads.unread, true));
     if (filter?.source) conds.push(eq(leads.source, filter.source));
     if (filter?.view) conds.push(leadViewCondition(filter.view, this.tx));
+    if (filter?.scope) conds.push(leadScopeCondition(filter.scope, this.tx));
     if (filter?.search) {
       // Escape LIKE wildcards first: unescaped, a customer typing "%" matches the entire book and
       // the search silently stops filtering.

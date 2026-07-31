@@ -1,5 +1,5 @@
 import type { LeadSort } from "../infra/lead-sorts";
-import type { LeadView } from "../infra/lead-views";
+import type { LeadView, LeadScope } from "../infra/lead-views";
 import type { LeadId, CompanyId, Phone, CursorPage, Paginated } from "@mallet/shared/types";
 import type { Lead, LeadStage } from "./lead";
 
@@ -29,6 +29,11 @@ export interface LeadFilter {
   readonly source?: string;
   /** One Pipeline board column. See infra/lead-views.ts. */
   readonly view?: LeadView;
+  /**
+   * A saved worklist — owes money, no job in 12 months. A separate axis from `view`: those are the
+   * board's mutually-exclusive columns, these are questions, and a customer can match both.
+   */
+  readonly scope?: LeadScope;
   readonly stage?: LeadStage;
   readonly unreadOnly?: boolean;
 }

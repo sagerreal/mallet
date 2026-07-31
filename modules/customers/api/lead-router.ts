@@ -6,7 +6,7 @@ import { Phone, isOk, toPage, asLeadId, asCompanyId, money } from "@mallet/share
 import { logger } from "@mallet/shared/observability";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
 import { LEAD_SORTS } from "../infra/lead-sorts";
-import { LEAD_VIEWS } from "../infra/lead-views";
+import { LEAD_VIEWS, LEAD_SCOPES } from "../infra/lead-views";
 import { DrizzleEstimateRepository } from "@mallet/quoting";
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
@@ -80,6 +80,8 @@ const listInput = z.object({
   source: z.string().max(120).optional(),
   /** One Pipeline board column (New leads / Quoting / Out / Won). */
   view: z.enum(LEAD_VIEWS).optional(),
+  /** A saved worklist — owes money, no job in 12 months. Combinable with the filters above. */
+  scope: z.enum(LEAD_SCOPES).optional(),
 });
 
 const countInput = z.object({
@@ -87,6 +89,9 @@ const countInput = z.object({
   unreadOnly: z.boolean().optional(),
   search: z.string().trim().min(1).max(200).optional(),
   source: z.string().max(120).optional(),
+  // The count must take the same narrowing as the list, or the header says "50 of 606" while the
+  // list is showing the 12 customers who owe money.
+  scope: z.enum(LEAD_SCOPES).optional(),
 });
 
 const paginatedLeadDTO = z.object({
@@ -359,7 +364,7 @@ export const createLeadRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view },
+          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope },
         });
         return { items: page.items.map(toLeadDTO), nextCursor: page.nextCursor };
       }),
@@ -398,6 +403,7 @@ export const createLeadRouter = () =>
             unreadOnly: input.unreadOnly,
             search: input.search,
             source: input.source,
+            scope: input.scope,
           }),
         };
       }),

@@ -8,6 +8,7 @@ import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleTimeEntryRepository } from "../infra/drizzle-time-entry-repository";
 import { CreateTimeEntryUseCase } from "../app/create-time-entry";
 import { ListTimeEntriesUseCase } from "../app/list-time-entries";
+import { CountTimeEntriesUseCase } from "../app/count-time-entries";
 import { UpdateTimeEntryUseCase } from "../app/update-time-entry";
 import { RemoveTimeEntryUseCase } from "../app/remove-time-entry";
 import { ApproveWeekUseCase } from "../app/approve-week";
@@ -125,6 +126,33 @@ export const createTimesheetRouter = () =>
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         });
         return { items: result.items.map(toTimeEntryDTO), nextCursor: result.nextCursor };
+      }),
+
+    /**
+     * How many entries match — the whole set, not a page of it.
+     *
+     * The office panel shows ONE WEEK. Without this it could only ask "did the week I fetched come
+     * back empty", which is also true of a shop that simply did not work that week, so navigating
+     * to a quiet week showed the never-set-this-up screen to a shop with months of history.
+     *
+     * Same tech override as `list`: a technician counts their own entries and nobody else's.
+     */
+    count: anyRole
+      .input(listInput.pick({ techUserId: true, fromDate: true, toDate: true }))
+      .output(z.object({ total: z.number().int() }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleTimeEntryRepository(ctx.tx, ctx.principal.orgId);
+        const techUserId =
+          ctx.principal.role === "tech"
+            ? asUserId(ctx.principal.userId)
+            : input.techUserId
+              ? asUserId(input.techUserId)
+              : undefined;
+
+        const total = await new CountTimeEntriesUseCase(repo).exec({
+          filter: { techUserId, fromDate: input.fromDate, toDate: input.toDate },
+        });
+        return { total };
       }),
 
     /**

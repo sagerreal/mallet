@@ -117,6 +117,35 @@ suite("jobs scoped views", () => {
     expect(seen.size).toBe(total!.n);
   });
 
+  // The dispatch board's window. Not a named view — those are relative to today and the board
+  // navigates anywhere — so it is its own filter, and the property that matters is that a job with
+  // several visits in range comes back ONCE. An EXISTS gives that; a join would not.
+  it("returns jobs with a visit in the window, each exactly once", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+
+    // A job with two visits inside the same week — the row-multiplication trap.
+    const twice = await addJob("V-TWICE", "scheduled", "2026-08-18");
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, duration_minutes, status)
+      values (${orgId}, ${twice}, '2026-08-19', 120, 'pending')`;
+
+    const page = await caller.v1.jobs.list({ visitFrom: "2026-08-17", visitTo: "2026-08-23", limit: 100 });
+    const nums = page.items.map((j) => j.num);
+    expect(nums.filter((n) => n === "V-TWICE")).toHaveLength(1);
+    expect(nums).toContain("V-WEEK1"); // 2026-08-18
+    expect(nums).toContain("V-WEEK2"); // 2026-08-22
+    expect(nums).not.toContain("V-LATER1"); // 2026-09-10, outside
+    expect(nums).not.toContain("V-OVERDUE"); // 2026-08-01, outside
+  });
+
+  it("includes both boundary days — the range is inclusive at each end", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const oneDay = await caller.v1.jobs.list({ visitFrom: "2026-08-22", visitTo: "2026-08-22", limit: 100 });
+    expect(oneDay.items.map((j) => j.num)).toContain("V-WEEK2");
+    const before = await caller.v1.jobs.list({ visitFrom: "2026-08-23", visitTo: "2026-08-25", limit: 100 });
+    expect(before.items.map((j) => j.num)).not.toContain("V-WEEK2");
+  });
+
   it("a job scheduled TODAY is not also counted in This week", async () => {
     // week has to exclude today explicitly, or this afternoon's job lands in both.
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));

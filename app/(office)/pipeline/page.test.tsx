@@ -36,7 +36,12 @@ vi.mock("@/lib/trpc/client", () => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/features/home/use-animated-number", () => ({ useAnimatedNumber: (n: number) => n }));
 vi.mock("@/features/quotes/derive", () => ({ deriveRail: () => ({ outSum: 0, out: [], won: [], delta: null }) }));
-vi.mock("@/features/pipeline/working", () => ({ deriveIntake: () => [], deriveGetting: () => [] }));
+// intakeRowOf shapes one card; the SET is chosen by the server query above.
+vi.mock("@/features/pipeline/working", () => ({
+  intakeRowOf: (lead: unknown) => ({ lead, stalled: false, stamp: "today" }),
+  byStalledThenAge: () => 0,
+  deriveGetting: () => [],
+}));
 vi.mock("@/features/pipeline/board-cards", () => ({
   IntakeCard: () => <div />,
   GettingCard: () => <div />,

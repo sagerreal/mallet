@@ -4,6 +4,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { invoiceSortSpec, invoiceSortValue, type InvoiceSort } from "./invoice-sorts";
+import { invoiceViewCondition } from "./invoice-views";
 import {
   buildPage,
   decodeCursor,
@@ -156,6 +157,9 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
   private listConds(filter?: InvoiceFilter): SQL[] {
     const conds: SQL[] = [isNull(invoices.deletedAt)];
     if (filter?.status) conds.push(eq(invoices.status, filter.status));
+    // The LEDGER's status, which is not the same thing as the status column: "overdue" and "paid"
+    // are facts about the balance and the due date. See invoice-views.ts.
+    if (filter?.view) conds.push(invoiceViewCondition(filter.view));
     if (filter?.unpaidOnly) conds.push(inArray(invoices.status, [...OPEN_STATUSES]));
     if (filter?.search) {
       // Escape LIKE wildcards: unescaped, "%" matches every invoice and the search silently

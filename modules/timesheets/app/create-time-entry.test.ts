@@ -86,6 +86,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async findById(): Promise<TimeEntry | null> {
     return null;
   }
+  async count(): Promise<number> {
+    return 0;
+  }
+
   async list(): Promise<{ items: TimeEntry[]; nextCursor: null }> {
     return { items: [], nextCursor: null };
   }

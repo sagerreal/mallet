@@ -15,8 +15,8 @@
 import { useState, useRef, useEffect, type DragEvent as ReactDragEvent } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { useScheduleWindow } from "./use-schedule-window";
 import { api } from "@/lib/trpc/client";
-import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -104,6 +104,14 @@ export function SchedulePanel() {
   function weekDates(): string[] {
     return Array.from({ length: 7 }, (_, i) => addDaysLocal(weekStart, i));
   }
+
+  // Load the days ON SCREEN. The board read the store's jobs collection, which holds the newest
+  // page — so navigating past that window drew an empty grid indistinguishable from a free day,
+  // which is how a booked slot gets double-booked. Merged, not replaced: other surfaces share
+  // this collection. See useScheduleWindow.
+  const windowFrom = schedView === "day" ? schedDay : weekStart;
+  const windowTo = schedView === "day" ? schedDay : addDaysLocal(weekStart, 6);
+  const shown = useScheduleWindow({ from: windowFrom, to: windowTo });
 
   function firstUnplaced(j: Job): Visit | undefined {
     return (j.visits ?? []).find((v) => !isPlaced(v));
@@ -472,16 +480,15 @@ export function SchedulePanel() {
   // visits carried on leads. Dedupes the JobsHydrator query (same key → no extra fetch). This is a
   // FULL early return that renders only the header + empty state — the board JSX below is untouched.
   const scheduleCount = jobs.length + leads.reduce((n, l) => n + (l.evisits?.length ?? 0), 0);
-  const jobsQuery = api.v1.jobs.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  const firstRun = shouldShowFirstRun({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
-  const loadFailed = shouldShowLoadFailed({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
-  const loading = isFirstLoad({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: scheduleCount });
+  // Gated on the window's own fetch: it is the read that fills this board, so it is the one that
+  // says whether "nothing here" means loading, failed, or genuinely empty.
+  const gate = { isFetched: shown.isFetched, isError: shown.isError, count: scheduleCount };
+  const firstRun = shouldShowFirstRun(gate);
+  const loadFailed = shouldShowLoadFailed(gate);
+  const loading = isFirstLoad(gate);
 
   if (loadFailed) {
-    return <LoadFailed noun="schedule" onRetry={() => void jobsQuery.refetch()} retrying={jobsQuery.isRefetching} />;
+    return <LoadFailed noun="schedule" onRetry={shown.refetch} retrying={shown.isRefetching} />;
   }
   if (loading) {
     return <ListLoading />;

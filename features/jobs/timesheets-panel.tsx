@@ -12,8 +12,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
-import { api } from "@/lib/trpc/client";
-import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { useTimesheetsWeek } from "@/features/timesheets/use-timesheets-week";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import type { TimeEntry } from "@/lib/store/types";
@@ -79,6 +78,10 @@ export function TimesheetsPanel() {
   // Week nav — local weekStart state, normalized to the Monday of today's week.
   const today = todayISO();
   const [weekStart, setWeekStart] = useState<string>(() => tsWeekStart(today));
+  // Loads the week ON SCREEN into the store, which the grid below reads. Previously a hydrator
+  // fetched a flat, unscoped page of the newest 500 entries and this panel filtered it down — so
+  // any week older than that window rendered empty, indistinguishable from "nobody logged hours".
+  const week = useTimesheetsWeek({ weekStart });
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [pick, setPick] = useState<TsPick>(null);
@@ -185,19 +188,16 @@ export function TimesheetsPanel() {
 
   const selTech = selId != null ? techById(techs, selId) : undefined;
 
-  // No-flash first-run gate on the TOTAL time-entry count (not the week-scoped `anyEntries`).
-  // Dedupes the TimesheetsHydrator query (same key → no extra fetch). Full early return — the grid
-  // below is untouched.
-  const tsQuery = api.v1.timesheets.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  const firstRun = shouldShowFirstRun({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
-  const loadFailed = shouldShowLoadFailed({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
-  const loading = isFirstLoad({ isFetched: tsQuery.isFetched, isError: tsQuery.isError, count: timeEntries.length });
+  // No-flash first-run gate on the ALL-TIME entry count, counted in the database — NOT on the rows
+  // loaded for the week. A shop that took last week off has hours; offering it the set-up screen
+  // would read as data loss. Full early return — the grid below is untouched.
+  const gate = { isFetched: week.isFetched, isError: week.isError, count: week.everCount ?? 0 };
+  const firstRun = shouldShowFirstRun(gate);
+  const loadFailed = shouldShowLoadFailed(gate);
+  const loading = isFirstLoad(gate);
 
   if (loadFailed) {
-    return <LoadFailed noun="hours" onRetry={() => void tsQuery.refetch()} retrying={tsQuery.isRefetching} />;
+    return <LoadFailed noun="hours" onRetry={week.refetch} retrying={week.isRefetching} />;
   }
   if (loading) {
     return <ListLoading />;

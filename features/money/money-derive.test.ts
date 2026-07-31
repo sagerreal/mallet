@@ -7,11 +7,9 @@ import {
   invDue,
   invOver,
   invStatusKey,
-  INVOICE_OVERDUE_DAYS,
   jobsReadyToInvoice,
   deriveMoneyRows,
   deriveArchivedMoneyRows,
-  filterMoneyRows,
 } from "./money-derive";
 
 const inv = (o: Partial<Invoice> = {}) => mkInvoice({ status: "sent", ...o });
@@ -24,16 +22,30 @@ describe("invoice money math", () => {
     expect(invDue(inv({ total: 100, depPaid: 0, payments: [{ amt: 150, when: "", method: "cash" }] }))).toBe(0);
   });
 
-  it("flags overdue only past the threshold, never for drafts or paid", () => {
-    expect(invOver(inv({ total: 100, age: INVOICE_OVERDUE_DAYS + 1 }))).toBe(true);
-    expect(invOver(inv({ total: 100, age: INVOICE_OVERDUE_DAYS }))).toBe(false);
-    expect(invOver(inv({ total: 100, age: 20, status: "draft" }))).toBe(false);
-    expect(invOver(inv({ total: 100, age: 20, payments: [{ amt: 100, when: "", method: "card" }] }))).toBe(false);
+  // Overdue is PAST THE AGREED DUE DATE, not a fixed number of days since the invoice was raised.
+  // The old rule ignored the customer's terms and — because dtoInvoiceToStore hard-coded age: 0 —
+  // could never be true for an invoice loaded from the database.
+  it("flags overdue past the due date, never for drafts, settled invoices, or no due date", () => {
+    const NOW = new Date("2026-07-30T12:00:00Z");
+    expect(invOver(inv({ total: 100, dueAt: "2026-07-29" }), NOW)).toBe(true);
+    expect(invOver(inv({ total: 100, dueAt: "2026-08-15" }), NOW)).toBe(false);
+    expect(invOver(inv({ total: 100, dueAt: "2026-07-01", status: "draft" }), NOW)).toBe(false);
+    expect(
+      invOver(inv({ total: 100, dueAt: "2026-07-01", payments: [{ amt: 100, when: "", method: "card" }] }), NOW),
+    ).toBe(false);
+    // Nothing was promised, so nothing was missed.
+    expect(invOver(inv({ total: 100, dueAt: null }), NOW)).toBe(false);
+  });
+
+  // A net-30 invoice raised three weeks ago is NOT late. The old age-threshold rule called it late
+  // on day eight, contradicting the terms the shop actually gave the customer.
+  it("respects long terms instead of flagging every invoice after a week", () => {
+    expect(invOver(inv({ total: 100, dueAt: "2026-08-20" }), new Date("2026-07-30T12:00:00Z"))).toBe(false);
   });
 
   it("derives the runtime status key", () => {
     expect(invStatusKey(inv({ status: "draft" }))).toBe("draft");
-    expect(invStatusKey(inv({ total: 100, age: 9 }))).toBe("over");
+    expect(invStatusKey(inv({ total: 100, dueAt: "2020-01-01" }))).toBe("over");
     expect(invStatusKey(inv({ total: 100, payments: [{ amt: 100, when: "", method: "card" }] }))).toBe("paid");
     expect(invStatusKey(inv({ total: 100, payments: [{ amt: 40, when: "", method: "card" }] }))).toBe("partial");
     expect(invStatusKey(inv({ total: 100 }))).toBe("sent");
@@ -67,7 +79,7 @@ describe("deriveMoneyRows — one ledger, needs-you first", () => {
   it("ranks ready → draft → overdue → part-paid → unpaid → paid", () => {
     const invoices = [
       inv({ id: "inv-1", leadId: "2", total: 100, payments: [{ amt: 100, when: "", method: "card" }] }), // paid
-      inv({ id: "inv-2", leadId: "2", total: 640, age: 9 }), // over
+      inv({ id: "inv-2", leadId: "2", total: 640, dueAt: "2020-01-01" }), // over — past its due date
       inv({ id: "inv-3", leadId: "2", total: 300, status: "draft" }), // draft
       inv({ id: "inv-4", leadId: "2", total: 420, payments: [{ amt: 100, when: "", method: "card" }], age: 1 }), // partial
       inv({ id: "inv-5", leadId: "2", total: 200, age: 1 }), // sent
@@ -99,27 +111,3 @@ describe("deriveMoneyRows — one ledger, needs-you first", () => {
   });
 });
 
-describe("filterMoneyRows — status filter + search narrow the one set", () => {
-  const leads = [mkLead({ id: "1", name: "Tom Webb" }), mkLead({ id: "2", name: "Sofia Hernandez" })];
-  const rows = deriveMoneyRows(
-    [
-      inv({ id: "inv-1", leadId: "1", num: "INV-2042", title: "Sewer camera", total: 640, age: 9 }), // over
-      inv({ id: "inv-2", leadId: "2", num: "INV-2043", title: "Valves", total: 420, age: 1 }), // sent
-      inv({ id: "inv-3", leadId: "2", num: "INV-2041", title: "Tune-up", total: 189, payments: [{ amt: 189, when: "", method: "card" }] }), // paid
-    ],
-    [],
-    leads
-  );
-
-  it("status filter narrows to one status", () => {
-    expect(filterMoneyRows(rows, { statusFilter: "paid", q: "" }).map((r) => r.num)).toEqual(["INV-2041"]);
-    expect(filterMoneyRows(rows, { statusFilter: "over", q: "" }).map((r) => r.num)).toEqual(["INV-2042"]);
-  });
-
-  it("search matches #, customer, and job, stacking on the status filter", () => {
-    expect(filterMoneyRows(rows, { statusFilter: "", q: "sofia" })).toHaveLength(2);
-    expect(filterMoneyRows(rows, { statusFilter: "sent", q: "sofia" }).map((r) => r.num)).toEqual(["INV-2043"]);
-    expect(filterMoneyRows(rows, { statusFilter: "", q: "2042" })).toHaveLength(1);
-    expect(filterMoneyRows(rows, { statusFilter: "", q: "tune" }).map((r) => r.num)).toEqual(["INV-2041"]);
-  });
-});

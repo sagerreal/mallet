@@ -12,6 +12,7 @@ import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { INVOICE_SORTS } from "../infra/invoice-sorts";
+import { INVOICE_VIEWS } from "../infra/invoice-views";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
@@ -26,6 +27,7 @@ import { UpdateInvoiceMetadataUseCase } from "../app/update-invoice-metadata";
 import { PatchInvoiceLinesUseCase } from "../app/patch-invoice-lines";
 
 const statusEnum = z.enum(INVOICE_STATUSES as unknown as [InvoiceStatus, ...InvoiceStatus[]]);
+const viewEnum = z.enum(INVOICE_VIEWS);
 const methodEnum = z.enum(PAYMENT_METHODS as unknown as [PaymentMethod, ...PaymentMethod[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
 
@@ -154,6 +156,8 @@ const listInput = z.object({
   unpaidOnly: z.boolean().optional(),
   /** Free-text over invoice number, title and customer name. */
   search: z.string().trim().min(1).max(200).optional(),
+  /** The ledger band shown on the Money screen — see invoice-views.ts. Not the status column. */
+  view: viewEnum.optional(),
 });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
@@ -434,7 +438,7 @@ export const createInvoiceRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { status: input.status, unpaidOnly: input.unpaidOnly, search: input.search },
+          filter: { status: input.status, unpaidOnly: input.unpaidOnly, search: input.search, view: input.view },
         });
         // One batched lead read for the page — never a per-row query. Same pattern the jobs list
         // uses, and for the same reason: the store cannot be relied on to hold these leads.
@@ -455,6 +459,7 @@ export const createInvoiceRouter = () =>
           status: statusEnum.optional(),
           unpaidOnly: z.boolean().optional(),
           search: z.string().trim().min(1).max(200).optional(),
+          view: viewEnum.optional(),
         }),
       )
       .output(z.object({ total: z.number().int() }))
@@ -465,6 +470,7 @@ export const createInvoiceRouter = () =>
             status: input.status,
             unpaidOnly: input.unpaidOnly,
             search: input.search,
+            view: input.view,
           }),
         };
       }),

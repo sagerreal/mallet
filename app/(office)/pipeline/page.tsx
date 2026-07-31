@@ -14,6 +14,7 @@ import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { useQuotesOut } from "@/features/quotes/use-quotes-out";
+import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
@@ -21,7 +22,7 @@ import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/fir
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
 import { deriveRail } from "@/features/quotes/derive";
-import { deriveIntake, deriveGetting } from "@/features/pipeline/working";
+import { intakeRowOf, byStalledThenAge, deriveGetting } from "@/features/pipeline/working";
 import { IntakeCard, GettingCard, OutCard, WonCard } from "@/features/pipeline/board-cards";
 import type { Snap } from "@/features/counter/types";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -73,7 +74,6 @@ export default function PipelinePage() {
   const router = useRouter();
 
   const rail = useMemo(() => deriveRail(estimates, leads, jobs), [estimates, leads, jobs]);
-  const intake = useMemo(() => deriveIntake(leads, estimates), [leads, estimates]);
   const getting = useMemo(() => deriveGetting(leads, estimates), [leads, estimates]);
   const lostCount = useMemo(
     () => leads.filter((l) => !l.archived && l.stage === "Lost").length,
@@ -92,6 +92,24 @@ export default function PipelinePage() {
   // collections, so the first column read "New leads 500" on a 606-customer book — the hydrator's
   // page size wearing the label of a business fact. See modules/customers/infra/lead-views.ts.
   const colCounts = api.v1.customers.viewCounts.useQuery(undefined, { refetchOnWindowFocus: true });
+
+  // The New-leads CARDS, fetched for that column rather than filtered out of the loaded book. The
+  // column is a worklist — customers nobody has papered — so it is fetched whole up to a cap, and
+  // the header says "N of M" when the cap bites.
+  const intakeRows = api.v1.customers.list.useQuery(
+    { view: "intake", limit: 100, sort: "created" },
+    { refetchOnWindowFocus: true },
+  );
+  const intakeLeads = useMemo(
+    () => (intakeRows.data?.items ?? []).map(toStoreLead),
+    [intakeRows.data],
+  );
+
+  // Shape only — the server already decided membership. Re-running the old client-side filter here
+  // would re-derive "has this lead been papered" from the LOADED estimates, and a lead whose quote
+  // sits outside that window would be dropped from a column whose header counted it. That
+  // disagreement between the count and the cards is the whole reason this moved server-side.
+  const intake = useMemo(() => intakeLeads.map(intakeRowOf).sort(byStalledThenAge), [intakeLeads]);
   const shownSum = useAnimatedNumber(out.outSum);
 
   // Same query key + options as LeadsHydrator → React Query dedupes it (no extra fetch). Used only

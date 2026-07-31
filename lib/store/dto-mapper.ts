@@ -17,6 +17,7 @@
  */
 
 import type { RouterOutputs } from "@/lib/trpc/client";
+import { daysSince } from "@/lib/clock";
 import type { Addon, Estimate, Invoice, Job, JobLine, TimeEntry, Visit } from "./types";
 import { JOB_ORIGIN } from "./hydrator-config";
 
@@ -443,7 +444,11 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
       r: l.rate.cents / 100,                                  // cents → dollars
       c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
     })),
-    age: 0,
+    // Days since the invoice was raised. Was hard-coded to 0, which made the ledger's age column
+    // read "0d" for every row and — while overdue was defined as an age threshold — made the
+    // Overdue pill unreachable. Overdue now keys off dueAt below; this is display only.
+    age: daysSince(dto.createdAt),
+    dueAt: dto.dueAt,
     archived: dto.status === "void",
     origin: "db",
   };

@@ -38,6 +38,9 @@ export interface TimeEntryRepository {
    */
   findOpenForTech(techUserId: UserId): Promise<TimeEntry | null>;
 
+  /** How many entries match the filter — the whole set, so a page can say what it is a page of. */
+  count(filter: TimeEntryFilter): Promise<number>;
+
   list(filter: TimeEntryFilter, page: CursorPage): Promise<Paginated<TimeEntry>>;
 
   save(entry: TimeEntry): Promise<void>;

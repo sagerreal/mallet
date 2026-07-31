@@ -76,6 +76,14 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
     this.listResult = result;
   }
 
+  countCalls: TimeEntryFilter[] = [];
+  countResult = 0;
+
+  async count(filter: TimeEntryFilter): Promise<number> {
+    this.countCalls.push(filter);
+    return this.countResult;
+  }
+
   async list(filter: TimeEntryFilter, page: CursorPage): Promise<Paginated<TimeEntry>> {
     this.listCalls.push({ filter, page });
     return this.listResult;

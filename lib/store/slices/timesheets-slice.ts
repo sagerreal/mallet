@@ -1,7 +1,8 @@
 /**
  * lib/store/slices/timesheets-slice.ts
  * Timesheet entries (payroll punches) + mutations. Immutable updates only.
- * Seeded from the backend via TimesheetsHydrator (no sample data).
+ * Seeded from the backend by useTimesheetsWeek, which loads the week the office panel is
+ * showing (no sample data). Optimistic writes below reconcile against that same slice.
  * Approved entries are locked: update/delete are no-ops once approved.
  * Mirrors the prototype's tsAddEntry / tsSetField / tsDelEntry / tsApproveTech actions.
  *

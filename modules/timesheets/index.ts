@@ -4,6 +4,7 @@ export type { TimeEntry, TimeEntryProps, TimeEntryKind, TimeEntrySrc, TimeEntryS
 export type { TimeEntryRepository, TimeEntryFilter } from "./domain/time-entry-repository";
 export { CreateTimeEntryUseCase } from "./app/create-time-entry";
 export { ListTimeEntriesUseCase } from "./app/list-time-entries";
+export { CountTimeEntriesUseCase } from "./app/count-time-entries";
 export { UpdateTimeEntryUseCase } from "./app/update-time-entry";
 export { RemoveTimeEntryUseCase } from "./app/remove-time-entry";
 export { ApproveWeekUseCase } from "./app/approve-week";

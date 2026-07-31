@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, isNull, lte, ne, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, gt, gte, isNull, lte, ne, notInArray, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, invoices } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 
@@ -65,6 +65,17 @@ const visitWhere = (tx: TenantTx, extra: SQL): SQL =>
   );
 
 const PLACED = sql`${jobVisits.scheduledDate} IS NOT NULL`;
+
+/**
+ * Jobs with a live visit landing in [from, to], inclusive — the dispatch board's window.
+ *
+ * Not one of the named views: those are relative to today, and the board navigates to any day or
+ * week. It used to filter the loaded jobs collection, which is capped at the hydrator's page size,
+ * so any date past that window drew an empty board that looked exactly like a day with nothing on
+ * it. Exported for the repository's filter.
+ */
+export const visitsBetween = (tx: TenantTx, from: string, to: string): SQL =>
+  visitWhere(tx, and(gte(jobVisits.scheduledDate, from), lte(jobVisits.scheduledDate, to)) as SQL);
 
 export interface ViewParams {
   /** The client's LOCAL date, YYYY-MM-DD. See the note above on why this is not server-derived. */

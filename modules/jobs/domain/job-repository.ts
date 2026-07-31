@@ -63,6 +63,15 @@ export interface JobFilter {
   readonly view?: JobView;
   /** The client's local date, YYYY-MM-DD. Required alongside a date-relative view. */
   readonly today?: string;
+  /**
+   * Jobs with a live visit landing between these dates, inclusive — what the dispatch board shows.
+   *
+   * A named view cannot answer this: the views are relative to today, and the board navigates to
+   * an arbitrary day or week. It read the loaded jobs collection instead, which is capped, so any
+   * day past that window drew an EMPTY board — indistinguishable from a day with nothing booked.
+   */
+  readonly visitFrom?: string;
+  readonly visitTo?: string;
   /** Job-level assignee only (the office list's filter). */
   readonly assigneeUserId?: UserId;
   /**

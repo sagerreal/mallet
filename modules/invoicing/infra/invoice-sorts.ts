@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { invoices } from "@mallet/shared/db/schema";
+import { INVOICE_BANDS } from "./invoice-views";
 import type { SortSpec } from "@mallet/shared/db/sort-page";
 
 /**
@@ -28,15 +29,20 @@ export type InvoiceSort = (typeof INVOICE_SORTS)[number];
  * expression rather than a column sort, and it has to be one for the ledger to page in the order
  * it has always shown.
  *
- * Ported rather than redesigned. Draft ranking above overdue is arguable — an overdue bill is
- * surely more urgent than one never sent — but changing where rows appear is a product decision,
- * not a side effect of moving the query.
+ * Built from the SAME predicates as the status filter (INVOICE_BANDS), so the band a row sorts
+ * into is by construction the band the filter puts it in. The first version of this duplicated the
+ * rule and drifted immediately: it treated only a literally-'sent' invoice as overdue, so an
+ * overdue part-payment sorted as part-paid under an Overdue pill.
+ *
+ * Draft ranking above overdue is arguable — an overdue bill is surely more urgent than one never
+ * sent — but that is a product decision, not a side effect of moving the query, so it is left as
+ * the screen has always shown it.
  */
 export const LEDGER_RANK = sql<number>`case
   when ${invoices.status} = 'draft' then 1
-  when ${invoices.status} = 'sent' and ${invoices.dueAt} is not null and ${invoices.dueAt} < now() then 2
-  when ${invoices.status} = 'partial' then 3
-  when ${invoices.status} = 'sent' then 4
+  when ${INVOICE_BANDS.notDraft} and ${INVOICE_BANDS.owing} and ${INVOICE_BANDS.pastDue} then 2
+  when ${INVOICE_BANDS.notDraft} and ${INVOICE_BANDS.owing} and ${invoices.amountPaidCents} > 0 then 3
+  when ${INVOICE_BANDS.notDraft} and ${INVOICE_BANDS.owing} then 4
   else 5
 end`;
 

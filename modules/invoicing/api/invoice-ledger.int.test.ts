@@ -44,16 +44,20 @@ suite("invoices — ledger order", () => {
       insert into leads (org_id, name) values (${orgId}, 'Ledger Customer') returning id`;
     leadId = l!.id;
 
-    const add = (num: string, status: string, dueOffsetDays: number | null) =>
-      admin`insert into invoices (org_id, lead_id, num, status, total_cents, due_at)
-            values (${orgId}, ${leadId}, ${num}, ${status}, 10000,
+    // paidCents matters: the ledger bands an invoice by its BALANCE, not by its status text —
+    // same rule the screen paints pills with (invStatusKey). A row marked 'paid' with the whole
+    // total still owing is a state applyPayment cannot produce, so seeding one would be testing
+    // against data the app never creates.
+    const add = (num: string, status: string, dueOffsetDays: number | null, paidCents = 0) =>
+      admin`insert into invoices (org_id, lead_id, num, status, total_cents, amount_paid_cents, due_at)
+            values (${orgId}, ${leadId}, ${num}, ${status}, 10000, ${paidCents},
               ${dueOffsetDays === null ? null : sqlOffset(dueOffsetDays)})`;
     const sqlOffset = (d: number) => new Date(Date.now() + d * 86_400_000);
 
-    await add("L-PAID", "paid", -50);
-    await add("L-SENT", "sent", 30);        // due in future -> plain sent
-    await add("L-OVER", "sent", -5);        // sent and past due -> overdue
-    await add("L-PARTIAL", "partial", 10);
+    await add("L-PAID", "paid", -50, 10000);   // settled — nothing owing, so not overdue
+    await add("L-SENT", "sent", 30);           // due in future -> plain sent
+    await add("L-OVER", "sent", -5);           // sent and past due -> overdue
+    await add("L-PARTIAL", "partial", 10, 4000);
     await add("L-DRAFT", "draft", null);
   });
 

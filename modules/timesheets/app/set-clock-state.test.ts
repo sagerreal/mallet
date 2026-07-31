@@ -190,6 +190,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   }
 
   // Not exercised by the clock — it never lists, and approval is a different use-case.
+  async count(): Promise<number> {
+    return 0;
+  }
+
   async list(_filter: unknown, _page: CursorPage): Promise<Paginated<TimeEntry>> {
     return { items: [], nextCursor: null };
   }

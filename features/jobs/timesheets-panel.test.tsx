@@ -12,13 +12,26 @@ interface Store {
   deleteTimeEntry: () => void;
   approveTechWeek: () => void;
   reopenEntry: () => void;
+  setTimeEntries: (entries: unknown[]) => void;
 }
 let storeState: Store;
 let q = { isFetched: true, isError: false };
+// The gate counts entries in the DATABASE, not the rows loaded for the week on screen. Those are
+// different numbers the moment the user pages to a quiet week — see the regression test below.
+let everTotal = 0;
 const push = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({ useAppStore: (sel: (s: Store) => unknown) => sel(storeState) }));
-vi.mock("@/lib/trpc/client", () => ({ api: { v1: { timesheets: { list: { useQuery: () => q } } } } }));
+vi.mock("@/lib/trpc/client", () => ({
+  api: {
+    v1: {
+      timesheets: {
+        list: { useQuery: () => ({ ...q, data: { items: [] } }) },
+        count: { useQuery: () => ({ ...q, data: { total: everTotal } }) },
+      },
+    },
+  },
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("./timesheets-crew", () => ({ TsCrewChips: () => <div data-testid="crew" />, TsTechWeekCard: () => <div /> }));
 
@@ -27,10 +40,11 @@ import { TimesheetsPanel } from "./timesheets-panel";
 const store = (timeEntries: unknown[], techs: Store["techs"] = []): Store => ({
   techs, jobs: [], leads: [], timeEntries,
   addTimeEntry: vi.fn(), updateTimeEntry: vi.fn(), deleteTimeEntry: vi.fn(), approveTechWeek: vi.fn(), reopenEntry: vi.fn(),
+  setTimeEntries: vi.fn(),
 });
 
 describe("TimesheetsPanel — first-run empty state", () => {
-  beforeEach(() => { storeState = store([]); q = { isFetched: true, isError: false }; vi.clearAllMocks(); });
+  beforeEach(() => { storeState = store([]); q = { isFetched: true, isError: false }; everTotal = 0; vi.clearAllMocks(); });
 
   it("shows the first-run screen when loaded and no hours are logged", () => {
     render(<TimesheetsPanel />);
@@ -95,5 +109,17 @@ describe("TimesheetsPanel — first-run empty state", () => {
     expect(screen.queryByText("No hours logged yet")).toBeNull();
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  // THE REGRESSION THE COUNT QUERY EXISTS FOR.
+  // The gate used to count the rows the panel had loaded. Those rows are one week, so paging back
+  // to a week nobody worked — a holiday, a shop that started last month — told an established shop
+  // it had never logged an hour and offered to set the clock up. That reads as data loss.
+  it("does not offer set-up for a quiet week when the shop has hours in other weeks", () => {
+    everTotal = 412; // months of history in the database…
+    storeState = store([], [{ id: "t1", name: "Mike" }]); // …and nothing in the week on screen
+    render(<TimesheetsPanel />);
+    expect(screen.queryByText("No hours logged yet")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Set up crew" })).toBeNull();
   });
 });

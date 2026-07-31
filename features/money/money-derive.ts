@@ -22,12 +22,25 @@ export function invDue(i: Invoice): number {
   return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
 }
 
-/** Unpaid past this many days reads as overdue. */
-export const INVOICE_OVERDUE_DAYS = 7;
-
-export function invOver(i: Invoice): boolean {
+/**
+ * Past its due date and still owed.
+ *
+ * The due date is the one the customer agreed to — it comes from the invoice's terms, so a shop
+ * that bills net-30 does not get its invoices flagged on day eight. The previous rule was a flat
+ * seven days since the invoice was raised, which ignored terms entirely AND could not fire at all:
+ * `dtoInvoiceToStore` hard-coded `age: 0`, so every invoice from the database read as zero days
+ * old. The Overdue pill never appeared on real data and the Overdue filter returned nothing.
+ *
+ * A draft is never overdue (it was never sent), and neither is a settled invoice. An invoice with
+ * no due date is not overdue either — nothing was promised, so nothing was missed.
+ *
+ * Must stay in step with `invoiceViewCondition("over")` in modules/invoicing/infra/invoice-views.ts,
+ * which is the same rule in SQL. A test asserts the two agree.
+ */
+export function invOver(i: Invoice, now: Date = new Date()): boolean {
   if (i.status === "draft" || invDue(i) <= 0) return false;
-  return (i.age ?? 0) > INVOICE_OVERDUE_DAYS;
+  if (!i.dueAt) return false;
+  return new Date(i.dueAt).getTime() < now.getTime();
 }
 
 /** Runtime status key incl. draft + overdue. */
@@ -170,25 +183,6 @@ export function deriveArchivedMoneyRows(invoices: Invoice[], leads: Lead[]): Mon
   return invoices.filter((i) => i.archived).map((i) => invoiceRow(i, leads));
 }
 
-// ---- filtering -----------------------------------------------------------------
-
-export interface MoneyRowFilter {
-  statusFilter: string;
-  q: string;
-}
-
-/** Narrow the ledger: status filter → search. */
-export function filterMoneyRows(rows: MoneyRow[], f: MoneyRowFilter): MoneyRow[] {
-  let out = rows;
-  if (f.statusFilter) out = out.filter((r) => r.statusKey === f.statusFilter);
-  const needle = f.q.trim().toLowerCase();
-  if (needle) {
-    out = out.filter(
-      (r) =>
-        (r.num ?? "").toLowerCase().includes(needle) ||
-        r.cust.toLowerCase().includes(needle) ||
-        r.jobTitle.toLowerCase().includes(needle)
-    );
-  }
-  return out;
-}
+// Filtering used to live here, over the rows the browser happened to hold. It moved to SQL —
+// modules/invoicing/infra/invoice-views.ts for status, the repository's listConds for search — so
+// that a filter describes the whole ledger instead of the loaded page.
