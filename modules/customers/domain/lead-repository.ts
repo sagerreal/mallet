@@ -1,4 +1,5 @@
 import type { LeadSort } from "../infra/lead-sorts";
+import type { LeadView } from "../infra/lead-views";
 import type { LeadId, CompanyId, Phone, CursorPage, Paginated } from "@mallet/shared/types";
 import type { Lead, LeadStage } from "./lead";
 
@@ -26,6 +27,8 @@ export interface LeadFilter {
   readonly search?: string;
   /** Narrow to one lead source ("Added manually", "Website form", …). */
   readonly source?: string;
+  /** One Pipeline board column. See infra/lead-views.ts. */
+  readonly view?: LeadView;
   readonly stage?: LeadStage;
   readonly unreadOnly?: boolean;
 }
@@ -56,6 +59,9 @@ export interface LeadRepository {
    * "Won" on a book with no won customers wastes a click. Sources are free text and genuinely have
    * to be discovered.
    */
+  /** Every Pipeline column's count in one round trip. */
+  viewCounts(): Promise<Record<LeadView, number>>;
+
   facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }>;
   save(lead: Lead): Promise<void>;
   // Returns the number of rows affected (0 = not found or already archived).

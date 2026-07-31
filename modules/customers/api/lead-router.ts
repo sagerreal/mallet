@@ -6,6 +6,7 @@ import { Phone, isOk, toPage, asLeadId, asCompanyId, money } from "@mallet/share
 import { logger } from "@mallet/shared/observability";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
 import { LEAD_SORTS } from "../infra/lead-sorts";
+import { LEAD_VIEWS } from "../infra/lead-views";
 import { DrizzleEstimateRepository } from "@mallet/quoting";
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
@@ -77,6 +78,8 @@ const listInput = z.object({
   search: z.string().trim().min(1).max(200).optional(),
   /** Narrow to one lead source. */
   source: z.string().max(120).optional(),
+  /** One Pipeline board column (New leads / Quoting / Out / Won). */
+  view: z.enum(LEAD_VIEWS).optional(),
 });
 
 const countInput = z.object({
@@ -356,7 +359,7 @@ export const createLeadRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source },
+          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view },
         });
         return { items: page.items.map(toLeadDTO), nextCursor: page.nextCursor };
       }),
@@ -367,6 +370,11 @@ export const createLeadRouter = () =>
      * Shares its predicates with list() through the repository, so the "n of N" a header shows is
      * two halves of one question rather than two questions that happen to look alike.
      */
+    /** Every Pipeline column's count — the board shows all four, so they come back together. */
+    viewCounts: ownerOrOffice
+      .output(z.record(z.enum(LEAD_VIEWS), z.number().int()))
+      .query(async ({ ctx }) => new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).viewCounts()),
+
     /** Filter-dropdown options and their counts, so the dropdown describes the BOOK, not a page. */
     facets: ownerOrOffice
       .output(
