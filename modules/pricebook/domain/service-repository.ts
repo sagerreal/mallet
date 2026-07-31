@@ -1,5 +1,5 @@
 import type { CursorPage, Paginated, ServiceId } from "@mallet/shared/types";
-import type { Service, PaintingQuantityKind } from "./service";
+import type { Service, ServicePricedBy } from "./service";
 
 // The org is NEVER a parameter — it is implicit in the org-scoped transaction the repository
 // is constructed with, so a caller physically cannot address another tenant's services.
@@ -20,7 +20,7 @@ export interface ServiceRepository {
     isAddon: boolean;
     active: boolean;
     position: number;
-    measuredBy: PaintingQuantityKind | null;
+    measuredBy: ServicePricedBy | null;
   }): Promise<Service>;
 
   findById(id: ServiceId): Promise<Service | null>;

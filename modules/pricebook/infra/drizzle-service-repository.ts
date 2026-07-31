@@ -10,7 +10,7 @@ import {
   type CursorPage,
   type Paginated,
 } from "@mallet/shared/types";
-import type { Service, PaintingQuantityKind } from "../domain/service";
+import type { Service, ServicePricedBy } from "../domain/service";
 import type { ServiceRepository } from "../domain/service-repository";
 import { laborHoursToColumn, rowToService } from "./service-mapper";
 
@@ -39,7 +39,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
     isAddon: boolean;
     active: boolean;
     position: number;
-    measuredBy: PaintingQuantityKind | null;
+    measuredBy: ServicePricedBy | null;
   }): Promise<Service> {
     const rows = await this.tx
       .insert(pricebookItems)

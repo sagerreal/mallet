@@ -2,7 +2,7 @@ import type { Result, AppError, Clock } from "@mallet/shared/types";
 import { validation, conflict, ok, err, toPage } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import type { Service, PaintingQuantityKind } from "../domain/service";
+import type { Service, ServicePricedBy } from "../domain/service";
 import type { ServiceRepository } from "../domain/service-repository";
 
 export interface CreateServiceCommand {
@@ -20,7 +20,7 @@ export interface CreateServiceCommand {
   readonly isAddon?: boolean;
   readonly active?: boolean;
   readonly position?: number;
-  readonly measuredBy?: PaintingQuantityKind | null;
+  readonly measuredBy?: ServicePricedBy | null;
 }
 
 export class CreateServiceUseCase {

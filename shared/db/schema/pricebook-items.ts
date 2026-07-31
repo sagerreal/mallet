@@ -58,7 +58,7 @@ export const pricebookItems = pgTable(
     }).onDelete("set null"),
     check(
       "pricebook_items_measured_by_check",
-      sql`${t.measuredBy} is null or ${t.measuredBy} in ('walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count')`,
+      sql`${t.measuredBy} is null or ${t.measuredBy} in ('hour', 'walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count')`,
     ),
   ],
 );

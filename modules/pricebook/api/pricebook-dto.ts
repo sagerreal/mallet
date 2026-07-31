@@ -9,6 +9,7 @@ import type { ServiceMaterial } from "../domain/service-material";
 // (rather than importing the domain's derived array) so this DTO module stays a pure
 // leaf — no import of domain constants required for a boundary schema.
 export const measuredByKindDTO = z.enum([
+  "hour",
   "walls_sqft",
   "ceiling_sqft",
   "baseboard_lnft",

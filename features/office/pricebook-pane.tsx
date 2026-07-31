@@ -25,10 +25,7 @@ import type { Service } from "@/lib/store/types";
 import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { ServiceRow } from "@/app/(office)/settings/service-row";
 import { MaterialsPanel } from "@/features/office/materials-panel";
-import { MarkupBandsEditor } from "@/features/office/markup-bands-editor";
 import { AddServiceRow } from "@/app/(office)/settings/add-service-row";
-import { EstimatorMemoryRow } from "@/app/(office)/settings/estimator-memory-card";
-import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 
@@ -37,7 +34,6 @@ function sortServices(services: Service[]): Service[] {
 }
 
 /** The Defaults-rail rows — one open at a time (front-desk RuleRow precedent). */
-type RailKey = "labor" | "markup" | "terms" | "memory";
 
 export function PricebookPane() {
   const services = useAppStore((s) => s.services);
@@ -45,15 +41,6 @@ export function PricebookPane() {
   const updateService = useAppStore((s) => s.updateService);
   const archiveService = useAppStore((s) => s.archiveService);
   const seedPricebook = useAppStore((s) => s.seedPricebook);
-  const laborRates = useAppStore((s) => s.laborRates);
-  const addLaborRate = useAppStore((s) => s.addLaborRate);
-  const updateLaborRate = useAppStore((s) => s.updateLaborRate);
-  const removeLaborRate = useAppStore((s) => s.removeLaborRate);
-  const markup = useAppStore((s) => s.markup);
-  const setMarkup = useAppStore((s) => s.setMarkup);
-  const terms = useAppStore((s) => s.terms);
-  const addTerm = useAppStore((s) => s.addTerm);
-  const removeTerm = useAppStore((s) => s.removeTerm);
   const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
 
   // Cost/margin are sensitive — hidden from tech role (fail closed until role loads).
@@ -67,16 +54,9 @@ export function PricebookPane() {
   const [pbSeg, setPbSeg] = useState<"services" | "materials">("services");
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
-  const [openRail, setOpenRail] = useState<RailKey | null>(null);
-  const toggleRail = (k: RailKey) => setOpenRail((prev) => (prev === k ? null : k));
   // "Build your own" dismisses first-run into the (empty) register so the inline
   // add-row is right there; the first added service makes it permanent.
   const [building, setBuilding] = useState(false);
-  const [lrName, setLrName] = useState("");
-  const [lrRate, setLrRate] = useState("");
-  const [lrKind, setLrKind] = useState<LaborRateKind>("hourly");
-  const [tlName, setTlName] = useState("");
-  const [tlBody, setTlBody] = useState("");
 
   async function handleSeed() {
     setSeeding(true);
@@ -86,19 +66,6 @@ export function PricebookPane() {
     if (!result.ok) {
       setSeedError("Couldn’t load the starter pack — check your connection and try again.");
     }
-  }
-
-  function handleAddLabor() {
-    addLaborRate(lrName, Number(lrRate), lrKind);
-    setLrName("");
-    setLrRate("");
-    setLrKind("hourly");
-  }
-
-  function handleAddTerm() {
-    addTerm(tlName, tlBody);
-    setTlName("");
-    setTlBody("");
   }
 
   const sorted = sortServices(services);
@@ -118,12 +85,6 @@ export function PricebookPane() {
   const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
   const materialsAll = useAppStore((s) => s.materials);
   const activeMaterials = materialsAll.filter((m) => m.active);
-  const bandsQ = api.v1.pricebook.markupBands.list.useQuery();
-  const bandsSummary = !bandsQ.data
-    ? "…"
-    : bandsQ.data.bands.length === 1
-      ? `${(bandsQ.data.bands[0]?.markupBps ?? 0) / 100}% flat`
-      : `${bandsQ.data.bands.length} bands`;
   const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
   const gate = { isFetched: svcQuery.isFetched, isError: svcQuery.isError, count: services.length };
 
@@ -252,104 +213,6 @@ export function PricebookPane() {
               <MaterialsPanel canSeeCost={canSeeCost} />
             )}
           </div>
-        </div>
-
-        {/* subordinate rail: the shop's pricing defaults as a definition list */}
-        <div className="fdrail">
-          <h3>Defaults</h3>
-
-          <DisclosureRow
-            label="Labor rates"
-            value={`${laborRates.length} rate${laborRates.length === 1 ? "" : "s"}`}
-            open={openRail === "labor"}
-            onToggle={() => toggleRail("labor")}
-          >
-            <div>
-              {laborRates.map((lr) => (
-                <div key={lr.id} className="stage-row">
-                  <input type="text" defaultValue={lr.name}
-                    onChange={(e) => updateLaborRate(lr.id, "name", e.target.value)}
-                    className="field-compact" style={{ flex: 1, minWidth: 100 }} />
-                  <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
-                    <span className="muted">$</span>
-                    <input type="number" inputMode="decimal" defaultValue={lr.rate}
-                      onChange={(e) => updateLaborRate(lr.id, "rate", e.target.value)}
-                      className="field-compact" style={{ width: 72 }} />
-                    <SelectMenu
-                      aria-label={`Unit for ${lr.name}`}
-                      value={lr.kind}
-                      onChange={(v) => updateLaborRate(lr.id, "kind", v)}
-                      options={[
-                        { value: "hourly", label: "/hr" },
-                        { value: "flat", label: "flat" },
-                      ]}
-                      compact
-                    />
-                  </span>
-                  {laborRates.length > 1 && (
-                    <button className="btn sm ghost" onClick={() => removeLaborRate(lr.id)}>✕</button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: "var(--space-3)" }}>
-              <div className="chips" style={{ marginBottom: "var(--space-2)" }}>
-                <button type="button" className={`chip${lrKind === "hourly" ? " sel" : ""}`} onClick={() => setLrKind("hourly")}>
-                  Hourly
-                </button>
-                <button type="button" className={`chip${lrKind === "flat_fee" ? " sel" : ""}`} onClick={() => setLrKind("flat_fee")}>
-                  Flat fee
-                </button>
-              </div>
-              <div style={{ display: "grid", gap: "var(--space-2)" }}>
-                <input type="text" id="lrName" placeholder="e.g. Diagnostic fee, After-hours" value={lrName} onChange={(e) => setLrName(e.target.value)}
-                  className="field-compact" />
-                <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                  <input type="number" inputMode="decimal" id="lrRate" placeholder={lrKind === "flat_fee" ? "$" : "$/hr"} value={lrRate} onChange={(e) => setLrRate(e.target.value)}
-                    className="field-compact" style={{ flex: 1 }} />
-                  <button className="btn sm" onClick={handleAddLabor}>+ Add</button>
-                </div>
-              </div>
-            </div>
-          </DisclosureRow>
-
-          <DisclosureRow
-            label="Parts markup"
-            value={<span className="mono">{bandsSummary}</span>}
-            open={openRail === "markup"}
-            onToggle={() => toggleRail("markup")}
-          >
-            <MarkupBandsEditor />
-          </DisclosureRow>
-
-          <DisclosureRow
-            label="Terms library"
-            value={`${terms.length} term${terms.length === 1 ? "" : "s"}`}
-            open={openRail === "terms"}
-            onToggle={() => toggleRail("terms")}
-          >
-            <div>
-              {terms.map((t) => (
-                <div key={t.id} className="stage-row">
-                  <span style={{ fontWeight: 700 }}>{t.t}</span>
-                  <span className="trig" style={{ flex: 1, whiteSpace: "normal" }}>{t.body.slice(0, 60)}…</span>
-                  <button className="btn sm ghost" onClick={() => removeTerm(t.id)}>✕</button>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "grid", gap: "var(--space-2)", marginTop: terms.length ? "var(--space-3)" : "0" }}>
-              <input type="text" id="tlName" placeholder="name (e.g. Repipe terms)" value={tlName} onChange={(e) => setTlName(e.target.value)}
-                className="field-compact" />
-              <div style={{ display: "flex", gap: "var(--space-2)" }}>
-                <input type="text" id="tlBody" placeholder="the fine print…" value={tlBody} onChange={(e) => setTlBody(e.target.value)}
-                  className="field-compact" style={{ flex: 1 }} />
-                <button className="btn sm" onClick={handleAddTerm}>+ Add</button>
-              </div>
-            </div>
-          </DisclosureRow>
-
-          <EstimatorMemoryRow open={openRail === "memory"} onToggle={() => toggleRail("memory")} />
-
         </div>
       </div>
     </div>

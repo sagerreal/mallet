@@ -176,8 +176,11 @@ export function QuoteCard({
   // Appends a snapshot of the service — later edits to the pricebook entry
   // never retroactively change a quote already built from it.
   function addPbLine(svc: Service) {
+    // Hourly service: quantity = the service's typical hours (editable on the line);
+    // rate = the hourly rate. "4 hrs × $150" lands exactly as the trade says it.
+    const q = svc.measuredBy === "hour" ? (svc.laborHours ?? 1) || 1 : 1;
     onUpdate({
-      lines: [...state.lines, { d: svc.name, q: 1, r: svc.unitPrice, c: svc.cost }],
+      lines: [...state.lines, { d: svc.name, q, r: svc.unitPrice, c: svc.cost }],
     });
   }
 

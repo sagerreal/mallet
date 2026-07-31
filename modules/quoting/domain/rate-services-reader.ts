@@ -13,7 +13,7 @@ export interface RateService {
   readonly name: string;
   readonly unitPriceCents: number;
   readonly costCents: number;
-  readonly measuredBy: PaintingQuantityKind;
+  readonly measuredBy: PaintingQuantityKind | "hour";
   readonly position: number;
 }
 
