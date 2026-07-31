@@ -150,6 +150,31 @@ interface VisitRowProps {
   onGoToSchedule: () => void;
 }
 
+/**
+ * The crew list for a picker.
+ *
+ * When the job requires certifications: qualified techs first (roster order within each group),
+ * unqualified suffixed with what they are missing. A tech who cannot legally do the work is still
+ * PICKABLE, just visibly flagged — the shop decides, the app does not block. No requirement means
+ * plain roster order.
+ */
+function crewOptions(techs: Tech[], req: readonly string[] | null): { value: string; label: string }[] {
+  if (req == null || req.length === 0) return techs.map((t) => ({ value: t.id, label: t.name }));
+  const qualified: Tech[] = [];
+  const unqualified: Tech[] = [];
+  for (const t of techs) {
+    if (meetsRequirement(t.skills, req)) qualified.push(t);
+    else unqualified.push(t);
+  }
+  return [
+    ...qualified.map((t) => ({ value: t.id, label: t.name })),
+    ...unqualified.map((t) => ({
+      value: t.id,
+      label: `${t.name} — missing ${missingCerts(t.skills, req).join(", ")}`,
+    })),
+  ];
+}
+
 function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onGoToSchedule }: VisitRowProps) {
   // UNPLACED — dashed row with a "Not placed" pill, Length, and where-to-next hint.
   if (!vPlaced(visit)) {
@@ -221,29 +246,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
           <SelectMenu
             value={visit.techId ?? ""}
             onChange={(v) => onUpdate({ techId: v || null })}
-            options={(() => {
-              // When a requirement exists: qualified techs first (roster order within each
-              // group), unqualified get a "— missing {certs}" suffix. When no requirement:
-              // roster order, no suffix. Unchanged from the <option> version — a tech who
-              // cannot legally do the work must still be pickable, just visibly flagged.
-              const req = job.requiredCerts ?? null;
-              if (req == null || req.length === 0) {
-                return techs.map((t) => ({ value: t.id, label: t.name }));
-              }
-              const qualified: Tech[] = [];
-              const unqualified: Tech[] = [];
-              for (const t of techs) {
-                if (meetsRequirement(t.skills, req)) qualified.push(t);
-                else unqualified.push(t);
-              }
-              return [
-                ...qualified.map((t) => ({ value: t.id, label: t.name })),
-                ...unqualified.map((t) => ({
-                  value: t.id,
-                  label: `${t.name} — missing ${missingCerts(t.skills, req).join(", ")}`,
-                })),
-              ];
-            })()}
+            options={crewOptions(techs, job.requiredCerts ?? null)}
           />
         </Field>
       </div>
@@ -795,6 +798,20 @@ export function JobModalContent() {
       ? `${visits.length} visit${visits.length === 1 ? "" : "s"}`
       : "Add";
 
+  // WHO IS ON THIS JOB. Assignment lives on the visit — a job can have several, each with its own
+  // crew — but it was reachable only by expanding Schedule and then a visit, so the one question a
+  // dispatcher asks most ("who's got this?") could not be answered from this screen at all, let
+  // alone changed. Named crew, deduped, in visit order.
+  const assignedNames = [
+    ...new Set(
+      visits
+        .map((v) => techs.find((t) => t.id === v.techId)?.name)
+        .filter((n): n is string => Boolean(n)),
+    ),
+  ];
+  const assignedValue =
+    visits.length === 0 ? "No visit yet" : assignedNames.length ? assignedNames.join(", ") : "Unassigned";
+
   return (
     <>
       {/* Sticky header — the job as an h2 over one calm meta line
@@ -923,6 +940,35 @@ export function JobModalContent() {
               onBuildPrice={() => pushModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
               onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
             />
+          </SheetRow>
+        )}
+
+        {/* Assigned to — the crew picker, lifted out of the visit editor.
+            One row per visit, because that is where assignment actually lives: a two-visit job can
+            genuinely have two different technicians, and collapsing that to a single picker would
+            silently reassign work nobody asked to move. */}
+        {visits.length > 0 && (
+          <SheetRow
+            label="Assigned to"
+            value={assignedValue}
+            valueIsHint={assignedNames.length === 0}
+            expandable
+          >
+            {visits.map((v, i) => (
+              <Field
+                key={v.id}
+                label={visits.length === 1 ? "Crew" : `Visit ${i + 1}${v.date ? ` · ${v.date}` : ""}`}
+                style={{ margin: "0 0 var(--space-2)" }}
+              >
+                <SelectMenu
+                  value={v.techId ?? ""}
+                  onChange={(val) => updateVisit(job.id, v.id, { techId: val || null })}
+                  options={[{ value: "", label: "Unassigned" }, ...crewOptions(techs, job.requiredCerts ?? null)]}
+                  aria-label={visits.length === 1 ? "Assigned crew" : `Crew for visit ${i + 1}`}
+                  compact
+                />
+              </Field>
+            ))}
           </SheetRow>
         )}
 
