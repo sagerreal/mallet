@@ -72,6 +72,14 @@ const invoiceDTO = z.object({
     })
     .nullable(),
   leadId: z.string().uuid(),
+  /**
+   * The customer's name, resolved SERVER-side — nullable only when the lead is gone.
+   *
+   * Same reasoning as the summary DTO. The invoice sheet read this out of the store's leads
+   * collection, which works only while every lead is loaded; the ledger pages through the
+   * database, so an invoice opened from a later page showed a blank customer.
+   */
+  customerName: z.string().nullable(),
   title: z.string().nullable(),
   status: statusEnum,
   /** Tax-INCLUSIVE — `tax` says how much of it is tax, it is not added on top. */
@@ -186,8 +194,14 @@ const toInvoiceDTOWithAuth = async (
   invoice: Invoice,
   tx: TenantTx,
   orgId: OrgId,
-): Promise<ReturnType<typeof toInvoiceDTO> & { authorization: InvoiceAuthorizationDTO }> => {
-  const base = toInvoiceDTO(invoice);
+): Promise<
+  ReturnType<typeof toInvoiceDTO> & { customerName: string | null; authorization: InvoiceAuthorizationDTO }
+> => {
+  // The customer's name, resolved here rather than looked up in the browser's store — the ledger
+  // pages through the database, so the store cannot be relied on to hold this invoice's lead.
+  const leads = await new DrizzleLeadRepository(tx, orgId).findByIds([invoice.props.leadId]);
+  const customerName = leads[0]?.props.name ?? null;
+  const base = { ...toInvoiceDTO(invoice), customerName };
   const jobId = invoice.props.sourceJobId;
   if (!jobId) return { ...base, authorization: null };
 

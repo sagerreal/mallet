@@ -103,6 +103,8 @@ export interface InvoicesSlice {
   invoices: Invoice[];
   /** Replace the entire invoices array — called by the server hydrator. */
   setInvoices: (invoices: Invoice[]) => void;
+  /** Put an invoice fetched by id into the store, without a network write. See adoptLead. */
+  adoptInvoice: (invoice: Invoice) => void;
   addInvoice: (draft: Omit<Invoice, "id" | "num">) => Invoice;
   updateInvoice: (id: string, patch: Partial<Invoice>) => void;
   setInvoiceLines: (id: string, lines: InvoiceLine[]) => void;
@@ -115,6 +117,20 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   invoices: [],
 
   setInvoices: (invoices) => set({ invoices }),
+
+  // ---------------------------------------------------------------------------
+  // adoptInvoice — an invoice the store never hydrated, fetched by id.
+  //
+  // The Money ledger pages through the database (847 invoices on the seeded org),
+  // so opening a row past the hydrator's page found nothing and rendered an EMPTY
+  // sheet under an open modal shell. Mirrors adoptLead.
+  // ---------------------------------------------------------------------------
+  adoptInvoice: (invoice) =>
+    set((s) => ({
+      invoices: s.invoices.some((i) => i.id === invoice.id)
+        ? reconcileInv(s.invoices, invoice)
+        : [invoice, ...s.invoices],
+    })),
 
   // ---------------------------------------------------------------------------
   // addInvoice — two semantic paths:

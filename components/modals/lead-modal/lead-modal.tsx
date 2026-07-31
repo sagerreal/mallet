@@ -19,8 +19,10 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { api } from "@/lib/trpc/client";
+import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { Modal } from "../modal";
 import { SheetRow } from "../sheet-row";
 import { LeadSheetHeader, PhoneCell } from "./lead-header";
@@ -112,6 +114,7 @@ export function LeadModal({ open }: { open: boolean }) {
   const pushModal = usePushModal();
   const router = useRouter();
   const leads = useAppStore((s) => s.leads);
+  const adoptLead = useAppStore((s) => s.adoptLead);
   const estimates = useAppStore((s) => s.estimates);
   const tasks = useAppStore((s) => s.tasks);
   const updateLead = useAppStore((s) => s.updateLead);
@@ -121,6 +124,19 @@ export function LeadModal({ open }: { open: boolean }) {
 
   const leadId = activeModal?.params?.leadId as string | undefined;
   const lead = leads.find((l) => l.id === leadId);
+
+  // FETCH-ON-MISS. The Customers list is served by the database a page at a time, so it shows
+  // customers the store never hydrated. Opening one of those found nothing here and rendered
+  // "no longer available — they may have been archived", which is not just unhelpful, it is
+  // FALSE: the customer exists and is not archived. Mirrors job-modal.
+  const missing = Boolean(leadId) && !lead;
+  const leadQ = api.v1.customers.get.useQuery(
+    { leadId: leadId ?? "" },
+    { enabled: missing, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (missing && leadQ.data) adoptLead(toStoreLead(leadQ.data));
+  }, [missing, leadQ.data, adoptLead]);
 
   const leadEstimates = lead ? estimates.filter((e) => e.leadId === lead.id) : [];
   const hasWork = leadEstimates.length > 0 || (lead?.evisits?.length ?? 0) > 0;
@@ -134,10 +150,18 @@ export function LeadModal({ open }: { open: boolean }) {
   }
 
   if (!lead) {
+    // Three genuinely different states, said apart. Claiming "archived" while a fetch is still in
+    // flight is what made this modal lie.
     return (
       <Modal open={open} onClose={close} wide label="Customer">
         <h2>Customer</h2>
-        <p className="muted">This customer is no longer available — they may have been archived.</p>
+        {missing && leadQ.isLoading ? (
+          <p className="muted">Loading…</p>
+        ) : missing && leadQ.isError ? (
+          <p className="muted">Couldn&apos;t load this customer. Close and try again.</p>
+        ) : (
+          <p className="muted">This customer is no longer available — they may have been archived.</p>
+        )}
       </Modal>
     );
   }

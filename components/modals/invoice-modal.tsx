@@ -36,7 +36,9 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/trpc/client";
+import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import { useAppStore, useActiveModal, useCloseModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
@@ -606,6 +608,7 @@ export function InvoiceModalContent() {
   const pushModal = usePushModal();
 
   const invoices = useAppStore((s) => s.invoices);
+  const adoptInvoice = useAppStore((s) => s.adoptInvoice);
   const leads = useAppStore((s) => s.leads);
   const services = useAppStore((s) => s.services);
   const jobs = useAppStore((s) => s.jobs);
@@ -622,7 +625,35 @@ export function InvoiceModalContent() {
 
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
-  if (!invoice) return null;
+
+  // FETCH-ON-MISS. The Money ledger pages through the database, so it lists invoices the store
+  // never hydrated; opening one of those rendered an EMPTY sheet under an open modal shell.
+  // The customer name comes from the DTO now, not from the store's leads — that collection has
+  // the same ceiling and would have shown a blank customer on the row this fixes.
+  const missing = Boolean(invoiceId) && !invoice;
+  const invQ = api.v1.invoicing.get.useQuery(
+    { invoiceId: invoiceId ?? "" },
+    { enabled: missing, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (!missing || !invQ.data) return;
+    const dto = invQ.data;
+    adoptInvoice(
+      dtoInvoiceToStore(dto as never, {
+        cust: dto.customerName ?? "—",
+        phone: "",
+        email: "",
+      } as never),
+    );
+  }, [missing, invQ.data, adoptInvoice]);
+
+  if (!invoice) {
+    if (missing && invQ.isLoading) return <p className="muted">Loading…</p>;
+    if (missing && invQ.isError) {
+      return <p className="muted">Couldn&apos;t load this invoice. Close and try again.</p>;
+    }
+    return null;
+  }
 
   const job = invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
   // hand-made invoices are built here; job invoices flow from the job (read-only).

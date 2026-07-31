@@ -25,7 +25,9 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/trpc/client";
+import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import { useAppStore, useActiveModal } from "@/lib/store/app-store";
 import type { Brand, Invoice, Job, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
@@ -254,11 +256,28 @@ export function CustInvoiceModalContent() {
   const jobs = useAppStore((s) => s.jobs);
   const brand = useAppStore((s) => s.brand);
   const recordPayment = useAppStore((s) => s.recordPayment);
+  const adoptInvoice = useAppStore((s) => s.adoptInvoice);
   const updateLead = useAppStore((s) => s.updateLead);
 
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
   const due = invoice ? invDue(invoice) : 0;
+
+  // FETCH-ON-MISS — the customer-facing twin of invoice-modal. This is the sheet a customer is
+  // shown to take a payment on, so an empty render is the worst of the three places this bug
+  // lived: it happens with someone standing there.
+  const missing = Boolean(invoiceId) && !invoice;
+  const invQ = api.v1.invoicing.get.useQuery(
+    { invoiceId: invoiceId ?? "" },
+    { enabled: missing, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (!missing || !invQ.data) return;
+    const dto = invQ.data;
+    adoptInvoice(
+      dtoInvoiceToStore(dto as never, { cust: dto.customerName ?? "—", phone: "", email: "" } as never),
+    );
+  }, [missing, invQ.data, adoptInvoice]);
 
   // Pay state lives HERE (not in PayBlock) so the sheet-foot primary can fire it.
   // Hooks run before the missing-invoice return, per the rules of hooks.
@@ -277,7 +296,13 @@ export function CustInvoiceModalContent() {
     setAmt(due);
   }
 
-  if (!invoice) return null;
+  if (!invoice) {
+    if (missing && invQ.isLoading) return <p className="muted">Loading…</p>;
+    if (missing && invQ.isError) {
+      return <p className="muted">Couldn&apos;t load this invoice. Close and try again.</p>;
+    }
+    return null;
+  }
 
   const job: Job | undefined =
     invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
