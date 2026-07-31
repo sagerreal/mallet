@@ -100,6 +100,18 @@ export const estimates = pgTable(
      * for the same reason; this extends that to the money.
      */
     signedSnapshot: jsonb("signed_snapshot"),
+    /**
+     * The job this quote adds work to — a CHANGE ORDER.
+     *
+     * Null on an ordinary quote, which sells work before a job exists. Set when the quote was
+     * raised from inside a job that is already running: more was found on site, it was priced, and
+     * the customer has to agree to it. Housecall Pro models a change order the same way — an
+     * estimate created on the job, whose approved lines are copied into it.
+     *
+     * The link is what lets the invoice sum EVERY signature that governs a job rather than only
+     * the one on the original quote.
+     */
+    changeOrderForJobId: uuid("change_order_for_job_id"),
     // Unguessable URL-safe token for the customer-facing public quote page (no login required).
     // Generated at draft time; null only for estimates created before the migration (backfilled).
     publicToken: text("public_token"),

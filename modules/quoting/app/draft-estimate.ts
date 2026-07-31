@@ -39,6 +39,14 @@ export interface DraftEstimateCommand {
   /** Snapshot of the selected job terms TEXT (no live reference). */
   readonly termsSnapshot?: string | null;
   /**
+   * The job this quote adds work to — makes it a CHANGE ORDER.
+   *
+   * Absent on an ordinary quote. Present when the quote was raised from inside a job already
+   * running: more was found on site, it was priced, and the customer signs for the extra exactly
+   * as they signed for the original.
+   */
+  readonly changeOrderForJobId?: string | null;
+  /**
    * The AI drafter's ORIGINAL lines, sent by the composer only when this
    * draft originated from the AI. Persisted write-once to estimates.ai_draft;
    * the send path diffs it against the sent lines (edit-delta mining).
@@ -105,6 +113,8 @@ export class DraftEstimateUseCase {
       declineReason: null,
       changeRequestedAt: null,
       changeRequest: null,
+      // The job this quote adds work to, when it was raised from inside a running job.
+      changeOrderForJobId: cmd.changeOrderForJobId ?? null,
       publicToken: generatePublicToken(),
       recommendedTier: cmd.recommendedTier ?? null,
       acceptedTier: null,

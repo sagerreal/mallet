@@ -78,6 +78,7 @@ const makeEstimate = (
     declinedAt: null,
     declineReason: null,
     changeRequestedAt: null,
+    changeOrderForJobId: null,
     changeRequest: null,
     publicToken: "c".repeat(64),
     recommendedTier,

@@ -49,6 +49,7 @@ const estimate = (overrides: Partial<EstimateProps> = {}): Estimate => {
     declinedAt: null,
     declineReason: null,
     changeRequestedAt: null,
+    changeOrderForJobId: null,
     changeRequest: null,
     publicToken: null,
     recommendedTier: null,

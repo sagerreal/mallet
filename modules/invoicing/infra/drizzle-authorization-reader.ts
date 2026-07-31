@@ -1,9 +1,9 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import { jobs, estimates } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import type { Authorization } from "../domain/authorization";
-import { resolveAuthorization } from "../domain/authorization";
+import { resolveAuthorization, withChangeOrders } from "../domain/authorization";
 
 /**
  * Find the signature that governs an invoice.
@@ -59,10 +59,37 @@ export class DrizzleAuthorizationReader implements AuthorizationReader {
     const row = rows[0];
     if (!row) return null;
 
-    return resolveAuthorization(
+    const base = resolveAuthorization(
       toAuthorization("job", row.jobNum, row.jobSignerName, row.jobSignedAt, row.jobSnapshot),
       toAuthorization("estimate", row.estNum, row.estSignerName, row.estSignedAt, row.estSnapshot),
     );
+
+    // Every SIGNED change order raised against this job. A second query rather than more joins:
+    // there can be many, and folding them into the row above would multiply it. Unsigned ones are
+    // filtered in the domain, not here — an unsigned add-on is exactly what the overage warning
+    // exists to catch, so dropping it in SQL would hide the case that matters.
+    const coRows = await this.tx
+      .select({
+        num: estimates.num,
+        signerName: estimates.signerName,
+        signedAt: estimates.signedAt,
+        snapshot: estimates.signedSnapshot,
+      })
+      .from(estimates)
+      .where(
+        and(
+          eq(estimates.orgId, this.orgId),
+          eq(estimates.changeOrderForJobId, jobId),
+          isNull(estimates.deletedAt),
+          isNotNull(estimates.signedAt),
+        ),
+      );
+
+    const changeOrders = coRows
+      .map((c) => toAuthorization("estimate", c.num, c.signerName, c.signedAt, c.snapshot))
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    return withChangeOrders(base, changeOrders);
   }
 }
 

@@ -126,6 +126,14 @@ export interface EstimateProps {
   readonly declinedAt: Date | null;
   readonly declineReason: string | null;
   readonly changeRequestedAt: Date | null;
+  /**
+   * The job this quote adds work to — a CHANGE ORDER. Null on an ordinary quote.
+   *
+   * Set when more work was found on a job already running. It is still a quote in every other
+   * respect: it is priced, sent, and SIGNED the same way. That is the point — the customer agrees
+   * to the extra in the same manner they agreed to the original, so the invoice can prove it.
+   */
+  readonly changeOrderForJobId: string | null;
   readonly changeRequest: string | null;
   // Unguessable URL-safe token for the public customer quote page (no login required).
   // Set at draft-time; never changes. Null only for estimates created before the backfill migration.
