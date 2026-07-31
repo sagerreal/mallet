@@ -19,6 +19,13 @@ export interface BookingService {
   readonly lane: ServiceLane;
   /** Price in DOLLARS (matches the prototype control — not cents). Optional for "estimate" lanes. */
   readonly price?: number;
+  /**
+   * Link to a pricebook entry: when set, the phone speaks THAT entry's current price
+   * (resolved at answer time — see frontdesk resolveBookingPrices) so the playbook
+   * never carries a second copy of a number the pricebook owns. `price` above remains
+   * as the unlinked/legacy fallback.
+   */
+  readonly pricebookServiceId?: string | null;
   readonly triggers: string;
   /** Words that mean this service is an EMERGENCY (see today). */
   readonly emergencyTriggers?: string;

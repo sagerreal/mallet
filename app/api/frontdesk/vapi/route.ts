@@ -29,6 +29,7 @@ import {
   DrizzleFrontdeskCallRepository,
   DrizzleToolInvocationLedger,
   DrizzleSettingsReader,
+  DrizzlePricebookPriceReader,
   DrizzleLeadSummaryReader,
   DrizzleAvailabilityReader,
   CensusGeocoder,
@@ -178,6 +179,7 @@ const handleAssistantRequest = async (
   const builder = new BuildAssistantUseCase(
     {
       settings: new DrizzleSettingsReader(tx, orgId),
+      pricebookPrices: new DrizzlePricebookPriceReader(tx, orgId),
       leadByPhone: new DrizzleLeadByPhoneReader(tx, orgId),
       leadSummary: new DrizzleLeadSummaryReader(tx, orgId),
       // Who may be interrupted right now. Opens its own short tx rather than sharing this one:
@@ -246,6 +248,7 @@ const handleEndOfCall = async (
     calls: new DrizzleFrontdeskCallRepository(tx, orgId),
     ledger: new DrizzleToolInvocationLedger(tx, orgId),
     settings: new DrizzleSettingsReader(tx, orgId),
+    pricebookPrices: new DrizzlePricebookPriceReader(tx, orgId),
     leadByPhone: new DrizzleLeadByPhoneReader(tx, orgId),
     unreadMarker: new DrizzleLeadUnreadMarker(tx, orgId),
     createTask: buildCreateTask(tx, orgId),

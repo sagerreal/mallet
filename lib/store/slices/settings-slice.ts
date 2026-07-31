@@ -56,6 +56,9 @@ export interface BookingService {
   name: string;
   lane: "repair" | "flat" | "estimate";
   price?: number;
+  /** Link to a pricebook entry — the phone speaks THAT entry's current price (server-resolved).
+   * null/absent = unlinked, `price` above is spoken as before. */
+  pricebookServiceId?: string | null;
   triggers: string;
   emergencyTriggers?: string;
   ballpark?: string;
@@ -447,6 +450,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
         services: s.booking.services.map((svc, i) => {
           if (i !== index) return svc;
           if (field === "price") return { ...svc, price: Math.max(0, Number(value) || 0) };
+          // "" = unlink (undefined keeps the blob clean, matching requiredCerts below).
+          if (field === "pricebookServiceId") return { ...svc, pricebookServiceId: value === "" ? undefined : (value as string) };
           if (field === "requiredCerts") {
             const certs = Array.isArray(value) ? value : [];
             // Empty array → undefined so untouched services stay clean in the blob.

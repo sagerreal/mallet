@@ -1,6 +1,8 @@
 import type { OrgId, Result, AppError } from "@mallet/shared/types";
 import { ok, err, notFound, Phone } from "@mallet/shared/types";
-import type { OrgSettings } from "@mallet/settings";
+import type { OrgSettings, BookingService } from "@mallet/settings";
+import { resolveBookingPrices } from "../domain/pricebook-price-reader";
+import type { PricebookPriceReader } from "../domain/pricebook-price-reader";
 import type { LeadByPhoneReader } from "@mallet/messaging";
 import type {
   SettingsReader,
@@ -32,6 +34,9 @@ export interface BuildAssistantCmd {
 
 export interface BuildAssistantDeps {
   readonly settings: SettingsReader;
+  /** Current pricebook prices for LINKED services (resolved at answer time). Absent → linked
+   * services fall back to their stored price; unlinked behavior is unchanged. */
+  readonly pricebookPrices?: PricebookPriceReader;
   readonly leadByPhone: LeadByPhoneReader;
   readonly leadSummary: LeadSummaryReader;
   /** Who may be interrupted by a caller, and their hours. Absent → escalation stays org-wide. */
@@ -113,7 +118,10 @@ export class BuildAssistantUseCase {
 
     const caller = await this.resolveCaller(cmd.fromNumber);
     const onCallNumber = await this.resolveOnCall(settings, cmd.orgId);
-    return ok(this.fullAssistant(settings, caller, onCallNumber));
+    // Linked prices resolve BEFORE the prompt is built, so a pricebook change reaches
+    // the phone on the very next call — the playbook never speaks a stale copy.
+    const services = await resolveBookingPrices(settings.props.booking.services, this.deps.pricebookPrices);
+    return ok(this.fullAssistant(settings, caller, onCallNumber, services));
   }
 
   /**
@@ -159,8 +167,13 @@ export class BuildAssistantUseCase {
     return { known: true, name: summary.name, openWork: summary.openWork };
   }
 
-  private fullAssistant(settings: OrgSettings, caller: CallerContext, onCallNumber: string | null): VapiAssistantDTO {
-    const facts = toPromptFacts(settings);
+  private fullAssistant(
+    settings: OrgSettings,
+    caller: CallerContext,
+    onCallNumber: string | null,
+    resolvedServices: readonly BookingService[],
+  ): VapiAssistantDTO {
+    const facts = { ...toPromptFacts(settings), services: [...resolvedServices] };
     // The transfer tool is PER-CALL: its destination is whoever is on shift right now, falling
     // back to the org's own emergency number when nobody is. Resolved per call rather than per org
     // because "who is on" changes hour to hour — a number baked at org level cannot express that.

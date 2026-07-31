@@ -24,6 +24,7 @@ export const bookingServiceDTO = z.object({
   name: z.string(),
   lane: z.enum(["repair", "estimate", "flat"]),
   price: z.number().min(0).optional(),
+  pricebookServiceId: z.string().uuid().nullable().optional(),
   triggers: z.string(),
   emergencyTriggers: z.string().optional(),
   ballpark: z.string().optional(),

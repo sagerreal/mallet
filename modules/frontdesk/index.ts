@@ -60,6 +60,9 @@ export type {
 export { DrizzleFrontdeskCallRepository } from "./infra/drizzle-call-repository";
 export { DrizzleToolInvocationLedger } from "./infra/drizzle-tool-ledger";
 export { DrizzleSettingsReader } from "./infra/drizzle-settings-reader";
+export { DrizzlePricebookPriceReader } from "./infra/drizzle-pricebook-price-reader";
+export { resolveBookingPrices } from "./domain/pricebook-price-reader";
+export type { PricebookPriceReader } from "./domain/pricebook-price-reader";
 export { DrizzleLeadSummaryReader } from "./infra/drizzle-lead-summary-reader";
 export { DrizzleAvailabilityReader } from "./infra/drizzle-availability-reader";
 export { CensusGeocoder } from "./infra/census-geocoder";
