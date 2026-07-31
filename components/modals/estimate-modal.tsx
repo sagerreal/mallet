@@ -443,7 +443,7 @@ export function EstimateModalContent() {
                   router.push(`/composer?revise=${e.id}`);
                 }}
               >
-                Revise quote
+                Edit &amp; resend
               </button>
               <button
                 className="btn sm ghost"
@@ -622,7 +622,7 @@ export function EstimateModalContent() {
               router.push(`/composer?revise=${e.id}`);
             }}
           >
-            Revise quote
+            Edit &amp; resend
           </button>
         </div>
       )}
