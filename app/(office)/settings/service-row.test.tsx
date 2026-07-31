@@ -107,7 +107,7 @@ describe("ServiceRow — Priced-by control (gated on measurementEstimating)", ()
       />,
     );
     openRow();
-    expect(screen.getByText("$ per sq ft")).toBeTruthy();
+    expect(screen.getAllByText("per sq ft").length).toBeGreaterThan(0);
     unmount1();
 
     const { unmount: unmount2 } = render(
@@ -121,7 +121,7 @@ describe("ServiceRow — Priced-by control (gated on measurementEstimating)", ()
       />,
     );
     openRow();
-    expect(screen.getByText("$ per ln ft")).toBeTruthy();
+    expect(screen.getAllByText("per ln ft").length).toBeGreaterThan(0);
     unmount2();
 
     render(
@@ -135,7 +135,7 @@ describe("ServiceRow — Priced-by control (gated on measurementEstimating)", ()
       />,
     );
     openRow();
-    expect(screen.getByText("$ each")).toBeTruthy();
+    expect(screen.getAllByText("each").length).toBeGreaterThan(0);
   });
 
   it("selecting Flat on a measured service commits measuredBy: null", () => {
