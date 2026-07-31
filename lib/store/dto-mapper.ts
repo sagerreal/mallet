@@ -24,6 +24,18 @@ import { JOB_ORIGIN } from "./hydrator-config";
 export type JobDTO = RouterOutputs["v1"]["visits"]["createVisit"];
 export type EstimateDTO = RouterOutputs["v1"]["quoting"]["draft"];
 export type InvoiceDTO = RouterOutputs["v1"]["invoicing"]["draft"];
+
+/**
+ * The LIST shapes — deliberately separate types, because they are deliberately smaller.
+ *
+ * A summary carries what a row needs; the full DTO carries lines, payments and tax. Passing a
+ * summary to the full mapper reads fields that are not there and throws, which is exactly how the
+ * Money and Pipeline pages came to render "Something went wrong": both call sites had an
+ * `as never` cast that silenced the compiler's objection. Naming these types is what makes that
+ * mistake impossible rather than merely discouraged.
+ */
+export type InvoiceSummaryDTO = RouterOutputs["v1"]["invoicing"]["list"]["items"][number];
+export type EstimateSummaryDTO = RouterOutputs["v1"]["quoting"]["list"]["items"][number];
 export type TimeEntryDTO = RouterOutputs["v1"]["timesheets"]["list"]["items"][number];
 type VisitDTO = JobDTO["visits"][number];
 
@@ -410,6 +422,79 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
  * @param dto - Full invoiceDTO from the invoicing router.
  * @param priorInv - Prior store record (used to preserve local-only fields).
  */
+/**
+ * A LIST row → a store Invoice. Header only, and honest about it.
+ *
+ * The ledger renders one row per invoice: who, what, how much, how much is left. It does not need
+ * the lines or the payment history, and the list endpoint does not send them — so this builds a
+ * record with those empty rather than pretending, and the modal fetches the full invoice when the
+ * row is opened.
+ *
+ * `paidTotal` is why the money still adds up. Balance normally comes from summing the payments,
+ * which are absent here; the server already computed `due`, so the paid figure is derived from it
+ * and marked authoritative. Without that, every row on the ledger would read as fully unpaid.
+ */
+export function dtoInvoiceSummaryToStore(
+  dto: InvoiceSummaryDTO,
+  priorInv: Pick<Invoice, "cust" | "phone" | "email">,
+): Invoice {
+  const total = dto.total.cents / 100;
+  const due = dto.due.cents / 100;
+  return {
+    id: dto.id,
+    num: dto.num,
+    jobId: null,
+    leadId: dto.leadId,
+    cust: dto.customerName ?? priorInv.cust,
+    phone: priorInv.phone,
+    email: priorInv.email,
+    title: dto.title ?? "Invoice",
+    status: dto.status,
+    total,
+    depPaid: 0,
+    // Everything already paid, deposit included — the server's figure, not a re-derivation.
+    paidTotal: Math.max(0, total - due),
+    payments: [],
+    lines: [],
+    age: daysSince(dto.createdAt),
+    dueAt: dto.dueAt,
+    archived: dto.status === "void",
+    origin: "db",
+  };
+}
+
+/**
+ * A LIST row → a store Estimate. Header only, same reasoning as the invoice summary above.
+ *
+ * `cachedTotal` carries the figure the domain computed, which is what estTotal reads when there
+ * are no lines — so a rail card shows the right money without the lines being loaded.
+ */
+export function dtoEstimateSummaryToStore(
+  dto: EstimateSummaryDTO,
+  fu: Estimate["fu"],
+): Estimate {
+  return {
+    id: dto.id,
+    num: dto.num,
+    leadId: dto.leadId,
+    title: dto.title ?? "Quote",
+    status: dto.status,
+    age: daysSince(dto.createdAt),
+    viewed: dto.status !== "draft",
+    fu,
+    lines: [],
+    cachedTotal: dto.total.cents / 100,
+    archived: false,
+    trash: false,
+    reads: [],
+    publicToken: dto.publicToken ?? undefined,
+    publicUrl: dto.publicUrl ?? undefined,
+    recommendedTier: dto.recommendedTier ?? undefined,
+    acceptedTier: dto.acceptedTier ?? undefined,
+    origin: "db",
+  } as Estimate;
+}
+
 export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
   return {
     id: dto.id,

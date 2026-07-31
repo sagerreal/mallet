@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { api } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
-import { dtoEstimateToStore } from "@/lib/store/dto-mapper";
+import { dtoEstimateSummaryToStore } from "@/lib/store/dto-mapper";
 import { railRowsFor, wonRowsFor, deltaOf, type RailRow, type WonRow } from "@/features/quotes/derive";
 import { deriveGetting, type GettingRow } from "@/features/pipeline/working";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
@@ -81,7 +81,7 @@ export function useRailColumns(): RailColumns {
   const getting = useMemo(() => {
     const leadRows = (quotingLeads.data?.items ?? []).map(toStoreLead);
     const draftRows = (drafts.data?.items ?? []).map((dto) =>
-      dtoEstimateToStore(dto as never, { on: false, stage: 0 }),
+      dtoEstimateSummaryToStore(dto, { on: false, stage: 0 }),
     );
     // deriveGetting pairs the two and shapes the card. Passing SERVER-selected sets is what makes
     // that safe: its "skip a draft whose customer is missing" guard used to fire whenever the
@@ -95,7 +95,7 @@ export function useRailColumns(): RailColumns {
   const out = useMemo(() => {
     const rows = (sentItems ?? []).map((dto) => ({
       // fu is client-local follow-up state; a list read carries none.
-      est: dtoEstimateToStore(dto as never, { on: false, stage: 0 }),
+      est: dtoEstimateSummaryToStore(dto, { on: false, stage: 0 }),
       customerName: dto.customerName,
     }));
     return railRowsFor(rows, leads);
@@ -103,7 +103,7 @@ export function useRailColumns(): RailColumns {
 
   const won = useMemo(() => {
     const rows = (acceptedItems ?? []).map((dto) => ({
-      est: dtoEstimateToStore(dto as never, { on: false, stage: 0 }),
+      est: dtoEstimateSummaryToStore(dto, { on: false, stage: 0 }),
       customerName: dto.customerName,
     }));
     return wonRowsFor(rows, leads, jobs);

@@ -14,6 +14,10 @@ import { todayISO } from "@/lib/clock";
 
 /** Sum of recorded payment amounts. */
 export function invPaid(i: Invoice): number {
+  // A record built from a LIST row carries no payments — the endpoint does not send them — but the
+  // server already computed the balance, so paidTotal holds its answer. Preferring it is what
+  // keeps a ledger row from reading as fully unpaid.
+  if (i.paidTotal !== undefined) return i.paidTotal;
   return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
 }
 

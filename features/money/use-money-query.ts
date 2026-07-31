@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { dtoJobToStoreJob } from "@/lib/store/dto-mapper";
-import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
+import { dtoInvoiceSummaryToStore } from "@/lib/store/dto-mapper";
 import { localToday } from "@/features/jobs/use-jobs-query";
 import type { InvoiceView } from "@/modules/invoicing/infra/invoice-views";
 
@@ -83,14 +83,11 @@ export function useMoneyQuery(state: MoneyQueryState) {
       // Filtering to ready-to-bill means no invoice belongs in the answer, so the rows are dropped
       // rather than the query being disabled — its cache stays warm for when the filter clears.
       (onlyReady ? [] : (invoices.data?.pages.flatMap((p) => p.items) ?? [])).map((i) =>
-        // dtoInvoiceToStore needs a prior record for the fields the DTO does not carry. The
-        // customer NAME now comes from the server; phone and email genuinely are not on the
-        // summary, and the ledger does not render them — so they are empty rather than guessed.
-        dtoInvoiceToStore(i as never, {
-          cust: i.customerName ?? "—",
-          phone: "",
-          email: "",
-        } as never),
+        // The SUMMARY mapper, not the full one. Passing a list row to dtoInvoiceToStore read
+        // `dto.tax.cents` off a field the summary does not carry and threw — which is what put
+        // "Something went wrong" on the Money page. Phone and email genuinely are not on a
+        // summary and the ledger does not render them, so they are empty rather than guessed.
+        dtoInvoiceSummaryToStore(i, { cust: "—", phone: "", email: "" }),
       ),
     [invoices.data, onlyReady],
   );

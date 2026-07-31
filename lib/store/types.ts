@@ -436,6 +436,15 @@ export interface Invoice {
   tax?: number;
   depPaid: number;
   payments: Payment[];
+  /**
+   * Everything already paid on this invoice, in dollars — deposit included.
+   *
+   * Present only on records built from a LIST row, where the payment history is not sent. The
+   * balance is normally the sum of `payments`; with none loaded, every ledger row would read as
+   * fully unpaid. The server already computed the balance, so this carries its answer and
+   * `invPaid` prefers it. Absent on a fully-loaded invoice, where the payments ARE the truth.
+   */
+  paidTotal?: number;
   status: string;
   /** Days since the invoice was raised. Display only — "overdue" is `dueAt`, not this. */
   age: number;
