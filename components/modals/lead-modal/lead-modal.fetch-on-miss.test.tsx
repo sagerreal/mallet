@@ -38,7 +38,14 @@ vi.mock("@/lib/store/app-store", () => ({
 }));
 
 vi.mock("@/lib/trpc/client", () => ({
-  api: { v1: { customers: { get: { useQuery: () => leadQuery } } } },
+  api: {
+    v1: {
+      customers: { get: { useQuery: () => leadQuery } },
+      // per-customer work now fetched server-side; settled/empty for these routing tests
+      quoting: { listByLead: { useQuery: () => ({ data: undefined, isFetched: true }) } },
+      tasks: { list: { useQuery: () => ({ data: undefined, isFetched: true }) } },
+    },
+  },
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
