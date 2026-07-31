@@ -10,6 +10,7 @@ import type { OrgId } from "@mallet/shared/types";
 import { INVOICE_STATUSES, type Invoice, type InvoiceStatus } from "../domain/invoice";
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
+import { DrizzleLeadRepository } from "@mallet/customers";
 import { INVOICE_SORTS } from "../infra/invoice-sorts";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
@@ -89,6 +90,14 @@ const summaryDTO = z.object({
   id: z.string().uuid(),
   num: z.string(),
   leadId: z.string().uuid(),
+  /**
+   * The customer's name, resolved SERVER-side.
+   *
+   * The ledger looked this up in the store's leads collection, which works only while every lead
+   * is loaded — and leads hit the same page ceiling as invoices, so a paginated ledger would show
+   * a blank customer for every row past the first page.
+   */
+  customerName: z.string().nullable(),
   title: z.string().nullable(),
   status: statusEnum,
   total: moneyDTO,
@@ -242,12 +251,13 @@ const toInvoiceDTO = (invoice: Invoice) => {
   };
 };
 
-const toSummaryDTO = (invoice: Invoice) => {
+const toSummaryDTO = (invoice: Invoice, customerName: string | null = null) => {
   const p = invoice.props;
   return {
     id: p.id,
     num: p.num,
     leadId: p.leadId,
+    customerName,
     title: p.title,
     status: p.status,
     total: money$(p.total),
@@ -426,7 +436,16 @@ export const createInvoiceRouter = () =>
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
           filter: { status: input.status, unpaidOnly: input.unpaidOnly, search: input.search },
         });
-        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+        // One batched lead read for the page — never a per-row query. Same pattern the jobs list
+        // uses, and for the same reason: the store cannot be relied on to hold these leads.
+        const names = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findByIds(
+          [...new Set(page.items.map((i) => i.props.leadId))],
+        );
+        const nameById = new Map<string, string>(names.map((l: { props: { id: string; name: string } }) => [String(l.props.id), l.props.name]));
+        return {
+          items: page.items.map((i) => toSummaryDTO(i, nameById.get(String(i.props.leadId)) ?? null)),
+          nextCursor: page.nextCursor,
+        };
       }),
 
     /** The TRUE number of invoices matching a filter — shares list()'s predicates. */
@@ -459,7 +478,7 @@ export const createInvoiceRouter = () =>
           asLeadId(input.leadId),
           toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         );
-        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+        return { items: page.items.map((i) => toSummaryDTO(i)), nextCursor: page.nextCursor };
       }),
 
     listOverdue: ownerOrOffice
@@ -471,6 +490,6 @@ export const createInvoiceRouter = () =>
           ctx.deps.clock.now(),
           toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         );
-        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+        return { items: page.items.map((i) => toSummaryDTO(i)), nextCursor: page.nextCursor };
       }),
   });

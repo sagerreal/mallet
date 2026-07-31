@@ -26,6 +26,7 @@ import {
 } from "./money-derive";
 import { MoneyTable, MONEY_COL_ORDER, type MoneyColKey, type MoneyRowCallbacks } from "./money-table";
 import { MoneyToolbar, MoneyColumnsPanel, MoneyFiltersPanel, type MoneySet } from "./money-toolbar";
+import { useMoneyQuery, useMoneyQueryState } from "./use-money-query";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 
@@ -87,8 +88,6 @@ const FIRST_RUN = {
 
 export function MoneyLedger() {
   const router = useRouter();
-  const invoices = useAppStore((s) => s.invoices);
-  const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
 
   const openModal = useOpenModal();
@@ -106,16 +105,24 @@ export function MoneyLedger() {
   // Armed "charge card on file" — first tap arms, second tap charges.
   const [armedCharge, setArmedCharge] = useState<string | null>(null);
 
+  // The ledger is served by the database now. It is a UNION of two things, so it is fetched as
+  // two: the ready-to-bill WORKLIST whole (it is short by nature, and if it ever is not, that is
+  // the signal this screen exists to give), and the invoices a page at a time in ledger order.
+  // `ready` ranks 0, so concatenating is the same order the merged derive produced.
+  const mq = useMoneyQueryState();
+  const money = useMoneyQuery({ search: q, archived: moneySet === "archived" });
   const source = useMemo(
     () =>
       moneySet === "active"
-        ? deriveMoneyRows(invoices, jobs, leads)
-        : deriveArchivedMoneyRows(invoices, leads),
-    [moneySet, invoices, jobs, leads] // jobs unused on the archived branch — harmless over-recompute, kept for simplicity
+        ? deriveMoneyRows(money.invoiceRows, money.readyJobs, leads)
+        : deriveArchivedMoneyRows(money.invoiceRows, leads),
+    [moneySet, money.invoiceRows, money.readyJobs, leads],
   );
+  // Status filtering stays client-side, over the loaded page ONLY — see the note by the filter
+  // panel. Search is server-side and is what actually reaches the whole book.
   const rows = useMemo(
-    () => filterMoneyRows(source, { statusFilter, q }),
-    [source, statusFilter, q]
+    () => filterMoneyRows(source, { statusFilter, q: "" }),
+    [source, statusFilter],
   );
   const activeFilterCount = statusFilter ? 1 : 0;
 
@@ -141,7 +148,8 @@ export function MoneyLedger() {
 
   // Build the draft from what was sold + approved add-ons, then open it.
   function createFromJob(jobId: string) {
-    const j = jobs.find((x) => x.id === jobId);
+    // On-screen rows only — a user cannot act on a row they cannot see.
+    const j = money.readyJobs.find((x) => x.id === jobId);
     if (!j) return;
     const lead = leads.find((l) => l.id === j.leadId);
     // Office surface: rates are never redacted here; ?? 0 only satisfies the shared type.
@@ -189,7 +197,7 @@ export function MoneyLedger() {
     onCreateInvoice: createFromJob,
     onOpenInvoice: openInvoice,
     onRemind: (id) => {
-      const i = invoices.find((x) => x.id === id);
+      const i = money.invoiceRows.find((x) => x.id === id);
       if (!i) return;
       updateInvoice(id, { fu: { on: true, stage: Math.min((i.fu?.stage ?? 0) + 1, 2) } });
     },
@@ -199,7 +207,7 @@ export function MoneyLedger() {
         setArmedCharge(id);
         return;
       }
-      const i = invoices.find((x) => x.id === id);
+      const i = money.invoiceRows.find((x) => x.id === id);
       if (!i) return;
       recordPayment(id, { amt: invDue(i), when: "Just now", method: "card", onFile: true });
       setArmedCharge(null);
@@ -220,26 +228,12 @@ export function MoneyLedger() {
       "Nothing owed — every finished job is billed and paid."
     );
 
-  // Same query key + options as InvoicesHydrator → React Query dedupes it (no extra fetch). Gate on
-  // the TOTAL invoice count so a no-match search on a populated shop still falls through to the
-  // table. Never flashes mid-fetch / on a failed load.
-  const invQuery = api.v1.invoicing.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  // The ledger's "ready to bill" rows come from JOBS (a different hydrator that can land after
-  // invoices) — without this second gate, a shop with finished-but-unbilled jobs was told
-  // "Nothing owed — every finished job is billed and paid." / "No invoices yet" for a beat.
-  const jobsQuery = api.v1.jobs.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  const jobsLoading = isFirstLoad({ isFetched: jobsQuery.isFetched, isError: jobsQuery.isError, count: jobs.length });
-  const firstRun =
-    shouldShowFirstRun({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length }) && !jobsLoading;
-  const loadFailed = shouldShowLoadFailed({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length });
-  const loading =
-    isFirstLoad({ isFetched: invQuery.isFetched, isError: invQuery.isError, count: invoices.length }) || jobsLoading;
+  // Gated on the SERVER's total, never on the loaded page: a no-match search on a shop that HAS
+  // invoices must fall through to an empty list, not to "No invoices yet". `?? 1` while the count
+  // is in flight keeps the first-run screen from flashing before it lands.
+  const firstRun = shouldShowFirstRun({ isFetched: money.isFetched, isError: money.isError, count: money.total ?? 1 });
+  const loadFailed = shouldShowLoadFailed({ isFetched: money.isFetched, isError: money.isError, count: money.total ?? 0 });
+  const loading = money.isLoading;
 
   return (
     <>
@@ -252,7 +246,7 @@ export function MoneyLedger() {
       {loading ? (
         <ListLoading />
       ) : loadFailed ? (
-        <LoadFailed noun="invoices" onRetry={() => void invQuery.refetch()} retrying={invQuery.isRefetching} />
+        <LoadFailed noun="invoices" onRetry={money.refetch} retrying={money.isRefetching} />
       ) : firstRun ? (
         <FirstRunEmptyState
           heading={FIRST_RUN.heading}
@@ -275,7 +269,7 @@ export function MoneyLedger() {
             onToggleCols={() => setColsOpen((v) => !v)}
             activeFilterCount={activeFilterCount}
             shown={rows.length}
-            total={source.length}
+            total={money.total ?? source.length}
           />
 
           {colsOpen && <MoneyColumnsPanel visible={visibleCols} onToggle={toggleCol} />}
