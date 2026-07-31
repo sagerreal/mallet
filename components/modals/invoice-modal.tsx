@@ -22,7 +22,14 @@
  *     bill-to picker, phone, email, terms, line items w/ qty/price/cost, +Add
  *     line, from-pricebook, subtotal/discount/tax/Total + margin, Pricing options.
  *   - READ-ONLY (sent, or a job invoice) → the line table + Total − deposit −
- *     payments + Due-now/Paid-in-full row + the payments list.
+ *     payments + Due-now/Paid-in-full row + the payments list. A job invoice
+ *     also carries a "From job" row (the bill is built on the job, not here);
+ *     with nothing billed yet it says so and points at the job.
+ *
+ * The branch decision NEVER runs on a summary row: list-hydrated invoices are
+ * `partial` (no lines/jobId), so the sheet fetches the full record on open and
+ * holds a quiet Loading line until it lands — a partial job draft used to open
+ * the hand-made editor with an empty Bill-to under a real bill.
  *
  * OUT OF SCOPE (handled elsewhere, per the prototype's other paths):
  *   - the job add-on plumbing (billAskBlock / invIncludeAddon / invSkipAddon).
@@ -516,12 +523,32 @@ function EditBlock({
 
 interface ReadOnlyViewProps {
   invoice: Invoice;
+  /** Opens the source job — present when the invoice was raised from one. */
+  onOpenJob?: () => void;
 }
 
-function ReadOnlyView({ invoice }: ReadOnlyViewProps) {
+function ReadOnlyView({ invoice, onOpenJob }: ReadOnlyViewProps) {
   const paid = invPaid(invoice);
   const due = invDue(invoice);
   const total = invoice.total ?? 0;
+  const fromJob = invoice.jobId != null;
+
+  // A job's invoice with nothing billed isn't a dead end — the price lives on the job.
+  if (fromJob && total <= 0) {
+    return (
+      <div className="card" style={{ marginTop: "var(--space-4)", textAlign: "center", padding: "var(--space-6) var(--space-4)" }}>
+        <b>No bill yet</b>
+        <p className="muted" style={{ margin: "var(--space-1) 0 var(--space-3)", fontSize: "var(--type-sm)" }}>
+          Price the job and the bill lands here.
+        </p>
+        {onOpenJob ? (
+          <button type="button" className="btn" onClick={onOpenJob}>
+            Open the job
+          </button>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="card" style={{ marginTop: "var(--space-4)" }}>
@@ -626,17 +653,20 @@ export function InvoiceModalContent() {
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
   const invoice = invoices.find((i) => i.id === invoiceId);
 
-  // FETCH-ON-MISS. The Money ledger pages through the database, so it lists invoices the store
-  // never hydrated; opening one of those rendered an EMPTY sheet under an open modal shell.
-  // The customer name comes from the DTO now, not from the store's leads — that collection has
-  // the same ceiling and would have shown a blank customer on the row this fixes.
+  // FETCH-ON-OPEN. The Money ledger and hydrator fill the store with SUMMARY rows — no lines,
+  // no jobId, no payment history (`partial: true`). This sheet DECIDES things from those fields
+  // (editor vs read-only, the due figure), so a partial row is as dangerous as a missing one:
+  // a job's $685 draft opened the hand-made-draft editor with an empty Bill-to and "No lines
+  // yet". The full record is fetched whenever the sheet opens; the store row is only trusted
+  // once it is not partial.
   const missing = Boolean(invoiceId) && !invoice;
+  const needsFull = missing || Boolean(invoice?.partial);
   const invQ = api.v1.invoicing.get.useQuery(
     { invoiceId: invoiceId ?? "" },
-    { enabled: missing, staleTime: 30_000, refetchOnWindowFocus: false },
+    { enabled: Boolean(invoiceId), staleTime: 30_000, refetchOnWindowFocus: false },
   );
   useEffect(() => {
-    if (!missing || !invQ.data) return;
+    if (!needsFull || !invQ.data) return;
     const dto = invQ.data;
     adoptInvoice(
       dtoInvoiceToStore(dto as never, {
@@ -645,14 +675,14 @@ export function InvoiceModalContent() {
         email: "",
       } as never),
     );
-  }, [missing, invQ.data, adoptInvoice]);
+  }, [needsFull, invQ.data, adoptInvoice]);
 
-  if (!invoice) {
-    if (missing && invQ.isLoading) return <p className="muted">Loading…</p>;
-    if (missing && invQ.isError) {
+  if (!invoiceId) return null;
+  if (!invoice || invoice.partial) {
+    if (invQ.isError) {
       return <p className="muted">Couldn&apos;t load this invoice. Close and try again.</p>;
     }
-    return null;
+    return <p className="muted">Loading…</p>;
   }
 
   const job = invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
@@ -760,6 +790,19 @@ export function InvoiceModalContent() {
           body and the money actions on purpose: a warning shown after Send is a post-mortem. */}
       <InvoiceAuthorizationNote authorization={invoice.authorization} />
 
+      {/* Where this bill comes from — the one fact that explains why some invoices are
+          edited here and some are not. A job's invoice is built on the job (Build the
+          price); a hand-made one is built right here. The row is the way back. */}
+      {invoice.jobId != null ? (
+        <div className="sheet-rows" style={{ marginTop: "var(--space-3)" }}>
+          <SheetRow
+            label="From job"
+            value={job?.title ?? invoice.title}
+            onPress={() => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })}
+          />
+        </div>
+      ) : null}
+
       {/* Body — editable edit-block vs read-only view */}
       {editable ? (
         <EditBlock
@@ -778,7 +821,14 @@ export function InvoiceModalContent() {
           onSetDepPaid={(depPaid) => updateInvoice(invoice.id, { depPaid })}
         />
       ) : (
-        <ReadOnlyView invoice={invoice} />
+        <ReadOnlyView
+          invoice={invoice}
+          onOpenJob={
+            invoice.jobId != null
+              ? () => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })
+              : undefined
+          }
+        />
       )}
 
       {/* Record cash or check — the quiet peer of Charge (money already

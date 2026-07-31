@@ -456,6 +456,8 @@ export function dtoInvoiceSummaryToStore(
     paidTotal: Math.max(0, total - due),
     payments: [],
     lines: [],
+    // A summary row — no lines/jobId/history; deciders must fetch the full record.
+    partial: true,
     age: daysSince(dto.createdAt),
     dueAt: dto.dueAt,
     archived: dto.status === "void",
