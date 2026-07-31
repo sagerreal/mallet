@@ -14,6 +14,8 @@ import { useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { firstName } from "@/features/home/derive";
 import { clockNow, commitOkSend, dispatchOkSend } from "@/features/home/send";
+import { useOkItems } from "@/features/home/use-ok-queue";
+import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { matchRows, deriveSuggestions } from "./matcher";
 import { api } from "@/lib/trpc/client";
@@ -53,9 +55,37 @@ export function useCounter() {
   // Bounded by reset-on-close for now; a per-turn cap or token-size limit could be added later.
   const [activeTranscript, setActiveTranscript] = useState<string | null>(null);
 
+  // SERVER truth for anything the agent SPEAKS: totals from invoicing, the ranked
+  // OK items, and the quoting-view customers. The raw collections below stay for
+  // record lookup (open modal by name etc.) — they are a page, not the book.
+  const totalsQ = api.v1.invoicing.totals.useQuery(undefined, { refetchOnWindowFocus: true });
+  const okItems = useOkItems();
+  const quotingQ = api.v1.customers.list.useQuery(
+    { view: "quoting", limit: 200, sort: "created" },
+    { refetchOnWindowFocus: true },
+  );
+  const sentQ = api.v1.quoting.list.useQuery(
+    { status: "sent", limit: 200 },
+    { refetchOnWindowFocus: true },
+  );
   const snap: Snap = useMemo(
-    () => ({ leads, estimates, invoices, jobs, techs, brandName: brand.name }),
-    [leads, estimates, invoices, jobs, techs, brand.name]
+    () => ({
+      leads,
+      estimates,
+      invoices,
+      jobs,
+      techs,
+      brandName: brand.name,
+      serverMoney: totalsQ.data
+        ? {
+            quotesOutDollars: (sentQ.data?.items ?? []).reduce((s, e) => s + e.total.cents / 100, 0),
+            owedDollars: totalsQ.data.openCents / 100,
+          }
+        : undefined,
+      okItems: okItems.isLoading ? undefined : okItems.items,
+      quotingLeads: quotingQ.data ? quotingQ.data.items.map(toStoreLead) : undefined,
+    }),
+    [leads, estimates, invoices, jobs, techs, brand.name, totalsQ.data, sentQ.data, okItems, quotingQ.data]
   );
 
   const rows = useMemo(

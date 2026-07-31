@@ -62,7 +62,8 @@ function justTexted(lead: { acts?: { from?: string; when: string }[] }): boolean
 
 export function buildMoneyRun(snap: Snap): Artifact {
   // Uncapped intent: the queue derivation, ignoring per-surface dismissals.
-  const items = deriveOkQueue(snap.leads, snap.estimates, snap.invoices, []);
+  // Server-ranked items when the surface fetched them; the store join sees one page.
+  const items = snap.okItems ?? deriveOkQueue(snap.leads, snap.estimates, snap.invoices, []);
   const fresh = items.filter((i) => justTexted(i.lead));
   const chase = items.filter(
     (i) => (i.kind === "quote-viewed" || i.kind === "invoice-overdue") && !justTexted(i.lead)

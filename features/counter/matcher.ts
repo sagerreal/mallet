@@ -99,6 +99,8 @@ export function matchRows(query: string, snap: Snap): PersonRow[] {
 
 /** Sum of money answerable right now (quotes out + invoice balances due). */
 export function reachableMoney(snap: Snap): number {
+  // SERVER truth when the surface fetched it — the store sums below see one page.
+  if (snap.serverMoney) return snap.serverMoney.quotesOutDollars + snap.serverMoney.owedDollars;
   const quotes = snap.estimates
     .filter((e) => !e.archived && !e.trash && e.status === "sent")
     .reduce((s, e) => s + estTotal(e), 0);
