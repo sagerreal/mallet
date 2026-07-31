@@ -12,6 +12,8 @@ export interface MaterialRepository {
     name: string;
     description: string | null;
     unitCostCents: number;
+    unitPriceCents: number;
+    pricingMode: "rule" | "manual";
     unitOfMeasure: string;
     markupBps: number | null;
     taxable: boolean;
@@ -31,4 +33,11 @@ export interface MaterialRepository {
 
   // Soft-delete via deletedAt. Returns the number of rows affected (0 = not found).
   archive(id: MaterialId, now: Date): Promise<number>;
+}
+
+/** The org's markup-band table. Empty list = org uses DEFAULT_MARKUP_BANDS. */
+export interface MarkupBandsRepository {
+  list(): Promise<{ minCostCents: number; markupBps: number }[]>;
+  /** Replace the whole table atomically — bands are a small ordered set, not row-CRUD. */
+  replaceAll(bands: { minCostCents: number; markupBps: number }[]): Promise<void>;
 }

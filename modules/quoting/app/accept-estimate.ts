@@ -73,6 +73,7 @@ export class AcceptEstimateUseCase {
           position: i,
           // Committed accept-time lines are always resolved — never tier-tagged.
           tier: null,
+          materialId: null,
         });
         if (!isOk(line)) return line;
         built.push(line.value);

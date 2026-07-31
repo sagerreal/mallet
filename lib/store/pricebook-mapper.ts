@@ -72,6 +72,8 @@ export function materialDtoToStore(dto: MaterialDTO): Material {
     name: dto.name,
     description: dto.description,
     unitCost: dto.unitCostCents / 100,
+    unitPrice: dto.unitPriceCents / 100,
+    pricingMode: dto.pricingMode,
     unitOfMeasure: dto.unitOfMeasure,
     markupBps: dto.markupBps,
     taxable: dto.taxable,
@@ -276,6 +278,7 @@ export type MaterialUpdateFields = Partial<
     | "code"
     | "description"
     | "unitCost"
+    | "unitPrice"
     | "unitOfMeasure"
     | "markupBps"
     | "taxable"
@@ -292,6 +295,7 @@ export interface MaterialUpdatePayload {
   code?: string | null;
   description?: string | null;
   unitCostCents?: number;
+  unitPriceCents?: number;
   unitOfMeasure?: string;
   markupBps?: number | null;
   taxable?: boolean;
@@ -312,6 +316,9 @@ export function materialUpdatePayload(
     ...(fields.description !== undefined ? { description: fields.description } : {}),
     ...(fields.unitCost !== undefined
       ? { unitCostCents: Math.max(0, Math.round(fields.unitCost * 100)) }
+      : {}),
+    ...(fields.unitPrice !== undefined
+      ? { unitPriceCents: Math.max(0, Math.round(fields.unitPrice * 100)) }
       : {}),
     ...(fields.unitOfMeasure !== undefined ? { unitOfMeasure: fields.unitOfMeasure } : {}),
     ...(fields.markupBps !== undefined ? { markupBps: fields.markupBps } : {}),

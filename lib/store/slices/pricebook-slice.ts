@@ -300,6 +300,10 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
       name,
       description: cmd.description ?? null,
       unitCost: Math.max(0, cmd.unitCost || 0),
+      // Optimistic sell guess = cost (rule mode); the server's band-derived price
+      // reconciles in on success — same adopt-the-DTO contract as every write.
+      unitPrice: Math.max(0, cmd.unitCost || 0),
+      pricingMode: "rule",
       unitOfMeasure: cmd.unitOfMeasure ?? "each",
       markupBps: cmd.markupBps ?? null,
       taxable: cmd.taxable ?? false,

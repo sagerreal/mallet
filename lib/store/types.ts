@@ -332,6 +332,10 @@ export interface Material {
   name: string;
   description: string | null;
   unitCost: number; // dollars
+  /** Sell price in dollars — what the customer pays. rule = derived from cost via the
+   * org's markup bands; manual = the shop's own number. */
+  unitPrice: number;
+  pricingMode: "rule" | "manual";
   unitOfMeasure: string;
   markupBps: number | null;
   taxable: boolean;

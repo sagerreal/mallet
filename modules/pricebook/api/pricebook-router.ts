@@ -10,6 +10,8 @@ import {
 import { DrizzleServiceRepository } from "../infra/drizzle-service-repository";
 import { DrizzleCategoryRepository } from "../infra/drizzle-category-repository";
 import { DrizzleMaterialRepository } from "../infra/drizzle-material-repository";
+import { DrizzleMarkupBandsRepository } from "../infra/drizzle-markup-bands-repository";
+import { DEFAULT_MARKUP_BANDS } from "../domain/markup-bands";
 import { DrizzleServiceMaterialRepository } from "../infra/drizzle-service-material-repository";
 import { CreateServiceUseCase } from "../app/create-service";
 import { UpdateServiceUseCase } from "../app/update-service";
@@ -133,6 +135,8 @@ const materialCreateInput = z.object({
   code: z.string().max(100).nullable().optional(),
   description: z.string().max(10_000).nullable().optional(),
   unitCostCents: z.number().int().nonnegative(),
+  // Explicit sell price = manual mode from birth; absent → derived from the markup bands.
+  unitPriceCents: z.number().int().nonnegative().optional(),
   unitOfMeasure: z.string().max(50).optional(),
   markupBps: z.number().int().nonnegative().nullable().optional(),
   taxable: z.boolean().optional(),
@@ -148,6 +152,8 @@ const materialUpdateInput = z.object({
   code: z.string().max(100).nullable().optional(),
   description: z.string().max(10_000).nullable().optional(),
   unitCostCents: z.number().int().nonnegative().optional(),
+  // Direct price edit — the use-case flips the item to manual.
+  unitPriceCents: z.number().int().nonnegative().optional(),
   unitOfMeasure: z.string().max(50).optional(),
   markupBps: z.number().int().nonnegative().nullable().optional(),
   taxable: z.boolean().optional(),
@@ -410,7 +416,8 @@ export const createPricebookRouter = () =>
         .output(materialDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleMaterialRepository(ctx.tx, ctx.principal.orgId);
-          const useCase = new CreateMaterialUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+          const bands = new DrizzleMarkupBandsRepository(ctx.tx, ctx.principal.orgId);
+          const useCase = new CreateMaterialUseCase(repo, bands, ctx.deps.clock, ctx.deps.ids);
           const result = await useCase.exec(
             {
               id: input.id,
@@ -419,6 +426,7 @@ export const createPricebookRouter = () =>
               code: input.code ?? null,
               description: input.description ?? null,
               unitCostCents: input.unitCostCents,
+              unitPriceCents: input.unitPriceCents,
               unitOfMeasure: input.unitOfMeasure,
               markupBps: input.markupBps ?? null,
               taxable: input.taxable ?? false,
@@ -436,7 +444,8 @@ export const createPricebookRouter = () =>
         .output(materialDTO)
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleMaterialRepository(ctx.tx, ctx.principal.orgId);
-          const useCase = new UpdateMaterialUseCase(repo, ctx.deps.clock);
+          const bands = new DrizzleMarkupBandsRepository(ctx.tx, ctx.principal.orgId);
+          const useCase = new UpdateMaterialUseCase(repo, bands, ctx.deps.clock);
           const result = await useCase.exec(
             {
               materialId: asMaterialId(input.materialId),
@@ -445,6 +454,7 @@ export const createPricebookRouter = () =>
               code: input.code,
               description: input.description,
               unitCostCents: input.unitCostCents,
+              unitPriceCents: input.unitPriceCents,
               unitOfMeasure: input.unitOfMeasure,
               markupBps: input.markupBps,
               taxable: input.taxable,
@@ -468,6 +478,71 @@ export const createPricebookRouter = () =>
             ctx.principal.orgId,
           );
           return orThrow(result);
+        }),
+    }),
+
+    // The org's ONE cost-banded markup table. list returns the DEFAULTS (flagged) when the
+    // org has no stored rows, so the UI always shows the real numbers in effect. replaceAll
+    // also re-derives every rule-mode material's sell price — a band edit IS a reprice.
+    markupBands: router({
+      list: ownerOrOffice
+        .output(
+          z.object({
+            bands: z.array(z.object({ minCostCents: z.number().int(), markupBps: z.number().int() })),
+            isDefault: z.boolean(),
+          }),
+        )
+        .query(async ({ ctx }) => {
+          const repo = new DrizzleMarkupBandsRepository(ctx.tx, ctx.principal.orgId);
+          const stored = await repo.list();
+          if (stored.length > 0) return { bands: stored, isDefault: false };
+          return { bands: [...DEFAULT_MARKUP_BANDS], isDefault: true };
+        }),
+
+      replaceAll: ownerOrOffice
+        .input(
+          z.object({
+            bands: z
+              .array(
+                z.object({
+                  minCostCents: z.number().int().nonnegative(),
+                  markupBps: z.number().int().nonnegative().max(100_000),
+                }),
+              )
+              .min(1)
+              .max(12)
+              .refine(
+                (bands) => new Set(bands.map((b) => b.minCostCents)).size === bands.length,
+                { message: "two bands start at the same cost" },
+              )
+              .refine((bands) => bands.some((b) => b.minCostCents === 0), {
+                message: "the table needs a band starting at $0",
+              }),
+          }),
+        )
+        .output(z.object({ ok: z.boolean(), repriced: z.number().int() }))
+        .mutation(async ({ ctx, input }) => {
+          const bandsRepo = new DrizzleMarkupBandsRepository(ctx.tx, ctx.principal.orgId);
+          await bandsRepo.replaceAll(input.bands);
+          // Reprice every RULE-mode material from the new table. Manual items and existing
+          // quotes are untouched (locked spec). Small catalogs (hundreds) — one pass is fine.
+          const materialRepo = new DrizzleMaterialRepository(ctx.tx, ctx.principal.orgId);
+          const updater = new UpdateMaterialUseCase(materialRepo, bandsRepo, ctx.deps.clock);
+          let repriced = 0;
+          let cursor: string | null = null;
+          do {
+            const page = await materialRepo.list(toPage({ cursor }), {});
+            for (const m of page.items) {
+              if (m.props.pricingMode !== "rule") continue;
+              const r = await updater.exec(
+                { materialId: m.props.id, unitCostCents: m.props.unitCostCents },
+                ctx.principal.orgId,
+              );
+              if (r.ok) repriced += 1;
+            }
+            cursor = page.nextCursor;
+          } while (cursor);
+          return { ok: true, repriced };
         }),
     }),
 

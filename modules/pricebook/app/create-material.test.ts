@@ -29,6 +29,8 @@ const baseProps = (overrides: Partial<MaterialProps> = {}): MaterialProps => ({
   name: "1/2in Copper Pipe",
   description: null,
   unitCostCents: 250,
+  unitPriceCents: 0,
+  pricingMode: "rule" as const,
   unitOfMeasure: "each",
   markupBps: null,
   taxable: false,
@@ -110,6 +112,8 @@ const fixedIds = (id: string = MINTED_ID) => ({ newId: () => id });
 
 // ── CreateMaterialUseCase ─────────────────────────────────────────────────────
 
+const fakeBands = { list: async () => [], replaceAll: async () => {} };
+
 describe("CreateMaterialUseCase", () => {
   let clock: FixedClock;
   let repo: FakeMaterialRepository;
@@ -118,7 +122,7 @@ describe("CreateMaterialUseCase", () => {
   beforeEach(() => {
     clock = new FixedClock(new Date("2026-07-12T12:00:00Z"));
     repo = new FakeMaterialRepository();
-    useCase = new CreateMaterialUseCase(repo, clock, fixedIds());
+    useCase = new CreateMaterialUseCase(repo, fakeBands, clock, fixedIds());
   });
 
   // ── validation — empty name ───────────────────────────────────────────────

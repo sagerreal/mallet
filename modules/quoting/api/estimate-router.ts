@@ -180,6 +180,8 @@ const lineInput = z.object({
   isOptional: z.boolean().optional(),
   needsPhoto: z.boolean().optional(),
   tier: tierEnum.optional(),
+  // Provenance pointer when the line came from a pricebook material (sellable parts).
+  materialId: z.string().uuid().nullable().optional(),
 });
 
 const draftInput = z
@@ -465,6 +467,7 @@ export const createEstimateRouter = () =>
             isOptional: line.isOptional ?? false,
             needsPhoto: line.needsPhoto ?? false,
             tier: line.tier ?? null,
+            materialId: line.materialId ?? null,
           })),
           recommendedTier: input.recommendedTier ?? null,
           tierNames: input.tierNames ?? null,

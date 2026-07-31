@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, uuid, text, integer, boolean, timestamp, index, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 import { pricebookCategories } from "./pricebook-categories";
 
@@ -20,6 +21,13 @@ export const pricebookMaterials = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     unitCostCents: integer("unit_cost_cents").notNull().default(0),
+    // SELL side (Jul 30 2026 — materials became first-class sellable quote lines, the
+    // $1k-cost/$3k-sell AC-unit model). unit_price_cents is STORED, never computed at
+    // quote time: 'rule' mode derives it from unit_cost_cents via the org's markup bands
+    // (recomputed on cost/band edits); 'manual' means the shop typed it and cost edits
+    // never touch it. Editing the price directly flips an item to manual (HCP pattern).
+    unitPriceCents: integer("unit_price_cents").notNull().default(0),
+    pricingMode: text("pricing_mode").notNull().default("rule"),
     unitOfMeasure: text("unit_of_measure").notNull().default("each"),
     markupBps: integer("markup_bps"), // null → use org default markup
     taxable: boolean("taxable").notNull().default(false),
@@ -41,5 +49,32 @@ export const pricebookMaterials = pgTable(
       columns: [t.orgId, t.categoryId],
       foreignColumns: [pricebookCategories.orgId, pricebookCategories.id],
     }).onDelete("set null"),
+    check("pricebook_materials_pricing_mode_ck", sql`${t.pricingMode} in ('rule','manual')`),
+  ],
+);
+
+// The org's ONE cost-banded markup table (Profit Rhino shape: cheap parts marked up hard,
+// big-ticket equipment gently — a flat % destroys margin on a $2 fitting and looks
+// predatory on an $1,800 condenser). A band applies to costs >= min_cost_cents up to the
+// next band's floor. A shop wanting flat % keeps a single $0 band. NO per-category or
+// per-customer dimensions — that's the complexity the flat-rate leaders warn against.
+// Orgs with no rows use DEFAULT_MARKUP_BANDS (app constant) — no backfill needed.
+export const pricebookMarkupBands = pgTable(
+  "pricebook_markup_bands",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    minCostCents: integer("min_cost_cents").notNull(),
+    markupBps: integer("markup_bps").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("pricebook_markup_bands_org_floor_uq").on(t.orgId, t.minCostCents),
+    index("pricebook_markup_bands_org_idx").on(t.orgId),
+    check("pricebook_markup_bands_floor_ck", sql`${t.minCostCents} >= 0`),
+    check("pricebook_markup_bands_bps_ck", sql`${t.markupBps} >= 0`),
   ],
 );

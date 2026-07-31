@@ -32,6 +32,7 @@ function renderCard(over: Partial<ComposerState> = {}) {
       isDrafting={false}
       aiDraftError={null}
       services={[]}
+      materials={[]}
       run={null}
       onRunDone={vi.fn()}
       materialize={false}

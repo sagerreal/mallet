@@ -83,6 +83,7 @@ export default function ComposerPage() {
   const addLeadNote = useAppStore((s) => s.addLeadNote);
   // The real pricebook catalog — "From pricebook" reads it; "Save to book" writes to it.
   const services = useAppStore((s) => s.services);
+  const materials = useAppStore((s) => s.materials);
   const laborRates = useAppStore((s) => s.laborRates);
   // One-tap "Update labor to Nh" chips write back through the store's service update.
   const updateService = useAppStore((s) => s.updateService);
@@ -491,6 +492,7 @@ export default function ComposerPage() {
         isOptional: l.opt ?? false,
         needsPhoto: l.photo ?? false,
         tier: l.tier,
+        materialId: l.materialId ?? null,
       })),
       ...(gbb
         ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
@@ -760,6 +762,7 @@ export default function ComposerPage() {
       <QuoteCard
         state={cs}
         onUpdate={update}
+        materials={materials}
         onAiDraft={triggerAiDraft}
         onRefine={triggerRefine}
         proposals={proposals}

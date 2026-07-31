@@ -9,6 +9,10 @@ export interface MaterialProps {
   readonly name: string;
   readonly description: string | null;
   readonly unitCostCents: number;
+  /** SELL side — stored, never quote-time-computed. 'rule' derives it from cost via the
+   * org's markup bands; 'manual' means the shop typed it and cost edits never touch it. */
+  readonly unitPriceCents: number;
+  readonly pricingMode: "rule" | "manual";
   readonly unitOfMeasure: string;
   readonly markupBps: number | null;
   readonly taxable: boolean;
@@ -34,6 +38,9 @@ export class Material {
     if (props.markupBps !== null && props.markupBps < 0) {
       return err(validation("markup must be ≥ 0", "markupBps"));
     }
+    if (props.unitPriceCents < 0) {
+      return err(validation("sell price must be ≥ 0", "unitPriceCents"));
+    }
     return ok(new Material({ ...props, name }));
   }
 
@@ -46,6 +53,8 @@ export class Material {
       name?: string;
       description?: string | null;
       unitCostCents?: number;
+      unitPriceCents?: number;
+      pricingMode?: "rule" | "manual";
       unitOfMeasure?: string;
       markupBps?: number | null;
       taxable?: boolean;
@@ -63,6 +72,9 @@ export class Material {
       description: fields.description !== undefined ? fields.description : this.p.description,
       unitCostCents:
         fields.unitCostCents !== undefined ? fields.unitCostCents : this.p.unitCostCents,
+      unitPriceCents:
+        fields.unitPriceCents !== undefined ? fields.unitPriceCents : this.p.unitPriceCents,
+      pricingMode: fields.pricingMode !== undefined ? fields.pricingMode : this.p.pricingMode,
       unitOfMeasure:
         fields.unitOfMeasure !== undefined ? fields.unitOfMeasure : this.p.unitOfMeasure,
       markupBps: fields.markupBps !== undefined ? fields.markupBps : this.p.markupBps,

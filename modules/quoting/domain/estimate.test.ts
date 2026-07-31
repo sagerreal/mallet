@@ -23,6 +23,7 @@ const line = (overrides: Partial<EstimateLineProps> = {}): EstimateLine => {
     needsPhoto: false,
     position: lineSeq,
     tier: null,
+    materialId: null,
     ...overrides,
   };
   const result = EstimateLine.create(props);

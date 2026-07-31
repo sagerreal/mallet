@@ -28,6 +28,7 @@ const line = (overrides: Partial<EstimateLineProps> = {}): EstimateLine => {
     quantity: 1,
     rate: money(10_000),
     cost: zeroMoney,
+    materialId: null,
     isOptional: false,
     needsPhoto: false,
     position: lineSeq,

@@ -33,6 +33,7 @@ const line = (desc: string, rateCents: number, tier: QuoteTier | null = null): E
     needsPhoto: false,
     position: 0,
     tier,
+    materialId: null,
   });
   if (!isOk(r)) throw new Error(r.error.message);
   return r.value;

@@ -16,7 +16,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { calcQuote } from "@/lib/prototype-sample";
 import { fmt$ } from "@/lib/format";
-import type { Service } from "@/lib/store/types";
+import type { Service, Material } from "@/lib/store/types";
 import {
   hasRealLine,
   linesForSend,
@@ -54,6 +54,7 @@ export function QuoteCard({
   isDrafting,
   aiDraftError,
   services,
+  materials,
   run,
   onRunDone,
   materialize,
@@ -73,6 +74,8 @@ export function QuoteCard({
   aiDraftError: string | null;
   /** The real pricebook catalog — read direction for "From pricebook". */
   services: Service[];
+  /** Sellable materials/equipment — the picker offers them beside services. */
+  materials: Material[];
   /** The staged run reveal — non-null while a draft is in flight/revealing. */
   run: DraftRunProps2 | null;
   onRunDone: () => void;
@@ -178,11 +181,22 @@ export function QuoteCard({
     });
   }
 
+  // Materials are sellable lines too (the $1k-cost/$3k-sell AC-unit model): snapshot the
+  // CURRENT sell/cost and carry the materialId as provenance — never a live link.
+  function addPbMaterial(m: Material) {
+    onUpdate({
+      lines: [...state.lines, { d: m.name, q: 1, r: m.unitPrice, c: m.unitCost, materialId: m.id }],
+    });
+  }
+
   const pbMatches = pbQuery.trim()
     ? services.filter((svc) =>
         svc.name.toLowerCase().includes(pbQuery.trim().toLowerCase())
       )
     : services;
+  const pbMaterialMatches = pbQuery.trim()
+    ? materials.filter((m) => m.active && m.name.toLowerCase().includes(pbQuery.trim().toLowerCase()))
+    : materials.filter((m) => m.active);
 
   return (
     <div className="card" style={{ marginTop: "var(--space-5)" }}>
@@ -360,7 +374,7 @@ export function QuoteCard({
                   fontSize: "var(--type-base)",
                 }}
               />
-              {pbMatches.length === 0 ? (
+              {pbMatches.length === 0 && pbMaterialMatches.length === 0 ? (
                 services.length === 0 ? (
                   // A dead end otherwise: this used to say "Settings → Pricebook", but the
                   // pricebook moved onto the Office page — Settings has no Pricebook to find.
@@ -376,15 +390,28 @@ export function QuoteCard({
                   </span>
                 )
               ) : (
-                pbMatches.map((svc) => (
-                  <button
-                    key={svc.id}
-                    className="chip"
-                    onClick={() => addPbLine(svc)}
-                  >
-                    {svc.name} · <b>{fmt$(svc.unitPrice)}</b>
-                  </button>
-                ))
+                <>
+                  {pbMatches.map((svc) => (
+                    <button
+                      key={svc.id}
+                      className="chip"
+                      onClick={() => addPbLine(svc)}
+                    >
+                      {svc.name} · <b>{fmt$(svc.unitPrice)}</b>
+                    </button>
+                  ))}
+                  {pbMaterialMatches.map((m) => (
+                    <button
+                      key={m.id}
+                      className="chip"
+                      onClick={() => addPbMaterial(m)}
+                      title={`Material · ${m.unitOfMeasure}`}
+                    >
+                      {m.name} · <b>{fmt$(m.unitPrice)}</b>
+                      <span className="muted" style={{ marginLeft: "var(--space-1)" }}>part</span>
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           )}

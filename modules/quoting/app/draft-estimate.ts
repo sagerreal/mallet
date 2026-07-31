@@ -21,6 +21,7 @@ export interface EstimateLineInput {
   readonly needsPhoto: boolean;
   /** Good/Better/Best tag — required on every line of a tiered draft, absent otherwise. */
   readonly tier?: QuoteTier | null;
+  readonly materialId?: string | null;
 }
 
 export interface DraftEstimateCommand {
@@ -75,6 +76,7 @@ export class DraftEstimateUseCase {
         needsPhoto: input.needsPhoto,
         position: i,
         tier: input.tier ?? null,
+        materialId: input.materialId ?? null,
       });
       if (!isOk(line)) return line;
       built.push(line.value);
