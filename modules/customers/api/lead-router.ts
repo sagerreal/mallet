@@ -29,6 +29,7 @@ const leadDTO = z.object({
   unread: z.boolean(),
   companyId: z.string().uuid().nullable(),
   role: z.string().nullable(),
+  customFields: z.array(z.object({ label: z.string().min(1).max(80), value: z.string().max(500) })).max(20).nullable(),
   notes: z.string().nullable(),
   address: z.string().nullable(),
   createdAt: z.string(),
@@ -112,6 +113,7 @@ const toLeadDTO = (lead: Lead) => {
     unread: p.unread,
     companyId: p.companyId,
     role: p.role,
+    customFields: (p.customFields as { label: string; value: string }[] | null) ?? null,
     notes: p.notes,
     address: p.address,
     createdAt: p.createdAt.toISOString(),
@@ -129,6 +131,7 @@ const updateInput = z.object({
   unread: z.boolean().optional(),
   companyId: z.string().uuid().nullable().optional(),
   role: z.string().max(255).nullable().optional(),
+  customFields: z.array(z.object({ label: z.string().min(1).max(80), value: z.string().max(500) })).max(20).nullable().optional(),
   address: z.string().max(500).nullable().optional(),
 });
 
@@ -156,6 +159,7 @@ export const createLeadRouter = () =>
           input.valueCents !== undefined ||
           input.companyId !== undefined ||
           input.role !== undefined ||
+          input.customFields !== undefined ||
           input.address !== undefined
         ) {
           let phone: Phone | null | undefined = undefined;
@@ -192,6 +196,7 @@ export const createLeadRouter = () =>
                   : null
                 : undefined,
               role: input.role,
+              customFields: input.customFields,
               address: input.address,
             },
             now,

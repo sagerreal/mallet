@@ -8,6 +8,7 @@ const baseProps = (overrides: Partial<LeadProps> = {}): LeadProps => ({
   name: "Karen Doyle",
   phone: null,
   email: null,
+  customFields: null,
   source: "web",
   stage: "new",
   value: zeroMoney,

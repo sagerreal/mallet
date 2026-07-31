@@ -10,8 +10,7 @@ import {
   uniqueIndex,
   unique,
   check,
-  foreignKey,
-} from "drizzle-orm/pg-core";
+  foreignKey, jsonb } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 import { companies } from "./companies";
 
@@ -40,6 +39,10 @@ export const leads = pgTable(
     wonAt: timestamp("won_at", { withTimezone: true }),
     // B2B link: the company this contact works for (nullable — individual contacts have no company).
     companyId: uuid("company_id"),
+    // Office-defined extra fields for this customer ({label, value} pairs, order preserved).
+    // jsonb blob, not a table: these are display-only facts (gate codes, preferred entry),
+    // never queried/joined — the office reads them with the customer open.
+    customFields: jsonb("custom_fields"),
     // The contact's role at the company (e.g. "Property manager", "Owner"). Nullable.
     role: text("role"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

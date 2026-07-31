@@ -42,6 +42,8 @@ export interface Lead {
   id: string;
   name: string;
   phone: string;
+  /** Office-defined {label, value} pairs — persisted on the lead. */
+  customFields?: { label: string; value: string }[] | null;
   source: string;
   stage: string;
   age: number;
@@ -52,7 +54,7 @@ export interface Lead {
   estId?: string;
   email?: string;
   address?: string;
-  companyId?: string;
+  companyId?: string | null;
   role?: string;
   value?: number;
   lossReason?: string;

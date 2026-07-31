@@ -22,6 +22,8 @@ export interface LeadProps {
   readonly name: string;
   readonly phone: Phone | null;
   readonly email: string | null;
+  /** Office-defined {label, value} pairs — display-only facts, order preserved. */
+  readonly customFields: readonly { label: string; value: string }[] | null;
   readonly source: string | null;
   readonly stage: LeadStage;
   readonly value: Money;
@@ -86,6 +88,7 @@ export class Lead {
       name?: string;
       phone?: Phone | null;
       email?: string | null;
+      customFields?: readonly { label: string; value: string }[] | null;
       source?: string | null;
       value?: Money;
       companyId?: CompanyId | null;
@@ -110,6 +113,7 @@ export class Lead {
       name: fields.name !== undefined ? fields.name : this.p.name,
       phone: fields.phone !== undefined ? fields.phone : this.p.phone,
       email: fields.email !== undefined ? fields.email : this.p.email,
+      customFields: fields.customFields !== undefined ? fields.customFields : this.p.customFields,
       source: fields.source !== undefined ? fields.source : this.p.source,
       value: fields.value !== undefined ? fields.value : this.p.value,
       companyId: fields.companyId !== undefined ? fields.companyId : this.p.companyId,

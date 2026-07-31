@@ -130,9 +130,14 @@ export function Modal({ open, onClose, children, wide, maxWidth, label }: ModalP
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
       >
-        <button className="x" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
+        {/* Sticky zero-height rail so the ✕ stays reachable however far the sheet
+            scrolls — position:absolute pinned it to the panel TOP, which scrolled
+            away with the content (Owen lost the close button mid-modal). */}
+        <div className="xwrap">
+          <button className="x" aria-label="Close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
         {children}
       </div>
     </div>

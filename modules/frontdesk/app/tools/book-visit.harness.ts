@@ -79,6 +79,7 @@ const buildLead = (input: EnsureCustomerInput): Lead => {
     name: input.name,
     phone: input.phone,
     email: input.email,
+    customFields: null,
     source: input.source,
     stage: "new" as LeadStage,
     value: zeroMoney,
