@@ -343,6 +343,20 @@ export class OrgSettings {
           : this.p.measurementEstimating,
       hoursWdOpen: fields.hoursWdOpen !== undefined ? fields.hoursWdOpen : this.p.hoursWdOpen,
       hoursWdClose: fields.hoursWdClose !== undefined ? fields.hoursWdClose : this.p.hoursWdClose,
+      // MONDAY TO FRIDAY. These ten were missing: patch() spreads the current props and then
+      // merges the listed fields, so a field left off the list keeps its OLD value no matter what
+      // the caller sent. Saturday and Sunday were listed; the weekdays were not — so every
+      // per-day weekday edit was dropped here, silently, and the save reported success.
+      hoursMonOpen: fields.hoursMonOpen !== undefined ? fields.hoursMonOpen : this.p.hoursMonOpen,
+      hoursMonClose: fields.hoursMonClose !== undefined ? fields.hoursMonClose : this.p.hoursMonClose,
+      hoursTueOpen: fields.hoursTueOpen !== undefined ? fields.hoursTueOpen : this.p.hoursTueOpen,
+      hoursTueClose: fields.hoursTueClose !== undefined ? fields.hoursTueClose : this.p.hoursTueClose,
+      hoursWedOpen: fields.hoursWedOpen !== undefined ? fields.hoursWedOpen : this.p.hoursWedOpen,
+      hoursWedClose: fields.hoursWedClose !== undefined ? fields.hoursWedClose : this.p.hoursWedClose,
+      hoursThuOpen: fields.hoursThuOpen !== undefined ? fields.hoursThuOpen : this.p.hoursThuOpen,
+      hoursThuClose: fields.hoursThuClose !== undefined ? fields.hoursThuClose : this.p.hoursThuClose,
+      hoursFriOpen: fields.hoursFriOpen !== undefined ? fields.hoursFriOpen : this.p.hoursFriOpen,
+      hoursFriClose: fields.hoursFriClose !== undefined ? fields.hoursFriClose : this.p.hoursFriClose,
       hoursSatOpen:
         fields.hoursSatOpen !== undefined ? fields.hoursSatOpen : this.p.hoursSatOpen,
       hoursSatClose:
