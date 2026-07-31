@@ -58,6 +58,7 @@ const sent = (overrides: Partial<EstimateProps> = {}): Estimate => {
     declinedAt: null,
     declineReason: null,
     changeRequestedAt: null,
+    changeOrderForJobId: null,
     changeRequest: null,
     publicToken: "a".repeat(64),
     recommendedTier: null,

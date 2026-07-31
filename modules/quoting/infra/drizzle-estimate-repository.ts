@@ -66,6 +66,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         declinedAt: p.declinedAt,
         declineReason: p.declineReason,
         changeRequestedAt: p.changeRequestedAt,
+        changeOrderForJobId: p.changeOrderForJobId,
         changeRequest: p.changeRequest,
         publicToken: p.publicToken,
         recommendedTier: p.recommendedTier,
@@ -98,6 +99,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           declinedAt: p.declinedAt,
           declineReason: p.declineReason,
           changeRequestedAt: p.changeRequestedAt,
+        changeOrderForJobId: p.changeOrderForJobId,
           changeRequest: p.changeRequest,
           // publicToken is set once at draft time and never overwritten on subsequent saves.
           recommendedTier: p.recommendedTier,

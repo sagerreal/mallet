@@ -126,6 +126,7 @@ describe("PriceSummary — quote pointer branch", () => {
         job={job}
         onBuildPrice={vi.fn()}
         onViewQuote={vi.fn()}
+        onAddWork={vi.fn()}
       />,
     );
 
@@ -143,6 +144,7 @@ describe("PriceSummary — quote pointer branch", () => {
         job={job}
         onBuildPrice={vi.fn()}
         onViewQuote={vi.fn()}
+        onAddWork={vi.fn()}
       />,
     );
 
@@ -160,7 +162,7 @@ describe("PriceSummary — quote pointer branch", () => {
       <PriceSummary
         job={job}
         onBuildPrice={vi.fn()}
-        onViewQuote={onViewQuote}
+        onViewQuote={onViewQuote} onAddWork={vi.fn()}
       />,
     );
 
@@ -181,6 +183,7 @@ describe("PriceSummary — 'Build the price' branch (no sourceEstimateId)", () =
         job={job}
         onBuildPrice={onBuildPrice}
         onViewQuote={vi.fn()}
+        onAddWork={vi.fn()}
       />,
     );
 
@@ -197,6 +200,7 @@ describe("PriceSummary — 'Build the price' branch (no sourceEstimateId)", () =
         job={job}
         onBuildPrice={vi.fn()}
         onViewQuote={vi.fn()}
+        onAddWork={vi.fn()}
       />,
     );
 
@@ -213,6 +217,7 @@ describe("PriceSummary — 'Build the price' branch (no sourceEstimateId)", () =
         job={job}
         onBuildPrice={onBuildPrice}
         onViewQuote={vi.fn()}
+        onAddWork={vi.fn()}
       />,
     );
 

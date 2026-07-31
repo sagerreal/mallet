@@ -345,6 +345,8 @@ interface PriceSummaryProps {
   job: Job;
   onBuildPrice: () => void;
   onViewQuote: (estId: string) => void;
+  /** Raise a quote that adds work to THIS job — a change order the customer signs for. */
+  onAddWork: () => void;
 }
 
 /**
@@ -359,7 +361,7 @@ export function estDisplayTotal(est: Estimate): number | null {
   return est.cachedTotal ?? null;
 }
 
-export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryProps) {
+export function PriceSummary({ job, onBuildPrice, onViewQuote, onAddWork }: PriceSummaryProps) {
   const estimates = useAppStore((s) => s.estimates);
 
   if (jobMode(job) === "estimate") return null;
@@ -412,8 +414,16 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote }: PriceSummaryPro
     <div className="card" style={{ margin: "var(--space-4) 0 0", background: "var(--paper)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h3 style={{ fontSize: "var(--type-base)", margin: "0" }}>Price</h3>
-        <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
-          Edit
+        <span style={{ display: "flex", gap: "var(--space-3)" }}>
+          {/* MORE WORK FOUND ON SITE. A change order is not a special object — it is a quote that
+              belongs to this job, priced and SIGNED the same way, which is what turns extra work
+              into authorised work instead of a surprise on the bill. */}
+          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onAddWork}>
+            + More work
+          </span>
+          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
+            Edit
+          </span>
         </span>
       </div>
       {(job.lines ?? []).map((x, i) => (
@@ -935,6 +945,7 @@ export function JobModalContent() {
               job={job}
               onBuildPrice={() => pushModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
               onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
+              onAddWork={() => { close(); router.push(`/composer?lead=${job.leadId}&change=${job.id}`); }}
             />
           </SheetRow>
         )}

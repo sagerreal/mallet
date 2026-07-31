@@ -100,6 +100,37 @@ export function checkAuthorization(input: CheckAuthorizationInput): Authorizatio
  * signed on the web that later got a price change signed on site has two, and only the later one
  * describes what the customer currently agrees to owe.
  */
+/**
+ * Fold every signed CHANGE ORDER into the governing authorisation.
+ *
+ * A job's authorised amount is not one number on one document — it is the original signature plus
+ * everything the customer has since agreed to in writing. Without this, finding more work on site,
+ * pricing it, and having the customer sign for it still produced an invoice flagged as exceeding
+ * what was authorised: the app could say "this bill is $2,400 over" but had no way to record that
+ * they had agreed to the extra. The warning was therefore worthless — it fired on legitimate work
+ * as readily as on unauthorised work, which is how a warning gets ignored.
+ *
+ * The base document stays the one on record (a shop chasing a dispute wants the original), while
+ * `authorizedCents` becomes the total actually agreed. Change orders WITHOUT a signature are
+ * excluded — an unsigned add-on is precisely the thing the overage warning exists to catch.
+ */
+export function withChangeOrders(
+  base: Authorization | null,
+  changeOrders: readonly Authorization[],
+): Authorization | null {
+  const signed = changeOrders.filter((c) => c.signerName.trim().length > 0);
+  if (!base) {
+    // No original signature. Signed add-ons alone do not authorise the base work — they authorise
+    // themselves — so there is still nothing governing the invoice as a whole.
+    return signed.length === 0 ? null : null;
+  }
+  if (signed.length === 0) return base;
+  return {
+    ...base,
+    authorizedCents: signed.reduce((sum, c) => sum + c.authorizedCents, base.authorizedCents),
+  };
+}
+
 export function resolveAuthorization(
   jobSignature: Authorization | null,
   estimateSignature: Authorization | null,

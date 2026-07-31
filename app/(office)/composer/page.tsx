@@ -110,6 +110,9 @@ export default function ComposerPage() {
   // ComposerState ONCE (a background refetch must never re-stomp office edits,
   // same "seed once" contract as the ?lead= initializer above).
   const jobId = searchParams.get("job");
+  // "+ Quote" from inside a job lands here with ?change=<jobId>. Distinct from ?job=, which seeds
+  // a price FROM a job's measurements — this one says the quote BELONGS to that job.
+  const changeOrderJobId = searchParams.get("change");
   const buildFromMeasurementsQuery = api.v1.quoting.buildFromMeasurements.useQuery(
     { jobId: jobId ?? "" },
     { enabled: Boolean(jobId), retry: false, refetchOnWindowFocus: false },
@@ -498,6 +501,10 @@ export default function ComposerPage() {
         ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
         : {}),
       ...(cs.terms?.text.trim() ? { termsSnapshot: cs.terms.text } : {}),
+      // A quote raised from inside a RUNNING job is a change order: it adds work to that job, and
+      // the signature it collects is what makes the extra authorised rather than a surprise on the
+      // bill. ?change=<jobId> marks it; an ordinary quote sends nothing.
+      ...(changeOrderJobId ? { changeOrderForJobId: changeOrderJobId } : {}),
       // AI-originated quotes carry the AI's original lines so the server can
       // diff what the office changed (edit-delta mining → proposed rules).
       ...(() => {

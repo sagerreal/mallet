@@ -208,6 +208,14 @@ const draftInput = z
     recommendedTier: tierEnum.optional(),
     tierNames: tierNamesInput.optional(),
     termsSnapshot: z.string().trim().min(1).max(10_000).optional(),
+    /**
+     * The job this quote adds work to — makes it a CHANGE ORDER.
+     *
+     * Sent when the quote was raised from inside a running job. The quote is otherwise ordinary:
+     * priced, sent, and SIGNED the same way, which is the point — the customer agrees to the extra
+     * exactly as they agreed to the original, so the invoice can prove it.
+     */
+    changeOrderForJobId: z.string().uuid().optional(),
     // The AI drafter's ORIGINAL lines — sent only when this draft originated from the AI.
     // Persisted write-once to estimates.ai_draft; the send path diffs it against the lines
     // actually sent (edit-delta mining → proposed quoting_rules).
@@ -488,6 +496,7 @@ export const createEstimateRouter = () =>
           recommendedTier: input.recommendedTier ?? null,
           tierNames: input.tierNames ?? null,
           termsSnapshot: input.termsSnapshot ?? null,
+          changeOrderForJobId: input.changeOrderForJobId ?? null,
           aiDraftLines:
             input.aiDraft?.lines.map((line) => ({
               description: line.description,
