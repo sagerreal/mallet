@@ -54,6 +54,14 @@ export interface InvoiceRepository {
   findBySourceJob(jobId: JobId): Promise<Invoice | null>;
   list(page: CursorPage, filter?: InvoiceFilter, sort?: InvoiceSort, sortDir?: "asc" | "desc"): Promise<Paginated<Invoice>>;
 
+  /**
+   * Headline money for the whole org: what is still owed, and how much of it is late.
+   *
+   * Summed in the database rather than added up from a page, because the Dashboard states these
+   * as fact on the first screen of the app.
+   */
+  totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }>;
+
   /** How many invoices match the filter, ignoring pagination. Same predicates as list(). */
   count(filter?: InvoiceFilter): Promise<number>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Invoice>>;

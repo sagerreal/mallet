@@ -13,7 +13,7 @@ import { useState, useEffect } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
 import { deriveShiftReport, deriveOkQueue } from "@/features/home/derive";
-import { deriveHomePipe } from "@/features/home/pipe";
+import { useHomePipe } from "@/features/home/use-home-pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
 import { HomePipe, HomePipeSkeleton } from "@/features/home/home-pipe";
 import { api } from "@/lib/trpc/client";
@@ -110,7 +110,10 @@ function TodayPane() {
   const report = deriveShiftReport(leads, jobs, estimates);
   const queue = deriveOkQueue(leads, estimates, invoices, dismissed);
   const queueValue = queue.reduce((s, it) => s + it.value, 0);
-  const pipe = deriveHomePipe({ leads, estimates, invoices, jobs, techs });
+  // Every tile is computed where its data lives now. It used to add these up from the store —
+  // one page per collection, and three of the six were joins ACROSS two capped collections — so
+  // the first screen of the app stated money derived from whatever happened to be cached.
+  const pipe = useHomePipe();
 
   // Cold reload: the tiles derive from four store slices that hydrate client-side. Until every
   // hydrator's FIRST load lands, the derived figures are zeros-from-an-empty-store — rendering
@@ -141,7 +144,7 @@ function TodayPane() {
         loading={loading}
       />
 
-      {loading ? <HomePipeSkeleton /> : <HomePipe stages={pipe} />}
+      {loading || pipe.isLoading ? <HomePipeSkeleton /> : <HomePipe stages={pipe.stages} />}
 
       {!loading && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
     </div>

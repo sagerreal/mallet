@@ -143,6 +143,29 @@ suite("invoice ledger views", () => {
     }
   });
 
+  // The Dashboard states these as fact on the first screen of the app. It used to add them up
+  // from the invoices the browser had loaded — one page — so on the real org it showed $0 owed
+  // while a genuinely open invoice sat outside that window.
+  it("sums what is owed across the WHOLE book, not a page of it", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const { openCents, overdueCents, openCount } = await caller.v1.invoicing.totals();
+
+    // LV-OVER1 60000, LV-OVER2 40000-10000=30000, LV-PARTIAL 40000-15000=25000,
+    // LV-SENT1 20000, LV-SENT2 20000. Drafts and settled invoices owe nothing.
+    expect(openCents).toBe(60000 + 30000 + 25000 + 20000 + 20000);
+    expect(openCount).toBe(5);
+    // Only the two past their due date.
+    expect(overdueCents).toBe(60000 + 30000);
+  });
+
+  it("excludes drafts from what is owed — nothing was ever sent", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const { openCount } = await caller.v1.invoicing.totals();
+    const drafts = await caller.v1.invoicing.count({ view: "draft" });
+    expect(drafts.total).toBe(2);
+    expect(openCount).toBe(5); // the 2 drafts are not among them
+  });
+
   it("counts each band", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const countOf = async (view: (typeof INVOICE_VIEWS)[number]) =>

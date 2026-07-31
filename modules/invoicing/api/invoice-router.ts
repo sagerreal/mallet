@@ -466,6 +466,26 @@ export const createInvoiceRouter = () =>
         };
       }),
 
+    /**
+     * What the shop is owed, and how much of it is late — for the whole book.
+     *
+     * Its own endpoint rather than a field on `count`, because a filtered count answers "how many
+     * of these" while this answers "how much, across everything", and folding the two together
+     * would invite a caller to pass a filter that silently does not apply.
+     */
+    totals: ownerOrOffice
+      .output(
+        z.object({
+          openCents: z.number().int(),
+          overdueCents: z.number().int(),
+          openCount: z.number().int(),
+        }),
+      )
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        return repo.totals();
+      }),
+
     /** The TRUE number of invoices matching a filter — shares list()'s predicates. */
     count: ownerOrOffice
       .input(

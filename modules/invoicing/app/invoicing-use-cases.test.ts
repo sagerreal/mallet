@@ -98,6 +98,9 @@ class FakeInvoiceRepository implements InvoiceRepository {
   async findBySourceJob(jobId: JobId): Promise<Invoice | null> {
     return [...this.store.values()].find((i) => i.props.sourceJobId === jobId) ?? null;
   }
+  async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
+    return { openCents: 0, overdueCents: 0, openCount: 0 };
+  }
   async count(): Promise<number> { return 0; }
   async list(page: CursorPage, filter?: InvoiceFilter): Promise<Paginated<Invoice>> {
     let rows = [...this.store.values()].sort((a, b) => {

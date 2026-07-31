@@ -257,7 +257,10 @@ export class DrizzleJobRepository implements JobRepository {
    * all six numbers at once in the filter dropdown, and six sequential round trips on one pooled
    * connection is the difference between the dropdown opening instantly and visibly filling in.
    */
-  async viewCounts(today: string, base?: JobFilter): Promise<{ counts: Record<JobView, number>; todayCents: number }> {
+  async viewCounts(
+    today: string,
+    base?: JobFilter,
+  ): Promise<{ counts: Record<JobView, number>; todayCents: number; needsSlotCents: number; needsInvoiceCents: number }> {
     const baseConds = this.listConds({ ...base, view: undefined });
     const one = (v: JobView) =>
       sql<number>`count(*) filter (where ${viewCondition(v, this.tx, { today })})::int`;
@@ -274,12 +277,19 @@ export class DrizzleJobRepository implements JobRepository {
         // headline figure read the store, so on a shop with more jobs than one page it stated a
         // number derived from whichever 500 happened to be cached.
         todayCents: sql<number>`coalesce(sum(${jobs.totalCents}) filter (where ${viewCondition("today", this.tx, { today })}), 0)::int`,
+        // The Dashboard's "Needs a slot" and "To bill" figures, summed here for the same reason:
+        // they were added up from the loaded page, so on a shop with more jobs than one page they
+        // stated a fraction of the real money as fact.
+        needsSlotCents: sql<number>`coalesce(sum(${jobs.totalCents}) filter (where ${viewCondition("needsSlot", this.tx, { today })}), 0)::int`,
+        needsInvoiceCents: sql<number>`coalesce(sum(${jobs.totalCents}) filter (where ${viewCondition("needsInvoice", this.tx, { today })}), 0)::int`,
       })
       .from(jobs)
       .where(and(...baseConds));
     const r = rows[0];
     return {
       todayCents: r?.todayCents ?? 0,
+      needsSlotCents: r?.needsSlotCents ?? 0,
+      needsInvoiceCents: r?.needsInvoiceCents ?? 0,
       counts: {
       needsSlot: r?.needsSlot ?? 0,
       today: r?.today ?? 0,

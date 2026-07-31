@@ -14,7 +14,6 @@ let storeState: Store;
 vi.mock("@/lib/store/app-store", () => ({ useAppStore: (sel: (s: Store) => unknown) => sel(storeState) }));
 vi.mock("@/features/identity/hooks", () => ({ useMe: () => ({ data: { orgName: "Rivera Plumbing", name: "Owen D", email: "o@x.com" } }) }));
 vi.mock("@/features/home/derive", () => ({ deriveShiftReport: () => ({}), deriveOkQueue: () => [] }));
-vi.mock("@/features/home/pipe", () => ({ deriveHomePipe: () => [] }));
 vi.mock("@/features/home/handoff-note", () => ({ HandoffNote: () => <div data-testid="handoff" /> }));
 vi.mock("@/features/home/home-pipe", () => ({ HomePipe: () => <div />, HomePipeSkeleton: () => <div data-testid="pipe-skeleton" /> }));
 // The Today pane mirrors the four hydrator queries to gate the tiles on first load — the mock
@@ -29,6 +28,11 @@ vi.mock("@/lib/trpc/client", () => ({
       invoicing: { list: { useQuery: () => settledQuery } },
     },
   },
+}));
+// The tiles are computed where their data lives now, so the page reads them through this hook
+// rather than adding up store collections. Stubbed: these tests are about the tab shell.
+vi.mock("@/features/home/use-home-pipe", () => ({
+  useHomePipe: () => ({ stages: [], isLoading: false, isError: false }),
 }));
 vi.mock("@/features/home/ok-queue", () => ({ OkQueue: () => <div /> }));
 vi.mock("@/features/office/front-desk-pane", () => ({ FrontDeskPane: () => <div data-testid="fd-pane" /> }));

@@ -96,6 +96,17 @@ suite("jobs scoped views", () => {
     expect(c.done).toBe(1);
   });
 
+  // The Dashboard's money tiles. They were added up from the loaded page, so a shop with more
+  // jobs than one page stated a fraction of the real figure as fact on its first screen.
+  it("sums the money for each band in the database, not from a page", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const r = await caller.v1.jobs.viewCounts({ today: TODAY });
+    // Every seeded job carries 50000 cents, so each sum is its band's count times that.
+    expect(r.needsSlotCents).toBe(r.counts.needsSlot * 50000);
+    expect(r.needsInvoiceCents).toBe(r.counts.needsInvoice * 50000);
+    expect(r.todayCents).toBe(r.counts.today * 50000);
+  });
+
   it("views are MUTUALLY EXCLUSIVE and account for every job", async () => {
     // The property the grouped list had for free. A job in two bands makes every number wrong.
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));

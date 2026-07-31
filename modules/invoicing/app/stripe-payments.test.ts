@@ -102,6 +102,9 @@ class FakeRepo implements InvoiceRepository {
   async findBySourceJob(): Promise<Invoice | null> {
     return null;
   }
+  async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
+    return { openCents: 0, overdueCents: 0, openCount: 0 };
+  }
   async count(): Promise<number> { return 0; }
   async list(_p: CursorPage, _f?: InvoiceFilter): Promise<Paginated<Invoice>> {
     return { items: [], nextCursor: null };

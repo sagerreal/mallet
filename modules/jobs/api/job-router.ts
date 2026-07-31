@@ -297,7 +297,15 @@ export const createJobRouter = () =>
           assigneeUserId: z.string().uuid().optional(),
         }),
       )
-      .output(z.object({ counts: z.record(z.enum(JOB_VIEWS), z.number().int()), todayCents: z.number().int() }))
+            .output(
+        z.object({
+          counts: z.record(z.enum(JOB_VIEWS), z.number().int()),
+          todayCents: z.number().int(),
+          /** Dollars of won work with no slot, and of finished work with no invoice — in cents. */
+          needsSlotCents: z.number().int(),
+          needsInvoiceCents: z.number().int(),
+        }),
+      )
       .query(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         return repo.viewCounts(input.today, {
