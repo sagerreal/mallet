@@ -2,7 +2,7 @@ import { Phone, isOk, type OrgId, type LeadId, type Clock } from "@mallet/shared
 import { logger } from "@mallet/shared/observability";
 import type { LeadByPhoneReader, LeadUnreadMarker } from "@mallet/messaging";
 import type { CreateTaskUseCase } from "@mallet/tasks";
-import type { OrgSettings } from "@mallet/settings";
+import type { OrgSettings, BookingService } from "@mallet/settings";
 import type { SettingsReader } from "../domain/assistant";
 import type {
   FrontdeskCallRepository,
@@ -12,6 +12,8 @@ import type {
   RecordCallInput,
 } from "../domain/call-record";
 import { auditPrices, extractDollarFigures } from "./price-audit";
+import { resolveBookingPrices } from "../domain/pricebook-price-reader";
+import type { PricebookPriceReader } from "../domain/pricebook-price-reader";
 import { deriveDisposition } from "./disposition";
 
 // Office task text when the audit flags a price the agent should never have spoken. The office
@@ -43,6 +45,9 @@ export interface RecordCallCmd {
 // the tenant tx.
 export interface RecordCallDeps {
   readonly calls: FrontdeskCallRepository;
+  /** Current pricebook prices for LINKED services — the audit must sanction the number the
+   * assistant was actually told to speak. Absent → linked services use their stored fallback. */
+  readonly pricebookPrices?: PricebookPriceReader;
   readonly ledger: ToolInvocationLedger;
   readonly settings: SettingsReader;
   readonly leadByPhone: LeadByPhoneReader;
@@ -151,7 +156,10 @@ export class RecordCallUseCase {
       logger.warn({ orgId: cmd.orgId }, "frontdesk.call.no_settings_for_audit");
       return null;
     }
-    const allowed = allowedDollars(settings);
+    // Resolve linked pricebook prices first — the assistant spoke the RESOLVED number,
+    // so the sanctioned set must contain it or every legitimate linked quote gets flagged.
+    const services = await resolveBookingPrices(settings.props.booking.services, this.deps.pricebookPrices);
+    const allowed = allowedDollars(settings, services);
     const spoken = assistantLines(cmd.messages);
     return { flagged: auditPrices(spoken, allowed) };
   }
@@ -195,12 +203,12 @@ export class RecordCallUseCase {
 // The sanctioned spoken amounts: the service/diagnostic fee + every flat-lane service price +
 // every ballpark figure from estimate/repair services. All in DOLLARS (playbook parity).
 // A trimmed-empty ballpark yields [] from extractDollarFigures — the coercion at this seam.
-const allowedDollars = (settings: OrgSettings): number[] => {
+const allowedDollars = (settings: OrgSettings, services: readonly BookingService[]): number[] => {
   const booking = settings.props.booking;
-  const flatPrices = booking.services
+  const flatPrices = services
     .filter((s) => s.lane === "flat" && typeof s.price === "number")
     .map((s) => s.price as number);
-  const ballparkFigures = booking.services.flatMap((s) => extractDollarFigures(s.ballpark ?? ""));
+  const ballparkFigures = services.flatMap((s) => extractDollarFigures(s.ballpark ?? ""));
   return [booking.serviceFee, ...flatPrices, ...ballparkFigures];
 };
 

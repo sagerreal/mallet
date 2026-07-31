@@ -4,7 +4,10 @@ import { useState } from "react";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { Segmented } from "./segmented";
-import { COMPACT_INPUT, Field, useGroupLabel } from "@/components/ui/input";
+import { COMPACT_INPUT, Field, useGroupLabel, useFieldId } from "@/components/ui/input";
+import { SelectMenu } from "@/components/ui/select-menu";
+import { useAppStore } from "@/lib/store/app-store";
+import { fmt$ } from "@/lib/format";
 import type { ServiceLane } from "@mallet/settings";
 import {
   LANE_OPTIONS,
@@ -250,8 +253,15 @@ function ExpandedEditor({
   const [showCerts, setShowCerts] = useState((service.requiredCerts ?? []).length > 0);
   const laneGroup = useGroupLabel();
   const ballparkGroup = useGroupLabel();
+  const pricebookLink = useFieldId();
 
-  const priceMissing = flatPriceMissing(lane, price);
+  // The real pricebook catalog — the link options and the resolved display price.
+  const pricebookServices = useAppStore((s) => s.services);
+  const linkedService = service.pricebookServiceId
+    ? pricebookServices.find((p) => p.id === service.pricebookServiceId) ?? null
+    : null;
+
+  const priceMissing = !linkedService && flatPriceMissing(lane, price);
 
   // The lane is now chosen DIRECTLY — it is no longer inferred from whether a price happens to be
   // filled in, so picking a lane can never quietly land you in a different one.
@@ -299,7 +309,7 @@ function ExpandedEditor({
             options={LANE_OPTIONS}
             aria-labelledby={laneGroup.labelProps.id}
           />
-          {lane === "flat" && (
+          {lane === "flat" && !linkedService && (
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
               <input
@@ -315,7 +325,33 @@ function ExpandedEditor({
               />
             </div>
           )}
+          {lane === "flat" && linkedService && (
+            <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>
+              {fmt$(linkedService.unitPrice)}
+              <span className="muted" style={{ fontWeight: 400, fontSize: "var(--type-sm)" }}> · from your pricebook</span>
+            </span>
+          )}
         </div>
+        {/* Link the spoken price to a pricebook entry — ONE source of truth for the number.
+            Linked: the phone always speaks the pricebook's CURRENT price; the manual field
+            above disappears (it would be a dead second copy). "— custom —" unlinks. */}
+        {lane === "flat" && (
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+            <label {...pricebookLink.labelProps} style={{ fontSize: "var(--type-sm)", fontWeight: 600, color: "var(--ink-2)" }}>
+              Price from pricebook
+            </label>
+            <SelectMenu
+              value={service.pricebookServiceId ?? ""}
+              onChange={(v) => updateBookingService(index, "pricebookServiceId", v)}
+              options={[
+                { value: "", label: "— custom price —" },
+                ...pricebookServices.map((p) => ({ value: p.id, label: `${p.name} (${fmt$(p.unitPrice)})` })),
+              ]}
+              {...pricebookLink.controlProps}
+              compact
+            />
+          </div>
+        )}
         {/* What the CALLER hears. The old two-button control had nowhere to say this, which is why
             the service call fee read as if it came from nowhere. */}
         <p
@@ -326,7 +362,7 @@ function ExpandedEditor({
             color: priceMissing ? "var(--red, #B3261E)" : "var(--ink-2)",
           }}
         >
-          {laneConsequence(lane, price, serviceFee)}
+          {laneConsequence(lane, linkedService ? String(linkedService.unitPrice) : price, serviceFee)}
         </p>
       </div>
 
