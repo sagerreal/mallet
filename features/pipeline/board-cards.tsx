@@ -264,10 +264,10 @@ export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
         <button
           type="button"
           className="cname rowopen"
-          aria-label={`Open quote for ${row.lead?.name ?? "customer"}`}
+          aria-label={`Open quote for ${row.customerName}`}
           onClick={(e) => { e.stopPropagation(); openModal(MODAL.EST, { estId: row.est.id }); }}
         >
-          {row.lead?.name ?? "—"}
+          {row.customerName}
         </button>
         <span className="camt fig">{fmt$(row.total)}</span>
       </div>
@@ -309,10 +309,10 @@ export function WonCard({ row }: { row: WonRow }) {
         <button
           type="button"
           className="cname rowopen"
-          aria-label={`Open quote for ${row.lead?.name ?? "customer"}`}
+          aria-label={`Open quote for ${row.customerName}`}
           onClick={(e) => { e.stopPropagation(); openModal(MODAL.EST, { estId: row.est.id }); }}
         >
-          {row.lead?.name ?? "—"}
+          {row.customerName}
         </button>
         <span className="camt fig">{fmt$(row.total)}</span>
       </div>

@@ -13,7 +13,6 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
-import { useQuotesOut } from "@/features/quotes/use-quotes-out";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
@@ -21,8 +20,8 @@ import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-con
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
-import { deriveRail } from "@/features/quotes/derive";
-import { intakeRowOf, byStalledThenAge, deriveGetting } from "@/features/pipeline/working";
+import { useRailColumns } from "@/features/pipeline/use-rail-columns";
+import { intakeRowOf, byStalledThenAge } from "@/features/pipeline/working";
 import { IntakeCard, GettingCard, OutCard, WonCard } from "@/features/pipeline/board-cards";
 import type { Snap } from "@/features/counter/types";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -73,8 +72,11 @@ export default function PipelinePage() {
   const openModal = useOpenModal();
   const router = useRouter();
 
-  const rail = useMemo(() => deriveRail(estimates, leads, jobs), [estimates, leads, jobs]);
-  const getting = useMemo(() => deriveGetting(leads, estimates), [leads, estimates]);
+  // Out and Won come from the SERVER. They used to be built by pairing loaded quotes with loaded
+  // customers, and a quote whose customer had not loaded was dropped from the column with no
+  // trace — so the header count and the cards under it could disagree. See useRailColumns.
+  const rail = useRailColumns();
+
   const lostCount = useMemo(
     () => leads.filter((l) => !l.archived && l.stage === "Lost").length,
     [leads]
@@ -84,10 +86,6 @@ export default function PipelinePage() {
     [leads, estimates, invoices, jobs, techs, brand.name]
   );
 
-  // Quotes out come from the SERVER. The rail derived them by joining loaded estimates to loaded
-  // leads, and those two collections have independent 500-row ceilings — so a shop whose sent
-  // quotes belong to older customers saw "$0" while $29,722 was genuinely out. See useQuotesOut.
-  const out = useQuotesOut();
   // Column counts come from the DATABASE. The board derived them by partitioning the loaded
   // collections, so the first column read "New leads 500" on a 606-customer book — the hydrator's
   // page size wearing the label of a business fact. See modules/customers/infra/lead-views.ts.
@@ -110,7 +108,7 @@ export default function PipelinePage() {
   // sits outside that window would be dropped from a column whose header counted it. That
   // disagreement between the count and the cards is the whole reason this moved server-side.
   const intake = useMemo(() => intakeLeads.map(intakeRowOf).sort(byStalledThenAge), [intakeLeads]);
-  const shownSum = useAnimatedNumber(out.outSum);
+  const shownSum = useAnimatedNumber(rail.outSum);
 
   // Same query key + options as LeadsHydrator → React Query dedupes it (no extra fetch). Used only
   // to tell "still loading" / "load errored" apart from a genuinely empty pipeline, so the first-run
@@ -126,12 +124,9 @@ export default function PipelinePage() {
 
   // The money strip and Out/Won columns derive from ESTIMATES, a different hydrator that can
   // land after leads — without its own gate the strip animated up from $0 and printed
-  // "Nothing's sitting on anyone's phone." as fact. Same key as EstimatesHydrator (deduped).
-  const estimatesQ = api.v1.quoting.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  const moneyLoading = isFirstLoad({ isFetched: estimatesQ.isFetched, isError: estimatesQ.isError, count: estimates.length });
+  // "Nothing's sitting on anyone's phone." as fact. Gated on the COLUMNS' own fetch now: they are
+  // what the strip is a summary of, so they are the read that says whether it is safe to print.
+  const moneyLoading = isFirstLoad({ isFetched: rail.isFetched, isError: rail.isError, count: rail.out.length });
 
   return (
     <div>
@@ -186,13 +181,13 @@ export default function PipelinePage() {
         ) : (
           <>
             <div>
-              <div className="herofig qstrip-fig" aria-label={`$${out.outSum.toLocaleString("en-US")} out on quotes`}>
+              <div className="herofig qstrip-fig" aria-label={`$${rail.outSum.toLocaleString("en-US")} out on quotes`}>
                 ${shownSum.toLocaleString("en-US")}
               </div>
               <div className="thesis">
-                {out.outSum > 0
-                  ? out.truncated
-                    ? `sitting on customers’ phones — first ${out.count} quotes`
+                {rail.outSum > 0
+                  ? rail.outTruncated
+                    ? `sitting on customers’ phones — first ${rail.outCount} quotes`
                     : "sitting on customers’ phones"
                   : "Nothing’s sitting on anyone’s phone."}
               </div>
@@ -218,12 +213,12 @@ export default function PipelinePage() {
         <div className="col">
           <div className="col-head">
             <span>Quoting</span>
-            <ColCount server={colCounts.data?.quoting} shown={getting.length} />
+            <ColCount server={colCounts.data?.quoting} shown={rail.getting.length} />
           </div>
-          {getting.map((row) => (
+          {rail.getting.map((row) => (
             <GettingCard key={`${row.kind}-${row.est?.id ?? row.lead.id}`} row={row} />
           ))}
-          {getting.length === 0 && <div className="empty-att" style={{ padding: "var(--space-5) 0" }}>—</div>}
+          {rail.getting.length === 0 && <div className="empty-att" style={{ padding: "var(--space-5) 0" }}>—</div>}
         </div>
 
         <div className="col">

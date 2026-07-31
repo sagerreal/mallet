@@ -15,6 +15,7 @@ import { ESTIMATE_SORTS } from "../infra/estimate-sorts";
 import { ListEstimatesUseCase } from "../app/list-estimates";
 import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase, jobSummaryDTO, toJobSummaryDTO } from "@mallet/jobs";
+import { DrizzleLeadRepository } from "@mallet/customers";
 import { logger } from "@mallet/shared/observability";
 import { runInSavepoint } from "./savepoint";
 import { createQuotingRulesRouter } from "./quoting-rules-router";
@@ -143,6 +144,16 @@ const estimateSummaryDTO = z.object({
   id: z.string().uuid(),
   num: z.string(),
   leadId: z.string().uuid(),
+  /**
+   * The customer's name, resolved SERVER-side.
+   *
+   * The Pipeline's Out and Won columns paired each quote with its customer by searching the
+   * browser's loaded customers. Both collections are capped, so a quote whose customer had not
+   * loaded was DROPPED from the column entirely — silently, and more often the bigger the book
+   * got, leaving a header count that did not match the cards under it. Same fault that showed $0
+   * of quotes out while $29,722 genuinely was. Sending the name removes the lookup.
+   */
+  customerName: z.string().nullable(),
   title: z.string().nullable(),
   status: statusEnum,
   total: moneyDTO,
@@ -419,12 +430,13 @@ const publicUrlFor = (token: string | null): string | null => {
   return `${cachedOrigin}/q/${token}`;
 };
 
-const toSummaryDTO = (estimate: Estimate) => {
+const toSummaryDTO = (estimate: Estimate, customerName: string | null = null) => {
   const p = estimate.props;
   return {
     id: p.id,
     num: p.num,
     leadId: p.leadId,
+    customerName,
     title: p.title,
     status: p.status,
     total: money(estimate.total()),
@@ -509,7 +521,19 @@ export const createEstimateRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
         });
-        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+        // ONE batched lead read for the page — never per row. Same pattern as the jobs and
+        // invoices lists, and for the same reason: the browser's customer collection is capped, so
+        // it cannot be relied on to hold these.
+        const names = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findByIds([
+          ...new Set(page.items.map((e) => e.props.leadId)),
+        ]);
+        const nameById = new Map<string, string>(
+          names.map((l: { props: { id: string; name: string } }) => [String(l.props.id), l.props.name]),
+        );
+        return {
+          items: page.items.map((e) => toSummaryDTO(e, nameById.get(String(e.props.leadId)) ?? null)),
+          nextCursor: page.nextCursor,
+        };
       }),
 
     listByLead: ownerOrOffice
@@ -521,7 +545,16 @@ export const createEstimateRouter = () =>
           asLeadId(input.leadId),
           toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         );
-        return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
+        // One lookup for the one lead these all belong to, so customerName is never null here
+        // just because this endpoint took a different route to the same rows.
+        const [lead] = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findByIds([
+          asLeadId(input.leadId),
+        ]);
+        const name = lead?.props.name ?? null;
+        return {
+          items: page.items.map((e) => toSummaryDTO(e, name)),
+          nextCursor: page.nextCursor,
+        };
       }),
 
     // "Build the price": turn a job's scanned rooms into estimate seed lines the composer can

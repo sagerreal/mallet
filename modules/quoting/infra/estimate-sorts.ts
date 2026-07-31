@@ -11,7 +11,7 @@ import type { SortSpec } from "@mallet/shared/db/sort-page";
  * discount in basis points, then tax — in the domain, in one place. Sorting by it in SQL means
  * writing that chain a second time in a second language, and the two WILL drift; the first
  * symptom is a list ordered by one number while every row displays another. The same reasoning
- * removed the Customers "value" column and kept useQuotesOut summing DTO totals instead of
+ * removed the Customers "value" column and keeps useRailColumns summing DTO totals instead of
  * re-deriving them in SQL.
  *
  * Making it possible is a schema change, not a sort: a cached total_cents on estimates,
