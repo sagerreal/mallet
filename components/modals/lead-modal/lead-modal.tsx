@@ -116,6 +116,7 @@ export function LeadModal({ open }: { open: boolean }) {
   const router = useRouter();
   const leads = useAppStore((s) => s.leads);
   const adoptLead = useAppStore((s) => s.adoptLead);
+  const adoptEstimateRecord = useAppStore((s) => s.adoptEstimateRecord);
   const estimates = useAppStore((s) => s.estimates);
   const tasks = useAppStore((s) => s.tasks);
   const updateLead = useAppStore((s) => s.updateLead);
@@ -161,6 +162,26 @@ export function LeadModal({ open }: { open: boolean }) {
     return [...fromStore, ...fromServer];
   }, [lead, estimates, workQ.data]);
   const hasWork = leadEstimates.length > 0;
+
+  // ADOPT what this sheet already fetched. The rows above were built from the server response and
+  // kept LOCAL, so opening one sent the estimate modal looking in the store, finding nothing, and
+  // blocking on a second round-trip for a record this component was already holding — the pause
+  // Owen sees between the tap and the sheet.
+  //
+  // Adopting the summary means the sheet opens immediately with what a header can say (title,
+  // number, total, status) while the lines load behind it. That is what `needsFull` is already
+  // written to handle; it just never had a header to work with here.
+  useEffect(() => {
+    const items = workQ.data?.items;
+    if (!items?.length) return;
+    const known = new Set(estimates.map((e) => e.id));
+    for (const dto of items) {
+      // The SUMMARY mapper and adoptEstimateRecord, not adoptEstimate — a list row carries no
+      // lines or pricing, and the full mapper reads both.
+      if (!known.has(dto.id)) adoptEstimateRecord(dtoEstimateSummaryToStore(dto, { on: false, stage: 0 }));
+    }
+    // `estimates` deliberately not a dep: adopting appends to it and would loop.
+  }, [workQ.data, adoptEstimateRecord]);
 
   // "New quote" → the real composer, seeded with this customer. Close first so the
   // sheet doesn't sit over the composer page.
