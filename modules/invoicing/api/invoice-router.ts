@@ -108,6 +108,14 @@ const summaryDTO = z.object({
    * a blank customer for every row past the first page.
    */
   customerName: z.string().nullable(),
+  /**
+   * The customer's phone, resolved SERVER-side.
+   *
+   * The home queue drafts a TEXT to this person. It was reading the phone off the store's leads
+   * collection, which holds one page — so a reminder for a customer outside it rendered "No phone
+   * number yet" and asked the owner to type in a number the shop already had.
+   */
+  customerPhone: z.string().nullable(),
   title: z.string().nullable(),
   status: statusEnum,
   total: moneyDTO,
@@ -269,13 +277,18 @@ const toInvoiceDTO = (invoice: Invoice) => {
   };
 };
 
-const toSummaryDTO = (invoice: Invoice, customerName: string | null = null) => {
+const toSummaryDTO = (
+  invoice: Invoice,
+  customerName: string | null = null,
+  customerPhone: string | null = null,
+) => {
   const p = invoice.props;
   return {
     id: p.id,
     num: p.num,
     leadId: p.leadId,
     customerName,
+    customerPhone,
     title: p.title,
     status: p.status,
     total: money$(p.total),
@@ -459,9 +472,17 @@ export const createInvoiceRouter = () =>
         const names = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findByIds(
           [...new Set(page.items.map((i) => i.props.leadId))],
         );
-        const nameById = new Map<string, string>(names.map((l: { props: { id: string; name: string } }) => [String(l.props.id), l.props.name]));
+        const leadById = new Map<string, { name: string; phone: string | null }>(
+          names.map((l: { props: { id: string; name: string; phone?: string | null } }) => [
+            String(l.props.id),
+            { name: l.props.name, phone: l.props.phone ?? null },
+          ]),
+        );
         return {
-          items: page.items.map((i) => toSummaryDTO(i, nameById.get(String(i.props.leadId)) ?? null)),
+          items: page.items.map((i) => {
+            const lead = leadById.get(String(i.props.leadId));
+            return toSummaryDTO(i, lead?.name ?? null, lead?.phone ?? null);
+          }),
           nextCursor: page.nextCursor,
         };
       }),

@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { api } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
+import { dtoInvoiceSummaryToStore } from "@/lib/store/dto-mapper";
 import type { OkItem } from "./derive";
 
 /**
@@ -71,13 +72,19 @@ export function useOkQueue(): OkQueue {
       // The card needs a lead for its Call/Text actions. It may not be loaded — the customers
       // collection has its own page — so a minimal stand-in carries the name and id, and the
       // actions that need a phone find it when the record is there.
+      // The server's phone, not the store's. The stub used to hard-code "" — so a customer
+      // outside the loaded page rendered "No phone number yet" and asked the owner to type in a
+      // number the shop already had on file.
       const lead = leads.find((l) => l.id === q.leadId) ?? {
-        id: q.leadId, name, phone: "", stage: "", age: 0, job: "", last: "", source: "", archived: false,
+        id: q.leadId, name, phone: q.customerPhone ?? "", stage: "", age: 0, job: "", last: "",
+        source: "", archived: false,
       };
       out.push({
         key,
         kind: "quote-viewed",
         lead: lead as OkItem["lead"],
+        // The DRAFT reads the estimate for its amount. Without it the text said "That quote ()".
+        estimate: { id: q.id, num: q.num, cachedTotal: dollars, lines: [] } as unknown as OkItem["estimate"],
         value: dollars,
         situation: `read the $${Math.round(dollars).toLocaleString("en-US")} quote — ${daysSinceIso(q.sentAt)}d since it went out`,
         editLabel: "Change",
@@ -90,13 +97,17 @@ export function useOkQueue(): OkQueue {
       const name = i.customerName ?? "there";
       const dollars = i.due.cents / 100;
       const lead = leads.find((l) => l.id === i.leadId) ?? {
-        id: i.leadId, name, phone: "", stage: "", age: 0, job: "", last: "", source: "", archived: false,
+        id: i.leadId, name, phone: i.customerPhone ?? "", stage: "", age: 0, job: "", last: "",
+        source: "", archived: false,
       };
       const late = daysSinceIso(i.dueAt);
       out.push({
         key,
         kind: "invoice-overdue",
         lead: lead as OkItem["lead"],
+        // The draft names the invoice and what is owed. Without this it read "invoice () is still
+        // open" — a reminder that cannot say which bill it is about.
+        invoice: dtoInvoiceSummaryToStore(i, { cust: name, phone: lead.phone ?? "", email: "" }),
         value: dollars,
         situation: `owes $${Math.round(dollars).toLocaleString("en-US")} — ${late}d past due`,
         editLabel: "Change",

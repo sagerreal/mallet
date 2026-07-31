@@ -40,6 +40,7 @@ import { useOkQueue } from "./use-ok-queue";
 
 const quote = (over: Record<string, unknown> = {}) => ({
   id: "est-1", num: "EST-1", leadId: "lead-1", customerName: "Luis Ibarra",
+  customerPhone: "+19255550111",
   title: "Repipe", total: { cents: 117500, currency: "USD" },
   sentAt: new Date(Date.now() - 13 * 86_400_000).toISOString(),
   firstViewedAt: new Date(Date.now() - 12 * 86_400_000).toISOString(),
@@ -48,6 +49,7 @@ const quote = (over: Record<string, unknown> = {}) => ({
 
 const invoice = (over: Record<string, unknown> = {}) => ({
   id: "inv-1", num: "INV-1", leadId: "lead-2", customerName: "Ruth Ferraro",
+  customerPhone: "+19255550122",
   title: "Sewer camera", status: "sent",
   total: { cents: 64000, currency: "USD" },
   due: { cents: 24000, currency: "USD" },
@@ -104,6 +106,28 @@ describe("the OK queue", () => {
     const { result } = renderHook(() => useOkQueue());
     expect(result.current.items).toHaveLength(1);
     expect(result.current.value).toBe(240);
+  });
+
+  // The draft names the bill and the amount off item.invoice. Without it the reminder read
+  // "invoice () is still open" — and the Send button was right there.
+  it("attaches the invoice so the reminder can name it", () => {
+    invoiceRows = [invoice()];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items[0]!.invoice?.num).toBe("INV-1");
+  });
+
+  it("attaches the quote so the follow-up can state its value", () => {
+    quoteRows = [quote()];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items[0]!.estimate?.num).toBe("EST-1");
+  });
+
+  // The phone comes from the SERVER. The stub used to hard-code "", so a customer outside the
+  // loaded page showed "No phone number yet" and asked for a number the shop already had.
+  it("carries the customer's phone even when the customer is not loaded", () => {
+    invoiceRows = [invoice()];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items[0]!.lead.phone).toBe("+19255550122");
   });
 
   it("is empty rather than guessing while the reads are in flight", () => {

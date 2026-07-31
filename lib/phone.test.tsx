@@ -11,7 +11,7 @@
  * The pure hasPhone helper is covered in lib/phone.test.ts.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PhoneGate } from "./phone";
 
 function renderGate(props: Partial<React.ComponentProps<typeof PhoneGate>> = {}) {
@@ -50,17 +50,34 @@ describe("PhoneGate", () => {
     expect(screen.getByLabelText("No phone number yet")).toBeTruthy();
   });
 
-  it("saves the fresh number and auto-proceeds with it (no store race)", () => {
+  it("saves the fresh number and auto-proceeds with it (no store race)", async () => {
     const { onAction, onSavePhone } = renderGate({ bearer: { phone: "" } });
     fireEvent.click(screen.getByText("Call"));
     const input = screen.getByLabelText("No phone number yet");
     fireEvent.change(input, { target: { value: "(925) 555-0100" } });
     fireEvent.click(screen.getByText(/^Save/));
-    // Persisted AND proceeded with the FRESH number the user just typed.
+    // Persisted AND proceeded with the FRESH number the user just typed. Awaited now: the save
+    // is allowed to report failure, so the proceed happens a tick later.
     expect(onSavePhone).toHaveBeenCalledWith("(925) 555-0100");
-    expect(onAction).toHaveBeenCalledWith("(925) 555-0100");
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith("(925) 555-0100"));
     // The row collapses after a successful save.
     expect(screen.queryByLabelText("No phone number yet")).toBeNull();
+  });
+
+  // A number the server refuses — already on another customer — used to send anyway: the save
+  // and the action fired in the same breath, the card left the queue, and the error arrived with
+  // nothing on screen left to correct.
+  it("does NOT proceed when the save is rejected, and keeps the row open to fix", async () => {
+    const onSavePhone = vi.fn().mockResolvedValue({ ok: false });
+    const { onAction } = renderGate({ bearer: { phone: "" }, onSavePhone });
+    fireEvent.click(screen.getByText("Call"));
+    fireEvent.change(screen.getByLabelText("No phone number yet"), { target: { value: "(925) 555-0100" } });
+    fireEvent.click(screen.getByText(/^Save/));
+
+    await waitFor(() => expect(onSavePhone).toHaveBeenCalled());
+    expect(onAction, "a refused number must not send").not.toHaveBeenCalled();
+    // Still there, with the digits in it.
+    expect(screen.getByLabelText("No phone number yet")).toBeTruthy();
   });
 
   it("rejects an invalid number inline without saving or proceeding", () => {
