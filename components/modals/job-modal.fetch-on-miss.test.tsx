@@ -77,7 +77,7 @@ describe("JobModalContent — fetch-on-miss for store-absent jobs", () => {
   it("renders an honest loading state — never an empty sheet — and enables the by-id fetch", () => {
     const { container } = render(<JobModalContent />);
     expect(container.firstChild).not.toBeNull();
-    expect(screen.getByText("Loading job…")).toBeTruthy();
+    expect(screen.getByText("Loading…")).toBeTruthy();
     expect(lastQueryOpts?.enabled).toBe(true);
   });
 

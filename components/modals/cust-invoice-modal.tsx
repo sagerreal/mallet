@@ -31,6 +31,7 @@ import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import { useAppStore, useActiveModal } from "@/lib/store/app-store";
 import type { Brand, Invoice, Job, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { ModalLoading } from "./modal-loading";
 
 // ---- money helpers (ported 1:1 from money/page.tsx + invoice-modal.tsx) -----
 
@@ -304,7 +305,7 @@ export function CustInvoiceModalContent() {
     if (invQ.isError) {
       return <p className="muted">Couldn&apos;t load this invoice. Close and try again.</p>;
     }
-    return <p className="muted">Loading…</p>;
+    return <ModalLoading size="lg" />;
   }
 
   const job: Job | undefined =

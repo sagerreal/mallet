@@ -58,6 +58,7 @@ import { Field } from "@/components/ui/input";
 import { SheetRow } from "./sheet-row";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
+import { ModalLoading } from "./modal-loading";
 
 function StatusPill({ invoice }: { invoice: Invoice }) {
   const s = IST[invStatusKey(invoice)] ?? IST.draft!;
@@ -682,7 +683,9 @@ export function InvoiceModalContent() {
     if (invQ.isError) {
       return <p className="muted">Couldn&apos;t load this invoice. Close and try again.</p>;
     }
-    return <p className="muted">Loading…</p>;
+    // Full-height skeleton, same as the chunk loader — the sheet opens at a believable
+    // size and settles, instead of a one-line sliver that snaps open when the fetch lands.
+    return <ModalLoading size="lg" />;
   }
 
   const job = invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
