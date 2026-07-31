@@ -182,13 +182,6 @@ export function MaterialsPanel({ canSeeCost }: { canSeeCost: boolean }) {
       )}
 
       <div style={{ padding: "0 var(--space-4)" }}>
-        {active.length === 0 && (
-          <p className="muted" style={{ fontSize: "var(--type-sm)", padding: "var(--space-3) 0 0" }}>
-            Parts and equipment you sell — an AC unit that costs you $1,000 and goes on the quote
-            at $3,000. Your markup table prices them from cost automatically; type a price to set
-            your own.
-          </p>
-        )}
         {visible.map((m) => (
           <MaterialRow key={m.id} m={m} canSeeCost={canSeeCost} />
         ))}
