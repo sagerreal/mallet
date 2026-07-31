@@ -44,6 +44,24 @@ const FIRST_RUN = {
   },
 } as const;
 
+/**
+ * A column's count.
+ *
+ * Shows the DATABASE's number, and says so when the cards below it are only part of that — the
+ * board renders the loaded page, and a header reading 500 over 500 visible cards on a book of 606
+ * is the exact lie this whole change exists to remove. Blank while the count is in flight rather
+ * than 0, which would read as "none" for a beat.
+ */
+function ColCount({ server, shown }: { server: number | undefined; shown: number }) {
+  if (server === undefined) return <span className="sum" />;
+  if (server === 0) return <span className="sum" />;
+  return (
+    <span className="sum">
+      {shown < server ? `${shown} of ${server}` : server}
+    </span>
+  );
+}
+
 export default function PipelinePage() {
   const estimates = useAppStore((s) => s.estimates);
   const leads = useAppStore((s) => s.leads);
@@ -70,6 +88,10 @@ export default function PipelinePage() {
   // leads, and those two collections have independent 500-row ceilings — so a shop whose sent
   // quotes belong to older customers saw "$0" while $29,722 was genuinely out. See useQuotesOut.
   const out = useQuotesOut();
+  // Column counts come from the DATABASE. The board derived them by partitioning the loaded
+  // collections, so the first column read "New leads 500" on a 606-customer book — the hydrator's
+  // page size wearing the label of a business fact. See modules/customers/infra/lead-views.ts.
+  const colCounts = api.v1.customers.viewCounts.useQuery(undefined, { refetchOnWindowFocus: true });
   const shownSum = useAnimatedNumber(out.outSum);
 
   // Same query key + options as LeadsHydrator → React Query dedupes it (no extra fetch). Used only
@@ -167,7 +189,7 @@ export default function PipelinePage() {
         <div className="col">
           <div className="col-head">
             <span>New leads</span>
-            <span className="sum">{intake.length || ""}</span>
+            <ColCount server={colCounts.data?.intake} shown={intake.length} />
           </div>
           {intake.map((row) => (
             <IntakeCard key={row.lead.id} row={row} snap={snap} />
@@ -178,7 +200,7 @@ export default function PipelinePage() {
         <div className="col">
           <div className="col-head">
             <span>Quoting</span>
-            <span className="sum">{getting.length || ""}</span>
+            <ColCount server={colCounts.data?.quoting} shown={getting.length} />
           </div>
           {getting.map((row) => (
             <GettingCard key={`${row.kind}-${row.est?.id ?? row.lead.id}`} row={row} />
