@@ -30,6 +30,7 @@ const storeState = () => ({
   adoptEstimate: vi.fn(),
 });
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "est", params: { estId: "est-1" } }),
   useCloseModal: () => vi.fn(),

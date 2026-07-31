@@ -7,7 +7,26 @@
  */
 
 import { useAppStore } from "@/lib/store/app-store";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type { OkItem } from "./derive";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The REAL outbound dispatch behind every approved Send. Until Jul 30 2026 the
+ * primitive below only wrote a note into browser memory — "✓ sent" with no
+ * message created anywhere (Owen: "if I click send here it doesnt actually
+ * work"). This routes the body through v1.messaging.send — the same pipeline
+ * the thread modal and estimate modal use — so the text persists to the thread
+ * and goes out through Twilio. Rejects with the server's reason on failure so
+ * surfaces can show it and roll the local note back.
+ */
+export function dispatchOkSend(leadId: string, body: string): Promise<void> {
+  // Store-local leads (non-uuid ids, never persisted) have no thread to send
+  // through — the local note is all there is. Skip the wire, succeed locally.
+  if (!UUID_RE.test(leadId)) return Promise.resolve();
+  return trpcVanilla.v1.messaging.send.mutate({ leadId, body }).then(() => undefined);
+}
 
 /** "8:47pm" — matches the ledger's act-timestamp format exactly. One voice. */
 export function clockNow(): string {

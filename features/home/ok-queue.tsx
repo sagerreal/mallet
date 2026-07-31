@@ -16,7 +16,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { PhoneGate } from "@/lib/phone";
 import { firstName, type OkItem } from "./derive";
 import { draftFor, softDraftFor, type DraftContext } from "./drafts";
-import { clockNow, commitOkSend } from "./send";
+import { clockNow, commitOkSend, dispatchOkSend } from "./send";
 
 const UNDO_MS = 30_000;
 /** Bubble inks in (180ms) → card folds (260ms, delayed 180ms) → dismiss. */
@@ -194,6 +194,20 @@ export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftConte
     // COMMIT — synchronous, before any animation. The message is real now.
     // (Shared primitive: the Counter's sends run this exact code path.)
     const undoSend = commitOkSend(item, text);
+
+    // REAL dispatch (v1.messaging.send) — the local commit above is the queue's
+    // bookkeeping; this is the actual message. On failure the commit reverts and
+    // the card returns to the queue (same rollback contract as store writes).
+    dispatchOkSend(item.lead.id, text).catch(() => {
+      undoSend();
+      undismissAttention(item.key);
+      setSent((prev) => prev.filter((e) => e.key !== item.key));
+      setLeaving((prev) => {
+        const next = new Set(prev);
+        next.delete(item.key);
+        return next;
+      });
+    });
 
     // EXIT — bubble inks in + card folds, then the item leaves the queue
     // (which is what drains the hero figure) and the ledger line lands.

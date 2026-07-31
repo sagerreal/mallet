@@ -403,6 +403,71 @@ export function applyMeasurementSeed(
   return { ...state, leadId, lines };
 }
 
+/** One line of a persisted estimate, as the composer's revise seed consumes it (cents in). */
+export interface ReviseSeedLine {
+  d: string;
+  q: number;
+  rCents: number;
+  cCents: number;
+  opt: boolean;
+  photo: boolean;
+  tier: TierKey | null;
+}
+
+export interface ReviseSeed {
+  leadId: string;
+  title: string;
+  discBps: number;
+  taxBps: number;
+  depBps: number;
+  lines: ReviseSeedLine[];
+  recommendedTier: TierKey | null;
+  tierNames: { good: string; better: string; best: string } | null;
+}
+
+/**
+ * Boot the composer from an EXISTING sent quote ("Revise" — a customer asked for a
+ * change). Restores lead, title, pricing and every line; a tiered quote restores its
+ * three tiers + recommendation, a flat one lands in the single table. The original
+ * stays untouched until the revision actually SENDS (the page archives it then) —
+ * abandoning the composer leaves the sent quote exactly as it was.
+ */
+export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): ComposerState {
+  const toLine = (l: ReviseSeedLine): ComposerLine => ({
+    d: l.d,
+    q: l.q,
+    r: l.rCents / 100,
+    ...(l.cCents > 0 ? { c: l.cCents / 100 } : {}),
+    ...(l.opt ? { opt: true } : {}),
+    ...(l.photo ? { photo: true } : {}),
+  });
+  const pricing = { disc: seed.discBps / 100, tax: seed.taxBps / 100, dep: seed.depBps / 100 };
+  const tiered = seed.lines.some((l) => l.tier != null);
+
+  if (!tiered) {
+    const lines = seed.lines.length > 0 ? seed.lines.map(toLine) : [emptyLine()];
+    return { ...state, leadId: seed.leadId, desc: seed.title, pricing, format: "single", lines };
+  }
+
+  const tierLines = (k: TierKey): ComposerLine[] => {
+    const ls = seed.lines.filter((l) => l.tier === k).map(toLine);
+    return ls.length > 0 ? ls : [emptyLine()];
+  };
+  const names = seed.tierNames;
+  const fallbackNames = { good: "Good", better: "Better", best: "Best" } as const;
+  const gbb: GBBDraft = {
+    rec: seed.recommendedTier ?? "better",
+    opts: (["good", "better", "best"] as const).map((k) => ({
+      k,
+      name: names?.[k] ?? fallbackNames[k],
+      title: "",
+      note: "",
+      lines: tierLines(k),
+    })),
+  };
+  return { ...state, leadId: seed.leadId, desc: seed.title, pricing, format: "gbb", gbb };
+}
+
 export interface MeasurementGap {
   kind: string;
   label: string;

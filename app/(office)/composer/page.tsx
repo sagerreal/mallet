@@ -47,6 +47,7 @@ import {
   hasRealLine,
   laborRulePayload,
   linesForSend,
+  applyReviseSeed,
   matchServiceByName,
   realLines,
   recommendedTier,
@@ -131,6 +132,44 @@ export default function ComposerPage() {
     setCs((prev) => applyMeasurementSeed(prev, built.leadId, seedLinesToComposerLines(built.seedLines)));
     setMeasurementNotice({ gaps: built.gaps, unconfirmedRooms: built.unconfirmedRooms });
   }, [jobId, buildFromMeasurementsQuery.data]);
+
+  // ---- ?revise= boot: edit-and-resend an already-sent quote -----------------
+  // "Revise" on a sent quote (change-requested or not) lands here with
+  // ?revise=<estimateId>. The full record (list hydration only carries headers)
+  // seeds lead/title/pricing/lines — tiered quotes restore their tiers. The
+  // ORIGINAL stays live until the revision sends; then it's archived (below), so
+  // abandoning the composer changes nothing.
+  const reviseId = searchParams.get("revise");
+  const reviseQuery = api.v1.quoting.get.useQuery(
+    { estimateId: reviseId ?? "" },
+    { enabled: Boolean(reviseId), retry: false, refetchOnWindowFocus: false },
+  );
+  const seededForRevise = useRef<string | null>(null);
+  useEffect(() => {
+    if (!reviseId || seededForRevise.current === reviseId || !reviseQuery.data) return;
+    seededForRevise.current = reviseId;
+    const dto = reviseQuery.data;
+    setCs((prev) =>
+      applyReviseSeed(prev, {
+        leadId: dto.leadId,
+        title: dto.title ?? "",
+        discBps: dto.discBps,
+        taxBps: dto.taxBps,
+        depBps: dto.depBps,
+        recommendedTier: dto.recommendedTier ?? null,
+        tierNames: dto.tierNames ?? null,
+        lines: dto.lines.map((l) => ({
+          d: l.description,
+          q: l.quantity,
+          rCents: l.rate.cents,
+          cCents: l.cost.cents,
+          opt: l.isOptional,
+          photo: l.needsPhoto,
+          tier: l.tier ?? null,
+        })),
+      }),
+    );
+  }, [reviseId, reviseQuery.data]);
 
   // ---- tRPC mutations for the real send flow --------------------------------
 
@@ -532,6 +571,13 @@ export default function ComposerPage() {
       // addEstimate here would fire a second quoting.draft and orphan a duplicate
       // draft in the shop rail.
       adoptEstimate(sentDto, { on: cs.fuOn, stage: 0 });
+
+      // A successful send of a REVISION supersedes the original sent quote —
+      // archive it so two versions of the same work never sit in the rail. The
+      // store patch routes through v1.quoting.archive (see estimates-slice).
+      if (reviseId && seededForRevise.current === reviseId) {
+        useAppStore.getState().updateEstimate(reviseId, { archived: true });
+      }
 
       // Preview drafts from this composer session are superseded by the real send —
       // archive them so they don't linger in the shop rail (best-effort; a failed
