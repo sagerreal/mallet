@@ -153,7 +153,7 @@ function SendBlock({
         </button>
         {/* "Edit text" — edits the CHASE MESSAGE only. (It read "Change" before, which
             sat ambiguously next to a change-requested quote — revising the quote itself
-            is the card's "Revise quote" action.) */}
+            is the card's "Edit & resend" action.) */}
         <button className="btn sm ghost" onClick={() => setEditing((v) => !v)}>
           {editing ? "Done" : "Edit text"}
         </button>
@@ -281,7 +281,7 @@ export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
           </div>
           <div className="cardacts" onClick={(e) => e.stopPropagation()}>
             <button className="btn sm approve" onClick={() => router.push(`/composer?revise=${row.est.id}`)}>
-              Revise quote
+              Edit &amp; resend
             </button>
           </div>
         </>
