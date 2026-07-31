@@ -12,6 +12,7 @@ import {
 } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Job, JobVisit, DEFAULT_VISIT_DURATION_MINUTES } from "../domain/job";
+import { JobLine } from "../domain/job-execution";
 import type { JobRepository } from "../domain/job-repository";
 import type { EstimateReader } from "../domain/estimate-reader";
 
@@ -95,6 +96,25 @@ export class CreateJobFromEstimateUseCase {
     });
     if (!isOk(job)) return job;
 
+    // THE SOLD SCOPE, copied onto the job. Without it the job carried a title and a total and the
+    // technician had to open the quote to find out what the work actually was. A SNAPSHOT, like
+    // Jobber's: later edits to the quote do not reach through, because the job is what is being
+    // done now and the quote is what was agreed then.
+    const lines: JobLine[] = [];
+    for (const [i, l] of estimate.lines.entries()) {
+      const line = JobLine.create({
+        id: this.ids.newId(),
+        jobId: job.value.props.id,
+        description: l.description,
+        quantity: l.quantity,
+        rateCents: l.rateCents,
+        costCents: l.costCents,
+        position: l.position || i + 1,
+      });
+      if (!isOk(line)) return line;
+      lines.push(line.value);
+    }
+
     // Idempotent insert: DO NOTHING on conflict keeps the transaction valid (a raised unique
     // violation would abort it, making any recovery query fail). If we lost the race, re-fetch and
     // return the winner instead of surfacing a conflict.
@@ -103,6 +123,13 @@ export class CreateJobFromEstimateUseCase {
       const raced = await this.repo.findBySourceEstimate(cmd.estimateId);
       if (raced) return ok(raced);
       return err(conflict("a job already exists for this estimate"));
+    }
+
+    // Written after the job row exists, in the same transaction. Not part of insertForEstimate's
+    // conflict path on purpose: if we lost the race the winner already carries its own lines, and
+    // writing ours over them would replace the scope another request just committed.
+    if (lines.length > 0) {
+      await this.repo.replaceLines(job.value.props.id, lines, now);
     }
 
     await this.bus.emit({

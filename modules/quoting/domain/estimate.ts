@@ -234,6 +234,21 @@ export class Estimate {
 
   // The line subset money derives from: the recommended tier pre-accept on a tiered estimate,
   // everything otherwise (single format, or resolved lines after accept).
+  /**
+   * The lines the customer actually bought — the scope of the sold work.
+   *
+   * Optional add-ons are EXCLUDED unless they were taken: an untaken add-on was priced and
+   * declined, and carrying it onto the job would put work on a technician's list that nobody
+   * agreed to pay for. Tiered quotes resolve to the accepted tier, so this is the one option
+   * that won, not all three.
+   *
+   * Same source the total is computed from, so the job's scope and the job's price can never
+   * describe different work.
+   */
+  soldLines(): readonly EstimateLine[] {
+    return this.effectiveLines().filter((line) => !line.props.isOptional);
+  }
+
   private effectiveLines(): readonly EstimateLine[] {
     if (this.p.recommendedTier === null || this.p.acceptedTier !== null) return this.p.lines;
     return this.linesForTier(this.p.recommendedTier);

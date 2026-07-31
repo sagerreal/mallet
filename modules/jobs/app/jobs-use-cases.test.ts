@@ -109,7 +109,11 @@ class FakeJobRepository implements JobRepository {
   async addLine() {}
   async updateLine() { return 0; }
   async removeLine() { return 0; }
-  async replaceLines() {}
+  /** Recorded, not swallowed: the sold scope arriving on the job is the thing to assert. */
+  linesWritten: { jobId: string; lines: readonly { props: { description: string; rate: number; quantity: number } }[] }[] = [];
+  async replaceLines(jobId: string, lines: readonly never[]) {
+    this.linesWritten.push({ jobId, lines });
+  }
   async saveOnSiteSignature(): Promise<void> {}
   async count(): Promise<number> { return 0; }
   async viewCounts(): Promise<{ counts: Record<string, number>; todayCents: number }> { return { counts: {}, todayCents: 0 } as never; }
@@ -141,6 +145,11 @@ const acceptedEstimate = (): EstimateSummary => ({
   totalCents: 110_000,
   taxBps: 875,
   taxCents: 8_855,
+  // The sold scope, which the job now carries so a technician can see what was bought.
+  lines: [
+    { description: "Deck boards — cedar", quantity: 1, rateCents: 80_000, costCents: 40_000, position: 1 },
+    { description: "Railing", quantity: 1, rateCents: 21_200, costCents: 9_000, position: 2 },
+  ],
 });
 
 describe("ScheduleJobUseCase", () => {
@@ -221,6 +230,34 @@ describe("CreateJobFromEstimateUseCase", () => {
       expect(r.value.props.sourceEstimateId).toBe(EST);
     }
     expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
+  });
+
+  // The point of the whole change: a technician opening the job sees WHAT WAS SOLD, not just a
+  // price. Before this the job carried a title and a total and the scope stayed on the quote.
+  it("copies the sold lines onto the job as its scope", async () => {
+    await useCase(new FakeEstimateReader(acceptedEstimate())).exec({ orgId: ORG, estimateId: EST });
+    expect(repo.linesWritten).toHaveLength(1);
+    const written = repo.linesWritten[0]!.lines;
+    expect(written.map((l) => l.props.description)).toEqual(["Deck boards — cedar", "Railing"]);
+    expect(written.map((l) => l.props.rate)).toEqual([80_000, 21_200]);
+  });
+
+  it("writes no lines for a quote that had none, rather than an empty scope row", async () => {
+    const bare = { ...acceptedEstimate(), lines: [] };
+    await useCase(new FakeEstimateReader(bare)).exec({ orgId: ORG, estimateId: EST });
+    expect(repo.linesWritten).toHaveLength(0);
+  });
+
+  // A quote is what was agreed then; a job is what is being done now. Jobber snapshots for the
+  // same reason — an edit to the quote after the fact must not silently rewrite live work.
+  it("keeps the scope even when it disagrees with the estimate total", async () => {
+    // A total that does not equal the sum of the lines is normal — discount and tax sit between
+    // them — so the job takes the estimate's snapshotted total AND the estimate's lines, without
+    // re-deriving one from the other.
+    const odd = { ...acceptedEstimate(), totalCents: 120_000 };
+    const r = await useCase(new FakeEstimateReader(odd)).exec({ orgId: ORG, estimateId: EST });
+    expect(isOk(r) && r.value.props.total).toBe(120_000);
+    expect(repo.linesWritten[0]!.lines).toHaveLength(2);
   });
 
   it("is idempotent — a second call returns the same job and emits once", async () => {
