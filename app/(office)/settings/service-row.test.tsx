@@ -53,9 +53,9 @@ describe("ServiceRow — Priced-by control (gated on measurementEstimating)", ()
     );
     openRow();
     expect(screen.queryByText("Priced by")).toBeNull();
-    // The editor's other fields are unaffected — Category and Labor still there.
-    expect(screen.getByText("Category")).toBeTruthy();
-    expect(screen.getByText("Labor")).toBeTruthy();
+    // The C-shape editor's default fields are unaffected — Name and Price still there.
+    expect(screen.getByText("Name")).toBeTruthy();
+    expect(screen.getByText("Price")).toBeTruthy();
   });
 
   it("toggle on: shows the Priced-by control, default Flat", () => {
