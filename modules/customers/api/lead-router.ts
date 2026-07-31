@@ -75,12 +75,15 @@ const listInput = z.object({
   sortDir: z.enum(["asc", "desc"]).optional(),
   /** Free-text across name, phone, email and address. Runs in the database. */
   search: z.string().trim().min(1).max(200).optional(),
+  /** Narrow to one lead source. */
+  source: z.string().max(120).optional(),
 });
 
 const countInput = z.object({
   stage: stageEnum.optional(),
   unreadOnly: z.boolean().optional(),
   search: z.string().trim().min(1).max(200).optional(),
+  source: z.string().max(120).optional(),
 });
 
 const paginatedLeadDTO = z.object({
@@ -353,7 +356,7 @@ export const createLeadRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search },
+          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source },
         });
         return { items: page.items.map(toLeadDTO), nextCursor: page.nextCursor };
       }),
@@ -364,6 +367,18 @@ export const createLeadRouter = () =>
      * Shares its predicates with list() through the repository, so the "n of N" a header shows is
      * two halves of one question rather than two questions that happen to look alike.
      */
+    /** Filter-dropdown options and their counts, so the dropdown describes the BOOK, not a page. */
+    facets: ownerOrOffice
+      .output(
+        z.object({
+          stages: z.record(z.string(), z.number().int()),
+          sources: z.array(z.object({ source: z.string(), n: z.number().int() })),
+        }),
+      )
+      .query(async ({ ctx }) =>
+        new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).facets(),
+      ),
+
     count: ownerOrOffice
       .input(countInput)
       .output(z.object({ total: z.number().int() }))
@@ -374,6 +389,7 @@ export const createLeadRouter = () =>
             stage: input.stage,
             unreadOnly: input.unreadOnly,
             search: input.search,
+            source: input.source,
           }),
         };
       }),

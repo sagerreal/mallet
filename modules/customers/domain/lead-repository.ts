@@ -24,6 +24,8 @@ export interface EnsureCustomerResult {
 export interface LeadFilter {
   /** Free-text across name, phone, email and address — matched in the database, not over a page. */
   readonly search?: string;
+  /** Narrow to one lead source ("Added manually", "Website form", …). */
+  readonly source?: string;
   readonly stage?: LeadStage;
   readonly unreadOnly?: boolean;
 }
@@ -46,6 +48,15 @@ export interface LeadRepository {
 
   /** How many leads match the filter, ignoring pagination. Same predicates as list(). */
   count(filter?: LeadFilter): Promise<number>;
+
+  /**
+   * The filter dropdown's options and their counts, in one round trip.
+   *
+   * Stage is a fixed enum so its VALUES need no query — but its counts do, and a filter offering
+   * "Won" on a book with no won customers wastes a click. Sources are free text and genuinely have
+   * to be discovered.
+   */
+  facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }>;
   save(lead: Lead): Promise<void>;
   // Returns the number of rows affected (0 = not found or already archived).
   archive(id: LeadId, now: Date): Promise<number>;

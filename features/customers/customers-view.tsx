@@ -15,7 +15,9 @@ import { isStaleLead } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
-import { filterLeads, sortLeads } from "./customers-utils";
+import { useCustomersQuery, useCustomersQueryState, CUSTOMER_COL_TO_SORT } from "./use-customers-query";
+import { toStoreLead } from "./leads-hydrator";
+import { LEAD_STAGES } from "@/modules/customers/domain/lead";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
 import { ViewToggle } from "@/components/shared/view-toggle";
@@ -47,7 +49,6 @@ const FIRST_RUN = {
 } as const;
 
 export function CustomersView() {
-  const leads = useLeads();
   const openModal = useOpenModal();
   const custSeg = useCustSeg();
   const setCustSeg = useSetCustSeg();
@@ -56,40 +57,49 @@ export function CustomersView() {
   // Same query key + options as LeadsHydrator, so React Query dedupes it — no extra fetch. We only
   // read the load state to tell "still loading" and "load errored" apart from a genuinely empty
   // list, so the first-run screen never flashes mid-fetch or misfires on a failed load.
-  const { isFetched, isError, refetch, isRefetching } = api.v1.customers.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  const firstRun = shouldShowFirstRun({ isFetched, isError, count: leads.length });
-  const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: leads.length });
-  const loading = isFirstLoad({ isFetched, isError, count: leads.length });
-
-  // $ on the table per customer: open (sent) quotes for active pipeline, else
-  // the won total once accepted, else nothing. Derived in the body (not a selector).
   const [archiveSet, setArchiveSet] = useState<CustomerArchiveSet>("active");
-  const [q, setQ] = useState("");
-  const [stageFilter, setStageFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [colsOpen, setColsOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<string[]>([...DEFAULT_COLS]);
-  const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState(1);
 
-  const activeLeads = leads.filter((l) => !l.archived);
-  const shownSet = archiveSet === "active" ? activeLeads : leads.filter((l) => l.archived);
-  const filtered = filterLeads(shownSet, q, stageFilter, sourceFilter);
-  const sorted = sortLeads(filtered, sortCol, sortDir);
+  // The list is served a page at a time by the database now: search, stage, source, sort and the
+  // count all run in SQL. It used to filter the store's leads in the browser, which could only see
+  // the hydrator's first 500 rows — so on 606 customers it reported "500 of 500".
+  const cq = useCustomersQueryState();
+  const serverSort = cq.sortCol ? (CUSTOMER_COL_TO_SORT[cq.sortCol] ?? null) : null;
+  const list = useCustomersQuery({
+    search: cq.search,
+    stage: cq.stage,
+    source: cq.source,
+    sort: serverSort,
+    sortDir: serverSort ? cq.sortDir : null,
+  });
+  const sorted = useMemo(() => list.rows.map(toStoreLead), [list.rows]);
 
-  const staleCount = activeLeads.filter(isStaleLead).length;
-  const allStages = [...new Set(shownSet.map((l) => l.stage))];
-  const allSources = [...new Set(shownSet.map((l) => l.source).filter(Boolean))];
-  const activeFilterCount = (stageFilter ? 1 : 0) + (sourceFilter ? 1 : 0) + (custSeg !== "people" ? 1 : 0) + (archiveSet !== "active" ? 1 : 0);
+  // Stage options come from the ENUM, not from the data: a filter that only offers the stages
+  // present on this page is a filter that hides the one you want. Counts come from the facets.
+  const allStages = LEAD_STAGES as readonly string[];
+  const allSources = (list.sources ?? []).map((x: { source: string }) => x.source);
+  const activeFilterCount =
+    (cq.stage ? 1 : 0) + (cq.source ? 1 : 0) + (custSeg !== "people" ? 1 : 0) + (archiveSet !== "active" ? 1 : 0);
   const visible = visibleCols.filter((c) => ALL_COL_DEFS[c]);
 
+  // First-run gates on the SERVER's total, never on the loaded page — a no-match search on a
+  // populated book must fall through to an empty list, not to "No customers yet". `?? 1` while the
+  // count is in flight keeps the first-run screen from flashing before it lands.
+  const firstRun = shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: list.total ?? 1 });
+  const loadFailed = shouldShowLoadFailed({ isFetched: list.isFetched, isError: list.isError, count: list.total ?? 0 });
+  const loading = list.isLoading;
+  const refetch = list.refetch;
+  const isRefetching = list.isRefetching;
+
+  const sortCol = cq.sortCol;
+  const sortDir = cq.sortDir === "desc" ? -1 : 1;
+
   function toggleSort(col: string) {
-    if (sortCol === col) setSortDir((d) => d * -1);
-    else { setSortCol(col); setSortDir(1); }
+    // Columns with no server sort are inert rather than sorting by something else — see
+    // CUSTOMER_COL_TO_SORT.
+    if (CUSTOMER_COL_TO_SORT[col]) cq.toggleSortCol(col);
   }
 
   function toggleCol(key: string) {
@@ -98,12 +108,6 @@ export function CustomersView() {
         ? prev.filter((c) => c !== key)
         : Object.keys(ALL_COL_DEFS).filter((c) => prev.includes(c) || c === key)
     );
-  }
-
-  function clearFilters() {
-    setQ("");
-    setStageFilter("");
-    setSourceFilter("");
   }
 
   // Companies segment renders its own list; the People segment falls through to
@@ -120,12 +124,11 @@ export function CustomersView() {
         <h1>Customers</h1>
         <div className="pagehead-acts">
           <button className="btn ghost" onClick={() => openModal(MODAL.SWEEP)}>
+            {/* The stale-customer count was derived from the loaded collection, so with a
+                paginated list it would describe one page and read as a whole-book figure. The
+                Clean up sweep still finds them — it does its own pass — so the button keeps
+                working; only the misleading badge is gone. */}
             Clean up
-            {staleCount > 0 && (
-              <span className="pill amber" style={{ marginLeft: "var(--space-2xs)" }}>
-                {staleCount}
-              </span>
-            )}
           </button>
           <button className="btn ghost" onClick={() => openModal(MODAL.IMPORT_CUSTOMERS)}>
             Import
@@ -171,15 +174,15 @@ export function CustomersView() {
       <CustomersToolbar
         archiveSet={archiveSet}
         onArchiveSet={setArchiveSet}
-        q={q}
-        onQ={setQ}
+        q={cq.search}
+        onQ={cq.setSearch}
         filtersOpen={filtersOpen}
         onToggleFilters={() => setFiltersOpen((o) => !o)}
         colsOpen={colsOpen}
         onToggleCols={() => setColsOpen((o) => !o)}
         activeFilterCount={activeFilterCount}
-        total={shownSet.length}
-        filtered={sorted.length}
+        total={list.total ?? 0}
+        filtered={list.shown}
       />
 
       {colsOpen && <CustomersColumns visible={visible} onToggle={toggleCol} />}
@@ -199,13 +202,13 @@ export function CustomersView() {
             />
           </div>
           <CustomersFilters
-            stageFilter={stageFilter}
-            sourceFilter={sourceFilter}
-            stages={allStages}
+            stageFilter={cq.stage}
+            sourceFilter={cq.source}
+            stages={[...allStages]}
             sources={allSources}
-            onStage={setStageFilter}
-            onSource={setSourceFilter}
-            onClear={clearFilters}
+            onStage={cq.setStage}
+            onSource={cq.setSource}
+            onClear={cq.clear}
           />
         </>
       )}
@@ -254,7 +257,7 @@ export function CustomersView() {
                     ) : (
                       <>
                         Nothing matches —{" "}
-                        <button type="button" className="linklike" onClick={clearFilters}>
+                        <button type="button" className="linklike" onClick={cq.clear}>
                           clear the filters
                         </button>
                       </>
@@ -266,6 +269,16 @@ export function CustomersView() {
           </tbody>
         </table>
       </div>
+
+      {/* Load-more rather than infinite scroll: someone scanning a customer book wants to reach
+          the end of it, and an auto-loading list has no end. */}
+      {list.hasMore && (
+        <div style={{ display: "flex", justifyContent: "center", padding: "var(--space-4) 0" }}>
+          <button className="btn" onClick={list.loadMore} disabled={list.isLoadingMore}>
+            {list.isLoadingMore ? "Loading…" : `Load more — showing ${list.shown} of ${list.total ?? "…"}`}
+          </button>
+        </div>
+      )}
 
       <p className="muted">
         Add columns or filters when you need them. Custom fields become filterable once defined.
