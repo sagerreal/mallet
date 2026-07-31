@@ -13,6 +13,7 @@
  */
 
 import { useState } from "react";
+import { AddressInput } from "@/components/ui/address-input";
 import { useAppStore } from "@/lib/store/app-store";
 import type { BookingHours } from "@/lib/store/slices/settings-slice";
 import { useMe } from "@/features/identity/hooks";
@@ -170,6 +171,10 @@ export function FrontDeskPane() {
   const setBookingHours = useAppStore((s) => s.setBookingHours);
   const setBookingDayHours = useAppStore((s) => s.setBookingDayHours);
   const setBookingArea = useAppStore((s) => s.setBookingArea);
+
+  // The address box is typed into, so it holds a draft and commits on select or blur — the store
+  // write geocodes server-side, and firing it per keystroke would geocode every partial address.
+  const [originDraft, setOriginDraft] = useState(bk.area.originAddress);
 
   // Single-expanded service accordion — null = all collapsed
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -458,10 +463,20 @@ export function FrontDeskPane() {
 
           <RuleRow k="area" openRule={openRule} onToggle={toggleRule} label="Service area" value={<span className="mono">{bk.area.radiusMi} mi</span>}>
             <Field label="Office address" style={{ margin: "0" }}>
-              <input type="text" defaultValue={bk.area.originAddress}
-                onChange={(e) => setBookingArea("originAddress", e.target.value)}
+              {/* The same lookup the customer sheet uses. This was a plain text box, so an office
+                  address could be typed any way at all — and it is the point the service-area
+                  radius is measured FROM, geocoded server-side on save. A typo here does not look
+                  broken; it quietly moves the centre of the shop's coverage. Suggestions render
+                  in-flow under the input, never floating. */}
+              <AddressInput
+                value={originDraft}
+                onChange={setOriginDraft}
+                onSelect={(v) => { setOriginDraft(v); setBookingArea("originAddress", v); }}
+                onBlur={() => setBookingArea("originAddress", originDraft)}
                 placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
-                style={{ fontSize: "var(--type-base)", padding: "var(--space-2) var(--space-3)", borderRadius: "var(--radius-sm)" }} />
+                aria-label="Office address"
+                inputStyle={{ width: "100%", minHeight: 44, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "0 var(--space-3)", fontSize: "var(--type-base)" }}
+              />
               {/* The behaviour was already correct — isInServiceArea returns "unknown" and the call
                   books normally — but nothing said so, and an owner reasonably assumes a blank
                   address means calls get turned away. */}

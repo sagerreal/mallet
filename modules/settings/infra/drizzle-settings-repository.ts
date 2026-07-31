@@ -102,16 +102,21 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         measurementEstimating: p.measurementEstimating,
         hoursWdOpen: p.hoursWdOpen,
         hoursWdClose: p.hoursWdClose,
-        hoursMonOpen: p.hoursWdOpen,
-        hoursMonClose: p.hoursWdClose,
-        hoursTueOpen: p.hoursWdOpen,
-        hoursTueClose: p.hoursWdClose,
-        hoursWedOpen: p.hoursWdOpen,
-        hoursWedClose: p.hoursWdClose,
-        hoursThuOpen: p.hoursWdOpen,
-        hoursThuClose: p.hoursWdClose,
-        hoursFriOpen: p.hoursWdOpen,
-        hoursFriClose: p.hoursWdClose,
+        // EACH DAY ITS OWN VALUE. These five used to be written from hoursWdOpen/Close — the
+        // weekday default — so every save silently overwrote Monday-to-Friday with one pair of
+        // hours. Editing "Friday closes at noon" appeared to work, then snapped back on the next
+        // read, and the front desk went on booking Friday afternoons. Saturday and Sunday were
+        // always written from their own columns, which is why only the weekdays misbehaved.
+        hoursMonOpen: p.hoursMonOpen,
+        hoursMonClose: p.hoursMonClose,
+        hoursTueOpen: p.hoursTueOpen,
+        hoursTueClose: p.hoursTueClose,
+        hoursWedOpen: p.hoursWedOpen,
+        hoursWedClose: p.hoursWedClose,
+        hoursThuOpen: p.hoursThuOpen,
+        hoursThuClose: p.hoursThuClose,
+        hoursFriOpen: p.hoursFriOpen,
+        hoursFriClose: p.hoursFriClose,
         hoursSatOpen: p.hoursSatOpen,
         hoursSatClose: p.hoursSatClose,
         hoursSunOpen: p.hoursSunOpen,
