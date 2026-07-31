@@ -13,6 +13,7 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { useQuotesOut } from "@/features/quotes/use-quotes-out";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
@@ -65,7 +66,11 @@ export default function PipelinePage() {
     [leads, estimates, invoices, jobs, techs, brand.name]
   );
 
-  const shownSum = useAnimatedNumber(rail.outSum);
+  // Quotes out come from the SERVER. The rail derived them by joining loaded estimates to loaded
+  // leads, and those two collections have independent 500-row ceilings — so a shop whose sent
+  // quotes belong to older customers saw "$0" while $29,722 was genuinely out. See useQuotesOut.
+  const out = useQuotesOut();
+  const shownSum = useAnimatedNumber(out.outSum);
 
   // Same query key + options as LeadsHydrator → React Query dedupes it (no extra fetch). Used only
   // to tell "still loading" / "load errored" apart from a genuinely empty pipeline, so the first-run
@@ -141,12 +146,14 @@ export default function PipelinePage() {
         ) : (
           <>
             <div>
-              <div className="herofig qstrip-fig" aria-label={`$${rail.outSum.toLocaleString("en-US")} out on quotes`}>
+              <div className="herofig qstrip-fig" aria-label={`$${out.outSum.toLocaleString("en-US")} out on quotes`}>
                 ${shownSum.toLocaleString("en-US")}
               </div>
               <div className="thesis">
-                {rail.outSum > 0
-                  ? "sitting on customers’ phones"
+                {out.outSum > 0
+                  ? out.truncated
+                    ? `sitting on customers’ phones — first ${out.count} quotes`
+                    : "sitting on customers’ phones"
                   : "Nothing’s sitting on anyone’s phone."}
               </div>
             </div>
