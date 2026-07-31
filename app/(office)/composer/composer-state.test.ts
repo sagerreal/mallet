@@ -13,6 +13,7 @@ import {
   applyAiDraftTiers,
   applyComposerPatch,
   applyMeasurementSeed,
+  applyReviseSeed,
   buildQuoteMessageBody,
   deliveryGateReason,
   gapNoticeText,
@@ -834,5 +835,53 @@ describe("unconfirmedRoomsNoticeText", () => {
     expect(unconfirmedRoomsNoticeText(2)).toBe(
       "2 rooms have unconfirmed measurements — confirm them on the job before sending.",
     );
+  });
+});
+
+describe("applyReviseSeed", () => {
+  const base = { ...INITIAL_STATE };
+  const flatSeed = {
+    leadId: "lead-9",
+    title: "Repaint hallway",
+    discBps: 500,
+    taxBps: 825,
+    depBps: 2500,
+    recommendedTier: null,
+    tierNames: null,
+    lines: [
+      { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, tier: null },
+      { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, tier: null },
+    ],
+  };
+
+  it("flat quote: restores lead, title, pricing (bps -> %) and lines (cents -> dollars)", () => {
+    const next = applyReviseSeed(base, flatSeed);
+    expect(next.leadId).toBe("lead-9");
+    expect(next.desc).toBe("Repaint hallway");
+    expect(next.format).toBe("single");
+    expect(next.pricing).toEqual({ disc: 5, tax: 8.25, dep: 25 });
+    expect(next.lines).toEqual([
+      { d: "Walls", q: 320, r: 2.5, c: 1 },
+      { d: "Trim", q: 60, r: 4, opt: true, photo: true },
+    ]);
+  });
+
+  it("tiered quote: restores the three tiers with names, lines and the recommendation", () => {
+    const next = applyReviseSeed(base, {
+      ...flatSeed,
+      recommendedTier: "best" as const,
+      tierNames: { good: "Basic", better: "Standard", best: "Premium" },
+      lines: [
+        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, tier: "good" as const },
+        { d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, tier: "best" as const },
+      ],
+    });
+    expect(next.format).toBe("gbb");
+    expect(next.gbb?.rec).toBe("best");
+    expect(next.gbb?.opts.map((o) => o.name)).toEqual(["Basic", "Standard", "Premium"]);
+    expect(next.gbb?.opts[0]?.lines).toEqual([{ d: "One coat", q: 1, r: 900 }]);
+    // The tier with no lines still renders one empty editable row, never a hole.
+    expect(next.gbb?.opts[1]?.lines).toHaveLength(1);
+    expect(next.gbb?.opts[1]?.lines[0]?.d).toBe("");
   });
 });

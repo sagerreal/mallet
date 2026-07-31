@@ -15,7 +15,8 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { fmt$ } from "@/lib/format";
 import { estTotal, gbbTierLine } from "@/lib/estimates";
 import { firstName, type OkItem } from "@/features/home/derive";
-import { clockNow, commitOkSend } from "@/features/home/send";
+import { clockNow, commitOkSend, dispatchOkSend } from "@/features/home/send";
+import { userMessage } from "@/lib/trpc/error-map";
 import { draftFor } from "@/features/home/drafts";
 import { okItemFor } from "@/features/counter/matcher";
 import { chaseDraftFor } from "@/features/counter/runs";
@@ -56,6 +57,7 @@ function SendBlock({
   const [text, setText] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [sent, setSent] = useState<{ when: string; undo: () => void; expiresAt: number } | null>(null);
+  const [sendErr, setSendErr] = useState<string | null>(null);
   const [, tick] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -75,13 +77,17 @@ function SendBlock({
     if (item) {
       const undoSend = commitOkSend(item, body);
       dismissAttention(item.key);
-      setSent({
-        when: clockNow(),
-        undo: () => {
-          undoSend();
-          undismissAttention(item.key);
-        },
-        expiresAt: Date.now() + UNDO_MS,
+      const revert = () => {
+        undoSend();
+        undismissAttention(item.key);
+      };
+      setSent({ when: clockNow(), undo: revert, expiresAt: Date.now() + UNDO_MS });
+      // REAL dispatch (v1.messaging.send). On failure: revert the local commit, bring
+      // the card back, and name the reason — never leave a "✓ sent" that sent nothing.
+      dispatchOkSend(item.lead.id, body).catch((err: unknown) => {
+        revert();
+        setSent(null);
+        setSendErr(userMessage(err, "Couldn't send — check your connection and try again."));
       });
       return;
     }
@@ -89,14 +95,16 @@ function SendBlock({
     const note = s.addLeadNote(fallback.leadId, { type: "text", from: "us", when: "Just now", t: body });
     s.updateLead(fallback.leadId, { age: 0 });
     const prevAge = fallback.age;
-    setSent({
-      when: clockNow(),
-      undo: () => {
-        const s2 = useAppStore.getState();
-        s2.removeLeadNote(fallback.leadId, note.id ?? "");
-        s2.updateLead(fallback.leadId, { age: prevAge });
-      },
-      expiresAt: Date.now() + UNDO_MS,
+    const revert = () => {
+      const s2 = useAppStore.getState();
+      s2.removeLeadNote(fallback.leadId, note.id ?? "");
+      s2.updateLead(fallback.leadId, { age: prevAge });
+    };
+    setSent({ when: clockNow(), undo: revert, expiresAt: Date.now() + UNDO_MS });
+    dispatchOkSend(fallback.leadId, body).catch((err: unknown) => {
+      revert();
+      setSent(null);
+      setSendErr(userMessage(err, "Couldn't send — check your connection and try again."));
     });
   }
 
@@ -136,12 +144,18 @@ function SendBlock({
       ) : (
         <div className="cardghost">{text}</div>
       )}
+      {sendErr && (
+        <div className="cstamp" style={{ color: "var(--red-700, #b91c1c)" }}>{sendErr}</div>
+      )}
       <div className="cardacts">
         <button className="btn sm approve" onClick={send}>
           Send
         </button>
+        {/* "Edit text" — edits the CHASE MESSAGE only. (It read "Change" before, which
+            sat ambiguously next to a change-requested quote — revising the quote itself
+            is the card's "Revise quote" action.) */}
         <button className="btn sm ghost" onClick={() => setEditing((v) => !v)}>
-          {editing ? "Done" : "Change"}
+          {editing ? "Done" : "Edit text"}
         </button>
       </div>
     </div>
@@ -229,6 +243,7 @@ export function GettingCard({ row }: { row: GettingRow }) {
 
 export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
   const openModal = useOpenModal();
+  const router = useRouter();
   const cold = row.quietDays >= 2;
   const item: OkItem | null = row.lead
     ? {
@@ -260,9 +275,16 @@ export function OutCard({ row, snap }: { row: RailRow; snap: Snap }) {
       <div className="cstamp fig">{row.stamp}</div>
       {gbbTierLine(row.est) && <div className="cstamp fig">{gbbTierLine(row.est)}</div>}
       {row.est.changeRequestedAt && (
-        <div className="cstamp fig" style={{ color: "var(--amber, #b45309)" }}>
-          change requested
-        </div>
+        <>
+          <div className="cstamp fig" style={{ color: "var(--amber, #b45309)" }}>
+            change requested
+          </div>
+          <div className="cardacts" onClick={(e) => e.stopPropagation()}>
+            <button className="btn sm approve" onClick={() => router.push(`/composer?revise=${row.est.id}`)}>
+              Revise quote
+            </button>
+          </div>
+        </>
       )}
       {cold && item && (
         <SendBlock

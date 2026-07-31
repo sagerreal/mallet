@@ -30,6 +30,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAppStore, useActiveModal, useCloseModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { calcQuote } from "@/lib/prototype-sample";
@@ -92,6 +93,7 @@ function FollowUpTrail({ e }: { e: Estimate }) {
 export function EstimateModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
+  const router = useRouter();
   const pushModal = usePushModal();
   const estimates = useAppStore((s) => s.estimates);
   const leads = useAppStore((s) => s.leads);
@@ -430,25 +432,38 @@ export function EstimateModalContent() {
                 : <span className="muted">Message loading…</span>
               }
             </div>
-            <button
-              className="btn sm ghost"
-              style={{ flexShrink: 0 }}
-              disabled={clearChangeRequestMutation.isPending}
-              onClick={async () => {
-                try {
-                  const updated = await clearChangeRequestMutation.mutateAsync({ estimateId: e.id });
-                  adoptEstimate(updated, e.fu ?? { on: false, stage: 0 });
-                } catch {
-                  // Surfaced on the button itself (isError → "Failed — retry"); no silent failure.
-                }
-              }}
-            >
-              {clearChangeRequestMutation.isPending
-                ? "Clearing…"
-                : clearChangeRequestMutation.isError
-                  ? "Failed — retry"
-                  : "Mark handled"}
-            </button>
+            <div style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }}>
+              {/* The answer to a change request: edit the quote and resend. Opens the
+                  composer seeded with this quote; the original archives when the
+                  revision actually sends. */}
+              <button
+                className="btn sm primary"
+                onClick={() => {
+                  close();
+                  router.push(`/composer?revise=${e.id}`);
+                }}
+              >
+                Revise quote
+              </button>
+              <button
+                className="btn sm ghost"
+                disabled={clearChangeRequestMutation.isPending}
+                onClick={async () => {
+                  try {
+                    const updated = await clearChangeRequestMutation.mutateAsync({ estimateId: e.id });
+                    adoptEstimate(updated, e.fu ?? { on: false, stage: 0 });
+                  } catch {
+                    // Surfaced on the button itself (isError → "Failed — retry"); no silent failure.
+                  }
+                }}
+              >
+                {clearChangeRequestMutation.isPending
+                  ? "Clearing…"
+                  : clearChangeRequestMutation.isError
+                    ? "Failed — retry"
+                    : "Mark handled"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -592,6 +607,23 @@ export function EstimateModalContent() {
               Send quote
             </button>
           )}
+        </div>
+      )}
+
+      {/* A SENT quote's one advance action: revise it. Opens the composer seeded with
+          this quote's lead/lines/pricing; the original archives only when the revision
+          sends, so backing out changes nothing. (Accepted/declined stay record-only.) */}
+      {e.status === "sent" && (
+        <div className="sheet-foot">
+          <button
+            className="sheet-pri"
+            onClick={() => {
+              close();
+              router.push(`/composer?revise=${e.id}`);
+            }}
+          >
+            Revise quote
+          </button>
         </div>
       )}
     </>

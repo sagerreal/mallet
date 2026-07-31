@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { firstName } from "@/features/home/derive";
-import { clockNow, commitOkSend } from "@/features/home/send";
+import { clockNow, commitOkSend, dispatchOkSend } from "@/features/home/send";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { matchRows, deriveSuggestions } from "./matcher";
 import { api } from "@/lib/trpc/client";
@@ -107,10 +107,13 @@ export function useCounter() {
       const undoSend = commitOkSend(gate.item, text);
       s.dismissAttention(gate.item.key);
       const key = gate.item.key;
-      return () => {
+      const revert = () => {
         undoSend();
         useAppStore.getState().undismissAttention(key);
       };
+      // REAL dispatch; failure reverts the commit (store rollback contract).
+      dispatchOkSend(gate.item.lead.id, text).catch(revert);
+      return revert;
     }
     if (gate.kind === "quote-send") {
       const est = s.estimates.find((e) => e.id === gate.estId);
@@ -139,11 +142,13 @@ export function useCounter() {
     const wasUnread = s.leads.find((l) => l.id === gate.leadId)?.unread ?? false;
     const note = s.addLeadNote(gate.leadId, { type: "text", from: "us", when: "Just now", t: text });
     if (wasUnread) s.updateLead(gate.leadId, { unread: false });
-    return () => {
+    const revertPlain = () => {
       const s2 = useAppStore.getState();
       s2.removeLeadNote(gate.leadId, note.id ?? "");
       if (wasUnread) s2.updateLead(gate.leadId, { unread: true });
     };
+    dispatchOkSend(gate.leadId, text).catch(revertPlain);
+    return revertPlain;
   }, []);
 
   const sendGate = useCallback(

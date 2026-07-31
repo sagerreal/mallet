@@ -54,6 +54,8 @@ vi.mock("@/lib/trpc/client", () => ({
           useQuery: (input: unknown, opts: unknown) => buildFromMeasurementsQuery(input, opts),
         },
         draft: { useMutation: () => ({ mutateAsync: vi.fn() }) },
+        // ?revise= boot — disabled in these tests (no ?revise param)
+        get: { useQuery: () => ({ data: undefined, isError: false }) },
         send: { useMutation: () => ({ mutateAsync: vi.fn() }) },
         archive: { useMutation: () => ({ mutate: vi.fn() }) },
         rules: { create: { useMutation: () => ({ mutate: vi.fn() }) } },
