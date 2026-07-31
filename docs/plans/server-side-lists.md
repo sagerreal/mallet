@@ -70,10 +70,23 @@ and an index inside the repository.
 | List | Default | Also offered |
 |---|---|---|
 | Jobs | `scheduled` — upcoming soonest-first, history most-recent-first | created, customer, amount, status |
-| Customers | `lastActivity` | name, created, value |
-| Invoices | `oldestUnpaid` — collection order | due, amount, created, status |
-| Estimates | `created` | sent, amount, status |
-| Timesheets | `date` | tech, week |
+| Customers | `lastActivity` | name, created, ~~value~~ |
+| Invoices | `oldestUnpaid` — collection order | due, amount, created, status, ledger |
+| Estimates | `created` | sent, status, ~~amount~~ |
+| Timesheets | `date` | tech, ~~week~~ |
+
+**Three struck through, each for a reason worth keeping:**
+
+- **Customers `value`** — 606 customers, none with a stored value, and 20 relevant estimates.
+  Sorting by a column nobody populates orders the list arbitrarily while looking authoritative.
+  Jobber does not show it either.
+- **Estimates `amount`** — an estimate has no total column; the figure is lines → rounding →
+  discount in basis points → tax, computed in the domain. Sorting by it in SQL means writing that
+  chain a second time in a second language, and the two will drift. Needs a cached `total_cents`
+  maintained on write, the way `invoices.total_cents` already is — a schema change, not a sort.
+- **Timesheets `week`** — a week is a RANGE, already expressed as `fromDate`/`toDate` and already
+  what the office panel sends. A sort named "week" would order rows identically to `date` while
+  implying otherwise.
 
 Jobs defaulting to scheduled date rather than created date is the single biggest perceived
 difference from Jobber. A dispatcher thinks in *when the work happens*, never *when the row was
@@ -133,6 +146,21 @@ mutation changes a field the current sort or filter depends on. There is precede
 codebase — `_recentLineWrites` already guards a stale-hydrator window — but it needs to become
 the normal path rather than a special case.
 
+**Done — `lib/trpc/list-cache.ts`.** It was right that this was where the bug would be: the screens
+were converted first and this was left, so for a while a save reached the database and the list on
+screen did not move until the window was refocused.
+
+Resolved by INVALIDATING, never patching. Patching the cached page would have to reimplement every
+sort and filter in the browser to know whether an edited row still belongs on the page it is on —
+an edit can move a row to a page that is not loaded (a job rescheduled out of "today", an invoice
+paid off out of "overdue"). Refetching asks the database, which is the thing that knows.
+
+The mutations live in Zustand slices, which are not components and cannot call `useUtils()`, so the
+provider registers the QueryClient into a module the slices can reach. Sixteen call sites, each
+inside the `.then` of a mutation — never alongside the optimistic write, because a refetch that
+overtakes the commit renders the row back to its old value. Job writes invalidate the invoice lists
+too: Money's top half is "finished work nobody has billed", which is a jobs query.
+
 ## Phase 4 — Scoped default views
 
 The deeper fix, and cheap once Phase 1 lands. Stop opening "all jobs".
@@ -169,6 +197,47 @@ independently revertible.
 - `EXPLAIN ANALYZE` shows index scans, not seq scans, for every default sort
 - Sidebar counts equal `SELECT count(*)`, not the page size
 - Board and lists stay responsive with 40,000 jobs — seed to that number and measure
+
+### Measured, 2026-07-30 — `scripts/scale-benchmark.mjs`
+
+40,000 jobs · 8,000 customers · 12,000 invoices · 20,000 time entries, in a throwaway org, with
+EXPLAIN ANALYZE on the query shapes the repositories actually emit. **Nothing over 100 ms.**
+
+| Query | | |
+|---|---|---|
+| jobs · default sort (scheduled) | 0.4 ms | index |
+| jobs · sort by created | 0.1 ms | index |
+| jobs · sort by amount | 0.3 ms | index |
+| jobs · sort by customer (join leads) | 4.9 ms | index |
+| jobs · search, selective term | 18–36 ms | index (`jobs_title_trgm_idx`, `jobs_num_trgm_idx`) |
+| jobs · search matching 20% of the table | 90.8 ms | seq scan — **correct** at that selectivity |
+| jobs · count for the header | 11.7 ms | seq scan |
+| board · one week of visits | 2.6 ms | index |
+| customers · default sort | 0.1 ms | index |
+| customers · search, selective term | 10.6 ms | seq scan (8k rows — scan wins) |
+| customers · worklist "owes money" | 9.8 ms | seq scan |
+| invoices · ledger order | 11.2 ms | seq scan |
+| invoices · collection order | 0.1 ms | index |
+| timesheets · one week | 0.6 ms | index |
+
+**What it caught.** The jobs search had no trigram index — Phase 2 specified them for "the searched
+text columns" and only leads got them. It was the slowest thing in the application and the only one
+near a user-visible delay. Fixed in `0116_job_search_trgm`.
+
+**The remaining sequential scans are the right plan, not debt:**
+
+- *20%-selectivity search* — reading the table beats hopping an index for one row in five. The
+  planner is correct; this row exists to know the ceiling.
+- *count for the header* — counting 40,000 rows means visiting them.
+- *ledger order* — the rank is a CASE over `now()`, and `now()` is STABLE rather than IMMUTABLE, so
+  it cannot be an expression index. Inherent to ranking by "is it overdue *right now*".
+- *customers search / owes money* — 8k leads and 12k invoices are small enough that a scan wins;
+  the trigram and FK indexes are there for when they are not.
+
+**A finding outside the lists.** `jobs.callback_of` is a self-referencing FK with no index behind
+it, so deleting a job re-checks the whole jobs table. Deleting 40,000 in one statement exceeded the
+statement timeout. Harmless for a shop deleting one job at a time, and the benchmark batches around
+it — but it is why bulk cleanup there is slow, and worth an index if bulk delete ever matters.
 
 ## Out of scope, deliberately
 

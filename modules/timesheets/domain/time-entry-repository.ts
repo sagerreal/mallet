@@ -1,5 +1,6 @@
 import type { TimeEntryId, UserId, CursorPage, Paginated } from "@mallet/shared/types";
 import type { TimeEntry } from "./time-entry";
+import type { TimesheetSort } from "../infra/timesheet-sorts";
 
 export interface TimeEntryFilter {
   readonly techUserId?: UserId;
@@ -41,7 +42,12 @@ export interface TimeEntryRepository {
   /** How many entries match the filter — the whole set, so a page can say what it is a page of. */
   count(filter: TimeEntryFilter): Promise<number>;
 
-  list(filter: TimeEntryFilter, page: CursorPage): Promise<Paginated<TimeEntry>>;
+  list(
+    filter: TimeEntryFilter,
+    page: CursorPage,
+    sort?: TimesheetSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<TimeEntry>>;
 
   save(entry: TimeEntry): Promise<void>;
 

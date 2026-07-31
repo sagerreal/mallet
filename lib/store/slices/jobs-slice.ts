@@ -72,6 +72,7 @@
 import type { StateCreator } from "zustand";
 import type { Job, Visit, Addon, VerifyAns, JobLine } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, type JobDTO } from "@/lib/store/dto-mapper";
 import { persistVisitStatus, visitWriteName, type VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
@@ -113,6 +114,16 @@ const _pendingVisitCreates = new Set<string>();
 // by addVisit's rollback when the visit's own create failed (no row to delete
 // — the queued delete then skips its mutate).
 const _pendingVisitRemovals = new Set<string>();
+
+/**
+ * Refetch every list a job write can move a row in or out of.
+ *
+ * Jobs and INVOICES together, always. The Money ledger's top half is "finished work nobody has
+ * billed", which is a jobs query — so marking a job complete adds a row to Money, and pricing one
+ * changes the amount shown there. Invalidating only the jobs lists would leave the ledger stale in
+ * exactly the case the ledger exists for.
+ */
+const invalidateJobLists = (): void => invalidateLists("jobs", "invoices");
 
 // Jobs adopted from a server mutation (adoptJob), keyed to their adoption
 // time. setJobs re-attaches store jobs absent from an incoming snapshot while
@@ -583,6 +594,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         set((s) => ({
           jobs: s.jobs.map((j) => (j.id === id ? reconciled : j)),
         }));
+        invalidateJobLists();
         return reconciled;
       })
       .catch((err: unknown) => {
@@ -629,6 +641,8 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
               : j,
           ),
         }));
+        // A status change moves the job between lifecycle bands, and into Money's ready-to-bill.
+        invalidateJobLists();
         return { ok: true };
       })
       .catch((err: unknown) => {
@@ -690,6 +704,8 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         // the full job (server line ids replace optimistic; merge-guarded).
         _recentLineWrites.set(jobId, Date.now());
         set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        // Pricing changes the Amount column and the ready-to-bill total on Money.
+        invalidateJobLists();
         return { ok: true };
       })
       .catch((err: unknown) => {
@@ -718,6 +734,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       .then((dto) => {
         _recentLineWrites.set(jobId, Date.now());
         set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        invalidateJobLists();
         return { ok: true };
       })
       .catch((err: unknown) => {
@@ -794,6 +811,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         .then((dto) => {
           // 3. Reconcile — server row id === client id so board state stays valid.
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+          invalidateJobLists();
         })
         .catch((err: unknown) => {
           // 4. Roll back. The row never existed, so a removal queued behind this
@@ -849,6 +867,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         })
         .then((dto) => {
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+          invalidateJobLists();
         })
         .catch((err: unknown) => {
           // Skip the restore when the visit is gone — the snapshot predates
@@ -931,6 +950,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
             .then((dto) => {
               _durRollback.delete(visitId);
               set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+              invalidateJobLists();
             })
             .catch((err: unknown) => {
               _durRollback.delete(visitId);
@@ -965,6 +985,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         .mutate(patchInput)
         .then((dto) => {
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+          invalidateJobLists();
         })
         .catch((err: unknown) => {
           if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
@@ -1003,6 +1024,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       return persistVisitStatus(surface, jobId, visitId, status)
         .then((dto) => {
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+          invalidateJobLists();
         })
         .catch((err: unknown) => {
           // Skip the restore when the visit is gone at catch time — the
@@ -1048,6 +1070,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         .then((dto) => {
           _pendingVisitRemovals.delete(visitId);
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+          invalidateJobLists();
         })
         .catch((err: unknown) => {
           _pendingVisitRemovals.delete(visitId);
@@ -1070,6 +1093,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     if (prior?.origin !== JOB_ORIGIN.DB) return; // local-only draft — nothing to persist
     trpcVanilla.v1.jobs.archive
       .mutate({ jobId: id })
+      .then(() => invalidateJobLists())
       .catch((err: unknown) => {
         if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
         reportWriteError("archiveJob", err);
@@ -1086,6 +1110,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     if (prior?.origin !== JOB_ORIGIN.DB) return;
     trpcVanilla.v1.jobs.archive
       .mutate({ jobId: id })
+      .then(() => invalidateJobLists())
       .catch((err: unknown) => {
         // Rollback: re-insert the removed job at the front (order is not load-bearing here).
         if (prior) set((s) => ({ jobs: [prior, ...s.jobs] }));

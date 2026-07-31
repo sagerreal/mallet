@@ -16,6 +16,7 @@
 import type { StateCreator } from "zustand";
 import type { TimeEntry } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoToTimeEntry } from "@/lib/store/dto-mapper";
 import { reportWriteError } from "../write-error";
 import { appErrorField } from "@/lib/trpc/error-map";
@@ -95,6 +96,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
         running: entry.running ?? false,
       })
       .then((dto) => {
+        invalidateLists("timesheets");
         // 3. Reconcile.
         set((s) => ({
           timeEntries: s.timeEntries.map((e) => (e.id === id ? dtoToTimeEntry(dto) : e)),
@@ -142,6 +144,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
     trpcVanilla.v1.timesheets.update
       .mutate(mutationInput)
       .then((dto) => {
+        invalidateLists("timesheets");
         // 3. Reconcile.
         set((s) => ({
           timeEntries: s.timeEntries.map((e) => (e.id === id ? dtoToTimeEntry(dto) : e)),
@@ -222,6 +225,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
     trpcVanilla.v1.timesheets.reopen
       .mutate({ entryId: id })
       .then((dto) => {
+        invalidateLists("timesheets");
         // 3. Reconcile with server-returned DTO.
         set((s) => ({
           timeEntries: s.timeEntries.map((e) => (e.id === id ? dtoToTimeEntry(dto) : e)),

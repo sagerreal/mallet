@@ -9,6 +9,7 @@ import { DrizzleTimeEntryRepository } from "../infra/drizzle-time-entry-reposito
 import { CreateTimeEntryUseCase } from "../app/create-time-entry";
 import { ListTimeEntriesUseCase } from "../app/list-time-entries";
 import { CountTimeEntriesUseCase } from "../app/count-time-entries";
+import { TIMESHEET_SORTS } from "../infra/timesheet-sorts";
 import { UpdateTimeEntryUseCase } from "../app/update-time-entry";
 import { RemoveTimeEntryUseCase } from "../app/remove-time-entry";
 import { ApproveWeekUseCase } from "../app/approve-week";
@@ -27,6 +28,9 @@ const listInput = z.object({
   toDate: z.string().optional(),
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
+  /** Named sort — never a column name. Absent means work date ascending. */
+  sort: z.enum(TIMESHEET_SORTS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
 const createInput = z.object({
@@ -124,6 +128,8 @@ export const createTimesheetRouter = () =>
             toDate: input.toDate,
           },
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
+          sort: input.sort,
+          sortDir: input.sortDir,
         });
         return { items: result.items.map(toTimeEntryDTO), nextCursor: result.nextCursor };
       }),

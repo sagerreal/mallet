@@ -3,7 +3,7 @@ import { invoices, invoiceLines, payments, leads } from "@mallet/shared/db/schem
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
-import { invoiceSortSpec, invoiceSortValue, type InvoiceSort } from "./invoice-sorts";
+import { invoiceSortSpec, type InvoiceSort } from "./invoice-sorts";
 import { invoiceViewCondition } from "./invoice-views";
 import {
   buildPage,

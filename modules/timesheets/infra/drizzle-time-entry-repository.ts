@@ -1,11 +1,9 @@
 import { and, asc, desc, eq, gte, isNull, isNotNull, lte, inArray, or, sql, type SQL } from "drizzle-orm";
 import { timeEntries } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import { keysetAfter } from "@mallet/shared/db/keyset";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueColumn } from "@mallet/shared/db/sort-page";
+import { timesheetSortSpec, type TimesheetSort } from "./timesheet-sorts";
 import {
-  buildPage,
-  decodeCursor,
-  isOk,
   type OrgId,
   type UserId,
   type TimeEntryId,
@@ -130,32 +128,41 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
     return rows[0]?.n ?? 0;
   }
 
-  async list(filter: TimeEntryFilter, page: CursorPage): Promise<Paginated<TimeEntry>> {
+  async list(
+    filter: TimeEntryFilter,
+    page: CursorPage,
+    sort?: TimesheetSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<TimeEntry>> {
     const conds = this.listConds(filter);
+    const spec = timesheetSortSpec(sort ?? "date", sortDir);
 
     if (page.cursor) {
-      const cursor = decodeCursor(page.cursor);
-      if (isOk(cursor)) {
-        // Keyset: ordered by (workDate asc, createdAt asc, id asc).
-        // Cursor encodes (createdAt, id) as the tiebreaker.
-        // NOTE: order-by leads with workDate but the cursor only keys on (createdAt, id) — if
-        // workDate order disagrees with createdAt order across a page boundary, a row can be
-        // skipped or duplicated. Separate, subtler bug; needs a multi-key cursor. Out of scope here.
-        conds.push(keysetAfter(timeEntries.createdAt, timeEntries.id, cursor.value));
+      const cursor = decodeSortCursor(page.cursor);
+      if (cursor) {
+        const after = keysetAfterSort(spec, timeEntries.id, cursor);
+        if (after) conds.push(after);
       }
     }
 
+    // The cursor's value is read from the SAME expression ORDER BY leads with, cast to text. The
+    // previous version ordered by work_date but keyed the cursor on (created_at, id), so wherever
+    // those disagreed — a back-dated correction is enough — a page boundary could skip an entry or
+    // repeat one. Hours dropped from payroll is not a cosmetic paging bug.
     const rows = await this.tx
-      .select()
+      .select({ row: timeEntries, sortValue: sortValueColumn(spec) })
       .from(timeEntries)
       .where(and(...conds))
-      .orderBy(asc(timeEntries.workDate), asc(timeEntries.createdAt), asc(timeEntries.id))
+      .orderBy(...orderFor(spec, timeEntries.id))
       .limit(page.limit + 1);
 
-    return buildPage(rows.map(toDomain), page, (entry) => ({
-      createdAt: entry.props.createdAt,
-      id: entry.props.id,
-    }));
+    const hasMore = rows.length > page.limit;
+    const kept = hasMore ? rows.slice(0, page.limit) : rows;
+    const last = kept[kept.length - 1];
+    return {
+      items: kept.map((r) => toDomain(r.row)),
+      nextCursor: hasMore && last ? encodeSortCursor({ value: last.sortValue, id: last.row.id }) : null,
+    };
   }
 
   async save(entry: TimeEntry): Promise<void> {

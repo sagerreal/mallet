@@ -1,4 +1,5 @@
 import type { EstimateId, LeadId, CursorPage, Paginated } from "@mallet/shared/types";
+import type { EstimateSort } from "../infra/estimate-sorts";
 import type { Estimate, EstimateStatus } from "./estimate";
 import type { AiDraftSnapshot } from "./edit-delta";
 
@@ -14,7 +15,12 @@ export interface EstimateRepository {
   save(estimate: Estimate): Promise<void>;
   // Load the aggregate with its lines via a single JOIN (no N+1). Null if absent/soft-deleted.
   findById(id: EstimateId): Promise<Estimate | null>;
-  list(page: CursorPage, filter?: EstimateFilter): Promise<Paginated<Estimate>>;
+  list(
+    page: CursorPage,
+    filter?: EstimateFilter,
+    sort?: EstimateSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Estimate>>;
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>>;
   // Soft-delete (archive) an estimate by setting deleted_at. Returns the number of rows affected
   // (0 = not found or already archived). Single UPDATE + RETURNING — no prior findById needed.

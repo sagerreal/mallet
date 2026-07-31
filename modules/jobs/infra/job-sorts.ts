@@ -1,4 +1,4 @@
-import { jobs } from "@mallet/shared/db/schema";
+import { jobs, leads } from "@mallet/shared/db/schema";
 import type { SortSpec } from "@mallet/shared/db/sort-page";
 
 /**
@@ -12,7 +12,7 @@ import type { SortSpec } from "@mallet/shared/db/sort-page";
  * sequential scan over the whole tenant. At 1,500 jobs nobody notices; at 40,000 the page times
  * out. See migration 0110.
  */
-export const JOB_SORTS = ["scheduled", "created", "amount", "status"] as const;
+export const JOB_SORTS = ["scheduled", "created", "amount", "status", "customer"] as const;
 export type JobSort = (typeof JOB_SORTS)[number];
 
 /**
@@ -31,19 +31,17 @@ export const jobSortSpec = (sort: JobSort, dir?: "asc" | "desc"): SortSpec => {
       return { column: jobs.totalCents, direction: dir ?? "desc", nulls: "last" };
     case "status":
       return { column: jobs.status, direction: dir ?? "asc", nulls: "last" };
+    case "customer":
+      // leads.name, reached by a JOIN the repository adds for this sort alone. jobs → leads is
+      // many-to-one, so the join cannot multiply rows and the keyset holds. A correlated subquery
+      // reads safer but cannot use an index: measured against production, 53ms of sequential scan
+      // versus 6ms of index-only scan on leads_org_name_idx.
+      //
+      // Ascending by default, because this sort exists for LOOKING SOMEONE UP — alphabetical is
+      // the only order in which "scroll to the M's" means anything.
+      return { column: leads.name, direction: dir ?? "asc", nulls: "last" };
     case "created":
     default:
       return { column: jobs.createdAt, direction: dir ?? "desc", nulls: "last" };
-  }
-};
-
-/** Column read off a row to build the next cursor — must match jobSortSpec's column exactly. */
-export const jobSortValue = (sort: JobSort, row: Record<string, unknown>): unknown => {
-  switch (sort) {
-    case "scheduled": return row.scheduledStart;
-    case "amount": return row.totalCents;
-    case "status": return row.status;
-    case "created":
-    default: return row.createdAt;
   }
 };

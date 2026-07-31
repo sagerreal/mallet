@@ -127,6 +127,9 @@ export const estimates = pgTable(
       foreignColumns: [leads.orgId, leads.id],
     }).onDelete("cascade"),
     index("estimates_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
+    // Backs the `sent` sort. Without it, ordering by sent_at is a sequential scan over the whole
+    // tenant — fine at a few hundred quotes, a timeout at forty thousand.
+    index("estimates_org_sent_idx").on(t.orgId, t.sentAt.desc(), t.id.desc()),
     index("estimates_org_lead_idx").on(t.orgId, t.leadId),
     uniqueIndex("estimates_org_num_uidx")
       .on(t.orgId, t.num)
