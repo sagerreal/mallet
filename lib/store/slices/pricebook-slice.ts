@@ -85,6 +85,10 @@ function mergeNewById<T extends { id: string }>(existing: T[], incoming: T[]): T
   return additions.length === 0 ? existing : [...existing, ...additions];
 }
 
+// Per-item write sequence — stale mutation responses must never clobber newer optimistic state.
+const _svcWriteSeq = new Map<string, number>();
+const _matWriteSeq = new Map<string, number>();
+
 export interface PricebookSlice {
   services: Service[];
   categories: Category[];
@@ -204,17 +208,25 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     set((s) => ({
       services: s.services.map((svc) => (svc.id === id ? { ...svc, ...fields } : svc)),
     }));
+    // LAST-WRITE-WINS: rapid edits (each keystroke / toggle is its own mutation) race,
+    // and a STALE response reconciling the whole row snapped newer optimistic values
+    // back for a beat — the Taxable switch visibly flip-flopped. Only the newest
+    // in-flight write for a service may reconcile or roll back.
+    const mySeq = (_svcWriteSeq.get(id) ?? 0) + 1;
+    _svcWriteSeq.set(id, mySeq);
     // Returns the outcome ({ ok }) — never rejects — so interactive callers can
     // dismiss their UI only when the write actually stuck (no silent rollback).
     return trpcVanilla.v1.pricebook.service.update
       .mutate(serviceUpdatePayload(id, fields))
       .then((dto) => {
-        set((s) => ({ services: reconcileService(s.services, id, dto) }));
+        if (_svcWriteSeq.get(id) === mySeq) {
+          set((s) => ({ services: reconcileService(s.services, id, dto) }));
+        }
         return { ok: true };
       })
       .catch((e: unknown) => {
         reportWriteError("updateService", e);
-        set({ services: snapshot });
+        if (_svcWriteSeq.get(id) === mySeq) set({ services: snapshot });
         return { ok: false };
       });
   },
@@ -335,14 +347,19 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
     set((s) => ({
       materials: s.materials.map((m) => (m.id === id ? { ...m, ...fields } : m)),
     }));
+    // Last-write-wins — same stale-response race as updateService.
+    const mySeq = (_matWriteSeq.get(id) ?? 0) + 1;
+    _matWriteSeq.set(id, mySeq);
     void trpcVanilla.v1.pricebook.material.update
       .mutate(materialUpdatePayload(id, fields))
       .then((dto) => {
-        set((s) => ({ materials: reconcileMaterial(s.materials, id, dto) }));
+        if (_matWriteSeq.get(id) === mySeq) {
+          set((s) => ({ materials: reconcileMaterial(s.materials, id, dto) }));
+        }
       })
       .catch((e: unknown) => {
         reportWriteError("updateMaterial", e);
-        set({ materials: snapshot });
+        if (_matWriteSeq.get(id) === mySeq) set({ materials: snapshot });
       });
   },
 

@@ -176,14 +176,7 @@ export function MaterialsPanel({ canSeeCost }: { canSeeCost: boolean }) {
         </div>
       )}
 
-      <div style={{ padding: "0 var(--space-4)" }}>
-        {visible.map((m) => (
-          <MaterialRow key={m.id} m={m} canSeeCost={canSeeCost} />
-        ))}
-        {active.length > 0 && visible.length === 0 && (
-          <div className="empty-att">No materials match “{query}”.</div>
-        )}
-      </div>
+
 
       <div style={{ padding: "var(--space-3) var(--space-4)", display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
         <input
@@ -214,6 +207,15 @@ export function MaterialsPanel({ canSeeCost }: { canSeeCost: boolean }) {
         <button className="btn sm" onClick={() => void handleAdd()} disabled={!newName.trim()}>
           + Add
         </button>
+      </div>
+
+      <div style={{ padding: "0 var(--space-4)" }}>
+        {visible.map((m) => (
+          <MaterialRow key={m.id} m={m} canSeeCost={canSeeCost} />
+        ))}
+        {active.length > 0 && visible.length === 0 && (
+          <div className="empty-att">No materials match “{query}”.</div>
+        )}
       </div>
       {addError && (
         <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", padding: "0 var(--space-4) var(--space-3)", margin: 0 }}>{addError}</p>
