@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { invoices } from "@mallet/shared/db/schema";
 import type { SortSpec } from "@mallet/shared/db/sort-page";
 
@@ -16,11 +17,35 @@ import type { SortSpec } from "@mallet/shared/db/sort-page";
  *
  * Every entry needs an index on (org_id, <column>). See migration 0114.
  */
-export const INVOICE_SORTS = ["oldestUnpaid", "due", "amount", "created", "status"] as const;
+export const INVOICE_SORTS = ["ledger", "oldestUnpaid", "due", "amount", "created", "status"] as const;
 export type InvoiceSort = (typeof INVOICE_SORTS)[number];
+
+/**
+ * The Money ledger's own order, ported from STATUS_RANK in features/money/money-derive.ts.
+ *
+ * It is a WORKFLOW order, not a column: things needing action first. `over` is not a status in the
+ * database — it is derived from a sent invoice whose due date has passed — so this is a CASE
+ * expression rather than a column sort, and it has to be one for the ledger to page in the order
+ * it has always shown.
+ *
+ * Ported rather than redesigned. Draft ranking above overdue is arguable — an overdue bill is
+ * surely more urgent than one never sent — but changing where rows appear is a product decision,
+ * not a side effect of moving the query.
+ */
+export const LEDGER_RANK = sql<number>`case
+  when ${invoices.status} = 'draft' then 1
+  when ${invoices.status} = 'sent' and ${invoices.dueAt} is not null and ${invoices.dueAt} < now() then 2
+  when ${invoices.status} = 'partial' then 3
+  when ${invoices.status} = 'sent' then 4
+  else 5
+end`;
 
 export const invoiceSortSpec = (sort: InvoiceSort, dir?: "asc" | "desc"): SortSpec => {
   switch (sort) {
+    case "ledger":
+      // Ranked by the CASE above; the cursor carries the rank, so paging resumes inside the right
+      // band rather than restarting at draft.
+      return { column: LEDGER_RANK, direction: dir ?? "asc", nulls: "last" };
     case "amount":
       return { column: invoices.totalCents, direction: dir ?? "desc", nulls: "last" };
     case "status":
@@ -40,6 +65,7 @@ export const invoiceSortSpec = (sort: InvoiceSort, dir?: "asc" | "desc"): SortSp
 /** Value read off a row to build the next cursor — must match invoiceSortSpec's column exactly. */
 export const invoiceSortValue = (sort: InvoiceSort, row: Record<string, unknown>): unknown => {
   switch (sort) {
+    case "ledger": return row.__ledgerRank;
     case "amount": return row.totalCents;
     case "status": return row.status;
     case "created": return row.createdAt;
