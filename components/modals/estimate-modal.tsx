@@ -614,9 +614,25 @@ export function EstimateModalContent() {
               </button>
             </div>
           ) : (
-            <button className="sheet-pri" onClick={openSendPanel}>
-              Send quote
-            </button>
+            // Edit sits BESIDE Send, not behind it. A draft is the one state where changing the
+            // price is the obvious next thing, and it was the only state with no way to do it:
+            // a SENT quote could be revised, a draft could only be sent as-is or deleted.
+            // Opens the composer seeded with this quote — the same path Revise uses.
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              <button
+                className="btn ghost"
+                style={{ flex: 1, minHeight: 44 }}
+                onClick={() => {
+                  close();
+                  router.push(`/composer?revise=${e.id}`);
+                }}
+              >
+                Edit
+              </button>
+              <button className="sheet-pri" style={{ flex: 2, width: "auto" }} onClick={openSendPanel}>
+                Send quote
+              </button>
+            </div>
           )}
         </div>
       )}

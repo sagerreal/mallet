@@ -947,7 +947,7 @@
      One loud action; everything else is a quiet level-0 row that expands in-flow.
      Rows are 52px (glove target), hairline-separated, label left / value right;
      accordion bodies open INSIDE the list, never floating. */
-  .sheet-head{position:sticky;top:calc(0px - var(--modal-pad-y));background:var(--card);z-index:4;margin:0 calc(0px - var(--modal-pad-x));padding:var(--space-2) var(--modal-pad-x) var(--space-3);border-radius:20px 20px 0 0}
+  .sheet-head{position:sticky;top:calc(0px - var(--modal-pad-y));background:var(--card);z-index:4;margin:0 calc(0px - var(--modal-pad-x));padding:var(--space-2) var(--modal-pad-x) var(--space-3);border-radius:var(--radius-xl) var(--radius-xl) 0 0}
   .sheet-head h2{font-family:var(--font-display);font-size:var(--type-2xl);font-weight:680;letter-spacing:-.3px;margin:0;padding-right:var(--space-8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .sheet-meta{margin-top:var(--space-2);display:flex;align-items:center;gap:var(--space-2);font-size:var(--type-sm);color:var(--ink-2);flex-wrap:wrap}
   /* THE primary. Filled ink — a primary that is one border-width away from a
@@ -956,7 +956,7 @@
      ~74% up the screen, past one-handed reach exactly when the record is fullest
      (the ergonomics critic measured it). The bottom edge is the one place a thumb
      always owns, and a flush anchored footer honours the no-floating rule. */
-  .sheet-foot{position:sticky;bottom:calc(0px - var(--modal-pad-y) - var(--safe-b));background:var(--card);margin:var(--space-4) calc(0px - var(--modal-pad-x)) calc(0px - var(--modal-pad-y) - var(--safe-b));padding:var(--space-3) var(--modal-pad-x) calc(var(--space-3) + var(--safe-b));border-top:1px solid var(--line-2);z-index:3}
+  .sheet-foot{position:sticky;bottom:calc(0px - var(--modal-pad-y) - var(--safe-b));background:var(--card);margin:var(--space-4) calc(0px - var(--modal-pad-x)) calc(0px - var(--modal-pad-y) - var(--safe-b));padding:var(--space-3) var(--modal-pad-x) calc(var(--space-3) + var(--safe-b));border-top:1px solid var(--line-2);z-index:3;border-radius:0 0 var(--radius-xl) var(--radius-xl)}
   .sheet-pri{display:flex;align-items:center;justify-content:center;gap:var(--space-2);width:100%;min-height:52px;border:none;border-radius:var(--radius);background:var(--pri-bg);color:var(--pri-fg);font-family:inherit;font-size:var(--type-md);font-weight:700;letter-spacing:.1px;cursor:pointer;box-shadow:0 2px 8px rgba(26,21,16,.22);transition:transform .1s,filter .12s}
   .sheet-pri:active{transform:translateY(1px) scale(.99);filter:brightness(.92)}
   /* 48px: the ergonomics pass measured the first cut at 35pt — under the 44pt glove
