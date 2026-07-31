@@ -68,7 +68,7 @@ export class GetQboSyncActivity {
         malletId: e.malletId,
         // A record deleted since the attempt keeps its row — hiding a failure because its subject
         // is gone is exactly how hours go missing unnoticed.
-        label: resolved.get(e.entityType)?.get(e.malletId) ?? "(no longer in Mallet)",
+        label: resolved.get(e.entityType)?.get(e.malletId) ?? "(no longer in Elas)",
         status: e.status,
         qboId: e.qboId,
         problem,

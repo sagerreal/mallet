@@ -3,7 +3,7 @@
  *
  * Carriers check the SERVICE, not the number: a 10DLC campaign attaches to a Messaging Service, and
  * a send naming a bare `from` is treated as unregistered traffic even when that number sits in the
- * service's own sender pool. Mallet sent bare `from` numbers exclusively, so an approved campaign
+ * service's own sender pool. Elas sent bare `from` numbers exclusively, so an approved campaign
  * would still not have delivered anything.
  */
 import { describe, it, expect, vi } from "vitest";

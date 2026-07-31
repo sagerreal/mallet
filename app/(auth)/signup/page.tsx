@@ -31,7 +31,7 @@ export default function SignupPage() {
       // No confirmation email was sent — the address already has an account. Point the
       // person at sign-in (the "Sign in" link below the form) instead of the check-your-email
       // screen, which would strand them waiting for a link that never arrives.
-      setError("That email already has a Mallet account. Sign in below instead.");
+      setError("That email already has a Elas account. Sign in below instead.");
       setBusy(false);
       return;
     }

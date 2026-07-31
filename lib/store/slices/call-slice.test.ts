@@ -77,11 +77,11 @@ describe("call-slice", () => {
 
   it("passes a domain refusal through — it names the fix, and the user can act on it", async () => {
     place.mockRejectedValue(
-      trpcError("CONFLICT", "add the mobile number Mallet should ring you on before placing a call"),
+      trpcError("CONFLICT", "add the mobile number Elas should ring you on before placing a call"),
     );
     store().startCall("lead-1");
     await vi.waitFor(() => expect(store().activeCall?.phase).toBe("failed"));
-    expect(store().activeCall?.error).toMatch(/mobile number Mallet should ring you on/);
+    expect(store().activeCall?.error).toMatch(/mobile number Elas should ring you on/);
   });
 
   describe("applyCallStatus", () => {

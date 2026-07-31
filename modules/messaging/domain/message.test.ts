@@ -8,7 +8,7 @@ const base = (overrides: Partial<MessageProps> = {}): MessageProps => ({
   leadId: null,
   direction: "outbound",
   channel: "sms",
-  body: "Hello from Mallet",
+  body: "Hello from Elas",
   fromNumber: "+15005550006",
   toNumber: "+15555550123",
   providerSid: null,
@@ -29,7 +29,7 @@ describe("Message.create", () => {
     const m = unwrap(Message.create(base()));
     expect(m.props.direction).toBe("outbound");
     expect(m.props.status).toBe("queued");
-    expect(m.props.body).toBe("Hello from Mallet");
+    expect(m.props.body).toBe("Hello from Elas");
   });
 
   it("creates a valid inbound message", () => {

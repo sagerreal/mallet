@@ -190,7 +190,7 @@ export function TechJobModalContent() {
       <TechHeader job={job} custName={custName} />
 
       {/* 2. Call / Text — the quiet peer-action row. CALL is for everyone: a technician ringing
-          the customer on their way is the ordinary field case, and going through Mallet is what
+          the customer on their way is the ordinary field case, and going through Elas is what
           keeps their personal mobile off the customer's phone. myDay now carries the customers
           behind a tech's own jobs, so the lead is in the store on this surface too. TEXT stays
           office-only — outbound SMS is gated on the org's 10DLC registration, a separate question

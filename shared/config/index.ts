@@ -27,13 +27,13 @@ const ConfigSchema = z.object({
   // unconfigured (graceful degradation). Email needs RESEND_API_KEY + EMAIL_FROM; SMS needs all
   // three Twilio vars. ANTHROPIC_API_KEY unblocks the Phase 3 AI features.
   RESEND_API_KEY: z.string().min(1).optional(),
-  EMAIL_FROM: z.string().min(1).optional(), // e.g. "Mallet <notifications@yourdomain.com>"
+  EMAIL_FROM: z.string().min(1).optional(), // e.g. "Elas <notifications@yourdomain.com>"
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_FROM_NUMBER: z.string().min(1).optional(),
-  // The ONE Mallet-owned number every shop's staff texts to reach the assistant. Deliberately
-  // NOT per-org: a tech texting the assistant is Mallet talking to its own user, not a shop
-  // texting a customer, so it rides Mallet's own A2P registration and no shop has to register
+  // The ONE Elas-owned number every shop's staff texts to reach the assistant. Deliberately
+  // NOT per-org: a tech texting the assistant is Elas talking to its own user, not a shop
+  // texting a customer, so it rides Elas's own A2P registration and no shop has to register
   // anything before their crew can use it. A shop's `orgs.twilio_number` stays purely for
   // customer conversations.
   //
@@ -41,7 +41,7 @@ const ConfigSchema = z.object({
   // the existing customer behaviour. That is the correct dark state — the feature is off, not
   // half-on.
   MALLET_ASSISTANT_NUMBER: z.string().min(1).optional(),
-  // The Messaging Service carrying Mallet's approved 10DLC campaign, used for assistant replies.
+  // The Messaging Service carrying Elas's approved 10DLC campaign, used for assistant replies.
   // Carriers check the SERVICE: a reply sent naming a bare `from` is filtered as unregistered
   // traffic even when the campaign is approved and the number sits in that service's pool.
   MALLET_ASSISTANT_MESSAGING_SERVICE_SID: z.string().min(1).optional(),

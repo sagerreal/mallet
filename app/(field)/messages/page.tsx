@@ -4,7 +4,7 @@
  * Messages page — pixel-faithful port of the prototype's vMessages() + aiPhone().
  *
  * Layout:
- *   1. Pinned "Mallet AI" crew card (unchanged — separate AI-logging surface).
+ *   1. Pinned "Artie" crew card (unchanged — separate AI-logging surface).
  *   2. Customer Inbox powered by v1.messaging.listConversations (live DB).
  *
  * Clicking a customer row opens the existing ThreadModal for that leadId.
@@ -35,7 +35,7 @@ function snippet(body: string, direction: "inbound" | "outbound"): string {
 }
 
 // ============================================================================
-// AI Phone mock (what a tech sees texting Mallet AI from their own phone)
+// AI Phone mock (what a tech sees texting Artie from their own phone)
 // Prototype: aiPhone() lines 3759-3787
 // ============================================================================
 
@@ -115,7 +115,7 @@ function AiPhone({ onBack }: AiPhoneProps) {
                 ‹
               </span>
               <span className="av">✦</span>
-              <span className="nm">Mallet</span>
+              <span className="nm">Elas</span>
               <span className="sb">(925) 555-0100</span>
             </div>
             {/* Body */}
@@ -302,7 +302,7 @@ function CustomerInbox() {
 }
 
 // ============================================================================
-// Mallet AI pinned card — visible to all roles
+// Artie pinned card — visible to all roles
 // ============================================================================
 
 interface MalletAiCardProps {
@@ -329,7 +329,7 @@ function MalletAiCard({ onClick }: MalletAiCardProps) {
         ✦
       </span>
       <div className="msg-main">
-        <div className="msg-nm">Mallet AI</div>
+        <div className="msg-nm">Artie</div>
         <div className="msg-snip">
           Text it to log work, photos &amp; hours — from any phone
         </div>
@@ -361,7 +361,7 @@ export default function MessagesPage() {
     <>
       <h1>Messages</h1>
       <div className="msg-list">
-        {/* Mallet AI row — pinned first, visible to all roles */}
+        {/* Artie row — pinned first, visible to all roles */}
         <MalletAiCard onClick={() => setAiOpen(true)} />
 
         {/* Customer inbox — only for owner/office once role is confirmed */}

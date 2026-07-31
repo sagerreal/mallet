@@ -191,7 +191,7 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
       <div className="sidehead">
         <div className="brand">
           <span className="bmark">✦</span>
-          Mallet
+          Elas
           <span className="brandai">.ai</span>
         </div>
       </div>

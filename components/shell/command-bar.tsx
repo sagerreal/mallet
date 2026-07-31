@@ -52,8 +52,8 @@ export function CommandBar() {
         <input
           ref={api.inputRef}
           id="cmdbar"
-          placeholder={api.isThinking ? "Mallet is thinking…" : "Ask Mallet — or just say what you want done…"}
-          aria-label="Ask Mallet"
+          placeholder={api.isThinking ? "Artie is thinking…" : "Ask Artie — or just say what you want done…"}
+          aria-label="Ask Artie"
           aria-busy={api.isThinking}
           // Enter submits (handleKeyDown), so the keyboard action key says "send", not "return".
           enterKeyHint="send"

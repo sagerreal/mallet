@@ -16,13 +16,13 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Mallet",
+  title: "Elas",
   description: "AI-native operating system for service businesses.",
-  applicationName: "Mallet",
+  applicationName: "Elas",
   // Launch full-screen (no Safari chrome) when added to the iPhone home screen.
   appleWebApp: {
     capable: true,
-    title: "Mallet",
+    title: "Elas",
     statusBarStyle: "default",
   },
   icons: {
@@ -40,7 +40,7 @@ export const viewport: Viewport = {
   // When the on-screen keyboard opens, shrink the LAYOUT viewport rather than only
   // sliding the visual one. Without this the page keeps its full height behind the
   // keyboard, so `position:fixed` bottom chrome — #mobiletabs and the .cmdline Ask
-  // Mallet bar at bottom:60px — stays pinned underneath it and the focused field can
+  // Elas bar at bottom:60px — stays pinned underneath it and the focused field can
   // end up hidden. The native shell gets this from Capacitor's Keyboard
   // resize:"native"; this is the same behaviour for mobile web, which had nothing.
   interactiveWidget: "resizes-content",

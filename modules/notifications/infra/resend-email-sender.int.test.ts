@@ -20,7 +20,7 @@ suite("ResendEmailSender against live Resend", () => {
       orgId: asOrgId("22222222-2222-4222-8222-222222222222"),
       channel: "email",
       to: TO,
-      body: "Mallet live email integration test.",
+      body: "Elas live email integration test.",
       kind: "invoice_sent",
       idempotencyKey: `int-email-${Date.now()}`,
     });

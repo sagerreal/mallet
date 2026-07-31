@@ -55,7 +55,7 @@ export function A2pRegistrationCard() {
           )}
           <p className="muted" style={{ fontSize: "var(--type-base)", margin: 0 }}>
             Register your business number for texting so quotes, reminders, and invoices can send
-            by SMS. Mallet pre-fills what it can and submits the registration for you.
+            by SMS. Elas pre-fills what it can and submits the registration for you.
           </p>
           <div>
             <Button onClick={() => setFormOpen((v) => !v)}>

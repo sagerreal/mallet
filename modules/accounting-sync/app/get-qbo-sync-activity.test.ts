@@ -45,7 +45,7 @@ describe("GetQboSyncActivity", () => {
     const { use } = build([entry({ status: "failed", errorCode: UNMAPPED_EMPLOYEE })], {});
     const { rows } = await use.exec();
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.label).toBe("(no longer in Mallet)");
+    expect(rows[0]!.label).toBe("(no longer in Elas)");
   });
 
   it("explains a failure and counts it as retryable", async () => {
