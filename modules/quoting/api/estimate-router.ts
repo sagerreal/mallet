@@ -536,6 +536,44 @@ export const createEstimateRouter = () =>
         };
       }),
 
+    /**
+     * The follow-up worklist: quotes the customer OPENED and has not answered.
+     *
+     * Its own endpoint rather than a flag on list(), because it answers a different question and
+     * carries a different shape — it needs the customer's name and when the quote was opened, and
+     * it is a worklist rather than a page of a book.
+     */
+    followUps: ownerOrOffice
+      .input(z.object({ limit: z.number().int().positive().max(200).optional() }))
+      .output(
+        z.array(
+          z.object({
+            id: z.string().uuid(),
+            num: z.string(),
+            leadId: z.string().uuid(),
+            customerName: z.string().nullable(),
+            title: z.string().nullable(),
+            total: moneyDTO,
+            sentAt: z.string().nullable(),
+            firstViewedAt: z.string().nullable(),
+          }),
+        ),
+      )
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const rows = await repo.viewedAwaitingReply(input.limit ?? 50);
+        return rows.map((r) => ({
+          id: r.id,
+          num: r.num,
+          leadId: r.leadId,
+          customerName: r.customerName,
+          title: r.title,
+          total: { cents: r.totalCents, currency: "USD" as const },
+          sentAt: r.sentAt?.toISOString() ?? null,
+          firstViewedAt: r.firstViewedAt?.toISOString() ?? null,
+        }));
+      }),
+
     listByLead: ownerOrOffice
       .input(listByLeadInput)
       .output(paginatedSummaryDTO)
