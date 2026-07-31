@@ -4,11 +4,12 @@
  * Pricebook → one service row. Level 0 shows just name → price; clicking the row
  * (▸/▾) reveals the FULL editor IN-FLOW underneath (no floating UI, max two levels).
  *
- * The editor is a single aligned definition grid (label column · control column) in
- * three quiet groups — Price, Costs (owner-only), Details — with Parts stacked
- * full-width beneath. Replaces the ad-hoc flex rows (hand-tuned widths, Taxable and
- * Warranty jammed together, a squeezed Parts side column, and NO price field for
- * flat-priced orgs) that Owen called out on Jul 30 2026.
+ * The editor is one aligned definition grid: Name · (Priced by, measurement orgs
+ * only) · Price · Cost, with Labor & tax behind an opt-in reveal. Parts do NOT
+ * live inside a service (Owen, Jul 31 2026): the pricebook's two item kinds are
+ * flat — Services (line-item templates) and Materials (sellable parts), and a
+ * quote pulls from either. The service_material join persists for legacy data
+ * but has no editor here.
  *
  * "Add Good/Better/Best" (option groups) is Phase 3 — intentionally absent here
  * (no dead buttons for features that don't exist yet).
@@ -18,7 +19,6 @@ import { useState } from "react";
 import type { Service, Category } from "@/lib/store/types";
 import type { MeasuredByKind, ServiceUpdateFields } from "@/lib/store/pricebook-mapper";
 import { fmt$ } from "@/lib/format";
-import { MaterialManager } from "./material-manager";
 import { useFieldId } from "@/components/ui/input";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 
@@ -232,15 +232,8 @@ export function ServiceRow({
 
           {!more && (
             <button type="button" className="linklike svced-more" onClick={() => setMore(true)}>
-              + Labor, tax{canSeeCost ? " & parts" : ""}
+              + Labor & tax
             </button>
-          )}
-
-          {/* Parts — full-width beneath the grid (owner-only; cost data). */}
-          {more && canSeeCost && (
-            <div className="svced-parts">
-              <MaterialManager serviceId={service.id} canSeeCost={canSeeCost} />
-            </div>
           )}
 
           <div className="svced-foot">
