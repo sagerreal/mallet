@@ -244,7 +244,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
    * Ordered by how long it has been sitting: the oldest silence is the one to chase.
    */
   async viewedAwaitingReply(limit: number): Promise<
-    { id: string; num: string; leadId: string; customerName: string | null; title: string | null; totalCents: number; sentAt: Date | null; firstViewedAt: Date | null }[]
+    { id: string; num: string; leadId: string; customerName: string | null; customerPhone: string | null; title: string | null; totalCents: number; sentAt: Date | null; firstViewedAt: Date | null }[]
   > {
     const rows = await this.tx
       .select({
@@ -252,6 +252,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         num: estimates.num,
         leadId: estimates.leadId,
         customerName: leads.name,
+        customerPhone: leads.phoneE164,
         title: estimates.title,
         sentAt: estimates.sentAt,
         firstViewedAt: estimates.firstViewedAt,

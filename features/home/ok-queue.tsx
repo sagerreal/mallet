@@ -248,28 +248,40 @@ export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftConte
   }
 
   const overdue = items.filter((i) => i.kind === "invoice-overdue");
-  const overdueSum = overdue.reduce((sum, i) => sum + i.value, 0);
+  // Only the ones a text can actually reach. The rest need a number first, and saying so is the
+  // difference between "23 reminders sent" and 23 messages that went nowhere.
+  const sendableOverdue = overdue.filter((i) => (i.lead.phone ?? "").trim().length > 0);
+  const missingPhone = overdue.length - sendableOverdue.length;
+  const overdueSum = sendableOverdue.reduce((sum, i) => sum + i.value, 0);
 
   function sendAllOverdue() {
     // One pass, using the same single-card path — so each send gets the same commit, the same
     // rollback on failure, and the same ledger line. A bulk action that took a shortcut around
     // that would be the one place failures went unreported.
-    for (const item of overdue) handleSend(item, draftFor(item, ctx));
+    //
+    // A card with NO PHONE is skipped, not sent. It used to go through the same loop and report
+    // itself as sent — a text to nobody, counted as done. The single-card path never had this
+    // problem because it stops at the add-a-number row; the bulk path went around it.
+    for (const item of sendableOverdue) handleSend(item, draftFor(item, ctx));
     setArmedBulk(false);
   }
 
   return (
     <div style={{ marginTop: "var(--space-5)" }}>
-      {overdue.length > 1 && (
+      {sendableOverdue.length > 1 && (
         <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-3)", padding: "var(--space-3) var(--space-4)" }}>
           <span>
             <strong>{overdue.length} overdue {overdue.length === 1 ? "invoice" : "invoices"}</strong>
-            <span className="muted"> · ${Math.round(overdueSum).toLocaleString("en-US")} owed</span>
+            <span className="muted"> · ${Math.round(overdueSum).toLocaleString("en-US")} reachable by text</span>
+            {missingPhone > 0 && (
+              <span className="muted"> · {missingPhone} with no phone number</span>
+            )}
           </span>
           {armedBulk ? (
             <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
               <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                Sends {overdue.length} {overdue.length === 1 ? "message" : "messages"} now.
+                Sends {sendableOverdue.length} {sendableOverdue.length === 1 ? "message" : "messages"} now
+                {missingPhone > 0 ? `; ${missingPhone} skipped — no number on file` : ""}.
               </span>
               <button className="btn sm" onClick={() => setArmedBulk(false)}>Cancel</button>
               <button className="btn sm primary" onClick={sendAllOverdue}>Yes, send all</button>

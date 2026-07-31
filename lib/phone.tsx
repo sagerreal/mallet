@@ -203,7 +203,11 @@ interface PhoneGateProps {
    * Persists a freshly-added number (office surfaces pass
    * `(p) => updateLead(lead.id, { phone: p })`). Only called on the add path.
    */
-  onSavePhone?: (phone: string) => void;
+  /**
+   * Persist the number. May return the write's outcome; when it reports failure the gate STAYS
+   * OPEN and the action does not fire — the number is still on screen to correct.
+   */
+  onSavePhone?: (phone: string) => void | Promise<{ ok: boolean } | void>;
   /** The prompt heading, e.g. "No phone number yet". */
   addLabel: string;
   /** One-sentence sub under the heading. */
@@ -251,8 +255,13 @@ export function PhoneGate({
     setAdding(true);
   }
 
-  function handleSave(phone: string) {
-    onSavePhone?.(phone);
+  async function handleSave(phone: string) {
+    // AWAITED. This used to fire the save and send in the same breath, so a number the server
+    // refused (already on another customer) still sent the message and closed the card — the
+    // error arrived afterwards, with nothing left on screen to fix. A rejected number now keeps
+    // the row open with the digits still in it.
+    const result = await onSavePhone?.(phone);
+    if (result && result.ok === false) return;
     setAdding(false);
     // Auto-proceed with the FRESH number — never re-read the store (the optimistic
     // updateLead may not have landed / could be racing a hydrator).

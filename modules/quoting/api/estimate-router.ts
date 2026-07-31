@@ -561,6 +561,8 @@ export const createEstimateRouter = () =>
             num: z.string(),
             leadId: z.string().uuid(),
             customerName: z.string().nullable(),
+            /** The customer's phone — the queue drafts a TEXT to this person. */
+            customerPhone: z.string().nullable(),
             title: z.string().nullable(),
             total: moneyDTO,
             sentAt: z.string().nullable(),
@@ -576,6 +578,7 @@ export const createEstimateRouter = () =>
           num: r.num,
           leadId: r.leadId,
           customerName: r.customerName,
+          customerPhone: r.customerPhone,
           title: r.title,
           total: { cents: r.totalCents, currency: "USD" as const },
           sentAt: r.sentAt?.toISOString() ?? null,
