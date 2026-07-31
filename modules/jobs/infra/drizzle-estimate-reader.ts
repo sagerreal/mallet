@@ -25,6 +25,15 @@ export class DrizzleEstimateReader implements EstimateReader {
       // implementation, so the split can never disagree with the total it came from.
       taxBps: estimate.props.taxBps,
       taxCents: estimate.taxAmount(),
+      // soldLines(), not props.lines: an optional add-on the customer declined was priced and
+      // refused, and putting it on the job would give a technician work nobody bought.
+      lines: estimate.soldLines().map((line) => ({
+        description: line.props.description,
+        quantity: line.props.quantity,
+        rateCents: line.props.rate,
+        costCents: line.props.cost,
+        position: line.props.position,
+      })),
     };
   }
 }
