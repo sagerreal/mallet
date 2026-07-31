@@ -183,6 +183,12 @@ export function PricebookPane() {
               </div>
             )}
 
+            {/* Add sits at the TOP — a 36-row book shouldn't require a scroll to grow. */}
+            {pbSeg === "services" && (
+              <div style={{ padding: "var(--space-2) var(--space-4) 0" }}>
+                <AddServiceRow onAdd={addService} autoFocus={building && services.length === 0} />
+              </div>
+            )}
             {pbSeg === "services" && services.length > 0 && (
               <div style={{ padding: "0 var(--space-4)" }}>
                 {visible.map((s) => (
@@ -204,11 +210,6 @@ export function PricebookPane() {
 
             {/* Inline add — anchored at the card's foot, never a stray row on the page.
                 Autofocused when arriving via first-run's "Build your own". */}
-            {pbSeg === "services" && (
-              <div style={{ padding: "0 var(--space-4) var(--space-3)" }}>
-                <AddServiceRow onAdd={addService} autoFocus={building && services.length === 0} />
-              </div>
-            )}
             {pbSeg === "materials" && (
               <MaterialsPanel canSeeCost={canSeeCost} />
             )}
