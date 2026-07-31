@@ -21,7 +21,17 @@ vi.mock("@/lib/store/app-store", () => ({
 }));
 vi.mock("@/lib/trpc/client", () => ({
   // quoting.list rides along since the money strip now gates on the estimates hydrator.
-  api: { v1: { customers: { list: { useQuery: () => queryState } }, quoting: { list: { useQuery: () => queryState } } } },
+  api: {
+    v1: {
+      customers: {
+        list: { useQuery: () => queryState },
+        // The board's column counts come from the database now — a header reading 500 over 500
+        // visible cards on a 606-customer book was the lie this replaced.
+        viewCounts: { useQuery: () => ({ data: undefined }) },
+      },
+      quoting: { list: { useQuery: () => queryState } },
+    },
+  },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/features/home/use-animated-number", () => ({ useAnimatedNumber: (n: number) => n }));
