@@ -23,9 +23,13 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
       customers: { list: { useQuery: () => settledQuery } },
-      jobs: { list: { useQuery: () => settledQuery } },
+      jobs: { list: { useQuery: () => settledQuery }, viewCounts: { useQuery: () => settledQuery }, count: { useQuery: () => settledQuery } },
       quoting: { list: { useQuery: () => settledQuery } },
-      invoicing: { list: { useQuery: () => settledQuery } },
+      invoicing: {
+        list: { useQuery: () => settledQuery },
+        listOverdue: { useQuery: () => settledQuery },
+        totals: { useQuery: () => settledQuery },
+      },
     },
   },
 }));

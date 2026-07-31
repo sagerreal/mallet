@@ -138,7 +138,10 @@ export function buildEstimateRun(snap: Snap): EstRunPlan {
   const items: EstPlanItem[] = [];
   const asides: RunAside[] = [];
 
-  for (const lead of snap.leads) {
+  // Server-selected quoting-view customers when fetched — the loaded page misses
+  // the older scoped-but-unquoted work this run exists to sweep.
+  const pool = snap.quotingLeads ?? snap.leads;
+  for (const lead of pool) {
     if (!quotable(lead, snap.estimates)) continue;
     const first = firstName(lead.name);
 

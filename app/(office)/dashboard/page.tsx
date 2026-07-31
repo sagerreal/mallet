@@ -12,7 +12,8 @@
 import { useState, useEffect } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
-import { deriveShiftReport, deriveOkQueue } from "@/features/home/derive";
+import { deriveShiftReport } from "@/features/home/derive";
+import { useOkQueue } from "@/features/home/use-ok-queue";
 import { useHomePipe } from "@/features/home/use-home-pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
 import { HomePipe, HomePipeSkeleton } from "@/features/home/home-pipe";
@@ -108,8 +109,11 @@ function TodayPane() {
     "there";
 
   const report = deriveShiftReport(leads, jobs, estimates);
-  const queue = deriveOkQueue(leads, estimates, invoices, dismissed);
-  const queueValue = queue.reduce((s, it) => s + it.value, 0);
+  // The queue's money kinds come from the SERVER now (viewed quotes + overdue
+  // invoices) — the store join undercounted on any book past one hydrator page.
+  const okQueue = useOkQueue();
+  const queue = okQueue.items;
+  const queueValue = okQueue.value;
   // Every tile is computed where its data lives now. It used to add these up from the store —
   // one page per collection, and three of the six were joins ACROSS two capped collections — so
   // the first screen of the app stated money derived from whatever happened to be cached.
@@ -141,12 +145,12 @@ function TodayPane() {
         report={report}
         queueCount={queue.length}
         queueValue={queueValue}
-        loading={loading}
+        loading={loading || okQueue.isLoading}
       />
 
       {loading || pipe.isLoading ? <HomePipeSkeleton /> : <HomePipe stages={pipe.stages} />}
 
-      {!loading && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
+      {!loading && !okQueue.isLoading && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
     </div>
   );
 }
