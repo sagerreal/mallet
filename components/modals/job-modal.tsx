@@ -389,6 +389,12 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote, onAddWork }: Pric
             View the quote →
           </span>
         )}
+        {/* Extra work can be found on ANY job, not only one that already carries its own lines.
+            This branch — a job priced from its quote — is the common case for sold work, and it
+            was the one branch with no way to raise a change order. */}
+        <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onAddWork}>
+          + More work
+        </span>
       </div>
     );
   }
@@ -794,8 +800,12 @@ export function JobModalContent() {
   const status = JST[job.status] ?? JST.scheduled!;
   const noteCount = jobNoteEntries(job).length;
   const hasLines = (job.lines ?? []).length > 0;
+  // The row says there is SCOPE inside it, not just a number. "$730" reads as the whole story and
+  // gives no reason to open the row — so the line items, and the "+ More work" that raises a
+  // change order, sat behind a tap nobody had a reason to make. Owen asked twice where they were.
+  const lineCount = (job.lines ?? []).length;
   const priceValue = hasLines
-    ? fmt$(jobTotal(job))
+    ? `${fmt$(jobTotal(job))} · ${lineCount} ${lineCount === 1 ? "item" : "items"}`
     : job.sourceEstimateId
       ? "from quote"
       : "Add";
@@ -945,7 +955,16 @@ export function JobModalContent() {
               job={job}
               onBuildPrice={() => pushModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
               onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
-              onAddWork={() => { close(); router.push(`/composer?lead=${job.leadId}&change=${job.id}`); }}
+              // MORE WORK IS PRICED AND SIGNED IN PLACE, not composed as a fresh quote.
+              //
+              // This used to push to /composer — a blank full quote builder, a page navigation
+              // away, to add one line. Wrong shape for the job: a change order is "found another
+              // $400 of work, customer says yes, sign here", and the surface for exactly that
+              // already existed. TECH_QUOTE seeds from this job's current lines, lets you add to
+              // them, presents the new total, and captures a signature on glass — and
+              // SetJobLinesUseCase writes the lines and that signature in ONE transaction, so a
+              // signature can never outlive the prices it refers to.
+              onAddWork={() => pushModal(MODAL.TECH_QUOTE, { jobId: job.id })}
             />
           </SheetRow>
         )}

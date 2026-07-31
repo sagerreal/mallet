@@ -110,8 +110,13 @@ export default function ComposerPage() {
   // ComposerState ONCE (a background refetch must never re-stomp office edits,
   // same "seed once" contract as the ?lead= initializer above).
   const jobId = searchParams.get("job");
-  // "+ Quote" from inside a job lands here with ?change=<jobId>. Distinct from ?job=, which seeds
-  // a price FROM a job's measurements — this one says the quote BELONGS to that job.
+  // A quote raised AGAINST a running job — ?change=<jobId>. Distinct from ?job=, which seeds a
+  // price FROM a job's measurements; this one says the quote BELONGS to that job.
+  //
+  // NOT the path "+ More work" takes. Extra work found on site is priced and signed in place
+  // (TECH_QUOTE on the job) — sending someone to a blank full quote builder to add one line was
+  // the wrong shape for that. This remains for the REMOTE case: the customer is not there, so the
+  // add-on has to be composed, sent, and signed at a distance like any other quote.
   const changeOrderJobId = searchParams.get("change");
   const buildFromMeasurementsQuery = api.v1.quoting.buildFromMeasurements.useQuery(
     { jobId: jobId ?? "" },
@@ -482,7 +487,11 @@ export default function ComposerPage() {
       : realLines(cs.lines);
     return {
       leadId: lead.id,
-      title: lead.job || "Quote",
+      // NAMED AFTER THE WORK. "Quote" was the fallback when the customer record had no job
+      // description — and that name follows the quote onto the JOB it becomes, so a scheduling
+      // board ends up with rows called "Quote" that tell a dispatcher nothing about what the truck
+      // is going out for. The first line item is what the work actually is.
+      title: lead.job?.trim() || payloadLines[0]?.d?.trim() || "Quote",
       discBps: Math.round((cs.pricing.disc ?? 0) * 100),
       taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
       depBps: Math.round((cs.pricing.dep ?? 0) * 100),
