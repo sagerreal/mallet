@@ -52,6 +52,7 @@ class FakeLeadRepository implements LeadRepository {
       name: input.name,
       phone: input.phone,
       email: input.email,
+      customFields: null,
       source: input.source,
       stage: "new",
       value: zeroMoney,

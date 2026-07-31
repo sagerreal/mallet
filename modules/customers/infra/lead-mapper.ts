@@ -18,6 +18,7 @@ export const toDomain = (row: LeadRow): Lead => {
     name: row.name,
     phone: row.phoneE164 ? asPhone(row.phoneE164) : null,
     email: row.email,
+    customFields: (row.customFields as { label: string; value: string }[] | null) ?? null,
     source: row.source,
     stage: row.stage,
     value: money(row.valueCents),

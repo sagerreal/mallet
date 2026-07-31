@@ -44,6 +44,7 @@ export function toStoreLead(dto: LeadDTO): Lead {
     value: dto.value.cents / 100, // DTO is cents; store Lead.value is dollars.
     companyId: dto.companyId ?? undefined,
     role: dto.role ?? undefined,
+    customFields: dto.customFields ?? undefined,
     notes: dto.notes ?? undefined,
     address: dto.address ?? undefined,
     acts: [],

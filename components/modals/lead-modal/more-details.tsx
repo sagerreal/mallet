@@ -27,26 +27,52 @@ interface CustomField {
 
 export function DetailsBody({ lead }: MoreDetailsProps) {
   const updateLead = useAppStore((s) => s.updateLead);
+  const companies = useAppStore((s) => s.companies);
+  const addCompany = useAppStore((s) => s.addCompany);
 
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  // Custom fields are PERSISTED on the lead (custom_fields jsonb) — they used to be
+  // component state and vanished on close (Owen: "the custom field I added isn't saving").
+  const persisted: CustomField[] = (lead.customFields ?? []).map((f, i) => ({ key: `cf-${i}`, label: f.label, value: f.value }));
   const [showAddField, setShowAddField] = useState(false);
   const [newFieldLabel, setNewFieldLabel] = useState("");
+
+  function persistFields(fields: CustomField[]) {
+    void updateLead(lead.id, { customFields: fields.map((f) => ({ label: f.label, value: f.value })) });
+  }
 
   function addCustomField() {
     const label = newFieldLabel.trim();
     if (!label) return;
-    setCustomFields((prev) => [
-      ...prev,
-      { key: `cf-${Date.now()}`, label, value: "" },
-    ]);
+    persistFields([...persisted, { key: `cf-${persisted.length}`, label, value: "" }]);
     setNewFieldLabel("");
     setShowAddField(false);
   }
 
-  function updateCustomField(key: string, value: string) {
-    setCustomFields((prev) =>
-      prev.map((f) => (f.key === key ? { ...f, value } : f))
-    );
+  function commitCustomField(key: string, value: string) {
+    persistFields(persisted.map((f) => (f.key === key ? { ...f, value } : f)));
+  }
+
+  function removeCustomField(key: string) {
+    persistFields(persisted.filter((f) => f.key !== key));
+  }
+
+  // Business = the lead's linked company. Committing a name finds-or-creates the
+  // company and links it; clearing unlinks. (The input used to be wired to nothing.)
+  const linkedCompany = companies.find((c) => c.id === lead.companyId);
+  function commitBusiness(raw: string) {
+    const name = raw.trim();
+    if (!name) {
+      if (lead.companyId) void updateLead(lead.id, { companyId: null });
+      return;
+    }
+    if (linkedCompany && linkedCompany.name.trim().toLowerCase() === name.toLowerCase()) return;
+    const existing = companies.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      void updateLead(lead.id, { companyId: existing.id });
+      return;
+    }
+    const { company } = addCompany(name);
+    void updateLead(lead.id, { companyId: company.id });
   }
 
   return (
@@ -62,12 +88,21 @@ export function DetailsBody({ lead }: MoreDetailsProps) {
             />
           </Field>
 
-          {/* Business / company */}
+          {/* Business / company — linked to the real Companies book (find-or-create). */}
           <Field label="Business">
             <input
+              key={linkedCompany?.name ?? "none"}
               type="text"
               placeholder="Company name (if applicable)"
-              defaultValue=""
+              defaultValue={linkedCompany?.name ?? ""}
+              onBlur={(e) => commitBusiness(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitBusiness(e.currentTarget.value);
+                  e.currentTarget.blur();
+                }
+              }}
             />
           </Field>
 
@@ -82,15 +117,35 @@ export function DetailsBody({ lead }: MoreDetailsProps) {
 
           {/* Custom fields */}
           {/* Field uses useId(), so one per row inside a .map() is safe. */}
-          {customFields.map((f) => (
-            <Field label={f.label} key={f.key}>
-              <input
-                type="text"
-                value={f.value}
-                onChange={(e) => updateCustomField(f.key, e.target.value)}
-                placeholder={f.label}
-              />
-            </Field>
+          {persisted.map((f) => (
+            <div key={f.key} style={{ display: "flex", gap: "var(--space-2)", alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <Field label={f.label}>
+                  <input
+                    key={f.value}
+                    type="text"
+                    defaultValue={f.value}
+                    onBlur={(e) => { if (e.target.value !== f.value) commitCustomField(f.key, e.target.value); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitCustomField(f.key, e.currentTarget.value);
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    placeholder={f.label}
+                  />
+                </Field>
+              </div>
+              <button
+                className="btn sm ghost"
+                aria-label={`Remove ${f.label}`}
+                style={{ marginBottom: "var(--space-3)" }}
+                onClick={() => removeCustomField(f.key)}
+              >
+                ✕
+              </button>
+            </div>
           ))}
 
           {/* Add custom field */}

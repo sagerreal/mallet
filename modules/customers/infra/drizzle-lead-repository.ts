@@ -43,6 +43,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         name: input.name,
         phoneE164: input.phone,
         email: input.email,
+        customFields: null, // created leads start with no custom fields
         source: input.source,
         companyId: input.companyId,
         role: input.role,
@@ -252,6 +253,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         name: p.name,
         phoneE164: p.phone,
         email: p.email,
+        customFields: p.customFields as { label: string; value: string }[] | null,
         source: p.source,
         stage: p.stage,
         valueCents: p.value,

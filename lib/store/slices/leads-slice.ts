@@ -95,6 +95,8 @@ export function buildLeadUpdatePayload(
       payload.companyId = patch.companyId ?? null;
     } else if (key === "role") {
       payload.role = patch.role;
+    } else if (key === "customFields") {
+      payload.customFields = patch.customFields ?? null;
     } else if (key === "address") {
       // Map empty string → null (no address on file).
       const raw = patch.address;
@@ -136,6 +138,7 @@ function reconcileLeadFromDTO(
     unread: boolean;
     companyId: string | null;
     role: string | null;
+    customFields?: { label: string; value: string }[] | null;
     notes?: string | null;
     address?: string | null;
   },
@@ -154,6 +157,7 @@ function reconcileLeadFromDTO(
     unread: dto.unread,
     companyId: dto.companyId ?? undefined,
     role: dto.role ?? undefined,
+    customFields: dto.customFields !== undefined ? (dto.customFields ?? undefined) : current.customFields,
     // notes is persisted; adopt from DTO when present, otherwise keep current.
     notes: dto.notes !== undefined ? (dto.notes ?? undefined) : current.notes,
     // address is persisted; adopt from DTO when present, otherwise keep current.
