@@ -52,6 +52,9 @@ describe("a job priced from its quote", () => {
     const btn = screen.getByText("+ More work");
     expect(btn).toBeTruthy();
     btn.click();
+    // The handler opens the on-glass price-and-sign surface for THIS job. It used to navigate to
+    // a blank full quote builder to add one line, which is the wrong shape for "found another
+    // $400 of work, customer says yes, sign here".
     expect(h.onAddWork).toHaveBeenCalled();
   });
 

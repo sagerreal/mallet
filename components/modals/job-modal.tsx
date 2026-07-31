@@ -955,7 +955,16 @@ export function JobModalContent() {
               job={job}
               onBuildPrice={() => pushModal(MODAL.PRICE_BUILDER, { jobId: job.id })}
               onViewQuote={(estId) => { close(); openModal(MODAL.EST, { estId }); }}
-              onAddWork={() => { close(); router.push(`/composer?lead=${job.leadId}&change=${job.id}`); }}
+              // MORE WORK IS PRICED AND SIGNED IN PLACE, not composed as a fresh quote.
+              //
+              // This used to push to /composer — a blank full quote builder, a page navigation
+              // away, to add one line. Wrong shape for the job: a change order is "found another
+              // $400 of work, customer says yes, sign here", and the surface for exactly that
+              // already existed. TECH_QUOTE seeds from this job's current lines, lets you add to
+              // them, presents the new total, and captures a signature on glass — and
+              // SetJobLinesUseCase writes the lines and that signature in ONE transaction, so a
+              // signature can never outlive the prices it refers to.
+              onAddWork={() => pushModal(MODAL.TECH_QUOTE, { jobId: job.id })}
             />
           </SheetRow>
         )}
