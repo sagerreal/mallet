@@ -12,11 +12,13 @@
  * DayView / WeekView / the tray card into leaf components.
  */
 
-import { useState, useRef, useEffect, type DragEvent as ReactDragEvent } from "react";
+import { useState, useRef, useEffect, useMemo, type DragEvent as ReactDragEvent } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { useScheduleWindow } from "./use-schedule-window";
 import { api } from "@/lib/trpc/client";
+import { localToday } from "@/features/jobs/use-jobs-query";
+import { dtoJobToStoreJob } from "@/lib/store/dto-mapper";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -78,6 +80,11 @@ const FIRST_RUN = {
 export function SchedulePanel() {
   const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
+  const adoptJob = useAppStore((s) => s.adoptJob);
+  const needsSlotQ = api.v1.jobs.list.useQuery(
+    { view: "needsSlot", today: localToday(), limit: 50 },
+    { refetchOnWindowFocus: true },
+  );
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
 
@@ -413,8 +420,24 @@ export function SchedulePanel() {
   }
 
   type TrayCard = { kind: "job"; j: Job } | { kind: "evisit"; l: Lead; v: Visit };
+  // The to-schedule jobs come from the SERVER's needsSlot view — the same predicate the
+  // Dashboard tile counts — never from the store's loaded page, which on a big book missed
+  // jobs entirely (the tile said 3 while this tray showed 1; the DB agreed with the tile).
+  // Fetched jobs are adopted into the store so placing a visit works on a real store row.
+  const trayJobs: Job[] = useMemo(
+    () => (needsSlotQ.data?.items ?? []).map((dto) => dtoJobToStoreJob(dto as never)),
+    [needsSlotQ.data],
+  );
+  useEffect(() => {
+    const known = new Set(jobs.map((j) => j.id));
+    for (const j of trayJobs) {
+      if (!known.has(j.id)) adoptJob(j as never);
+    }
+    // jobs deliberately NOT a dep: adopting appends to jobs and would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trayJobs]);
   const trayCards: TrayCard[] = [
-    ...jobsUnscheduled(jobs).map((j) => ({ kind: "job" as const, j })),
+    ...trayJobs.map((j) => ({ kind: "job" as const, j })),
     ...unplacedEvisits(leads).map(({ l, v }) => ({ kind: "evisit" as const, l, v })),
   ];
   const day = schedView === "day";
