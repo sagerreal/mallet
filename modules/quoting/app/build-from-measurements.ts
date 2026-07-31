@@ -70,6 +70,7 @@ const lowestPositionByKind = (
 ): Map<PaintingQuantityKind, RateService> => {
   const byKind = new Map<PaintingQuantityKind, RateService>();
   for (const svc of services) {
+    if (svc.measuredBy === "hour") continue; // hourly services are labor, not room rates
     const current = byKind.get(svc.measuredBy);
     if (!current || isLowerRanked(svc, current)) {
       byKind.set(svc.measuredBy, svc);

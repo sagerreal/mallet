@@ -38,8 +38,13 @@ export interface ServiceRowProps {
 }
 
 // "" stands in for Flat (measuredBy null) — SelectMenu options are string-valued.
-const PRICED_BY_OPTIONS: readonly SelectOption[] = [
-  { value: "", label: "Flat" },
+// Flat and Per hour are universal (a paver at $150/hr is any trade's reality); the
+// measurement units join only for measurement-priced orgs.
+const BASE_PRICED_BY: readonly SelectOption[] = [
+  { value: "", label: "Flat price" },
+  { value: "hour", label: "Per hour" },
+];
+const MEASUREMENT_PRICED_BY: readonly SelectOption[] = [
   { value: "walls_sqft", label: "Walls (per sq ft)" },
   { value: "ceiling_sqft", label: "Ceiling (per sq ft)" },
   { value: "baseboard_lnft", label: "Baseboard (per ln ft)" },
@@ -60,6 +65,8 @@ function priceUnit(measuredBy: string | null): string | null {
     case "doors_count":
     case "windows_count":
       return "each";
+    case "hour":
+      return "per hour";
     default:
       return null;
   }
@@ -143,17 +150,15 @@ export function ServiceRow({
                 className="svced-in"
               />
             </EditorRow>
-            {measurementEstimating && (
-              <EditorRow label="Priced by" field={pricedByField}>
-                <SelectMenu
-                  value={service.measuredBy ?? ""}
-                  onChange={(v) => onUpdate(service.id, { measuredBy: v === "" ? null : (v as MeasuredByKind) })}
-                  options={PRICED_BY_OPTIONS}
-                  {...pricedByField.controlProps}
-                  compact
-                />
-              </EditorRow>
-            )}
+            <EditorRow label="Priced by" field={pricedByField}>
+              <SelectMenu
+                value={service.measuredBy ?? ""}
+                onChange={(v) => onUpdate(service.id, { measuredBy: v === "" ? null : (v as MeasuredByKind) })}
+                options={measurementEstimating ? [...BASE_PRICED_BY, ...MEASUREMENT_PRICED_BY] : BASE_PRICED_BY}
+                {...pricedByField.controlProps}
+                compact
+              />
+            </EditorRow>
             <EditorRow label="Price" field={priceField}>
               <span className="svced-money">
                 <span className="muted">$</span>
@@ -191,7 +196,7 @@ export function ServiceRow({
                 </EditorRow>
               </>
             )}
-            <EditorRow label="Labor" field={laborField}>
+            <EditorRow label={service.measuredBy === "hour" ? "Typical hours" : "Labor"} field={laborField}>
               <span className="svced-money">
                 <input
                   {...laborField.controlProps}

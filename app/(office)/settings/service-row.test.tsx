@@ -52,7 +52,10 @@ describe("ServiceRow — Priced-by control (gated on measurementEstimating)", ()
       />,
     );
     openRow();
-    expect(screen.queryByText("Priced by")).toBeNull();
+    // Priced-by now shows for EVERY org (Flat | Per hour); only the measurement
+    // units stay gated. The gate assertion moves to the option set.
+    expect(screen.getByText("Priced by")).toBeTruthy();
+    expect(screen.queryByText("Walls (per sq ft)")).toBeNull();
     // The C-shape editor's default fields are unaffected — Name and Price still there.
     expect(screen.getByText("Name")).toBeTruthy();
     expect(screen.getByText("Price")).toBeTruthy();
@@ -152,7 +155,7 @@ describe("ServiceRow — Priced-by control (gated on measurementEstimating)", ()
     );
     openRow();
     fireEvent.click(screen.getByLabelText("Priced by"));
-    fireEvent.mouseDown(screen.getByRole("option", { name: "Flat" }));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Flat price" }));
 
     expect(onUpdate).toHaveBeenCalledWith("svc-1", { measuredBy: null });
   });

@@ -14,6 +14,8 @@ import { useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import type { Material } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { MarkupBandsEditor } from "@/features/office/markup-bands-editor";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
 
 function marginPct(m: Material): number {
   if (!m.unitPrice) return 0;
@@ -146,6 +148,7 @@ export function MaterialsPanel({ canSeeCost }: { canSeeCost: boolean }) {
   const [newName, setNewName] = useState("");
   const [newCost, setNewCost] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
+  const [bandsOpen, setBandsOpen] = useState(false);
 
   const active = materials.filter((m) => m.active);
   const q = query.trim().toLowerCase();
@@ -222,6 +225,20 @@ export function MaterialsPanel({ canSeeCost }: { canSeeCost: boolean }) {
       </div>
       {addError && (
         <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", padding: "0 var(--space-4) var(--space-3)", margin: 0 }}>{addError}</p>
+      )}
+
+      {/* The markup table lives WITH the things it prices — not in a side rail. */}
+      {canSeeCost && (
+        <div style={{ padding: "0 var(--space-4) var(--space-3)", borderTop: "1px solid var(--line-2)" }}>
+          <DisclosureRow
+            label="Markup table"
+            value="prices parts from cost"
+            open={bandsOpen}
+            onToggle={() => setBandsOpen((v) => !v)}
+          >
+            <MarkupBandsEditor />
+          </DisclosureRow>
+        </div>
       )}
     </>
   );

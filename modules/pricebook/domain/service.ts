@@ -29,8 +29,11 @@ export const MEASURED_BY_KINDS: readonly PaintingQuantityKind[] = Object.keys(
   MEASURED_BY_KIND_SET,
 ) as PaintingQuantityKind[];
 
-const isMeasuredByKind = (v: string): v is PaintingQuantityKind =>
-  Object.prototype.hasOwnProperty.call(MEASURED_BY_KIND_SET, v);
+/** What a service's price is PER: a measured room quantity, or an hour of labor. */
+export type ServicePricedBy = PaintingQuantityKind | "hour";
+
+const isMeasuredByKind = (v: string): v is ServicePricedBy =>
+  v === "hour" || Object.prototype.hasOwnProperty.call(MEASURED_BY_KIND_SET, v);
 
 export interface ServiceProps {
   readonly id: ServiceId;
@@ -51,7 +54,7 @@ export interface ServiceProps {
   // When set, unitPriceCents is a PER-UNIT rate against this measured room quantity (e.g. a
   // painting wall service priced per sqft) rather than a flat price. Null preserves today's
   // flat-price semantics unchanged.
-  readonly measuredBy: PaintingQuantityKind | null;
+  readonly measuredBy: ServicePricedBy | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -93,7 +96,7 @@ export class Service {
       isAddon?: boolean;
       active?: boolean;
       position?: number;
-      measuredBy?: PaintingQuantityKind | null;
+      measuredBy?: ServicePricedBy | null;
     },
     now: Date,
   ): Result<Service, ValidationError> {

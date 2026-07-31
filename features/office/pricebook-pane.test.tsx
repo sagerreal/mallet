@@ -105,14 +105,14 @@ describe("PricebookPane — the four list states", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add a service" }));
     expect(screen.queryByText("No services yet")).toBeNull();
     expect(screen.getByPlaceholderText("e.g. Hydro-jet kitchen drain")).toBeTruthy();
-    expect(screen.getByText("Defaults")).toBeTruthy();
+    // Defaults rail deleted (Jul 31): the pricebook is the Services|Materials card alone.
   });
 
   it("populated → the register (card + rail), never the first-run screen", () => {
     storeState = store([{ id: "s1", name: "Drain cleaning", position: 0 }]);
     render(<PricebookPane />);
     expect(screen.getByTestId("svc-row")).toBeTruthy();
-    expect(screen.getByText("Defaults")).toBeTruthy();
+    // Defaults rail deleted (Jul 31): the pricebook is the Services|Materials card alone.
     expect(screen.queryByText("No services yet")).toBeNull();
   });
 
