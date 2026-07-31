@@ -110,7 +110,7 @@ describe("money stages", () => {
     visits: [mkVisit({ date: dPlus(-2), techId: "1", start: 9, status: "done" })],
   });
   const invoices: Invoice[] = [
-    mkInvoice({ id: "inv-1", leadId: "1", total: 640, age: 9 }), // overdue, due 640
+    mkInvoice({ id: "inv-1", leadId: "1", total: 640, dueAt: "2026-06-20" }), // overdue (past due), due 640
     mkInvoice({ id: "inv-2", leadId: "1", total: 189, payments: [{ amt: 189, when: "", method: "card" }] }), // paid 189
   ];
 

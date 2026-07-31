@@ -84,6 +84,9 @@ const listInput = z.object({
   view: z.enum(JOB_VIEWS).optional(),
   /** The CLIENT's local date, YYYY-MM-DD — see job-views.ts on why this is not server-derived. */
   today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** The dispatch board's window: jobs with a live visit in [visitFrom, visitTo], inclusive. */
+  visitFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  visitTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
@@ -243,6 +246,8 @@ export const createJobRouter = () =>
             search: input.search,
             view: input.view,
             today: input.today,
+            visitFrom: input.visitFrom,
+            visitTo: input.visitTo,
           },
         });
         // Resolve the page's customer names in ONE batched read. The list cannot look them up in

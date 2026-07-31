@@ -25,3 +25,18 @@ export function addDaysISO(iso: string, n: number): string {
 export function daysFromTodayISO(n: number): string {
   return addDaysISO(todayISO(), n);
 }
+
+/**
+ * Whole calendar days between an ISO timestamp and today — 0 for anything raised today.
+ *
+ * Calendar days, not elapsed 24-hour periods: an invoice raised at 11pm last night is "1 day old"
+ * to the person looking at it this morning, not zero. Negative inputs (a future timestamp) floor
+ * at 0 rather than reporting a negative age.
+ */
+export function daysSince(iso: string): number {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return 0;
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diff = startOf(new Date()) - startOf(then);
+  return Math.max(0, Math.round(diff / 86_400_000));
+}

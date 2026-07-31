@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNull, isNotNull, lte, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, isNotNull, lte, inArray, or, sql, type SQL } from "drizzle-orm";
 import { timeEntries } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetAfter } from "@mallet/shared/db/keyset";
@@ -99,8 +99,9 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
     return row ? toDomain(row) : null;
   }
 
-  async list(filter: TimeEntryFilter, page: CursorPage): Promise<Paginated<TimeEntry>> {
-    const conds = [isNull(timeEntries.deletedAt)];
+  /** The filter, once — so count and list can never disagree about what they are describing. */
+  private listConds(filter: TimeEntryFilter): SQL[] {
+    const conds: SQL[] = [isNull(timeEntries.deletedAt) as SQL];
 
     if (filter.techUserId !== undefined) {
       conds.push(eq(timeEntries.techUserId, filter.techUserId));
@@ -111,6 +112,26 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
     if (filter.toDate !== undefined) {
       conds.push(lte(timeEntries.workDate, filter.toDate));
     }
+    return conds;
+  }
+
+  /**
+   * How many entries match — the whole set, not the page.
+   *
+   * The office panel needs this to tell "this shop has never logged an hour" apart from "nobody
+   * worked the week you are looking at". Those render as the same empty grid, and only one of them
+   * should offer to set the clock up.
+   */
+  async count(filter: TimeEntryFilter): Promise<number> {
+    const rows = await this.tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(timeEntries)
+      .where(and(...this.listConds(filter)));
+    return rows[0]?.n ?? 0;
+  }
+
+  async list(filter: TimeEntryFilter, page: CursorPage): Promise<Paginated<TimeEntry>> {
+    const conds = this.listConds(filter);
 
     if (page.cursor) {
       const cursor = decodeCursor(page.cursor);

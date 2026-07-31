@@ -4,7 +4,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { jobSortSpec, jobSortValue, type JobSort } from "./job-sorts";
-import { viewCondition, type JobView } from "./job-views";
+import { viewCondition, visitsBetween, type JobView } from "./job-views";
 import {
   buildPage,
   decodeCursor,
@@ -308,6 +308,11 @@ export class DrizzleJobRepository implements JobRepository {
     if (filter?.activeOnly) conds.push(notInArray(jobs.status, ["complete", "canceled"]));
     if (filter?.view && filter.today) {
       conds.push(viewCondition(filter.view, this.tx, { today: filter.today }));
+    }
+    if (filter?.visitFrom && filter?.visitTo) {
+      // EXISTS, not a join: a job with three visits in the range must come back once, and a join
+      // would return it three times and break the keyset.
+      conds.push(visitsBetween(this.tx, filter.visitFrom, filter.visitTo));
     }
     if (filter?.search) {
       // Escape the LIKE wildcards before wrapping in our own. Without this a customer typing "%"

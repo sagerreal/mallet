@@ -131,7 +131,17 @@ export interface Estimate {
   leadId: string;
   title: string;
   status: string;
+  /** Days since the invoice was raised. Display only — "overdue" is `dueAt`, not this. */
   age: number;
+  /**
+   * When payment is due, ISO date, or null when the invoice was never sent.
+   *
+   * This is what OVERDUE means — past this date and still owed. It used to be inferred from `age`
+   * exceeding a fixed seven days, which ignored the terms actually agreed with the customer and,
+   * because the mapper hard-coded `age: 0`, could never be true for an invoice loaded from the
+   * database. The Overdue pill was unreachable and the Overdue filter matched nothing.
+   */
+  dueAt?: string | null;
   viewed: boolean;
   validDays?: number;
   fu: { on: boolean; stage: number };
@@ -421,7 +431,17 @@ export interface Invoice {
   depPaid: number;
   payments: Payment[];
   status: string;
+  /** Days since the invoice was raised. Display only — "overdue" is `dueAt`, not this. */
   age: number;
+  /**
+   * When payment is due, ISO date, or null when the invoice was never sent.
+   *
+   * This is what OVERDUE means — past this date and still owed. It used to be inferred from `age`
+   * exceeding a fixed seven days, which ignored the terms actually agreed with the customer and,
+   * because the mapper hard-coded `age: 0`, could never be true for an invoice loaded from the
+   * database. The Overdue pill was unreachable and the Overdue filter matched nothing.
+   */
+  dueAt?: string | null;
   fu?: { on: boolean; stage: number };
   archived: boolean;
   /**

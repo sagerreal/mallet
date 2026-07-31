@@ -265,6 +265,8 @@ function withVerify(job: Job, itemId: string, ans: VerifyAns): Job {
 export interface JobsSlice {
   jobs: Job[];
   setJobs: (jobs: Job[]) => void;
+  /** Upsert a SCOPED read (the dispatch board's window) without dropping the rest. */
+  mergeJobs: (jobs: Job[]) => void;
   /**
    * Optimistically inserts the job and fires v1.jobs.create.
    * Returns { job } synchronously (the optimistic record with the client-authored id)
@@ -476,6 +478,33 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         return prior ? mergeIncomingJob(prior, incoming) : incoming;
       });
       return { jobs: adoptedSurvivors.length ? [...adoptedSurvivors, ...merged] : merged };
+    }),
+
+  // ---------------------------------------------------------------------------
+  // mergeJobs — add a SCOPED read into the store without removing anything.
+  //
+  // setJobs replaces the collection, which is right for a hydrator holding the
+  // whole book and wrong for a window. The dispatch board fetches the day or
+  // week on screen, and a dozen other surfaces read s.jobs; if the board's
+  // window replaced the collection, opening the board would empty every one of
+  // them. So this upserts and leaves the rest alone.
+  //
+  // Uses the same mergeIncomingJob as setJobs, so an incoming row never clobbers
+  // an optimistic visit or a just-written checklist — the guards are in the
+  // merge, not in the caller.
+  // ---------------------------------------------------------------------------
+  mergeJobs: (incoming) =>
+    set((s) => {
+      if (incoming.length === 0) return {};
+      const byId = new Map(incoming.map((j) => [j.id, j]));
+      const updated = s.jobs.map((prior) => {
+        const next = byId.get(prior.id);
+        if (!next) return prior;
+        byId.delete(prior.id);
+        return mergeIncomingJob(prior, next);
+      });
+      // Whatever is left in byId is new to the store; order follows the read.
+      return byId.size ? { jobs: [...updated, ...byId.values()] } : { jobs: updated };
     }),
 
   // ---------------------------------------------------------------------------

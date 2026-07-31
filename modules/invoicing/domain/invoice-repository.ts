@@ -1,4 +1,5 @@
 import type { InvoiceSort } from "../infra/invoice-sorts";
+import type { InvoiceView } from "../infra/invoice-views";
 import type {
   OrgId,
   InvoiceId,
@@ -16,6 +17,13 @@ export interface InvoiceFilter {
   readonly unpaidOnly?: boolean;
   /** Free-text over invoice number, title and customer name. Matched in the database. */
   readonly search?: string;
+  /**
+   * The ledger band the Money screen filters by — draft / over / paid / partial / sent.
+   *
+   * Distinct from `status` on purpose. `status` is the column; a view is what the shop sees, and
+   * two of them (overdue, paid) are computed from the balance and the due date rather than stored.
+   */
+  readonly view?: InvoiceView;
 }
 
 // Outcome of an atomic applyPayment. `applied` is true iff the guarded UPDATE matched a payable

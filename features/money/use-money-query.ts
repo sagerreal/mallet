@@ -5,6 +5,7 @@ import { api } from "@/lib/trpc/client";
 import { dtoJobToStoreJob } from "@/lib/store/dto-mapper";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import { localToday } from "@/features/jobs/use-jobs-query";
+import type { InvoiceView } from "@/modules/invoicing/infra/invoice-views";
 
 /**
  * The Money ledger, served by the server.
@@ -34,21 +35,34 @@ const READY_CAP = 200;
 export interface MoneyQueryState {
   readonly search: string;
   readonly archived: boolean;
+  /**
+   * The ledger band being shown, or "" for all of it.
+   *
+   * "ready" is the odd one: it is not an invoice at all, it is a finished job nobody has billed.
+   * So it selects the worklist and suppresses the invoice query entirely, rather than being
+   * passed to it as a filter it has no way to satisfy.
+   */
+  readonly statusFilter: string;
 }
 
 export function useMoneyQuery(state: MoneyQueryState) {
   const today = useMemo(localToday, []);
   const search = state.search.trim() || undefined;
+  const onlyReady = state.statusFilter === "ready";
+  // Anything other than "ready" (or nothing) is an invoice band the database can answer.
+  const view = !state.statusFilter || onlyReady ? undefined : (state.statusFilter as InvoiceView);
+  // Filtering to an invoice band means the ready-to-bill worklist is not part of the answer.
+  const wantReady = !state.archived && (!state.statusFilter || onlyReady);
 
   // Finished work with no invoice — the jobs module already answers this as a scoped view, so the
   // ledger reuses it rather than growing a second definition of "ready to bill".
   const ready = api.v1.jobs.list.useQuery(
     { view: "needsInvoice", today, limit: READY_CAP },
-    { refetchOnWindowFocus: true, enabled: !state.archived },
+    { refetchOnWindowFocus: true, enabled: wantReady },
   );
 
   const invoices = api.v1.invoicing.list.useInfiniteQuery(
-    { limit: PAGE_SIZE, sort: "ledger", ...(search ? { search } : {}) },
+    { limit: PAGE_SIZE, sort: "ledger", ...(search ? { search } : {}), ...(view ? { view } : {}) },
     {
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       refetchOnWindowFocus: true,
@@ -56,17 +70,19 @@ export function useMoneyQuery(state: MoneyQueryState) {
   );
 
   const total = api.v1.invoicing.count.useQuery(
-    { ...(search ? { search } : {}) },
+    { ...(search ? { search } : {}), ...(view ? { view } : {}) },
     { refetchOnWindowFocus: true },
   );
 
   const readyJobs = useMemo(
-    () => (state.archived ? [] : (ready.data?.items ?? []).map((j) => dtoJobToStoreJob(j as never))),
-    [ready.data, state.archived],
+    () => (wantReady ? (ready.data?.items ?? []).map((j) => dtoJobToStoreJob(j as never)) : []),
+    [ready.data, wantReady],
   );
   const invoiceRows = useMemo(
     () =>
-      (invoices.data?.pages.flatMap((p) => p.items) ?? []).map((i) =>
+      // Filtering to ready-to-bill means no invoice belongs in the answer, so the rows are dropped
+      // rather than the query being disabled — its cache stays warm for when the filter clears.
+      (onlyReady ? [] : (invoices.data?.pages.flatMap((p) => p.items) ?? [])).map((i) =>
         // dtoInvoiceToStore needs a prior record for the fields the DTO does not carry. The
         // customer NAME now comes from the server; phone and email genuinely are not on the
         // summary, and the ledger does not render them — so they are empty rather than guessed.
@@ -76,7 +92,7 @@ export function useMoneyQuery(state: MoneyQueryState) {
           email: "",
         } as never),
       ),
-    [invoices.data],
+    [invoices.data, onlyReady],
   );
 
   const loadMore = useCallback(() => {
@@ -91,8 +107,8 @@ export function useMoneyQuery(state: MoneyQueryState) {
     /** True when the worklist hit its cap and is being truncated — the UI must say so. */
     readyTruncated: readyJobs.length >= READY_CAP,
     shown: readyJobs.length + invoiceRows.length,
-    total: total.data === undefined ? undefined : total.data.total + readyJobs.length,
-    hasMore: Boolean(invoices.hasNextPage),
+    total: total.data === undefined ? undefined : (onlyReady ? 0 : total.data.total) + readyJobs.length,
+    hasMore: Boolean(invoices.hasNextPage) && !onlyReady,
     loadMore,
     isLoadingMore: invoices.isFetchingNextPage,
     isLoading: invoices.isLoading,

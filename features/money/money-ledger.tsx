@@ -14,13 +14,11 @@ import Link from "next/link";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
-import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import {
   deriveMoneyRows,
   deriveArchivedMoneyRows,
-  filterMoneyRows,
   invDue,
   type MoneyRow,
 } from "./money-derive";
@@ -110,7 +108,7 @@ export function MoneyLedger() {
   // the signal this screen exists to give), and the invoices a page at a time in ledger order.
   // `ready` ranks 0, so concatenating is the same order the merged derive produced.
   const mq = useMoneyQueryState();
-  const money = useMoneyQuery({ search: q, archived: moneySet === "archived" });
+  const money = useMoneyQuery({ search: q, archived: moneySet === "archived", statusFilter });
   const source = useMemo(
     () =>
       moneySet === "active"
@@ -118,12 +116,12 @@ export function MoneyLedger() {
         : deriveArchivedMoneyRows(money.invoiceRows, leads),
     [moneySet, money.invoiceRows, money.readyJobs, leads],
   );
-  // Status filtering stays client-side, over the loaded page ONLY — see the note by the filter
-  // panel. Search is server-side and is what actually reaches the whole book.
-  const rows = useMemo(
-    () => filterMoneyRows(source, { statusFilter, q: "" }),
-    [source, statusFilter],
-  );
+  // Status, search and the ready-to-bill worklist are all resolved in the DATABASE now, so the
+  // rows arriving here are already the right ones and are counted against the whole book rather
+  // than the loaded page. Filtering client-side made "show me the overdue ones" mean "show me the
+  // overdue ones among the fifty rows on screen", which on an 847-invoice ledger is a wrong answer
+  // presented as a complete one.
+  const rows = source;
   const activeFilterCount = statusFilter ? 1 : 0;
 
   function toggleCol(key: MoneyColKey) {

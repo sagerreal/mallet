@@ -51,6 +51,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async findOpenForTech(): Promise<TimeEntry | null> {
     return null;
   }
+  async count(): Promise<number> {
+    return 0;
+  }
+
   async list(): Promise<Paginated<TimeEntry>> {
     return { items: [], nextCursor: null };
   }

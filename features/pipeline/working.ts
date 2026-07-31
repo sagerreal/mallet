@@ -41,25 +41,47 @@ const pendingVisit = (l: Lead) =>
   (l.evisits ?? []).find((v) => v.status === "scheduled" && !v.scopeNotes && v.date);
 
 /** Pre-quote intake — no visit route, no paper: the AI is nurturing them. */
+/**
+ * How one untouched lead READS as a card — the stamp, and whether it has gone quiet.
+ *
+ * Separate from the question of which leads belong in the column, because those two answers now
+ * come from different places: membership is decided in SQL (leadViewCondition "intake") so the
+ * column can describe the whole book, while the card's wording stays here where the rest of the
+ * board's language lives.
+ */
+export function intakeRowOf(lead: Lead): IntakeRow {
+  const stalled = isCooling(lead);
+  const trace = traceOf(lead);
+  const stamp = stalled
+    ? `Quiet ${lead.age} days`
+    : trace
+      ? `Front Desk · ${trace.when}`
+      : lead.age === 0
+        ? "today"
+        : `${lead.age}d`;
+  return { lead, stalled, stamp };
+}
+
+/** Stalled first, then oldest — the order the column is worked in. */
+export const byStalledThenAge = (a: IntakeRow, b: IntakeRow): number =>
+  Number(b.stalled) - Number(a.stalled) || b.lead.age - a.lead.age;
+
+/**
+ * Untouched leads out of an in-memory collection.
+ *
+ * Kept for callers that hold the whole book already. The Pipeline board does NOT use this: its
+ * membership test has to run against every customer, not the page the browser happens to hold,
+ * and `hasPaper` here can only see the estimates that were loaded — so a lead whose quote fell
+ * outside that window would be shown as untouched.
+ */
 export function deriveIntake(leads: Lead[], estimates: Estimate[]): IntakeRow[] {
   const hasPaper = (id: string) =>
     estimates.some((e) => e.leadId === id && !e.archived && !e.trash);
 
   return leads
     .filter((l) => alive(l) && !hasPaper(l.id) && !scopedVisit(l) && !pendingVisit(l))
-    .map((lead) => {
-      const stalled = isCooling(lead);
-      const trace = traceOf(lead);
-      const stamp = stalled
-        ? `Quiet ${lead.age} days`
-        : trace
-          ? `Front Desk · ${trace.when}`
-          : lead.age === 0
-            ? "today"
-            : `${lead.age}d`;
-      return { lead, stalled, stamp };
-    })
-    .sort((a, b) => Number(b.stalled) - Number(a.stalled) || b.lead.age - a.lead.age);
+    .map(intakeRowOf)
+    .sort(byStalledThenAge);
 }
 
 /** Deals with an active route to a price — scoped / walkthrough booked / in the shop. */

@@ -1,5 +1,5 @@
 import { and, eq, exists, isNull, ne, sql, type SQL } from "drizzle-orm";
-import { leads, estimates, jobVisits, jobs } from "@mallet/shared/db/schema";
+import { leads, estimates, jobVisits, jobs, invoices } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 
 /**
@@ -85,5 +85,70 @@ export const leadViewCondition = (view: LeadView, tx: TenantTx): SQL => {
     case "won":
     default:
       return and(live, acceptedQuote) as SQL;
+  }
+};
+
+/**
+ * SCOPES — the Customers screen's saved worklists.
+ *
+ * Deliberately a separate axis from LEAD_VIEWS above. Those are the Pipeline board's columns and
+ * are mutually exclusive by construction so their counts sum to the book; these are questions a
+ * shop asks about its customer list, and a customer can easily be in both ("owes money" AND "no
+ * work in a year" is precisely the customer you want to find).
+ *
+ * Both are answered with EXISTS/NOT EXISTS rather than a join: a customer with four unpaid
+ * invoices must appear once, and a join would return them four times and break the keyset.
+ */
+export const LEAD_SCOPES = ["owesMoney", "cold12m"] as const;
+export type LeadScope = (typeof LEAD_SCOPES)[number];
+
+export const LEAD_SCOPE_LABELS: Record<LeadScope, string> = {
+  owesMoney: "Owes money",
+  cold12m: "No job in 12 months",
+};
+
+/** Nothing scheduled or done for this customer in a year — the win-back list. */
+const COLD_MONTHS = 12;
+
+export const leadScopeCondition = (scope: LeadScope, tx: TenantTx): SQL => {
+  switch (scope) {
+    case "owesMoney":
+      // A sent bill with a balance still on it. Not `status = 'sent'`: an invoice part-paid down
+      // to zero is settled whatever its status column says, and one marked paid with a balance
+      // is not. The balance is the fact.
+      return exists(
+        tx
+          .select({ one: sql`1` })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.orgId, leads.orgId),
+              eq(invoices.leadId, leads.id),
+              isNull(invoices.deletedAt),
+              ne(invoices.status, "draft"),
+              sql`greatest(0, ${invoices.totalCents} - ${invoices.depositPaidCents} - ${invoices.amountPaidCents}) > 0`,
+            ),
+          ),
+      ) as SQL;
+    case "cold12m":
+    default:
+      // No visit in the last year. A customer with NO job at all is cold by this definition too —
+      // which is right: the question is "who has not had us out", and never is longer than a year.
+      return sql`NOT ${exists(
+        tx
+          .select({ one: sql`1` })
+          .from(jobVisits)
+          .innerJoin(jobs, and(eq(jobs.orgId, jobVisits.orgId), eq(jobs.id, jobVisits.jobId)))
+          .where(
+            and(
+              eq(jobVisits.orgId, leads.orgId),
+              eq(jobs.leadId, leads.id),
+              ne(jobVisits.status, "canceled"),
+              isNull(jobVisits.deletedAt),
+              isNull(jobs.deletedAt),
+              sql`${jobVisits.scheduledDate} > (current_date - interval '${sql.raw(String(COLD_MONTHS))} months')`,
+            ),
+          ),
+      )}` as SQL;
   }
 };

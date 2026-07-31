@@ -8,12 +8,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { LEAD_SCOPES, LEAD_SCOPE_LABELS } from "@/modules/customers/infra/lead-views";
 import { useAppStore, useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
 import { isStaleLead } from "@/features/pipeline/pipeline-constants";
 import { api } from "@/lib/trpc/client";
-import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { useCustomersQuery, useCustomersQueryState, CUSTOMER_COL_TO_SORT } from "./use-customers-query";
 import { toStoreLead } from "./leads-hydrator";
@@ -71,6 +71,7 @@ export function CustomersView() {
     search: cq.search,
     stage: cq.stage,
     source: cq.source,
+    scope: cq.scope,
     sort: serverSort,
     sortDir: serverSort ? cq.sortDir : null,
   });
@@ -81,7 +82,7 @@ export function CustomersView() {
   const allStages = LEAD_STAGES as readonly string[];
   const allSources = (list.sources ?? []).map((x: { source: string }) => x.source);
   const activeFilterCount =
-    (cq.stage ? 1 : 0) + (cq.source ? 1 : 0) + (custSeg !== "people" ? 1 : 0) + (archiveSet !== "active" ? 1 : 0);
+    (cq.stage ? 1 : 0) + (cq.source ? 1 : 0) + (cq.scope ? 1 : 0) + (custSeg !== "people" ? 1 : 0) + (archiveSet !== "active" ? 1 : 0);
   const visible = visibleCols.filter((c) => ALL_COL_DEFS[c]);
 
   // First-run gates on the SERVER's total, never on the loaded page — a no-match search on a
@@ -206,8 +207,11 @@ export function CustomersView() {
             sourceFilter={cq.source}
             stages={[...allStages]}
             sources={allSources}
+            scopeFilter={cq.scope}
+            scopes={LEAD_SCOPES.map((v) => ({ value: v, label: LEAD_SCOPE_LABELS[v] }))}
             onStage={cq.setStage}
             onSource={cq.setSource}
+            onScope={cq.setScope}
             onClear={cq.clear}
           />
         </>
