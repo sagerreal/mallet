@@ -297,7 +297,7 @@ export function AiResultBlock({
 export function AiThinkingBlock() {
   return (
     <div className="ct-block">
-      <div className="ct-confirm ct-dim" aria-live="polite" aria-label="Mallet is thinking">
+      <div className="ct-confirm ct-dim" aria-live="polite" aria-label="Artie is thinking">
         thinking…
       </div>
     </div>

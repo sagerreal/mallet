@@ -125,13 +125,13 @@ function CustHead({ brand }: { brand: Brand }) {
 }
 
 // ===========================================================================
-//  FOOTER (prototype §"Powered by Mallet")
+//  FOOTER (prototype §"Powered by Elas")
 // ===========================================================================
 
 function CustFooter() {
   return (
     <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-3)" }}>
-      Powered by Mallet — licensed &amp; insured
+      Powered by Elas — licensed &amp; insured
     </p>
   );
 }

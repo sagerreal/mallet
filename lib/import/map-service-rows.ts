@@ -1,7 +1,7 @@
 /**
  * Turns a parsed foreign-CRM CSV into clean Mallet pricebook service rows.
  * Mirrors `map-rows.ts` (the customer import): `autoMapService` best-guesses
- * which columns map to which Mallet field; `buildServiceImportRows` applies a
+ * which columns map to which Elas field; `buildServiceImportRows` applies a
  * mapping, classifying each source row as ready / skipped (no name) / warning
  * (unreadable price or cost — imported at $0, flagged so the user can fix it
  * before or after committing).
@@ -35,7 +35,7 @@ export interface ServiceBuildResult {
   warnings: RowIssue[];
 }
 
-// Header synonyms → Mallet field. Matched case-insensitively by substring.
+// Header synonyms → Elas field. Matched case-insensitively by substring.
 const SYNONYMS: Record<keyof ServiceMappingConfig, string[]> = {
   name: ["service name", "service", "item name", "item", "task", "name"],
   category: ["category", "service category", "type", "group"],

@@ -128,7 +128,7 @@ export class PlaceOutboundCallUseCase {
         // is missing.
         return err(
           conflict(
-            "add the mobile number Mallet should ring you on before placing a call",
+            "add the mobile number Elas should ring you on before placing a call",
             "agentNumber",
           ),
         );

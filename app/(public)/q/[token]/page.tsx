@@ -38,9 +38,9 @@ export async function generateMetadata({
   params: Promise<Params>;
 }): Promise<Metadata> {
   const { token } = await params;
-  if (!TOKEN_RE.test(token)) return { title: "Quote — Mallet" };
+  if (!TOKEN_RE.test(token)) return { title: "Quote — Elas" };
   const view = await getPublicQuote(token);
-  if (!view) return { title: "Quote — Mallet" };
+  if (!view) return { title: "Quote — Elas" };
   return {
     title: `Quote from ${view.orgName}`,
     description: `Review and approve your quote from ${view.orgName}.`,
@@ -137,7 +137,7 @@ export default async function PublicQuotePage({
               marginTop: "var(--space-8)",
             }}
           >
-            Powered by Mallet
+            Powered by Elas
           </p>
         </div>
       </main>
@@ -307,7 +307,7 @@ export default async function PublicQuotePage({
 
           {/* Footer */}
           <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-4)" }}>
-            Powered by Mallet &mdash; licensed &amp; insured
+            Powered by Elas &mdash; licensed &amp; insured
           </p>
         </div>
       </div>

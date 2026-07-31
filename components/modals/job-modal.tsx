@@ -266,7 +266,7 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
       {conflict && (
         <div className="banner" style={{ marginTop: "var(--space-2)" }}>
           ⚠ Overlaps another visit for {techFirst} on{" "}
-          {visit.date ? colLabel(visit.date) : "that day"} — <b>Mallet flagged the clash</b> — nudge the time.
+          {visit.date ? colLabel(visit.date) : "that day"} — <b>Artie flagged the clash</b> — nudge the time.
         </div>
       )}
 

@@ -1081,7 +1081,7 @@ export const timesheetApproveWeekTool: AgentTool = {
     const parsed = parseTool(timesheetApproveWeekInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     // The bus is NOT optional in practice. approve-week.ts calls approval "the only trigger for
-    // hours leaving Mallet": without it, `timeEntry.weekApproved` never fires, QboTimeSyncHandler
+    // hours leaving Elas": without it, `timeEntry.weekApproved` never fires, QboTimeSyncHandler
     // never runs, and the hours an owner just approved never reach QuickBooks. The rows still flip
     // to `approved` and the tool still answers "Approved 12 entries", so the failure is invisible
     // until someone notices missing TimeActivity rows in QBO.

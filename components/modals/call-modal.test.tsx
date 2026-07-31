@@ -45,18 +45,18 @@ beforeEach(() => {
 });
 
 describe("CallModalContent — phoneless reachability", () => {
-  it("with a phone: shows the 'Call from Mallet' path and starts the call", () => {
+  it("with a phone: shows the 'Call from Elas' path and starts the call", () => {
     mockLeads = [{ id: "lead-1", name: "Dana Alvarez", phone: "555-0101" }];
     render(<CallModalContent />);
-    expect(screen.getByText("Call from Mallet")).toBeTruthy();
-    fireEvent.click(screen.getByText("Call from Mallet"));
+    expect(screen.getByText("Call from Elas")).toBeTruthy();
+    fireEvent.click(screen.getByText("Call from Elas"));
     expect(startCall).toHaveBeenCalledWith("lead-1", "phone");
     expect(close).toHaveBeenCalled();
   });
 
   it("with NO phone: hides the call path, shows the add-number prompt, does not start a blank call", () => {
     render(<CallModalContent />);
-    expect(screen.queryByText("Call from Mallet")).toBeNull();
+    expect(screen.queryByText("Call from Elas")).toBeNull();
     expect(screen.getByLabelText(/No phone number yet/i)).toBeTruthy();
     // No blank call bar opened.
     expect(startCall).not.toHaveBeenCalled();
@@ -122,7 +122,7 @@ describe("CallModalContent — this browser can carry the call", () => {
   it("calls through the browser, with no number on file", () => {
     mockMe = { role: "owner", callbackNumber: null };
     render(<CallModalContent />);
-    fireEvent.click(screen.getByText("Call from Mallet"));
+    fireEvent.click(screen.getByText("Call from Elas"));
     expect(startCall).toHaveBeenCalledWith("lead-1", "browser");
     expect(close).toHaveBeenCalled();
   });
@@ -136,7 +136,7 @@ describe("CallModalContent — this browser can carry the call", () => {
   it("never asks for a callback number it does not need", () => {
     mockMe = { role: "owner", callbackNumber: null };
     render(<CallModalContent />);
-    fireEvent.click(screen.getByText("Call from Mallet"));
+    fireEvent.click(screen.getByText("Call from Elas"));
     expect(screen.queryByText(/needs a number to ring you on/i)).toBeNull();
   });
 });
@@ -154,7 +154,7 @@ describe("CallModalContent — no callback number on file", () => {
 
   it("does not place a call, and names the fix", () => {
     render(<CallModalContent />);
-    fireEvent.click(screen.getByText("Call from Mallet"));
+    fireEvent.click(screen.getByText("Call from Elas"));
     expect(startCall).not.toHaveBeenCalled();
     expect(screen.getByText(/needs a number to ring you on/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /add your mobile/i }).getAttribute("href")).toBe("/settings");
@@ -163,7 +163,7 @@ describe("CallModalContent — no callback number on file", () => {
   it("sends a technician to their own account page, which is the only settings surface they have", () => {
     mockMe = { role: "tech", callbackNumber: null };
     render(<CallModalContent />);
-    fireEvent.click(screen.getByText("Call from Mallet"));
+    fireEvent.click(screen.getByText("Call from Elas"));
     expect(screen.getByRole("link", { name: /add your mobile/i }).getAttribute("href")).toBe("/account");
   });
 

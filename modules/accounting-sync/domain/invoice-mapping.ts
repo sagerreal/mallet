@@ -43,15 +43,15 @@ const isoDate = (d: Date): string => {
 };
 
 /**
- * Map a Mallet invoice to a QuickBooks Invoice.
+ * Map a Elas invoice to a QuickBooks Invoice.
  *
  * **ONE line, for the pre-tax amount. This is the load-bearing decision.**
  *
- * QuickBooks computes an invoice total as `Σ(lines) + TxnTaxDetail.TotalTax`. Mallet's `total` is
+ * QuickBooks computes an invoice total as `Σ(lines) + TxnTaxDetail.TotalTax`. Elas's `total` is
  * tax-INCLUSIVE. So the line total must be `total − tax`: send lines summing to the full total AND
  * the tax and QuickBooks charges the tax twice.
  *
- * And it has to be one synthesised line rather than Mallet's own, because Mallet's lines cannot be
+ * And it has to be one synthesised line rather than Elas's own, because Elas's lines cannot be
  * relied on to sum to anything in particular:
  *
  * - `invoices.total_cents` is a deliberate SNAPSHOT of the agreed price (`invoice.ts:37,58`);
@@ -60,12 +60,12 @@ const isoDate = (d: Date): string => {
  * - The estimate's discount is baked into that total, while the lines are the undiscounted list —
  *   so even a fully-lined invoice normally has `Σ(lines) ≠ total − tax`.
  *
- * Sending Mallet's lines would therefore put a number in the books that nobody agreed to. And it
+ * Sending Elas's lines would therefore put a number in the books that nobody agreed to. And it
  * would buy nothing: with no pricebook link, every line carries the SAME ItemRef, so the revenue
  * breakdown in QuickBooks is identical either way. One line that is exactly right beats five that
  * are collectively wrong. Per-line detail arrives when the pricebook link does.
  *
- * The customer never sees this document — Mallet sends the invoice, QuickBooks holds the books.
+ * The customer never sees this document — Elas sends the invoice, QuickBooks holds the books.
  */
 export const toQboInvoice = (
   invoice: SyncableInvoice,

@@ -9,8 +9,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Mallet",
-    short_name: "Mallet",
+    name: "Elas",
+    short_name: "Elas",
     description: "AI-native operating system for service businesses.",
     start_url: "/",
     scope: "/",

@@ -792,7 +792,7 @@ export default function SettingsPage() {
   return (
     <div>
       <h1>Settings</h1>
-      <div className="sub">Your workspace and how Mallet works.</div>
+      <div className="sub">Your workspace and how Elas works.</div>
 
       <div className="setwrap">
         <nav className="setnav">

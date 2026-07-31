@@ -20,7 +20,7 @@ export const users = pgTable(
     // Certification tags for this tech (e.g. ["Gas", "Boiler"]). Additive column —
     // existing rows default to empty array. No new RLS needed (users table is FOR ALL).
     skillTags: text("skill_tags").array().notNull().default(sql`'{}'::text[]`),
-    // The mobile Mallet rings first on an outbound click-to-call, E.164. Additive + nullable:
+    // The mobile Elas rings first on an outbound click-to-call, E.164. Additive + nullable:
     // existing rows are unaffected, and it is remembered the first time a call is placed so the
     // office does not retype it. No new RLS needed (users table is already FOR ALL).
     callbackNumber: text("callback_number"),
@@ -48,7 +48,7 @@ export const users = pgTable(
     uniqueIndex("users_auth_user_uidx").on(t.authUserId),
     index("users_org_idx").on(t.orgId),
     check("users_role_check", sql`${t.role} in ('owner', 'office', 'tech')`),
-    // GLOBAL, not per-org, and that is the whole point. Every shop's staff texts ONE Mallet-owned
+    // GLOBAL, not per-org, and that is the whole point. Every shop's staff texts ONE Elas-owned
     // assistant number, so the number a text arrived AT no longer says which shop it belongs to —
     // the SENDER's number is the only thing that identifies both the person and their org. Scoped
     // per-org this index would permit the same mobile in two shops, and an inbound text would have

@@ -112,7 +112,7 @@ export function CounterPanel({ api }: { api: CounterApi }) {
 
       {empty && (
         <div>
-          <div className="cmd-hint">Say it like you would to a person — Mallet runs it:</div>
+          <div className="cmd-hint">Say it like you would to a person — Artie runs it:</div>
           {api.suggestions.map((sg) => (
             <button
               type="button"

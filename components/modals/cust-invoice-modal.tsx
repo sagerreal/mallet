@@ -347,7 +347,7 @@ export function CustInvoiceModalContent() {
           className="muted"
           style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-3)" }}
         >
-          Powered by Mallet — licensed &amp; insured
+          Powered by Elas — licensed &amp; insured
         </p>
       </div>
 

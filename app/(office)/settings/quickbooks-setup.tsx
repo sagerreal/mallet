@@ -64,7 +64,7 @@ export function QuickbooksSetup() {
         <p style={{ ...label, color: "var(--red)" }} role="alert">
           QuickBooks already has {s.existingTimeEntries} time{" "}
           {s.existingTimeEntries === 1 ? "entry" : "entries"} in the last 30 days. If your crew
-          clocks in inside QuickBooks too, sending Mallet’s hours as well would pay the same hours
+          clocks in inside QuickBooks too, sending Elas’s hours as well would pay the same hours
           twice — pick one place to track time before switching this on.
         </p>
       )}
@@ -96,7 +96,7 @@ export function QuickbooksSetup() {
           Match your crew ({matched}/{s.crew.length})
         </div>
         <div style={{ ...note, margin: "var(--space-1) 0 var(--space-2)" }}>
-          Anyone left unmatched keeps their hours in Mallet — they just won’t reach QuickBooks.
+          Anyone left unmatched keeps their hours in Elas — they just won’t reach QuickBooks.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
           {s.crew.map((c) => {
@@ -175,7 +175,7 @@ export function QuickbooksSetup() {
           options={s.items.map((i) => ({ value: i.id, label: i.name }))}
         />
         <div style={{ ...note, marginTop: "var(--space-2)" }}>
-          Every line goes under this one item for now. Mallet&apos;s invoice lines don&apos;t name a
+          Every line goes under this one item for now. Elas&apos;s invoice lines don&apos;t name a
           pricebook item, so there is nothing to match them against yet.
         </div>
       </section>
