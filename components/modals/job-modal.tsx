@@ -389,6 +389,12 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote, onAddWork }: Pric
             View the quote →
           </span>
         )}
+        {/* Extra work can be found on ANY job, not only one that already carries its own lines.
+            This branch — a job priced from its quote — is the common case for sold work, and it
+            was the one branch with no way to raise a change order. */}
+        <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onAddWork}>
+          + More work
+        </span>
       </div>
     );
   }
@@ -794,8 +800,12 @@ export function JobModalContent() {
   const status = JST[job.status] ?? JST.scheduled!;
   const noteCount = jobNoteEntries(job).length;
   const hasLines = (job.lines ?? []).length > 0;
+  // The row says there is SCOPE inside it, not just a number. "$730" reads as the whole story and
+  // gives no reason to open the row — so the line items, and the "+ More work" that raises a
+  // change order, sat behind a tap nobody had a reason to make. Owen asked twice where they were.
+  const lineCount = (job.lines ?? []).length;
   const priceValue = hasLines
-    ? fmt$(jobTotal(job))
+    ? `${fmt$(jobTotal(job))} · ${lineCount} ${lineCount === 1 ? "item" : "items"}`
     : job.sourceEstimateId
       ? "from quote"
       : "Add";

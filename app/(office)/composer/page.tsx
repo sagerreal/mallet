@@ -482,7 +482,11 @@ export default function ComposerPage() {
       : realLines(cs.lines);
     return {
       leadId: lead.id,
-      title: lead.job || "Quote",
+      // NAMED AFTER THE WORK. "Quote" was the fallback when the customer record had no job
+      // description — and that name follows the quote onto the JOB it becomes, so a scheduling
+      // board ends up with rows called "Quote" that tell a dispatcher nothing about what the truck
+      // is going out for. The first line item is what the work actually is.
+      title: lead.job?.trim() || payloadLines[0]?.d?.trim() || "Quote",
       discBps: Math.round((cs.pricing.disc ?? 0) * 100),
       taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
       depBps: Math.round((cs.pricing.dep ?? 0) * 100),
