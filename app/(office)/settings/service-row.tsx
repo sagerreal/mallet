@@ -94,16 +94,6 @@ function EditorRow({
   );
 }
 
-/** A quiet group heading spanning the grid — the only structure, no boxes. */
-function GroupHead({ text, aside }: { text: string; aside?: string }) {
-  return (
-    <div className="svced-grp">
-      {text}
-      {aside && <span className="svced-aside">{aside}</span>}
-    </div>
-  );
-}
-
 export function ServiceRow({
   service,
   categories,
@@ -113,13 +103,14 @@ export function ServiceRow({
   onArchive,
 }: ServiceRowProps) {
   const [open, setOpen] = useState(false);
+  // C-shape editor: the default is just name · price · cost; labor/tax/parts are
+  // opt-in behind this reveal (most services never need them).
+  const [more, setMore] = useState(false);
   const nameField = useFieldId();
-  const categoryField = useFieldId();
   const costField = useFieldId();
   const laborField = useFieldId();
   const pricedByField = useFieldId();
   const priceField = useFieldId();
-  const warrantyField = useFieldId();
   const unit = priceUnit(service.measuredBy);
 
   return (
@@ -142,7 +133,18 @@ export function ServiceRow({
       {open && (
         <div className="svced">
           <div className="svced-grid">
-            <GroupHead text="Price" />
+            <EditorRow label="Name" field={nameField}>
+              <input
+                {...nameField.controlProps}
+                type="text"
+                defaultValue={service.name}
+                onChange={(e) => {
+                  const v = e.target.value.trim();
+                  if (v) onUpdate(service.id, { name: v });
+                }}
+                className="svced-in"
+              />
+            </EditorRow>
             {measurementEstimating && (
               <EditorRow label="Priced by" field={pricedByField}>
                 <SelectMenu
@@ -169,6 +171,31 @@ export function ServiceRow({
                 {unit && <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{unit}</span>}
               </span>
             </EditorRow>
+
+            {canSeeCost && (
+              <>
+                <EditorRow label="Your cost" field={costField}>
+                  <span className="svced-money">
+                    <span className="muted">$</span>
+                    <input
+                      {...costField.controlProps}
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      defaultValue={service.cost}
+                      onChange={(e) => onUpdate(service.id, { cost: Math.max(0, Number(e.target.value) || 0) })}
+                      className="svced-in svced-num"
+                    />
+                    <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+                      {service.cost > 0 ? `${marginPct(service)}% margin` : "no cost set"} · owner-only
+                    </span>
+                  </span>
+                </EditorRow>
+              </>
+            )}
+
+            {more && (
+              <>
             <EditorRow label="Labor" field={laborField}>
               <span className="svced-money">
                 <input
@@ -199,66 +226,18 @@ export function ServiceRow({
                 <i />
               </label>
             </EditorRow>
-
-            {canSeeCost && (
-              <>
-                <GroupHead text="Costs" aside="owner-only" />
-                <EditorRow label="Your cost" field={costField}>
-                  <span className="svced-money">
-                    <span className="muted">$</span>
-                    <input
-                      {...costField.controlProps}
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      defaultValue={service.cost}
-                      onChange={(e) => onUpdate(service.id, { cost: Math.max(0, Number(e.target.value) || 0) })}
-                      className="svced-in svced-num"
-                    />
-                    <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                      {service.cost > 0 ? `${marginPct(service)}% margin` : "no cost set"}
-                    </span>
-                  </span>
-                </EditorRow>
               </>
             )}
-
-            <GroupHead text="Details" />
-            <EditorRow label="Name" field={nameField}>
-              <input
-                {...nameField.controlProps}
-                type="text"
-                defaultValue={service.name}
-                onChange={(e) => {
-                  const v = e.target.value.trim();
-                  if (v) onUpdate(service.id, { name: v });
-                }}
-                className="svced-in"
-              />
-            </EditorRow>
-            <EditorRow label="Category" field={categoryField}>
-              <SelectMenu
-                value={service.categoryId ?? ""}
-                onChange={(v) => onUpdate(service.id, { categoryId: v || null })}
-                options={[{ value: "", label: "— none —" }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
-                {...categoryField.controlProps}
-                compact
-              />
-            </EditorRow>
-            <EditorRow label="Warranty" field={warrantyField}>
-              <input
-                {...warrantyField.controlProps}
-                type="text"
-                placeholder="e.g. 6-yr parts / 1-yr labor"
-                defaultValue={service.warrantyText ?? ""}
-                onChange={(e) => onUpdate(service.id, { warrantyText: e.target.value.trim() ? e.target.value : null })}
-                className="svced-in"
-              />
-            </EditorRow>
           </div>
 
+          {!more && (
+            <button type="button" className="linklike svced-more" onClick={() => setMore(true)}>
+              + Labor, tax{canSeeCost ? " & parts" : ""}
+            </button>
+          )}
+
           {/* Parts — full-width beneath the grid (owner-only; cost data). */}
-          {canSeeCost && (
+          {more && canSeeCost && (
             <div className="svced-parts">
               <MaterialManager serviceId={service.id} canSeeCost={canSeeCost} />
             </div>

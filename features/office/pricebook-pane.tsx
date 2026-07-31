@@ -25,7 +25,6 @@ import type { Service } from "@/lib/store/types";
 import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { ServiceRow } from "@/app/(office)/settings/service-row";
 import { AddServiceRow } from "@/app/(office)/settings/add-service-row";
-import { CategoryManager } from "@/app/(office)/settings/category-manager";
 import { EstimatorMemoryRow } from "@/app/(office)/settings/estimator-memory-card";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
@@ -36,15 +35,13 @@ function sortServices(services: Service[]): Service[] {
 }
 
 /** The Defaults-rail rows — one open at a time (front-desk RuleRow precedent). */
-type RailKey = "labor" | "markup" | "terms" | "memory" | "categories";
+type RailKey = "labor" | "markup" | "terms" | "memory";
 
 export function PricebookPane() {
   const services = useAppStore((s) => s.services);
-  const categories = useAppStore((s) => s.categories);
   const addService = useAppStore((s) => s.addService);
   const updateService = useAppStore((s) => s.updateService);
   const archiveService = useAppStore((s) => s.archiveService);
-  const addCategory = useAppStore((s) => s.addCategory);
   const seedPricebook = useAppStore((s) => s.seedPricebook);
   const laborRates = useAppStore((s) => s.laborRates);
   const addLaborRate = useAppStore((s) => s.addLaborRate);
@@ -211,7 +208,7 @@ export function PricebookPane() {
                   <ServiceRow
                     key={s.id}
                     service={s}
-                    categories={categories}
+                    categories={[]}
                     canSeeCost={canSeeCost}
                     measurementEstimating={measurementEstimating}
                     onUpdate={updateService}
@@ -333,14 +330,6 @@ export function PricebookPane() {
 
           <EstimatorMemoryRow open={openRail === "memory"} onToggle={() => toggleRail("memory")} />
 
-          <DisclosureRow
-            label="Categories"
-            value={String(categories.length)}
-            open={openRail === "categories"}
-            onToggle={() => toggleRail("categories")}
-          >
-            <CategoryManager categories={categories} onAdd={addCategory} />
-          </DisclosureRow>
         </div>
       </div>
     </div>
