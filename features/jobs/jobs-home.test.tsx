@@ -7,6 +7,11 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 interface ListState {
   rows: unknown[];
   total: number | undefined;
+  /** The whole book, ignoring filters — what the first-run gate keys on, so a no-match search
+   *  falls through to an empty list instead of "No jobs yet". */
+  bookTotal: number | undefined;
+  /** A page being replaced, or a search typed but not yet debounced. */
+  isStale: boolean;
   isFetched: boolean;
   isError: boolean;
   isLoading: boolean;
