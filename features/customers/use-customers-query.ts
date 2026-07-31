@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { api } from "@/lib/trpc/client";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { LeadSort } from "@/modules/customers/infra/lead-sorts";
 import type { LeadScope } from "@/modules/customers/infra/lead-views";
 
@@ -29,7 +30,10 @@ export interface CustomersQueryState {
 }
 
 export function useCustomersQuery(state: CustomersQueryState) {
-  const search = state.search.trim() || undefined;
+  // Typing must not mint a query per keystroke (the whole list flashed to the loader) —
+  // the query trails the input by 250ms; the input itself stays instant.
+  const debouncedSearch = useDebouncedValue(state.search, 250);
+  const search = debouncedSearch.trim() || undefined;
   const stage = state.stage || undefined;
   const source = state.source || undefined;
   const scope = state.scope || undefined;
@@ -52,13 +56,20 @@ export function useCustomersQuery(state: CustomersQueryState) {
     },
     {
       getNextPageParam: (last) => last.nextCursor ?? undefined,
+      // Keep the previous page on screen while a new filter/search loads — swapping the
+      // whole list for a spinner on every keystroke read as "the page reloads".
+      placeholderData: (prev) => prev,
       // No staleTime: a list that serves a cached page after an edit is how "I changed that and it
       // didn't save" gets reported.
       refetchOnWindowFocus: true,
     },
   );
 
-  const total = api.v1.customers.count.useQuery(filters, { refetchOnWindowFocus: true });
+  const total = api.v1.customers.count.useQuery(filters, { refetchOnWindowFocus: true, placeholderData: (prev) => prev });
+  // The UNFILTERED book size — the only honest input to "does this shop have customers at
+  // all?". Gating first-run on the filtered count showed "No customers yet" to a shop of
+  // 600 whenever a search matched nothing.
+  const bookTotal = api.v1.customers.count.useQuery({}, { refetchOnWindowFocus: false });
 
   // Facets are NOT filtered by the current selection: a dropdown that hides the option you would
   // switch to is a dead end. It describes the whole book, always.
@@ -74,6 +85,9 @@ export function useCustomersQuery(state: CustomersQueryState) {
     rows,
     shown: rows.length,
     total: total.data?.total,
+    bookTotal: bookTotal.data?.total,
+    /** True while showing held-over rows for a superseded filter — callers dim, never swap. */
+    isStale: page.isPlaceholderData || debouncedSearch !== state.search,
     stageCounts: facets.data?.stages,
     sources: facets.data?.sources,
     hasMore: Boolean(page.hasNextPage),

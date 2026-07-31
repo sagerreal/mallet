@@ -229,9 +229,11 @@ export function MoneyLedger() {
   // Gated on the SERVER's total, never on the loaded page: a no-match search on a shop that HAS
   // invoices must fall through to an empty list, not to "No invoices yet". `?? 1` while the count
   // is in flight keeps the first-run screen from flashing before it lands.
-  const firstRun = shouldShowFirstRun({ isFetched: money.isFetched, isError: money.isError, count: money.total ?? 1 });
+  // Unfiltered book size — a no-match search must fall through to the empty list, never
+  // to "No invoices yet" on a shop with a full ledger.
+  const firstRun = shouldShowFirstRun({ isFetched: money.isFetched, isError: money.isError, count: money.bookTotal ?? 1 });
   const loadFailed = shouldShowLoadFailed({ isFetched: money.isFetched, isError: money.isError, count: money.total ?? 0 });
-  const loading = money.isLoading;
+  const loading = money.isLoading && rows.length === 0 && !money.isFetched;
 
   return (
     <>

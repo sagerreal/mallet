@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { api } from "@/lib/trpc/client";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { dtoJobToStoreJob } from "@/lib/store/dto-mapper";
 import { dtoInvoiceSummaryToStore } from "@/lib/store/dto-mapper";
 import { localToday } from "@/features/jobs/use-jobs-query";
@@ -47,7 +48,9 @@ export interface MoneyQueryState {
 
 export function useMoneyQuery(state: MoneyQueryState) {
   const today = useMemo(localToday, []);
-  const search = state.search.trim() || undefined;
+  // Query trails the input — no query per keystroke (see lib/use-debounced-value).
+  const debouncedSearch = useDebouncedValue(state.search, 250);
+  const search = debouncedSearch.trim() || undefined;
   const onlyReady = state.statusFilter === "ready";
   // Anything other than "ready" (or nothing) is an invoice band the database can answer.
   const view = !state.statusFilter || onlyReady ? undefined : (state.statusFilter as InvoiceView);
@@ -66,13 +69,17 @@ export function useMoneyQuery(state: MoneyQueryState) {
     {
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       refetchOnWindowFocus: true,
+      // Previous rows stay on screen (dimmed) while a new filter loads.
+      placeholderData: (prev) => prev,
     },
   );
 
   const total = api.v1.invoicing.count.useQuery(
     { ...(search ? { search } : {}), ...(view ? { view } : {}) },
-    { refetchOnWindowFocus: true },
+    { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
   );
+  // Unfiltered book size — the honest first-run input.
+  const bookTotal = api.v1.invoicing.count.useQuery({}, { refetchOnWindowFocus: false });
 
   const readyJobs = useMemo(
     () => (wantReady ? (ready.data?.items ?? []).map((j) => dtoJobToStoreJob(j as never)) : []),
@@ -105,6 +112,8 @@ export function useMoneyQuery(state: MoneyQueryState) {
     readyTruncated: readyJobs.length >= READY_CAP,
     shown: readyJobs.length + invoiceRows.length,
     total: total.data === undefined ? undefined : (onlyReady ? 0 : total.data.total) + readyJobs.length,
+    bookTotal: bookTotal.data?.total,
+    isStale: invoices.isPlaceholderData || debouncedSearch !== state.search,
     hasMore: Boolean(invoices.hasNextPage) && !onlyReady,
     loadMore,
     isLoadingMore: invoices.isFetchingNextPage,

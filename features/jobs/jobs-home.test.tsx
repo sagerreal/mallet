@@ -50,7 +50,7 @@ vi.mock("./jobs-columns", () => ({ JobsColumns: () => <div /> }));
 import { JobsHome } from "./jobs-home";
 
 const list = (rows: unknown[], over: Partial<ListState> = {}): ListState => ({
-  rows, total: rows.length, isFetched: true, isError: false, isLoading: false, ...over,
+  rows, total: rows.length, bookTotal: rows.length, isStale: false, isFetched: true, isError: false, isLoading: false, ...over,
 });
 const setup = () => {
   const onOpenNewJob = vi.fn();
