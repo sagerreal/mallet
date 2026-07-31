@@ -661,9 +661,17 @@ export function SchedulePanel() {
             })}
           </div>
         </div>
-      ) : (
+      ) : needsSlotQ.isFetched ? (
         <div className="rail" style={{ background: "var(--green-50)", borderColor: "#DDD7C9", marginBottom: "var(--space-4)" }}>
           <b style={{ fontSize: "var(--type-base)" }}>Everything sold is scheduled.</b>
+        </div>
+      ) : (
+        // NOT the all-clear until the read has landed. An empty list means "nothing fetched yet"
+        // for the first moment of every load, and "Everything sold is scheduled." is a claim — it
+        // was being made before the app had looked, then contradicted a beat later when five cards
+        // appeared. A dispatcher who believes it and walks away is the cost.
+        <div className="rail" style={{ marginBottom: "var(--space-4)" }} aria-busy="true">
+          <b style={{ fontSize: "var(--type-base)" }} className="muted">Loading the tray…</b>
         </div>
       )}
 
