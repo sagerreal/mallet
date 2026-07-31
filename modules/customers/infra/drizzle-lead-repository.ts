@@ -4,6 +4,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { leadSortSpec, leadSortValue, type LeadSort } from "./lead-sorts";
+import { leadViewCondition, type LeadView } from "./lead-views";
 import {
   buildPage,
   decodeCursor,
@@ -121,6 +122,7 @@ export class DrizzleLeadRepository implements LeadRepository {
     if (filter?.stage) conds.push(eq(leads.stage, filter.stage));
     if (filter?.unreadOnly) conds.push(eq(leads.unread, true));
     if (filter?.source) conds.push(eq(leads.source, filter.source));
+    if (filter?.view) conds.push(leadViewCondition(filter.view, this.tx));
     if (filter?.search) {
       // Escape LIKE wildcards first: unescaped, a customer typing "%" matches the entire book and
       // the search silently stops filtering.
@@ -135,6 +137,17 @@ export class DrizzleLeadRepository implements LeadRepository {
       if (cond) conds.push(cond);
     }
     return conds;
+  }
+
+  /** Every Pipeline column's count in ONE round trip — the board shows all four at once. */
+  async viewCounts(): Promise<Record<LeadView, number>> {
+    const one = (v: LeadView) => sql<number>`count(*) filter (where ${leadViewCondition(v, this.tx)})::int`;
+    const rows = await this.tx
+      .select({ intake: one("intake"), quoting: one("quoting"), out: one("out"), won: one("won") })
+      .from(leads)
+      .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt)));
+    const r = rows[0];
+    return { intake: r?.intake ?? 0, quoting: r?.quoting ?? 0, out: r?.out ?? 0, won: r?.won ?? 0 };
   }
 
   async facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }> {

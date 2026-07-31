@@ -92,6 +92,8 @@ class FakeLeadRepository implements LeadRepository {
 
   async facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }> { return { stages: {}, sources: [] }; }
 
+  async viewCounts(): Promise<Record<string, number>> { return { intake: 0, quoting: 0, out: 0, won: 0 }; }
+
   async list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>> {
     // Exclude soft-deleted rows.
     let rows = [...this.store.values()]
