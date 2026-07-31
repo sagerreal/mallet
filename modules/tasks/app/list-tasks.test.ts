@@ -53,6 +53,7 @@ const makeRepo = (
 } => {
   const repo = {
     lastPage: undefined as CursorPage | undefined,
+    async count() { return 0; },
     lastFilter: undefined as TaskFilter | undefined,
 
     async list(page: CursorPage, filter?: TaskFilter): Promise<Paginated<Task>> {

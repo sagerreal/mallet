@@ -20,7 +20,7 @@ export const SVC_KIND = { estimate: "estimate", service: "service", install: "in
 export type SvcKind = (typeof SVC_KIND)[keyof typeof SVC_KIND];
 
 /** A held/placed item on the schedule board is either a job or an estimate visit. */
-export const BOARD_ITEM_KIND = { job: "job", evisit: "evisit" } as const;
+export const BOARD_ITEM_KIND = { job: "job" } as const;
 export type BoardItemKind = (typeof BOARD_ITEM_KIND)[keyof typeof BOARD_ITEM_KIND];
 
 /** Status pill display (label · text color · background). */

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { NewJobModalContent } from "./new-job-modal";
 
-// Store actions captured so the test can assert ordering (create → then evisit patch).
+// Store actions captured so the test can assert ordering (create lead → then estimate job).
 const addLead = vi.fn();
 const updateLead = vi.fn();
 const addJob = vi.fn();
@@ -29,14 +29,20 @@ describe("NewJobModalContent — createEstimate", () => {
   beforeEach(() => {
     addLead.mockReset();
     updateLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
     closeMock = vi.fn();
   });
 
-  it("awaits the persisted lead, then attaches the evisit to the SERVER id", async () => {
+  it("awaits the persisted lead, then creates a real estimate JOB on the SERVER id", async () => {
     // addLead returns an optimistic id but persists to a different server id.
     addLead.mockReturnValue({
-      lead: { id: "optimistic-1", name: "New customer", evisits: [] },
-      persisted: Promise.resolve({ id: "srv-1", name: "New customer", evisits: [] }),
+      lead: { id: "optimistic-1", name: "New customer" },
+      persisted: Promise.resolve({ id: "srv-1", name: "New customer" }),
+    });
+    addJob.mockReturnValue({
+      job: { id: "job-1" },
+      persisted: Promise.resolve({ id: "job-1", origin: "db" }),
     });
 
     render(<NewJobModalContent />);
@@ -48,19 +54,23 @@ describe("NewJobModalContent — createEstimate", () => {
     fireEvent.submit(screen.getByText("Create job").closest("form")!);
 
     expect(addLead).toHaveBeenCalledOnce();
-    // The evisit patch must land on the reconciled server id, not the optimistic one.
+    // The estimate job must attach to the reconciled server lead id, not the optimistic one.
     await waitFor(() => {
-      expect(updateLead).toHaveBeenCalledOnce();
+      expect(addJob).toHaveBeenCalledOnce();
     });
-    const [id, patch] = updateLead.mock.calls[0] as [string, { evisits: unknown[] }];
-    expect(id).toBe("srv-1");
-    expect(patch.evisits).toHaveLength(1);
+    const [jobDraft] = addJob.mock.calls[0] as [{ leadId: string; svc: string }];
+    expect(jobDraft.leadId).toBe("srv-1");
+    expect(jobDraft.svc).toBe("estimate");
+    // The unplaced visit rides the persisted job.
+    await waitFor(() => {
+      expect(addVisit).toHaveBeenCalledWith("job-1", expect.any(Number));
+    });
   });
 
   it("shows an error and keeps the modal open when persisted rejects (network failure)", async () => {
     // addLead returns a persisted promise that rejects (e.g. server/network error).
     addLead.mockReturnValue({
-      lead: { id: "optimistic-2", name: "New customer", evisits: [] },
+      lead: { id: "optimistic-2", name: "New customer" },
       persisted: Promise.reject(new Error("network error")),
     });
 
@@ -79,8 +89,8 @@ describe("NewJobModalContent — createEstimate", () => {
     // The modal must NOT have been closed — data is preserved.
     expect(closeMock).not.toHaveBeenCalled();
 
-    // updateLead must NOT have been called (no evisit attached on failure).
-    expect(updateLead).not.toHaveBeenCalled();
+    // No estimate job may be created when the lead never persisted.
+    expect(addJob).not.toHaveBeenCalled();
   });
 });
 
@@ -95,9 +105,9 @@ describe("NewJobModalContent — createJob (Job type)", () => {
 
   it("creates a lead first for a new customer, then addJob receives the server-assigned leadId", async () => {
     // Lead persist returns a different (server) id from the optimistic one.
-    const persistedLead = { id: "srv-lead-10", name: "Maria Garcia", evisits: [], phone: "5551234567" };
+    const persistedLead = { id: "srv-lead-10", name: "Maria Garcia", phone: "5551234567" };
     addLead.mockReturnValue({
-      lead: { id: "opt-lead-10", name: "Maria Garcia", evisits: [] },
+      lead: { id: "opt-lead-10", name: "Maria Garcia" },
       persisted: Promise.resolve(persistedLead),
     });
     // addJob returns { job, persisted } shape; persisted resolves to the reconciled job.
@@ -133,7 +143,7 @@ describe("NewJobModalContent — createJob (Job type)", () => {
 
   it("calls addVisit AFTER job persisted resolves (visits persist when origin is db)", async () => {
     // existing customer — no addLead call needed.
-    const persistedLead = { id: "existing-lead-20", name: "Bob Smith", evisits: [] };
+    const persistedLead = { id: "existing-lead-20", name: "Bob Smith" };
     addLead.mockReturnValue({
       lead: persistedLead,
       persisted: Promise.resolve(persistedLead),
@@ -166,8 +176,8 @@ describe("NewJobModalContent — createJob (Job type)", () => {
 
   it("surfaces an error and keeps the modal open when addJob persisted rejects", async () => {
     addLead.mockReturnValue({
-      lead: { id: "lead-fail-30", name: "Fail User", evisits: [] },
-      persisted: Promise.resolve({ id: "lead-fail-30", name: "Fail User", evisits: [] }),
+      lead: { id: "lead-fail-30", name: "Fail User" },
+      persisted: Promise.resolve({ id: "lead-fail-30", name: "Fail User" }),
     });
     const optimisticJob = { id: "job-fail-30", origin: "manual", visits: [] };
     addJob.mockReturnValue({
@@ -231,8 +241,8 @@ describe("NewJobModalContent — phone validation", () => {
 
   it("a blank phone is fine — it's optional", async () => {
     addLead.mockReturnValue({
-      lead: { id: "opt-1", name: "New customer", evisits: [] },
-      persisted: Promise.resolve({ id: "srv-1", name: "New customer", evisits: [] }),
+      lead: { id: "opt-1", name: "New customer" },
+      persisted: Promise.resolve({ id: "srv-1", name: "New customer" }),
     });
     addJob.mockReturnValue({
       job: { id: "job-1", origin: "manual", visits: [] },
@@ -250,7 +260,7 @@ describe("NewJobModalContent — phone validation", () => {
   it("names the server's own validation reason instead of blaming the connection (BAD_REQUEST)", async () => {
     // Simulates a TRPCClientError shape the leads-slice rethrows unchanged.
     addLead.mockReturnValue({
-      lead: { id: "opt-2", name: "New customer", evisits: [] },
+      lead: { id: "opt-2", name: "New customer" },
       persisted: Promise.reject({
         message: 'invalid US phone number: "78138501"',
         data: { code: "BAD_REQUEST" },
@@ -271,7 +281,7 @@ describe("NewJobModalContent — phone validation", () => {
 
   it("still blames the connection for a genuine network failure (no server data shape)", async () => {
     addLead.mockReturnValue({
-      lead: { id: "opt-3", name: "New customer", evisits: [] },
+      lead: { id: "opt-3", name: "New customer" },
       persisted: Promise.reject(new TypeError("Failed to fetch")),
     });
     render(<NewJobModalContent />);
@@ -311,7 +321,7 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
         ],
       },
     ];
-    const persistedLead = { id: "lead-40", name: "Chk Customer", evisits: [] };
+    const persistedLead = { id: "lead-40", name: "Chk Customer" };
     addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
     let resolveJobPersisted!: (j: unknown) => void;
     addJob.mockReturnValue({
@@ -343,7 +353,7 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
   });
 
   it("builds a custom checklist from scratch with required photo/check items", async () => {
-    const persistedLead = { id: "lead-41", name: "Custom Customer", evisits: [] };
+    const persistedLead = { id: "lead-41", name: "Custom Customer" };
     addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
     addJob.mockReturnValue({
       job: { id: "job-41", origin: "manual", visits: [] },
@@ -383,7 +393,7 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
         items: [{ id: "i1", text: "Flow tested", type: "check", required: true, position: 0 }],
       },
     ];
-    const persistedLead = { id: "lead-50", name: "Retry Customer", evisits: [] };
+    const persistedLead = { id: "lead-50", name: "Retry Customer" };
     addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
     addJob.mockReturnValue({
       job: { id: "job-50", origin: "manual", visits: [] },
@@ -417,7 +427,7 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
   });
 
   it("no checklist section for the Estimate type; none attached without a pick", async () => {
-    const persistedLead = { id: "lead-42", name: "Plain Customer", evisits: [] };
+    const persistedLead = { id: "lead-42", name: "Plain Customer" };
     addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
     addJob.mockReturnValue({
       job: { id: "job-42", origin: "manual", visits: [] },
@@ -460,14 +470,14 @@ describe("NewJobModalContent — one press, one job", () => {
   const armSlowChain = () => {
     let releaseLead: (v: unknown) => void = () => {};
     addLead.mockReturnValue({
-      lead: { id: "opt-lead-x", name: "Maria Garcia", evisits: [] },
+      lead: { id: "opt-lead-x", name: "Maria Garcia" },
       persisted: new Promise((res) => { releaseLead = res; }),
     });
     addJob.mockReturnValue({
       job: { id: "job-x", origin: "manual", visits: [] },
       persisted: Promise.resolve({ id: "job-x", origin: "db", visits: [] }),
     });
-    return () => releaseLead({ id: "srv-lead-x", name: "Maria Garcia", evisits: [], phone: "5551234567" });
+    return () => releaseLead({ id: "srv-lead-x", name: "Maria Garcia", phone: "5551234567" });
   };
 
   const fillForm = () => {

@@ -166,6 +166,11 @@ function OkCard({
 // ---- the queue -------------------------------------------------------------------
 
 export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftContext }) {
+  // Sending one at a time is fine for five cards and absurd for the collections queue — a shop
+  // with 239 open invoices is not clicking Send 239 times. The bulk action is deliberately
+  // ARMED rather than instant: it names the count and the money before it fires, because it
+  // sends real messages to real customers and there is no unsending them in bulk.
+  const [armedBulk, setArmedBulk] = useState(false);
   const openModal = useOpenModal();
   const updateLead = useAppStore((s) => s.updateLead);
   const dismissAttention = useAppStore((s) => s.dismissAttention);
@@ -242,8 +247,41 @@ export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftConte
     setSent((prev) => prev.filter((e) => e !== entry));
   }
 
+  const overdue = items.filter((i) => i.kind === "invoice-overdue");
+  const overdueSum = overdue.reduce((sum, i) => sum + i.value, 0);
+
+  function sendAllOverdue() {
+    // One pass, using the same single-card path — so each send gets the same commit, the same
+    // rollback on failure, and the same ledger line. A bulk action that took a shortcut around
+    // that would be the one place failures went unreported.
+    for (const item of overdue) handleSend(item, draftFor(item, ctx));
+    setArmedBulk(false);
+  }
+
   return (
     <div style={{ marginTop: "var(--space-5)" }}>
+      {overdue.length > 1 && (
+        <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-3)", padding: "var(--space-3) var(--space-4)" }}>
+          <span>
+            <strong>{overdue.length} overdue {overdue.length === 1 ? "invoice" : "invoices"}</strong>
+            <span className="muted"> · ${Math.round(overdueSum).toLocaleString("en-US")} owed</span>
+          </span>
+          {armedBulk ? (
+            <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+              <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+                Sends {overdue.length} {overdue.length === 1 ? "message" : "messages"} now.
+              </span>
+              <button className="btn sm" onClick={() => setArmedBulk(false)}>Cancel</button>
+              <button className="btn sm primary" onClick={sendAllOverdue}>Yes, send all</button>
+            </span>
+          ) : (
+            <button className="btn sm" onClick={() => setArmedBulk(true)}>
+              Send all reminders
+            </button>
+          )}
+        </div>
+      )}
+
       {items.map((item) => (
         <OkCard
           key={item.key}

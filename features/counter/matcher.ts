@@ -40,7 +40,7 @@ function verbsFor(lead: Lead, item: OkItem | null, snap: Snap): Verb[] {
   if (item?.kind === "quote-viewed") return [{ label: "nudge", input: `nudge ${first}` }, call, open];
   if (item?.kind === "invoice-overdue") return [{ label: "remind", input: `remind ${first}` }, call, open];
   if (item?.kind === "new-lead") return [{ label: "text", input: `text ${first}` }, call, open];
-  if (isScopedNeedsQuote(lead, snap.estimates)) {
+  if (isScopedNeedsQuote(lead, snap.estimates, snap.jobs)) {
     return [{ label: "quote", input: `quote ${first}` }, open, call];
   }
   return [open, call];
@@ -61,7 +61,7 @@ function situationFor(lead: Lead, item: OkItem | null, snap: Snap): string {
     (i) => i.leadId === lead.id && !i.archived && (i.status === "sent" || i.status === "partial") && invDue(i) > 0
   );
   if (inv) return `owes $${Math.round(invDue(inv)).toLocaleString("en-US")} · ${inv.num}`;
-  if (isScopedNeedsQuote(lead, snap.estimates)) return "scoped on site — owe them a quote";
+  if (isScopedNeedsQuote(lead, snap.estimates, snap.jobs)) return "scoped on site — owe them a quote";
   if (lead.stage === "Won") return `won — ${lead.last.toLowerCase()}`;
   if (lead.stage === "Lost") return `lost${lead.lossReason ? ` — ${lead.lossReason.toLowerCase()}` : ""}`;
   return lead.job || lead.last;
@@ -99,6 +99,8 @@ export function matchRows(query: string, snap: Snap): PersonRow[] {
 
 /** Sum of money answerable right now (quotes out + invoice balances due). */
 export function reachableMoney(snap: Snap): number {
+  // SERVER truth when the surface fetched it — the store sums below see one page.
+  if (snap.serverMoney) return snap.serverMoney.quotesOutDollars + snap.serverMoney.owedDollars;
   const quotes = snap.estimates
     .filter((e) => !e.archived && !e.trash && e.status === "sent")
     .reduce((s, e) => s + estTotal(e), 0);

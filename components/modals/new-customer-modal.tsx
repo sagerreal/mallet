@@ -237,32 +237,33 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       return { ok: true, job: created };
     }
     if (visitPurpose === "look") {
-      // "Create estimate visit" — attach a schedulable estimate visit to the
-      // lead, mirroring new-job-modal's createEstimate. evisits are store-local
-      // (the leads hydrator resets them), so the lead must exist in the store:
-      // the customer was created via the react-query mutation (not addLead),
-      // so insert the row first if the hydrator hasn't caught up yet.
-      const evisit: Visit = {
-        id: crypto.randomUUID(),
-        date: null,
-        techId: null,
-        start: null,
-        dur: ESTIMATE_VISIT_HOURS,
-        status: "scheduled",
-      };
-      const { leads, updateLead, setLeads } = useAppStore.getState();
-      const existing = leads.find((l) => l.id === data.id);
-      if (existing) {
-        updateLead(data.id, {
-          job: jobDesc.trim(),
-          evisits: [...(existing.evisits ?? []), evisit],
-        });
-      } else {
-        setLeads([
-          { ...toStoreLead(data), job: jobDesc.trim(), evisits: [evisit] },
-          ...leads,
-        ]);
+      // "Create estimate visit" — a REAL job (svc "estimate") with an unplaced visit.
+      // It used to be a client-store-only evisit: gone on refresh and invisible to the
+      // schedule window / crew-load / conflict checks.
+      const { job: created, persisted } = addJob({
+        leadId: data.id,
+        svc: "estimate",
+        origin: "manual",
+        title: jobDesc.trim() || "Estimate visit",
+        addr: address.trim() || "",
+        phone: data.phone ?? "",
+        status: "unscheduled",
+        archived: false,
+        lines: [],
+        addons: [],
+        photos: [],
+        notes: notes.trim(),
+        acts: [],
+        visits: [],
+      });
+      try {
+        await persisted;
+      } catch (err) {
+        setError(userMessage(err, "The customer was saved, but the estimate visit wasn't — check your connection and try again."));
+        return { ok: false, job: null };
       }
+      addVisit(created.id, ESTIMATE_VISIT_HOURS);
+      return { ok: true, job: created };
     }
     return { ok: true, job: null };
   }

@@ -77,9 +77,20 @@ const mockMutateAsync = vi.fn();
 const mockResumeMutateAsync = vi.fn();
 const mockInvalidateV1 = vi.fn().mockResolvedValue(undefined);
 
+// Server-truth queries the counter now composes into the snap — settled/empty here.
+const settledQ = { data: undefined, isFetched: true };
+vi.mock("@/features/home/use-ok-queue", () => ({
+  useOkQueue: () => ({ items: [], value: 0, overdue: [], truncated: false, isFetched: true, isError: false }),
+}));
+vi.mock("@/features/customers/leads-hydrator", () => ({
+  toStoreLead: (d: unknown) => d,
+}));
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
+      invoicing: { totals: { useQuery: () => settledQ } },
+      customers: { list: { useQuery: () => settledQ } },
+      quoting: { list: { useQuery: () => settledQ } },
       ai: {
         run: {
           useMutation: () => ({

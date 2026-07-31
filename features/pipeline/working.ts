@@ -10,7 +10,8 @@
 
 import { todayISO } from "@/lib/clock";
 import { isCooling, traceOf } from "./pipeline-lanes";
-import type { Estimate, Lead } from "@/lib/store/types";
+import { scopedEstimateVisit, pendingEstimateVisit } from "./pipeline-utils";
+import type { Estimate, Job, Lead } from "@/lib/store/types";
 
 export interface IntakeRow {
   lead: Lead;
@@ -36,9 +37,6 @@ function weekdayOf(iso: string): string {
 const alive = (l: Lead) =>
   !l.archived && !l.book && (l.stage === "New customer" || l.stage === "Contacted");
 
-const scopedVisit = (l: Lead) => (l.evisits ?? []).find((v) => v.scopeNotes);
-const pendingVisit = (l: Lead) =>
-  (l.evisits ?? []).find((v) => v.status === "scheduled" && !v.scopeNotes && v.date);
 
 /** Pre-quote intake — no visit route, no paper: the AI is nurturing them. */
 /**
@@ -66,26 +64,9 @@ export function intakeRowOf(lead: Lead): IntakeRow {
 export const byStalledThenAge = (a: IntakeRow, b: IntakeRow): number =>
   Number(b.stalled) - Number(a.stalled) || b.lead.age - a.lead.age;
 
-/**
- * Untouched leads out of an in-memory collection.
- *
- * Kept for callers that hold the whole book already. The Pipeline board does NOT use this: its
- * membership test has to run against every customer, not the page the browser happens to hold,
- * and `hasPaper` here can only see the estimates that were loaded — so a lead whose quote fell
- * outside that window would be shown as untouched.
- */
-export function deriveIntake(leads: Lead[], estimates: Estimate[]): IntakeRow[] {
-  const hasPaper = (id: string) =>
-    estimates.some((e) => e.leadId === id && !e.archived && !e.trash);
-
-  return leads
-    .filter((l) => alive(l) && !hasPaper(l.id) && !scopedVisit(l) && !pendingVisit(l))
-    .map(intakeRowOf)
-    .sort(byStalledThenAge);
-}
 
 /** Deals with an active route to a price — scoped / walkthrough booked / in the shop. */
-export function deriveGetting(leads: Lead[], estimates: Estimate[]): GettingRow[] {
+export function deriveGetting(leads: Lead[], estimates: Estimate[], jobs: Job[]): GettingRow[] {
   const rows: GettingRow[] = [];
 
   // Paper being built (drafts) — includes quotes a tech starts on site.
@@ -102,7 +83,7 @@ export function deriveGetting(leads: Lead[], estimates: Estimate[]): GettingRow[
   for (const lead of leads) {
     if (!alive(lead) || hasPaper(lead.id)) continue;
     const today = todayISO();
-    const scoped = scopedVisit(lead);
+    const scoped = scopedEstimateVisit(lead.id, jobs);
     if (scoped) {
       rows.push({
         lead,
@@ -113,7 +94,7 @@ export function deriveGetting(leads: Lead[], estimates: Estimate[]): GettingRow[
       });
       continue;
     }
-    const pending = pendingVisit(lead);
+    const pending = pendingEstimateVisit(lead.id, jobs);
     if (pending?.date) {
       rows.push({
         lead,

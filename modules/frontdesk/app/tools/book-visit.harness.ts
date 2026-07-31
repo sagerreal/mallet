@@ -135,6 +135,7 @@ export class FakeLeadRepository implements LeadRepository {
 }
 
 export class FakeTaskRepository implements TaskRepository {
+  async count(): Promise<number> { return 0; }
   readonly created: TaskProps[] = [];
   async create(input: {
     id: string;

@@ -19,16 +19,16 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/trpc/client";
+import { dtoEstimateSummaryToStore } from "@/lib/store/dto-mapper";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { Modal } from "../modal";
 import { SheetRow } from "../sheet-row";
 import { LeadSheetHeader, PhoneCell } from "./lead-header";
 import { NotesBody, latestNoteSnippet } from "./lead-notes";
 import { TasksBody, openTaskLabel } from "./tasks-card";
-import { VisitRows } from "./visit-card";
 import { DetailsBody, CleanUpBody } from "./more-details";
 import {
   useCloseModal,
@@ -138,8 +138,28 @@ export function LeadModal({ open }: { open: boolean }) {
     if (missing && leadQ.data) adoptLead(toStoreLead(leadQ.data));
   }, [missing, leadQ.data, adoptLead]);
 
-  const leadEstimates = lead ? estimates.filter((e) => e.leadId === lead.id) : [];
-  const hasWork = leadEstimates.length > 0 || (lead?.evisits?.length ?? 0) > 0;
+  // THIS CUSTOMER'S work comes from the server — the store holds one page per collection,
+  // so a customer opened from the paginated list used to show an EMPTY Work section and
+  // "0 open tasks" while their quotes and tasks sat in the database. Store rows win on id
+  // collision (they carry optimistic/local state like fu).
+  const workQ = api.v1.quoting.listByLead.useQuery(
+    { leadId: leadId ?? "" },
+    { enabled: Boolean(lead), refetchOnWindowFocus: false },
+  );
+  const leadTasksQ = api.v1.tasks.list.useQuery(
+    { leadId: leadId ?? "", done: false, limit: 100 },
+    { enabled: Boolean(lead), refetchOnWindowFocus: false },
+  );
+  const leadEstimates = useMemo(() => {
+    if (!lead) return [];
+    const fromStore = estimates.filter((e) => e.leadId === lead.id);
+    const seen = new Set(fromStore.map((e) => e.id));
+    const fromServer = (workQ.data?.items ?? [])
+      .filter((dto) => !seen.has(dto.id))
+      .map((dto) => dtoEstimateSummaryToStore(dto, { on: false, stage: 0 }));
+    return [...fromStore, ...fromServer];
+  }, [lead, estimates, workQ.data]);
+  const hasWork = leadEstimates.length > 0;
 
   // "New quote" → the real composer, seeded with this customer. Close first so the
   // sheet doesn't sit over the composer page.
@@ -180,7 +200,8 @@ export function LeadModal({ open }: { open: boolean }) {
         ? { label: callLabel(lead), run: () => pushModal(MODAL.CALL, { leadId: lead.id }) }
         : { label: "New quote", run: newQuote };
 
-  const openTasks = tasks.filter((t) => t.leadId === lead.id && !t.done).length;
+  const openTasksStore = tasks.filter((t) => t.leadId === lead.id && !t.done);
+  const openTasks = Math.max(openTasksStore.length, leadTasksQ.data?.items.length ?? 0);
 
   return (
     <Modal open={open} onClose={close} wide label={lead.name}>
@@ -221,7 +242,6 @@ export function LeadModal({ open }: { open: boolean }) {
         <>
           <div className="sheet-worklab">Work</div>
           <QuoteRows estimates={leadEstimates} />
-          <VisitRows lead={lead} />
         </>
       )}
 

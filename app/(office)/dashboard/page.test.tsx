@@ -23,9 +23,13 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
       customers: { list: { useQuery: () => settledQuery } },
-      jobs: { list: { useQuery: () => settledQuery } },
+      jobs: { list: { useQuery: () => settledQuery }, viewCounts: { useQuery: () => settledQuery }, count: { useQuery: () => settledQuery } },
       quoting: { list: { useQuery: () => settledQuery } },
-      invoicing: { list: { useQuery: () => settledQuery } },
+      invoicing: {
+        list: { useQuery: () => settledQuery },
+        listOverdue: { useQuery: () => settledQuery },
+        totals: { useQuery: () => settledQuery },
+      },
     },
   },
 }));
@@ -33,6 +37,11 @@ vi.mock("@/lib/trpc/client", () => ({
 // rather than adding up store collections. Stubbed: these tests are about the tab shell.
 vi.mock("@/features/home/use-home-pipe", () => ({
   useHomePipe: () => ({ stages: [], isLoading: false, isError: false }),
+}));
+// The morning queue is fetched from the database now — viewed quotes AND overdue invoices —
+// rather than derived from the loaded page. Stubbed: these tests are about the tab shell.
+vi.mock("@/features/home/use-ok-queue", () => ({
+  useOkQueue: () => ({ items: [], value: 0, overdue: [], truncated: false, isFetched: true, isError: false }),
 }));
 vi.mock("@/features/home/ok-queue", () => ({ OkQueue: () => <div /> }));
 vi.mock("@/features/office/front-desk-pane", () => ({ FrontDeskPane: () => <div data-testid="fd-pane" /> }));

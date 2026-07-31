@@ -15,7 +15,8 @@
  * board later, so there is NO date/crew picker at creation.
  *
  * Create behavior:
- *  - Estimate → a LEAD + unplaced evisit(s) (a scoping visit), NOT a job.
+ *  - Estimate → a LEAD + a real job (svc "estimate") with unplaced visit(s) — it
+ *    rides the server schedule window / crew-load / conflict checks like any job.
  *  - Job (service) → addJob(...) + addVisit(...) per visit row + the picked
  *    checklist attached via updateJob AFTER jobPersisted resolves (origin 'db').
  *
@@ -30,7 +31,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { useCloseModal, useOpenModal, usePushModal, useLeads, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
-import type { ChecklistItem, Job, Lead, Visit } from "@/lib/store/types";
+import type { ChecklistItem, Job, Lead } from "@/lib/store/types";
 import { Field, FieldGroup } from "@/components/ui/input";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
@@ -243,8 +244,8 @@ export function NewJobModalContent() {
     const match = matchLead(custName);
 
     // Resolve the matched lead, or create a new one and AWAIT the server id.
-    // addLead returns { lead, persisted }; the evisit must attach to the
-    // reconciled (server-assigned) id, so we await before patching.
+    // addLead returns { lead, persisted }; the estimate job must attach to the
+    // reconciled (server-assigned) id, so we await before creating it.
     let lead: Lead;
     if (match) {
       lead = match;
@@ -268,28 +269,42 @@ export function NewJobModalContent() {
     }
 
     // Merge fill-ins onto an existing lead without clobbering (prototype behavior).
-    const existing = lead.evisits ?? [];
-    const patch: Partial<Lead> = {
-      job,
-      evisits: [
-        ...existing,
-        ...rows.map<Visit>((v) => ({
-          id: crypto.randomUUID(),
-          date: null,
-          techId: null,
-          start: null,
-          dur: v.h,
-          status: "scheduled",
-        })),
-      ],
-    };
+    const patch: Partial<Lead> = { job };
     if (phone.trim() && (!lead.phone || lead.phone === "—")) patch.phone = phone.trim();
     if (addr.trim() && !lead.address) patch.address = addr.trim();
     if (notes.trim()) patch.notes = notes.trim();
-
     updateLead(lead.id, patch);
-    // No checklist on estimates — leads carry no checklist; the section only
-    // renders for the Job type.
+
+    // The estimate visit is a REAL job (svc "estimate") with unplaced visits. It used
+    // to be a client-store-only evisit on the lead: gone on refresh, invisible to the
+    // schedule window, ignored by crew-load and conflict checks — a placed walkthrough
+    // could double-book a tech with no warning (same fix as visit-modal / new-customer).
+    const { job: created, persisted: jobPersisted } = addJob({
+      leadId: lead.id,
+      svc: "estimate",
+      origin: "manual",
+      title: job,
+      addr: addr.trim() || (lead.address ?? ""),
+      phone: phone.trim() || (lead.phone && lead.phone !== "—" ? lead.phone : ""),
+      status: "unscheduled",
+      archived: false,
+      lines: [],
+      addons: [],
+      photos: [],
+      notes: notes.trim(),
+      acts: [],
+      visits: [],
+    });
+    try {
+      await jobPersisted;
+    } catch (err) {
+      setError(userMessage(err, "The customer was saved, but the estimate visit wasn't — check your connection and try again."));
+      return false;
+    }
+    // Unplaced (hours only) — dragged onto the Schedule later. Must run after the
+    // reconcile: addVisit only persists once the job is DB-origin.
+    rows.forEach((v) => addVisit(created.id, v.h));
+    // No checklist on estimates — the section only renders for the Job type.
     return true;
   }
 
@@ -395,7 +410,7 @@ export function NewJobModalContent() {
   }
 
   /** Validate + create the job/estimate. For estimates the create is async
-   *  (awaits the persisted lead before attaching the evisit); returns a promise
+   *  (awaits the persisted lead, then the persisted estimate job); returns a promise
    *  resolving to { ok, job }. */
   async function commit(): Promise<{ ok: boolean; job: Job | null }> {
     const job = title.trim();

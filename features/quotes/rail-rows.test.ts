@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { railRowsFor, wonRowsFor, deriveRail } from "./derive";
+import { railRowsFor, wonRowsFor } from "./derive";
 import type { Estimate, Lead } from "@/lib/store/types";
 
 const mkLead = (over: Partial<Lead> = {}): Lead => ({
@@ -34,12 +34,6 @@ describe("rail rows built from server-selected quotes", () => {
     expect(rows[0]!.customerName).toBe("Zsofia Quennell");
   });
 
-  // The old behaviour, kept here as the contrast: deriveRail still filters, because its callers
-  // hold the whole book in memory and its orphan filter is about ARCHIVED customers there.
-  it("...which is exactly what the in-memory derive drops", () => {
-    const rail = deriveRail([sent()], [], []);
-    expect(rail.out).toHaveLength(0);
-  });
 
   it("prefers the server's name over a stale store copy", () => {
     const leads: Lead[] = [mkLead({ id: "off-page", name: "Old Name" })];

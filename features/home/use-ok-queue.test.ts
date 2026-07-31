@@ -1,0 +1,116 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook } from "@testing-library/react";
+
+/**
+ * The morning queue, from the database.
+ *
+ * TWO BUGS it replaces:
+ *
+ * 1. "Viewed" was read off the quote's STATUS — sent counted as seen — so the queue drafted
+ *    "Saw you had a look at the quote" to customers who may never have opened it. It now keys on
+ *    first_viewed_at, stamped when the public link is actually loaded, and the server only returns
+ *    quotes that have one.
+ *
+ * 2. Overdue invoices were meant to be here and never appeared: the queue derived from the
+ *    browser's loaded page, so on a shop with 239 open invoices not one overdue bill reached it.
+ */
+
+let quoteRows: unknown[] | undefined;
+let invoiceRows: unknown[] | undefined;
+let dismissed: string[] = [];
+
+vi.mock("@/lib/trpc/client", () => ({
+  api: {
+    v1: {
+      quoting: { followUps: { useQuery: () => ({ data: quoteRows, isFetched: true, isError: false }) } },
+      invoicing: {
+        list: { useQuery: () => ({ data: invoiceRows ? { items: invoiceRows } : undefined, isFetched: true, isError: false }) },
+      },
+    },
+  },
+}));
+
+vi.mock("@/lib/store/app-store", () => ({
+  useAppStore: (sel: (s: { dismissedAttention: string[]; leads: unknown[] }) => unknown) =>
+    sel({ dismissedAttention: dismissed, leads: [] }),
+}));
+
+import { useOkQueue } from "./use-ok-queue";
+
+const quote = (over: Record<string, unknown> = {}) => ({
+  id: "est-1", num: "EST-1", leadId: "lead-1", customerName: "Luis Ibarra",
+  title: "Repipe", total: { cents: 117500, currency: "USD" },
+  sentAt: new Date(Date.now() - 13 * 86_400_000).toISOString(),
+  firstViewedAt: new Date(Date.now() - 12 * 86_400_000).toISOString(),
+  ...over,
+});
+
+const invoice = (over: Record<string, unknown> = {}) => ({
+  id: "inv-1", num: "INV-1", leadId: "lead-2", customerName: "Ruth Ferraro",
+  title: "Sewer camera", status: "sent",
+  total: { cents: 64000, currency: "USD" },
+  due: { cents: 24000, currency: "USD" },
+  dueAt: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+  createdAt: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+  ...over,
+});
+
+describe("the OK queue", () => {
+  beforeEach(() => {
+    quoteRows = [];
+    invoiceRows = [];
+    dismissed = [];
+  });
+
+  it("carries BOTH kinds — the overdue invoices were the missing half", () => {
+    quoteRows = [quote()];
+    invoiceRows = [invoice()];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items.map((i) => i.kind)).toEqual(["quote-viewed", "invoice-overdue"]);
+  });
+
+  it("counts the money the queue is actually holding", () => {
+    quoteRows = [quote()];
+    invoiceRows = [invoice()];
+    const { result } = renderHook(() => useOkQueue());
+    // $1,175 of quote + $240 still owed — the BALANCE, not the invoice total.
+    expect(result.current.value).toBe(1175 + 240);
+  });
+
+  it("exposes the overdue subset for the bulk action", () => {
+    quoteRows = [quote()];
+    invoiceRows = [invoice(), invoice({ id: "inv-2", leadId: "lead-3" })];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.overdue).toHaveLength(2);
+  });
+
+  it("says how long the quote has been sitting, from when it went out", () => {
+    quoteRows = [quote()];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items[0]!.situation).toContain("13d since it went out");
+  });
+
+  it("says how late the invoice is, from its due date", () => {
+    invoiceRows = [invoice()];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items[0]!.situation).toContain("30d past due");
+  });
+
+  it("drops what has been dismissed — this is what drains the figure", () => {
+    quoteRows = [quote()];
+    invoiceRows = [invoice()];
+    dismissed = ["okq-est-1"];
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.value).toBe(240);
+  });
+
+  it("is empty rather than guessing while the reads are in flight", () => {
+    quoteRows = undefined;
+    invoiceRows = undefined;
+    const { result } = renderHook(() => useOkQueue());
+    expect(result.current.items).toHaveLength(0);
+    expect(result.current.value).toBe(0);
+  });
+});

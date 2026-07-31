@@ -37,7 +37,9 @@ function nightClause(r: ShiftReport, frontDeskOn: boolean): React.ReactNode {
       </>
     );
   }
-  if (!r.busy) return "Quiet night — nothing came in after close.";
+  // acts are local-only (never hydrated) — an empty report usually means "no data",
+  // not "quiet night". Never state a negative the client cannot know.
+  if (!r.busy) return "";
 
   const answered =
     r.callsAnswered === 1

@@ -31,6 +31,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { StagePill, SoftPill } from "@/components/shared/stage-pill";
 import type { Company, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { api } from "@/lib/trpc/client";
 import { pipeSum } from "@/lib/estimates";
 import { Field } from "@/components/ui/input";
 import { SheetRow } from "./sheet-row";
@@ -191,8 +192,12 @@ export function CompanyViewModalContent() {
   }
 
   const contacts = leads.filter((l) => l.companyId === company.id && !l.archived);
-  const openPipe = pipeSum(contacts, estimates, "sent");
-  const revenueWon = pipeSum(contacts, estimates, "accepted");
+  // Server rollup — pipeSum over the store's page asserted "\$0 open" for any account
+  // whose history predates the loaded page. Store-derived only as a fallback while loading.
+  const rollupsQ = api.v1.companies.rollups.useQuery(undefined, { refetchOnWindowFocus: false });
+  const roll = rollupsQ.data?.find((r) => r.companyId === company.id);
+  const openPipe = roll ? roll.openPipeCents / 100 : pipeSum(contacts, estimates, "sent");
+  const revenueWon = roll ? roll.revenueWonCents / 100 : pipeSum(contacts, estimates, "accepted");
 
   const detailsValue = company.phone.trim() || company.email.trim();
   const workCount = contacts.length;

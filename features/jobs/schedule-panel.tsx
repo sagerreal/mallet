@@ -31,7 +31,6 @@ import {
   techById,
   boardItemsFor,
   jobsUnscheduled,
-  unplacedEvisits,
   dayLoad,
   type Held,
 } from "./jobs-helpers";
@@ -85,11 +84,13 @@ export function SchedulePanel() {
     { view: "needsSlot", today: localToday(), limit: 50 },
     { refetchOnWindowFocus: true },
   );
+  // The tray caps at 50 cards; the COUNT must still be the book's ("50 of 63"), never
+  // the cap wearing the label of a business fact.
+  const needsSlotCountQ = api.v1.jobs.viewCounts.useQuery({ today: localToday() }, { refetchOnWindowFocus: true });
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
 
   const placeVisit = useAppStore((s) => s.placeVisit);
-  const placeEvisit = useAppStore((s) => s.placeEvisit);
   const addVisit = useAppStore((s) => s.addVisit);
   const updateVisit = useAppStore((s) => s.updateVisit);
   const removeVisit = useAppStore((s) => s.removeVisit);
@@ -103,7 +104,7 @@ export function SchedulePanel() {
   const [schedView, setSchedView] = useState<SchedView>("day");
   const [schedDay, setSchedDay] = useState(today);
   const [weekStart, setWeekStart] = useState(today);
-  // A job visit or an estimate visit (evisit) held for placement on the board.
+  // A job visit held for placement on the board (estimate visits are jobs too).
   const [placing, setPlacing] = useState<Held | null>(null);
   const [drag, setDrag] = useState<Held | null>(null);
 
@@ -124,18 +125,13 @@ export function SchedulePanel() {
     return (j.visits ?? []).find((v) => !isPlaced(v));
   }
   function place(held: Held, techId: string, iso: string, hour: number) {
-    if (held.kind === "job") placeVisit(held.ownerId, held.visitId, { techId, date: iso, start: hour });
-    else placeEvisit(held.ownerId, held.visitId, { techId, date: iso, start: hour });
+    placeVisit(held.ownerId, held.visitId, { techId, date: iso, start: hour });
   }
   // Tap "Schedule": arm the job's first unplaced visit (creating one if needed).
   function armJob(j: Job) {
     const v = firstUnplaced(j) ?? addVisit(j.id);
     if (!v) return;
     setPlacing((p) => (p && p.kind === "job" && p.visitId === v.id ? null : { kind: "job", ownerId: j.id, visitId: v.id }));
-  }
-  // Tap "Schedule" on an estimate-visit tray card.
-  function armEvisit(leadId: string, visitId: string) {
-    setPlacing((p) => (p && p.kind === "evisit" && p.visitId === visitId ? null : { kind: "evisit", ownerId: leadId, visitId }));
   }
   // Tap a board cell while armed → place the held item there (crew + day + start).
   function cellTap(techId: string, iso: string, hour: number) {
@@ -210,10 +206,9 @@ export function SchedulePanel() {
   })();
 
   // Skill-annotation state — computed once per render from the active held item.
-  // Only job holds can carry a cert requirement; evisits never have requiredCerts.
   const heldRequired: readonly string[] | null = (() => {
     const held = drag ?? placing;
-    if (!held || held.kind !== "job") return null;
+    if (!held) return null;
     return jobs.find((x) => x.id === held.ownerId)?.requiredCerts ?? null;
   })();
 
@@ -300,10 +295,7 @@ export function SchedulePanel() {
                   const left = Math.max(0, (vStart - START) * WPX);
                   const w = Math.max(MIN_BLOCK_WIDTH_PX, (v.dur ?? 1) * WPX - BLOCK_GAP_PX);
                   const m = svcMeta(mode);
-                  const openIt = () =>
-                    kind === "job"
-                      ? openModal(MODAL.JOB, { jobId: ownerId })
-                      : openModal(MODAL.EVISIT, { leadId: ownerId, visitId: v.id });
+                  const openIt = () => openModal(MODAL.JOB, { jobId: ownerId });
                   return (
                     <div
                       key={`${kind}-${v.id}`}
@@ -382,8 +374,7 @@ export function SchedulePanel() {
                     style={{ opacity: v.status === "done" ? DONE_VISIT_OPACITY : 1 }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (kind === "job") openModal(MODAL.JOB, { jobId: ownerId });
-                      else openModal(MODAL.EVISIT, { leadId: ownerId, visitId: v.id });
+                      openModal(MODAL.JOB, { jobId: ownerId });
                     }}
                   >
                     <div className="wk-bt" style={{ color: m.c }}>
@@ -419,7 +410,7 @@ export function SchedulePanel() {
     );
   }
 
-  type TrayCard = { kind: "job"; j: Job } | { kind: "evisit"; l: Lead; v: Visit };
+  type TrayCard = { kind: "job"; j: Job };
   // The to-schedule jobs come from the SERVER's needsSlot view — the same predicate the
   // Dashboard tile counts — never from the store's loaded page, which on a big book missed
   // jobs entirely (the tile said 3 while this tray showed 1; the DB agreed with the tile).
@@ -434,12 +425,8 @@ export function SchedulePanel() {
       if (!known.has(j.id)) adoptJob(j as never);
     }
     // jobs deliberately NOT a dep: adopting appends to jobs and would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trayJobs]);
-  const trayCards: TrayCard[] = [
-    ...trayJobs.map((j) => ({ kind: "job" as const, j })),
-    ...unplacedEvisits(leads).map(({ l, v }) => ({ kind: "evisit" as const, l, v })),
-  ];
+  const trayCards: TrayCard[] = trayJobs.map((j) => ({ kind: "job" as const, j }));
   const day = schedView === "day";
 
   const toggle = (
@@ -499,10 +486,10 @@ export function SchedulePanel() {
     </div>
   );
 
-  // No-flash first-run gate. The board has nothing to place when there are no jobs AND no estimate
-  // visits carried on leads. Dedupes the JobsHydrator query (same key → no extra fetch). This is a
+  // No-flash first-run gate. The board has nothing to place when there are no jobs (estimate
+  // visits are jobs too). Dedupes the JobsHydrator query (same key → no extra fetch). This is a
   // FULL early return that renders only the header + empty state — the board JSX below is untouched.
-  const scheduleCount = jobs.length + leads.reduce((n, l) => n + (l.evisits?.length ?? 0), 0);
+  const scheduleCount = jobs.length;
   // Gated on the window's own fetch: it is the read that fills this board, so it is the one that
   // says whether "nothing here" means loading, failed, or genuinely empty.
   const gate = { isFetched: shown.isFetched, isError: shown.isError, count: scheduleCount };
@@ -547,45 +534,39 @@ export function SchedulePanel() {
       {trayCards.length > 0 ? (
         <div className="rail" style={{ marginBottom: "var(--space-4)" }}>
           <b style={{ fontSize: "var(--type-base)" }}>
-            To schedule <span className="muted" style={{ fontWeight: 600 }}>· {trayCards.length}</span>
+            To schedule{" "}
+            <span className="muted" style={{ fontWeight: 600 }}>
+              · {(() => {
+                const serverTotal = needsSlotCountQ.data?.counts?.needsSlot ?? 0;
+                return serverTotal > trayCards.length ? `${trayCards.length} of ${serverTotal}` : trayCards.length;
+              })()}
+            </span>
           </b>
           <div className="tray-grid" style={{ marginTop: "var(--space-3)", display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: "var(--space-2)" }}>
             {trayCards.map((card) => {
-              const isJob = card.kind === "job";
-              const name = isJob ? custName(card.j, leads) : card.l.name;
-              const title = isJob ? card.j.title : card.l.job || "Estimate visit";
-              const mode = isJob ? jobMode(card.j) : "estimate";
+              const name = custName(card.j, leads);
+              const title = card.j.title;
+              const mode = jobMode(card.j);
               const m = svcMeta(mode);
-              const hrs = isJob
-                ? (card.j.visits ?? []).filter((v) => !(v.date && v.techId != null)).reduce((s, v) => s + (v.dur ?? 0), 0) || 2
-                : card.v.dur ?? 2;
-              const armed = isJob
-                ? placing?.kind === "job" && placing.ownerId === card.j.id
-                : placing?.kind === "evisit" && placing.visitId === card.v.id;
-              const key = isJob ? `job-${card.j.id}` : `ev-${card.v.id}`;
+              const hrs =
+                (card.j.visits ?? []).filter((v) => !(v.date && v.techId != null)).reduce((s, v) => s + (v.dur ?? 0), 0) || 2;
+              const armed = placing?.kind === "job" && placing.ownerId === card.j.id;
+              const key = `job-${card.j.id}`;
               function onSchedule() {
-                if (isJob) armJob(card.j);
-                else armEvisit(card.l.id, card.v.id);
+                armJob(card.j);
               }
               function onDragStart(e: ReactDragEvent) {
                 // Firefox refuses to start a drag with no data payload.
                 e.dataTransfer.setData("text/plain", "");
-                if (isJob) {
-                  const v = firstUnplaced(card.j) ?? addVisit(card.j.id);
-                  if (v) setDrag({ kind: "job", ownerId: card.j.id, visitId: v.id });
-                } else {
-                  setDrag({ kind: "evisit", ownerId: card.l.id, visitId: card.v.id });
-                }
+                const v = firstUnplaced(card.j) ?? addVisit(card.j.id);
+                if (v) setDrag({ kind: "job", ownerId: card.j.id, visitId: v.id });
               }
               // Several unplaced visits → each chip schedules its own (prototype card branch).
-              const unplacedList = isJob
-                ? (card.j.visits ?? []).filter((v) => !isPlaced(v))
-                : [];
+              const unplacedList = (card.j.visits ?? []).filter((v) => !isPlaced(v));
               function openRecord() {
-                if (isJob) openModal(MODAL.JOB, { jobId: card.j.id });
-                else openModal(MODAL.LEAD, { leadId: card.l.id });
+                openModal(MODAL.JOB, { jobId: card.j.id });
               }
-              if (isJob && unplacedList.length > 1) {
+              if (unplacedList.length > 1) {
                 const total = unplacedList.reduce((a, v) => a + (v.dur ?? 0), 0);
                 return (
                   <div key={key} className="railjob" style={{ cursor: "pointer" }} onClick={openRecord}>
@@ -655,11 +636,9 @@ export function SchedulePanel() {
                   onClick={openRecord}
                   style={{ cursor: "pointer" }}
                 >
-                  {isJob && (
-                    <button className="rail-addv" onClick={(e) => { e.stopPropagation(); splitTray(card.j); }} title="Add another visit">
-                      +
-                    </button>
-                  )}
+                  <button className="rail-addv" onClick={(e) => { e.stopPropagation(); splitTray(card.j); }} title="Add another visit">
+                    +
+                  </button>
                   <b style={{ fontSize: "var(--type-base)" }}>{name}</b>
                   <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2xs) 0 var(--space-3)" }}>{title}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>

@@ -17,6 +17,16 @@ export interface Snap {
   jobs: Job[];
   techs: Tech[];
   brandName: string;
+  /**
+   * SERVER-computed truth, when the composing surface fetched it. The store
+   * collections above are one hydrator page each — any figure the agent SPEAKS
+   * must come from these, never from summing the page.
+   */
+  serverMoney?: { quotesOutDollars: number; owedDollars: number };
+  /** Server-ranked OK-queue items (uncapped) — replaces the store-join derivation. */
+  okItems?: import("@/features/home/derive").OkItem[];
+  /** Server-selected "waiting on a number" customers (the quoting view). */
+  quotingLeads?: Lead[];
 }
 
 // ---- opening records ---------------------------------------------------------

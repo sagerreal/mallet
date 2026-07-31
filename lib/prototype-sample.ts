@@ -39,7 +39,6 @@ export interface SampleLead {
   role?: string;
   value?: number;
   lossReason?: string;
-  evisits?: SampleVisit[];
   acts?: SampleAct[];
   card?: { brand: string; last4: string; via: string };
 }
@@ -206,18 +205,6 @@ export const SAMPLE_LEADS: SampleLead[] = [
     address: "88 Touriga Dr, Pleasanton",
     // Mike walked it this morning — scoped, no quote yet: the estimate run's
     // headline case (priced from these notes + the shop's last repipe).
-    evisits: [
-      {
-        id: "9501",
-        date: TODAY_ISO,
-        techId: "1",
-        start: 11,
-        dur: 1,
-        status: "done",
-        scopeNotes:
-          "1962 galvanized supply throughout, 3 bed / 2 bath. Attic and crawlspace access both fine. Full PEX repipe; drywall patches at ~6 points. Homeowner fine with a week of scheduling notice.",
-      },
-    ],
     acts: [
       {
         type: "call",
@@ -301,19 +288,6 @@ export const SAMPLE_LEADS: SampleLead[] = [
     email: "dchen@gmail.com",
     address: "4467 Black Ave, Pleasanton",
     card: { brand: "Visa", last4: "4242", via: "the deposit" },
-    evisits: [
-      {
-        id: "7011",
-        date: TODAY_ISO,
-        techId: "1",
-        start: 9,
-        dur: 1,
-        status: "scheduled",
-        scopeNotes:
-          "1962 build — galvanized supply throughout, 3 bed / 2 bath. Access via the garage. Recommend whole-house PEX; drywall patch at 6 access points. Homeowner works nights — no start before 9.",
-        photos: ["s1", "s2", "s3"],
-      },
-    ],
   },
   {
     id: "8",
@@ -352,7 +326,6 @@ export const SAMPLE_LEADS: SampleLead[] = [
     email: "diane@crestviewpm.com",
     address: "4012 Foothill Rd, Pleasanton",
     // Walkthrough on the books — the estimate run holds her until it happens.
-    evisits: [{ id: "9502", date: dPlus(2), techId: "1", start: 9, dur: 1, status: "scheduled" }],
   },
   // book:true = customer-book records (direct-booked work)
   {

@@ -3,7 +3,7 @@
  * components/modals/new-customer-modal.test.tsx
  * The submit button must actually create the booked work it names:
  *   "Create job"            → addJob + one unplaced visit (after persist reconcile)
- *   "Create estimate visit" → a store evisit on the created lead
+ *   "Create estimate visit" → a real estimate job on the created lead
  *   dedup hit               → NO work created (the phone belongs to someone else)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -20,7 +20,7 @@ const updateLead = vi.fn();
 const setLeads = vi.fn();
 
 // Mutable store state — tests may push leads in to exercise the "already in
-// store" evisit path. Reset in beforeEach.
+// store" estimate path. Reset in beforeEach.
 const storeState = {
   addJob,
   addVisit,
@@ -30,7 +30,7 @@ const storeState = {
   setLeads,
   companies: [] as unknown[],
   sources: [] as unknown[],
-  leads: [] as { id: string; evisits?: unknown[] }[],
+  leads: [] as { id: string }[],
 };
 
 let closeMock = vi.fn();
@@ -220,7 +220,7 @@ describe("NewCustomerModal — Build the price", () => {
 });
 
 describe("NewCustomerModal — submit with the Estimate-visit purpose", () => {
-  it("inserts the created lead into the store with one 0.5h evisit", async () => {
+  it("creates a REAL estimate job with one unplaced visit — never a store-local evisit", async () => {
     resolveCreateWith(createdDto());
 
     render(<NewCustomerModal open />);
@@ -231,35 +231,14 @@ describe("NewCustomerModal — submit with the Estimate-visit purpose", () => {
     fireEvent.click(screen.getByRole("button", { name: "Estimate visit" }));
     fireEvent.click(screen.getByRole("button", { name: "Create estimate visit" }));
 
-    await waitFor(() => expect(setLeads).toHaveBeenCalledOnce());
-    const [leads] = setLeads.mock.calls[0] as [
-      { id: string; job: string; evisits: { dur: number; status: string; date: null }[] }[],
-    ];
-    expect(leads[0]).toMatchObject({ id: "srv-lead-1", job: "quote a repipe" });
-    expect(leads[0]!.evisits).toHaveLength(1);
-    expect(leads[0]!.evisits[0]).toMatchObject({ dur: 0.5, status: "scheduled", date: null });
-    // No job created on the estimate path.
-    expect(addJob).not.toHaveBeenCalled();
-    // The evisit is store-local — an invalidate-triggered rehydrate would wipe it.
-    expect(invalidate).not.toHaveBeenCalled();
-    expect(closeMock).toHaveBeenCalled();
-  });
-
-  it("patches evisits onto the lead when the store already has it", async () => {
-    resolveCreateWith(createdDto());
-    storeState.leads = [{ id: "srv-lead-1", evisits: [] }];
-
-    render(<NewCustomerModal open />);
-    fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Estimate visit" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create estimate visit" }));
-
-    await waitFor(() => expect(updateLead).toHaveBeenCalledOnce());
-    const [id, patch] = updateLead.mock.calls[0] as [string, { evisits: { dur: number }[] }];
-    expect(id).toBe("srv-lead-1");
-    expect(patch.evisits).toHaveLength(1);
-    expect(patch.evisits[0]).toMatchObject({ dur: 0.5 });
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    const [draft] = addJob.mock.calls[0] as [{ svc: string; leadId: string; title: string }];
+    expect(draft).toMatchObject({ svc: "estimate", leadId: "srv-lead-1", title: "quote a repipe" });
+    await waitFor(() => expect(addVisit).toHaveBeenCalledOnce());
+    // No store-local evisit path anymore — it vanished on refresh and was invisible
+    // to the schedule window and crew-load checks.
     expect(setLeads).not.toHaveBeenCalled();
+    expect(closeMock).toHaveBeenCalled();
   });
 });
 

@@ -56,6 +56,16 @@ export class DrizzleTaskRepository implements TaskRepository {
     return row ? toDomain(row) : null;
   }
 
+  async count(filter?: { done?: boolean }): Promise<number> {
+    const conds = [isNull(tasks.deletedAt)];
+    if (filter?.done !== undefined) conds.push(eq(tasks.done, filter.done));
+    const [row] = await this.tx
+      .select({ n: rawSql<number>`count(*)::int` })
+      .from(tasks)
+      .where(and(...conds));
+    return row?.n ?? 0;
+  }
+
   async list(page: CursorPage, filter?: TaskFilter): Promise<Paginated<Task>> {
     const conds = [isNull(tasks.deletedAt)];
     if (filter?.done !== undefined) conds.push(eq(tasks.done, filter.done));

@@ -225,27 +225,4 @@ export function deriveOkQueue(
     .slice(0, QUEUE_CAP);
 }
 
-/** Next weekday (within 5) whose afternoon is empty — sellable white space.
- *  (Used by the Counter's runs, not the home page.) */
-export function deriveOpenSlot(jobs: Job[], leads: Lead[]): string | null {
-  const allVisits: Visit[] = [
-    ...jobs.filter((j) => !j.archived).flatMap((j) => j.visits ?? []),
-    ...leads.filter((l) => !l.archived).flatMap((l) => l.evisits ?? []),
-  ];
-  const base = new Date(todayISO() + "T12:00:00");
-  for (let d = 1; d <= 5; d++) {
-    const day = new Date(base);
-    day.setDate(day.getDate() + d);
-    const dow = day.getDay();
-    if (dow === 0 || dow === 6) continue; // weekends aren't sellable slots here
-    const iso = day.toISOString().slice(0, 10);
-    const afternoonBooked = allVisits.some(
-      (v) => v.date === iso && v.start != null && v.start >= 12
-    );
-    if (!afternoonBooked) {
-      return `${day.toLocaleDateString("en-US", { weekday: "long" })} afternoon open`;
-    }
-  }
-  return null;
-}
 

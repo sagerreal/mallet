@@ -40,7 +40,6 @@ export function VisitModalContent() {
   const pushModal = usePushModal();
 
   const leads = useAppStore((s) => s.leads);
-  const addEvisit = useAppStore((s) => s.addEvisit);
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
   const updateLead = useAppStore((s) => s.updateLead);
@@ -83,12 +82,12 @@ export function VisitModalContent() {
    *
    *  Returns the optimistic Job on success, or null on failure (error already set).
    */
-  async function createJobForLead(): Promise<Job | null> {
+  async function createJobForLead(svc: "service" | "estimate" = "service"): Promise<Job | null> {
     const { job, persisted } = addJob({
       leadId: lead!.id,
-      svc: "service",
+      svc,
       origin: "manual",
-      title: jobDesc.trim() || lead!.job || "Site visit",
+      title: jobDesc.trim() || lead!.job || (svc === "estimate" ? "Estimate visit" : "Site visit"),
       addr: addr.trim() || lead!.address || "",
       phone: lead!.phone ?? "",
       status: "unscheduled",
@@ -129,15 +128,13 @@ export function VisitModalContent() {
   async function submit() {
     syncLead();
     if (purpose === "look") {
-      // Estimate visit — an unscheduled estimate visit on the lead (scope, then quote).
-      addEvisit(lead!.id, {
-        date: null,
-        techId: null,
-        start: null,
-        dur: 1,
-        status: "scheduled",
-        scopeNotes: jobDesc.trim(),
-      });
+      // Estimate visit — a REAL job (svc "estimate") with an unplaced visit. It used to be
+      // a client-store-only "evisit" on the lead: gone on refresh, invisible to the
+      // schedule window, ignored by crew-load and conflict checks — a placed walkthrough
+      // could double-book a tech with no warning. As a job it rides every server path the
+      // board already trusts.
+      const job = await createJobForLead("estimate");
+      if (!job) return; // error already set; modal stays open
       close(); // pop back to the lead that pushed this sheet
       return;
     }

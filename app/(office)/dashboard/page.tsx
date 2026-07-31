@@ -12,7 +12,8 @@
 import { useState, useEffect } from "react";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
-import { deriveShiftReport, deriveOkQueue } from "@/features/home/derive";
+import { deriveShiftReport } from "@/features/home/derive";
+import { useOkQueue } from "@/features/home/use-ok-queue";
 import { useHomePipe } from "@/features/home/use-home-pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
 import { HomePipe, HomePipeSkeleton } from "@/features/home/home-pipe";
@@ -97,7 +98,6 @@ function TodayPane() {
   const jobs = useAppStore((s) => s.jobs);
   const techs = useAppStore((s) => s.techs);
   const frontDeskOn = useAppStore((s) => s.toggles.frontDesk);
-  const dismissed = useAppStore((s) => s.dismissedAttention);
 
   // ---- real identity — org name + owner's first name from the DB -----------
   const me = useMe();
@@ -108,8 +108,12 @@ function TodayPane() {
     "there";
 
   const report = deriveShiftReport(leads, jobs, estimates);
-  const queue = deriveOkQueue(leads, estimates, invoices, dismissed);
-  const queueValue = queue.reduce((s, it) => s + it.value, 0);
+  // The queue comes from the DATABASE. It used to derive from the browser's loaded page, so on a
+  // shop with 239 open invoices not one overdue bill reached it — $67,790 of late money missing
+  // from the screen whose whole job is to surface what needs chasing. See useOkQueue.
+  const okQueue = useOkQueue();
+  const queue = okQueue.items;
+  const queueValue = okQueue.value;
   // Every tile is computed where its data lives now. It used to add these up from the store —
   // one page per collection, and three of the six were joins ACROSS two capped collections — so
   // the first screen of the app stated money derived from whatever happened to be cached.
@@ -141,12 +145,12 @@ function TodayPane() {
         report={report}
         queueCount={queue.length}
         queueValue={queueValue}
-        loading={loading}
+        loading={loading || !okQueue.isFetched}
       />
 
       {loading || pipe.isLoading ? <HomePipeSkeleton /> : <HomePipe stages={pipe.stages} />}
 
-      {!loading && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
+      {!loading && okQueue.isFetched && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
     </div>
   );
 }

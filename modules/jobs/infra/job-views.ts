@@ -39,9 +39,8 @@ export const JOB_VIEW_LABELS: Record<JobView, string> = {
 /**
  * How long a finished, billed job stays on the active list before it archives itself.
  *
- * MUST equal JOB_ARCHIVE_AFTER_DAYS in features/jobs/today-derive.ts (7). Duplicated rather than
- * imported because a domain module must not reach into features/ — an integration test asserts
- * the two agree, because a silent drift here moves jobs between Done and Archived.
+ * The auto-archive window (7 days). The only definition — the client-side band math that once
+ * carried a twin of this constant was deleted with the browser-derived lifecycle bands.
  */
 export const ARCHIVE_AFTER_DAYS = 7;
 

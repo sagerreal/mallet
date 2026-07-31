@@ -9,12 +9,12 @@ import { todayISO } from "@/lib/clock";
 import type { Job, Lead, Tech, Visit } from "@/lib/store/types";
 import { SVC_KIND } from "./job-status-meta";
 
-// A job visit or an estimate visit (evisit) held for board placement.
-// ownerId is a Job.id or Lead.id — both UUID strings.
-export type Held = { kind: "job" | "evisit"; ownerId: string; visitId: string };
+// A job visit held for board placement (estimate visits are jobs too — svc "estimate").
+// ownerId is a Job.id (UUID string).
+export type Held = { kind: "job"; ownerId: string; visitId: string };
 
 export interface BoardItem {
-  kind: "job" | "evisit";
+  kind: "job";
   ownerId: string;
   name: string;
   mode: string;
@@ -95,7 +95,7 @@ export function techById(techs: Tech[], id: string): Tech | undefined {
   return techs.find((t) => t.id === id);
 }
 
-/** All placed visits (job + estimate) for one crew on one day, time-sorted. */
+/** All placed visits for one crew on one day, time-sorted (estimate visits are jobs too). */
 export function boardItemsFor(jobs: Job[], leads: Lead[], techId: string, iso: string): BoardItem[] {
   const items: BoardItem[] = [];
   liveJobs(jobs).forEach((j) =>
@@ -104,24 +104,5 @@ export function boardItemsFor(jobs: Job[], leads: Lead[], techId: string, iso: s
         items.push({ kind: "job", ownerId: j.id, name: custName(j, leads), mode: jobMode(j), v });
     })
   );
-  leads.forEach((l) => {
-    if (l.archived) return;
-    (l.evisits ?? []).forEach((v) => {
-      if (v.techId === techId && v.date === iso)
-        items.push({ kind: "evisit", ownerId: l.id, name: l.name, mode: SVC_KIND.estimate, v });
-    });
-  });
   return items.sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0));
-}
-
-/** Estimate visits awaiting a slot. */
-export function unplacedEvisits(leads: Lead[]): Array<{ l: Lead; v: Visit }> {
-  const out: Array<{ l: Lead; v: Visit }> = [];
-  leads.forEach((l) => {
-    if (l.archived) return;
-    (l.evisits ?? []).forEach((v) => {
-      if (v.status !== "done" && !isPlaced(v)) out.push({ l, v });
-    });
-  });
-  return out;
 }

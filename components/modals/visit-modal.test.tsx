@@ -13,7 +13,6 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { VisitModalContent } from "./visit-modal";
 
 // Store actions captured so the test can assert ordering (addJob → await → addVisit).
-const addEvisit = vi.fn();
 const addJob = vi.fn();
 const addVisit = vi.fn();
 const updateLead = vi.fn();
@@ -40,7 +39,6 @@ vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       leads: [LEAD],
-      addEvisit,
       addJob,
       addVisit,
       updateLead,
@@ -57,7 +55,6 @@ vi.mock("@/lib/store/modal-ids", () => ({
 
 describe("VisitModalContent — createJobForLead race fix", () => {
   beforeEach(() => {
-    addEvisit.mockReset();
     addJob.mockReset();
     addVisit.mockReset();
     updateLead.mockReset();

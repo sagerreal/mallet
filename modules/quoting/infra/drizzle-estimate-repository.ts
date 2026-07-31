@@ -1,5 +1,5 @@
-import { and, desc, eq, isNull, isNotNull, inArray, notInArray, sql, type SQL } from "drizzle-orm";
-import { estimates, estimateLines } from "@mallet/shared/db/schema";
+import { and, asc, desc, eq, isNull, isNotNull, inArray, notInArray, sql, type SQL } from "drizzle-orm";
+import { estimates, estimateLines, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueColumn } from "@mallet/shared/db/sort-page";
@@ -228,6 +228,49 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     const conds: SQL[] = [isNull(estimates.deletedAt)];
     if (filter?.status) conds.push(eq(estimates.status, filter.status));
     return this.loadPage(conds, page, sort, sortDir);
+  }
+
+  /**
+   * Quotes the customer has actually OPENED and not yet answered — the follow-up worklist.
+   *
+   * "Viewed" is `first_viewed_at`, stamped when the customer loads the public quote link. It is
+   * the only honest read signal there is. The home queue used to treat "sent" as "seen" and drafted
+   * a text saying "Saw you had a look at the quote" to people who may never have opened it —
+   * telling a customer something about themselves that the shop does not know is worse than
+   * saying nothing.
+   *
+   * Ordered by how long it has been sitting: the oldest silence is the one to chase.
+   */
+  async viewedAwaitingReply(limit: number): Promise<
+    { id: string; num: string; leadId: string; customerName: string | null; title: string | null; totalCents: number; sentAt: Date | null; firstViewedAt: Date | null }[]
+  > {
+    const rows = await this.tx
+      .select({
+        id: estimates.id,
+        num: estimates.num,
+        leadId: estimates.leadId,
+        customerName: leads.name,
+        title: estimates.title,
+        sentAt: estimates.sentAt,
+        firstViewedAt: estimates.firstViewedAt,
+        totalCents: sql<number>`coalesce((
+          select sum(round(el.quantity * el.rate_cents))::int
+          from estimate_lines el
+          where el.estimate_id = ${estimates.id} and el.deleted_at is null
+        ), 0)`,
+      })
+      .from(estimates)
+      .leftJoin(leads, and(eq(leads.orgId, estimates.orgId), eq(leads.id, estimates.leadId)))
+      .where(
+        and(
+          isNull(estimates.deletedAt),
+          eq(estimates.status, "sent"),
+          isNotNull(estimates.firstViewedAt),
+        ),
+      )
+      .orderBy(asc(estimates.sentAt))
+      .limit(limit);
+    return rows;
   }
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>> {

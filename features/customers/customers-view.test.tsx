@@ -63,7 +63,7 @@ import { CustomersView } from "./customers-view";
 
 const aLead = (): Lead =>
   ({ id: "1", name: "Ann", phone: "", source: "", stage: "New customer", age: 0, job: "", last: "",
-     unread: 0, value: 0, acts: [], evisits: [], archived: false } as unknown as Lead);
+     unread: 0, value: 0, acts: [], archived: false } as unknown as Lead);
 
 describe("CustomersView — first-run empty state", () => {
   beforeEach(() => {

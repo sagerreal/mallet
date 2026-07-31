@@ -645,17 +645,18 @@ function SecChannels() {
   // source claims "0 leads", so those cells hold shape as skeletons instead.
   const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
   const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
-  const leadsQ = api.v1.customers.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
-  const leadsLoading = !leadsQ.isFetched && !leadsQ.isError && leads.length === 0;
-  const leadCountCell = (n: number) =>
-    leadsLoading ? (
-      <span className="sk" style={{ display: "inline-block", width: 48, height: 10 }} aria-hidden="true" />
-    ) : (
-      <>{n} lead{n === 1 ? "" : "s"}</>
-    );
+  // Facets describe the whole BOOK (server aggregate) — the store's page under-counted
+  // every source once the book passed one hydrator page.
+  const facetsQ = api.v1.customers.facets.useQuery(undefined, { refetchOnWindowFocus: false });
+  const facetCount = (label: string): number =>
+    facetsQ.data?.sources.find((x: { source: string }) => x.source === label)?.n ?? 0;
+  const leadsLoading = !facetsQ.isFetched && !facetsQ.isError;
+  const leadCountCell = (label: string) => {
+    if (leadsLoading)
+      return <span className="sk" style={{ display: "inline-block", width: 48, height: 10 }} aria-hidden="true" />;
+    const n = facetCount(label);
+    return <>{n} lead{n === 1 ? "" : "s"}</>;
+  };
 
   async function handleAddSource() {
     const result = await addSource(srcName);
@@ -683,11 +684,10 @@ function SecChannels() {
         </p>
         <div>
           {DEFAULT_SOURCES.map((label) => {
-            const n = leads.filter((l) => l.source === label).length;
-            return (
+                        return (
               <div key={label} className="stage-row">
                 <span style={{ fontWeight: 600, flex: 1 }}>{label}</span>
-                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(n)}</span>
+                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(label)}</span>
                 <span style={{ fontSize: "var(--type-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-3)", background: "var(--manila)", border: "1px solid var(--manila-line)", borderRadius: "var(--radius-pill)", padding: "var(--space-2xs) var(--space-2)" }}>
                   Built-in
                 </span>
@@ -695,11 +695,10 @@ function SecChannels() {
             );
           })}
           {sources.map((s) => {
-            const n = leads.filter((l) => l.source === s.label).length;
-            return (
+                        return (
               <div key={s.id} className="stage-row">
                 <span style={{ fontWeight: 700, flex: 1 }}>{s.label}</span>
-                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(n)}</span>
+                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(s.label)}</span>
                 <button className="btn sm ghost" aria-label={`Remove ${s.label}`} onClick={() => removeSource(s.id)}>✕</button>
               </div>
             );
