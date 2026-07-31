@@ -157,7 +157,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     await expect(
       caller.v1.messaging.send({ leadId: leadAId, body: "Hello" }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not configured") });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not set up") });
   });
 
   // ── RBAC ──────────────────────────────────────────────────────────────────────
