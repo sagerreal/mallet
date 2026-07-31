@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, ilike, isNull, lt, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, gt, ilike, isNull, lt, ne, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { invoices, invoiceLines, payments, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
@@ -180,6 +180,36 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       if (cond) conds.push(cond);
     }
     return conds;
+  }
+
+  /**
+   * The ledger's headline money, summed in the DATABASE.
+   *
+   * The Dashboard added these up from the invoices the browser had loaded — one page — so on a
+   * shop with 847 invoices the "Owed" tile stated the balance of whichever 500 were cached, as
+   * fact, on the first screen of the app. A number that is confidently wrong is worse than one
+   * that is missing.
+   *
+   * `openCents` is what is still owed on anything sent; `overdueCents` is the part of that past
+   * its due date. Both use the same balance expression as the ledger's status bands, so the tile
+   * and the list it links to cannot disagree.
+   */
+  async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
+    const owed = sql<number>`greatest(0, ${invoices.totalCents} - ${invoices.depositPaidCents} - ${invoices.amountPaidCents})`;
+    const isOpen = and(isNull(invoices.deletedAt), ne(invoices.status, "draft"), gt(owed, 0));
+    const rows = await this.tx
+      .select({
+        openCents: sql<number>`coalesce(sum(${owed}) filter (where ${isOpen}), 0)::int`,
+        overdueCents: sql<number>`coalesce(sum(${owed}) filter (where ${isOpen} and ${invoices.dueAt} is not null and ${invoices.dueAt} < now()), 0)::int`,
+        openCount: sql<number>`count(*) filter (where ${isOpen})::int`,
+      })
+      .from(invoices);
+    const r = rows[0];
+    return {
+      openCents: r?.openCents ?? 0,
+      overdueCents: r?.overdueCents ?? 0,
+      openCount: r?.openCount ?? 0,
+    };
   }
 
   async count(filter?: InvoiceFilter): Promise<number> {
