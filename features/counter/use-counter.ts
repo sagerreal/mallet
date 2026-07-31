@@ -14,7 +14,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { firstName } from "@/features/home/derive";
 import { clockNow, commitOkSend, dispatchOkSend } from "@/features/home/send";
-import { useOkItems } from "@/features/home/use-ok-queue";
+import { useOkQueue } from "@/features/home/use-ok-queue";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
 import { matchRows, deriveSuggestions } from "./matcher";
@@ -59,7 +59,7 @@ export function useCounter() {
   // OK items, and the quoting-view customers. The raw collections below stay for
   // record lookup (open modal by name etc.) — they are a page, not the book.
   const totalsQ = api.v1.invoicing.totals.useQuery(undefined, { refetchOnWindowFocus: true });
-  const okItems = useOkItems();
+  const okQueue = useOkQueue();
   const quotingQ = api.v1.customers.list.useQuery(
     { view: "quoting", limit: 200, sort: "created" },
     { refetchOnWindowFocus: true },
@@ -82,10 +82,10 @@ export function useCounter() {
             owedDollars: totalsQ.data.openCents / 100,
           }
         : undefined,
-      okItems: okItems.isLoading ? undefined : okItems.items,
+      okItems: okQueue.isFetched ? okQueue.items : undefined,
       quotingLeads: quotingQ.data ? quotingQ.data.items.map(toStoreLead) : undefined,
     }),
-    [leads, estimates, invoices, jobs, techs, brand.name, totalsQ.data, sentQ.data, okItems, quotingQ.data]
+    [leads, estimates, invoices, jobs, techs, brand.name, totalsQ.data, sentQ.data, okQueue, quotingQ.data]
   );
 
   const rows = useMemo(

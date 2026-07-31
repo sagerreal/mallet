@@ -1,155 +1,117 @@
 "use client";
 
-/**
- * features/home/use-ok-queue.ts
- * The Dashboard's OK queue, computed where the data is.
- *
- * WHAT WAS WRONG. deriveOkQueue joined THREE store collections (leads × estimates ×
- * invoices), each capped at one hydrator page — so on a big book the hero figure was
- * simply a smaller number than the truth, and the biggest item at stake could be
- * invisible. The money kinds now come from the server:
- *   quote-viewed    ← v1.quoting.list {status:"sent"}   (same key the Pipeline rail uses)
- *   invoice-overdue ← v1.invoicing.listOverdue
- * The people kinds (replies, brand-new leads) stay store-derived ON PURPOSE: both are
- * defined by recency, and the hydrator page is newest-first — a new lead or an unread
- * reply is in the page by construction.
- */
-
 import { useMemo } from "react";
 import { api } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
-import { dtoEstimateSummaryToStore } from "@/lib/store/dto-mapper";
-import type { Estimate, Invoice, Lead } from "@/lib/store/types";
-import { estTotal } from "@/lib/estimates";
-import { deriveOkQueue, type OkItem } from "./derive";
-
-const QUEUE_CAP = 5;
-const OVERDUE_AGE_DAYS = 7;
-/** Matches the rail's COLUMN_CAP order of magnitude — enough to rank a real book. */
-const FETCH_CAP = 200;
-
-const daysSince = (iso: string): number =>
-  Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+import type { OkItem } from "./derive";
 
 /**
- * A display/send-capable stand-in for a customer outside the loaded page. Sending
- * works (the server resolves the phone from the lead id); the store-side note simply
- * no-ops for a lead the page doesn't hold — the real thread is server truth anyway.
+ * The morning queue: things waiting on the owner's OK, fetched from the DATABASE.
+ *
+ * TWO KINDS, by design — and both were broken in a different way.
+ *
+ * QUOTES THE CUSTOMER OPENED. The old queue treated "sent" as "seen", because the store's `viewed`
+ * flag is set from the status. So it drafted "Saw you had a look at the quote" to people who may
+ * never have opened it — telling a customer something about themselves that the shop does not
+ * know. It now keys on `first_viewed_at`, stamped when the public quote link is actually loaded.
+ *
+ * OVERDUE INVOICES. These were meant to be here all along and never appeared: the queue derived
+ * from the browser's loaded page, and on a shop with 239 open invoices none of the overdue ones
+ * were in it. $67,790 of late money, invisible on the screen whose whole job is to surface what
+ * needs chasing.
+ *
+ * Both are worklists, not ledgers — capped, and the cap is reported rather than hidden.
  */
-function leadStub(id: string, name: string | null): Lead {
-  return {
-    id,
-    name: name ?? "Customer",
-    phone: "",
-    source: "",
-    stage: "Quote Sent",
-    age: 0,
-    job: "",
-    last: "",
-    book: false,
-    unread: false,
-    archived: false,
-    acts: [],
-    evisits: [],
-  } as unknown as Lead;
-}
 
-export interface OkQueueResult {
+/** Past this many, it is a backlog to work through, not a morning queue. */
+const QUEUE_CAP = 50;
+
+export interface OkQueue {
   readonly items: OkItem[];
-  /** Dollars across the SHOWN items — the hero figure. */
+  /** Total value sitting in the queue — what the hero figure counts. */
   readonly value: number;
-  readonly isLoading: boolean;
+  /** The overdue-invoice subset, for the bulk action. */
+  readonly overdue: OkItem[];
+  readonly truncated: boolean;
+  readonly isFetched: boolean;
+  readonly isError: boolean;
 }
 
-/** Uncapped, dismissal-blind ranked items — the Counter's runs want full intent. */
-export function useOkItems(): { items: OkItem[]; isLoading: boolean } {
-  const q = useOkQueueInternal([]);
-  return { items: q.uncapped, isLoading: q.isLoading };
-}
+const daysSinceIso = (iso: string | null): number => {
+  if (!iso) return 0;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 0;
+  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+};
 
-export function useOkQueue(): OkQueueResult {
+export function useOkQueue(): OkQueue {
   const dismissed = useAppStore((s) => s.dismissedAttention);
-  const q = useOkQueueInternal(dismissed);
-  const ranked = q.uncapped.filter((it) => !dismissed.includes(it.key)).slice(0, QUEUE_CAP);
-  return { items: ranked, value: ranked.reduce((s, it) => s + it.value, 0), isLoading: q.isLoading };
-}
-
-function useOkQueueInternal(dismissed: string[]): { uncapped: OkItem[]; isLoading: boolean } {
   const leads = useAppStore((s) => s.leads);
-  const estimates = useAppStore((s) => s.estimates);
-  const invoices = useAppStore((s) => s.invoices);
 
-  // Same query key as the Pipeline rail's Out column — React Query dedupes.
-  const sentQ = api.v1.quoting.list.useQuery(
-    { status: "sent", limit: FETCH_CAP },
+  const quotes = api.v1.quoting.followUps.useQuery(
+    { limit: QUEUE_CAP },
     { refetchOnWindowFocus: true },
   );
-  const overdueQ = api.v1.invoicing.listOverdue.useQuery(
-    { limit: FETCH_CAP },
+  const overdueInvoices = api.v1.invoicing.list.useQuery(
+    { view: "over", limit: QUEUE_CAP, sort: "oldestUnpaid" },
     { refetchOnWindowFocus: true },
   );
 
-  return useMemo(() => {
-    const leadOf = (id: string) => leads.find((l) => l.id === id && !l.archived);
+  const quoteRows = quotes.data;
+  const invoiceRows = overdueInvoices.data?.items;
 
-    const items: OkItem[] = [];
+  const items = useMemo(() => {
+    const out: OkItem[] = [];
 
-    // Viewed, still-open quotes — server rows; "viewed" matches the store convention
-    // (anything sent counts — the client approximation the whole app uses today).
-    for (const dto of sentQ.data?.items ?? []) {
-      const est: Estimate = dtoEstimateSummaryToStore(dto, { on: false, stage: 0 });
-      if (est.archived || est.trash) continue;
-      const lead = leadOf(dto.leadId) ?? leadStub(dto.leadId, dto.customerName);
-      const value = estTotal(est);
-      const age = daysSince(dto.createdAt);
-      items.push({
-        key: `okq-${est.id}`,
+    for (const q of quoteRows ?? []) {
+      const key = `okq-${q.id}`;
+      if (dismissed.includes(key)) continue;
+      const name = q.customerName ?? "there";
+      const dollars = q.total.cents / 100;
+      // The card needs a lead for its Call/Text actions. It may not be loaded — the customers
+      // collection has its own page — so a minimal stand-in carries the name and id, and the
+      // actions that need a phone find it when the record is there.
+      const lead = leads.find((l) => l.id === q.leadId) ?? {
+        id: q.leadId, name, phone: "", stage: "", age: 0, job: "", last: "", source: "", archived: false,
+      };
+      out.push({
+        key,
         kind: "quote-viewed",
-        lead,
-        estimate: est,
-        value,
-        situation: `read the $${Math.round(value).toLocaleString("en-US")} quote — ${age}d since it went out`,
+        lead: lead as OkItem["lead"],
+        value: dollars,
+        situation: `read the $${Math.round(dollars).toLocaleString("en-US")} quote — ${daysSinceIso(q.sentAt)}d since it went out`,
         editLabel: "Change",
-      });
+      } as OkItem);
     }
 
-    // Overdue invoices — server rows (findOverdue already applies the due test).
-    for (const dto of overdueQ.data?.items ?? []) {
-      const dueDollars = dto.due.cents / 100;
-      if (dueDollars <= 0) continue;
-      const age = daysSince(dto.createdAt);
-      if (age < OVERDUE_AGE_DAYS) continue;
-      const lead = leadOf(dto.leadId) ?? leadStub(dto.leadId, dto.customerName);
-      const invoice = {
-        id: dto.id,
-        num: dto.num,
-        leadId: dto.leadId,
-        age,
-        status: dto.status,
-        archived: false,
-      } as unknown as Invoice;
-      items.push({
-        key: `oki-${dto.id}`,
+    for (const i of invoiceRows ?? []) {
+      const key = `oki-${i.id}`;
+      if (dismissed.includes(key)) continue;
+      const name = i.customerName ?? "there";
+      const dollars = i.due.cents / 100;
+      const lead = leads.find((l) => l.id === i.leadId) ?? {
+        id: i.leadId, name, phone: "", stage: "", age: 0, job: "", last: "", source: "", archived: false,
+      };
+      const late = daysSinceIso(i.dueAt);
+      out.push({
+        key,
         kind: "invoice-overdue",
-        lead,
-        invoice,
-        value: dueDollars,
-        situation: `owes $${Math.round(dueDollars).toLocaleString("en-US")} · ${dto.num} · ${age} days`,
-        editLabel: "Soften it",
-      });
+        lead: lead as OkItem["lead"],
+        value: dollars,
+        situation: `owes $${Math.round(dollars).toLocaleString("en-US")} — ${late}d past due`,
+        editLabel: "Change",
+      } as OkItem);
     }
 
-    // Replies + brand-new leads: recency-defined, so the newest-first store page holds
-    // them by construction — reuse the existing derivation, keeping only those kinds.
-    const storeKinds = deriveOkQueue(leads, estimates, invoices, dismissed).filter(
-      (it) => it.kind === "reply" || it.kind === "new-lead",
-    );
-    items.push(...storeKinds);
+    return out;
+  }, [quoteRows, invoiceRows, dismissed, leads]);
 
-    const uncapped = items
-      .filter((it) => !dismissed.includes(it.key))
-      .sort((a, b) => b.value - a.value);
-
-    return { uncapped, isLoading: !sentQ.isFetched || !overdueQ.isFetched };
-  }, [sentQ.data, sentQ.isFetched, overdueQ.data, overdueQ.isFetched, leads, estimates, invoices, dismissed]);
+  return {
+    items,
+    value: items.reduce((sum, i) => sum + i.value, 0),
+    overdue: items.filter((i) => i.kind === "invoice-overdue"),
+    truncated: (quoteRows?.length ?? 0) >= QUEUE_CAP || (invoiceRows?.length ?? 0) >= QUEUE_CAP,
+    isFetched: quotes.isFetched && overdueInvoices.isFetched,
+    isError: quotes.isError || overdueInvoices.isError,
+  };
 }

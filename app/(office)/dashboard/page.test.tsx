@@ -38,6 +38,11 @@ vi.mock("@/lib/trpc/client", () => ({
 vi.mock("@/features/home/use-home-pipe", () => ({
   useHomePipe: () => ({ stages: [], isLoading: false, isError: false }),
 }));
+// The morning queue is fetched from the database now — viewed quotes AND overdue invoices —
+// rather than derived from the loaded page. Stubbed: these tests are about the tab shell.
+vi.mock("@/features/home/use-ok-queue", () => ({
+  useOkQueue: () => ({ items: [], value: 0, overdue: [], truncated: false, isFetched: true, isError: false }),
+}));
 vi.mock("@/features/home/ok-queue", () => ({ OkQueue: () => <div /> }));
 vi.mock("@/features/office/front-desk-pane", () => ({ FrontDeskPane: () => <div data-testid="fd-pane" /> }));
 vi.mock("@/features/office/pricebook-pane", () => ({ PricebookPane: () => <div data-testid="pb-pane" /> }));

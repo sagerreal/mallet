@@ -80,7 +80,7 @@ const mockInvalidateV1 = vi.fn().mockResolvedValue(undefined);
 // Server-truth queries the counter now composes into the snap — settled/empty here.
 const settledQ = { data: undefined, isFetched: true };
 vi.mock("@/features/home/use-ok-queue", () => ({
-  useOkItems: () => ({ items: [], isLoading: false }),
+  useOkQueue: () => ({ items: [], value: 0, overdue: [], truncated: false, isFetched: true, isError: false }),
 }));
 vi.mock("@/features/customers/leads-hydrator", () => ({
   toStoreLead: (d: unknown) => d,

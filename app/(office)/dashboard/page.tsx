@@ -98,7 +98,6 @@ function TodayPane() {
   const jobs = useAppStore((s) => s.jobs);
   const techs = useAppStore((s) => s.techs);
   const frontDeskOn = useAppStore((s) => s.toggles.frontDesk);
-  const dismissed = useAppStore((s) => s.dismissedAttention);
 
   // ---- real identity — org name + owner's first name from the DB -----------
   const me = useMe();
@@ -109,8 +108,9 @@ function TodayPane() {
     "there";
 
   const report = deriveShiftReport(leads, jobs, estimates);
-  // The queue's money kinds come from the SERVER now (viewed quotes + overdue
-  // invoices) — the store join undercounted on any book past one hydrator page.
+  // The queue comes from the DATABASE. It used to derive from the browser's loaded page, so on a
+  // shop with 239 open invoices not one overdue bill reached it — $67,790 of late money missing
+  // from the screen whose whole job is to surface what needs chasing. See useOkQueue.
   const okQueue = useOkQueue();
   const queue = okQueue.items;
   const queueValue = okQueue.value;
