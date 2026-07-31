@@ -11,6 +11,7 @@ import { DraftEstimateUseCase } from "../app/draft-estimate";
 import { SendEstimateUseCase } from "../app/send-estimate";
 import { AcceptEstimateUseCase } from "../app/accept-estimate";
 import { DeclineEstimateUseCase } from "../app/decline-estimate";
+import { ESTIMATE_SORTS } from "../infra/estimate-sorts";
 import { ListEstimatesUseCase } from "../app/list-estimates";
 import { ClearEstimateChangeRequestUseCase } from "../app/clear-estimate-change-request";
 import { DrizzleJobRepository, DrizzleEstimateReader, CreateJobFromEstimateUseCase, jobSummaryDTO, toJobSummaryDTO } from "@mallet/jobs";
@@ -253,6 +254,9 @@ const listInput = z.object({
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   status: statusEnum.optional(),
+  /** Named sort — never a column name. Absent keeps the historical newest-first ordering. */
+  sort: z.enum(ESTIMATE_SORTS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
 const idInput = z.object({ estimateId: z.string().uuid() });
@@ -502,6 +506,8 @@ export const createEstimateRouter = () =>
         const page = await useCase.exec({
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
           filter: { status: input.status },
+          sort: input.sort,
+          sortDir: input.sortDir,
         });
         return { items: page.items.map(toSummaryDTO), nextCursor: page.nextCursor };
       }),

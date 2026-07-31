@@ -67,16 +67,3 @@ export const invoiceSortSpec = (sort: InvoiceSort, dir?: "asc" | "desc"): SortSp
       return { column: invoices.dueAt, direction: dir ?? "asc", nulls: "last" };
   }
 };
-
-/** Value read off a row to build the next cursor — must match invoiceSortSpec's column exactly. */
-export const invoiceSortValue = (sort: InvoiceSort, row: Record<string, unknown>): unknown => {
-  switch (sort) {
-    case "ledger": return row.__ledgerRank;
-    case "amount": return row.totalCents;
-    case "status": return row.status;
-    case "created": return row.createdAt;
-    case "due":
-    case "oldestUnpaid":
-    default: return row.dueAt;
-  }
-};

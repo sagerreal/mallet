@@ -32,6 +32,7 @@
 import type { StateCreator } from "zustand";
 import type { Estimate, EstimateRead } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoEstimateToStore } from "@/lib/store/dto-mapper";
 import type { JobsSlice } from "./jobs-slice";
 import { reportWriteError } from "../write-error";
@@ -146,6 +147,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         termsSnapshot: draft.termsSnapshot?.trim() ? draft.termsSnapshot : undefined,
       })
       .then((dto) => {
+        invalidateLists("estimates", "customers", "jobs");
         // 3. Reconcile — id stays stable (client-authored); server overwrites num.
         const reconciled = dtoEstimateToStore(dto, newEst.fu);
         // Preserve local id so reconcile doesn't orphan the optimistic record.
@@ -188,6 +190,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
       trpcVanilla.v1.quoting.send
         .mutate({ estimateId: id })
         .then((dto) => {
+          invalidateLists("estimates", "customers", "jobs");
           const reconciled = dtoEstimateToStore(dto, patch.fu ?? prior?.fu ?? { on: false, stage: 0 });
           set((s) => ({ estimates: reconcileEst(s.estimates, { ...reconciled, id }) }));
         })
@@ -216,6 +219,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         // estimate to THAT tier (undefined on single quotes: unchanged path).
         .mutate({ estimateId: id, lines: backendLines, chosenTier: patch.acceptedTier })
         .then((dto) => {
+          invalidateLists("estimates", "customers", "jobs");
           // Reconcile with the persisted accepted lines (including any customer-selected add-ons).
           const reconciled = dtoEstimateToStore(dto, prior?.fu ?? { on: false, stage: 0 });
           set((s) => ({ estimates: reconcileEst(s.estimates, { ...reconciled, id }) }));
@@ -272,6 +276,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
     trpcVanilla.v1.quoting.decline
       .mutate({ estimateId: id, reason })
       .then((dto) => {
+        invalidateLists("estimates", "customers", "jobs");
         const reconciled = dtoEstimateToStore(dto, prior?.fu ?? { on: false, stage: 0 });
         set((s) => ({ estimates: reconcileEst(s.estimates, { ...reconciled, id }) }));
       })
@@ -322,6 +327,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
     trpcVanilla.v1.quoting.restore
       .mutate({ estimateId: id })
       .then((dto) => {
+        invalidateLists("estimates", "customers", "jobs");
         const reconciled = dtoEstimateToStore(dto, prior?.fu ?? { on: false, stage: 0 });
         set((s) => ({ estimates: reconcileEst(s.estimates, { ...reconciled, id }) }));
       })

@@ -3,7 +3,7 @@ import { leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
-import { leadSortSpec, leadSortValue, type LeadSort } from "./lead-sorts";
+import { leadSortSpec, type LeadSort } from "./lead-sorts";
 import { leadViewCondition, leadScopeCondition, type LeadView } from "./lead-views";
 import {
   buildPage,

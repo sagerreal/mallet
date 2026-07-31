@@ -40,13 +40,3 @@ export const leadSortSpec = (sort: LeadSort, dir?: "asc" | "desc"): SortSpec => 
       return { column: leads.updatedAt, direction: dir ?? "desc", nulls: "last" };
   }
 };
-
-/** Value read off a row to build the next cursor — must match leadSortSpec's column exactly. */
-export const leadSortValue = (sort: LeadSort, row: Record<string, unknown>): unknown => {
-  switch (sort) {
-    case "name": return row.name;
-    case "created": return row.createdAt;
-    case "lastActivity":
-    default: return row.updatedAt;
-  }
-};

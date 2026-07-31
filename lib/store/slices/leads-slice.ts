@@ -20,6 +20,7 @@ import type { inferRouterInputs } from "@trpc/server";
 import type { AppRouter } from "@/trpc/root";
 import type { Lead, LeadNote, Task, Visit } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import { storeStageToBackend, backendStageToStore } from "@/lib/store/dto-mapper";
 import { reportWriteError } from "../write-error";
 
@@ -252,6 +253,10 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         set((s) => ({
           leads: s.leads.map((l) => (l.id === id ? reconciled : l)),
         }));
+        // The Customers list and the Pipeline columns render a fetched PAGE, not this store — so a
+        // new customer stays invisible there until something refetches. After the write, never
+        // alongside it: a refetch that overtakes the commit returns the list without this row.
+        invalidateLists("customers");
         return reconciled;
       })
       .catch((err: unknown) => {
@@ -298,6 +303,9 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
             l.id === id ? reconcileLeadFromDTO(l, dto) : l,
           ),
         }));
+        // An edit can move the row to a different page: renaming re-sorts it, and a stage change
+        // moves it between Pipeline columns. Refetch rather than patch the cached page.
+        invalidateLists("customers");
         return true;
       })
       .catch((err: unknown) => {
@@ -356,6 +364,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
     }));
     void trpcVanilla.v1.customers.archive
       .mutate({ leadId: id })
+      .then(() => invalidateLists("customers"))
       .catch((err: unknown) => {
         set({ leads: prior });
         reportWriteError("archiveLead", err);
@@ -374,6 +383,8 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         set((s) => ({
           leads: s.leads.map((l) => (l.id === id ? reconcileLeadFromDTO(l, dto) : l)),
         }));
+        // Restoring puts the row back into the Active list, which is a different fetched set.
+        invalidateLists("customers");
       })
       .catch((err: unknown) => {
         set({ leads: prior });

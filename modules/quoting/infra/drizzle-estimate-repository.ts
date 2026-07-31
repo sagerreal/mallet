@@ -2,6 +2,8 @@ import { and, desc, eq, isNull, isNotNull, inArray, notInArray, sql, type SQL } 
 import { estimates, estimateLines } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueColumn } from "@mallet/shared/db/sort-page";
+import { estimateSortSpec, type EstimateSort } from "./estimate-sorts";
 import {
   buildPage,
   decodeCursor,
@@ -217,10 +219,15 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     return toDomain(header, lineRows);
   }
 
-  list(page: CursorPage, filter?: EstimateFilter): Promise<Paginated<Estimate>> {
+  list(
+    page: CursorPage,
+    filter?: EstimateFilter,
+    sort?: EstimateSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Estimate>> {
     const conds: SQL[] = [isNull(estimates.deletedAt)];
     if (filter?.status) conds.push(eq(estimates.status, filter.status));
-    return this.loadPage(conds, page);
+    return this.loadPage(conds, page, sort, sortDir);
   }
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>> {
@@ -277,21 +284,58 @@ export class DrizzleEstimateRepository implements EstimateRepository {
 
   // Keyset-paginate estimate headers, then batch-load their lines in ONE query (no N+1) and
   // rebuild the aggregates so derived totals are available to the caller.
-  private async loadPage(baseConds: SQL[], page: CursorPage): Promise<Paginated<Estimate>> {
+  /**
+   * One page of estimates with their lines.
+   *
+   * Two paths on purpose. Without a sort it keeps the original createdAt-descending keyset exactly
+   * as it was, so listByLead and every existing caller are untouched. With a named sort it routes
+   * through the shared sort/cursor machinery, where the cursor carries the value of the SAME
+   * expression ORDER BY leads with — the property that stops a page repeating or skipping a row.
+   */
+  private async loadPage(
+    baseConds: SQL[],
+    page: CursorPage,
+    sort?: EstimateSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Estimate>> {
     const conds = [...baseConds];
+    const spec = sort ? estimateSortSpec(sort, sortDir) : null;
+
     if (page.cursor) {
-      const cursor = decodeCursor(page.cursor);
-      if (isOk(cursor)) {
-        conds.push(keysetBefore(estimates.createdAt, estimates.id, cursor.value));
+      if (spec) {
+        const cursor = decodeSortCursor(page.cursor);
+        if (cursor) {
+          const after = keysetAfterSort(spec, estimates.id, cursor);
+          if (after) conds.push(after);
+        }
+      } else {
+        const cursor = decodeCursor(page.cursor);
+        if (isOk(cursor)) {
+          conds.push(keysetBefore(estimates.createdAt, estimates.id, cursor.value));
+        }
       }
     }
 
-    const headers = await this.tx
-      .select()
-      .from(estimates)
-      .where(and(...conds))
-      .orderBy(desc(estimates.createdAt), desc(estimates.id))
-      .limit(page.limit + 1);
+    // The sorted path selects the sort column a second time, cast to text, and builds the cursor
+    // from that — a timestamptz round-tripped through a JS Date loses microseconds, and a cursor
+    // built from the truncated value matches its own row again. See sortValueColumn.
+    const selected = spec
+      ? await this.tx
+          .select({ row: estimates, sortValue: sortValueColumn(spec) })
+          .from(estimates)
+          .where(and(...conds))
+          .orderBy(...orderFor(spec, estimates.id))
+          .limit(page.limit + 1)
+      : null;
+
+    const headers = selected
+      ? selected.map((r) => r.row)
+      : await this.tx
+          .select()
+          .from(estimates)
+          .where(and(...conds))
+          .orderBy(desc(estimates.createdAt), desc(estimates.id))
+          .limit(page.limit + 1);
 
     const ids = headers.map((h) => h.id);
     const lineRows = ids.length
@@ -309,6 +353,17 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     }
 
     const rebuilt = headers.map((h) => toDomain(h, linesByEstimate.get(h.id) ?? []));
-    return buildPage(rebuilt, page, (e) => ({ createdAt: e.props.createdAt, id: e.props.id }));
+
+    if (!selected) {
+      return buildPage(rebuilt, page, (e) => ({ createdAt: e.props.createdAt, id: e.props.id }));
+    }
+
+    const hasMore = selected.length > page.limit;
+    const kept = hasMore ? selected.slice(0, page.limit) : selected;
+    const last = kept[kept.length - 1];
+    return {
+      items: rebuilt.slice(0, kept.length),
+      nextCursor: hasMore && last ? encodeSortCursor({ value: last.sortValue, id: last.row.id }) : null,
+    };
   }
 }

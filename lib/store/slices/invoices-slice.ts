@@ -31,6 +31,7 @@
 import type { StateCreator } from "zustand";
 import type { Invoice, InvoiceLine, Payment } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import { reportWriteError } from "../write-error";
 
@@ -146,6 +147,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       trpcVanilla.v1.invoicing.createFromJob
         .mutate({ jobId: draft.jobId })
         .then((dto) => {
+          invalidateLists("invoices", "jobs");
           // Reconcile — keep local id stable; server row now has the canonical num.
           const reconciled = dtoInvoiceToStore(dto, inv);
           const merged: Invoice = { ...reconciled, id };
@@ -184,6 +186,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     trpcVanilla.v1.invoicing.updateMetadata
       .mutate(payload)
       .then((dto) => {
+        invalidateLists("invoices", "jobs");
         const reconciled = dtoInvoiceToStore(dto, inv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
       })
@@ -225,6 +228,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         })),
       })
       .then((dto) => {
+        invalidateLists("invoices", "jobs");
         const reconciled = dtoInvoiceToStore(dto, inv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
       })
@@ -274,6 +278,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         idempotencyKey,
       })
       .then((dto) => {
+        invalidateLists("invoices", "jobs");
         const reconciled = dtoInvoiceToStore(dto, inv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
       })
@@ -329,6 +334,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           })),
         })
         .then((draftDto) => {
+          invalidateLists("invoices", "jobs");
           // Step 1 reconcile: stamps origin: "db" on the newly created row.
           const reconciled = dtoInvoiceToStore(draftDto, inv);
           set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
@@ -336,6 +342,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           return trpcVanilla.v1.invoicing.send.mutate({ invoiceId: draftDto.id });
         })
         .then((sendDto) => {
+          invalidateLists("invoices", "jobs");
           // Step 2 reconcile: sendDto is always defined here — if draft threw, .catch ran instead.
           const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
           const reconciled = dtoInvoiceToStore(sendDto, currentInv);
@@ -352,6 +359,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     trpcVanilla.v1.invoicing.send
       .mutate({ invoiceId: id })
       .then((dto) => {
+        invalidateLists("invoices", "jobs");
         const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
         const reconciled = dtoInvoiceToStore(dto, currentInv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
@@ -390,6 +398,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     trpcVanilla.v1.invoicing.void
       .mutate({ invoiceId: id })
       .then((dto) => {
+        invalidateLists("invoices", "jobs");
         const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
         const reconciled = dtoInvoiceToStore(dto, currentInv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
