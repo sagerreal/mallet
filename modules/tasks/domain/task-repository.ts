@@ -9,6 +9,8 @@ export interface TaskFilter {
 // The org is NEVER a parameter — it is implicit in the org-scoped transaction the repository
 // is constructed with, so a caller physically cannot address another tenant's tasks.
 export interface TaskRepository {
+  /** Whole-book count under the same filter semantics as list(). */
+  count(filter?: { done?: boolean }): Promise<number>;
   create(input: {
     id: string;
     orgId: string;

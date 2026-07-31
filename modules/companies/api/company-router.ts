@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
@@ -59,6 +60,54 @@ export const createCompanyRouter = () =>
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
         });
         return { items: page.items.map(toCompanyDTO), nextCursor: page.nextCursor };
+      }),
+
+    // Per-company money + people rollups, computed in SQL across the WHOLE book — the
+    // Companies table joined two page-capped store collections and read a fraction of
+    // reality (or "$0 open") for any account whose history predates the loaded page.
+    rollups: ownerOrOffice
+      .output(
+        z.array(
+          z.object({
+            companyId: z.string().uuid(),
+            people: z.number().int(),
+            openPipeCents: z.number().int(),
+            revenueWonCents: z.number().int(),
+          }),
+        ),
+      )
+      .query(async ({ ctx }) => {
+        const orgId = ctx.principal.orgId;
+        const rows = await ctx.tx.execute(sql`
+          select l.company_id as "companyId",
+                 count(distinct l.id)::int as "people",
+                 coalesce(sum(
+                   case when e.status = 'sent' and e.deleted_at is null
+                     then (select coalesce(sum(round(el.quantity * el.rate_cents)), 0)
+                             from estimate_lines el
+                            where el.estimate_id = e.id and el.org_id = e.org_id and el.deleted_at is null
+                              and (el.tier is null or el.tier = e.recommended_tier))
+                     else 0 end), 0)::bigint as "openPipeCents",
+                 coalesce(sum(
+                   case when e.status = 'accepted' and e.deleted_at is null
+                     then (select coalesce(sum(round(el.quantity * el.rate_cents)), 0)
+                             from estimate_lines el
+                            where el.estimate_id = e.id and el.org_id = e.org_id and el.deleted_at is null
+                              and (el.tier is null or el.tier = e.recommended_tier))
+                     else 0 end), 0)::bigint as "revenueWonCents"
+            from leads l
+            left join estimates e on e.lead_id = l.id and e.org_id = l.org_id
+           where l.org_id = ${orgId} and l.company_id is not null and l.deleted_at is null
+           group by l.company_id
+        `);
+        return (rows as unknown as { companyId: string; people: number; openPipeCents: string | number; revenueWonCents: string | number }[]).map(
+          (r) => ({
+            companyId: r.companyId,
+            people: r.people,
+            openPipeCents: Number(r.openPipeCents),
+            revenueWonCents: Number(r.revenueWonCents),
+          }),
+        );
       }),
 
     create: ownerOrOffice

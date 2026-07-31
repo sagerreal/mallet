@@ -28,6 +28,8 @@ vi.mock("@/lib/trpc/client", () => ({
         // The board's column counts come from the database now — a header reading 500 over 500
         // visible cards on a 606-customer book was the lie this replaced.
         viewCounts: { useQuery: () => ({ data: undefined }) },
+        // lost (N) comes from the database now — Lost customers are the oldest rows.
+        count: { useQuery: () => ({ data: undefined }) },
       },
       quoting: { list: { useQuery: () => queryState } },
     },

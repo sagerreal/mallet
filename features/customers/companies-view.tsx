@@ -79,12 +79,12 @@ export function CompaniesView() {
     { limit: HYDRATOR_PAGE_LIMIT },
     { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
   );
-  const estimatesQ = api.v1.quoting.list.useQuery(
-    { limit: HYDRATOR_PAGE_LIMIT },
-    { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false },
-  );
+  // Per-company money comes from a SERVER rollup — pipeSum joined two page-capped
+  // collections and read a fraction of reality for accounts with older history.
+  const rollupsQ = api.v1.companies.rollups.useQuery(undefined, { refetchOnWindowFocus: true });
+  const rollupOf = (companyId: string) => rollupsQ.data?.find((r) => r.companyId === companyId);
   const listLoading = isFirstLoad({ isFetched: companiesQ.isFetched, isError: companiesQ.isError, count: companies.length });
-  const moneyLoading = isFirstLoad({ isFetched: estimatesQ.isFetched, isError: estimatesQ.isError, count: estimates.length });
+  const moneyLoading = !rollupsQ.isFetched && !rollupsQ.isError;
 
   const setTotal = companies.filter((c) => (archiveSet === "active" ? !c.archived : Boolean(c.archived))).length;
 
@@ -95,12 +95,13 @@ export function CompaniesView() {
       .filter((c) => !query || c.name.toLowerCase().includes(query))
       .map((company) => {
         const contacts = contactsOf(company, leads);
+        const roll = rollupOf(company.id);
         return {
           company,
-          people: contacts.length,
+          people: roll?.people ?? contacts.length,
           phone: company.phone,
-          openPipe: pipeSum(contacts, estimates, "sent"),
-          revenueWon: pipeSum(contacts, estimates, "accepted"),
+          openPipe: roll ? roll.openPipeCents / 100 : 0,
+          revenueWon: roll ? roll.revenueWonCents / 100 : 0,
           sites: sitesCount(company, contacts),
         };
       });

@@ -40,6 +40,7 @@ const seqIds = (): IdGenerator => {
 // ---------------------------------------------------------------------------
 
 class FakeTaskRepository implements TaskRepository {
+  async count(): Promise<number> { return 0; }
   readonly created: Task[] = [];
   private readonly saved: Task[] = [];
 

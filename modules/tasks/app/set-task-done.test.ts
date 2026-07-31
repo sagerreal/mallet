@@ -45,6 +45,7 @@ const makeRepo = (task: Task | null): TaskRepository & { saved: Task | undefined
     async create() {
       throw new Error("unexpected create");
     },
+    async count() { return 0; },
     async list() {
       return { items: [], nextCursor: null };
     },

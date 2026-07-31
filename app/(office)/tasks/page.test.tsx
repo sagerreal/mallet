@@ -14,7 +14,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useOpenModal: () => vi.fn(),
 }));
 vi.mock("@/lib/trpc/client", () => ({
-  api: { v1: { tasks: { list: { useQuery: () => queryState } } } },
+  api: { v1: { tasks: { list: { useQuery: () => queryState }, count: { useQuery: () => ({ data: undefined }) } } } },
 }));
 
 import TasksPage from "./page";
