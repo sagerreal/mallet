@@ -42,6 +42,7 @@ import { SoftPill, type PillTone } from "@/components/shared/stage-pill";
 import { SignatureRecord } from "@/components/shared/signature-record";
 import { Field } from "@/components/ui/input";
 import { api } from "@/lib/trpc/client";
+import { ModalLoading } from "./modal-loading";
 
 
 const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
@@ -160,7 +161,7 @@ export function EstimateModalContent() {
   }, [sendOpen, sendChannel, lead?.id]);
 
   if (!e) {
-    if (absent && fullQuery.isLoading) return <p className="muted">Loading…</p>;
+    if (absent && fullQuery.isLoading) return <ModalLoading size="lg" />;
     if (absent && fullQuery.isError) {
       return <p className="muted">Couldn&apos;t load this quote. Close and try again.</p>;
     }

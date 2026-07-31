@@ -41,6 +41,7 @@ import type { Estimate, Lead } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
 import { fmtPhone } from "@/lib/format";
 import { AddressInput } from "@/components/ui/address-input";
+import { ModalLoading } from "../modal-loading";
 
 /**
  * The pill on a quote row.
@@ -176,7 +177,7 @@ export function LeadModal({ open }: { open: boolean }) {
       <Modal open={open} onClose={close} wide label="Customer">
         <h2>Customer</h2>
         {missing && leadQ.isLoading ? (
-          <p className="muted">Loading…</p>
+          <ModalLoading size="lg" />
         ) : missing && leadQ.isError ? (
           <p className="muted">Couldn&apos;t load this customer. Close and try again.</p>
         ) : (

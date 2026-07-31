@@ -52,6 +52,7 @@ import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-ga
 import { dayLoad } from "@/features/jobs/jobs-helpers";
 import { Field, FieldGroup } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { ModalLoading } from "./modal-loading";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -708,14 +709,9 @@ export function JobModalContent() {
         </div>
       );
     }
-    return (
-      <div className="sheet-head" aria-busy="true">
-        <h2>
-          <span className="sk" style={{ display: "inline-block", width: 180, height: 22 }} aria-hidden="true" />
-        </h2>
-        <span className="sr-only">Loading job…</span>
-      </div>
-    );
+    // Full-height skeleton, same as the chunk loader — a head-only sliver made every
+    // fetch-on-miss open flash a collapsed card before snapping to size.
+    return <ModalLoading size="lg" />;
   }
 
   const lead: Lead | undefined = leads.find((l) => l.id === job.leadId);

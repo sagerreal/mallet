@@ -44,6 +44,7 @@ import type { Brand, Estimate, EstimateLine, QuoteTierKey } from "@/lib/store/ty
 import { fmt$ } from "@/lib/format";
 import { estTierName } from "@/lib/estimates";
 import { clockNow } from "@/features/home/send";
+import { ModalLoading } from "./modal-loading";
 
 // ---- Real GBB tier views (from the tier-tagged lines + tierNames) -----------
 
@@ -537,7 +538,7 @@ export function CustQuoteModalContent() {
   }, [estId]);
 
   if (!estimate) {
-    if (missing && estQ.isLoading) return <p className="muted">Loading…</p>;
+    if (missing && estQ.isLoading) return <ModalLoading size="lg" />;
     if (missing && estQ.isError) {
       return <p className="muted">Couldn&apos;t load this quote. Close and try again.</p>;
     }
