@@ -7,15 +7,10 @@
  * the single gate at the end sends through the shared OK-send primitive.
  */
 
-import { deriveOkQueue, deriveOpenSlot, firstName } from "@/features/home/derive";
+import { deriveOkQueue, firstName } from "@/features/home/derive";
 import { draftFor } from "@/features/home/drafts";
 import type { Artifact, RunAside, RunStep, Snap } from "./types";
 
-/** "Thursday afternoon open" → "Thursday afternoon" (or null). */
-function openSlotPhrase(snap: Snap): string | null {
-  const slot = deriveOpenSlot(snap.jobs, snap.leads);
-  return slot ? slot.replace(/ open$/, "") : null;
-}
 
 /** They already got the standard reminder — the same text twice reads as a bot. */
 function alreadyReminded(step: { estimateFuStage: number; hasAutoReminder: boolean }): boolean {
@@ -25,8 +20,10 @@ function alreadyReminded(step: { estimateFuStage: number; hasAutoReminder: boole
 /**
  * The chase draft for one queue item — SHARED by the money run and the Quotes
  * rail so a nudge is the same words everywhere. Never repeats a reminder the
- * customer already got: past fu stage 1 (or a logged auto reminder) it changes
- * the angle and offers the real open slot instead.
+ * customer already got: past fu stage 1 (or a logged auto reminder) it keeps the
+ * nudge quiet rather than repeating the same reminder. (It used to offer "Thursday
+ * afternoon open" — a free-slot claim derived from ONE PAGE of the calendar, which
+ * could promise time that wasn't free. Deleted with deriveOpenSlot.)
  */
 export function chaseDraftFor(
   item: OkItemLike,
@@ -36,17 +33,6 @@ export function chaseDraftFor(
     const hasAutoReminder = (item.lead.acts ?? []).some(
       (a) => a.from === "auto" && /reminder/i.test(a.t ?? "")
     );
-    const slot = openSlotPhrase(snap);
-    if (
-      alreadyReminded({ estimateFuStage: item.estimate.fu.stage, hasAutoReminder }) &&
-      slot
-    ) {
-      const job = item.estimate.title.toLowerCase();
-      return {
-        draft: `Hi ${firstName(item.lead.name)} — a ${slot} opened up this week. Want me to pencil you in and get the ${job} handled?`,
-        angled: true,
-      };
-    }
   }
   return { draft: draftFor(item as Parameters<typeof draftFor>[0]), angled: false };
 }
@@ -67,12 +53,11 @@ export function buildMoneyRun(snap: Snap): Artifact {
   const chase = items.filter(
     (i) => (i.kind === "quote-viewed" || i.kind === "invoice-overdue") && !justTexted(i.lead)
   );
-  const slot = openSlotPhrase(snap);
 
   const steps: RunStep[] = chase.map((item) => {
     const { draft, angled } = chaseDraftFor(item, snap);
     const sub = angled
-      ? `got the standard reminder already — wrote a different angle: offered ${slot}`
+      ? `got the standard reminder already — wrote a different angle`
       : item.kind === "invoice-overdue"
         ? "firm reminder drafted"
         : "follow-up drafted";

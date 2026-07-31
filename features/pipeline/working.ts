@@ -66,23 +66,6 @@ export function intakeRowOf(lead: Lead): IntakeRow {
 export const byStalledThenAge = (a: IntakeRow, b: IntakeRow): number =>
   Number(b.stalled) - Number(a.stalled) || b.lead.age - a.lead.age;
 
-/**
- * Untouched leads out of an in-memory collection.
- *
- * Kept for callers that hold the whole book already. The Pipeline board does NOT use this: its
- * membership test has to run against every customer, not the page the browser happens to hold,
- * and `hasPaper` here can only see the estimates that were loaded — so a lead whose quote fell
- * outside that window would be shown as untouched.
- */
-export function deriveIntake(leads: Lead[], estimates: Estimate[]): IntakeRow[] {
-  const hasPaper = (id: string) =>
-    estimates.some((e) => e.leadId === id && !e.archived && !e.trash);
-
-  return leads
-    .filter((l) => alive(l) && !hasPaper(l.id) && !scopedVisit(l) && !pendingVisit(l))
-    .map(intakeRowOf)
-    .sort(byStalledThenAge);
-}
 
 /** Deals with an active route to a price — scoped / walkthrough booked / in the shop. */
 export function deriveGetting(leads: Lead[], estimates: Estimate[]): GettingRow[] {

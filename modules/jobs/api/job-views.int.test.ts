@@ -9,7 +9,6 @@ import type { AuthProvider, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 import { ARCHIVE_AFTER_DAYS } from "../infra/job-views";
-import { JOB_ARCHIVE_AFTER_DAYS } from "@/features/jobs/today-derive";
 
 /**
  * The scoped views — the SQL twin of the lifecycle bands.
@@ -187,10 +186,8 @@ suite("jobs scoped views", () => {
     expect(c.needsSlot).toBe(0);
   });
 
-  it("keeps the archive cutoff in step with the client's constant", () => {
-    // The rule lives in two places — a domain module must not import from features/ — so a silent
-    // drift here moves jobs between Done and Archived without anything failing.
-    expect(ARCHIVE_AFTER_DAYS).toBe(JOB_ARCHIVE_AFTER_DAYS);
+  it("pins the archive cutoff — moving it silently shifts jobs between Done and Archived", () => {
+    expect(ARCHIVE_AFTER_DAYS).toBe(7);
   });
 
   it("sums TODAY's money server-side, not from whatever the browser loaded", () => {

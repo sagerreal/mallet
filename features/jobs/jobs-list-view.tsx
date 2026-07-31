@@ -3,7 +3,7 @@
 /**
  * features/jobs/jobs-list-view.tsx
  * The Jobs list — a flat, sortable table (styled like the Customers table). It is
- * built from the lifecycle bands (deriveJobBands / deriveArchivedBands) so status
+ * built from the server-shaped lifecycle bands so status
  * and default order read by state. Columns can be hidden (Customer/Job is fixed);
  * the Crew filter narrows rows here; the Status filter chooses the bands upstream.
  * Reads leads/techs from the store; derivation is pure.
