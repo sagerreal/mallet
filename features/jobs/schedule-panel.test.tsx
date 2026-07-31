@@ -31,6 +31,24 @@ const store = (jobs: unknown[], leads: Store["leads"] = []): Store => ({
 describe("SchedulePanel — first-run empty state (board untouched)", () => {
   beforeEach(() => { storeState = store([]); q = { isFetched: true, isError: false }; vi.clearAllMocks(); });
 
+  // Owen: "initially when this loads it shows up empty saying nothing to be scheduled and then it
+  // populates." An empty list means "nothing fetched yet" for the first moment of every load, and
+  // "Everything sold is scheduled." is a CLAIM — it was being made before the app had looked, then
+  // contradicted a beat later when the cards arrived. A dispatcher who believes it walks away.
+  it("does not claim everything is scheduled before the read lands", () => {
+    storeState = store([{ id: "j1", visits: [{ id: "v1", date: "2026-08-01", techId: "t1" }] }]);
+    q = { isFetched: false, isError: false };
+    render(<SchedulePanel />);
+    expect(screen.queryByText(/Everything sold is scheduled/)).toBeNull();
+  });
+
+  it("says it once the read lands and the tray is genuinely empty", () => {
+    storeState = store([{ id: "j1", visits: [{ id: "v1", date: "2026-08-01", techId: "t1" }] }]);
+    q = { isFetched: true, isError: false };
+    render(<SchedulePanel />);
+    expect(screen.getByText(/Everything sold is scheduled/)).toBeTruthy();
+  });
+
   it("shows the first-run screen when loaded with nothing to schedule", () => {
     render(<SchedulePanel />);
     const frs = screen.getByText("Nothing to schedule yet").closest(".frs") as HTMLElement;

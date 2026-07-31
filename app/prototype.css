@@ -2015,8 +2015,15 @@
   /* Field shell — desktop uses the office sidebar layout; mobile goes phone-first. */
   .field-shell main{overflow:visible}
   .field-shell .sectiontabs{display:flex;flex:0 0 auto;padding:0 var(--space-4);background:var(--bg);border-bottom:1px solid var(--line);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  /* To-schedule tray, DESKTOP: about two rows, then it scrolls. The grid wrapped without limit,
+     so a shop with twenty jobs waiting pushed the BOARD off the screen — and the board is the
+     thing you drag onto. The header count ("12 of 20") reports the rest; the tray does not have to
+     show everything at once to be honest about how much there is.
+     The phone rule below replaces this with a horizontal snap-scroller. */
+  .tray-grid{max-height:44vh;overflow-y:auto;overscroll-behavior:contain}
+
   /* ---- phone layout ---- */
-  @media (max-width:760px){
+@media (max-width:760px){
     body{margin-right:0 !important}
     /* glove-and-glare layer: 44px+ targets, readable pills, words over hues, no iOS zoom */
     .btn{min-height:44px}
