@@ -314,21 +314,32 @@
   /* Topbar ⋯ (More overflow) is phone-only — desktop reaches Settings via the sidebar. */
   .topmore{display:none}
 
-  /* Pricebook service editor (service-row.tsx): ONE aligned definition grid —
-     label column · control column — in quiet groups. Replaces ad-hoc flex rows. */
+  /* Pricebook item editor (service-row / materials-panel): a disciplined definition
+     grid. ONE input height (36px), ONE hairline border weight, ONE radius; every
+     text control caps at the same 300px right edge; money/hours are JOINED prefix
+     groups ($ lives inside the box) with right-aligned tabular numerals at one
+     fixed width, so the numbers rag on a shared line. Quiet, iOS-Settings register. */
   .svced{padding:var(--space-2) var(--space-2) var(--space-4)}
-  .svced-grid{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:var(--space-3) var(--space-4);max-width:520px}
-  .svced-grp{grid-column:1 / -1;font-size:var(--type-xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-top:var(--space-3);display:flex;align-items:baseline;gap:var(--space-2)}
-  .svced-grp:first-child{margin-top:0}
-  .svced-aside{font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink-3);opacity:.7}
+  .svced-grid{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:var(--space-2) var(--space-4);max-width:460px}
   .svced-l{font-size:var(--type-sm);font-weight:600;color:var(--ink-2)}
-  .svced-c{display:flex;align-items:center;min-width:0}
-  .svced-money{display:flex;align-items:center;gap:var(--space-2)}
-  .svced-in{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-2);font-family:inherit;font-size:var(--type-base);width:100%;max-width:280px}
-  .svced-num{width:88px}
-  .svced-more{margin-top:var(--space-3);font-size:var(--type-sm);color:var(--ink-3);background:none;border:none;font-family:inherit;cursor:pointer;padding:0;font-weight:600}
-  .svced-parts{margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--line-2);max-width:520px}
-  .svced-foot{display:flex;justify-content:flex-end;margin-top:var(--space-4);max-width:520px}
+  .svced-c{display:flex;align-items:center;gap:var(--space-2);min-width:0;min-height:36px}
+  .svced-in{height:36px;border:1px solid var(--line);border-radius:var(--radius-xs);padding:0 var(--space-3);font-family:inherit;font-size:var(--type-base);width:100%;max-width:300px;background:var(--card);color:var(--ink)}
+  .svced-in:focus{outline:none;border-color:var(--ink-2)}
+  /* Joined money / unit group: prefix INSIDE the border, number right-aligned. */
+  .min{display:inline-flex;align-items:stretch;height:36px;border:1px solid var(--line);border-radius:var(--radius-xs);background:var(--card);overflow:hidden;width:132px;flex:none}
+  .min:focus-within{border-color:var(--ink-2)}
+  .min .pre{display:flex;align-items:center;padding:0 var(--space-2);font-size:var(--type-sm);color:var(--ink-3);background:var(--paper);border-right:1px solid var(--line-2)}
+  .min.suf .pre{border-right:none;border-left:1px solid var(--line-2)}
+  .min input{border:none;outline:none;background:none;width:100%;min-width:0;padding:0 var(--space-3);font-family:inherit;font-size:var(--type-base);color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+  .min input::placeholder{color:var(--ink-3)}
+  .svced-hint{font-size:var(--type-sm);color:var(--ink-3);white-space:nowrap}
+  /* The select shares the text controls' 300px right edge — one rag line for the column. */
+  .svced-c > div{max-width:300px}
+  .svced-parts{margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--line-2);max-width:460px}
+  /* Footer: anchored by a hairline, the destructive action a quiet red text control. */
+  .svced-foot{display:flex;justify-content:flex-end;margin-top:var(--space-4);padding-top:var(--space-3);border-top:1px solid var(--line-2);max-width:460px}
+  .svced-rm{background:none;border:none;padding:0;font-family:inherit;font-size:var(--type-sm);font-weight:600;color:var(--red);cursor:pointer}
+  .svced-rm:hover{text-decoration:underline}
   @media (max-width:760px){
     .svced-grid{grid-template-columns:1fr;gap:var(--space-1) 0}
     .svced-l{margin-top:var(--space-2)}

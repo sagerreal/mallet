@@ -67,8 +67,8 @@ function MaterialRow({ m, canSeeCost }: { m: Material; canSeeCost: boolean }) {
               <>
                 <label className="svced-l" htmlFor={`mat-cost-${m.id}`}>Your cost</label>
                 <div className="svced-c">
-                  <span className="svced-money">
-                    <span className="muted">$</span>
+                  <span className="min">
+                    <span className="pre">$</span>
                     <input
                       id={`mat-cost-${m.id}`}
                       type="number"
@@ -77,20 +77,17 @@ function MaterialRow({ m, canSeeCost }: { m: Material; canSeeCost: boolean }) {
                       step={0.01}
                       defaultValue={m.unitCost}
                       onChange={(e) => updateMaterial(m.id, { unitCost: Math.max(0, Number(e.target.value) || 0) })}
-                      className="svced-in svced-num"
                     />
-                    <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                      per {m.unitOfMeasure}
-                    </span>
                   </span>
+                  <span className="svced-hint">per {m.unitOfMeasure}</span>
                 </div>
               </>
             )}
 
             <label className="svced-l" htmlFor={`mat-price-${m.id}`}>Sell price</label>
             <div className="svced-c">
-              <span className="svced-money">
-                <span className="muted">$</span>
+              <span className="min">
+                <span className="pre">$</span>
                 <input
                   id={`mat-price-${m.id}`}
                   type="number"
@@ -102,13 +99,12 @@ function MaterialRow({ m, canSeeCost }: { m: Material; canSeeCost: boolean }) {
                   key={`${m.pricingMode}-${m.unitPrice}`}
                   defaultValue={m.unitPrice}
                   onChange={(e) => updateMaterial(m.id, { unitPrice: Math.max(0, Number(e.target.value) || 0) })}
-                  className="svced-in svced-num"
                 />
-                <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                  {m.pricingMode === "rule"
-                    ? `from your markup table${canSeeCost && m.unitPrice > 0 ? ` · ${marginPct(m)}% margin` : ""}`
-                    : `set by you${canSeeCost && m.unitPrice > 0 ? ` · ${marginPct(m)}% margin` : ""}`}
-                </span>
+              </span>
+              <span className="svced-hint">
+                {m.pricingMode === "rule"
+                  ? `from your markup table${canSeeCost && m.unitPrice > 0 ? ` · ${marginPct(m)}% margin` : ""}`
+                  : `set by you${canSeeCost && m.unitPrice > 0 ? ` · ${marginPct(m)}% margin` : ""}`}
               </span>
             </div>
 
@@ -127,11 +123,7 @@ function MaterialRow({ m, canSeeCost }: { m: Material; canSeeCost: boolean }) {
           </div>
 
           <div className="svced-foot">
-            <button
-              className="btn sm ghost"
-              style={{ color: "var(--red-700, #b91c1c)" }}
-              onClick={() => archiveMaterial(m.id)}
-            >
+            <button className="svced-rm" onClick={() => archiveMaterial(m.id)}>
               Remove material
             </button>
           </div>

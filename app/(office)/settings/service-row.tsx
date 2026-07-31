@@ -160,8 +160,8 @@ export function ServiceRow({
               />
             </EditorRow>
             <EditorRow label="Price" field={priceField}>
-              <span className="svced-money">
-                <span className="muted">$</span>
+              <span className="min">
+                <span className="pre">$</span>
                 <input
                   {...priceField.controlProps}
                   type="number"
@@ -169,17 +169,16 @@ export function ServiceRow({
                   min={0}
                   defaultValue={service.unitPrice}
                   onChange={(e) => onUpdate(service.id, { unitPrice: Math.max(0, Number(e.target.value) || 0) })}
-                  className="svced-in svced-num"
                 />
-                {unit && <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{unit}</span>}
               </span>
+              {unit && <span className="svced-hint">{unit}</span>}
             </EditorRow>
 
             {canSeeCost && (
               <>
                 <EditorRow label="Your cost" field={costField}>
-                  <span className="svced-money">
-                    <span className="muted">$</span>
+                  <span className="min">
+                    <span className="pre">$</span>
                     <input
                       {...costField.controlProps}
                       type="number"
@@ -187,17 +186,16 @@ export function ServiceRow({
                       min={0}
                       defaultValue={service.cost}
                       onChange={(e) => onUpdate(service.id, { cost: Math.max(0, Number(e.target.value) || 0) })}
-                      className="svced-in svced-num"
                     />
-                    <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                      {service.cost > 0 ? `${marginPct(service)}% margin` : "no cost set"} · owner-only
-                    </span>
+                  </span>
+                  <span className="svced-hint">
+                    {service.cost > 0 ? `${marginPct(service)}% margin` : "no cost set"} · owner-only
                   </span>
                 </EditorRow>
               </>
             )}
             <EditorRow label={service.measuredBy === "hour" ? "Typical hours" : "Labor"} field={laborField}>
-              <span className="svced-money">
+              <span className="min suf">
                 <input
                   {...laborField.controlProps}
                   type="number"
@@ -210,9 +208,8 @@ export function ServiceRow({
                     const v = e.target.value;
                     onUpdate(service.id, { laborHours: v === "" ? null : Math.max(0, Number(v) || 0) });
                   }}
-                  className="svced-in svced-num"
                 />
-                <span className="muted" style={{ fontSize: "var(--type-sm)" }}>hours</span>
+                <span className="pre">hrs</span>
               </span>
             </EditorRow>
             <EditorRow label="Taxable">
@@ -229,7 +226,7 @@ export function ServiceRow({
           </div>
 
           <div className="svced-foot">
-            <button className="btn sm ghost" style={{ color: "var(--red-700, #b91c1c)" }} onClick={() => onArchive(service.id)}>
+            <button className="svced-rm" onClick={() => onArchive(service.id)}>
               Remove service
             </button>
           </div>
