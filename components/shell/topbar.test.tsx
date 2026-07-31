@@ -36,7 +36,9 @@ describe("Topbar", () => {
     render(<Topbar />);
     expect(screen.getByText("Office")).toBeTruthy();
     expect(screen.getByTitle("Light / dark")).toBeTruthy();
-    expect(screen.getByTitle("Notifications")).toBeTruthy();
+    // No notifications bell. It was a control with no handler — nothing opened, nothing counted —
+    // and an icon that does nothing teaches people not to trust the ones that do.
+    expect(screen.queryByTitle("Notifications")).toBeNull();
   });
 
   it("carries the More overflow (phone-only via CSS) so dropping the More tab lost no reach", () => {

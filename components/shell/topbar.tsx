@@ -24,13 +24,6 @@ const CRUMBS: Record<string, { section: string; label: string }> = {
   "/messages": { section: "Field", label: "Messages" },
 };
 
-const BellIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-    <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-    <path d="M13.7 21a2 2 0 0 1-3.4 0" />
-  </svg>
-);
-
 const SunIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
     <circle cx="12" cy="12" r="5" />
@@ -133,9 +126,6 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
             an unlabeled 20px + in the corner was too small for the app's key action. */}
         <button className="iconbtn" onClick={toggleTheme} title="Light / dark">
           {theme === "light" ? <MoonIcon /> : <SunIcon />}
-        </button>
-        <button className="iconbtn" title="Notifications" style={{ position: "relative" }}>
-          <BellIcon />
         </button>
         {/* Mobile-only (CSS-hidden on desktop, where the sidebar reaches Settings): the
             "More" overflow moved up here so the tab bar's create button sits dead-center. */}
