@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { api } from "@/lib/trpc/client";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { JobView } from "@/modules/jobs/infra/job-views";
 import type { JobSort } from "@/modules/jobs/infra/job-sorts";
 
@@ -43,7 +44,9 @@ export function localToday(): string {
 
 export function useJobsQuery(state: JobsQueryState) {
   const today = useMemo(localToday, []);
-  const search = state.search.trim() || undefined;
+  // Query trails the input (see lib/use-debounced-value) — no query per keystroke.
+  const debouncedSearch = useDebouncedValue(state.search, 250);
+  const search = debouncedSearch.trim() || undefined;
 
   const listArgs = {
     limit: PAGE_SIZE,
@@ -56,6 +59,8 @@ export function useJobsQuery(state: JobsQueryState) {
 
   const page = api.v1.jobs.list.useInfiniteQuery(listArgs, {
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    // Previous rows stay on screen (dimmed) while a new filter loads — never a full swap.
+    placeholderData: (prev) => prev,
     // No staleTime: a list that quietly serves a cached page after an edit is how "I changed that
     // and it didn't save" reports get filed. Refetch on focus for the same reason.
     refetchOnWindowFocus: true,
@@ -65,8 +70,10 @@ export function useJobsQuery(state: JobsQueryState) {
   // — count and list share one predicate builder on the server.
   const total = api.v1.jobs.count.useQuery(
     { ...(search ? { search } : {}) },
-    { refetchOnWindowFocus: true },
+    { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
   );
+  // Unfiltered book size — the only honest first-run input (a no-match search reads 0).
+  const bookTotal = api.v1.jobs.count.useQuery({}, { refetchOnWindowFocus: false });
 
   const viewCounts = api.v1.jobs.viewCounts.useQuery(
     { today, ...(search ? { search } : {}) },
@@ -85,6 +92,8 @@ export function useJobsQuery(state: JobsQueryState) {
     shown: rows.length,
     /** Everything matching the search, across every view. Undefined until it lands. */
     total: total.data?.total,
+    bookTotal: bookTotal.data?.total,
+    isStale: page.isPlaceholderData || debouncedSearch !== state.search,
     /** Per-view counts for the filter pill. */
     counts: viewCounts.data,
     hasMore: Boolean(page.hasNextPage),

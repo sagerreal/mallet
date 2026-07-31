@@ -28,6 +28,8 @@ vi.mock("./use-customers-query", () => ({
     shown: leads.length,
     ...listState,
     total: listState.total ?? leads.length,
+    bookTotal: listState.total ?? leads.length,
+    isStale: false,
     stageCounts: {},
     sources: [],
     hasMore: false,

@@ -104,9 +104,12 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   // populated shop must fall through to an empty list, not to "No jobs yet". `?? 1` while the
   // count is in flight keeps the first-run screen from flashing before it lands.
   const total = list.total;
-  const firstRun = shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: total ?? 1 });
+  // First-run gates on the UNFILTERED book — the filtered total reads 0 on a no-match
+  // search, which told a shop with hundreds of jobs "No jobs yet".
+  const firstRun = shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: list.bookTotal ?? 1 });
   const loadFailed = shouldShowLoadFailed({ isFetched: list.isFetched, isError: list.isError, count: total ?? 0 });
-  const loading = list.isLoading;
+  // Cold load only — a filter change keeps previous rows on screen instead of the loader.
+  const loading = list.isLoading && list.rows.length === 0 && !list.isFetched;
   const activeFilterCount = (q.view ? 1 : 0) + (archiveSet === "archived" ? 1 : 0);
 
   return (

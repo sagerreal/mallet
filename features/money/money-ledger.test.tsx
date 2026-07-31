@@ -33,6 +33,8 @@ vi.mock("./use-money-query", () => ({
     // total defaults to the fixture's row count: the view gates first-run on the SERVER total, so
     // rows-with-total-0 would render the first-run screen and pass for the wrong reason.
     total: moneyState.total ?? moneyState.invoiceRows.length + moneyState.readyJobs.length,
+    bookTotal: moneyState.total ?? moneyState.invoiceRows.length + moneyState.readyJobs.length,
+    isStale: false,
     readyTruncated: false,
     shown: moneyState.invoiceRows.length + moneyState.readyJobs.length,
     hasMore: false, loadMore: vi.fn(), isLoadingMore: false, refetch: vi.fn(),

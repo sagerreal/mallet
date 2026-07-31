@@ -85,12 +85,14 @@ export function CustomersView() {
     (cq.stage ? 1 : 0) + (cq.source ? 1 : 0) + (cq.scope ? 1 : 0) + (custSeg !== "people" ? 1 : 0) + (archiveSet !== "active" ? 1 : 0);
   const visible = visibleCols.filter((c) => ALL_COL_DEFS[c]);
 
-  // First-run gates on the SERVER's total, never on the loaded page — a no-match search on a
-  // populated book must fall through to an empty list, not to "No customers yet". `?? 1` while the
-  // count is in flight keeps the first-run screen from flashing before it lands.
-  const firstRun = shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: list.total ?? 1 });
-  const loadFailed = shouldShowLoadFailed({ isFetched: list.isFetched, isError: list.isError, count: list.total ?? 0 });
-  const loading = list.isLoading;
+  // First-run gates on the UNFILTERED book size — the filtered total reads 0 for any
+  // no-match search, and that told a 600-customer shop "No customers yet" (Owen hit it).
+  // `?? 1` while the count is in flight keeps the screen from flashing before it lands.
+  const firstRun = shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: list.bookTotal ?? 1 });
+  const loadFailed = shouldShowLoadFailed({ isFetched: list.isFetched, isError: list.isError, count: list.bookTotal ?? 0 });
+  // Only the genuine cold load swaps the page for the loader; a filter change keeps the
+  // previous rows on screen (dimmed via isStale) instead of "reloading the page".
+  const loading = list.isLoading && sorted.length === 0 && !list.isFetched;
   const refetch = list.refetch;
   const isRefetching = list.isRefetching;
 
@@ -219,7 +221,8 @@ export function CustomersView() {
 
       {/* Table */}
       <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
-        <table className="list-tbl">
+        {/* Held-over rows for a superseded search dim rather than swap — motion, not a reload. */}
+        <table className="list-tbl" style={list.isStale ? { opacity: 0.55, transition: "opacity .12s" } : { transition: "opacity .12s" }}>
           <thead>
             <tr>
               {visible.map((col) => {
