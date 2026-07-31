@@ -656,8 +656,13 @@ export function InvoiceModalContent() {
   }
 
   const job = invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
-  // hand-made invoices are built here; job invoices flow from the job (read-only).
-  const editable = !job && invoice.status === "draft";
+  // Hand-made invoices are built here; job invoices flow from the job and are read-only.
+  //
+  // Keyed on jobId, NOT on whether the job object was found. The jobs collection holds one page,
+  // so an invoice raised from a job outside it found nothing, decided the invoice was hand-made,
+  // and opened the editor: a blank "Search or add a customer" box over an invoice that HAS a
+  // customer, an empty line table, and an Archive button — for a bill the shop cannot edit here.
+  const editable = invoice.jobId == null && invoice.status === "draft";
   const sent = invoice.status !== "draft";
   const due = invDue(invoice);
   const total = invoice.total ?? 0;
