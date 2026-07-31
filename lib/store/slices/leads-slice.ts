@@ -176,6 +176,8 @@ export interface LeadsSlice {
 
   /** Replace the entire leads array — called by the server hydrator. */
   setLeads: (leads: Lead[]) => void;
+  /** Put a customer fetched by id into the store, without a network write. See adoptJob. */
+  adoptLead: (lead: Lead) => void;
   /** Replace the entire tasks array — called by the TasksHydrator. */
   setTasks: (tasks: Task[]) => void;
 
@@ -216,6 +218,25 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   tasks: [],
 
   setLeads: (leads) => set({ leads }),
+
+  // ---------------------------------------------------------------------------
+  // adoptLead — a customer the store never hydrated, fetched by id and merged in.
+  //
+  // The Customers list is served by the database a page at a time, so it shows
+  // customers outside the hydrator's page. Opening one of those found nothing in
+  // the store and rendered "This customer is no longer available — they may have
+  // been archived", which is not merely unhelpful, it is FALSE: the customer
+  // exists and is not archived. Same failure the Jobs list had before adoptJob.
+  //
+  // Replace by id when already present (idempotent), else prepend. No mutation
+  // fires — this is a read arriving late, not an edit.
+  // ---------------------------------------------------------------------------
+  adoptLead: (lead) =>
+    set((s) => ({
+      leads: s.leads.some((l) => l.id === lead.id)
+        ? s.leads.map((l) => (l.id === lead.id ? { ...l, ...lead } : l))
+        : [lead, ...s.leads],
+    })),
 
   setTasks: (tasks) => set({ tasks }),
 

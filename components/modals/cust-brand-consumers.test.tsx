@@ -103,6 +103,18 @@ vi.mock("@/lib/store/app-store", () => {
   return { useAppStore, useActiveModal };
 });
 
+// Both sheets fetch their record by id when the store does not hold it (the ledger and the rail
+// page through the database). These tests seed the store, so the fetch stays idle — but the hook
+// still runs, and it needs a client.
+vi.mock("@/lib/trpc/client", () => ({
+  api: {
+    v1: {
+      quoting: { get: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) } },
+      invoicing: { get: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) } },
+    },
+  },
+}));
+
 // Import after vi.mock so the mock is in place when the modules resolve.
 import { CustQuoteModalContent } from "./cust-quote-modal";
 import { CustInvoiceModalContent } from "./cust-invoice-modal";

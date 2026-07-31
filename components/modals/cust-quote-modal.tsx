@@ -37,6 +37,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/trpc/client";
 import { useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Brand, Estimate, EstimateLine, QuoteTierKey } from "@/lib/store/types";
@@ -503,12 +504,26 @@ export function CustQuoteModalContent() {
   const leads = useAppStore((s) => s.leads);
   const brand = useAppStore((s) => s.brand);
   const updateEstimate = useAppStore((s) => s.updateEstimate);
+  const adoptEstimate = useAppStore((s) => s.adoptEstimate);
   const declineEstimate = useAppStore((s) => s.declineEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const updateLead = useAppStore((s) => s.updateLead);
 
   const estId = activeModal?.params?.estId as string | undefined;
   const estimate = estimates.find((x) => x.id === estId);
+
+  // FETCH-ON-MISS. Estimates hydrate one page like everything else, and this sheet is opened from
+  // the Pipeline rail and from links a customer follows — an empty render here is a quote that
+  // "disappeared". adoptEstimate takes the DTO without firing a write.
+  const missing = Boolean(estId) && !estimate;
+  const estQ = api.v1.quoting.get.useQuery(
+    { estimateId: estId ?? "" },
+    { enabled: missing, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    // fu is client-local follow-up state; a freshly fetched estimate has none yet.
+    if (missing && estQ.data) adoptEstimate(estQ.data, { on: false, stage: 0 });
+  }, [missing, estQ.data, adoptEstimate]);
 
   // This surface IS the customer's phone in the sample world. Opening it records
   // a read (live while the session is open — the Rail's breathing dot); closing
@@ -521,7 +536,13 @@ export function CustQuoteModalContent() {
     return () => useAppStore.getState().endRead(estId);
   }, [estId]);
 
-  if (!estimate) return null;
+  if (!estimate) {
+    if (missing && estQ.isLoading) return <p className="muted">Loading…</p>;
+    if (missing && estQ.isError) {
+      return <p className="muted">Couldn&apos;t load this quote. Close and try again.</p>;
+    }
+    return null;
+  }
 
   const lead = leads.find((l) => l.id === estimate.leadId);
   // Pre-accept GBB: the picker structure from the real tier-tagged lines.

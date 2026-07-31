@@ -61,6 +61,18 @@ vi.mock("@/lib/store/app-store", () => {
 // The send primitive pulls trpc; the modal only needs its clock stamp.
 vi.mock("@/features/home/send", () => ({ clockNow: () => "9:00am" }));
 
+// The sheet fetches the quote by id when the store does not hold it — estimates hydrate one page,
+// so a quote outside it used to render blank. These tests seed the store, so the fetch stays idle.
+vi.mock("@/lib/trpc/client", () => ({
+  api: {
+    v1: {
+      quoting: {
+        get: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) },
+      },
+    },
+  },
+}));
+
 import { CustQuoteModalContent } from "./cust-quote-modal";
 
 // ---------------------------------------------------------------------------

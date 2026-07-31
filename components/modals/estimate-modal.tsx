@@ -124,7 +124,12 @@ export function EstimateModalContent() {
   // lines/pricing), so without this a refreshed session opens every quote as an
   // empty table with a $0 total. Fetch once per open and adopt into the store.
   // retry:false — store-local drafts (never persisted) 404 here; that's expected.
-  const needsFull = Boolean(e) && e!.lines.length === 0;
+  // Two reasons to fetch, and the second was missing. `needsFull` covers a store copy that is
+  // header-only (lines are not hydrated, so a refreshed session opened every quote as an empty
+  // table). `absent` covers the quote not being in the store AT ALL — estimates hydrate one page,
+  // so a quote outside it opened as a blank sheet with no explanation.
+  const absent = Boolean(estId) && !e;
+  const needsFull = absent || (Boolean(e) && e!.lines.length === 0);
   const fullQuery = api.v1.quoting.get.useQuery(
     { estimateId: estId ?? "" },
     { enabled: Boolean(estId) && needsFull, staleTime: 30_000, retry: false, refetchOnWindowFocus: false },
@@ -154,7 +159,13 @@ export function EstimateModalContent() {
   // lead.phone / lead.email are intentionally excluded to avoid spurious resets on every render.
   }, [sendOpen, sendChannel, lead?.id]);
 
-  if (!e) return null;
+  if (!e) {
+    if (absent && fullQuery.isLoading) return <p className="muted">Loading…</p>;
+    if (absent && fullQuery.isError) {
+      return <p className="muted">Couldn&apos;t load this quote. Close and try again.</p>;
+    }
+    return null;
+  }
 
   // L2: surface a non-not_found query error inline rather than silently leaving the table empty.
   if (fullQuery.isError && fullQuery.error?.data?.code !== "NOT_FOUND") {

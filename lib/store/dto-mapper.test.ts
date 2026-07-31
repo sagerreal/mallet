@@ -88,6 +88,7 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     sourceJobId: "job-xyz",
     authorization: null,
     leadId: "lead-abc",
+    customerName: "Sofia Hernandez",
     title: "Final bill",
     status: "sent",
     total: makeMoneyDTO(12000),        // $120.00 — TAX-INCLUSIVE
