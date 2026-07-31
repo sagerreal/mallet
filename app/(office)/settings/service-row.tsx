@@ -9,7 +9,8 @@
  * live inside a service (Owen, Jul 31 2026): the pricebook's two item kinds are
  * flat — Services (line-item templates) and Materials (sellable parts), and a
  * quote pulls from either. The service_material join persists for legacy data
- * but has no editor here.
+ * but has no editor here. Labor & tax sit in the open grid (HCP shows duration
+ * and taxable on the service; a reveal hiding two small fields was ceremony).
  *
  * "Add Good/Better/Best" (option groups) is Phase 3 — intentionally absent here
  * (no dead buttons for features that don't exist yet).
@@ -103,9 +104,6 @@ export function ServiceRow({
   onArchive,
 }: ServiceRowProps) {
   const [open, setOpen] = useState(false);
-  // C-shape editor: the default is just name · price · cost; labor/tax/parts are
-  // opt-in behind this reveal (most services never need them).
-  const [more, setMore] = useState(false);
   const nameField = useFieldId();
   const costField = useFieldId();
   const laborField = useFieldId();
@@ -193,9 +191,6 @@ export function ServiceRow({
                 </EditorRow>
               </>
             )}
-
-            {more && (
-              <>
             <EditorRow label="Labor" field={laborField}>
               <span className="svced-money">
                 <input
@@ -226,15 +221,7 @@ export function ServiceRow({
                 <i />
               </label>
             </EditorRow>
-              </>
-            )}
           </div>
-
-          {!more && (
-            <button type="button" className="linklike svced-more" onClick={() => setMore(true)}>
-              + Labor & tax
-            </button>
-          )}
 
           <div className="svced-foot">
             <button className="btn sm ghost" style={{ color: "var(--red-700, #b91c1c)" }} onClick={() => onArchive(service.id)}>
