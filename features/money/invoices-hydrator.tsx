@@ -76,6 +76,8 @@ function toStoreInvoice(dto: InvoiceSummaryDTO): Invoice {
     termsDays: undefined,
     // lines: empty from list DTO; modal fetches them on open.
     lines: [],
+    // A summary row — the modal must not decide editor-vs-read-only from it.
+    partial: true,
     archived,
     // Every invoice from the list endpoint is DB-origin. Without this flag,
     // the origin !== "db" guards in invoices-slice (recordPayment / sendInvoice /

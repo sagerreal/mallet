@@ -444,6 +444,14 @@ export interface Invoice {
    * `invPaid` prefers it. Absent on a fully-loaded invoice, where the payments ARE the truth.
    */
   paidTotal?: number;
+  /**
+   * True when this row was built from a LIST/summary DTO — no lines, no jobId, no payment
+   * history. A surface that DECIDES anything from those fields (the invoice modal choosing
+   * editor vs read-only) must wait for the full record instead of trusting a partial row:
+   * a job's draft with `jobId: null` from a summary opened the hand-made-draft editor —
+   * empty Bill-to, "No lines yet" — under a real $685 bill. Cleared by adopting the full DTO.
+   */
+  partial?: true;
   status: string;
   /** Days since the invoice was raised. Display only — "overdue" is `dueAt`, not this. */
   age: number;
