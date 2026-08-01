@@ -31,10 +31,11 @@ export const pricebookItems = pgTable(
     active: boolean("active").notNull().default(true),
     position: integer("position").notNull().default(0),
     // Nullable: null = flat price (today's unchanged semantics). When set, unit_price_cents is
-    // a PER-UNIT rate against this measured room quantity kind (e.g. painting walls priced per
-    // sqft) rather than a flat price. Mirrors measurements' PaintingQuantityKind — see
-    // modules/pricebook/domain/service.ts's MEASURED_BY_KIND_SET (compile-time pinned to the
-    // measurements module's type without importing its barrel).
+    // a PER-UNIT rate against this measured quantity kind — a room kind (e.g. painting walls
+    // priced per sqft), a site kind (a traced outdoor surface's area/perimeter), or 'hour'.
+    // Mirrors measurements' PaintingQuantityKind/SiteQuantityKind — see
+    // modules/pricebook/domain/service.ts's MEASURED_BY_KIND_SET/SITE_KIND_SET (compile-time
+    // pinned to the measurements module's types without importing its barrel).
     measuredBy: text("measured_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -58,7 +59,7 @@ export const pricebookItems = pgTable(
     }).onDelete("set null"),
     check(
       "pricebook_items_measured_by_check",
-      sql`${t.measuredBy} is null or ${t.measuredBy} in ('hour', 'walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count')`,
+      sql`${t.measuredBy} is null or ${t.measuredBy} in ('hour', 'walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count', 'site_sqft', 'site_lnft')`,
     ),
   ],
 );

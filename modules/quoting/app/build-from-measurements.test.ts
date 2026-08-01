@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { asJobId, asLeadId, asServiceId, isOk, type JobId, type LeadId } from "@mallet/shared/types";
-import type { RoomQuantitiesForJob, RoomQuantitiesReader } from "@mallet/measurements";
+import type {
+  RoomQuantitiesForJob,
+  RoomQuantitiesReader,
+  SiteQuantitiesForJob,
+  SiteQuantitiesReader,
+} from "@mallet/measurements";
 import type { RateService, RateServicesReader } from "../domain/rate-services-reader";
 import { BuildFromMeasurementsUseCase, type JobLeadReader } from "./build-from-measurements";
 
@@ -21,6 +26,13 @@ class FakeRoomQuantitiesReader implements RoomQuantitiesReader {
   }
 }
 
+class FakeSiteQuantitiesReader implements SiteQuantitiesReader {
+  constructor(private readonly sites: SiteQuantitiesForJob[]) {}
+  async readForJob(): Promise<SiteQuantitiesForJob[]> {
+    return this.sites;
+  }
+}
+
 class FakeRateServicesReader implements RateServicesReader {
   constructor(private readonly services: RateService[]) {}
   async listMeasuredByActive(): Promise<RateService[]> {
@@ -38,13 +50,31 @@ const service = (overrides: Partial<RateService>): RateService => ({
   ...overrides,
 });
 
+const flatSite = (overrides: Partial<SiteQuantitiesForJob> = {}): SiteQuantitiesForJob => ({
+  name: "Driveway",
+  surface: "flat",
+  pitchRise: null,
+  areaSqft: 640,
+  perimeterLnft: 104,
+  ...overrides,
+});
+
+const build = (
+  rooms: RoomQuantitiesForJob[],
+  sites: SiteQuantitiesForJob[],
+  services: RateService[],
+  leadId: LeadId | null = LEAD,
+): BuildFromMeasurementsUseCase =>
+  new BuildFromMeasurementsUseCase(
+    new FakeJobLeadReader(leadId),
+    new FakeRoomQuantitiesReader(rooms),
+    new FakeSiteQuantitiesReader(sites),
+    new FakeRateServicesReader(services),
+  );
+
 describe("BuildFromMeasurementsUseCase", () => {
   it("returns notFound when the job does not exist", async () => {
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(null),
-      new FakeRoomQuantitiesReader([]),
-      new FakeRateServicesReader([]),
-    );
+    const useCase = build([], [], [], null);
     const result = await useCase.exec({ jobId: JOB });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe("not_found");
@@ -58,11 +88,7 @@ describe("BuildFromMeasurementsUseCase", () => {
         quantities: [{ kind: "walls_sqft", value: 240, status: "derived" }],
       },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([service({ measuredBy: "walls_sqft" })]),
-    );
+    const useCase = build(rooms, [], [service({ measuredBy: "walls_sqft" })]);
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
@@ -74,7 +100,7 @@ describe("BuildFromMeasurementsUseCase", () => {
         rateCents: 250,
         costCents: 90,
         measuredKind: "walls_sqft",
-        roomName: "Living Room",
+        sourceName: "Living Room",
         serviceId: asServiceId("33333333-3333-3333-3333-333333333333"),
       },
     ]);
@@ -90,11 +116,7 @@ describe("BuildFromMeasurementsUseCase", () => {
         quantities: [{ kind: "ceiling_sqft", value: 120, status: "derived" }],
       },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([]), // no ceiling service in the pricebook
-    );
+    const useCase = build(rooms, [], []); // no ceiling service in the pricebook
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
@@ -110,15 +132,11 @@ describe("BuildFromMeasurementsUseCase", () => {
         quantities: [{ kind: "walls_sqft", value: 100, status: "derived" }],
       },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([
-        service({ name: "Premium paint", position: 5, unitPriceCents: 500 }),
-        service({ name: "Standard paint", position: 1, unitPriceCents: 250 }),
-        service({ name: "Mid paint", position: 3, unitPriceCents: 300 }),
-      ]),
-    );
+    const useCase = build(rooms, [], [
+      service({ name: "Premium paint", position: 5, unitPriceCents: 500 }),
+      service({ name: "Standard paint", position: 1, unitPriceCents: 250 }),
+      service({ name: "Mid paint", position: 3, unitPriceCents: 300 }),
+    ]);
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
@@ -151,16 +169,8 @@ describe("BuildFromMeasurementsUseCase", () => {
       unitPriceCents: 222,
     });
 
-    const forward = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([svcA, svcB]),
-    );
-    const reversed = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([svcB, svcA]),
-    );
+    const forward = build(rooms, [], [svcA, svcB]);
+    const reversed = build(rooms, [], [svcB, svcA]);
 
     const forwardResult = await forward.exec({ jobId: JOB });
     const reversedResult = await reversed.exec({ jobId: JOB });
@@ -182,11 +192,7 @@ describe("BuildFromMeasurementsUseCase", () => {
         quantities: [{ kind: "doors_count", value: 0, status: "derived" }],
       },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([service({ measuredBy: "doors_count" })]),
-    );
+    const useCase = build(rooms, [], [service({ measuredBy: "doors_count" })]);
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
@@ -202,11 +208,7 @@ describe("BuildFromMeasurementsUseCase", () => {
     const rooms: RoomQuantitiesForJob[] = [
       { roomName: "Closet", hasUnconfirmed: false, quantities: [] },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([service({ measuredBy: "walls_sqft" })]),
-    );
+    const useCase = build(rooms, [], [service({ measuredBy: "walls_sqft" })]);
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
@@ -222,11 +224,7 @@ describe("BuildFromMeasurementsUseCase", () => {
         quantities: [{ kind: "doors_count", value: 3, status: "derived" }],
       },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([service({ measuredBy: "doors_count", name: "Door painting" })]),
-    );
+    const useCase = build(rooms, [], [service({ measuredBy: "doors_count", name: "Door painting" })]);
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
@@ -241,11 +239,7 @@ describe("BuildFromMeasurementsUseCase", () => {
         quantities: [{ kind: "walls_sqft", value: 180, status: "derived" }],
       },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([service({ measuredBy: "walls_sqft" })]),
-    );
+    const useCase = build(rooms, [], [service({ measuredBy: "walls_sqft" })]);
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
@@ -266,14 +260,125 @@ describe("BuildFromMeasurementsUseCase", () => {
         quantities: [{ kind: "walls_sqft", value: 200, status: "derived" }],
       },
     ];
-    const useCase = new BuildFromMeasurementsUseCase(
-      new FakeJobLeadReader(LEAD),
-      new FakeRoomQuantitiesReader(rooms),
-      new FakeRateServicesReader([service({ measuredBy: "walls_sqft" })]),
+    const useCase = build(rooms, [], [service({ measuredBy: "walls_sqft" })]);
+    const result = await useCase.exec({ jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.seedLines.map((l) => l.sourceName)).toEqual(["Room A", "Room B"]);
+  });
+
+  it("a flat traced surface seeds an area line and a perimeter line from its per-sqft/per-lnft services", async () => {
+    const sealSvc = service({
+      id: asServiceId("55555555-5555-5555-5555-555555555555"),
+      name: "Seal coating",
+      measuredBy: "site_sqft",
+      unitPriceCents: 1400,
+      costCents: 400,
+    });
+    const edgeSvc = service({
+      id: asServiceId("66666666-6666-6666-6666-666666666666"),
+      name: "Edge restraint",
+      measuredBy: "site_lnft",
+      unitPriceCents: 800,
+      costCents: 200,
+    });
+    const useCase = build([], [flatSite()], [sealSvc, edgeSvc]);
+    const result = await useCase.exec({ jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.seedLines).toEqual([
+      {
+        description: "Driveway — Seal coating",
+        quantity: 640,
+        rateCents: 1400,
+        costCents: 400,
+        measuredKind: "site_sqft",
+        sourceName: "Driveway",
+        serviceId: sealSvc.id,
+      },
+      {
+        description: "Driveway — Edge restraint",
+        quantity: 104,
+        rateCents: 800,
+        costCents: 200,
+        measuredKind: "site_lnft",
+        sourceName: "Driveway",
+        serviceId: edgeSvc.id,
+      },
+    ]);
+    expect(result.value.gaps).toEqual([]);
+  });
+
+  it("a pitched surface seeds the CORRECTED roof area and names its pitch in the line", async () => {
+    // areaSqft is already pitch-corrected by the domain (1282 sqft footprint at 6/12 ≈ 1433) —
+    // the use-case must pass it through untouched and label the source with the pitch, never
+    // fall back to the raw footprint.
+    const roofSvc = service({ name: "Shingle install", measuredBy: "site_sqft", unitPriceCents: 550 });
+    const useCase = build(
+      [],
+      [flatSite({ name: "Main roof", surface: "pitched", pitchRise: 6, areaSqft: 1433.35, perimeterLnft: null })],
+      [roofSvc],
     );
     const result = await useCase.exec({ jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
-    expect(result.value.seedLines.map((l) => l.roomName)).toEqual(["Room A", "Room B"]);
+    expect(result.value.seedLines).toEqual([
+      {
+        description: "Main roof at 6/12 — Shingle install",
+        quantity: 1433.35,
+        rateCents: 550,
+        costCents: 90,
+        measuredKind: "site_sqft",
+        sourceName: "Main roof at 6/12",
+        serviceId: roofSvc.id,
+      },
+    ]);
+  });
+
+  it("a surface with no priced site service surfaces a Site area gap", async () => {
+    const useCase = build([], [flatSite()], []); // pricebook has no site-priced services
+    const result = await useCase.exec({ jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.seedLines).toEqual([]);
+    expect(result.value.gaps).toEqual([
+      { kind: "site_sqft", label: "Site area" },
+      { kind: "site_lnft", label: "Site perimeter" },
+    ]);
+  });
+
+  it("a manual capture with no perimeter neither seeds a lnft line nor reports a lnft gap", async () => {
+    const sealSvc = service({ name: "Seal coating", measuredBy: "site_sqft" });
+    const useCase = build([], [flatSite({ name: "Back patio", perimeterLnft: null, areaSqft: 300 })], [sealSvc]);
+    const result = await useCase.exec({ jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.seedLines).toHaveLength(1);
+    expect(result.value.seedLines[0]?.measuredKind).toBe("site_sqft");
+    expect(result.value.gaps).toEqual([]);
+  });
+
+  it("rooms and surfaces seed side by side on the same job", async () => {
+    const rooms: RoomQuantitiesForJob[] = [
+      {
+        roomName: "Living Room",
+        hasUnconfirmed: false,
+        quantities: [{ kind: "walls_sqft", value: 240, status: "derived" }],
+      },
+    ];
+    const wallsSvc = service({ measuredBy: "walls_sqft" });
+    const siteSvc = service({
+      id: asServiceId("77777777-7777-7777-7777-777777777777"),
+      name: "Seal coating",
+      measuredBy: "site_sqft",
+    });
+    const useCase = build(rooms, [flatSite({ perimeterLnft: null })], [wallsSvc, siteSvc]);
+    const result = await useCase.exec({ jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.seedLines.map((l) => l.description)).toEqual([
+      "Living Room — Paint walls",
+      "Driveway — Seal coating",
+    ]);
   });
 });

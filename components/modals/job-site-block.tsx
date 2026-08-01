@@ -12,8 +12,9 @@
 
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useJobSites } from "@/features/measurements/use-job-sites";
-import { usePushModal, useAppStore } from "@/lib/store/app-store";
+import { usePushModal, useCloseModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -29,6 +30,16 @@ export function JobSiteBlock({ jobId }: { jobId: string }) {
   const query = useJobSites(jobId);
   const sites = useAppStore((s) => s.sitesByJob[jobId]) ?? EMPTY_SITES;
   const pushModal = usePushModal();
+  const close = useCloseModal();
+  const router = useRouter();
+
+  // "Build the price" — same navigate-away pattern as job-measure-block.tsx: close the modal
+  // stack, route to the composer, which seeds itself from v1.quoting.buildFromMeasurements
+  // (rooms AND traced surfaces) on mount.
+  function buildThePrice() {
+    close();
+    router.push(`/composer?job=${jobId}`);
+  }
 
   const loadFailed = shouldShowLoadFailed({
     isFetched: query.isFetched,
@@ -59,6 +70,17 @@ export function JobSiteBlock({ jobId }: { jobId: string }) {
             <div className="empty-att" style={{ marginBottom: "var(--space-2)" }}>
               No surfaces traced yet.
             </div>
+          )}
+
+          {sites.length > 0 && (
+            <button
+              type="button"
+              className="btn sm"
+              style={{ marginBottom: "var(--space-2)" }}
+              onClick={buildThePrice}
+            >
+              Build the price
+            </button>
           )}
         </>
       )}

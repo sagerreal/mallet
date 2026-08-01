@@ -25,7 +25,11 @@ import { DrizzleServiceNameReader } from "../infra/drizzle-service-name-reader";
 import { DrizzleRateServicesReader } from "../infra/drizzle-rate-services-reader";
 import { DrizzleJobLeadReader } from "../infra/drizzle-job-lead-reader";
 import { BuildFromMeasurementsUseCase } from "../app/build-from-measurements";
-import { MeasurementRoomQuantitiesReader, DrizzleMeasurementRepository } from "@mallet/measurements";
+import {
+  MeasurementRoomQuantitiesReader,
+  MeasurementSiteQuantitiesReader,
+  DrizzleMeasurementRepository,
+} from "@mallet/measurements";
 
 const statusEnum = z.enum(ESTIMATE_STATUSES as unknown as [EstimateStatus, ...EstimateStatus[]]);
 const moneyDTO = z.object({ cents: z.number().int(), currency: z.literal("USD") });
@@ -310,6 +314,8 @@ const measuredKindDTO = z.enum([
   "crown_lnft",
   "doors_count",
   "windows_count",
+  "site_sqft",
+  "site_lnft",
 ]);
 const buildFromMeasurementsOutput = z.object({
   leadId: z.string().uuid(),
@@ -320,7 +326,9 @@ const buildFromMeasurementsOutput = z.object({
       rateCents: z.number().int(),
       costCents: z.number().int(),
       measuredKind: measuredKindDTO,
-      roomName: z.string(),
+      // Provenance: the room (painting kinds) or traced surface (site kinds) the quantity
+      // came from.
+      sourceName: z.string(),
       serviceId: z.string().uuid(),
     }),
   ),
@@ -607,17 +615,19 @@ export const createEstimateRouter = () =>
         };
       }),
 
-    // "Build the price": turn a job's scanned rooms into estimate seed lines the composer can
-    // drop straight into a draft. Read-only (no estimate is created here) — the composer decides
-    // what to keep before calling v1.quoting.draft.
+    // "Build the price": turn a job's measurements — scanned rooms AND traced site surfaces —
+    // into estimate seed lines the composer can drop straight into a draft. Read-only (no
+    // estimate is created here) — the composer decides what to keep before calling v1.quoting.draft.
     buildFromMeasurements: ownerOrOffice
       .input(buildFromMeasurementsInput)
       .output(buildFromMeasurementsOutput)
       .query(async ({ ctx, input }) => {
         const jobId = asJobId(input.jobId);
+        const measurements = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new BuildFromMeasurementsUseCase(
           new DrizzleJobLeadReader(ctx.tx, ctx.principal.orgId),
-          new MeasurementRoomQuantitiesReader(new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId)),
+          new MeasurementRoomQuantitiesReader(measurements),
+          new MeasurementSiteQuantitiesReader(measurements),
           new DrizzleRateServicesReader(ctx.tx, ctx.principal.orgId),
         );
         const built = orThrow(await useCase.exec({ jobId }));

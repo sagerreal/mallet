@@ -113,6 +113,15 @@ describe("Service.create measuredBy", () => {
     }
   });
 
+  it("accepts each of the site (aerial takeoff) quantity kinds", () => {
+    const kinds = ["site_sqft", "site_lnft"] as const;
+    for (const kind of kinds) {
+      const r = Service.create(baseProps({ measuredBy: kind }));
+      expect(isOk(r)).toBe(true);
+      if (isOk(r)) expect(r.value.props.measuredBy).toBe(kind);
+    }
+  });
+
   it("rejects a garbage measuredBy value", () => {
     const r = Service.create(baseProps({ measuredBy: "square_footage" as never }));
     expect(r.ok).toBe(false);

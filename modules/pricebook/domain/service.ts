@@ -6,9 +6,9 @@ import { validation, ok, err } from "@mallet/shared/types";
 // without DB env in unit tests). `import type` is erased at compile time — verbatimModuleSyntax
 // guarantees no runtime import statement survives — so this never triggers that barrel
 // evaluation despite going through the same specifier.
-import type { PaintingQuantityKind } from "@mallet/measurements";
+import type { PaintingQuantityKind, SiteQuantityKind } from "@mallet/measurements";
 
-export type { PaintingQuantityKind };
+export type { PaintingQuantityKind, SiteQuantityKind };
 
 // Compile-time pin: if derive-painting.ts's PaintingQuantityKind ever adds/removes a literal,
 // this exhaustiveness map fails to typecheck (`Record<PaintingQuantityKind, true>` requires
@@ -24,16 +24,28 @@ const MEASURED_BY_KIND_SET: Record<PaintingQuantityKind, true> = {
   windows_count: true,
 };
 
+// Same compile-time pin for the site (aerial takeoff) kinds — site-quantities-reader.ts is
+// the source of the membership.
+const SITE_KIND_SET: Record<SiteQuantityKind, true> = {
+  site_sqft: true,
+  site_lnft: true,
+};
+
 // The 6 kinds a measured-by service can be priced per unit of, for UI/validation consumers.
 export const MEASURED_BY_KINDS: readonly PaintingQuantityKind[] = Object.keys(
   MEASURED_BY_KIND_SET,
 ) as PaintingQuantityKind[];
 
-/** What a service's price is PER: a measured room quantity, or an hour of labor. */
-export type ServicePricedBy = PaintingQuantityKind | "hour";
+/** The measured quantities (room OR site) a per-unit service can price against. */
+export type MeasuredQuantityKind = PaintingQuantityKind | SiteQuantityKind;
+
+/** What a service's price is PER: a measured room/site quantity, or an hour of labor. */
+export type ServicePricedBy = MeasuredQuantityKind | "hour";
 
 const isMeasuredByKind = (v: string): v is ServicePricedBy =>
-  v === "hour" || Object.prototype.hasOwnProperty.call(MEASURED_BY_KIND_SET, v);
+  v === "hour" ||
+  Object.prototype.hasOwnProperty.call(MEASURED_BY_KIND_SET, v) ||
+  Object.prototype.hasOwnProperty.call(SITE_KIND_SET, v);
 
 export interface ServiceProps {
   readonly id: ServiceId;

@@ -118,7 +118,7 @@ suite("v1.quoting.buildFromMeasurements (full stack, live RLS)", () => {
       quantity: 240,
       rateCents: 250,
       costCents: 90,
-      roomName: "Living Room",
+      sourceName: "Living Room",
       serviceId: wallsService.id,
     });
     expect(wallsService.unitPriceCents).toBe(250);
@@ -130,7 +130,7 @@ suite("v1.quoting.buildFromMeasurements (full stack, live RLS)", () => {
       quantity: 2,
       rateCents: 4_500,
       costCents: 1_200,
-      roomName: "Living Room",
+      sourceName: "Living Room",
       serviceId: doorsService.id,
     });
     expect(doorsService.unitPriceCents).toBe(4_500);
@@ -139,6 +139,42 @@ suite("v1.quoting.buildFromMeasurements (full stack, live RLS)", () => {
     const gapKinds = result.gaps.map((g) => g.kind).sort();
     expect(gapKinds).toEqual(["baseboard_lnft", "ceiling_sqft", "crown_lnft", "windows_count"].sort());
     expect(result.gaps.find((g) => g.kind === "ceiling_sqft")?.label).toBe("Ceiling");
+  });
+
+  it("a traced site surface seeds lines from site-priced services", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const sealService = await caller.v1.pricebook.service.create({
+      name: "Seal coating",
+      unitPriceCents: 1_400,
+      costCents: 400,
+      measuredBy: "site_sqft",
+      position: 1,
+    });
+
+    const job = await caller.v1.jobs.create({ leadId: leadAId, title: "Driveway seal" });
+
+    await caller.v1.measurements.siteCreate({
+      jobId: job.id,
+      name: "Driveway",
+      source: "manual",
+      surface: "flat",
+      areaSqft: 640,
+    });
+
+    const result = await caller.v1.quoting.buildFromMeasurements({ jobId: job.id });
+
+    const siteLine = result.seedLines.find((l) => l.measuredKind === "site_sqft");
+    expect(siteLine).toMatchObject({
+      description: "Driveway — Seal coating",
+      quantity: 640,
+      rateCents: 1_400,
+      costCents: 400,
+      sourceName: "Driveway",
+      serviceId: sealService.id,
+    });
+    // A manual capture has no perimeter — site_lnft was never seen, so it is not a gap.
+    expect(result.gaps.find((g) => g.kind === "site_lnft")).toBeUndefined();
   });
 
   it("a different org's job is not found (tenant isolation)", async () => {
