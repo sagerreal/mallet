@@ -13,6 +13,7 @@ export * from "./notifications";
 export * from "./outbox";
 export * from "./api-keys";
 export * from "./tool-confirmations";
+export * from "./lead-notes";
 export * from "./tasks";
 export * from "./invites";
 export * from "./time-entries";

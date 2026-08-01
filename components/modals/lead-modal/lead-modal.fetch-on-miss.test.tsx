@@ -40,7 +40,11 @@ vi.mock("@/lib/store/app-store", () => ({
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
-      customers: { get: { useQuery: () => leadQuery } },
+      customers: {
+        get: { useQuery: () => leadQuery },
+        // The activity trail is fetched per customer; settled/empty for these routing tests.
+        listNotes: { useQuery: () => ({ data: undefined, isFetched: true }) },
+      },
       // per-customer work now fetched server-side; settled/empty for these routing tests
       quoting: { listByLead: { useQuery: () => ({ data: undefined, isFetched: true }) } },
       tasks: { list: { useQuery: () => ({ data: undefined, isFetched: true }) } },

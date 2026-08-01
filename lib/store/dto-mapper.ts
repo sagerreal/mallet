@@ -18,7 +18,8 @@
 
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { daysSince } from "@/lib/clock";
-import type { Addon, Estimate, Invoice, Job, JobLine, TimeEntry, Visit } from "./types";
+import { shortWhen } from "@/lib/format";
+import type { Addon, Estimate, Invoice, Job, JobLine, LeadNote, TimeEntry, Visit } from "./types";
 import { JOB_ORIGIN } from "./hydrator-config";
 
 export type JobDTO = RouterOutputs["v1"]["visits"]["createVisit"];
@@ -38,6 +39,28 @@ export type InvoiceSummaryDTO = RouterOutputs["v1"]["invoicing"]["list"]["items"
 export type EstimateSummaryDTO = RouterOutputs["v1"]["quoting"]["list"]["items"][number];
 export type TimeEntryDTO = RouterOutputs["v1"]["timesheets"]["list"]["items"][number];
 type VisitDTO = JobDTO["visits"][number];
+
+export type LeadNoteDTO = RouterOutputs["v1"]["customers"]["listNotes"]["items"][number];
+
+/**
+ * A persisted activity entry → the store's LeadNote shape, so the note feed renders a server row
+ * and a just-typed optimistic one identically. `when` becomes a display string here (the feed
+ * shows it verbatim); the ISO stamp is what the server ordered by, and is not needed again.
+ */
+export function dtoLeadNoteToStore(dto: LeadNoteDTO): LeadNote {
+  return {
+    id: dto.id,
+    type: dto.kind,
+    when: shortWhen(dto.createdAt),
+    t: dto.body,
+    ...(dto.author ? { from: dto.author } : {}),
+    ...(dto.direction ? { dir: dto.direction } : {}),
+    ...(dto.outcome ? { outcome: dto.outcome } : {}),
+    ...(dto.durationLabel ? { dur: dto.durationLabel } : {}),
+    ...(dto.via ? { via: dto.via } : {}),
+    ...(dto.overnight ? { overnight: true } : {}),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Time helpers (duplicated in jobs-hydrator; exported from here for slices)

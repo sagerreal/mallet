@@ -22,7 +22,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/trpc/client";
-import { dtoEstimateSummaryToStore } from "@/lib/store/dto-mapper";
+import { dtoEstimateSummaryToStore, dtoLeadNoteToStore } from "@/lib/store/dto-mapper";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { Modal } from "../modal";
 import { SheetRow } from "../sheet-row";
@@ -117,6 +117,7 @@ export function LeadModal({ open }: { open: boolean }) {
   const leads = useAppStore((s) => s.leads);
   const adoptLead = useAppStore((s) => s.adoptLead);
   const adoptEstimateRecord = useAppStore((s) => s.adoptEstimateRecord);
+  const adoptLeadNotes = useAppStore((s) => s.adoptLeadNotes);
   const estimates = useAppStore((s) => s.estimates);
   const tasks = useAppStore((s) => s.tasks);
   const updateLead = useAppStore((s) => s.updateLead);
@@ -148,6 +149,19 @@ export function LeadModal({ open }: { open: boolean }) {
     { leadId: leadId ?? "" },
     { enabled: Boolean(lead), refetchOnWindowFocus: false },
   );
+  // THE TRAIL, from the database. Notes/calls/texts used to live only in the store, which the
+  // hydrator resets on every refetch — so a gate code typed here vanished. Fetched per customer
+  // rather than ridden along on the list: the list shows 50 rows and reads none of their trails.
+  const notesQ = api.v1.customers.listNotes.useQuery(
+    { leadId: leadId ?? "" },
+    { enabled: Boolean(lead), refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    const items = notesQ.data?.items;
+    if (!items || !leadId) return;
+    adoptLeadNotes(leadId, items.map(dtoLeadNoteToStore));
+  }, [notesQ.data, leadId, adoptLeadNotes]);
+
   const leadTasksQ = api.v1.tasks.list.useQuery(
     { leadId: leadId ?? "", done: false, limit: 100 },
     { enabled: Boolean(lead), refetchOnWindowFocus: false },
