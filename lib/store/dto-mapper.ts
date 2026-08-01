@@ -338,12 +338,13 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
-    // addr/phone are not DB columns on jobs — hydrated from the lead on the modal side.
-    addr: "",
-    phone: "",
+    addr: dto.addr ?? "",
+    phone: dto.phone ?? "",
     status,
     archived: false,
     notes: dto.notes ?? "",
+    completion: dto.completion ?? undefined,
+    invRequested: dto.invRequested,
     // Explicitly set (undefined when the DTO carries null) so a reconcile after a
     // detach actually REMOVES the checklist from the store record.
     checklist: dtoChecklistToStore(dto.checklist),
@@ -384,8 +385,11 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     // viewed: anything past draft was at minimum sent — customer has seen it.
     viewed: dto.status !== "draft",
     validDays: dto.validDays ?? undefined,
-    // fu is client-local; preserve the caller's value across the reconcile.
-    fu: priorFu,
+    // fu comes from the server now. priorFu is the fallback for an in-flight optimistic toggle
+    // the response has not caught up with.
+    fu: dto.followUpOn !== undefined
+      ? { on: dto.followUpOn, stage: dto.followUpStage }
+      : priorFu,
     lines: dto.lines.map((l) => ({
       d: l.description,
       q: l.quantity,
@@ -483,6 +487,9 @@ export function dtoInvoiceSummaryToStore(
     partial: true,
     age: daysSince(dto.createdAt),
     dueAt: dto.dueAt,
+    // From the server now — the hydrator used to leave this unset, so the ledger's follow-up
+    // state reset on every refetch.
+    fu: { on: dto.followUpOn, stage: dto.followUpStage },
     archived: dto.status === "void",
     origin: "db",
   };
@@ -506,7 +513,7 @@ export function dtoEstimateSummaryToStore(
     status: dto.status,
     age: daysSince(dto.createdAt),
     viewed: dto.status !== "draft",
-    fu,
+    fu: dto.followUpOn !== undefined ? { on: dto.followUpOn, stage: dto.followUpStage } : fu,
     lines: [],
     cachedTotal: dto.total.cents / 100,
     archived: false,
@@ -559,6 +566,7 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     // Overdue pill unreachable. Overdue now keys off dueAt below; this is display only.
     age: daysSince(dto.createdAt),
     dueAt: dto.dueAt,
+    fu: { on: dto.followUpOn, stage: dto.followUpStage },
     archived: dto.status === "void",
     origin: "db",
   };

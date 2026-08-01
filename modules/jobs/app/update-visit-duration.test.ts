@@ -112,6 +112,10 @@ const makeVisit = (overrides: Partial<JobVisitProps> = {}): JobVisit => {
 
 const makeJob = (overrides: Partial<JobProps> = {}): Job => {
   const props: JobProps = {
+    addr: null,
+    phone: null,
+    completion: null,
+    invRequested: false,
     id: JOB_ID,
     orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
     num: "JOB-9001",

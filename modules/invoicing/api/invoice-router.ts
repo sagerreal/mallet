@@ -94,6 +94,9 @@ const invoiceDTO = z.object({
   payments: z.array(paymentDTO),
   sentAt: z.string().nullable(),
   dueAt: z.string().nullable(),
+  // Is the shop still chasing this one, and how many nudges in.
+  followUpOn: z.boolean(),
+  followUpStage: z.number().int(),
   createdAt: z.string(),
 });
 const summaryDTO = z.object({
@@ -121,6 +124,9 @@ const summaryDTO = z.object({
   total: moneyDTO,
   due: moneyDTO,
   dueAt: z.string().nullable(),
+  // Is the shop still chasing this one, and how many nudges in.
+  followUpOn: z.boolean(),
+  followUpStage: z.number().int(),
   createdAt: z.string(),
 });
 const paginatedSummaryDTO = z.object({
@@ -273,6 +279,8 @@ const toInvoiceDTO = (invoice: Invoice) => {
     })),
     sentAt: iso(p.sentAt),
     dueAt: iso(p.dueAt),
+    followUpOn: p.followUpOn ?? false,
+    followUpStage: p.followUpStage ?? 0,
     createdAt: p.createdAt.toISOString(),
   };
 };
@@ -294,6 +302,8 @@ const toSummaryDTO = (
     total: money$(p.total),
     due: money$(invoice.due()),
     dueAt: iso(p.dueAt),
+    followUpOn: p.followUpOn ?? false,
+    followUpStage: p.followUpStage ?? 0,
     createdAt: p.createdAt.toISOString(),
   };
 };
@@ -403,6 +413,25 @@ export const createInvoiceRouter = () =>
           ctx.tx,
           ctx.principal.orgId,
         );
+      }),
+
+    /** Chasing this invoice: on/off plus how many nudges have gone out. Was client-local, so the
+     *  switch read back OFF after a refetch whatever the user had set. */
+    setFollowUp: ownerOrOffice
+      .input(z.object({
+        invoiceId: z.string().uuid(),
+        on: z.boolean(),
+        stage: z.number().int().min(0).max(10),
+      }))
+      .output(z.object({ ok: z.literal(true) }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        const invoice = await repo.findById(asInvoiceId(input.invoiceId));
+        if (!invoice) throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
+        const next = invoice.setFollowUp(input.on, input.stage, ctx.deps.clock.now());
+        if (!next.ok) throw new TRPCError({ code: "BAD_REQUEST", message: next.error.message });
+        await repo.save(next.value);
+        return { ok: true as const };
       }),
 
     patchLines: ownerOrOffice

@@ -12,10 +12,16 @@ export interface UpdateJobCommand {
   readonly notes?: string | null;
   /** undefined = keep; null = detach; object = attach/replace the before-you-leave checklist. */
   readonly checklist?: JobChecklistProps | null;
+  readonly addr?: string | null;
+  readonly phone?: string | null;
+  readonly completion?: string | null;
+  readonly invRequested?: boolean;
 }
 
-// Edit a job's DB-backed fields (title/svc/notes/checklist). addr/phone are not job columns
-// and never reach here. Terminal jobs reject via Job.patchFields (mirrors UpdateCompanyUseCase).
+// Edit a job's DB-backed fields. addr/phone/completion/invRequested USED to be accepted here and
+// silently dropped for want of columns — the office job modal's Service address row and the
+// close-out sheet's "What was done" edited nothing at all, and the next jobs.list refetch erased
+// what had been typed. Terminal jobs reject via Job.patchFields (mirrors UpdateCompanyUseCase).
 export class UpdateJobUseCase {
   constructor(
     private readonly repo: JobRepository,
@@ -29,7 +35,16 @@ export class UpdateJobUseCase {
 
     const now = this.clock.now();
     const patched = job.patchFields(
-      { title: cmd.title, svc: cmd.svc, notes: cmd.notes, checklist: cmd.checklist },
+      {
+        title: cmd.title,
+        svc: cmd.svc,
+        notes: cmd.notes,
+        checklist: cmd.checklist,
+        addr: cmd.addr,
+        phone: cmd.phone,
+        completion: cmd.completion,
+        invRequested: cmd.invRequested,
+      },
       now,
     );
     if (!isOk(patched)) return patched;

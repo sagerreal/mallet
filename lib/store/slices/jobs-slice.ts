@@ -169,7 +169,12 @@ let _nextAuxId = 6000; // addons + other field-created ids (mirrors state.nextId
 // Job fields that have a DB column via v1.jobs.update. Everything else on Job is
 // local-only (visits ride their own mutations; lines/addons/verify/photos are
 // Phase-5; addr/phone have no job column; status/archived derive server-side).
-const JOB_UPDATE_KEYS = new Set<keyof Job>(["title", "svc", "notes", "checklist"]);
+// The persisted set. addr/phone/completion/invRequested were absent here for want of columns, so
+// the office job modal's Service address row and the close-out sheet's "What was done" wrote to
+// the store and nowhere else — erased by the next jobs.list refetch.
+const JOB_UPDATE_KEYS = new Set<keyof Job>([
+  "title", "svc", "notes", "checklist", "addr", "phone", "completion", "invRequested",
+]);
 
 /** Wire shape of a checklist item for v1.jobs.update (no store-only `position` —
  *  order on the wire is the array order). */
@@ -186,6 +191,10 @@ export interface JobUpdatePayload {
   svc?: string | null;
   notes?: string | null;
   checklist?: { name: string; items: JobChecklistItemPayload[] } | null;
+  addr?: string | null;
+  phone?: string | null;
+  completion?: string | null;
+  invRequested?: boolean;
 }
 
 /**
@@ -209,6 +218,10 @@ export function buildJobUpdatePayload(
     if (key === "title") payload.title = patch.title;
     else if (key === "svc") payload.svc = patch.svc;
     else if (key === "notes") payload.notes = patch.notes;
+    else if (key === "addr") payload.addr = patch.addr;
+    else if (key === "phone") payload.phone = patch.phone;
+    else if (key === "completion") payload.completion = patch.completion;
+    else if (key === "invRequested") payload.invRequested = patch.invRequested;
     else if (key === "checklist") {
       payload.checklist = patch.checklist
         ? {
@@ -636,6 +649,10 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
                   title: dto.title ?? j.title,
                   svc: dto.svc !== undefined ? dto.svc : j.svc,
                   notes: dto.notes ?? j.notes,
+                  addr: dto.addr ?? j.addr,
+                  phone: dto.phone ?? j.phone,
+                  completion: dto.completion ?? j.completion,
+                  invRequested: dto.invRequested,
                   checklist: dtoChecklistToStore(dto.checklist),
                 }
               : j,

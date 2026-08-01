@@ -262,6 +262,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         companyId: p.companyId,
         role: p.role,
         notes: p.notes,
+        lossReason: p.lossReason,
         address: p.address,
         updatedAt: p.updatedAt,
       })

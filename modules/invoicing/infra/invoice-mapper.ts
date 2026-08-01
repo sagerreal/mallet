@@ -71,6 +71,8 @@ export const toDomain = (
     termsDays: row.termsDays,
     sentAt: row.sentAt,
     dueAt: row.dueAt,
+    followUpOn: row.followUpOn,
+    followUpStage: row.followUpStage,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

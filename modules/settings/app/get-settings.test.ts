@@ -30,6 +30,7 @@ export class FakeSettingsRepository implements SettingsRepository {
       orgId: asOrgId(orgId), trade: "plumbing", markupBps: 3500,
       visitScopeMinutes: 30, visitRepairMinutes: 90, visitInstallMinutes: 240,
       techSeesPrice: true, techTexts: true, frontDesk: true, scopeOn: false,
+      autoRemind: true,
       measurementEstimating: false,
       timezone: "America/Los_Angeles",
       hoursWdOpen: 8, hoursWdClose: 17,

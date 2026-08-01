@@ -93,6 +93,7 @@ export function SettingsHydrator() {
       toggles: {
         techSeesPrice: dto.config.techSeesPrice,
         frontDesk: dto.config.frontDesk,
+        autoRemind: dto.config.autoRemind,
         measurementEstimating: dto.config.measurementEstimating,
       },
     });

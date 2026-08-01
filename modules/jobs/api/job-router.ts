@@ -126,6 +126,10 @@ export const updateJobInput = z.object({
   title: z.string().max(200).nullable().optional(),
   svc: z.string().min(1).max(60).nullable().optional(),
   notes: z.string().max(10_000).nullable().optional(),
+  addr: z.string().max(1000).nullable().optional(),
+  phone: z.string().max(50).nullable().optional(),
+  completion: z.string().max(2000).nullable().optional(),
+  invRequested: z.boolean().optional(),
   // undefined = keep; null = detach; object = attach/replace.
   checklist: jobChecklistInput.nullable().optional(),
 });
@@ -578,6 +582,10 @@ export const createJobRouter = () =>
               svc: input.svc,
               notes: input.notes,
               checklist: input.checklist,
+              addr: input.addr,
+              phone: input.phone,
+              completion: input.completion,
+              invRequested: input.invRequested,
             }),
           ),
         );

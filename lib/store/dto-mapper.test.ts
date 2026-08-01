@@ -30,6 +30,8 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     leadId: "lead-abc",
     title: "Roof repair",
     status: "draft",
+    followUpOn: false,
+    followUpStage: 0,
     discBps: 500,    // 5%
     taxBps: 800,     // 8%
     depBps: 2000,    // 20%
@@ -85,6 +87,8 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
   return {
     id: "inv-222",
     num: "INV-0099",
+    followUpOn: false,
+    followUpStage: 0,
     sourceJobId: "job-xyz",
     authorization: null,
     leadId: "lead-abc",
@@ -221,11 +225,19 @@ describe("dtoEstimateToStore", () => {
     expect(result.lines[1]?.photo).toBe(true);
   });
 
-  it("preserves caller-supplied fu (client-local)", () => {
+  // fu comes from the SERVER now. It used to be client-local, and the hydrator reset it to off on
+  // every refetch — so a follow-up the user switched on read back off.
+  it("takes fu from the DTO, not the caller", () => {
+    const dto = makeEstimateDTO({ followUpOn: true, followUpStage: 2 });
+    const result = dtoEstimateToStore(dto, { on: false, stage: 0 });
+    expect(result.fu).toEqual({ on: true, stage: 2 });
+  });
+
+  // The fallback still matters: an optimistic toggle the response has not caught up with.
+  it("falls back to the caller's fu when the DTO carries none", () => {
     const dto = makeEstimateDTO();
-    const fu = { on: true, stage: 2 };
-    const result = dtoEstimateToStore(dto, fu);
-    expect(result.fu).toEqual(fu);
+    delete (dto as { followUpOn?: boolean }).followUpOn;
+    expect(dtoEstimateToStore(dto, { on: true, stage: 1 }).fu).toEqual({ on: true, stage: 1 });
   });
 
   it("initialises reads to empty array (client-local — not persisted)", () => {

@@ -19,6 +19,7 @@ function seedSettings(over: Partial<OrgSettingsProps> = {}): OrgSettings {
     techTexts: true,
     frontDesk: true,
     scopeOn: false,
+    autoRemind: true,
     measurementEstimating: false,
     hoursWdOpen: 8,
     hoursWdClose: 17,

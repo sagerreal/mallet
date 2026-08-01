@@ -4,6 +4,7 @@ import {
   uuid,
   text,
   integer,
+  boolean,
   numeric,
   timestamp,
   index,
@@ -45,6 +46,11 @@ export const invoices = pgTable(
     termsDays: integer("terms_days").notNull().default(7),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }),
+    // Per-document follow-up: is the shop still chasing this one, and how many nudges in.
+    // Was client-local, and the hydrator reset it to off on every refetch — so a toggle the user
+    // switched ON read back OFF, disagreeing with whether reminders were actually being sent.
+    followUpOn: boolean("follow_up_on").notNull().default(false),
+    followUpStage: integer("follow_up_stage").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

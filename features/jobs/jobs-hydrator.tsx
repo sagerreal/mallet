@@ -94,11 +94,15 @@ function toStoreJob(dto: JobSummaryDTO): Job {
     svc: dto.svc ?? "service",
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
-    addr: "",
-    phone: "",
+    // Were hard-coded empty here (no columns existed), so even after the write started persisting
+    // the list read would blank them again on the next refetch.
+    addr: dto.addr ?? "",
+    phone: dto.phone ?? "",
     status,
     archived: false,
     notes: dto.notes ?? "",
+    completion: dto.completion ?? undefined,
+    invRequested: dto.invRequested,
     checklist: dtoChecklistToStore(dto.checklist),
     requiredCerts: dto.requiredCerts ?? null,
     acts: [],

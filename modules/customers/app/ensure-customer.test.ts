@@ -61,6 +61,7 @@ class FakeLeadRepository implements LeadRepository {
       companyId: input.companyId,
       role: input.role,
       notes: input.notes,
+      lossReason: null,
       address: input.address,
       createdAt: now,
       updatedAt: now,

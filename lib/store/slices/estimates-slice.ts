@@ -200,6 +200,18 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
       estimates: s.estimates.map((e) => (e.id === id ? { ...e, ...patch } : e)),
     }));
 
+    // Follow-up rides its own endpoint — it is orthogonal to status, and the send/accept/decline
+    // routes below each handle exactly one transition.
+    if (patch.fu) {
+      const { on, stage } = patch.fu;
+      void trpcVanilla.v1.quoting.setFollowUp
+        .mutate({ estimateId: id, on, stage })
+        .catch((err: unknown) => {
+          if (prior) set((s) => ({ estimates: restoreEst(s.estimates, prior) }));
+          reportWriteError("updateEstimate.followUp", err);
+        });
+    }
+
     // 2. Route to the backend mutation based on what changed.
     if (patch.status === "sent") {
       trpcVanilla.v1.quoting.send

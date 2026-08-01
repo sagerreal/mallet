@@ -9,6 +9,8 @@ interface Store {
   addInvoice: (d: unknown) => { id: string };
   recordPayment: () => void;
   updateInvoice: () => void;
+  toggles: { techSeesPrice: boolean; frontDesk: boolean; autoRemind: boolean; measurementEstimating: boolean };
+  setToggle: (k: string, v: boolean) => void;
 }
 let storeState: Store;
 // The ledger queries the server now — two halves, ready-to-bill and invoices — so the fixture is
@@ -53,6 +55,10 @@ import { MoneyLedger } from "./money-ledger";
 
 const store = (invoices: unknown[]): Store => ({
   invoices, jobs: [], leads: [], addInvoice, recordPayment: vi.fn(), updateInvoice: vi.fn(),
+  // The header's Auto-remind switch reads the org toggle now — it was useState(true), a control
+  // that promised reminder texts and wrote nowhere.
+  toggles: { techSeesPrice: true, frontDesk: true, autoRemind: true, measurementEstimating: false },
+  setToggle: vi.fn(),
 });
 
 describe("MoneyLedger — first-run empty state", () => {

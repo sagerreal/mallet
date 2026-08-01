@@ -984,9 +984,9 @@ export function CloseOutModalContent() {
   }) {
     if (!invoice) return;
     recordPayment(invoice.id, { amt, when: "Just now", method, onFile });
-    if (save && lead && !lead.card) {
-      updateLead(lead.id, { card: { brand: "Visa", last4: "4242", via: "tap" } });
-    }
+    // A card on file is NOT recorded here. This used to write a hardcoded
+    // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
+    // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.
     if (invoice.status === "draft") sendInvoice(invoice.id);
   }
 

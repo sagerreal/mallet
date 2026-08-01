@@ -122,6 +122,10 @@ export interface EstimateProps {
   readonly depPaid: Money; // deposit expected/collected, cents (stamped on accept)
   readonly validDays: number | null;
   readonly sentAt: Date | null;
+  /** Is the shop still chasing this quote, and how many nudges in. Was client-local, and the
+   *  hydrator reset it to off on every refetch — so a toggle switched ON read back OFF. */
+  readonly followUpOn?: boolean;
+  readonly followUpStage?: number;
   readonly acceptedAt: Date | null;
   readonly declinedAt: Date | null;
   readonly declineReason: string | null;
@@ -504,6 +508,14 @@ export class Estimate {
   // use-case) is responsible for ordering (withLinesForAccept → accept).
   withLinesForAccept(lines: readonly EstimateLine[], now: Date): Estimate {
     return new Estimate({ ...this.p, lines, updatedAt: now });
+  }
+
+  /** Turn chasing on or off, and record how many nudges have gone out. */
+  setFollowUp(on: boolean, stage: number, now: Date): Result<Estimate, ValidationError> {
+    if (!Number.isInteger(stage) || stage < 0) {
+      return err(validation("follow-up stage cannot be negative", "followUpStage"));
+    }
+    return Estimate.create({ ...this.p, followUpOn: on, followUpStage: stage, updatedAt: now });
   }
 
   get props(): EstimateProps {
