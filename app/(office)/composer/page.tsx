@@ -39,6 +39,7 @@ import {
   aiDraftForPayload,
   applyAiDraftLines,
   applyAiDraftTiers,
+  appendMeasurementLines,
   applyComposerPatch,
   applyMeasurementSeed,
   buildQuoteMessageBody,
@@ -67,6 +68,7 @@ import {
   type TierKey,
 } from "./composer-state";
 import { suggestFromGood } from "./gbb-suggest";
+import { MeasuredSurfacesPanel } from "./measured-surfaces-panel";
 import { CustomerSelector } from "./customer-selector";
 import { QuoteCard } from "./quote-card";
 import { PricingCard } from "./pricing-card";
@@ -773,6 +775,19 @@ export default function ComposerPage() {
             )}
           </div>
         )}
+
+      {/* Measured surfaces — the job's captures, per-surface Seed lines, and the
+          tracer entry. Hidden when the org toggle is off or there is no job
+          context (see measured-surfaces-panel.tsx). A ?job= boot has already
+          seeded the whole job, so its rows start "Seeded". */}
+      <MeasuredSurfacesPanel
+        paramJobId={jobId}
+        leadId={cs.leadId}
+        wholeJobSeeded={measurementNotice !== null}
+        onSeedLines={(lines) =>
+          setCs((prev) => appendMeasurementLines(prev, seedLinesToComposerLines(lines)))
+        }
+      />
 
       {/* The quote — format toggle, authoring tools, line editor / tier panels */}
       <QuoteCard

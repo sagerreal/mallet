@@ -381,4 +381,77 @@ describe("BuildFromMeasurementsUseCase", () => {
       "Driveway — Seal coating",
     ]);
   });
+
+  // ---- sourceNames filter (the composer's per-surface "Seed lines") --------
+  describe("sourceNames filter", () => {
+    const rooms: RoomQuantitiesForJob[] = [
+      {
+        roomName: "Living Room",
+        hasUnconfirmed: false,
+        quantities: [{ kind: "walls_sqft", value: 240, status: "derived" }],
+      },
+      {
+        roomName: "Kitchen",
+        hasUnconfirmed: true,
+        quantities: [{ kind: "walls_sqft", value: 180, status: "needs_confirm" }],
+      },
+    ];
+    const services = [
+      service({ measuredBy: "walls_sqft" }),
+      service({
+        id: asServiceId("77777777-7777-7777-7777-777777777777"),
+        name: "Seal coating",
+        measuredBy: "site_sqft",
+      }),
+    ];
+
+    it("absent sourceNames seeds the whole job (backward-compatible)", async () => {
+      const useCase = build(rooms, [flatSite({ perimeterLnft: null })], services);
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines).toHaveLength(3);
+    });
+
+    it("seeds only the named capture's lines", async () => {
+      const useCase = build(rooms, [flatSite({ perimeterLnft: null })], services);
+      const result = await useCase.exec({ jobId: JOB, sourceNames: ["Driveway"] });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines.map((l) => l.description)).toEqual(["Driveway — Seal coating"]);
+      // Excluded captures contribute nothing — not even unconfirmed flags.
+      expect(result.value.unconfirmedRooms).toEqual([]);
+    });
+
+    it("filters PITCHED sites by their stored name, not the pitch-decorated sourceName", async () => {
+      const pitched = flatSite({
+        name: "Main roof",
+        surface: "pitched",
+        pitchRise: 6,
+        perimeterLnft: null,
+      });
+      const useCase = build([], [pitched], services);
+      const result = await useCase.exec({ jobId: JOB, sourceNames: ["Main roof"] });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines.map((l) => l.sourceName)).toEqual(["Main roof at 6/12"]);
+    });
+
+    it("a name matching nothing yields an empty seed, not an error", async () => {
+      const useCase = build(rooms, [flatSite()], services);
+      const result = await useCase.exec({ jobId: JOB, sourceNames: ["Nope"] });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines).toEqual([]);
+      expect(result.value.gaps).toEqual([]);
+    });
+
+    it("matches trimmed names", async () => {
+      const useCase = build(rooms, [], services);
+      const result = await useCase.exec({ jobId: JOB, sourceNames: ["  Living Room  "] });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines.map((l) => l.sourceName)).toEqual(["Living Room"]);
+    });
+  });
 });

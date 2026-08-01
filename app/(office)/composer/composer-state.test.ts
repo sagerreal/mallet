@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   INITIAL_STATE,
   aiDraftForPayload,
+  appendMeasurementLines,
   applyAiDraftLines,
   applyAiDraftTiers,
   applyComposerPatch,
@@ -809,6 +810,58 @@ describe("applyMeasurementSeed", () => {
     const next = applyMeasurementSeed(INITIAL_STATE, "lead-1", lines);
     next.lines[0]!.d = "mutated";
     expect(lines).toEqual(before);
+  });
+});
+
+describe("appendMeasurementLines", () => {
+  const seed: ComposerLine[] = [{ d: "Driveway — Seal coating", q: 640, r: 1.5, c: 0.4 }];
+
+  it("appends after existing real lines, dropping blank placeholder rows", () => {
+    const state = {
+      ...INITIAL_STATE,
+      lines: [{ d: "Pressure wash", q: 1, r: 250 }, { d: "", q: 1, r: 0 }],
+    };
+    const next = appendMeasurementLines(state, seed);
+    expect(next.lines).toEqual([
+      { d: "Pressure wash", q: 1, r: 250 },
+      { d: "Driveway — Seal coating", q: 640, r: 1.5, c: 0.4 },
+    ]);
+  });
+
+  it("replaces a fresh composer's single empty row instead of stacking above it", () => {
+    const next = appendMeasurementLines(INITIAL_STATE, seed);
+    expect(next.lines).toEqual(seed);
+  });
+
+  it("an empty seed returns the state unchanged (caller surfaces why)", () => {
+    expect(appendMeasurementLines(INITIAL_STATE, [])).toBe(INITIAL_STATE);
+  });
+
+  it("in GBB format appends to the Good tier (same target as applyAiDraftLines)", () => {
+    const gbbState: ComposerState = { ...INITIAL_STATE, ...switchToGbb(INITIAL_STATE) };
+    const next = appendMeasurementLines(
+      { ...gbbState, gbb: updateTier(gbbState.gbb!, "good", { lines: [{ d: "Base", q: 1, r: 100 }] }) },
+      seed,
+    );
+    const good = next.gbb!.opts.find((o) => o.k === "good")!;
+    expect(good.lines).toEqual([
+      { d: "Base", q: 1, r: 100 },
+      { d: "Driveway — Seal coating", q: 640, r: 1.5, c: 0.4 },
+    ]);
+    // Better/Best untouched.
+    expect(next.gbb!.opts.find((o) => o.k === "better")!.lines).toEqual(
+      gbbState.gbb!.opts.find((o) => o.k === "better")!.lines,
+    );
+  });
+
+  it("does not mutate the seed lines or the previous state", () => {
+    const before = structuredClone(seed);
+    const state = { ...INITIAL_STATE, lines: [{ d: "Existing", q: 1, r: 50 }] };
+    const stateBefore = structuredClone(state.lines);
+    const next = appendMeasurementLines(state, seed);
+    next.lines[1]!.d = "mutated";
+    expect(seed).toEqual(before);
+    expect(state.lines).toEqual(stateBefore);
   });
 });
 
