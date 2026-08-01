@@ -9,7 +9,7 @@
 import type { Lead } from "@/lib/store/types";
 import { StagePill, SrcPill } from "@/components/shared/stage-pill";
 import { ALL_COL_DEFS } from "./customers-columns";
-import { fmt$ } from "@/lib/format";
+import { fmt$, agoShort } from "@/lib/format";
 import { pressable } from "@/lib/a11y";
 
 
@@ -38,7 +38,11 @@ function LeadCell({ lead, col }: LeadCellProps) {
     case "stage":
       return <StagePill stage={lead.stage} />;
     case "latest":
-      return <span className="muted">{lead.last ?? ""}</span>;
+      return <span className="muted">{agoShort(lead.lastActivityAt)}</span>;
+    case "value":
+      // Was missing entirely — the column existed in the picker and rendered nothing, which is
+      // how fmt$ came to be imported here and never called.
+      return <>{lead.value ? fmt$(lead.value) : <span className="muted">—</span>}</>;
     case "age":
       return <>{lead.age}d</>;
     case "email":

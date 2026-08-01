@@ -22,7 +22,7 @@ import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
 import { ViewToggle } from "@/components/shared/view-toggle";
 import { CustomersFilters } from "./customers-filters";
-import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS } from "./customers-columns";
+import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS, colWidths } from "./customers-columns";
 import { LeadRow } from "./lead-row";
 import { CompaniesView } from "./companies-view";
 import { pressable } from "@/lib/a11y";
@@ -222,7 +222,16 @@ export function CustomersView() {
       {/* Table */}
       <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
         {/* Held-over rows for a superseded search dim rather than swap — motion, not a reload. */}
-        <table className="list-tbl" style={list.isStale ? { opacity: 0.55, transition: "opacity .12s" } : { transition: "opacity .12s" }}>
+        <table className="list-tbl cols-sized" style={list.isStale ? { opacity: 0.55, transition: "opacity .12s" } : { transition: "opacity .12s" }}>
+          {/* Explicit widths, because automatic table layout spreads the surplus on a wide screen
+              evenly across columns and strands short content in the middle of huge cells. */}
+          <colgroup>
+            {/* The Archived view's Restore cell is a real column and shares the same normalised
+                budget — a fixed pixel width here would push the total past 100%. */}
+            {colWidths(archiveSet === "archived" ? [...visible, "restore"] : visible).map((w, i) => (
+              <col key={i} style={{ width: w }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {visible.map((col) => {
