@@ -708,6 +708,14 @@
   /* List tables (Customers, Companies, Invoices): taller rows so their single-line
      rows match the Jobs list's row height */
   .list-tbl tbody td{padding-top:var(--space-5);padding-bottom:var(--space-5)}
+  /* Honour the <colgroup> widths. Automatic layout ignores them once content is wider, and on a
+     wide screen it hands the surplus out in near-equal shares — which is what stranded a stage
+     pill and a phone number in the middle of enormous empty cells. Long values ellipsize rather
+     than forcing a column wider than its share.
+     Opt-in via .cols-sized: .list-tbl is shared with Money and Companies, which have no colgroup
+     and would fall back to equal columns. */
+  .list-tbl.cols-sized{table-layout:fixed}
+  .list-tbl.cols-sized th,.list-tbl.cols-sized td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* compact auto-remind chip in the Money header */
   .mrem{display:inline-flex;align-items:center;gap:var(--space-2);font-family:inherit;font-size:var(--type-base);font-weight:600;color:var(--ink-2);border:1.5px solid var(--line);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);background:var(--card);cursor:pointer;white-space:nowrap}
   .mrem .switch{width:30px;height:18px;margin-top:0}
@@ -2181,6 +2189,10 @@
     .list-tbl,.jl,.list-tbl tbody,.jl tbody{display:block}
     .list-tbl tbody tr,.jl tbody tr{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);margin:0 0 var(--space-3);background:var(--card)}
     .list-tbl tbody td,.jl tbody td{display:flex;justify-content:space-between;align-items:center;gap:var(--space-4);padding:var(--space-1) 0 !important;border:none !important;text-align:right;white-space:normal;min-width:0}
+    /* .cols-sized is two classes, so its desktop nowrap/ellipsis outranks the single-class rule
+       above and would keep card values on one clipped line. Rows are cards here — no columns to
+       size, so the whole treatment comes back off. */
+    .list-tbl.cols-sized tbody td{white-space:normal;overflow:visible;text-overflow:clip}
     .list-tbl tbody td::before,.jl tbody td::before{content:attr(data-label);flex:0 0 auto;text-align:left;font-size:var(--type-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3)}
     /* Ready-to-bill card, mobile: JOB label + job name + the italic "built from
        what was sold…" helper were all flex siblings on one line, so the job name

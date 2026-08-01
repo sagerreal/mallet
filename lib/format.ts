@@ -27,6 +27,35 @@ export function shortWhen(isoOrDate: string | Date): string {
   }
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+/**
+ * How long ago something happened, for a list column.
+ *   • today / future (clock skew) → "Today"
+ *   • 1 day                       → "Yesterday"
+ *   • 2–6 days                    → "3d ago"
+ *   • 7–29 days                   → "2w ago"
+ *   • older                       → "Jun 17" ("Aug 3, 2024" across a year boundary)
+ * An absent or unparseable stamp renders as an em dash — never "Invalid Date" or "NaNd ago".
+ */
+export function agoShort(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return "—";
+
+  const now = new Date();
+  const days = Math.floor((now.getTime() - then.getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+
+  const sameYear = then.getFullYear() === now.getFullYear();
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  }).format(then);
+}
+
 export const formatMoney = (cents: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 

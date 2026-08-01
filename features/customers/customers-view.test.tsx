@@ -52,8 +52,9 @@ vi.mock("./companies-view", () => ({ CompaniesView: () => <div data-testid="comp
 vi.mock("./lead-row", () => ({ LeadRow: () => (<tr data-testid="lead-row"><td /></tr>) }));
 vi.mock("./customers-columns", () => ({
   CustomersColumns: () => <div />,
-  ALL_COL_DEFS: { name: { l: "Name" } },
+  ALL_COL_DEFS: { name: { l: "Name", w: 22 } },
   DEFAULT_COLS: ["name"],
+  colWidths: (cols: readonly string[]) => cols.map(() => `${100 / cols.length}%`),
 }));
 vi.mock("./customers-filters", () => ({ CustomersFilters: () => <div /> }));
 vi.mock("@/components/shared/view-toggle", () => ({ ViewToggle: () => <div /> }));

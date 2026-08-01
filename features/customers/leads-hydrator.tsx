@@ -39,6 +39,7 @@ export function toStoreLead(dto: LeadDTO): Lead {
     age: daysAgo(dto.createdAt),
     job: "",
     last: "",
+    lastActivityAt: dto.updatedAt,
     unread: dto.unread,
     email: dto.email ?? undefined,
     value: dto.value.cents / 100, // DTO is cents; store Lead.value is dollars.

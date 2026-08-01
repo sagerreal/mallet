@@ -48,7 +48,11 @@ export interface Lead {
   stage: string;
   age: number;
   job: string;
+  /** Prose "what happened last" — prototype sample data and optimistic in-session writes only. */
   last: string;
+  /** ISO stamp behind the Latest column. Distinct from `last`: this is the DB's updated_at, the
+      value the list is already ordered by, and the only one a fresh page load can show. */
+  lastActivityAt?: string;
   book?: boolean;
   unread?: boolean;
   estId?: string;

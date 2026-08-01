@@ -33,6 +33,9 @@ const leadDTO = z.object({
   notes: z.string().nullable(),
   address: z.string().nullable(),
   createdAt: z.string(),
+  // The list's DEFAULT ordering is `lastActivity` → updated_at, and until this shipped the
+  // Latest column had no way to show the value the rows were already sorted by.
+  updatedAt: z.string(),
 });
 
 // create extends the base DTO with a `created` flag so callers can distinguish a genuine
@@ -117,6 +120,7 @@ const toLeadDTO = (lead: Lead) => {
     notes: p.notes,
     address: p.address,
     createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
   };
 };
 
