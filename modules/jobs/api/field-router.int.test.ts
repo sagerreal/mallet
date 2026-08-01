@@ -1159,7 +1159,196 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       expect(lines).toHaveLength(0);
       const [row] = await admin<{ signed_at: Date | null }[]>`select signed_at from jobs where id = ${j!.id}`;
       expect(row!.signed_at).toBeNull();
+      // No orphan estimate either — the whole sign rolled back as one transaction.
+      const [est] = await admin<{ n: string }[]>`
+        select count(*)::text as n from estimates where org_id = ${orgId} and origin = 'field'
+          and signer_name = '   '
+      `;
+      expect(est!.n).toBe("0");
       await admin`delete from jobs where id = ${j!.id}`;
+    });
+
+    // -----------------------------------------------------------------------
+    // Estimating, part 1: a quote sold in the field is a REAL quote. The sign
+    // must also produce an accepted estimate on the job's lead — the record the
+    // rail, won revenue, and the learning estimator all read.
+    // -----------------------------------------------------------------------
+
+    it("the sign mints an ACCEPTED field-origin estimate the office can read — and re-signing UPDATES it, never duplicates", async () => {
+      // Own lead: the suite's shared lead accumulates field estimates from the earlier sign
+      // tests, and this test counts estimates per lead to prove no duplicates.
+      const [estLead] = await admin<{ id: string }[]>`
+        insert into leads (org_id, name) values (${orgId}, 'Field Estimate Customer') returning id
+      `;
+      const estLeadId = estLead!.id;
+      const [j] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, title)
+        values (${orgId}, ${estLeadId}, 'JOB-SIG-EST', 'scheduled', 0, ${techAId}, 'Repipe laundry')
+        returning id
+      `;
+      const jobId = j!.id;
+      const tech = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await tech.v1.field.signQuote({
+        jobId,
+        lines: [
+          { description: "Repipe laundry line", quantity: 1, rateCents: 120_000, costCents: 0 },
+          { description: "Shutoff valve", quantity: 2, rateCents: 4_000, costCents: 0 },
+        ],
+        signerName: "Priya Nair",
+        signatureSvg: "M1,1 L9,9",
+      });
+
+      // 1. The estimate row: right org, right lead, accepted, field-born, signed.
+      const [linked] = await admin<{ source_estimate_id: string | null }[]>`
+        select source_estimate_id from jobs where id = ${jobId}
+      `;
+      expect(linked!.source_estimate_id).not.toBeNull();
+      const estId = linked!.source_estimate_id!;
+      const [est] = await admin<{
+        org_id: string;
+        lead_id: string;
+        status: string;
+        origin: string;
+        title: string | null;
+        signer_name: string | null;
+        accepted_at: Date | null;
+        signed_snapshot: { totalCents: number } | null;
+      }[]>`
+        select org_id, lead_id, status, origin, title, signer_name, accepted_at, signed_snapshot
+        from estimates where id = ${estId}
+      `;
+      expect(est!.org_id).toBe(orgId);
+      expect(est!.lead_id).toBe(estLeadId);
+      expect(est!.status).toBe("accepted");
+      expect(est!.origin).toBe("field");
+      expect(est!.title).toBe("Repipe laundry");
+      expect(est!.signer_name).toBe("Priya Nair");
+      expect(est!.accepted_at).not.toBeNull();
+      expect(est!.signed_snapshot!.totalCents).toBe(128_000);
+
+      // 2. Its lines are the SIGNED lines.
+      const estLines = await admin<{ description: string; rate_cents: number }[]>`
+        select description, rate_cents from estimate_lines
+        where estimate_id = ${estId} and deleted_at is null order by position
+      `;
+      expect(estLines).toHaveLength(2);
+      expect(estLines[0]!.description).toBe("Repipe laundry line");
+      expect(estLines[1]!.rate_cents).toBe(4_000);
+
+      // 3. It appears in the office quoting list read — the rail's data source —
+      //    with ZERO changes to that reader.
+      const office = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+      const accepted = await office.v1.quoting.list({ status: "accepted", limit: 200 });
+      const listed = accepted.items.find((e) => e.id === estId);
+      expect(listed).toBeTruthy();
+      expect(listed!.total.cents).toBe(128_000);
+
+      // 4. Re-sign the SAME job at a new price: the estimate is REPLACED, not duplicated.
+      await tech.v1.field.signQuote({
+        jobId,
+        lines: [{ description: "Repipe laundry line + valve", quantity: 1, rateCents: 140_000, costCents: 0 }],
+        signerName: "Priya Nair",
+      });
+      const [after] = await admin<{ n: string }[]>`
+        select count(*)::text as n from estimates
+        where org_id = ${orgId} and lead_id = ${estLeadId} and origin = 'field' and deleted_at is null
+      `;
+      expect(after!.n).toBe("1");
+      const [resigned] = await admin<{ signed_snapshot: { totalCents: number } }[]>`
+        select signed_snapshot from estimates where id = ${estId}
+      `;
+      expect(resigned!.signed_snapshot.totalCents).toBe(140_000);
+      const liveLines = await admin<{ description: string }[]>`
+        select description from estimate_lines where estimate_id = ${estId} and deleted_at is null
+      `;
+      expect(liveLines).toHaveLength(1);
+
+      await admin`update jobs set source_estimate_id = null where id = ${jobId}`;
+      await admin`delete from estimate_lines where estimate_id = ${estId}`;
+      await admin`delete from estimates where id = ${estId}`;
+      await admin`delete from jobs where id = ${jobId}`;
+      await admin`delete from leads where id = ${estLeadId}`;
+    });
+
+    it("a job sold from an OFFICE quote keeps that quote — the sign does not mint a second accepted estimate", async () => {
+      // Office-born accepted estimate + the job it created (source_estimate_id already set).
+      // Own lead, so the no-second-estimate count below is scoped to this fixture alone.
+      const [offLead] = await admin<{ id: string }[]>`
+        insert into leads (org_id, name) values (${orgId}, 'Office Quote Customer') returning id
+      `;
+      const offLeadId = offLead!.id;
+      const [e] = await admin<{ id: string }[]>`
+        insert into estimates (org_id, lead_id, num, status, origin, accepted_at)
+        values (${orgId}, ${offLeadId}, 'EST-OFFICE-1', 'accepted', 'office', now())
+        returning id
+      `;
+      const officeEstId = e!.id;
+      const [j] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, source_estimate_id)
+        values (${orgId}, ${offLeadId}, 'JOB-SIG-OFFICE', 'scheduled', 0, ${techAId}, ${officeEstId})
+        returning id
+      `;
+      const tech = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await tech.v1.field.signQuote({
+        jobId: j!.id,
+        lines: [{ description: "Found extra work", quantity: 1, rateCents: 60_000, costCents: 0 }],
+        signerName: "Priya Nair",
+      });
+      // The job's signature landed (unchanged behavior)…
+      const [job] = await admin<{ signer_name: string | null; source_estimate_id: string }[]>`
+        select signer_name, source_estimate_id from jobs where id = ${j!.id}
+      `;
+      expect(job!.signer_name).toBe("Priya Nair");
+      // …the office estimate is still the job's source, untouched and alone.
+      expect(job!.source_estimate_id).toBe(officeEstId);
+      const [count] = await admin<{ n: string }[]>`
+        select count(*)::text as n from estimates
+        where org_id = ${orgId} and lead_id = ${offLeadId} and deleted_at is null
+      `;
+      expect(count!.n).toBe("1");
+      const [office] = await admin<{ origin: string; num: string }[]>`
+        select origin, num from estimates where id = ${officeEstId}
+      `;
+      expect(office!.origin).toBe("office");
+
+      await admin`update jobs set source_estimate_id = null where id = ${j!.id}`;
+      await admin`delete from estimates where id = ${officeEstId}`;
+      await admin`delete from jobs where id = ${j!.id}`;
+      await admin`delete from leads where id = ${offLeadId}`;
+    });
+
+    it("signing a job whose customer is ARCHIVED fails loudly and writes NOTHING — no lines, no estimate", async () => {
+      const [archivedLead] = await admin<{ id: string }[]>`
+        insert into leads (org_id, name, deleted_at) values (${orgId}, 'Archived Customer', now())
+        returning id
+      `;
+      const [j] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${archivedLead!.id}, 'JOB-SIG-ARCH', 'scheduled', 0, ${techAId})
+        returning id
+      `;
+      const tech = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      await expect(
+        tech.v1.field.signQuote({
+          jobId: j!.id,
+          lines: [{ description: "Repair", quantity: 1, rateCents: 50_000, costCents: 0 }],
+          signerName: "Priya Nair",
+        }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      // The whole transaction rolled back: no job lines, no signature, no estimate.
+      const jobLines = await admin`select id from job_lines where job_id = ${j!.id} and deleted_at is null`;
+      expect(jobLines).toHaveLength(0);
+      const [row] = await admin<{ signed_at: Date | null }[]>`select signed_at from jobs where id = ${j!.id}`;
+      expect(row!.signed_at).toBeNull();
+      const [ests] = await admin<{ n: string }[]>`
+        select count(*)::text as n from estimates
+        where org_id = ${orgId} and lead_id = ${archivedLead!.id}
+      `;
+      expect(ests!.n).toBe("0");
+
+      await admin`delete from jobs where id = ${j!.id}`;
+      await admin`delete from leads where id = ${archivedLead!.id}`;
     });
   });
 });

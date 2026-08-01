@@ -56,6 +56,9 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         leadId: p.leadId,
         title: p.title,
         status: p.status,
+        // Provenance is birth data: written at insert, deliberately absent from the conflict set
+        // below (write-once — an estimate never changes origin, same rule as publicToken).
+        origin: p.origin ?? "office",
         discBps: p.discBps,
         taxBps: p.taxBps,
         depBps: p.depBps,

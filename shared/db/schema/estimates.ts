@@ -48,6 +48,10 @@ export const estimates = pgTable(
     leadId: uuid("lead_id").notNull(),
     title: text("title"),
     status: text("status").notNull().default("draft"),
+    // Provenance: where this quote was born. 'office' = the ordinary draft→send→accept path;
+    // 'field' = priced and signed ON SITE via v1.field.signQuote — born accepted, evidenced by
+    // the same signature columns below. Write-once (never flips after creation).
+    origin: text("origin").notNull().default("office"),
     discBps: integer("disc_bps").notNull().default(0),
     taxBps: integer("tax_bps").notNull().default(0),
     depBps: integer("dep_bps").notNull().default(0),
@@ -158,6 +162,7 @@ export const estimates = pgTable(
       .on(t.publicToken)
       .where(sql`${t.publicToken} is not null`),
     check("estimates_status_check", sql`${t.status} in ('draft', 'sent', 'accepted', 'declined')`),
+    check("estimates_origin_check", sql`${t.origin} in ('office', 'field')`),
     check(
       "estimates_recommended_tier_check",
       sql`${t.recommendedTier} in ('good', 'better', 'best')`,

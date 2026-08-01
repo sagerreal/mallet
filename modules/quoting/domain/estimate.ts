@@ -26,6 +26,18 @@ export const ESTIMATE_STATUSES: readonly EstimateStatus[] = [
 export const isEstimateStatus = (value: string): value is EstimateStatus =>
   (ESTIMATE_STATUSES as readonly string[]).includes(value);
 
+/**
+ * Where the quote was born. 'office' = the ordinary draft→send→accept path. 'field' = priced and
+ * signed ON SITE (v1.field.signQuote) — born accepted, carrying the on-glass signature evidence.
+ * Write-once provenance: an estimate never changes origin.
+ */
+export type EstimateOrigin = "office" | "field";
+
+export const ESTIMATE_ORIGINS: readonly EstimateOrigin[] = ["office", "field"];
+
+export const isEstimateOrigin = (value: string): value is EstimateOrigin =>
+  (ESTIMATE_ORIGINS as readonly string[]).includes(value);
+
 // Good/Better/Best. An estimate is tiered iff recommendedTier is non-null; then every line
 // carries a tier tag until accept resolves the estimate to the customer's chosen tier.
 export type QuoteTier = "good" | "better" | "best";
@@ -116,6 +128,9 @@ export interface EstimateProps {
   readonly leadId: LeadId;
   readonly title: string | null;
   readonly status: EstimateStatus;
+  /** Provenance — see EstimateOrigin. Optional so pre-existing construction sites read as the
+   *  historical default ('office'); absent means office, never "unknown". */
+  readonly origin?: EstimateOrigin;
   readonly discBps: number; // discount %, basis points (0..10000)
   readonly taxBps: number; // tax %, basis points (>= 0)
   readonly depBps: number; // deposit %, basis points (0..10000)
@@ -173,6 +188,9 @@ export class Estimate {
     if (num.length === 0) return err(validation("estimate number is required", "num"));
     if (!isEstimateStatus(props.status)) {
       return err(validation(`unknown estimate status: ${props.status}`, "status"));
+    }
+    if (props.origin !== undefined && !isEstimateOrigin(props.origin)) {
+      return err(validation(`unknown estimate origin: ${props.origin}`, "origin"));
     }
     if (props.discBps < 0 || props.discBps > BPS_DENOMINATOR) {
       return err(validation("discount must be between 0 and 10000 bps", "discBps"));
@@ -447,6 +465,116 @@ export class Estimate {
         orgName,
       }),
     };
+  }
+
+  /** Provenance, defaulting the pre-column history to 'office'. */
+  origin(): EstimateOrigin {
+    return this.p.origin ?? "office";
+  }
+
+  /**
+   * A sale closed ON SITE: the quote is born ACCEPTED, with the customer's signature taken in the
+   * same construction — there is no moment where a field-born estimate exists unsigned.
+   *
+   * This is the record behind v1.field.signQuote. The tech prices the work on the tablet and the
+   * customer signs there; draft→send→accept never happened, so forcing the aggregate through those
+   * transitions would fabricate a history nobody lived. Instead the estimate starts at the end
+   * state, and `origin: "field"` says so honestly. sentAt is stamped too: presenting the tablet IS
+   * the presentation, and downstream reads treat sentAt as "when the customer first saw it".
+   *
+   * No discount/tax/deposit percentages — the on-site price is the flat number the customer signed
+   * (identical to the job-line snapshot), not a derivation they never saw.
+   */
+  static sellOnSite(args: {
+    readonly id: EstimateId;
+    readonly orgId: OrgId;
+    readonly num: string;
+    readonly leadId: LeadId;
+    readonly title: string | null;
+    readonly lines: readonly EstimateLine[];
+    readonly publicToken: string | null;
+    readonly signature: SignatureDraft;
+    readonly orgName: string;
+    readonly now: Date;
+  }): Result<Estimate, ValidationError> {
+    const base = Estimate.create({
+      id: args.id,
+      orgId: args.orgId,
+      num: args.num,
+      leadId: args.leadId,
+      title: args.title,
+      status: "accepted",
+      origin: "field",
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      depPaid: zeroMoney,
+      validDays: null,
+      sentAt: args.now,
+      acceptedAt: args.now,
+      declinedAt: null,
+      declineReason: null,
+      changeRequestedAt: null,
+      changeRequest: null,
+      changeOrderForJobId: null,
+      publicToken: args.publicToken,
+      recommendedTier: null,
+      acceptedTier: null,
+      tierNames: null,
+      termsSnapshot: null,
+      lines: args.lines,
+      createdAt: args.now,
+      updatedAt: args.now,
+    });
+    if (!base.ok) return base;
+    return base.value.withOnSiteSignature(args.signature, args.orgName, args.now);
+  }
+
+  /**
+   * Re-sign a FIELD-born estimate with a new line set — the customer agreed to a revised on-site
+   * price on the same job. The estimate is REPLACED, not duplicated: one job, one field quote,
+   * whatever was signed last. Refused on office-born estimates (their signed evidence is frozen —
+   * a re-priced office sale must not rewrite the document the customer originally signed).
+   */
+  resignOnSite(
+    lines: readonly EstimateLine[],
+    signature: SignatureDraft,
+    orgName: string,
+    now: Date,
+  ): Result<Estimate, ValidationError> {
+    if (this.origin() !== "field") {
+      return err(validation("only a field-born estimate can be re-signed on site", "origin"));
+    }
+    if (this.p.status !== "accepted") {
+      return err(validation("only an accepted field estimate can be re-signed", "status"));
+    }
+    const replaced = Estimate.create({ ...this.p, lines, acceptedAt: now, updatedAt: now });
+    if (!replaced.ok) return replaced;
+    return replaced.value.withOnSiteSignature(signature, orgName, now);
+  }
+
+  // Shared tail of the two on-site constructors: freeze the snapshot from the FINAL line set and
+  // write the evidence in the same step that produced the instance (never a half-signed estimate).
+  private withOnSiteSignature(
+    signature: SignatureDraft,
+    orgName: string,
+    now: Date,
+  ): Result<Estimate, ValidationError> {
+    const priced = new Estimate({ ...this.p, depPaid: this.depositDue() });
+    const snapshot = priced.toSignedSnapshot(orgName);
+    const built = createSignature({ ...signature, signedAt: now, snapshot });
+    if (!built.ok) return built;
+    return ok(
+      new Estimate({
+        ...priced.p,
+        signerName: built.value.signerName,
+        signatureSvg: built.value.signatureSvg,
+        signerIp: built.value.signerIp,
+        signerUserAgent: built.value.signerUserAgent,
+        signedAt: built.value.signedAt,
+        signedSnapshot: built.value.snapshot,
+      }),
+    );
   }
 
   // Sent → declined, capturing the reason.

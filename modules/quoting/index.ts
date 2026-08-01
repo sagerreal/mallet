@@ -12,6 +12,12 @@ export { SendEstimateUseCase } from "./app/send-estimate";
 export { AcceptEstimateUseCase } from "./app/accept-estimate";
 export { DeclineEstimateUseCase } from "./app/decline-estimate";
 export { ListEstimatesUseCase } from "./app/list-estimates";
+// The field-sale recorder — v1.field.signQuote (jobs module) writes the accepted on-site
+// estimate through this seam, in the same tenant tx as the job's own line/signature write.
+export { RecordFieldSaleUseCase } from "./app/record-field-sale";
+export type { RecordFieldSaleCommand, FieldSaleOutcome, FieldSaleLineInput } from "./app/record-field-sale";
+export type { EstimateOrigin } from "./domain/estimate";
+export { isEstimateOrigin } from "./domain/estimate";
 // Public (unauthenticated) quote functions — used by the customer-facing quote page routes.
 export { getPublicQuote, acceptPublicQuote, declinePublicQuote } from "./app/public-quote";
 export type { PublicQuoteView } from "./app/public-quote";

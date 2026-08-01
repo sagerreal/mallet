@@ -7,6 +7,10 @@ import { logger } from "@mallet/shared/observability";
 import { router, anyRole } from "@/trpc/init";
 import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleLeadRepository } from "@mallet/customers";
+// Through the quoting barrel — the sanctioned seam (lint enforces index-only imports). The
+// jobs↔quoting barrel cycle already exists (infra/drizzle-estimate-reader takes the same path)
+// and resolves fine because both sides bind lazily inside procedure bodies.
+import { RecordFieldSaleUseCase, DrizzleEstimateRepository } from "@mallet/quoting";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
@@ -467,6 +471,57 @@ export const createFieldRouter = () =>
             ctx.principal.orgId,
           ),
         );
+
+        // A quote sold in the field is a REAL quote. The same signed sale is recorded as an
+        // ACCEPTED estimate (origin 'field') on the job's lead, in the SAME tenant transaction —
+        // so it lands on the quotes rail, counts as won revenue, and feeds the learning
+        // estimator's won-quote history exactly like an office-accepted quote. Any failure here
+        // throws and rolls back the job write too: the two records must not disagree.
+        //
+        // The customer must exist to own the quote. findById excludes archived leads, so a sign
+        // against an archived customer's job fails LOUDLY (not a quote-less silent success).
+        const lead = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findById(r.job.props.leadId);
+        if (!lead) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "This job's customer is missing or archived — restore the customer, then sign again.",
+          });
+        }
+        const sale = orThrow(
+          await new RecordFieldSaleUseCase(
+            new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId),
+            ctx.deps.bus,
+            ctx.deps.clock,
+            ctx.deps.ids,
+          ).exec({
+            orgId: ctx.principal.orgId,
+            leadId: r.job.props.leadId,
+            jobId: input.jobId,
+            jobTitle: r.job.props.title,
+            existingEstimateId: r.job.props.sourceEstimateId,
+            lines: input.lines.map((l) => ({
+              description: l.description,
+              quantity: l.quantity,
+              rateCents: l.rateCents,
+              costCents: l.costCents,
+            })),
+            signerName: input.signerName,
+            signatureSvg: input.signatureSvg ?? "",
+            orgName,
+          }),
+        );
+        if (sale.kind === "created") {
+          // Same linkage the office direction uses (job.source_estimate_id), written in reverse.
+          // 0 rows = the link raced or the job vanished mid-transaction; fail loudly — an
+          // unlinked field estimate would duplicate on the next re-sign.
+          const linked = await repo.setSourceEstimate(jobId, sale.estimate.props.id, ctx.deps.clock.now());
+          if (linked === 0) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "The job changed while signing — reopen it and sign again.",
+            });
+          }
+        }
         return toJobDTO(r.job, r.execution);
       }),
 
