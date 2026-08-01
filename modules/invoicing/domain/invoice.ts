@@ -52,6 +52,10 @@ export interface InvoiceProps {
   readonly termsDays: number;
   readonly sentAt: Date | null;
   readonly dueAt: Date | null;
+  /** Is the shop still chasing this invoice, and how many nudges in. Same client-local fate as
+   *  the quote's — the toggle disagreed with whether reminders were actually going out. */
+  readonly followUpOn?: boolean;
+  readonly followUpStage?: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -178,6 +182,19 @@ export class Invoice {
       depositPaid: patch.depositPaid ?? this.p.depositPaid,
       updatedAt: now,
     });
+  }
+
+  /**
+   * Turn chasing on or off, and record how many nudges have gone out.
+   *
+   * Deliberately NOT gated on paid/void like editMetadata: the moment an invoice is paid is
+   * exactly when the shop stops chasing it, and a gate would refuse the write that says so.
+   */
+  setFollowUp(on: boolean, stage: number, now: Date): Result<Invoice, ValidationError> {
+    if (!Number.isInteger(stage) || stage < 0) {
+      return err(validation("follow-up stage cannot be negative", "followUpStage"));
+    }
+    return Invoice.create({ ...this.p, followUpOn: on, followUpStage: stage, updatedAt: now });
   }
 
   // Replace display lines AND recompute the total from their amounts. For open invoices

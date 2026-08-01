@@ -317,12 +317,9 @@ export function CustInvoiceModalContent() {
   function pay() {
     if (!invoice) return;
     recordPayment(invoice.id, { amt: clampAmt(amt, due), when: "Just now", method });
-    if (method === "card" && save) {
-      const lead = leads.find((l) => l.id === invoice.leadId);
-      if (lead && !lead.card) {
-        updateLead(invoice.leadId, { card: { brand: "Visa", last4: "4242", via: "online" } });
-      }
-    }
+    // No card is recorded on file. This used to write a hardcoded Visa •••• 4242 onto the
+    // customer — fabricated payment data, shown back to the shop as though a real card were
+    // stored. Saving a card is Stripe Connect's job; until it exists, record nothing.
   }
 
   return (

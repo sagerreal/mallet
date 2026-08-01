@@ -149,6 +149,13 @@ export const jobDTO = z.object({
   // org's techSeesPrice is off. Office/owner responses are never null.
   total: moneyDTO.nullable(),
   notes: z.string().nullable(),
+  // The address the crew drives to and a job-specific contact, when they differ from the
+  // customer's on file. Both were accepted by the create input and dropped for want of a column.
+  addr: z.string().nullable(),
+  phone: z.string().nullable(),
+  // What the tech did, shown to the customer on the invoice; and their "ready to bill" tap.
+  completion: z.string().nullable(),
+  invRequested: z.boolean(),
   scope: z.string().nullable(),
   callbackOf: z.string().uuid().nullable(),
   callbackReason: callbackReasonEnum.nullable(),
@@ -215,6 +222,13 @@ export const jobSummaryDTO = z.object({
   // org's techSeesPrice is off. Office/owner responses are never null.
   total: moneyDTO.nullable(),
   notes: z.string().nullable(),
+  // The address the crew drives to and a job-specific contact, when they differ from the
+  // customer's on file. Both were accepted by the create input and dropped for want of a column.
+  addr: z.string().nullable(),
+  phone: z.string().nullable(),
+  // What the tech did, shown to the customer on the invoice; and their "ready to bill" tap.
+  completion: z.string().nullable(),
+  invRequested: z.boolean(),
   scope: z.string().nullable(),
   callbackOf: z.string().uuid().nullable(),
   callbackReason: callbackReasonEnum.nullable(),
@@ -370,6 +384,10 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
     cancelReason: p.cancelReason,
     total: money(p.total),
     notes: p.notes,
+    addr: p.addr,
+    phone: p.phone,
+    completion: p.completion,
+    invRequested: p.invRequested,
     scope: p.scope,
     callbackOf: p.callbackOf,
     callbackReason: p.callbackReason,
@@ -425,6 +443,10 @@ export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution,
     scheduledStart: iso(p.scheduledStart),
     total: money(p.total),
     notes: p.notes,
+    addr: p.addr,
+    phone: p.phone,
+    completion: p.completion,
+    invRequested: p.invRequested,
     scope: p.scope,
     callbackOf: p.callbackOf,
     callbackReason: p.callbackReason,

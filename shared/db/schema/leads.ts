@@ -33,6 +33,10 @@ export const leads = pgTable(
     // Free-form notes captured at lead creation or edited on the lead modal.
     // Nullable: most leads are created without notes.
     notes: text("notes"),
+    // Why the customer went elsewhere ("Price", "No response"). Written when a quote is declined;
+    // was dropped by the update payload builder, so the answer to "why did we lose this?" was gone
+    // by the next refetch.
+    lossReason: text("loss_reason"),
     // Service address captured at lead creation or updated from the lead modal.
     // Nullable: most leads are created without an address.
     address: text("address"),

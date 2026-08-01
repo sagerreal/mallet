@@ -21,6 +21,10 @@ const ORG_ID = asOrgId("22222222-2222-2222-2222-222222222222");
 const ABSENT_JOB_ID = asJobId("99999999-9999-9999-9999-999999999999");
 
 const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
+  addr: null,
+  phone: null,
+  completion: null,
+  invRequested: false,
   id: JOB_ID,
   orgId: ORG_ID,
   num: "JOB-1000",

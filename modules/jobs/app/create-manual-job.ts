@@ -14,7 +14,8 @@ export interface CreateManualJobCommand {
   readonly kind?: JobKind;
   readonly title: string | null;
   readonly svc: string | null;
-  // addr/phone accepted for modal parity but NOT persisted (no job columns) — dropped here.
+  // A job-specific service address and contact, when they differ from the customer's on file.
+  // These were accepted here and DROPPED for want of columns until they got them.
   readonly addr: string | null;
   readonly phone: string | null;
   readonly notes: string | null;
@@ -63,6 +64,8 @@ export class CreateManualJobUseCase {
       assigneeUserId: null,
       title: cmd.title,
       svc: cmd.svc,
+      addr: cmd.addr,
+      phone: cmd.phone,
       kind: cmd.kind ?? "work",
       status: "scheduled",
       scheduledStart: null,

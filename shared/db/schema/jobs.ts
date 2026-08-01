@@ -4,6 +4,7 @@ import {
   uuid,
   text,
   integer,
+  boolean,
   timestamp,
   date,
   time,
@@ -61,6 +62,18 @@ export const jobs = pgTable(
     taxBps: integer("tax_bps").notNull().default(0),
     taxCents: integer("tax_cents").notNull().default(0),
     notes: text("notes"),
+    // The address the crew drives to, when it differs from the customer's on file — a property
+    // manager's own address is not the unit being serviced. Both this and `phone` were accepted by
+    // the create input and DROPPED for want of a column, so the office job modal's rows edited
+    // nothing and the next jobs.list refetch erased what was typed.
+    addr: text("addr"),
+    phone: text("phone"),
+    // What the tech did, in their words — "goes on the invoice the customer sees". Same fate as
+    // addr: typed into the close-out sheet, dropped on the way to the server.
+    completion: text("completion"),
+    // The tech tapped "send to office": this job is ready to bill. Was a store-only flag, so the
+    // office's ready-to-bill signal did not survive the tech's own page refresh.
+    invRequested: boolean("inv_requested").notNull().default(false),
     // Service type ("service" | "estimate" | free-text trade label). Mirrors the store
     // Job.svc field; nullable because estimate-sourced jobs may not set one at creation.
     svc: text("svc"),

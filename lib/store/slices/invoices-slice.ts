@@ -196,6 +196,19 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     const inv = get().invoices.find((i) => i.id === id);
     // 2. Persist only DB-origin invoices with a DB-backed field in the patch.
     if (!inv || inv.origin !== "db") return;
+
+    // Follow-up rides its own endpoint: updateMetadata refuses a paid or void invoice, and the
+    // moment an invoice is paid is exactly when the shop stops chasing it.
+    if (patch.fu) {
+      const { on, stage } = patch.fu;
+      void trpcVanilla.v1.invoicing.setFollowUp
+        .mutate({ invoiceId: id, on, stage })
+        .catch((err: unknown) => {
+          if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
+          reportWriteError("updateInvoice.followUp", err);
+        });
+    }
+
     const payload = buildInvoiceMetadataPayload(id, patch);
     if (!payload) return; // client-local-only patch — no network call
 

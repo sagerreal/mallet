@@ -107,6 +107,9 @@ export interface BookingCfg {
 export interface SettingsToggles {
   techSeesPrice: boolean;
   frontDesk: boolean;
+  /** Money's "Auto-remind" switch. It was useState(true) in that header — a control promising
+   *  reminder texts on a schedule and wired to nothing at all. */
+  autoRemind: boolean;
   /** Org-level gate for the job modal's Measurements section (measurement-priced trades only). */
   measurementEstimating: boolean;
 }
@@ -142,6 +145,7 @@ const EMPTY_TRADE = "plumbing";
 const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
   frontDesk: true,
+  autoRemind: true,
   measurementEstimating: false,
 };
 
@@ -578,6 +582,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     const toggleToField: Record<keyof SettingsToggles, string> = {
       techSeesPrice: "techSeesPrice",
       frontDesk: "frontDesk",
+      autoRemind: "autoRemind",
       measurementEstimating: "measurementEstimating",
     };
     const col = toggleToField[key];

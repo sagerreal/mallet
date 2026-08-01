@@ -117,6 +117,11 @@ export const estimates = pgTable(
     publicToken: text("public_token"),
     // Stamped the first time a customer opens the public quote link. Idempotent; never updated.
     firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+    // Per-document follow-up: is the shop still chasing this one, and how many nudges in.
+    // Was client-local, and the hydrator reset it to off on every refetch — so a toggle the user
+    // switched ON read back OFF, disagreeing with whether reminders were actually being sent.
+    followUpOn: boolean("follow_up_on").notNull().default(false),
+    followUpStage: integer("follow_up_stage").notNull().default(0),
     // The AI drafter's original lines, present only on AI-originated estimates. Write-once
     // snapshot semantics: set at draft via a dedicated repo method; the save() upsert never
     // touches it (deliberately absent from BOTH the insert values and the conflict set), so a

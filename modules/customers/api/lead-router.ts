@@ -36,6 +36,9 @@ const leadDTO = z.object({
   role: z.string().nullable(),
   customFields: z.array(z.object({ label: z.string().min(1).max(80), value: z.string().max(500) })).max(20).nullable(),
   notes: z.string().nullable(),
+  // Why the customer went elsewhere. Written when a quote is declined; was dropped by the
+  // store's payload builder, so "why did we lose this?" had no durable answer.
+  lossReason: z.string().nullable(),
   address: z.string().nullable(),
   createdAt: z.string(),
   // The list's DEFAULT ordering is `lastActivity` → updated_at, and until this shipped the
@@ -156,6 +159,7 @@ const toLeadDTO = (lead: Lead) => {
     role: p.role,
     customFields: (p.customFields as { label: string; value: string }[] | null) ?? null,
     notes: p.notes,
+    lossReason: p.lossReason,
     address: p.address,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
@@ -175,6 +179,7 @@ const updateInput = z.object({
   role: z.string().max(255).nullable().optional(),
   customFields: z.array(z.object({ label: z.string().min(1).max(80), value: z.string().max(500) })).max(20).nullable().optional(),
   address: z.string().max(500).nullable().optional(),
+  lossReason: z.string().max(200).nullable().optional(),
 });
 
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
@@ -202,7 +207,8 @@ export const createLeadRouter = () =>
           input.companyId !== undefined ||
           input.role !== undefined ||
           input.customFields !== undefined ||
-          input.address !== undefined
+          input.address !== undefined ||
+          input.lossReason !== undefined
         ) {
           let phone: Phone | null | undefined = undefined;
           if (input.phone !== undefined) {
@@ -240,6 +246,7 @@ export const createLeadRouter = () =>
               role: input.role,
               customFields: input.customFields,
               address: input.address,
+              lossReason: input.lossReason,
             },
             now,
           );

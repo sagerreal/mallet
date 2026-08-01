@@ -137,6 +137,8 @@ function normalizeChecklist(
   return ok({ name, items });
 }
 
+const COMPLETION_MAX_LENGTH = 2000;
+
 const MAX_VISIT_DURATION_MINUTES = 24 * 60;
 
 // Default length (2h) seeded onto the single unplaced visit of a quote-created job, so the
@@ -256,6 +258,14 @@ export interface JobProps {
   readonly taxBps: number;
   readonly tax: Money;
   readonly notes: string | null;
+  /** The address the crew drives to, when it differs from the customer's on file. */
+  readonly addr: string | null;
+  /** A job-specific contact number (a tenant, not the account holder). */
+  readonly phone: string | null;
+  /** What the tech did, in their words — shown to the customer on the invoice. */
+  readonly completion: string | null;
+  /** The tech tapped "send to office": ready to bill. */
+  readonly invRequested: boolean;
   readonly scope: string | null; // free-text "anything else noticed?" note from the booking flow
   readonly callbackOf: JobId | null; // this job is a callback/redo of an earlier job (nullable)
   readonly callbackReason: CallbackReason | null; // 'callback' | 'new_issue' | 'found_work' (nullable)
@@ -283,7 +293,8 @@ export interface JobProps {
 // so pre-existing callers keep compiling. kind defaults to "work"; the rest default to null.
 export type JobCreateProps = Omit<
   JobProps,
-  "kind" | "scope" | "callbackOf" | "callbackReason" | "requiredCerts" | "taxBps" | "tax"
+  | "kind" | "scope" | "callbackOf" | "callbackReason" | "requiredCerts" | "taxBps" | "tax"
+  | "addr" | "phone" | "completion" | "invRequested"
 > & {
   // Optional so the many jobs created without a quote need not state "no tax" explicitly. Only
   // create-job-from-estimate has a split to pass, because only an estimate ever computed one.
@@ -294,6 +305,12 @@ export type JobCreateProps = Omit<
   readonly callbackOf?: JobId | null;
   readonly callbackReason?: CallbackReason | null;
   readonly requiredCerts?: readonly string[] | null;
+  // Optional so the many jobs that inherit the customer's address and are not yet closed out
+  // need not state "no address of its own" and "not ready to bill" explicitly.
+  readonly addr?: string | null;
+  readonly phone?: string | null;
+  readonly completion?: string | null;
+  readonly invRequested?: boolean;
 };
 
 // Scheduled field work. Aggregate root with a status state machine
@@ -356,10 +373,23 @@ export class Job {
       if (!validated.ok) return validated;
       checklist = validated.value;
     }
+    // Close-out and address fields: trim, and treat "" as absent so a cleared input reads as
+    // "nothing on file" rather than an empty string the UI has to special-case.
+    const blankToNull = (v: string | null | undefined): string | null => {
+      const t = (v ?? "").trim();
+      return t.length === 0 ? null : t;
+    };
+    const addr = blankToNull(props.addr);
+    const phone = blankToNull(props.phone);
+    const completion = blankToNull(props.completion);
+    if (completion !== null && completion.length > COMPLETION_MAX_LENGTH) {
+      return err(validation(`completion note must be at most ${COMPLETION_MAX_LENGTH} characters`, "completion"));
+    }
+    const invRequested = props.invRequested ?? false;
     const rawRequired = props.requiredCerts ?? null;
     const requiredCerts = rawRequired === null || rawRequired.length === 0 ? null : rawRequired;
     return ok(
-      new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind, requiredCerts, taxBps, tax }),
+      new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind, requiredCerts, taxBps, tax, addr, phone, completion, invRequested }),
     );
   }
 
@@ -498,10 +528,25 @@ export class Job {
       svc?: string | null;
       notes?: string | null;
       checklist?: JobChecklistProps | null;
+      addr?: string | null;
+      phone?: string | null;
+      completion?: string | null;
+      invRequested?: boolean;
     },
     now: Date,
   ): Result<Job, ValidationError> {
-    if (isTerminal(this.p.status)) {
+    // `completion` and `invRequested` are the CLOSE-OUT fields — what the tech did, and "this is
+    // ready to bill". They are written at or after the moment a job completes, so gating them on
+    // a non-terminal status would reject exactly the write they exist for. Everything else stays
+    // gated: a finished job's scope and address are history, not a draft.
+    const closeOutOnly =
+      fields.title === undefined &&
+      fields.svc === undefined &&
+      fields.notes === undefined &&
+      fields.checklist === undefined &&
+      fields.addr === undefined &&
+      fields.phone === undefined;
+    if (isTerminal(this.p.status) && !closeOutOnly) {
       return err(validation("cannot edit a completed or canceled job", "status"));
     }
     return Job.create({
@@ -510,6 +555,10 @@ export class Job {
       svc: fields.svc !== undefined ? fields.svc : this.p.svc,
       notes: fields.notes !== undefined ? fields.notes : this.p.notes,
       checklist: fields.checklist !== undefined ? fields.checklist : this.p.checklist,
+      addr: fields.addr !== undefined ? fields.addr : this.p.addr,
+      phone: fields.phone !== undefined ? fields.phone : this.p.phone,
+      completion: fields.completion !== undefined ? fields.completion : this.p.completion,
+      invRequested: fields.invRequested !== undefined ? fields.invRequested : this.p.invRequested,
       updatedAt: now,
     });
   }

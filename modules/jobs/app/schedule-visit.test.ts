@@ -48,6 +48,10 @@ const makeVisit = (overrides: Partial<JobVisitProps> = {}): JobVisit => {
 };
 
 const jobProps = (overrides: Partial<JobProps> = {}): JobProps => ({
+  addr: null,
+  phone: null,
+  completion: null,
+  invRequested: false,
   id: JOB_ID,
   orgId: ORG_ID,
   num: "JOB-1000",

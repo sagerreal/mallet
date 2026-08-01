@@ -31,6 +31,9 @@ export const orgSettings = pgTable(
     techTexts: boolean("tech_texts").notNull().default(true),
     frontDesk: boolean("front_desk").notNull().default(true),
     scopeOn: boolean("scope_on").notNull().default(false),
+    // Money's "Auto-remind" switch. It was useState(true) in the header — a control that promised
+    // reminder texts on a schedule and was wired to nothing at all.
+    autoRemind: boolean("auto_remind").notNull().default(true),
     // Org-level gate for the Measurements section (job modal room captures + pricing-from-measurements).
     // Only measurement-priced trades (painting etc.) opt in — plumbing and similar trades never see the
     // section at all when this is false. Defaults off so existing orgs are unaffected.

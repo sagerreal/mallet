@@ -73,6 +73,9 @@ const estimateDTO = z.object({
   depositDue: moneyDTO,
   validDays: z.number().int().nullable(),
   sentAt: z.string().nullable(),
+  // Is the shop still chasing this one, and how many nudges in.
+  followUpOn: z.boolean(),
+  followUpStage: z.number().int(),
   acceptedAt: z.string().nullable(),
   declinedAt: z.string().nullable(),
   declineReason: z.string().nullable(),
@@ -186,6 +189,8 @@ const estimateSummaryDTO = z.object({
    * snapshot of every customer in one response, which is a lot of evidence to ship for a pill.
    */
   signed: z.boolean(),
+  followUpOn: z.boolean(),
+  followUpStage: z.number().int(),
 });
 
 const lineInput = z.object({
@@ -370,6 +375,8 @@ const toEstimateDTO = (estimate: Estimate) => {
     depositDue: money(estimate.depositDue()),
     validDays: p.validDays,
     sentAt: p.sentAt?.toISOString() ?? null,
+    followUpOn: p.followUpOn ?? false,
+    followUpStage: p.followUpStage ?? 0,
     acceptedAt: p.acceptedAt?.toISOString() ?? null,
     declinedAt: p.declinedAt?.toISOString() ?? null,
     declineReason: p.declineReason,
@@ -467,6 +474,8 @@ const toSummaryDTO = (estimate: Estimate, customerName: string | null = null) =>
     // Same three-part gate as toSignatureDTO, so a row can never be flagged signed on the list
     // and then render no signature when the record opens.
     signed: Boolean(p.signedAt && p.signedSnapshot && p.signerName),
+    followUpOn: p.followUpOn ?? false,
+    followUpStage: p.followUpStage ?? 0,
   };
 };
 
@@ -789,6 +798,25 @@ export const createEstimateRouter = () =>
         const existing = await repo.findById(asEstimateId(input.estimateId));
         if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "estimate not found" });
         return toEstimateDTO(existing);
+      }),
+
+    /** Chasing this quote: on/off plus how many nudges have gone out. Was client-local, so the
+     *  toggle read back OFF after a refetch whatever the user had set. */
+    setFollowUp: ownerOrOffice
+      .input(z.object({
+        estimateId: z.string().uuid(),
+        on: z.boolean(),
+        stage: z.number().int().min(0).max(10),
+      }))
+      .output(z.object({ ok: z.literal(true) }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
+        const estimate = await repo.findById(asEstimateId(input.estimateId));
+        if (!estimate) throw new TRPCError({ code: "NOT_FOUND", message: "quote not found" });
+        const next = estimate.setFollowUp(input.on, input.stage, ctx.deps.clock.now());
+        if (!next.ok) throw new TRPCError({ code: "BAD_REQUEST", message: next.error.message });
+        await repo.save(next.value);
+        return { ok: true as const };
       }),
 
     decline: ownerOrOffice

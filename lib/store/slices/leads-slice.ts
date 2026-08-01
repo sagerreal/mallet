@@ -100,13 +100,15 @@ export function buildLeadUpdatePayload(
       payload.role = patch.role;
     } else if (key === "customFields") {
       payload.customFields = patch.customFields ?? null;
+    } else if (key === "lossReason") {
+      payload.lossReason = patch.lossReason ?? null;
     } else if (key === "address") {
       // Map empty string → null (no address on file).
       const raw = patch.address;
       payload.address = raw === "" ? null : (raw ?? null);
     }
-    // Remaining fields (notes, card, custom, lossReason, archived, trash) are either
-    // handled by dedicated mutations or are not yet wired to the DB — skip them.
+    // Remaining fields (notes, card, custom, archived, trash) are either handled by dedicated
+    // mutations or are not yet wired to the DB — skip them.
   }
 
   return hasPersistedField ? payload : null;

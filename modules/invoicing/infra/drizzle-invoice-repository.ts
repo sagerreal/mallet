@@ -61,6 +61,8 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       termsDays: p.termsDays,
       sentAt: p.sentAt,
       dueAt: p.dueAt,
+      followUpOn: p.followUpOn ?? false,
+      followUpStage: p.followUpStage ?? 0,
       updatedAt: p.updatedAt,
     };
   }

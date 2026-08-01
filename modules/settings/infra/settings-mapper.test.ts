@@ -22,6 +22,7 @@ const baseRow = (): OrgSettingsRow => ({
   visitScopeMinutes: 30,
   visitRepairMinutes: 90,
   visitInstallMinutes: 240,
+  autoRemind: true,
   techSeesPrice: true,
   techTexts: true,
   frontDesk: true,

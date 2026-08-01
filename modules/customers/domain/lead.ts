@@ -35,6 +35,9 @@ export interface LeadProps {
   readonly role: string | null;
   // Free-form notes (gate code, call preferences, etc.). Null when not provided.
   readonly notes: string | null;
+  // Why the customer went elsewhere ("Price", "No response"). Written when a quote is declined;
+  // was dropped by the store's update payload builder, so the answer was gone by the next refetch.
+  readonly lossReason: string | null;
   // Service address for field work (e.g. "123 Main St, Oakland CA 94601"). Null when not captured.
   readonly address: string | null;
   readonly createdAt: Date;
@@ -95,6 +98,7 @@ export class Lead {
       role?: string | null;
       notes?: string | null;
       address?: string | null;
+      lossReason?: string | null;
     },
     now: Date,
   ): Result<Lead, ValidationError> {
@@ -108,6 +112,10 @@ export class Lead {
       fields.address !== undefined
         ? (fields.address?.trim() || null)
         : this.p.address;
+    const lossReason =
+      fields.lossReason !== undefined
+        ? (fields.lossReason?.trim() || null)
+        : this.p.lossReason;
     return Lead.create({
       ...this.p,
       name: fields.name !== undefined ? fields.name : this.p.name,
@@ -120,6 +128,7 @@ export class Lead {
       role: fields.role !== undefined ? fields.role : this.p.role,
       notes,
       address,
+      lossReason,
       updatedAt: now,
     });
   }

@@ -87,6 +87,9 @@ const FIRST_RUN = {
 export function MoneyLedger() {
   const router = useRouter();
   const leads = useAppStore((s) => s.leads);
+  // Was useState(true) — a switch that promised reminder texts on a schedule and wrote nowhere.
+  const autoRemind = useAppStore((s) => s.toggles.autoRemind);
+  const setToggle = useAppStore((s) => s.setToggle);
 
   const openModal = useOpenModal();
   const addInvoice = useAppStore((s) => s.addInvoice);
@@ -99,7 +102,7 @@ export function MoneyLedger() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [colsOpen, setColsOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState<MoneyColKey[]>([...MONEY_COL_ORDER]);
-  const [autoRemind, setAutoRemind] = useState(true);
+
   // Armed "charge card on file" — first tap arms, second tap charges.
   const [armedCharge, setArmedCharge] = useState<string | null>(null);
 
@@ -237,7 +240,7 @@ export function MoneyLedger() {
 
   return (
     <>
-      <MoneyHeader autoRemind={autoRemind} onAutoRemind={() => setAutoRemind((v) => !v)} onNewInvoice={newInvoice} />
+      <MoneyHeader autoRemind={autoRemind} onAutoRemind={() => setToggle("autoRemind", !autoRemind)} onNewInvoice={newInvoice} />
 
       <div className="mob-new">
         <button className="btn primary" onClick={newInvoice}>+ New invoice</button>

@@ -12,6 +12,10 @@ import {
 import { Job, JobVisit, type JobProps } from "./job";
 
 const props = (overrides: Partial<JobProps> = {}): JobProps => ({
+  addr: null,
+  phone: null,
+  completion: null,
+  invRequested: false,
   id: asJobId("11111111-1111-1111-1111-111111111111"),
   orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
   num: "JOB-1000",

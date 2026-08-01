@@ -60,8 +60,9 @@ export function toStoreEstimate(dto: EstimateSummaryDTO): Estimate {
     viewed: dto.status !== "draft",
     // validDays: not in summary DTO; loaded by the modal via quoting.get.
     validDays: undefined,
-    // fu: follow-up is fully client-local, not persisted.
-    fu: { on: false, stage: 0 },
+    // fu comes from the server. It used to be reset to off here on every refetch, so a toggle
+    // the user switched ON read back OFF — disagreeing with whether reminders were going out.
+    fu: { on: dto.followUpOn, stage: dto.followUpStage },
     // lines: empty from list DTO; modal fetches them via quoting.get on open.
     lines: [],
     // pricing: bps not in summary DTO; modal fetches them.

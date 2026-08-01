@@ -27,6 +27,7 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     techTexts: row.techTexts,
     frontDesk: row.frontDesk,
     scopeOn: row.scopeOn,
+    autoRemind: row.autoRemind,
     measurementEstimating: row.measurementEstimating,
     hoursWdOpen: row.hoursWdOpen,
     hoursMonOpen: row.hoursMonOpen,

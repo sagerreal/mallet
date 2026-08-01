@@ -78,6 +78,8 @@ export interface OrgSettingsProps {
   readonly techTexts: boolean;
   readonly frontDesk: boolean;
   readonly scopeOn: boolean;
+  /** Money's "Auto-remind" switch — it was useState(true) in the header, wired to nothing. */
+  readonly autoRemind: boolean;
   /**
    * Org-level gate for the Measurements section on jobs (room captures + pricing from them).
    * Only measurement-priced trades (painting etc.) turn this on; a plumbing org leaves it off and
@@ -337,6 +339,7 @@ export class OrgSettings {
       techTexts: fields.techTexts !== undefined ? fields.techTexts : this.p.techTexts,
       frontDesk: fields.frontDesk !== undefined ? fields.frontDesk : this.p.frontDesk,
       scopeOn: fields.scopeOn !== undefined ? fields.scopeOn : this.p.scopeOn,
+      autoRemind: fields.autoRemind !== undefined ? fields.autoRemind : this.p.autoRemind,
       measurementEstimating:
         fields.measurementEstimating !== undefined
           ? fields.measurementEstimating

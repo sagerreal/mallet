@@ -99,6 +99,7 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         techTexts: p.techTexts,
         frontDesk: p.frontDesk,
         scopeOn: p.scopeOn,
+        autoRemind: p.autoRemind,
         measurementEstimating: p.measurementEstimating,
         hoursWdOpen: p.hoursWdOpen,
         hoursWdClose: p.hoursWdClose,

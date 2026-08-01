@@ -47,6 +47,8 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     depPaid: money(row.depPaidCents),
     validDays: row.validDays,
     sentAt: row.sentAt,
+    followUpOn: row.followUpOn,
+    followUpStage: row.followUpStage,
     acceptedAt: row.acceptedAt,
     declinedAt: row.declinedAt,
     declineReason: row.declineReason,

@@ -171,11 +171,32 @@ describe("buildJobUpdatePayload", () => {
     expect(buildJobUpdatePayload("j1", { notes: "x" })).toEqual({ jobId: "j1", notes: "x" });
   });
 
-  it("returns null for a local-only patch (lines/addr/phone/status)", () => {
+  // `lines` stays out of this payload on purpose — it has its own endpoint (setJobLines), because
+  // job_lines is a child table rather than a column on jobs.
+  it("returns null for a genuinely local-only patch", () => {
     expect(buildJobUpdatePayload("j1", { lines: [] })).toBeNull();
-    expect(buildJobUpdatePayload("j1", { addr: "1 Main" })).toBeNull();
-    expect(buildJobUpdatePayload("j1", { phone: "555" })).toBeNull();
-    expect(buildJobUpdatePayload("j1", { invRequested: true })).toBeNull();
+  });
+
+  /**
+   * These four USED to return null, and that was the bug: the office job modal's Service address
+   * row and the close-out sheet's "What was done" wrote to the store and nowhere else, so the next
+   * jobs.list refetch erased what had been typed. They have columns now.
+   */
+  it("persists the service address — the field a crew drives to", () => {
+    expect(buildJobUpdatePayload("j1", { addr: "1 Main" })).toEqual({ jobId: "j1", addr: "1 Main" });
+  });
+
+  it("persists a job-specific phone", () => {
+    expect(buildJobUpdatePayload("j1", { phone: "555" })).toEqual({ jobId: "j1", phone: "555" });
+  });
+
+  it("persists the completion note — it is shown to the customer on the invoice", () => {
+    expect(buildJobUpdatePayload("j1", { completion: "Replaced 40-gal heater" }))
+      .toEqual({ jobId: "j1", completion: "Replaced 40-gal heater" });
+  });
+
+  it("persists the ready-to-bill flag", () => {
+    expect(buildJobUpdatePayload("j1", { invRequested: true })).toEqual({ jobId: "j1", invRequested: true });
   });
 
   it("maps an attached checklist to the wire shape (drops store-only position)", () => {
