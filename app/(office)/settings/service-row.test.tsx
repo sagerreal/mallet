@@ -141,6 +141,26 @@ describe("ServiceRow — Priced-by control (gated on measurementEstimating)", ()
     expect(screen.getAllByText("each").length).toBeGreaterThan(0);
   });
 
+  it("selecting a site kind commits measuredBy and shows the per-unit label", () => {
+    const onUpdate = vi.fn();
+    render(
+      <ServiceRow
+        service={makeService({ measuredBy: "site_sqft" })}
+        categories={categories}
+        canSeeCost={false}
+        measurementEstimating={true}
+        onUpdate={onUpdate}
+        onArchive={vi.fn()}
+      />,
+    );
+    openRow();
+    expect(screen.getAllByText("per sq ft").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByLabelText("Priced by"));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Site perimeter (per ln ft)" }));
+
+    expect(onUpdate).toHaveBeenCalledWith("svc-1", { measuredBy: "site_lnft" });
+  });
+
   it("selecting Flat on a measured service commits measuredBy: null", () => {
     const onUpdate = vi.fn();
     render(

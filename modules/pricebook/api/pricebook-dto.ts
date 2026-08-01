@@ -16,6 +16,8 @@ export const measuredByKindDTO = z.enum([
   "crown_lnft",
   "doors_count",
   "windows_count",
+  "site_sqft",
+  "site_lnft",
 ]);
 
 export const serviceDTO = z.object({

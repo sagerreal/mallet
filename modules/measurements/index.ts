@@ -35,3 +35,5 @@ export { UpdateSiteCaptureUseCase } from "./app/update-site-capture";
 export { ArchiveSiteCaptureUseCase } from "./app/archive-site-capture";
 export type { RoomQuantitiesReader, RoomQuantitiesForJob, RoomQuantity } from "./domain/room-quantities-reader";
 export { MeasurementRoomQuantitiesReader } from "./domain/room-quantities-reader";
+export type { SiteQuantitiesReader, SiteQuantitiesForJob, SiteQuantityKind } from "./domain/site-quantities-reader";
+export { MeasurementSiteQuantitiesReader } from "./domain/site-quantities-reader";

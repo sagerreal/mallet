@@ -3,9 +3,12 @@ import type { ServiceId } from "@mallet/shared/types";
 // type-only pin: PaintingQuantityKind is erased at compile time (verbatimModuleSyntax), so this
 // never triggers the measurements barrel's runtime evaluation (createMeasurementRouter pulls the
 // config validator and throws without DB env in unit tests).
-import type { PaintingQuantityKind } from "@mallet/measurements";
+import type { PaintingQuantityKind, SiteQuantityKind } from "@mallet/measurements";
 
-export type { PaintingQuantityKind };
+export type { PaintingQuantityKind, SiteQuantityKind };
+
+/** The measured quantities (room OR site) a per-unit service can price against. */
+export type MeasuredQuantityKind = PaintingQuantityKind | SiteQuantityKind;
 
 /** One active, measured-by pricebook service — just the fields BuildFromMeasurementsUseCase needs. */
 export interface RateService {
@@ -13,7 +16,7 @@ export interface RateService {
   readonly name: string;
   readonly unitPriceCents: number;
   readonly costCents: number;
-  readonly measuredBy: PaintingQuantityKind | "hour";
+  readonly measuredBy: MeasuredQuantityKind | "hour";
   readonly position: number;
 }
 

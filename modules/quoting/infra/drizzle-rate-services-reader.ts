@@ -3,28 +3,32 @@ import { pricebookItems } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { asServiceId, type OrgId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
-import type { RateService, RateServicesReader, PaintingQuantityKind } from "../domain/rate-services-reader";
+import type { RateService, RateServicesReader, MeasuredQuantityKind } from "../domain/rate-services-reader";
 
 // Per-org catalogs are small (hundreds, not thousands) — a flat cap beats cursor plumbing for a
 // rate lookup. Mirrors modules/quoting/infra/drizzle-service-name-reader.ts's NAME_CAP precedent.
 const RATE_CAP = 500;
 
-// The 6-kind set MEASURED_BY_KIND_SET pins in modules/pricebook/domain/service.ts, duplicated
-// here (never imported — quoting's app layer must not depend on pricebook internals) so a
-// non-null `measured_by` column value can be narrowed WITHOUT a blind cast. The isNotNull filter
-// below already guarantees non-null; this guards against a value the CHECK constraint doesn't
-// (yet) recognize ever silently mis-typing as a valid kind.
-const MEASURED_BY_KINDS: ReadonlySet<PaintingQuantityKind> = new Set([
+// The kind sets MEASURED_BY_KIND_SET/SITE_KIND_SET pin in modules/pricebook/domain/service.ts,
+// duplicated here (never imported — quoting's app layer must not depend on pricebook internals)
+// so a non-null `measured_by` column value can be narrowed WITHOUT a blind cast. The isNotNull
+// filter below already guarantees non-null; this guards against a value the CHECK constraint
+// doesn't (yet) recognize ever silently mis-typing as a valid kind.
+const MEASURED_BY_KINDS: ReadonlySet<MeasuredQuantityKind> = new Set([
   "walls_sqft",
   "ceiling_sqft",
   "baseboard_lnft",
   "crown_lnft",
   "doors_count",
   "windows_count",
-] satisfies PaintingQuantityKind[]);
+  "site_sqft",
+  "site_lnft",
+] satisfies MeasuredQuantityKind[]);
 
-const isMeasuredByKind = (v: string): v is PaintingQuantityKind =>
-  MEASURED_BY_KINDS.has(v as PaintingQuantityKind);
+// 'hour' is a valid priced-by value too (hourly labor services) — the use-case skips those
+// rows itself, but this reader must pass them through rather than throwing on them.
+const isMeasuredByKind = (v: string): v is MeasuredQuantityKind | "hour" =>
+  v === "hour" || MEASURED_BY_KINDS.has(v as MeasuredQuantityKind);
 
 // Real persistence over pricebook's own table, reached only from quoting's infra (the same
 // cross-module pattern modules/jobs/infra/drizzle-estimate-reader.ts uses against quoting's

@@ -51,6 +51,9 @@ const MEASUREMENT_PRICED_BY: readonly SelectOption[] = [
   { value: "crown_lnft", label: "Crown (per ln ft)" },
   { value: "doors_count", label: "Doors (each)" },
   { value: "windows_count", label: "Windows (each)" },
+  // Site (aerial takeoff) kinds — outdoor surfaces traced from satellite imagery.
+  { value: "site_sqft", label: "Site area (per sq ft)" },
+  { value: "site_lnft", label: "Site perimeter (per ln ft)" },
 ];
 
 /** The price row's unit suffix — nothing for flat, the measured unit otherwise. */
@@ -58,9 +61,11 @@ function priceUnit(measuredBy: string | null): string | null {
   switch (measuredBy) {
     case "walls_sqft":
     case "ceiling_sqft":
+    case "site_sqft":
       return "per sq ft";
     case "baseboard_lnft":
     case "crown_lnft":
+    case "site_lnft":
       return "per ln ft";
     case "doors_count":
     case "windows_count":
