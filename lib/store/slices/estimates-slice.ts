@@ -51,6 +51,14 @@ export interface EstimatesSlice {
    *  itself; going through addEstimate there would fire a second quoting.draft and orphan
    *  a duplicate draft in the shop rail. */
   adoptEstimate: (dto: Parameters<typeof dtoEstimateToStore>[0], fu: Estimate["fu"]) => void;
+  /**
+   * Adopt an already-MAPPED estimate — a header from a list read.
+   *
+   * Separate from adoptEstimate on purpose: that one takes the FULL DTO and runs the full mapper,
+   * which reads lines/pricing a list row does not carry. Handing it a summary is what crashed
+   * Money and Pipeline; naming the two shapes apart is what stops it happening again.
+   */
+  adoptEstimateRecord: (estimate: Estimate) => void;
   updateEstimate: (id: string, patch: Partial<Estimate>) => void;
   /** Decline an estimate. Separate from updateEstimate because the backend
    *  requires an explicit reason string. */
@@ -89,6 +97,13 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
   estimates: [],
 
   setEstimates: (estimates) => set({ estimates }),
+
+  adoptEstimateRecord: (estimate) =>
+    set((s) => ({
+      estimates: s.estimates.some((e) => e.id === estimate.id)
+        ? reconcileEst(s.estimates, estimate)
+        : [...s.estimates, estimate],
+    })),
 
   adoptEstimate: (dto, fu) => {
     const mapped = dtoEstimateToStore(dto, fu);
