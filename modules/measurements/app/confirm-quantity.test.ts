@@ -86,6 +86,26 @@ class FakeMeasurementRepository implements MeasurementRepository {
   async archive(): Promise<number> {
     throw new Error("archive not used in confirm tests");
   }
+
+  async createSiteCapture(): Promise<never> {
+    throw new Error("createSiteCapture not used in confirm tests");
+  }
+
+  async getSiteCapture(): Promise<never> {
+    throw new Error("getSiteCapture not used in confirm tests");
+  }
+
+  async listSiteCaptures(): Promise<never> {
+    throw new Error("listSiteCaptures not used in confirm tests");
+  }
+
+  async updateSiteCapture(): Promise<never> {
+    throw new Error("updateSiteCapture not used in confirm tests");
+  }
+
+  async archiveSiteCapture(): Promise<never> {
+    throw new Error("archiveSiteCapture not used in confirm tests");
+  }
 }
 
 const fixedIds = () => ({ newId: () => "unused" });

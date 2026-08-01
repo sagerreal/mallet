@@ -3,6 +3,7 @@ import {
   pgTable,
   uuid,
   text,
+  integer,
   jsonb,
   numeric,
   timestamp,
@@ -47,6 +48,50 @@ export const roomCaptures = pgTable(
     }).onDelete("cascade"),
     index("room_captures_org_job_idx").on(t.orgId, t.jobId, t.deletedAt),
     check("room_captures_source_ck", sql`${t.source} in ('roomplan_v1','manual')`),
+  ],
+);
+
+// Outdoor site capture: one surface (driveway, patio, walkway, roof facet) traced on satellite
+// imagery ('aerial_trace_v1') or typed by hand ('manual'). area_sqft is the WORKING number the
+// estimator prices from: for flat surfaces it equals the traced footprint, for pitched surfaces
+// it is footprint / cos(atan(pitch_rise/12)) — derived server-side, never trusted from the
+// client. Same tenant model as room_captures: composite FK to jobs + hand-written RLS.
+export const siteCaptures = pgTable(
+  "site_captures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id").notNull(),
+    name: text("name").notNull(), // "Driveway", "Front walkway", "Main roof — south face"
+    source: text("source").notNull(), // 'aerial_trace_v1' | 'manual'
+    surface: text("surface").notNull(), // 'flat' | 'pitched'
+    pitchRise: integer("pitch_rise"), // rise-per-12 for pitched surfaces (4 = 4/12); null for flat
+    polygon: jsonb("polygon"), // {vertices: [{lat,lng},...], view: {centerLat,centerLng,zoom}}; null for manual
+    footprintSqft: numeric("footprint_sqft", { precision: 12, scale: 2, mode: "number" }), // plan area as traced; null for manual
+    areaSqft: numeric("area_sqft", { precision: 12, scale: 2, mode: "number" }).notNull(), // working number (pitch-corrected)
+    perimeterLnft: numeric("perimeter_lnft", { precision: 12, scale: 2, mode: "number" }), // traced edge length; null for manual
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Composite-unique target so future child tables can FK on (org_id, capture_id) and never
+    // link across tenants — same pattern as room_captures_org_id_uq.
+    unique("site_captures_org_id_uq").on(t.orgId, t.id),
+    foreignKey({
+      name: "site_captures_job_fk",
+      columns: [t.orgId, t.jobId],
+      foreignColumns: [jobs.orgId, jobs.id],
+    }).onDelete("cascade"),
+    index("site_captures_org_job_idx").on(t.orgId, t.jobId, t.deletedAt),
+    check("site_captures_source_ck", sql`${t.source} in ('aerial_trace_v1','manual')`),
+    check("site_captures_surface_ck", sql`${t.surface} in ('flat','pitched')`),
+    check(
+      "site_captures_pitch_ck",
+      sql`(${t.surface} = 'flat' and ${t.pitchRise} is null) or (${t.surface} = 'pitched' and ${t.pitchRise} between 1 and 24)`,
+    ),
   ],
 );
 

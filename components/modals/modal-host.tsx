@@ -154,6 +154,12 @@ const RoomCardModalContent = dynamic(
   { ssr: false, loading: () => <ModalLoading size="md" /> },
 );
 
+const SiteTracerModalContent = dynamic(
+  () => import("./site-tracer/site-tracer-modal").then((m) => ({ default: m.SiteTracerModalContent })),
+
+  { ssr: false, loading: () => <ModalLoading size="lg" /> },
+);
+
 // ---------------------------------------------------------------------------
 
 export function ModalHost() {
@@ -250,6 +256,11 @@ export function ModalHost() {
 
       <Modal open={id === MODAL.ROOM_CARD} onClose={close}>
         <RoomCardModalContent />
+      </Modal>
+
+      {/* wide — the satellite tracer needs the room for imagery. */}
+      <Modal open={id === MODAL.SITE_TRACER} onClose={close} wide>
+        <SiteTracerModalContent />
       </Modal>
     </>
   );

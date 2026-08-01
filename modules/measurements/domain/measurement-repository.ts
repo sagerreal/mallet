@@ -1,4 +1,5 @@
 import type { RoomCapture } from "./room-capture";
+import type { SiteCapture } from "./site-capture";
 import type { PaintingQuantity, PaintingQuantityKind } from "./derive-painting";
 
 // Persistence-level status union — WIDER than the domain derivation union
@@ -92,4 +93,25 @@ export interface MeasurementRepository {
   // Soft-delete. Returns the number of rows affected (0 = not found / wrong org / already
   // deleted) — same contract as CompanyRepository.archive.
   archive(captureId: string): Promise<number>;
+
+  // ── site captures (aerial takeoff — outdoor surfaces) ──────────────────────
+
+  // Throws JobNotFoundError when the (org_id, job_id) FK doesn't resolve for this org.
+  createSiteCapture(capture: SiteCapture): Promise<void>;
+
+  // One capture by id (not deleted) — the update use-case reads the current row so it can
+  // recompute the pitch-corrected area from the STORED footprint, never a client-sent area.
+  getSiteCapture(id: string): Promise<SiteCapture | null>;
+
+  // Not-deleted captures for a job, newest createdAt (then id) first.
+  listSiteCaptures(jobId: string): Promise<SiteCapture[]>;
+
+  // Patches name/surface/pitch/area only — id, source, polygon, footprint and perimeter are
+  // fixed at capture time. Returns the number of rows affected (0 = not found / wrong org /
+  // already deleted) — same no-silent-fail contract as archive.
+  updateSiteCapture(capture: SiteCapture): Promise<number>;
+
+  // Soft-delete. Returns the number of rows affected (0 = not found / wrong org / already
+  // deleted).
+  archiveSiteCapture(captureId: string): Promise<number>;
 }

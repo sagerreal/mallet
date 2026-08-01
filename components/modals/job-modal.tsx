@@ -47,6 +47,7 @@ import { DurField } from "./dur-field";
 import { SheetRow } from "./sheet-row";
 import { JobChecklistBlock } from "./job-checklist-block";
 import { JobMeasureBlock } from "./job-measure-block";
+import { JobSiteBlock } from "./job-site-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
 import { dayLoad } from "@/features/jobs/jobs-helpers";
@@ -697,6 +698,7 @@ export function JobModalContent() {
 
   const jobId = activeModal?.params?.jobId as string | undefined;
   const rooms = useAppStore((s) => (jobId ? s.roomsByJob[jobId] : undefined)) ?? [];
+  const sites = useAppStore((s) => (jobId ? s.sitesByJob[jobId] : undefined)) ?? [];
   const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
   const adoptJob = useAppStore((s) => s.adoptJob);
   const job = jobs.find((j) => j.id === jobId);
@@ -1062,6 +1064,23 @@ export function JobModalContent() {
             expandable
           >
             <JobMeasureBlock jobId={job.id} />
+          </SheetRow>
+        )}
+
+        {/* Site measurements — outdoor surfaces traced from satellite imagery
+            (aerial takeoff). Same org gate and lazy-hydration shape as the
+            rooms row above: sitesByJob holds whatever the store has for this
+            job until the accordion opens and useJobSites fills it. */}
+        {measurementEstimating && (
+          <SheetRow
+            label="Site measurements"
+            value={
+              sites.length > 0 ? `${sites.length} surface${sites.length === 1 ? "" : "s"}` : "Add"
+            }
+            valueIsHint={sites.length === 0}
+            expandable
+          >
+            <JobSiteBlock jobId={job.id} />
           </SheetRow>
         )}
       </div>

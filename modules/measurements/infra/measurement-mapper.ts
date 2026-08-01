@@ -1,12 +1,14 @@
 import { asOrgId, asJobId } from "@mallet/shared/types";
-import { roomCaptures, paintingRoomQuantities } from "@mallet/shared/db/schema";
+import { roomCaptures, paintingRoomQuantities, siteCaptures } from "@mallet/shared/db/schema";
 import { RoomCapture, type RoomCaptureSource } from "../domain/room-capture";
+import { SiteCapture, parseSitePolygon, type SiteCaptureSource, type SiteSurface } from "../domain/site-capture";
 import { parseNormalizedGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantityKind } from "../domain/derive-painting";
 import type { StoredQuantity, QuantityStatus, RoomCaptureWithQuantities } from "../domain/measurement-repository";
 
 export type RoomCaptureRow = typeof roomCaptures.$inferSelect;
 export type PaintingRoomQuantityRow = typeof paintingRoomQuantities.$inferSelect;
+export type SiteCaptureRow = typeof siteCaptures.$inferSelect;
 
 // Thrown by `toDomainCapture` when a row's geometry jsonb fails schema parsing or its props fail
 // domain validation — i.e. the row itself is unreadable, not a bug in the caller. A dedicated
@@ -54,6 +56,42 @@ export const toDomainCapture = (row: RoomCaptureRow): RoomCapture => {
   });
   if (!result.ok) {
     throw new CorruptCaptureError(`corrupt room_capture ${row.id}: ${result.error.message}`);
+  }
+  return result.value;
+};
+
+// Reconstruct a domain SiteCapture from a DB row. Same contract as toDomainCapture: an
+// unreadable row (corrupt polygon jsonb / props failing domain validation) throws
+// CorruptCaptureError so the repository's list path can skip-and-log it per-row while a direct
+// getSiteCapture open fails loudly.
+export const toDomainSiteCapture = (row: SiteCaptureRow): SiteCapture => {
+  let polygon = null;
+  if (row.polygon !== null) {
+    const parsed = parseSitePolygon(row.polygon);
+    if (!parsed.ok) {
+      throw new CorruptCaptureError(`corrupt site_capture ${row.id} polygon: ${parsed.error.message}`);
+    }
+    polygon = parsed.value;
+  }
+
+  const result = SiteCapture.create({
+    id: row.id,
+    orgId: asOrgId(row.orgId),
+    jobId: asJobId(row.jobId),
+    name: row.name,
+    source: row.source as SiteCaptureSource,
+    surface: row.surface as SiteSurface,
+    pitchRise: row.pitchRise,
+    polygon,
+    footprintSqft: row.footprintSqft,
+    areaSqft: row.areaSqft,
+    perimeterLnft: row.perimeterLnft,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  });
+  if (!result.ok) {
+    throw new CorruptCaptureError(`corrupt site_capture ${row.id}: ${result.error.message}`);
   }
   return result.value;
 };

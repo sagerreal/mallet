@@ -18,5 +18,20 @@ export { ListRoomsUseCase } from "./app/list-rooms";
 export { RenameRoomUseCase } from "./app/rename-room";
 export { ArchiveRoomUseCase } from "./app/archive-room";
 export { DrizzleMeasurementRepository } from "./infra/drizzle-measurement-repository";
+export type { SiteCaptureDTO, SitePolygonDTO } from "./api/measurement-dto";
+export type {
+  SiteCapture,
+  SiteCaptureProps,
+  SiteCaptureSource,
+  SiteSurface,
+  SitePolygon,
+  SitePolygonVertex,
+  SitePolygonView,
+} from "./domain/site-capture";
+export { pitchCorrectedArea } from "./domain/site-capture";
+export { CreateSiteCaptureUseCase } from "./app/create-site-capture";
+export { ListSiteCapturesUseCase } from "./app/list-site-captures";
+export { UpdateSiteCaptureUseCase } from "./app/update-site-capture";
+export { ArchiveSiteCaptureUseCase } from "./app/archive-site-capture";
 export type { RoomQuantitiesReader, RoomQuantitiesForJob, RoomQuantity } from "./domain/room-quantities-reader";
 export { MeasurementRoomQuantitiesReader } from "./domain/room-quantities-reader";

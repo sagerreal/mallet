@@ -1,0 +1,88 @@
+/**
+ * components/modals/site-tracer/site-tracer-modal.tsx
+ * Entry point for the aerial tracer sheet. Opened from the job modal's Site
+ * measurements block (a drill-in that PUSHES onto the modal back-stack, like
+ * ROOM_CARD):
+ *   { jobId }             → trace a new surface
+ *   { jobId, captureId }  → view/edit a saved capture
+ *
+ * Site captures hydrate lazily via useJobSites; a failed list fetch renders
+ * LoadFailed rather than pretending the capture vanished.
+ */
+
+"use client";
+
+import { useActiveModal, useAppStore } from "@/lib/store/app-store";
+import { useJobSites } from "@/features/measurements/use-job-sites";
+import { shouldShowLoadFailed } from "@/lib/first-run";
+import { LoadFailed } from "@/components/shared/load-failed";
+import { ModalLoading } from "../modal-loading";
+import { SiteTraceNew } from "./site-trace-new";
+import { SiteCaptureView } from "./site-capture-view";
+import type { SiteCard } from "@/lib/store/types";
+
+const EMPTY_SITES: readonly SiteCard[] = [];
+
+export function SiteTracerModalContent() {
+  const activeModal = useActiveModal();
+  const jobId = activeModal?.params?.jobId as string | undefined;
+  const captureId = activeModal?.params?.captureId as string | undefined;
+
+  const query = useJobSites(jobId);
+  const sites = useAppStore((s) => (jobId ? s.sitesByJob[jobId] : undefined)) ?? EMPTY_SITES;
+  const job = useAppStore((s) => (jobId ? s.jobs.find((j) => j.id === jobId) : undefined));
+
+  if (!jobId) {
+    return (
+      <div>
+        <div className="sheet-head">
+          <h2>Site measurements</h2>
+        </div>
+        <p className="muted">This surface is no longer available.</p>
+      </div>
+    );
+  }
+
+  if (captureId) {
+    const site = sites.find((s) => s.id === captureId);
+    if (site) return <SiteCaptureView site={site} jobTitle={job?.title} />;
+
+    const loadFailed = shouldShowLoadFailed({
+      isFetched: query.isFetched,
+      isError: query.isError,
+      count: sites.length,
+    });
+    if (loadFailed) {
+      return (
+        <div>
+          <div className="sheet-head">
+            <h2>Site measurements</h2>
+          </div>
+          <LoadFailed
+            noun="surfaces"
+            onRetry={() => void query.refetch()}
+            retrying={query.isRefetching}
+          />
+        </div>
+      );
+    }
+    if (!query.isFetched) return <ModalLoading size="lg" />;
+    return (
+      <div>
+        <div className="sheet-head">
+          <h2>Site measurements</h2>
+        </div>
+        <p className="muted">This surface is no longer available — it may have been removed.</p>
+      </div>
+    );
+  }
+
+  return (
+    <SiteTraceNew
+      jobId={jobId}
+      jobTitle={job?.title}
+      address={job?.addr?.trim() ?? ""}
+      existingNames={sites.map((s) => s.name)}
+    />
+  );
+}
