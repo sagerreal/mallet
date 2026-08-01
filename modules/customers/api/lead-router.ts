@@ -12,6 +12,11 @@ import { DrizzleJobRepository } from "@mallet/jobs";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
 import { ListLeadsUseCase } from "../app/list-leads";
 import { Lead, LEAD_STAGES, type LeadStage } from "../domain/lead";
+import { DrizzleLeadNoteRepository } from "../infra/drizzle-lead-note-repository";
+import { AddLeadNoteUseCase } from "../app/add-lead-note";
+import { ListLeadNotesUseCase } from "../app/list-lead-notes";
+import { RemoveLeadNoteUseCase } from "../app/remove-lead-note";
+import { LEAD_NOTE_KINDS, LEAD_NOTE_MAX, type LeadNote } from "../domain/lead-note";
 
 // DTOs — the wire contract, deliberately separate from the domain. Money is flattened to a
 // plain cents object; Phone/branded ids serialize as strings.
@@ -41,6 +46,39 @@ const leadDTO = z.object({
 // create extends the base DTO with a `created` flag so callers can distinguish a genuine
 // new insert from a dedupe hit (ON CONFLICT DO NOTHING returning the existing row).
 const createLeadDTO = leadDTO.extend({ created: z.boolean() });
+
+// One entry in the customer activity trail. Shapes 1:1 onto the store's LeadNote so the existing
+// note feed renders a server row and an optimistic one identically.
+const leadNoteDTO = z.object({
+  id: z.string().uuid(),
+  leadId: z.string().uuid(),
+  kind: z.enum(LEAD_NOTE_KINDS),
+  body: z.string(),
+  author: z.string().nullable(),
+  direction: z.string().nullable(),
+  outcome: z.string().nullable(),
+  durationLabel: z.string().nullable(),
+  via: z.string().nullable(),
+  overnight: z.boolean(),
+  createdAt: z.string(),
+});
+
+const toLeadNoteDTO = (note: LeadNote) => {
+  const p = note.props;
+  return {
+    id: p.id,
+    leadId: p.leadId as string,
+    kind: p.kind,
+    body: p.body,
+    author: p.author,
+    direction: p.direction,
+    outcome: p.outcome,
+    durationLabel: p.durationLabel,
+    via: p.via,
+    overnight: p.overnight,
+    createdAt: p.createdAt.toISOString(),
+  };
+};
 
 const createInput = z.object({
   name: z.string().min(1).max(255),
@@ -415,5 +453,71 @@ export const createLeadRouter = () =>
             scope: input.scope,
           }),
         };
+      }),
+
+    /**
+     * The customer's activity trail — typed notes, logged calls, sent texts.
+     *
+     * Before this the whole trail lived in the browser's store and nowhere else, so a gate code
+     * typed into the Notes composer survived until the next refetch and then vanished.
+     */
+    listNotes: ownerOrOffice
+      .input(z.object({ leadId: z.string().uuid() }))
+      .output(z.object({ items: z.array(leadNoteDTO) }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleLeadNoteRepository(ctx.tx, ctx.principal.orgId);
+        const notes = await new ListLeadNotesUseCase(repo).exec(asLeadId(input.leadId));
+        return { items: notes.map(toLeadNoteDTO) };
+      }),
+
+    addNote: ownerOrOffice
+      .input(
+        z.object({
+          // Client-authored so the store can hand the id out synchronously — the home queue's
+          // 30s Undo deletes exactly the note a Send appended.
+          id: z.string().uuid(),
+          leadId: z.string().uuid(),
+          kind: z.enum(LEAD_NOTE_KINDS),
+          body: z.string().max(LEAD_NOTE_MAX),
+          author: z.string().max(120).nullable().optional(),
+          direction: z.string().max(20).nullable().optional(),
+          outcome: z.string().max(120).nullable().optional(),
+          durationLabel: z.string().max(20).nullable().optional(),
+          via: z.string().max(60).nullable().optional(),
+          overnight: z.boolean().optional(),
+        }),
+      )
+      .output(leadNoteDTO)
+      .mutation(async ({ ctx, input }) => {
+        const useCase = new AddLeadNoteUseCase(
+          new DrizzleLeadNoteRepository(ctx.tx, ctx.principal.orgId),
+          new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId),
+        );
+        const result = await useCase.exec({
+          id: input.id,
+          orgId: ctx.principal.orgId,
+          leadId: asLeadId(input.leadId),
+          kind: input.kind,
+          body: input.body,
+          author: input.author ?? null,
+          direction: input.direction ?? null,
+          outcome: input.outcome ?? null,
+          durationLabel: input.durationLabel ?? null,
+          via: input.via ?? null,
+          overnight: input.overnight ?? false,
+          now: new Date(),
+        });
+        return toLeadNoteDTO(orThrow(result));
+      }),
+
+    removeNote: ownerOrOffice
+      .input(z.object({ noteId: z.string().uuid() }))
+      .output(z.object({ removed: z.literal(true) }))
+      .mutation(async ({ ctx, input }) => {
+        const useCase = new RemoveLeadNoteUseCase(
+          new DrizzleLeadNoteRepository(ctx.tx, ctx.principal.orgId),
+        );
+        orThrow(await useCase.exec(input.noteId));
+        return { removed: true as const };
       }),
   });

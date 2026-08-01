@@ -26,6 +26,9 @@ import { reportWriteError } from "../write-error";
 
 type CustomerUpdateInput = inferRouterInputs<AppRouter>["v1"]["customers"]["update"];
 
+/** Server-side note ids are UUIDs; seeded/legacy entries are not, and have no row to delete. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
@@ -199,6 +202,7 @@ export interface LeadsSlice {
   moveLeadStage: (id: string, stage: string) => void;
   addLeadNote: (id: string, note: Omit<LeadNote, "id">) => LeadNote;
   removeLeadNote: (id: string, noteId: string) => void;
+  adoptLeadNotes: (id: string, notes: LeadNote[]) => void;
   archiveLead: (id: string) => void;
   restoreLead: (id: string) => void;
   deleteLead: (id: string) => void;
@@ -354,8 +358,23 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
     get().updateLead(id, { stage });
   },
 
+  // ---------------------------------------------------------------------------
+  // addLeadNote — OPTIMISTIC + PERSIST + ROLLBACK.
+  //
+  // This used to write to the store and stop. The store has no persist middleware and the leads
+  // hydrator resets `acts: []` on every refetch, so a gate code typed into the Notes composer did
+  // not even survive to a reload — only to the next background refetch. Every logged call, sent
+  // text and Front Desk entry appends through here too, so the whole customer activity trail was
+  // ephemeral.
+  //
+  // The id is client-authored and a real UUID: the home queue's 30s Undo needs it synchronously,
+  // and the row must carry the same one. (It was `String(Date.now())` — not a UUID, and two notes
+  // added inside the same millisecond collided.)
+  // ---------------------------------------------------------------------------
   addLeadNote: (id, note) => {
-    const fullNote: LeadNote = { ...note, id: String(Date.now()) };
+    const fullNote: LeadNote = { ...note, id: crypto.randomUUID() };
+    const prior = get().leads.slice();
+    const known = prior.some((l) => l.id === id);
     set((s) => ({
       leads: s.leads.map((l) =>
         l.id === id
@@ -363,16 +382,65 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
           : l
       ),
     }));
+    // A note against a customer the store never loaded has nowhere to render and no lead row to
+    // roll back — persisting it would write a record no surface could show.
+    if (!known) return fullNote;
+
+    trpcVanilla.v1.customers.addNote
+      .mutate({
+        id: fullNote.id!,
+        leadId: id,
+        kind: note.type,
+        body: note.t ?? note.notes ?? "",
+        author: note.from ?? null,
+        direction: note.dir ?? null,
+        outcome: note.outcome ?? null,
+        durationLabel: note.dur ?? null,
+        via: note.via ?? null,
+        overnight: note.overnight ?? false,
+      })
+      .catch((err: unknown) => {
+        // Rollback: a note that silently failed to save is the bug this replaces.
+        set({ leads: prior });
+        reportWriteError("addLeadNote", err);
+      });
     return fullNote;
   },
 
-  // Powers the home queue's 30s Undo — removes exactly the note a Send appended.
-  removeLeadNote: (id, noteId) =>
+  /**
+   * The trail as the database has it, merged into whatever the store already holds.
+   *
+   * Server rows win on id, and any local entry the server does not know about is KEPT: a note
+   * typed a moment ago may still be in flight, and dropping it would make it blink out and
+   * reappear. Ordering follows the server (oldest first), with the unknown locals after it.
+   */
+  adoptLeadNotes: (id, notes) =>
+    set((s) => ({
+      leads: s.leads.map((l) => {
+        if (l.id !== id) return l;
+        const serverIds = new Set(notes.map((n) => n.id));
+        const localOnly = (l.acts ?? []).filter((a) => !a.id || !serverIds.has(a.id));
+        return { ...l, acts: [...notes, ...localOnly] };
+      }),
+    })),
+
+  // Powers the home queue's 30s Undo — removes exactly the note a Send appended. The server
+  // delete matters: without it the next refetch resurrects a record of a retracted message.
+  removeLeadNote: (id, noteId) => {
+    const prior = get().leads.slice();
     set((s) => ({
       leads: s.leads.map((l) =>
         l.id === id ? { ...l, acts: (l.acts ?? []).filter((a) => a.id !== noteId) } : l
       ),
-    })),
+    }));
+    // Only UUID ids exist server-side. Seeded and legacy entries have no row to delete, and
+    // asking would fail the input schema rather than the lookup.
+    if (!UUID_RE.test(noteId)) return;
+    trpcVanilla.v1.customers.removeNote.mutate({ noteId }).catch((err: unknown) => {
+      set({ leads: prior });
+      reportWriteError("removeLeadNote", err);
+    });
+  },
 
   archiveLead: (id) => {
     const prior = get().leads.slice();
