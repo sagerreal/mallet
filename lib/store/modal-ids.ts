@@ -26,6 +26,7 @@ export const MODAL = {
   IMPORT_CUSTOMERS: "import-customers",
   IMPORT_SERVICES: "import-services",
   ROOM_CARD: "room-card",
+  SITE_TRACER: "site-tracer",
 } as const;
 
 export type ModalId = (typeof MODAL)[keyof typeof MODAL];

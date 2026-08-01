@@ -2422,3 +2422,14 @@
   .select-option{background:transparent}
   .select-option.active{background:var(--manila-2)}
   .select-option:active{background:color-mix(in srgb,var(--ink) 12%,var(--manila-2))}
+
+  /* ---------- aerial tracer (site measurements) ----------
+     The satellite tracing surface inside the site-tracer modal. The map bleeds
+     to the sheet edges via the modal-pad negative margins (same trick as
+     .sheet-head/.sheet-foot); its control bar is ANCHORED flush beneath it —
+     nothing floats over the imagery except the vertex markers themselves. */
+  .tracer-map{height:46vh;min-height:260px;margin:var(--space-4) calc(0px - var(--modal-pad-x)) 0;background:var(--bg);border-top:1px solid var(--line-2)}
+  .tracer-bar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2);margin:0 calc(0px - var(--modal-pad-x));padding:var(--space-3) var(--modal-pad-x);border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);background:var(--card)}
+  .tracer-bar .fig{font-family:var(--font-mono);font-weight:700;font-size:var(--type-md);white-space:nowrap}
+  .tracer-bar .gap{flex:1}
+  .tracer-note{color:var(--ink-2);font-size:var(--type-sm);margin:var(--space-2) 0 0}

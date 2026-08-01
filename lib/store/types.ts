@@ -607,3 +607,42 @@ export interface RoomCard {
   capturedAt: string; // ISO string
   quantities: RoomQuantity[];
 }
+
+// ---- Site captures (aerial takeoff — outdoor surfaces) ----------------------
+
+export interface SiteVertex {
+  lat: number;
+  lng: number;
+}
+
+/** The map view the surface was traced against — reopening re-centers here. */
+export interface SiteMapView {
+  centerLat: number;
+  centerLng: number;
+  zoom: number;
+}
+
+export interface SitePolygonShape {
+  vertices: SiteVertex[];
+  view: SiteMapView;
+}
+
+/**
+ * One outdoor surface (driveway, patio, roof facet) traced on satellite
+ * imagery or entered by hand. areaSqft is the WORKING number — the server
+ * recomputes it from footprint + pitch for traced captures; never trust a
+ * locally derived value past the preview.
+ */
+export interface SiteCard {
+  id: string;
+  jobId: string;
+  name: string;
+  source: "aerial_trace_v1" | "manual";
+  surface: "flat" | "pitched";
+  pitchRise: number | null; // rise per 12; null for flat
+  areaSqft: number;
+  footprintSqft: number | null;
+  perimeterLnft: number | null;
+  polygon: SitePolygonShape | null; // null for manual entries
+  createdAt: string; // ISO string
+}

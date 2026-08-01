@@ -21,6 +21,7 @@ interface Store {
   checklists: unknown[];
   settings: Record<string, unknown>;
   roomsByJob: Record<string, unknown[]>;
+  sitesByJob: Record<string, unknown[]>;
   toggles: Record<string, boolean>;
 }
 let store: Store;
@@ -85,6 +86,7 @@ describe("assigning a job", () => {
       checklists: [],
       settings: {},
       roomsByJob: {},
+      sitesByJob: {},
       toggles: { measurementEstimating: false },
     };
     vi.clearAllMocks();

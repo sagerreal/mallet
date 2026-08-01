@@ -64,6 +64,7 @@ vi.mock("@/lib/store/app-store", () => ({
       removeVisit: noop,
       deleteJob: noop,
       roomsByJob: {},
+      sitesByJob: {},
       toggles: { measurementEstimating: mockMeasurementEstimating },
     }),
 }));
