@@ -11,7 +11,18 @@ import { ConfirmQuantityUseCase } from "../app/confirm-quantity";
 import { ListRoomsUseCase } from "../app/list-rooms";
 import { RenameRoomUseCase } from "../app/rename-room";
 import { ArchiveRoomUseCase } from "../app/archive-room";
-import { quantityDTO, roomCaptureDTO, toRoomCaptureDTO } from "./measurement-dto";
+import { CreateSiteCaptureUseCase } from "../app/create-site-capture";
+import { ListSiteCapturesUseCase } from "../app/list-site-captures";
+import { UpdateSiteCaptureUseCase } from "../app/update-site-capture";
+import { ArchiveSiteCaptureUseCase } from "../app/archive-site-capture";
+import {
+  quantityDTO,
+  roomCaptureDTO,
+  toRoomCaptureDTO,
+  siteCaptureDTO,
+  sitePolygonDTO,
+  toSiteCaptureDTO,
+} from "./measurement-dto";
 
 const paintingQuantityKind = z.enum([
   "walls_sqft",
@@ -74,6 +85,38 @@ const renameRoomInput = z.object({
 });
 
 const archiveRoomInput = z.object({
+  captureId: z.string().uuid(),
+});
+
+// The client sends the trace (footprint/perimeter/polygon) or, for a manual entry, the typed
+// area — never both. The server derives the working area for a trace (pitchCorrectedArea in
+// the use-case); a client-sent areaSqft on a traced capture is rejected there.
+const siteCreateInput = z.object({
+  id: z.string().uuid().optional(),
+  jobId: z.string().uuid(),
+  name: z.string().min(1).max(80),
+  source: z.enum(["aerial_trace_v1", "manual"]),
+  surface: z.enum(["flat", "pitched"]),
+  pitchRise: z.number().int().min(1).max(24).optional(),
+  polygon: sitePolygonDTO.optional(),
+  footprintSqft: z.number().positive().optional(),
+  perimeterLnft: z.number().positive().optional(),
+  areaSqft: z.number().positive().optional(),
+});
+
+const siteListInput = z.object({
+  jobId: z.string().uuid(),
+});
+
+const siteUpdateInput = z.object({
+  captureId: z.string().uuid(),
+  name: z.string().min(1).max(80).optional(),
+  surface: z.enum(["flat", "pitched"]).optional(),
+  pitchRise: z.number().int().min(1).max(24).optional(),
+  areaSqft: z.number().positive().optional(),
+});
+
+const siteArchiveInput = z.object({
   captureId: z.string().uuid(),
 });
 
@@ -199,6 +242,71 @@ export const createMeasurementRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new ArchiveRoomUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const result = await useCase.exec({ captureId: input.captureId }, ctx.principal.orgId);
+        return orThrow(result);
+      }),
+
+    // ── site captures (aerial takeoff — outdoor surfaces) ──────────────────────
+
+    siteCreate: ownerOrOffice
+      .input(siteCreateInput)
+      .output(siteCaptureDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new CreateSiteCaptureUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const result = await useCase.exec(
+          {
+            id: input.id,
+            jobId: asJobId(input.jobId),
+            name: input.name,
+            source: input.source,
+            surface: input.surface,
+            pitchRise: input.pitchRise,
+            polygon: input.polygon,
+            footprintSqft: input.footprintSqft,
+            perimeterLnft: input.perimeterLnft,
+            areaSqft: input.areaSqft,
+          },
+          ctx.principal.orgId,
+        );
+        return toSiteCaptureDTO(orThrow(result));
+      }),
+
+    siteList: ownerOrOffice
+      .input(siteListInput)
+      .output(z.array(siteCaptureDTO))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ListSiteCapturesUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const result = await useCase.exec({ jobId: asJobId(input.jobId) }, ctx.principal.orgId);
+        return orThrow(result).map(toSiteCaptureDTO);
+      }),
+
+    siteUpdate: ownerOrOffice
+      .input(siteUpdateInput)
+      .output(siteCaptureDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new UpdateSiteCaptureUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const result = await useCase.exec(
+          {
+            captureId: input.captureId,
+            name: input.name,
+            surface: input.surface,
+            pitchRise: input.pitchRise,
+            areaSqft: input.areaSqft,
+          },
+          ctx.principal.orgId,
+        );
+        return toSiteCaptureDTO(orThrow(result));
+      }),
+
+    siteArchive: ownerOrOffice
+      .input(siteArchiveInput)
+      .output(z.object({ ok: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ArchiveSiteCaptureUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec({ captureId: input.captureId }, ctx.principal.orgId);
         return orThrow(result);
       }),

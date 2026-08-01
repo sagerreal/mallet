@@ -1,9 +1,10 @@
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { roomCaptures, paintingRoomQuantities } from "@mallet/shared/db/schema";
+import { roomCaptures, paintingRoomQuantities, siteCaptures } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { RoomCapture } from "../domain/room-capture";
+import type { SiteCapture } from "../domain/site-capture";
 import { toWireGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantity, PaintingQuantityKind } from "../domain/derive-painting";
 import {
@@ -38,10 +39,12 @@ function pgErrorInfo(e: unknown): { code: string | null; constraint: string | nu
 }
 import {
   toDomainCapture,
+  toDomainSiteCapture,
   toStoredQuantity,
   toCaptureWithQuantities,
   CorruptCaptureError,
   type RoomCaptureRow,
+  type SiteCaptureRow,
 } from "./measurement-mapper";
 
 // Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
@@ -166,6 +169,107 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
       .update(roomCaptures)
       .set({ deletedAt: now, updatedAt: now })
       .where(and(eq(roomCaptures.id, captureId), eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)))
+      .returning();
+    return rows.length;
+  }
+
+  // ── site captures (aerial takeoff) ─────────────────────────────────────────
+
+  // EXPLICIT column list on insert — a values() built from a spread once silently dropped a
+  // newly added column; every column is named here so a schema/domain drift breaks the build
+  // instead of writing nulls.
+  async createSiteCapture(capture: SiteCapture): Promise<void> {
+    const p = capture.props;
+    try {
+      await this.tx.insert(siteCaptures).values({
+        id: p.id,
+        orgId: this.orgId,
+        jobId: p.jobId,
+        name: p.name,
+        source: p.source,
+        surface: p.surface,
+        pitchRise: p.pitchRise,
+        polygon: p.polygon,
+        footprintSqft: p.footprintSqft,
+        areaSqft: p.areaSqft,
+        perimeterLnft: p.perimeterLnft,
+      });
+    } catch (e) {
+      // 23503 = foreign_key_violation; scoped to the jobs FK by name so an unrelated FK
+      // violation on this statement (e.g. the orgs FK) isn't misclassified as JobNotFound.
+      const { code, constraint } = pgErrorInfo(e);
+      if (code === "23503" && (constraint === null || constraint === "site_captures_job_fk")) {
+        throw new JobNotFoundError(p.jobId);
+      }
+      throw e;
+    }
+  }
+
+  async getSiteCapture(id: string): Promise<SiteCapture | null> {
+    const rows = await this.tx
+      .select()
+      .from(siteCaptures)
+      .where(and(eq(siteCaptures.id, id), eq(siteCaptures.orgId, this.orgId), isNull(siteCaptures.deletedAt)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    // Direct open of ONE capture — a corrupt row fails loudly (same deliberate asymmetry as
+    // getCapture vs listByJob above).
+    return toDomainSiteCapture(row);
+  }
+
+  async listSiteCaptures(jobId: string): Promise<SiteCapture[]> {
+    const rows = await this.tx
+      .select()
+      .from(siteCaptures)
+      .where(
+        and(
+          eq(siteCaptures.orgId, this.orgId),
+          eq(siteCaptures.jobId, jobId),
+          isNull(siteCaptures.deletedAt),
+        ),
+      )
+      .orderBy(desc(siteCaptures.createdAt), desc(siteCaptures.id));
+
+    // Same skip-and-log contract as listByJob: one unreadable capture (corrupt polygon/props)
+    // must not blank the whole job's site list.
+    const healthy: SiteCapture[] = [];
+    for (const row of rows as SiteCaptureRow[]) {
+      try {
+        healthy.push(toDomainSiteCapture(row));
+      } catch (e) {
+        if (!(e instanceof CorruptCaptureError)) throw e;
+        logger.warn({ captureId: row.id }, "measurements.site_capture.unreadable");
+      }
+    }
+    return healthy;
+  }
+
+  // Patches name/surface/pitch/area only — id, source, polygon, footprint and perimeter are
+  // fixed at capture time (the port documents the same contract). EXPLICIT column list, same
+  // rationale as createSiteCapture.
+  async updateSiteCapture(capture: SiteCapture): Promise<number> {
+    const p = capture.props;
+    const rows = await this.tx
+      .update(siteCaptures)
+      .set({
+        name: p.name,
+        surface: p.surface,
+        pitchRise: p.pitchRise,
+        areaSqft: p.areaSqft,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(siteCaptures.id, p.id), eq(siteCaptures.orgId, this.orgId), isNull(siteCaptures.deletedAt)))
+      .returning();
+    return rows.length;
+  }
+
+  async archiveSiteCapture(captureId: string): Promise<number> {
+    const now = new Date();
+    const rows = await this.tx
+      .update(siteCaptures)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(siteCaptures.id, captureId), eq(siteCaptures.orgId, this.orgId), isNull(siteCaptures.deletedAt)))
       .returning();
     return rows.length;
   }

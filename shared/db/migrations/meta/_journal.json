@@ -855,6 +855,20 @@
       "when": 1785530005837,
       "tag": "0121_lonely_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1785536731276,
+      "tag": "0122_fast_spectrum",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1785536731277,
+      "tag": "0123_site_captures_rls",
+      "breakpoints": true
     }
   ]
 }

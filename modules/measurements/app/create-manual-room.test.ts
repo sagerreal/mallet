@@ -54,6 +54,26 @@ class FakeMeasurementRepository implements MeasurementRepository {
   async archive(): Promise<number> {
     throw new Error("archive not used in create-manual-room tests");
   }
+
+  async createSiteCapture(): Promise<never> {
+    throw new Error("createSiteCapture not used in create-manual-room tests");
+  }
+
+  async getSiteCapture(): Promise<never> {
+    throw new Error("getSiteCapture not used in create-manual-room tests");
+  }
+
+  async listSiteCaptures(): Promise<never> {
+    throw new Error("listSiteCaptures not used in create-manual-room tests");
+  }
+
+  async updateSiteCapture(): Promise<never> {
+    throw new Error("updateSiteCapture not used in create-manual-room tests");
+  }
+
+  async archiveSiteCapture(): Promise<never> {
+    throw new Error("archiveSiteCapture not used in create-manual-room tests");
+  }
 }
 
 const fixedIds = (id: string = MINTED_ID) => ({ newId: () => id });

@@ -287,4 +287,117 @@ suite("measurements tRPC router (full stack, live RLS)", () => {
     const rows = await admin<{ id: string }[]>`select id from room_captures where id = ${attemptedId}`;
     expect(rows).toHaveLength(0);
   });
+
+  // ── site captures: create → list → update pitch → archive round trip ────────
+
+  it("a traced site capture round-trips: create derives the area, update re-pitches it, archive removes it", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const polygon = {
+      vertices: [
+        { lat: 35.771, lng: -78.638 },
+        { lat: 35.7712, lng: -78.638 },
+        { lat: 35.7712, lng: -78.6378 },
+        { lat: 35.771, lng: -78.6378 },
+      ],
+      view: { centerLat: 35.7711, centerLng: -78.6379, zoom: 20 },
+    };
+
+    // Create: flat trace — working area equals the footprint, never a client-sent area.
+    const created = await caller.v1.measurements.siteCreate({
+      jobId: jobAId,
+      name: "Main roof — south face",
+      source: "aerial_trace_v1",
+      surface: "flat",
+      polygon,
+      footprintSqft: 1000,
+      perimeterLnft: 130,
+    });
+    expect(created.source).toBe("aerial_trace_v1");
+    expect(created.areaSqft).toBe(1000);
+    expect(created.footprintSqft).toBe(1000);
+    expect(created.perimeterLnft).toBe(130);
+    expect(created.polygon?.vertices).toHaveLength(4);
+
+    // List: the capture comes back with its polygon for re-display.
+    const listed = await caller.v1.measurements.siteList({ jobId: jobAId });
+    const found = listed.find((s) => s.id === created.id);
+    expect(found).toBeDefined();
+    expect(found?.name).toBe("Main roof — south face");
+    expect(found?.polygon?.view.zoom).toBe(20);
+
+    // Update pitch: server recomputes area from the STORED footprint (4/12 → ×~1.0541).
+    const pitched = await caller.v1.measurements.siteUpdate({
+      captureId: created.id,
+      surface: "pitched",
+      pitchRise: 4,
+    });
+    expect(pitched.pitchRise).toBe(4);
+    expect(pitched.areaSqft).toBeCloseTo(1054.09, 2);
+    expect(pitched.footprintSqft).toBe(1000);
+
+    // Cross-org isolation: org B sees nothing and cannot touch the capture.
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const listedB = await callerB.v1.measurements.siteList({ jobId: jobAId });
+    expect(listedB).toHaveLength(0);
+    await expect(
+      callerB.v1.measurements.siteUpdate({ captureId: created.id, name: "Should fail" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // Archive: soft-deleted, gone from the list, second archive is NOT_FOUND.
+    const archived = await caller.v1.measurements.siteArchive({ captureId: created.id });
+    expect(archived.ok).toBe(true);
+    const afterArchive = await caller.v1.measurements.siteList({ jobId: jobAId });
+    expect(afterArchive.find((s) => s.id === created.id)).toBeUndefined();
+    await expect(caller.v1.measurements.siteArchive({ captureId: created.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+
+    const rows = await admin<{ deleted_at: string | null }[]>`
+      select deleted_at from site_captures where id = ${created.id}`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.deleted_at).not.toBeNull();
+  });
+
+  it("a manual site capture takes a typed area and rejects a trace-only edit path violation", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.measurements.siteCreate({
+      jobId: jobAId,
+      name: "Back patio",
+      source: "manual",
+      surface: "flat",
+      areaSqft: 320,
+    });
+    expect(created.areaSqft).toBe(320);
+    expect(created.polygon).toBeNull();
+    expect(created.footprintSqft).toBeNull();
+
+    const updated = await caller.v1.measurements.siteUpdate({ captureId: created.id, areaSqft: 400 });
+    expect(updated.areaSqft).toBe(400);
+  });
+
+  it("siteCreate with a jobId that doesn't exist for this org returns NOT_FOUND", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.measurements.siteCreate({
+        jobId: randomUUID(),
+        name: "Ghost driveway",
+        source: "manual",
+        surface: "flat",
+        areaSqft: 100,
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("a tech is forbidden from site capture mutations", async () => {
+    const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    await expect(
+      callerTech.v1.measurements.siteCreate({
+        jobId: jobAId,
+        name: "Nope",
+        source: "manual",
+        surface: "flat",
+        areaSqft: 100,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });
