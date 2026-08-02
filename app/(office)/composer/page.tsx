@@ -92,10 +92,14 @@ export default function ComposerPage() {
   const updateService = useAppStore((s) => s.updateService);
 
   // Seed leadId from ?lead= once (read-only initializer so state edits persist).
+  // ?desc= rides alongside it: the new-customer modal's Build-the-price hands
+  // off the typed job description so the office doesn't retype it here — it
+  // seeds the describe-the-job bar (QuoteCard reads state.desc at mount).
   const [cs, setCs] = useState<ComposerState>(() => {
     const raw = searchParams.get("lead");
     const leadId = raw != null && raw !== "" ? raw : null;
-    return { ...INITIAL_STATE, leadId };
+    const desc = searchParams.get("desc")?.trim() ?? "";
+    return { ...INITIAL_STATE, leadId, desc };
   });
 
   const [aiDraftError, setAiDraftError] = useState<string | null>(null);
