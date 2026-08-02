@@ -21,6 +21,7 @@ import { createPricebookSlice, type PricebookSlice } from "./slices/pricebook-sl
 import { createA2pSlice, type A2pSlice } from "./slices/a2p-slice";
 import { createMeasurementsSlice, type MeasurementsSlice } from "./slices/measurements-slice";
 import { createSitesSlice, type SitesSlice } from "./slices/sites-slice";
+import { createAssembliesSlice, type AssembliesSlice } from "./slices/assemblies-slice";
 
 export type AppStore = UISlice &
   LeadsSlice &
@@ -35,7 +36,8 @@ export type AppStore = UISlice &
   PricebookSlice &
   A2pSlice &
   MeasurementsSlice &
-  SitesSlice;
+  SitesSlice &
+  AssembliesSlice;
 
 export const useAppStore = create<AppStore>()((...args) => ({
   ...createUISlice(...args),
@@ -52,6 +54,7 @@ export const useAppStore = create<AppStore>()((...args) => ({
   ...createA2pSlice(...args),
   ...createMeasurementsSlice(...args),
   ...createSitesSlice(...args),
+  ...createAssembliesSlice(...args),
 }));
 
 // Dev/test-only handle so the E2E visual harness can open any store-driven modal

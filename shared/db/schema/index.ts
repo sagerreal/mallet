@@ -38,3 +38,4 @@ export * from "./qbo-connections";
 export * from "./qbo-sync";
 export * from "./outbound-calls";
 export * from "./measurements";
+export * from "./assemblies";
