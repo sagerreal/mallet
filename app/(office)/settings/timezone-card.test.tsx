@@ -68,4 +68,20 @@ describe("the timezone control", () => {
     render(<TimezoneCard />);
     expect(screen.getByText(/front desk/i)).toBeTruthy();
   });
+
+  // If the ZIP table ever gains a zone this list doesn't have yet, a stored value outside the
+  // known list must still render as ITSELF, not fall through to a blank <select> — the one screen
+  // built to let someone see and fix the value must not be the one place it disappears.
+  it("shows an unknown stored zone as its own option rather than rendering blank", () => {
+    queryResult = { data: { config: { timezone: "America/Boise" } }, isFetched: true };
+    render(<TimezoneCard />);
+    expect(screen.getByDisplayValue("America/Boise")).toBeTruthy();
+  });
+
+  it("surfaces a save failure instead of silently snapping back", async () => {
+    updateConfig.mockImplementation((_input, opts) => opts?.onError?.(new Error("offline")));
+    render(<TimezoneCard />);
+    fireEvent.change(screen.getByLabelText("Time zone"), { target: { value: "America/New_York" } });
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
 });

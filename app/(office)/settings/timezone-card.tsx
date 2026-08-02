@@ -13,32 +13,30 @@
  * "America/New_York".
  */
 
+import { useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { Field, Select } from "@/components/ui/input";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
+import { userMessage } from "@/lib/trpc/error-map";
+import { TZ_LABEL } from "@/lib/geo/zip-timezone";
 import { FoldCard } from "./fold-card";
 
-const ZONES: readonly (readonly [string, string])[] = [
-  ["America/New_York", "Eastern time"],
-  ["America/Chicago", "Central time"],
-  ["America/Denver", "Mountain time"],
-  ["America/Phoenix", "Arizona time"],
-  ["America/Los_Angeles", "Pacific time"],
-  ["America/Anchorage", "Alaska time"],
-  ["Pacific/Honolulu", "Hawaii time"],
-  ["America/Puerto_Rico", "Atlantic time"],
-];
+// Single source of truth: TZ_LABEL (lib/geo/zip-timezone.ts) is also what /welcome's derivation
+// preview reads. A third, independently-maintained zone list here is exactly how this control used
+// to end up unable to render an option for a zone the ZIP table already knew about.
+const ZONES: readonly (readonly [string, string])[] = Object.entries(TZ_LABEL);
 
 const DEFAULT_ZONE = "America/Los_Angeles";
 
 function labelFor(zone: string): string {
-  return ZONES.find(([value]) => value === zone)?.[1] ?? zone;
+  return TZ_LABEL[zone] ?? zone;
 }
 
 export function TimezoneCard() {
   const utils = api.useUtils();
   const settings = api.v1.settings.get.useQuery();
   const { saved, flash } = useSaveFlash();
+  const [saveError, setSaveError] = useState<string | null>(null);
   const save = api.v1.settings.updateConfig.useMutation();
 
   // Gate on the real value having arrived. Rendering DEFAULT_ZONE as a live, editable,
@@ -57,13 +55,18 @@ export function TimezoneCard() {
   }
 
   const current = settings.data?.config.timezone ?? DEFAULT_ZONE;
+  // A stored zone the ZIP table (and this list) doesn't know about must still show up as ITSELF,
+  // not fall through to a blank selection — that would hide the exact value this control exists to
+  // let someone see and correct.
+  const currentIsKnown = ZONES.some(([value]) => value === current);
 
   return (
     <FoldCard title="Time zone" summary={labelFor(current)} defaultOpen>
       <Field label="Time zone">
         <Select
           value={current}
-          onChange={(e) =>
+          onChange={(e) => {
+            setSaveError(null);
             save.mutate(
               { timezone: e.target.value },
               {
@@ -71,10 +74,18 @@ export function TimezoneCard() {
                   void utils.v1.settings.get.invalidate();
                   flash();
                 },
+                onError: (err) => {
+                  setSaveError(userMessage(err, "Couldn't save the time zone — try again."));
+                },
               },
-            )
-          }
+            );
+          }}
         >
+          {!currentIsKnown && (
+            <option key={current} value={current}>
+              {current}
+            </option>
+          )}
           {ZONES.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
@@ -86,6 +97,11 @@ export function TimezoneCard() {
         Used by the front desk when it offers appointment times, and by the assistant when it says
         &ldquo;today&rdquo;.
       </p>
+      {saveError && (
+        <p role="alert" style={{ color: "var(--red-700, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
+          {saveError}
+        </p>
+      )}
       <SavedFlash saved={saved} />
     </FoldCard>
   );

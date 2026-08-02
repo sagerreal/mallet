@@ -57,6 +57,25 @@ const ZONES: readonly (readonly [number, number, string])[] = [
   [995, 999, "America/Anchorage"],
 ];
 
+/**
+ * Plain names for every zone the ZIP table above can produce. A shop reads "Eastern", not
+ * "America/New_York". Single source of truth: /welcome's derivation preview and the Settings
+ * timezone control both import this rather than keeping their own copy — a third copy is exactly
+ * how the Settings `<select>` ended up able to render blank for a zone the ZIP table had already
+ * started producing (see TimezoneCard, which also renders a fallback `<option>` for any stored
+ * zone missing from this map, so an unknown value is visible rather than blank).
+ */
+export const TZ_LABEL: Record<string, string> = {
+  "America/New_York": "Eastern time",
+  "America/Chicago": "Central time",
+  "America/Denver": "Mountain time",
+  "America/Phoenix": "Arizona time",
+  "America/Los_Angeles": "Pacific time",
+  "America/Anchorage": "Alaska time",
+  "Pacific/Honolulu": "Hawaii time",
+  "America/Puerto_Rico": "Atlantic time",
+};
+
 export function zipToTimezone(zip: string | null | undefined): string | null {
   const digits = (zip ?? "").trim().replace(/\D/g, "");
   if (digits.length < 5) return null;
