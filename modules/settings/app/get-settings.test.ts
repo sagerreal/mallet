@@ -66,6 +66,8 @@ export class FakeSettingsRepository implements SettingsRepository {
 
   async getTimezone(): Promise<string> { return this.config?.props.timezone ?? "America/Los_Angeles"; }
 
+  async hasConfig(): Promise<boolean> { return this.config !== null; }
+
   async listPricebook(): Promise<PricebookItem[]> { return this.pricebook; }
 
   async createPricebook(i: {

@@ -152,17 +152,6 @@ export const createIdentityRouter = () =>
         });
         if (!me) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "provisioned user not found" });
 
-        // Timezone derived client-side from the ZIP (lib/geo/zip-timezone). Absent when the ZIP
-        // fell outside that table — the org keeps its column default rather than a silent guess.
-        if (input.timezone) {
-          await withTenant(asOrgId(provisioned.orgId), async (tx) => {
-            const repo = new DrizzleSettingsRepository(tx, asOrgId(provisioned.orgId));
-            const settings = await repo.getConfig(provisioned.orgId, defaultBooking);
-            const patched = settings.patch({ timezone: input.timezone }, ctx.deps.clock.now());
-            if (isOk(patched)) await repo.saveConfig(patched.value);
-          });
-        }
-
         // Buy the shop its business line. AWAITED but never allowed to fail the signup: a Twilio
         // outage must not read to a new customer as "Elas is broken, I could not even sign up".
         // The Front Desk header already renders "Getting your number — we'll email you when it's
@@ -182,6 +171,50 @@ export const createIdentityRouter = () =>
             logger.error(
               { err: error instanceof Error ? error.message : String(error), orgId: provisioned.orgId },
               "signup.number_provision_threw",
+            );
+          }
+        }
+
+        // Timezone derived client-side from the ZIP (lib/geo/zip-timezone). Absent when the ZIP
+        // fell outside that table — the org keeps its column default rather than a silent guess.
+        //
+        // ONLY for a genuinely brand-new org: `provisioned` also covers the invited-joiner path
+        // (app_signup_create_org joins a pending invite into an EXISTING org and returns ITS id +
+        // the invited role — this is not "create a new org" every time). Patching unconditionally
+        // would let an invited tech's ZIP silently revert a timezone the owner had already
+        // corrected in Settings, and would do it through a role (`authedNoPrincipal`) that bypasses
+        // the `ownerOrOffice` guard on settings.updateConfig. Both conditions below must hold:
+        // the provisioned role is 'owner', AND no org_settings row exists yet for that org — read
+        // BEFORE calling getConfig, whose lazy insert would otherwise make every org look
+        // pre-existing by the time anything checks.
+        //
+        // Wrapped in try/catch and placed after number provisioning (not before it): this write is
+        // best-effort, not the point of signup. `createOrgForUser` already committed on its own
+        // SECURITY DEFINER connection, so an unguarded throw here used to 500 the whole mutation —
+        // and because the identity was already mapped, a retry took the `if (ctx.principal)` early
+        // return above and never reached number provisioning again, permanently stranding the org
+        // with twilio_number = null. Matches the adjacent Twilio block's pattern for the same reason.
+        if (input.timezone && role === "owner") {
+          try {
+            await withTenant(asOrgId(provisioned.orgId), async (tx) => {
+              const repo = new DrizzleSettingsRepository(tx, asOrgId(provisioned.orgId));
+              const alreadyHasSettings = await repo.hasConfig();
+              if (alreadyHasSettings) return;
+              const settings = await repo.getConfig(provisioned.orgId, defaultBooking);
+              const patched = settings.patch({ timezone: input.timezone }, ctx.deps.clock.now());
+              if (isOk(patched)) {
+                await repo.saveConfig(patched.value);
+              } else {
+                logger.warn(
+                  { orgId: provisioned.orgId, timezone: input.timezone, reason: patched.error.message },
+                  "signup.timezone_patch_rejected",
+                );
+              }
+            });
+          } catch (error) {
+            logger.error(
+              { err: error instanceof Error ? error.message : String(error), orgId: provisioned.orgId },
+              "signup.timezone_patch_threw",
             );
           }
         }
