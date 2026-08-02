@@ -36,6 +36,8 @@ const site = (overrides: Partial<SiteCard> = {}): SiteCard => ({
     ],
     view: { centerLat: 35.15, centerLng: -80.15, zoom: 20 },
   },
+  edges: null,
+  complexity: null,
   createdAt: "2026-07-01T00:00:00.000Z",
   ...overrides,
 });

@@ -5,7 +5,14 @@
  * paths — one shape, one mapper. No money in this module.
  */
 
-import type { RoomCard, RoomQuantity, SiteCard, SitePolygonShape } from "./types";
+import type {
+  RoomCard,
+  RoomQuantity,
+  SiteCard,
+  SiteComplexity,
+  SiteEdgeTotals,
+  SitePolygonShape,
+} from "./types";
 
 // The subset of RoomCaptureDTO (modules/measurements/api/measurement-dto.ts) this
 // mapper needs — kept structural so callers don't have to import the module's
@@ -32,6 +39,8 @@ interface SiteCaptureDtoShape {
   footprintSqft: number | null;
   perimeterLnft: number | null;
   polygon: SitePolygonShape | null;
+  edges: SiteEdgeTotals | null;
+  complexity: SiteComplexity | null;
   createdAt: string;
 }
 
@@ -52,7 +61,21 @@ export function siteCaptureDtoToStore(dto: SiteCaptureDtoShape): SiteCard {
         : {
             vertices: dto.polygon.vertices.map((v) => ({ lat: v.lat, lng: v.lng })),
             view: { ...dto.polygon.view },
+            ...(dto.polygon.edgeClasses !== undefined
+              ? { edgeClasses: [...dto.polygon.edgeClasses] }
+              : {}),
+            ...(dto.polygon.interiorLines !== undefined
+              ? {
+                  interiorLines: dto.polygon.interiorLines.map((l) => ({
+                    a: { ...l.a },
+                    b: { ...l.b },
+                    cls: l.cls,
+                  })),
+                }
+              : {}),
           },
+    edges: dto.edges === null ? null : { ...dto.edges },
+    complexity: dto.complexity === null ? null : { ...dto.complexity },
     createdAt: dto.createdAt,
   };
 }

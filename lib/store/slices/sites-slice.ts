@@ -88,6 +88,20 @@ export const createSitesSlice: StateCreator<SitesSlice, [], [], SitesSlice> = (s
         polygon: {
           vertices: input.polygon.vertices.map((v) => ({ lat: v.lat, lng: v.lng })),
           view: { ...input.polygon.view },
+          // Roof edge classification rides in the polygon (v2 additive shape);
+          // the server derives the per-class linears from it.
+          ...(input.polygon.edgeClasses !== undefined
+            ? { edgeClasses: [...input.polygon.edgeClasses] }
+            : {}),
+          ...(input.polygon.interiorLines !== undefined
+            ? {
+                interiorLines: input.polygon.interiorLines.map((l) => ({
+                  a: { ...l.a },
+                  b: { ...l.b },
+                  cls: l.cls,
+                })),
+              }
+            : {}),
         },
         footprintSqft: input.footprintSqft,
         perimeterLnft: input.perimeterLnft,

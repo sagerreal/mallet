@@ -2445,3 +2445,11 @@
   .tracer-bar .fig{font-family:var(--font-mono);font-weight:700;font-size:var(--type-md);white-space:nowrap}
   .tracer-bar .gap{flex:1}
   .tracer-note{color:var(--ink-2);font-size:var(--type-sm);margin:var(--space-2) 0 0}
+  /* Stacked tracer bars (trace figures + roof-edge legend) share one hairline. */
+  .tracer-bar+.tracer-bar{border-top:0;padding-top:0}
+  /* Roof-edge legend key: swatch + class label + running total. The swatch
+     background is set inline from EDGE_COLORS (fixed imagery-overlay hexes —
+     theme tokens would vanish on satellite photography). */
+  .tracer-edge-key{display:inline-flex;align-items:center;gap:var(--space-1);font-size:var(--type-sm);color:var(--ink-2);white-space:nowrap}
+  .tracer-edge-key .swatch{display:inline-block;width:var(--space-4);height:4px;border-radius:var(--radius-2xs);flex:none;box-shadow:inset 0 0 0 1px var(--line)} /* hairline so the white EAVE swatch reads on the light bar */
+  .tracer-bar .tracer-edge-key .fig{font-size:var(--type-sm);color:var(--ink)}

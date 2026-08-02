@@ -463,7 +463,10 @@ export default function ComposerPage() {
           name: t.name,
           surface: t.surface,
           pitchRise: t.surface === "pitched" ? (t.pitchRise ?? undefined) : undefined,
-          polygon: { vertices: [...t.polygon.vertices], view: { ...t.polygon.view } },
+          // The whole polygon rides along — including the roof edge
+          // classification (edgeClasses/interiorLines), which the server
+          // re-derives the per-class linears from.
+          polygon: { ...t.polygon, vertices: [...t.polygon.vertices], view: { ...t.polygon.view } },
           footprintSqft: t.footprintSqft,
           perimeterLnft: t.perimeterLnft,
         }),

@@ -358,6 +358,89 @@ suite("measurements tRPC router (full stack, live RLS)", () => {
     expect(rows[0]?.deleted_at).not.toBeNull();
   });
 
+  it("a CLASSIFIED pitched capture round-trips: classes persist, per-class linears and complexity derive server-side", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    // Equator rectangle with hand-checkable arc lengths (edge-classes.test.ts):
+    // long sides 365.22 ft, short sides 182.61 ft.
+    const polygon = {
+      vertices: [
+        { lat: 0, lng: 0 },
+        { lat: 0, lng: 0.001 },
+        { lat: 0.0005, lng: 0.001 },
+        { lat: 0.0005, lng: 0 },
+      ],
+      view: { centerLat: 0.00025, centerLng: 0.0005, zoom: 20 },
+      edgeClasses: ["eave", "rake", "eave", "valley"] as ("eave" | "rake" | "valley")[],
+      interiorLines: [
+        {
+          a: { lat: 0.00025, lng: 0 },
+          b: { lat: 0.00025, lng: 0.001 },
+          cls: "ridge" as const,
+        },
+      ],
+    };
+
+    const created = await caller.v1.measurements.siteCreate({
+      jobId: jobAId,
+      name: "Main roof",
+      source: "aerial_trace_v1",
+      surface: "pitched",
+      pitchRise: 6,
+      polygon,
+      footprintSqft: 66695,
+      perimeterLnft: 1095.67,
+    });
+    expect(created.polygon?.edgeClasses).toEqual(polygon.edgeClasses);
+    expect(created.polygon?.interiorLines).toEqual(polygon.interiorLines);
+    expect(created.edges).not.toBeNull();
+    expect(created.edges?.eaveFt).toBeCloseTo(2 * 365.22, 1);
+    expect(created.edges?.rakeFt).toBeCloseTo(182.61, 1);
+    expect(created.edges?.valleyFt).toBeCloseTo(182.61, 1);
+    expect(created.edges?.ridgeFt).toBeCloseTo(365.22, 1); // interior line
+    expect(created.edges?.hipFt).toBe(0);
+    expect(created.complexity).toEqual({ hips: 0, valleys: 1, cutUp: true });
+
+    // The classification survives the DB round trip, re-derived on read.
+    const listed = await caller.v1.measurements.siteList({ jobId: jobAId });
+    const found = listed.find((s) => s.id === created.id);
+    expect(found?.polygon?.edgeClasses).toEqual(polygon.edgeClasses);
+    expect(found?.edges).toEqual(created.edges);
+    expect(found?.complexity).toEqual(created.complexity);
+
+    // LEGACY compatibility: a capture saved without classes stays valid and
+    // reads back unclassified — null edges/complexity, no polygon classes.
+    const legacy = await caller.v1.measurements.siteCreate({
+      jobId: jobAId,
+      name: "Legacy roof",
+      source: "aerial_trace_v1",
+      surface: "pitched",
+      pitchRise: 4,
+      polygon: { vertices: polygon.vertices, view: polygon.view },
+      footprintSqft: 66695,
+      perimeterLnft: 1095.67,
+    });
+    expect(legacy.polygon?.edgeClasses).toBeUndefined();
+    expect(legacy.edges).toBeNull();
+    expect(legacy.complexity).toBeNull();
+
+    // A classes/vertices length mismatch is rejected at the boundary.
+    await expect(
+      caller.v1.measurements.siteCreate({
+        jobId: jobAId,
+        name: "Bad classes",
+        source: "aerial_trace_v1",
+        surface: "pitched",
+        pitchRise: 6,
+        polygon: { ...polygon, edgeClasses: ["eave", "rake"] },
+        footprintSqft: 66695,
+        perimeterLnft: 1095.67,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    await caller.v1.measurements.siteArchive({ captureId: created.id });
+    await caller.v1.measurements.siteArchive({ captureId: legacy.id });
+  });
+
   it("a manual site capture takes a typed area and rejects a trace-only edit path violation", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const created = await caller.v1.measurements.siteCreate({

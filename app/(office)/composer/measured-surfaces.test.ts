@@ -40,6 +40,8 @@ const site = (overrides: Partial<SiteCard> = {}): SiteCard => ({
   footprintSqft: 640,
   perimeterLnft: 104,
   polygon: null,
+  edges: null,
+  complexity: null,
   createdAt: "2026-08-01T12:00:00.000Z",
   ...overrides,
 });
@@ -176,6 +178,27 @@ describe("siteRowSummary", () => {
     expect(siteRowSummary(site({ source: "manual", perimeterLnft: null }))).toBe(
       "640 sqft · traced Aug 1",
     );
+  });
+
+  it("a CLASSIFIED pitched surface shows classed linears in place of the perimeter", () => {
+    expect(
+      siteRowSummary(
+        site({
+          surface: "pitched",
+          pitchRise: 6,
+          areaSqft: 2420,
+          edges: { eaveFt: 160.4, rakeFt: 99.6, ridgeFt: 40, hipFt: 0, valleyFt: 0 },
+        }),
+      ),
+    ).toBe("2,420 sqft at 6/12 · Eaves 160 ft · Rakes 100 ft · Ridge 40 ft · traced Aug 1");
+  });
+
+  it("a FLAT surface ignores stray edge totals — classes are a pitched concept", () => {
+    expect(
+      siteRowSummary(
+        site({ edges: { eaveFt: 100, rakeFt: 0, ridgeFt: 0, hipFt: 0, valleyFt: 0 } }),
+      ),
+    ).toBe("640 sqft · 104 lnft · traced Aug 1");
   });
 });
 

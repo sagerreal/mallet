@@ -17,6 +17,7 @@ import { useAppStore, useCloseModal } from "@/lib/store/app-store";
 import { useGoogleMaps } from "@/features/measurements/aerial/use-google-maps";
 import { useTracerMap } from "@/features/measurements/aerial/use-tracer-map";
 import { formatLnft, pitchLabel, surfaceSummary } from "@/lib/measure/aerial-geometry";
+import { edgeReadout } from "@/lib/measure/edge-classes";
 import { formatDate } from "@/lib/format";
 import { SrcPill } from "@/components/shared/stage-pill";
 import { SheetRow } from "../sheet-row";
@@ -102,6 +103,9 @@ export function SiteCaptureView({ site, jobTitle }: { site: SiteCard; jobTitle: 
     vertices: site.polygon?.vertices ?? [],
     closed: true,
     interactive: false,
+    // A classified capture re-draws its edges in their class colors (read-only).
+    edgeClasses: site.polygon?.edgeClasses ?? null,
+    interiorLines: site.polygon?.interiorLines,
   });
 
   function setSurface(surface: "flat" | "pitched") {
@@ -118,6 +122,8 @@ export function SiteCaptureView({ site, jobTitle }: { site: SiteCard; jobTitle: 
   }
 
   const sourceLabel = site.source === "manual" ? "Manual" : `Traced · ${formatDate(site.createdAt)}`;
+  const classedLinears =
+    site.surface === "pitched" && site.edges !== null ? edgeReadout(site.edges) : "";
 
   return (
     <div>
@@ -133,9 +139,15 @@ export function SiteCaptureView({ site, jobTitle }: { site: SiteCard; jobTitle: 
         <TracerMapCanvas status={mapsStatus} geocode={tracerMap.geocode} address="" mapRef={mapRef} />
       )}
 
+      {/* A classified pitched surface reads out its per-class linears in place
+          of the bare perimeter; flat and legacy captures are unchanged. */}
       <p style={{ fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>
         {surfaceSummary(site)}
-        {site.perimeterLnft !== null && ` · Perimeter ${formatLnft(site.perimeterLnft)}`}
+        {classedLinears !== ""
+          ? ` · ${classedLinears}`
+          : site.perimeterLnft !== null
+            ? ` · Perimeter ${formatLnft(site.perimeterLnft)}`
+            : ""}
       </p>
 
       <div className="sheet-rows">

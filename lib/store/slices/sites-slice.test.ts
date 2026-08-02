@@ -50,6 +50,8 @@ const site = (overrides: Partial<SiteCard> = {}): SiteCard => ({
   footprintSqft: 1240,
   perimeterLnft: 142,
   polygon,
+  edges: null,
+  complexity: null,
   createdAt: "2026-07-01T00:00:00.000Z",
   ...overrides,
 });

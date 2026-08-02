@@ -183,3 +183,95 @@ describe("parseSitePolygon", () => {
     expect(isErr(parseSitePolygon({ vertices: polygon.vertices }))).toBe(true);
   });
 });
+
+// ── edge classification (v2 additive polygon shape) ───────────────────────────
+
+const classedPolygon: SitePolygon = {
+  ...polygon,
+  edgeClasses: ["eave", "rake", "ridge"],
+  interiorLines: [
+    { a: { lat: 35.7711, lng: -78.638 }, b: { lat: 35.7711, lng: -78.6378 }, cls: "ridge" },
+  ],
+};
+
+describe("SiteCapture.create with edge classification", () => {
+  it("accepts a polygon carrying edge classes and interior lines", () => {
+    const result = SiteCapture.create(baseProps({ polygon: classedPolygon }));
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.polygon?.edgeClasses).toEqual(["eave", "rake", "ridge"]);
+      expect(result.value.props.polygon?.interiorLines).toHaveLength(1);
+    }
+  });
+
+  it("rejects edgeClasses whose length differs from the vertex count", () => {
+    const result = SiteCapture.create(
+      baseProps({ polygon: { ...classedPolygon, edgeClasses: ["eave", "rake"] } }),
+    );
+    expect(isErr(result)).toBe(true);
+  });
+
+  it("rejects an unknown edge class", () => {
+    const result = SiteCapture.create(
+      baseProps({ polygon: { ...polygon, edgeClasses: ["eave", "gable", "ridge"] as never } }),
+    );
+    expect(isErr(result)).toBe(true);
+  });
+
+  it("rejects an interior line with an EAVE class (interior lines are ridge/hip/valley)", () => {
+    const result = SiteCapture.create(
+      baseProps({
+        polygon: {
+          ...polygon,
+          interiorLines: [
+            { a: { lat: 1, lng: 1 }, b: { lat: 2, lng: 2 }, cls: "eave" as never },
+          ],
+        },
+      }),
+    );
+    expect(isErr(result)).toBe(true);
+  });
+
+  it("rejects an interior line with non-finite endpoints", () => {
+    const result = SiteCapture.create(
+      baseProps({
+        polygon: {
+          ...polygon,
+          interiorLines: [{ a: { lat: Number.NaN, lng: 1 }, b: { lat: 2, lng: 2 }, cls: "ridge" }],
+        },
+      }),
+    );
+    expect(isErr(result)).toBe(true);
+  });
+});
+
+describe("parseSitePolygon with edge classification", () => {
+  it("round-trips a classified polygon through the wire shape", () => {
+    const result = parseSitePolygon(JSON.parse(JSON.stringify(classedPolygon)));
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.edgeClasses).toEqual(["eave", "rake", "ridge"]);
+      expect(result.value.interiorLines).toEqual(classedPolygon.interiorLines);
+    }
+  });
+
+  it("a LEGACY polygon without classes stays valid and comes back unclassified", () => {
+    const result = parseSitePolygon(JSON.parse(JSON.stringify(polygon)));
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.edgeClasses).toBeUndefined();
+      expect(result.value.interiorLines).toBeUndefined();
+    }
+  });
+
+  it.each([
+    { ...classedPolygon, edgeClasses: "eave" }, // not an array
+    { ...classedPolygon, edgeClasses: ["eave", "nope", "ridge"] }, // unknown class
+    { ...classedPolygon, edgeClasses: ["eave"] }, // wrong length
+    { ...classedPolygon, interiorLines: 42 }, // not an array
+    { ...classedPolygon, interiorLines: [{ a: { lat: 1 }, b: { lat: 2, lng: 2 }, cls: "ridge" }] },
+    { ...classedPolygon, interiorLines: [{ a: { lat: 1, lng: 1 }, b: { lat: 2, lng: 2 }, cls: "eave" }] },
+  ])("rejects a present-but-malformed classification %#", (value) => {
+    expect(isErr(parseSitePolygon(JSON.parse(JSON.stringify(value))))).toBe(true);
+  });
+});

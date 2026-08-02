@@ -4,6 +4,13 @@
  * square-feet / perimeter figures in the anchored bar, close the outline (tap
  * the first vertex or Done), then name it, pick Flat | Pitched, and save.
  *
+ * PITCHED surfaces get an EDGES step once the outline closes: every perimeter
+ * edge starts as an EAVE and draws in its class color; tapping an edge cycles
+ * it (eave → rake → ridge → hip → valley), and "Add a line" drops a classed
+ * interior line (a hip roof's ridge) with two map taps. The classification
+ * rides in the saved polygon; the server derives the per-class linears.
+ * Flat surfaces keep the original flow untouched.
+ *
  * TWO save targets (satellite measurement is an estimating feature — the
  * composer opens this with zero prerequisites):
  *   - "job":  the original flow — persists via addTracedSite (server derives
@@ -38,6 +45,17 @@ import {
   pitchCorrectedAreaPreview,
   surfaceSummary,
 } from "@/lib/measure/aerial-geometry";
+import { defaultEdgeClasses, edgeReadout, edgeTotalsFt } from "@/lib/measure/edge-classes";
+import {
+  canUndoLine,
+  cycleEdgeAt,
+  cycleInteriorLineAt,
+  initialEdgeEdit,
+  placeLinePoint,
+  toggleAddLine,
+  undoLine,
+  type EdgeEditState,
+} from "@/lib/measure/edge-edit";
 import { createHeldTrace, type HeldTrace } from "@/lib/measure/held-trace";
 import { userMessage } from "@/lib/trpc/error-map";
 import { Field } from "@/components/ui/input";
@@ -45,6 +63,7 @@ import { AddressInput, type PlaceLocation } from "@/components/ui/address-input"
 import { SrcPill } from "@/components/shared/stage-pill";
 import { SurfaceToggle, PitchRow } from "./site-surface-controls";
 import { TracerMapCanvas } from "./tracer-map-canvas";
+import { EdgeClassBar } from "./edge-class-bar";
 
 const SAVE_ERROR_COPY = "Couldn't save this surface — check your connection and try again.";
 const NO_AREA_COPY = "This outline has no area — trace at least three points around the surface.";
@@ -70,6 +89,11 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
   const [name, setName] = useState(() => nextSurfaceName(existingNames));
   const [surface, setSurface] = useState<"flat" | "pitched">("flat");
   const [pitchRise, setPitchRise] = useState(DEFAULT_PITCH_RISE);
+  // The EDGES step (pitched + closed outline): non-null exactly while active.
+  // Handlers keep it in lockstep with the outline — re-opening or clearing the
+  // trace, or flipping to Flat, drops the classification (re-classifying a
+  // 3-tap default is cheaper than reconciling classes to a changed outline).
+  const [edgeEdit, setEdgeEdit] = useState<EdgeEditState | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -85,6 +109,30 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
   const [committedLocation, setCommittedLocation] = useState<PlaceLocation | null>(null);
   const mapAddress = target.kind === "job" ? target.address : committedAddress;
 
+  const edgesActive = trace.closed && surface === "pitched" && edgeEdit !== null;
+
+  // The map's click callbacks read through latest-render refs inside
+  // useTracerMap, so these handlers can safely close over current state.
+  function handleMapClick(vertex: { lat: number; lng: number }) {
+    if (edgesActive && edgeEdit !== null && edgeEdit.addingLine) {
+      setEdgeEdit(placeLinePoint(edgeEdit, vertex));
+      return;
+    }
+    setTrace((s) => addVertex(s, vertex));
+  }
+
+  function handleCloseOutline() {
+    if (!canClose(trace)) return;
+    const next = closeTrace(trace);
+    setTrace(next);
+    if (surface === "pitched") setEdgeEdit(initialEdgeEdit(next.vertices.length));
+  }
+
+  function handleSurfaceChange(next: "flat" | "pitched") {
+    setSurface(next);
+    setEdgeEdit(next === "pitched" && trace.closed ? initialEdgeEdit(trace.vertices.length) : null);
+  }
+
   const mapsStatus = useGoogleMaps();
   const mapRef = useRef<HTMLDivElement | null>(null);
   const tracerMap = useTracerMap({
@@ -96,14 +144,28 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
     vertices: trace.vertices,
     closed: trace.closed,
     interactive: true,
-    onMapClick: (vertex) => setTrace((s) => addVertex(s, vertex)),
-    onFirstVertexClick: () => setTrace((s) => closeTrace(s)),
+    onMapClick: handleMapClick,
+    onFirstVertexClick: handleCloseOutline,
+    edgeClasses: edgesActive && edgeEdit !== null ? edgeEdit.edgeClasses : null,
+    interiorLines: edgesActive && edgeEdit !== null ? edgeEdit.interiorLines : undefined,
+    pendingLinePoint: edgesActive && edgeEdit !== null ? edgeEdit.draftPoint : null,
+    onEdgeClick: (i) => setEdgeEdit((e) => (e === null ? e : cycleEdgeAt(e, i))),
+    onInteriorLineClick: (i) => setEdgeEdit((e) => (e === null ? e : cycleInteriorLineAt(e, i))),
   });
 
   const figures = useMemo(
     () => measureTrace(trace.vertices, trace.closed),
     // mapsStatus: figures become computable the moment the geometry library lands.
     [trace.vertices, trace.closed, mapsStatus],
+  );
+
+  // Per-class linears while classifying — pure math, live on every tap.
+  const edgeTotals = useMemo(
+    () =>
+      edgesActive && edgeEdit !== null
+        ? edgeTotalsFt(trace.vertices, edgeEdit.edgeClasses, edgeEdit.interiorLines)
+        : null,
+    [edgesActive, edgeEdit, trace.vertices],
   );
 
   async function save() {
@@ -120,6 +182,23 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
     }
     const surfaceName = name.trim() || nextSurfaceName(existingNames);
 
+    // A pitched surface saves its edge classification in the polygon (every
+    // edge defaults to EAVE — an untouched edges step is still a full, honest
+    // classification). A half-drawn interior line (one point placed) never
+    // became a line and is dropped. Flat surfaces save the v1 shape untouched.
+    const polygon = {
+      vertices: [...trace.vertices],
+      view,
+      ...(surface === "pitched"
+        ? {
+            edgeClasses: [...(edgeEdit?.edgeClasses ?? defaultEdgeClasses(trace.vertices.length))],
+            ...(edgeEdit !== null && edgeEdit.interiorLines.length > 0
+              ? { interiorLines: [...edgeEdit.interiorLines] }
+              : {}),
+          }
+        : {}),
+    };
+
     if (target.kind === "held") {
       // Pure client math — no server call. The composer holds the trace until
       // the quote's flow has a job to persist it against.
@@ -129,7 +208,7 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
           name: surfaceName,
           surface,
           pitchRise: surface === "pitched" ? pitchRise : undefined,
-          polygon: { vertices: [...trace.vertices], view },
+          polygon,
           footprintSqft: figures.footprintSqft,
           perimeterLnft: figures.perimeterLnft,
         }),
@@ -145,7 +224,7 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
         name: surfaceName,
         surface,
         pitchRise: surface === "pitched" ? pitchRise : undefined,
-        polygon: { vertices: [...trace.vertices], view },
+        polygon,
         footprintSqft: figures.footprintSqft,
         perimeterLnft: figures.perimeterLnft,
       });
@@ -223,7 +302,11 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
             type="button"
             className="btn sm"
             disabled={trace.vertices.length === 0}
-            onClick={() => setTrace((s) => undoLast(s))}
+            onClick={() => {
+              // Re-opening the outline invalidates its edge classification.
+              setEdgeEdit(null);
+              setTrace((s) => undoLast(s));
+            }}
           >
             Undo
           </button>
@@ -232,6 +315,7 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
             className="btn sm"
             disabled={trace.vertices.length === 0}
             onClick={() => {
+              setEdgeEdit(null);
               setTrace(clearTrace());
               setSaveError(null);
             }}
@@ -243,12 +327,23 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
               type="button"
               className="btn sm"
               disabled={!canClose(trace)}
-              onClick={() => setTrace((s) => closeTrace(s))}
+              onClick={handleCloseOutline}
             >
               Done
             </button>
           )}
         </div>
+      )}
+
+      {edgesActive && edgeEdit !== null && edgeTotals !== null && (
+        <EdgeClassBar
+          totals={edgeTotals}
+          addingLine={edgeEdit.addingLine}
+          hasDraftPoint={edgeEdit.draftPoint !== null}
+          canUndoLine={canUndoLine(edgeEdit)}
+          onToggleAddLine={() => setEdgeEdit((e) => (e === null ? e : toggleAddLine(e)))}
+          onUndoLine={() => setEdgeEdit((e) => (e === null ? e : undoLine(e)))}
+        />
       )}
 
       {trace.closed && figures !== null && (
@@ -258,7 +353,7 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
           </Field>
 
           <div style={{ marginTop: "var(--space-3)" }}>
-            <SurfaceToggle surface={surface} onChange={setSurface} />
+            <SurfaceToggle surface={surface} onChange={handleSurfaceChange} />
           </div>
 
           {surface === "pitched" && (
@@ -277,8 +372,10 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
                   : figures.footprintSqft,
               footprintSqft: figures.footprintSqft,
             })}
-            {" · Perimeter "}
-            {formatLnft(figures.perimeterLnft)}
+            {" · "}
+            {edgeTotals !== null
+              ? edgeReadout(edgeTotals)
+              : `Perimeter ${formatLnft(figures.perimeterLnft)}`}
           </p>
 
           {saveError && (
