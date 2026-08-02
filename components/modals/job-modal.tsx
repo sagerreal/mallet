@@ -46,7 +46,6 @@ import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { SheetRow } from "./sheet-row";
 import { JobChecklistBlock } from "./job-checklist-block";
-import { JobMeasureBlock } from "./job-measure-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
 import { dayLoad } from "@/features/jobs/jobs-helpers";
@@ -696,8 +695,6 @@ export function JobModalContent() {
   const createInvoice = api.v1.invoicing.createFromJob.useMutation();
 
   const jobId = activeModal?.params?.jobId as string | undefined;
-  const rooms = useAppStore((s) => (jobId ? s.roomsByJob[jobId] : undefined)) ?? [];
-  const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
   const adoptJob = useAppStore((s) => s.adoptJob);
   const job = jobs.find((j) => j.id === jobId);
 
@@ -1048,27 +1045,11 @@ export function JobModalContent() {
           <JobChecklistBlock job={job} />
         </SheetRow>
 
-        {/* Measurements — room captures (RoomPlan scans or manual rooms).
-            Rooms hydrate lazily inside JobMeasureBlock (useJobRooms), so this
-            row's count reflects whatever the store already has for this job
-            until the accordion is opened. Org-gated: only shops that price from
-            measurements (painting etc.) see this row at all — a plumbing org
-            with measurementEstimating off gets no row, not an empty one. */}
-        {measurementEstimating && (
-          <SheetRow
-            label="Measurements"
-            value={rooms.length > 0 ? `${rooms.length} room${rooms.length === 1 ? "" : "s"}` : "Add"}
-            valueIsHint={rooms.length === 0}
-            expandable
-          >
-            <JobMeasureBlock jobId={job.id} />
-          </SheetRow>
-        )}
-
-        {/* Site measurements (satellite traces) deliberately have NO row here:
-            aerial takeoff is an ESTIMATING feature, so its entry point lives on
-            the quote page's Measure section (app/(office)/composer). Saved
-            captures are opened from there too. */}
+        {/* Measurements (rooms AND satellite traces) deliberately have NO rows
+            here: measuring is an ESTIMATING feature, so both live on the quote
+            page's Measure section (app/(office)/composer) — room cards and
+            saved captures open from there. The tech field Quote tab keeps its
+            scan row for measuring on site. */}
       </div>
 
       {/* What the customer signed on site, when they did. Renders only when a signature exists —

@@ -3,9 +3,16 @@
 /**
  * features/measurements/aerial/use-tracer-map.ts
  * Owns the Google Map instance for the aerial tracer: creates the satellite
- * map, seeds the view (saved view → geocoded job address → wide default),
- * mirrors the trace (markers + open polyline / closed polygon) onto it, and
- * reports geocode state by name so the UI never fails silently.
+ * map, seeds the view (saved view → seed coordinates → geocoded address →
+ * wide default), mirrors the trace (markers + open polyline / closed polygon)
+ * onto it, and reports geocode state by name so the UI never fails silently.
+ *
+ * Seed coordinates (from Places autocomplete's Place Details) are the PRIMARY
+ * path when present — the map pans straight to them with no Geocoding API
+ * call. Geocoding is the fallback for an address that never touched
+ * autocomplete (job addresses, hand-typed addresses committed on blur); it
+ * requires the Geocoding API to be enabled on the Maps key, which Places
+ * autocomplete alone does not prove.
  *
  * The hook renders NOTHING over the map — vertex markers are the only
  * permitted map overlay (house rule: no floating UI); all controls live in the
@@ -18,6 +25,30 @@ import { MIN_TRACE_VERTICES, type TraceVertex } from "@/lib/measure/trace-state"
 import type { SiteMapView } from "@/lib/store/types";
 
 export type GeocodeState = "idle" | "pending" | "no-address" | "failed";
+
+export interface SeedLocation {
+  lat: number;
+  lng: number;
+}
+
+/** How the view should be seeded — pure precedence rule, exported for tests. */
+export type SeedPlan =
+  | { kind: "saved" }
+  | { kind: "location"; location: SeedLocation }
+  | { kind: "no-address" }
+  | { kind: "geocode"; address: string };
+
+export function seedPlan(
+  savedView: SiteMapView | null,
+  seedLocation: SeedLocation | null,
+  address: string,
+): SeedPlan {
+  if (savedView !== null) return { kind: "saved" };
+  if (seedLocation !== null) return { kind: "location", location: seedLocation };
+  const trimmed = address.trim();
+  if (trimmed === "") return { kind: "no-address" };
+  return { kind: "geocode", address };
+}
 
 // Continental-US wide shot — only ever seen when a job has no usable address.
 const DEFAULT_CENTER = { lat: 39.8283, lng: -98.5795 };
@@ -40,7 +71,12 @@ export interface UseTracerMapArgs {
   containerRef: RefObject<HTMLDivElement | null>;
   /** Saved view from an existing capture — wins over geocoding. */
   savedView: SiteMapView | null;
-  /** Job address to geocode when there is no saved view. Empty = none. */
+  /**
+   * Known coordinates for the address (Places autocomplete → Place Details).
+   * When present the map pans straight here — no Geocoding API call.
+   */
+  seedLocation: SeedLocation | null;
+  /** Address to geocode when there is no saved view and no seed location. Empty = none. */
   address: string;
   vertices: readonly TraceVertex[];
   closed: boolean;
@@ -57,7 +93,8 @@ export interface TracerMapHandle {
 }
 
 export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
-  const { status, containerRef, savedView, address, vertices, closed, interactive } = args;
+  const { status, containerRef, savedView, seedLocation, address, vertices, closed, interactive } =
+    args;
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
@@ -117,10 +154,20 @@ export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
     // for the life of one tracer opening, and the map must be created once.
   }, [status, containerRef]);
 
-  // ---- seed the view: saved view wins; otherwise geocode the job address ----
+  // ---- seed the view: saved view → seed coordinates → geocode the address ----
   useEffect(() => {
-    if (!mapReady || savedView !== null) return;
-    if (address.trim() === "") {
+    if (!mapReady) return;
+    const plan = seedPlan(savedView, seedLocation, address);
+    if (plan.kind === "saved") return;
+    if (plan.kind === "location") {
+      // Coordinates came with the address (Places autocomplete) — jump
+      // straight there. No Geocoding API involved.
+      mapRef.current?.setCenter(plan.location);
+      mapRef.current?.setZoom(TRACE_ZOOM);
+      setGeocode("idle");
+      return;
+    }
+    if (plan.kind === "no-address") {
       setGeocode("no-address");
       return;
     }
@@ -145,7 +192,7 @@ export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
     return () => {
       cancelled = true;
     };
-  }, [mapReady, savedView, address]);
+  }, [mapReady, savedView, seedLocation, address]);
 
   // ---- mirror the trace onto the map ----------------------------------------
   useEffect(() => {

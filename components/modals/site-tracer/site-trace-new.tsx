@@ -41,7 +41,7 @@ import {
 import { createHeldTrace, type HeldTrace } from "@/lib/measure/held-trace";
 import { userMessage } from "@/lib/trpc/error-map";
 import { Field } from "@/components/ui/input";
-import { AddressInput } from "@/components/ui/address-input";
+import { AddressInput, type PlaceLocation } from "@/components/ui/address-input";
 import { SrcPill } from "@/components/shared/stage-pill";
 import { SurfaceToggle, PitchRow } from "./site-surface-controls";
 import { TracerMapCanvas } from "./tracer-map-canvas";
@@ -73,12 +73,16 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Held mode: the typed address (live) vs the one the map geocodes (committed
-  // on suggestion select / blur — never per keystroke).
+  // Held mode: the typed address (live) vs the one the map uses (committed on
+  // suggestion select / blur — never per keystroke). A suggestion select also
+  // carries the place's COORDINATES (Place Details) — the map jumps straight
+  // to them, no Geocoding API call. A hand-typed address committed on blur has
+  // no coordinates, so the map falls back to geocoding it.
   const [address, setAddress] = useState(target.kind === "held" ? target.initialAddress : "");
   const [committedAddress, setCommittedAddress] = useState(
     target.kind === "held" ? target.initialAddress : "",
   );
+  const [committedLocation, setCommittedLocation] = useState<PlaceLocation | null>(null);
   const mapAddress = target.kind === "job" ? target.address : committedAddress;
 
   const mapsStatus = useGoogleMaps();
@@ -87,6 +91,7 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
     status: mapsStatus,
     containerRef: mapRef,
     savedView: null,
+    seedLocation: target.kind === "held" ? committedLocation : null,
     address: mapAddress,
     vertices: trace.vertices,
     closed: trace.closed,
@@ -170,8 +175,19 @@ export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
           <AddressInput
             value={address}
             onChange={setAddress}
-            onSelect={(v) => setCommittedAddress(v)}
-            onBlur={() => setCommittedAddress(address)}
+            onSelect={(v, location) => {
+              setCommittedAddress(v);
+              setCommittedLocation(location);
+            }}
+            onBlur={() => {
+              // Commit a hand-typed address for the geocode fallback — but a
+              // blur right after a suggestion select must not wipe the
+              // coordinates that came with it.
+              if (address !== committedAddress) {
+                setCommittedAddress(address);
+                setCommittedLocation(null);
+              }
+            }}
             placeholder="Type the property address"
             aria-label="Property address"
           />

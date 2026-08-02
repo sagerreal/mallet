@@ -7,6 +7,11 @@
  *   - Renders up to 5 suggestions in-flow, flush under the input.
  *   - Keyboard: ArrowDown/ArrowUp navigate; Enter selects; Escape closes.
  *   - Click selects.
+ *   - Selecting a suggestion also fetches the place's LOCATION (lat/lng) via
+ *     Place Details (New) — the SAME Places API the autocomplete call uses, so
+ *     no extra Google product needs enabling on the key. onSelect receives the
+ *     coordinates alongside the address; a failed details fetch passes null and
+ *     the caller falls back to its own resolution (e.g. geocoding).
  *   - Fetch errors degrade silently (console.warn dev only); plain input still works.
  *
  * When the key is absent: renders a plain input — no fetch, no list.
@@ -20,17 +25,66 @@
 import { useState, useRef, useCallback, useEffect, useId } from "react";
 
 const PLACES_URL = "https://places.googleapis.com/v1/places:autocomplete";
+const PLACE_DETAILS_URL = "https://places.googleapis.com/v1/places";
 const MAX_SUGGESTIONS = 5;
 const DEBOUNCE_MS = 300;
 
+export interface PlaceLocation {
+  lat: number;
+  lng: number;
+}
+
 interface Suggestion {
   text: string;
+  placeId: string | null;
+}
+
+/**
+ * Fetches the selected place's coordinates via Place Details (New) — location
+ * field only. Returns null on any failure (missing id, HTTP error, malformed
+ * body); the caller treats null as "resolve the address yourself".
+ */
+async function fetchPlaceLocation(
+  placeId: string,
+  apiKey: string,
+): Promise<PlaceLocation | null> {
+  try {
+    const res = await fetch(`${PLACE_DETAILS_URL}/${encodeURIComponent(placeId)}`, {
+      headers: {
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "location",
+      },
+    });
+    if (!res.ok) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[AddressInput] Place Details error", res.status);
+      }
+      return null;
+    }
+    const data = (await res.json()) as {
+      location?: { latitude?: number; longitude?: number };
+    };
+    const lat = data.location?.latitude;
+    const lng = data.location?.longitude;
+    if (typeof lat !== "number" || typeof lng !== "number") return null;
+    return { lat, lng };
+  } catch (err) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[AddressInput] Place Details fetch failed", err);
+    }
+    return null;
+  }
 }
 
 interface AddressInputProps {
   value: string;
   onChange: (value: string) => void;
-  onSelect?: (value: string) => void;
+  /**
+   * Fires when a suggestion is chosen. `location` is the place's coordinates
+   * from Place Details, or null when the lookup failed — callers that need a
+   * map position fall back to their own geocoding on null.
+   */
+  onSelect?: (value: string, location: PlaceLocation | null) => void;
   onBlur?: () => void;
   placeholder?: string;
   className?: string;
@@ -88,11 +142,16 @@ export function AddressInput({
           return;
         }
         const data = (await res.json()) as {
-          suggestions?: Array<{ placePrediction?: { text?: { text?: string } } }>;
+          suggestions?: Array<{
+            placePrediction?: { text?: { text?: string }; placeId?: string };
+          }>;
         };
         const items: Suggestion[] = (data.suggestions ?? [])
           .slice(0, MAX_SUGGESTIONS)
-          .map((s) => ({ text: s.placePrediction?.text?.text ?? "" }))
+          .map((s) => ({
+            text: s.placePrediction?.text?.text ?? "",
+            placeId: s.placePrediction?.placeId ?? null,
+          }))
           .filter((s) => s.text.length > 0);
         setSuggestions(items);
         setOpen(items.length > 0);
@@ -118,12 +177,22 @@ export function AddressInput({
     }, DEBOUNCE_MS);
   }
 
-  function selectSuggestion(text: string) {
-    onChange(text);
-    onSelect?.(text);
+  function selectSuggestion(suggestion: Suggestion) {
+    onChange(suggestion.text);
     setSuggestions([]);
     setOpen(false);
     setActiveIdx(-1);
+    if (!onSelect) return;
+    const handler = onSelect;
+    if (suggestion.placeId && apiKey) {
+      // The prediction carries a place id — resolve its coordinates through
+      // Place Details so callers get a map position with NO geocode call.
+      void fetchPlaceLocation(suggestion.placeId, apiKey).then((location) => {
+        handler(suggestion.text, location);
+      });
+    } else {
+      handler(suggestion.text, null);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -137,7 +206,7 @@ export function AddressInput({
     } else if (e.key === "Enter" && activeIdx >= 0) {
       e.preventDefault();
       const chosen = suggestions[activeIdx];
-      if (chosen) selectSuggestion(chosen.text);
+      if (chosen) selectSuggestion(chosen);
     } else if (e.key === "Escape") {
       setSuggestions([]);
       setOpen(false);
@@ -214,7 +283,7 @@ export function AddressInput({
               onMouseDown={(e) => {
                 // Prevent blur before click registers.
                 e.preventDefault();
-                selectSuggestion(s.text);
+                selectSuggestion(s);
               }}
               style={{
                 padding: "var(--space-2) var(--space-3)",
