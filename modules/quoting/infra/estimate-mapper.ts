@@ -1,6 +1,6 @@
 import { asEstimateId, asEstimateLineId, asOrgId, asLeadId, money } from "@mallet/shared/types";
 import { estimates, estimateLines } from "@mallet/shared/db/schema";
-import { Estimate, EstimateLine, isEstimateStatus, type QuoteTier, type TierNames } from "../domain/estimate";
+import { Estimate, EstimateLine, isEstimateStatus, isEstimateOrigin, type QuoteTier, type TierNames } from "../domain/estimate";
 import type { SignedSnapshot } from "../domain/signature";
 
 export type EstimateRow = typeof estimates.$inferSelect;
@@ -30,6 +30,9 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
   if (!isEstimateStatus(row.status)) {
     throw new Error(`corrupt estimate ${row.id}: unknown status "${row.status}"`);
   }
+  if (!isEstimateOrigin(row.origin)) {
+    throw new Error(`corrupt estimate ${row.id}: unknown origin "${row.origin}"`);
+  }
   const lines = [...lineRows]
     .sort((a, b) => a.position - b.position)
     .map(toEstimateLine);
@@ -41,6 +44,7 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     leadId: asLeadId(row.leadId),
     title: row.title,
     status: row.status,
+    origin: row.origin,
     discBps: row.discBps,
     taxBps: row.taxBps,
     depBps: row.depBps,

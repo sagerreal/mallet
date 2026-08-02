@@ -209,6 +209,32 @@ export class DrizzleJobRepository implements JobRepository {
     return true;
   }
 
+  /**
+   * Link a FIELD-BORN estimate to the job it was signed on (the reverse of insertForEstimate's
+   * office direction: there the estimate exists first and mints the job; here the job existed
+   * first and the on-site sign minted the estimate). Write-once: only fills a NULL
+   * source_estimate_id — an existing link is a different sale record and must not be clobbered.
+   * Returns rows affected (0 = job missing, archived, or already linked).
+   *
+   * Concrete-repository method, not part of the JobRepository port: it exists solely for the
+   * field-sign transport composition, and the port's ~16 in-memory fakes have no use for it.
+   */
+  async setSourceEstimate(jobId: JobId, estimateId: EstimateId, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(jobs)
+      .set({ sourceEstimateId: estimateId, updatedAt: now })
+      .where(
+        and(
+          eq(jobs.id, jobId),
+          eq(jobs.orgId, this.orgId),
+          isNull(jobs.sourceEstimateId),
+          isNull(jobs.deletedAt),
+        ),
+      )
+      .returning({ id: jobs.id });
+    return rows.length;
+  }
+
   async findById(id: JobId): Promise<Job | null> {
     const rows = await this.tx
       .select({ job: jobs, visit: jobVisits })
