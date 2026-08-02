@@ -18,6 +18,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useActiveModal, useAppStore, useCloseModal, usePushModal } from "@/lib/store/app-store";
+import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useRoomScanAvailable, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
@@ -179,11 +180,15 @@ function QuantityRow({
   def,
   quantity,
   source,
+  readOnly,
   onCommit,
 }: {
   def: QuantityDef;
   quantity: RoomQuantity;
   source: RoomCard["source"];
+  /** Techs read the numbers; confirming/overriding them into the record is desk work
+   *  (v1.measurements.confirmQuantity / overrideQuantity stay ownerOrOffice). */
+  readOnly: boolean;
   onCommit: (kind: RoomQuantityKind, value: number) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -191,6 +196,24 @@ function QuantityRow({
   const [error, setError] = useState<string | null>(null);
 
   const display = quantityDisplay(quantity, source, def.unit);
+
+  if (readOnly) {
+    return (
+      <SheetRow
+        label={def.label}
+        value={display.value}
+        valueIsHint={display.valueIsHint}
+        after={
+          (display.badge || display.measured) && (
+            <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+              {display.measured && <span className="muted">{display.measured}</span>}
+              {display.badge && <Badge tone={display.badge.tone}>{display.badge.text}</Badge>}
+            </span>
+          )
+        }
+      />
+    );
+  }
 
   function openEditor(next: boolean) {
     setOpen(next);
@@ -392,6 +415,11 @@ function sourceLabel(room: RoomCard): string {
 
 function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefined }) {
   const jobId = room.jobId;
+  // Role gate: quantity confirm/override write ownerOrOffice endpoints — for a tech the
+  // rows are read-only (fail closed until the role loads). Scan/rename/archive/re-scan
+  // are field work and stay live (v1.measurements allows an assigned tech).
+  const me = useMe();
+  const isOffice = me.data?.role === "owner" || me.data?.role === "office";
   const setRoomQuantity = useAppStore((s) => s.setRoomQuantity);
   const renameRoom = useAppStore((s) => s.renameRoom);
   const archiveRoom = useAppStore((s) => s.archiveRoom);
@@ -424,7 +452,14 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
           const quantity = findQuantity(room, def.kind);
           if (!quantity) return null;
           return (
-            <QuantityRow key={def.kind} def={def} quantity={quantity} source={room.source} onCommit={commitQuantity} />
+            <QuantityRow
+              key={def.kind}
+              def={def}
+              quantity={quantity}
+              source={room.source}
+              readOnly={!isOffice}
+              onCommit={commitQuantity}
+            />
           );
         })}
 

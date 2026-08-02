@@ -20,6 +20,7 @@ import { CompleteJobUseCase } from "../app/complete-job";
 import { SetVisitStatusUseCase } from "../app/set-visit-status";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
+import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
@@ -94,6 +95,16 @@ const fieldSignQuoteInput = z.object({
   // Optional, exactly as on the web path: a typed name IS the signature, and requiring a drawing
   // would gate approval on the weakest evidence and lock out anyone who cannot draw.
   signatureSvg: z.string().trim().max(100_000).optional(),
+});
+
+// Scope notes from the walkthrough — the field half of the estimating split. The visit's notes
+// column is the SAME field the office pipeline reads (scopedEstimateVisit keys the Quoting
+// column's "quote it ›" card on it), so a tech writing here is the handoff signal, with no new
+// status. Empty string clears the notes (stored as NULL) — the scope stays editable.
+const fieldSetVisitNotesInput = z.object({
+  jobId: z.string().uuid(),
+  visitId: z.string().uuid(),
+  notes: z.string().max(2000),
 });
 
 const fieldAddAddonInput = z.object({
@@ -338,6 +349,50 @@ export const createFieldRouter = () =>
         logger.info(
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.enroute_set",
+        );
+        const dto = toJobDTO(job);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice);
+      }),
+
+    // Scope notes from the job site. JOB-level assignment gate (same as signQuote): the person
+    // who walked the site writes what they saw, whichever of the job's visits carried them there.
+    // Delegates to the SAME PatchVisitScheduleUseCase the office surface uses — one write path
+    // for the one field. The write is what lights up the office pipeline's "quote it ›" card
+    // (scopedEstimateVisit reads visit notes), so it must not be gated on job kind: plain jobs
+    // keep their walkthrough notes too.
+    setVisitNotes: anyRole
+      .input(fieldSetVisitNotesInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        if (techJob?.isTerminal()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
+        }
+        if (!techJob) {
+          const job = await repo.findById(jobId);
+          if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+          if (job.isTerminal()) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
+          }
+        }
+        const useCase = new PatchVisitScheduleUseCase(repo, ctx.deps.clock);
+        const trimmed = input.notes.trim();
+        const job = orThrow(
+          await useCase.exec({
+            jobId,
+            visitId: asVisitId(input.visitId),
+            // Empty scope clears the column back to NULL — "no scope" must not be a "" that
+            // still satisfies the pipeline's scoped predicate.
+            notes: trimmed === "" ? null : trimmed,
+          }),
+        );
+        logger.info(
+          { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
+          "job_visit.scope_notes_set",
         );
         const dto = toJobDTO(job);
         if (ctx.principal.role !== "tech") return dto;

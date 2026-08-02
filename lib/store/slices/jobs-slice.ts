@@ -349,6 +349,18 @@ export interface JobsSlice {
    * against the wrong person.
    */
   setVisitStatus: (jobId: string, visitId: string, status: string, surface: VisitWriteSurface) => void;
+  /**
+   * Write a visit's scope notes from the FIELD surface (v1.field.setVisitNotes — anyRole,
+   * assignment-gated). The visit's notes column is what the office pipeline's "quote it ›"
+   * card keys on (scopedEstimateVisit), so this write IS the tech→office handoff signal.
+   * Resolves { ok, error } and never rejects, so the Scope row can surface a refusal.
+   */
+  setVisitNotes: (jobId: string, visitId: string, notes: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Local-only append of an already-persisted photo path (the field Scope strip uploads via
+   * uploadFieldPhoto, which writes the DB row itself — this just keeps the store in step).
+   */
+  adoptJobPhotoPath: (jobId: string, storagePath: string) => void;
   removeVisit: (jobId: string, visitId: string) => void;
   /**
    * Adopt a job DTO returned by a server mutation (e.g. the job created by quoting.accept).
@@ -1052,6 +1064,65 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           reportWriteError(visitWriteName(status), err);
         });
     });
+  },
+
+  // ---------------------------------------------------------------------------
+  // setVisitNotes — the field scope write. Optimistic scopeNotes + persist via
+  // v1.field.setVisitNotes + reconcile from the returned jobDTO; rollback +
+  // { ok: false, error } on refusal so the Scope row shows the server's words.
+  // ---------------------------------------------------------------------------
+  setVisitNotes: (jobId, visitId, notes) => {
+    const prior = snapshot(get().jobs, jobId);
+    const trimmed = notes.trim();
+
+    // 1. Optimistic update — empty clears the field (mirrors the server's NULL).
+    set((s) => ({
+      jobs: s.jobs.map((j) =>
+        j.id === jobId
+          ? withVisits(
+              j,
+              j.visits.map((v) =>
+                v.id === visitId
+                  ? trimmed
+                    ? { ...v, scopeNotes: trimmed }
+                    : (({ scopeNotes: _dropped, ...rest }) => rest)(v)
+                  : v,
+              ),
+            )
+          : j,
+      ),
+    }));
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) return Promise.resolve({ ok: true });
+
+    return trpcVanilla.v1.field.setVisitNotes
+      .mutate({ jobId, visitId, notes: trimmed })
+      .then((dto) => {
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        invalidateJobLists();
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        if (prior && visitExists(get().jobs, jobId, visitId)) {
+          set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        }
+        reportWriteError("setVisitNotes", err);
+        return { ok: false, error: userMessage(err) };
+      });
+  },
+
+  // ---------------------------------------------------------------------------
+  // adoptJobPhotoPath — local-only: the upload path already persisted the photo
+  // row (uploadFieldPhoto → v1.field.addPhoto); this keeps the store's photos
+  // strip in step without a refetch. Snapshot merges preserve store photos.
+  // ---------------------------------------------------------------------------
+  adoptJobPhotoPath: (jobId, storagePath) => {
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) =>
+        j.photos.includes(storagePath) ? j : { ...j, photos: [...j.photos, storagePath] },
+      ),
+    }));
   },
 
   // ---------------------------------------------------------------------------

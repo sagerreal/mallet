@@ -47,6 +47,13 @@ vi.mock("@/features/measurements/use-job-rooms", () => ({
   useJobRooms: (...args: unknown[]) => useJobRoomsMock(...args),
 }));
 
+// These tests exercise the OFFICE behavior (quantity editing) — the tech's
+// read-only quantity rows are covered separately below via mockRoleRef.
+const mockRoleRef = { role: "owner" as "owner" | "office" | "tech" };
+vi.mock("@/features/identity/hooks", () => ({
+  useMe: () => ({ data: { role: mockRoleRef.role, userId: "user-1" }, isLoading: false }),
+}));
+
 vi.mock("@/lib/native/room-scan", async () => {
   const actual = await vi.importActual<typeof import("@/lib/native/room-scan")>("@/lib/native/room-scan");
   return {
@@ -79,6 +86,7 @@ function room(overrides: Partial<RoomCard> = {}): RoomCard {
 }
 
 beforeEach(() => {
+  mockRoleRef.role = "owner";
   activeModalParams = { captureId: CAPTURE_ID, jobId: JOB_ID };
   closeMock.mockReset();
   pushModalMock.mockReset();
@@ -295,6 +303,30 @@ describe("RoomCardModalContent — view mode", () => {
 // ---------------------------------------------------------------------------
 // Create mode
 // ---------------------------------------------------------------------------
+
+// Techs read the numbers; confirming/overriding them into the record stays desk
+// work (the v1.measurements confirm/override endpoints are ownerOrOffice), so
+// the quantity rows are read-only for a tech. Rename/remove/rescan stay live —
+// the field router-side gate allows an assigned tech.
+describe("RoomCardModalContent — view mode, TECH role", () => {
+  beforeEach(() => {
+    mockRoleRef.role = "tech";
+  });
+
+  it("quantity rows are read-only — tapping one opens no editor", () => {
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByText("Walls (sq ft)"));
+    expect(screen.queryByLabelText("Walls (sq ft)")).toBeNull();
+    expect(storeState.setRoomQuantity).not.toHaveBeenCalled();
+  });
+
+  it("keeps the room name editable and the remove control live", () => {
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByText("Room name"));
+    expect(screen.getByLabelText("Room name")).toBeTruthy();
+    expect(screen.getByText("Remove room")).toBeTruthy();
+  });
+});
 
 describe("RoomCardModalContent — create mode", () => {
   beforeEach(() => {
