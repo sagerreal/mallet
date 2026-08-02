@@ -56,6 +56,8 @@ const flatSite = (overrides: Partial<SiteQuantitiesForJob> = {}): SiteQuantities
   pitchRise: null,
   areaSqft: 640,
   perimeterLnft: 104,
+  edges: null,
+  complexity: null,
   ...overrides,
 });
 

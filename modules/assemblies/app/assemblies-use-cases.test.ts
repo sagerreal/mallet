@@ -205,6 +205,8 @@ describe("seed-from-capture — the server seeding path", () => {
         pitchRise: s.pitchRise ?? null,
         areaSqft: s.areaSqft,
         perimeterLnft: s.perimeterLnft,
+        edges: null,
+        complexity: null,
       })),
   });
 

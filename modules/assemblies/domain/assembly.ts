@@ -10,10 +10,11 @@ import { parseAssemblyConfig } from "./assembly-config";
  * or a custom scope); the recipe itself lives in the versioned config blob
  * (assembly-config.ts), identity/basis/mode/minimum in columns.
  *
- * measurementBasis admits "line" and "count" (roofing's bases, a later PR) so
- * their arrival is enum-only — no migration churn — but the engine refuses to
- * compute them today (compute-assembly.ts) and creation rejects them here:
- * an assembly nothing can seed from would be a dead row.
+ * measurementBasis: "area"/"perimeter" price from the surface's working
+ * area/traced perimeter; "line" prices from the roof's classed edge linears
+ * (the tracer's eave/rake/ridge/hip/valley totals); "count" prices per dialed
+ * unit. A count assembly cannot be UNIT_RATE — a count of parts has no single
+ * sell line — rejected here and mirrored in the engine's gate.
  */
 
 export const MEASUREMENT_BASES = ["area", "perimeter", "line", "count"] as const;
@@ -53,13 +54,13 @@ export class Assembly {
     if (!MEASUREMENT_BASES.includes(props.measurementBasis)) {
       return err(validation("unrecognized measurement basis", "measurementBasis"));
     }
-    if (props.measurementBasis === "line" || props.measurementBasis === "count") {
-      return err(
-        validation("line/count assemblies aren't supported yet", "measurementBasis"),
-      );
-    }
     if (!PRICING_MODES.includes(props.pricingMode)) {
       return err(validation("unrecognized pricing mode", "pricingMode"));
+    }
+    if (props.measurementBasis === "count" && props.pricingMode === "unit_rate") {
+      return err(
+        validation("a count assembly can't sell one unit-rate line — price it cost-plus", "measurementBasis"),
+      );
     }
     if (!Number.isInteger(props.marginBps) || props.marginBps < 0 || props.marginBps > MAX_MARGIN_BPS) {
       return err(validation("margin must be between 0% and 400%", "marginBps"));

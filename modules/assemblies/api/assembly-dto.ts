@@ -18,7 +18,7 @@ export const pricingModeDTO = z.enum(["cost_plus", "unit_rate"]);
 export const dialViewDTO = z.object({
   key: z.string(),
   label: z.string(),
-  format: z.enum(["dollars", "percentBps", "wastePercent", "number"]),
+  format: z.enum(["dollars", "percentBps", "wastePercent", "number", "toggle"]),
   unitSuffix: z.string().nullable(),
   currentRaw: z.number(),
   defaultRaw: z.number(),
@@ -110,6 +110,12 @@ export const seedResultDTO = z.object({
   minimum: z
     .object({ minimumCents: z.number().int(), addedCents: z.number().int() })
     .nullable(),
-  skipped: z.array(z.string()),
+  /** Components the surface couldn't feed, with WHAT was missing — the client
+   * turns need:"edges" into "Classify the roof edges on this trace to price …". */
+  skipped: z.array(
+    z.object({ label: z.string(), need: z.enum(["area", "perimeter", "edges"]) }),
+  ),
+  /** The complexity-derived waste actually applied, when any component used it. */
+  derivedWaste: z.object({ percent: z.number(), reason: z.string() }).nullable(),
 });
 export type SeedResultDTO = z.infer<typeof seedResultDTO>;

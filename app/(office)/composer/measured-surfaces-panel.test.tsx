@@ -556,3 +556,94 @@ describe("MeasuredSurfacesPanel — assembly picker (recipe pricing)", () => {
     expect(picker.textContent).toContain("Sealcoat, two coats");
   });
 });
+
+describe("MeasuredSurfacesPanel — roofing recipes (surface-gated pickers)", () => {
+  /** The 24-square classified roof: hips, no valleys → the 12% moderate tier. */
+  const classifiedRoof = (): HeldTrace =>
+    heldTrace({
+      id: "held-roof",
+      name: "Main roof",
+      surface: "pitched",
+      pitchRise: 6,
+      footprintSqft: 2146.63,
+      areaSqft: 2400,
+      perimeterLnft: 260,
+      edges: { eaveFt: 160, rakeFt: 100, ridgeFt: 40, hipFt: 60, valleyFt: 0 },
+      complexity: { hips: 2, valleys: 0, cutUp: true },
+    });
+
+  it("a FLAT trace never offers the roofing recipes", () => {
+    storeState.assemblies = catalogViews();
+    seededProps.heldTraces = [heldTrace({ areaSqft: 800, footprintSqft: 800, perimeterLnft: 120 })];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    const picker = screen.getByRole("group", { name: "Price this surface with" });
+    expect(picker.textContent).not.toContain("Asphalt shingle reroof");
+    expect(picker.textContent).not.toContain("Roof tune-up");
+  });
+
+  it("a classified pitched trace seeds the reroof's component lines and says the derived waste", () => {
+    storeState.assemblies = catalogViews();
+    seededProps.heldTraces = [classifiedRoof()];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Asphalt shingle reroof" }));
+    const lines = (seededProps.onSeedLines as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      description: string;
+    }[];
+    expect(lines.map((l) => l.description)).toContain("Field shingles (81 bundles)");
+    expect(lines.map((l) => l.description)).toContain("Hip and ridge cap (5 bundles)");
+    // The derived waste is shown honestly, with where to change it.
+    expect(
+      screen.getByText("Waste 12% (hips on this roof) — change it in the Pricebook."),
+    ).toBeTruthy();
+  });
+
+  it("an UNCLASSIFIED pitched trace still offers the recipe — its edge components become named gaps", () => {
+    storeState.assemblies = catalogViews();
+    seededProps.heldTraces = [
+      heldTrace({
+        id: "held-plain",
+        name: "Garage roof",
+        surface: "pitched",
+        pitchRise: 4,
+        areaSqft: 900,
+        footprintSqft: 853.99,
+        perimeterLnft: 130,
+        edges: null,
+        complexity: null,
+      }),
+    ];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Asphalt shingle reroof" }));
+    expect(seededProps.onSeedLines).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(
+        "Classify the roof edges on this trace to price Hip and ridge cap, Starter strip, Ice and water shield and Drip edge.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a persisted PITCHED site row offers the roofing recipes; a flat one doesn't", () => {
+    storeState.assemblies = catalogViews();
+    storeState.sitesByJob = {
+      j1: [
+        site({
+          id: "s-roof",
+          name: "Main roof",
+          surface: "pitched",
+          pitchRise: 6,
+          areaSqft: 2400,
+          edges: { eaveFt: 160, rakeFt: 100, ridgeFt: 40, hipFt: 60, valleyFt: 0 },
+          complexity: { hips: 2, valleys: 0, cutUp: true },
+        }),
+      ],
+    };
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    const picker = screen.getByRole("group", { name: "Price this surface with" });
+    expect(picker.textContent).toContain("Asphalt shingle reroof");
+    expect(picker.textContent).toContain("Roof tune-up / repair allowance");
+  });
+});

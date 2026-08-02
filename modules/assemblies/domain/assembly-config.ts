@@ -16,10 +16,37 @@ import { validation, ok, err } from "@mallet/shared/types";
 
 export const ASSEMBLY_CONFIG_VERSION = 1;
 
-/** Which measured quantity a component consumes. LINE/COUNT come in a later PR —
- * the measurement-basis enum admits them (see assembly.ts) but no component math
- * reads them yet, so a component's basis stays area|perimeter. */
-export const componentBasisSchema = z.enum(["area", "perimeter"]);
+/** The classed roof linears a LINE component can reference — the exact keys of
+ * the tracer's derived edge totals (lib/measure/edge-classes.ts EdgeTotalsFt). */
+export const EDGE_CLASS_KEYS = ["eaveFt", "rakeFt", "ridgeFt", "hipFt", "valleyFt"] as const;
+export const edgeClassKeySchema = z.enum(EDGE_CLASS_KEYS);
+export type EdgeClassKey = z.infer<typeof edgeClassKeySchema>;
+
+/**
+ * Which measured quantity a component consumes (v1 ADDITIVE — the two string
+ * literals are the original shapes, so every pre-roofing blob stays valid):
+ *  - "area" / "perimeter": the surface's working area / traced perimeter
+ *  - { edges: [...] }: the SUM of the named classed roof linears — a LINE
+ *    quantity ("eaves + rakes" feeds starter strip). An unclassified surface
+ *    cannot feed it (the component skips LOUDLY as a named gap); a classified
+ *    surface where the named classes total zero owes nothing (no valleys → no
+ *    valley metal) and the component is omitted.
+ *  - { count: n }: a COUNT the office dials by hand (pipe boots — the tracer
+ *    doesn't count penetrations in v1). 0 = configured off, omitted silently.
+ */
+export const componentBasisSchema = z.union([
+  z.enum(["area", "perimeter"]),
+  z.object({
+    edges: z
+      .array(edgeClassKeySchema)
+      .min(1)
+      .max(5)
+      .refine((keys) => new Set(keys).size === keys.length, {
+        message: "edge classes in a sum must be unique",
+      }),
+  }),
+  z.object({ count: z.number().int().min(0).max(1000) }),
+]);
 export type ComponentBasis = z.infer<typeof componentBasisSchema>;
 
 const keySchema = z
@@ -43,7 +70,14 @@ export const materialComponentSchema = z.object({
   basis: componentBasisSchema,
   factors: z.array(z.number().finite().positive().max(1_000_000)).min(1).max(6),
   wasteFactor: z.number().min(1).max(3),
+  /** v1 additive: waste resolves from the config's wasteByComplexity table and
+   * the surface's derived complexity instead of the flat wasteFactor (which
+   * stays as the fallback when the surface carries no classification). */
+  usesDerivedWaste: z.boolean().optional(),
   packSize: z.number().positive().max(1_000_000).nullable(),
+  /** v1 additive: whole units added AFTER pack rounding — "drip edge sticks,
+   * plus two" is bought as spares, not as coverage. */
+  extraUnits: z.number().int().min(0).max(100).optional(),
   unit: z.string().min(1).max(20),
   unitCostCents: centsSchema,
   optional: z.boolean().optional(),
@@ -62,6 +96,9 @@ export const laborComponentSchema = z
     key: keySchema,
     label: labelSchema,
     basis: componentBasisSchema,
+    /** v1 additive: conversion chain applied to the basis BEFORE the mode math —
+     * tear-off priced per SQUARE is basis sqft × [1/100]. Absent = [1]. */
+    factors: z.array(z.number().finite().positive().max(1_000_000)).min(1).max(6).optional(),
     mode: z.enum(["per_unit", "crew_day", "hourly"]),
     unitsPerDay: z.number().positive().max(1_000_000).nullable(),
     unitsPerHour: z.number().positive().max(1_000_000).nullable(),
@@ -124,9 +161,26 @@ export const unitRateTierSchema = z.object({
 });
 export type UnitRateTier = z.infer<typeof unitRateTierSchema>;
 
+/** v1 additive: the derived-waste table — the multiplier a usesDerivedWaste
+ * material applies, picked by the surface's complexity tier (simple gable /
+ * some hips or valleys / cut-up). Dial-overridable per tier. */
+export const wasteByComplexitySchema = z.object({
+  simple: z.number().min(1).max(3),
+  moderate: z.number().min(1).max(3),
+  cutUp: z.number().min(1).max(3),
+});
+export type WasteByComplexity = z.infer<typeof wasteByComplexitySchema>;
+
 export const assemblyConfigSchema = z
   .object({
     version: z.literal(ASSEMBLY_CONFIG_VERSION),
+    /** v1 additive: the surface kind this recipe prices — a shingle reroof is
+     * meaningless on a flat driveway. Absent = any surface (all pre-roofing
+     * blobs). Enforced by the engine AND the composer's picker gating. */
+    surface: z.enum(["flat", "pitched"]).optional(),
+    /** v1 additive: see wasteByComplexitySchema. Required when any component
+     * sets usesDerivedWaste (the superRefine below holds that invariant). */
+    wasteByComplexity: wasteByComplexitySchema.optional(),
     components: z.array(assemblyComponentSchema).min(1).max(20),
     /** UNIT_RATE brackets; null for COST_PLUS assemblies. */
     tiers: z.array(unitRateTierSchema).min(1).max(10).nullable(),
@@ -138,6 +192,14 @@ export const assemblyConfigSchema = z
         ctx.addIssue({ code: "custom", message: `duplicate component key "${component.key}"` });
       }
       seen.add(component.key);
+    }
+    for (const component of config.components) {
+      if (component.kind === "material" && component.usesDerivedWaste === true && config.wasteByComplexity === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message: `material "${component.key}" derives waste from complexity but the config has no wasteByComplexity table`,
+        });
+      }
     }
     for (const component of config.components) {
       if (component.kind !== "equipment") continue;

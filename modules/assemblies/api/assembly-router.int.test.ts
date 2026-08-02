@@ -252,4 +252,54 @@ suite("assemblies tRPC router (full stack, live RLS)", () => {
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  it("prices a CLASSIFIED pitched capture through the shingle reroof — edges feed LINE components", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const job = await caller.v1.jobs.create({ leadId: leadAId, title: "Reroof the house" });
+    // A ~40×54 ft rectangle traced at rooftop zoom: eaves top/bottom, rakes the
+    // sides, one interior ridge — the server derives the classed linears from
+    // this polygon on read (never trusting the client's numbers).
+    await caller.v1.measurements.siteCreate({
+      jobId: job.id,
+      name: "Main roof",
+      source: "aerial_trace_v1",
+      surface: "pitched",
+      pitchRise: 6,
+      footprintSqft: 2146,
+      perimeterLnft: 187,
+      polygon: {
+        vertices: [
+          { lat: 35.7712, lng: -78.6382 },
+          { lat: 35.7712, lng: -78.63802 },
+          { lat: 35.77131, lng: -78.63802 },
+          { lat: 35.77131, lng: -78.6382 },
+        ],
+        view: { centerLat: 35.77125, centerLng: -78.63811, zoom: 20 },
+        edgeClasses: ["eave", "rake", "eave", "rake"],
+        interiorLines: [
+          {
+            a: { lat: 35.771255, lng: -78.6382 },
+            b: { lat: 35.771255, lng: -78.63802 },
+            cls: "ridge",
+          },
+        ],
+      },
+    });
+
+    const seeded = await caller.v1.assemblies.seedFromCapture({
+      jobId: job.id,
+      sourceName: "Main roof",
+      assemblyId: "catalog:asphalt_shingle_reroof",
+    });
+    // The classed-linear components priced — no named gaps on a classified roof.
+    expect(seeded.skipped).toEqual([]);
+    const keys = seeded.lines.map((line) => line.componentKey);
+    for (const key of ["shingles", "cap", "starter", "underlayment", "iw", "drip", "tearoff", "install", "permit"]) {
+      expect(keys).toContain(key);
+    }
+    // Gable (no hips/valleys) → the simple 10% tier, derived and reported.
+    expect(seeded.derivedWaste).toEqual({ percent: 10, reason: "simple roof" });
+    expect(seeded.lines[0]!.description).toContain("Field shingles");
+    expect(seeded.totalCents).toBeGreaterThan(0);
+  });
 });

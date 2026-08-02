@@ -62,6 +62,36 @@ function DialRow({
   const money = dial.format === "dollars";
   const percent = dial.format === "percentBps" || dial.format === "wastePercent";
 
+  // A toggle dial (the ice-dam switch) is a checkbox, not a number field.
+  if (dial.format === "toggle") {
+    return (
+      <>
+        <label className="svced-l" {...field.labelProps}>
+          {dial.label}
+        </label>
+        <div className="svced-c">
+          <input
+            {...field.controlProps}
+            type="checkbox"
+            checked={dial.currentRaw !== 0}
+            onChange={(e) => onSave(e.target.checked ? 1 : 0)}
+          />
+          <span className="svced-hint">
+            {dial.unitSuffix ?? ""}
+            {edited && (
+              <>
+                {dial.unitSuffix ? " · " : ""}
+                <button type="button" className="linklike" onClick={() => onSave(dial.defaultRaw)}>
+                  Reset to {dial.defaultRaw !== 0 ? "on" : "off"}
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+      </>
+    );
+  }
+
   function commit(value: string) {
     setText(value);
     const parsed = Number(value);

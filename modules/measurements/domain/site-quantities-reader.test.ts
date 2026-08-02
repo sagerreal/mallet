@@ -105,8 +105,50 @@ describe("MeasurementSiteQuantitiesReader", () => {
     const result = await reader.readForJob(asJobId("job-1"));
 
     expect(result).toEqual([
-      { name: "Driveway", surface: "flat", pitchRise: null, areaSqft: 640, perimeterLnft: 104 },
+      {
+        name: "Driveway",
+        surface: "flat",
+        pitchRise: null,
+        areaSqft: 640,
+        perimeterLnft: 104,
+        // Unclassified polygon (no edgeClasses/interiorLines) — no roof linears.
+        edges: null,
+        complexity: null,
+      },
     ]);
+  });
+
+  it("derives classed roof linears + complexity from a CLASSIFIED polygon on read", async () => {
+    const repo = new FakeMeasurementRepository();
+    repo.seed("job-roof", [
+      makeCapture({
+        name: "Main roof",
+        surface: "pitched",
+        pitchRise: 6,
+        polygon: {
+          ...TRIANGLE,
+          edgeClasses: ["eave", "rake", "valley"],
+          interiorLines: [
+            { a: { lat: 35.0, lng: -80.0 }, b: { lat: 35.0001, lng: -80.0 }, cls: "ridge" },
+          ],
+        },
+      }),
+    ]);
+    const reader = new MeasurementSiteQuantitiesReader(repo);
+
+    const [site] = await reader.readForJob(asJobId("job-roof"));
+
+    // Derivation goes through the ONE shared edge-classes implementation — the
+    // DTO mapper and the held-trace path use the same functions, so exact
+    // values are pinned in lib/measure/edge-classes.test.ts; here we assert
+    // the seam wires the classes to the right buckets.
+    expect(site?.edges).not.toBeNull();
+    expect(site?.edges?.eaveFt).toBeGreaterThan(0);
+    expect(site?.edges?.rakeFt).toBeGreaterThan(0);
+    expect(site?.edges?.valleyFt).toBeGreaterThan(0);
+    expect(site?.edges?.ridgeFt).toBeGreaterThan(0); // the interior line
+    expect(site?.edges?.hipFt).toBe(0);
+    expect(site?.complexity).toEqual({ hips: 0, valleys: 1, cutUp: true });
   });
 
   it("passes the pitch-corrected working area through for a pitched surface, never the footprint", async () => {
@@ -132,6 +174,8 @@ describe("MeasurementSiteQuantitiesReader", () => {
         pitchRise: 6,
         areaSqft: corrected,
         perimeterLnft: 104,
+        edges: null,
+        complexity: null,
       },
     ]);
     expect(result[0]?.areaSqft).toBeGreaterThan(1282);
@@ -154,7 +198,15 @@ describe("MeasurementSiteQuantitiesReader", () => {
     const result = await reader.readForJob(asJobId("job-3"));
 
     expect(result).toEqual([
-      { name: "Back patio", surface: "flat", pitchRise: null, areaSqft: 300, perimeterLnft: null },
+      {
+        name: "Back patio",
+        surface: "flat",
+        pitchRise: null,
+        areaSqft: 300,
+        perimeterLnft: null,
+        edges: null,
+        complexity: null,
+      },
     ]);
   });
 

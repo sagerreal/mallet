@@ -69,8 +69,10 @@ describe("AssembliesPanel — the list", () => {
   it("lists every shipped assembly with how it prices", () => {
     render(<AssembliesPanel />);
     expect(screen.getByText("Driveway replacement, 3-inch")).toBeTruthy();
-    // Driveway replacement AND overlay both ship at cost + 25%.
-    expect(screen.getAllByText("Cost + 25%")).toHaveLength(2);
+    // Driveway replacement, overlay, and both roofing recipes ship at cost + 25%.
+    expect(screen.getAllByText("Cost + 25%")).toHaveLength(4);
+    expect(screen.getByText("Asphalt shingle reroof")).toBeTruthy();
+    expect(screen.getByText("Roof tune-up / repair allowance")).toBeTruthy();
     expect(screen.getByText("Sealcoat, two coats")).toBeTruthy();
     expect(screen.getByText("$0.25/sq ft")).toBeTruthy();
     expect(screen.getByText("Crack filling")).toBeTruthy();
@@ -149,6 +151,42 @@ describe("AssembliesPanel — the numbers editor", () => {
     fireEvent.click(screen.getByText("Driveway replacement, 3-inch"));
     fireEvent.change(screen.getByLabelText("Hot-mix price"), { target: { value: "135" } });
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  });
+
+  it("renders the roofing dials in trade vocabulary — prices, per-square labor, waste tiers", () => {
+    render(<AssembliesPanel />);
+    fireEvent.click(screen.getByText("Asphalt shingle reroof"));
+    expect((screen.getByLabelText("Shingle bundles") as HTMLInputElement).value).toBe("42");
+    expect((screen.getByLabelText("Install labor") as HTMLInputElement).value).toBe("235");
+    expect((screen.getByLabelText("Waste on a cut-up roof") as HTMLInputElement).value).toBe("15");
+    expect((screen.getByLabelText("Waste on a simple roof") as HTMLInputElement).value).toBe("10");
+    expect((screen.getByLabelText("Pipe boots") as HTMLInputElement).value).toBe("3");
+    expect((screen.getByLabelText("Job minimum") as HTMLInputElement).value).toBe("3500");
+  });
+
+  it("the ice-dam toggle renders as a checkbox and saves 0/1 through the dial", () => {
+    render(<AssembliesPanel />);
+    fireEvent.click(screen.getByText("Asphalt shingle reroof"));
+    const toggle = screen.getByLabelText("Ice-dam region") as HTMLInputElement;
+    expect(toggle.type).toBe("checkbox");
+    expect(toggle.checked).toBe(true); // ships ON
+    fireEvent.click(toggle);
+    expect(storeState.saveAssemblyDial).toHaveBeenCalledWith(
+      "catalog:asphalt_shingle_reroof",
+      "ice_dam",
+      0,
+    );
+  });
+
+  it("editing a waste tier converts percent to the raw multiplier", () => {
+    render(<AssembliesPanel />);
+    fireEvent.click(screen.getByText("Asphalt shingle reroof"));
+    fireEvent.change(screen.getByLabelText("Waste on a cut-up roof"), { target: { value: "12" } });
+    expect(storeState.saveAssemblyDial).toHaveBeenCalledWith(
+      "catalog:asphalt_shingle_reroof",
+      "waste_cutup",
+      1.12,
+    );
   });
 
   it("catalog rows carry no remove control; a custom row does", () => {
