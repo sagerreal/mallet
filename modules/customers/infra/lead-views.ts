@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { leads, estimates, jobVisits, jobs, invoices } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 
@@ -59,6 +59,32 @@ const hasVisit = (tx: TenantTx): SQL =>
   );
 
 /**
+ * A scoped walkthrough: an estimate job's visit that came back with notes — the field half of
+ * the quoting split (the tech's v1.field.setVisitNotes write IS the handoff signal). The office
+ * owes this customer a quote before any estimate row exists, so the Quoting column must see
+ * them. SQL twin of the client's scopedEstimateVisit (features/pipeline/pipeline-utils.ts).
+ */
+const hasScopedEstimateVisit = (tx: TenantTx): SQL =>
+  exists(
+    tx
+      .select({ one: sql`1` })
+      .from(jobVisits)
+      .innerJoin(jobs, and(eq(jobs.orgId, jobVisits.orgId), eq(jobs.id, jobVisits.jobId)))
+      .where(
+        and(
+          eq(jobVisits.orgId, leads.orgId),
+          eq(jobs.leadId, leads.id),
+          eq(jobs.svc, "estimate"),
+          isNotNull(jobVisits.notes),
+          ne(jobVisits.notes, ""),
+          ne(jobVisits.status, "canceled"),
+          isNull(jobVisits.deletedAt),
+          isNull(jobs.deletedAt),
+        ),
+      ),
+  );
+
+/**
  * The predicate for one board column.
  *
  * MUTUALLY EXCLUSIVE by construction, so the four counts sum to the live book and no customer
@@ -76,8 +102,15 @@ export const leadViewCondition = (view: LeadView, tx: TenantTx): SQL => {
       // as stage = "new" — a lead can sit at new with a quote already out.
       return and(live, sql`NOT ${hasEstimate(tx)}`, sql`NOT ${hasVisit(tx)}`) as SQL;
     case "quoting":
-      // Work has been priced but nothing is out with the customer yet.
-      return and(live, hasEstimate(tx), sql`NOT ${sentQuote}`, sql`NOT ${acceptedQuote}`) as SQL;
+      // Work has been priced — or a walkthrough came back scoped (the tech's visit-notes write)
+      // — but nothing is out with the customer yet. Still exclusive of the columns after it,
+      // and of intake, which excludes any visit-carrying lead.
+      return and(
+        live,
+        or(hasEstimate(tx), hasScopedEstimateVisit(tx)),
+        sql`NOT ${sentQuote}`,
+        sql`NOT ${acceptedQuote}`,
+      ) as SQL;
     case "out":
       // A quote is with the customer and undecided. Accepted wins if both exist — a customer who
       // said yes is WON even with another quote still open, which is what the board showed.

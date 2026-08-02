@@ -34,6 +34,7 @@ const noop = vi.fn();
 const mockOpenModal = vi.fn();
 const mockUpdateJob = vi.fn();
 const mockSetVisitStatus = vi.fn();
+const mockSetVisitNotes2 = vi.fn(() => Promise.resolve({ ok: true }));
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
@@ -55,8 +56,20 @@ vi.mock("@/lib/store/app-store", () => ({
       overrideVerifyItem: noop,
       uncheckVerifyItem: noop,
       addJobPhoto: noop,
+      // Quote tab (estimating part 3) selectors.
+      services: [],
+      laborRates: [],
+      brand: { name: "E2E Plumbing" },
+      setVisitNotes: mockSetVisitNotes2,
+      adoptJobPhotoPath: noop,
+      signJobQuote: noop,
     }),
 }));
+
+// Keep native/scan + supabase out of jsdom (the Quote tab imports both modules).
+vi.mock("@/lib/native/room-scan", () => ({ useRoomScanAvailable: () => false }));
+vi.mock("@/lib/store/upload-field-photo", () => ({ uploadFieldPhoto: vi.fn() }));
+vi.mock("@/lib/images/downscale", () => ({ downscaleImage: vi.fn() }));
 
 vi.mock("@/features/identity/hooks", () => ({
   useMe: () => ({
@@ -426,6 +439,65 @@ describe("NoteFeed — tech (read-only)", () => {
 // The modal id constant the mock's useActiveModal mirrors — keeps the mock honest.
 it("MODAL.TECH_JOB matches the id the mock returns", () => {
   expect(MODAL.TECH_JOB).toBe("tech-job");
+});
+
+// ---------------------------------------------------------------------------
+// Tabs (estimating part 3): the TECH view is Job · Quote; the OFFICE view is
+// tabless and renders exactly as before.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — tabs", () => {
+  it("office: NO tab bar, and the PricingSec entry stays", () => {
+    mockRole = "owner";
+    render(<TechJobModalContent />);
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByText("Price it on site →")).toBeTruthy();
+  });
+
+  it("tech: Job · Quote tabs render; the Job tab carries no pricing section", () => {
+    mockRole = "tech";
+    render(<TechJobModalContent />);
+    expect(screen.getByRole("tab", { name: "Job" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Quote" })).toBeTruthy();
+    // The tech's pricing home moved to the Quote tab.
+    expect(screen.queryByText("Price it on site →")).toBeNull();
+    expect(screen.queryByText("Pricing")).toBeNull();
+  });
+
+  it("tech: the Quote tab shows Scope + the builder and takes over the foot", () => {
+    mockRole = "tech";
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    expect(screen.getByText("Scope")).toBeTruthy();
+    expect(screen.getByText("The price")).toBeTruthy();
+    expect(screen.getByText("Present to customer →")).toBeTruthy();
+    // The Job tab's spine is hidden while the Quote tab is up.
+    expect(screen.queryByText("Your visit")).toBeNull();
+    expect(screen.queryByText("Done")).toBeNull();
+  });
+
+  it("tech: an estimate job's Quote tab replaces the dead end with the dual exit", () => {
+    mockRole = "tech";
+    mockJobs = [makeJob({ svc: "estimate" })];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    expect(screen.getByText("Quote it now")).toBeTruthy();
+    expect(screen.getByText("Send scope to the office")).toBeTruthy();
+    // The old "Scoping visit — the office builds the quote" copy is gone for techs.
+    expect(screen.queryByText(/Scoping visit/)).toBeNull();
+  });
+
+  it("tech: the Quote tab's scope save reaches setVisitNotes with the tech's own visit", async () => {
+    mockRole = "tech";
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    fireEvent.click(screen.getByText(/What you saw on site/));
+    fireEvent.change(screen.getByLabelText("Scope notes"), { target: { value: "two doors" } });
+    fireEvent.click(screen.getByText("Save scope"));
+    await vi.waitFor(() => {
+      expect(mockSetVisitNotes2).toHaveBeenCalledWith("job-1", "v1", "two doors");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

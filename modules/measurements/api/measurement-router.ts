@@ -1,7 +1,14 @@
 import { z } from "zod";
-import { router, ownerOrOffice } from "@/trpc/init";
+import { TRPCError } from "@trpc/server";
+import { router, ownerOrOffice, anyRole } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asJobId } from "@mallet/shared/types";
+import type { TenantTx } from "@mallet/shared/db/tx";
+import type { Principal } from "@mallet/identity";
+// Through the jobs barrel — the sanctioned cross-module seam (lint enforces index-only imports).
+// The measurements→jobs edge joins the existing jobs↔quoting barrel cycle; it resolves because
+// every side binds its classes lazily inside procedure bodies.
+import { DrizzleJobRepository } from "@mallet/jobs";
 import { DrizzleMeasurementRepository } from "../infra/drizzle-measurement-repository";
 import { IngestScanUseCase } from "../app/ingest-scan";
 import { RescanRoomUseCase } from "../app/rescan-room";
@@ -125,16 +132,50 @@ const renamedRoomDTO = z.object({
   roomName: z.string(),
 });
 
+// Field access: room capture is FIELD work — the person standing in the room scans it. The
+// scan/room-CRUD procedures below are anyRole with the same assignment gate the field router
+// uses (a tech may act only on jobs they are ON — Job.isAssignedTo, the domain's rule).
+// Owner/office pass through. Quantity confirm/override and the whole site-tracer surface stay
+// ownerOrOffice: resolving numbers into the record and aerial takeoff are desk work.
+const assertOnJobIfTech = async (
+  tx: TenantTx,
+  principal: Principal,
+  jobId: string,
+): Promise<void> => {
+  if (principal.role !== "tech") return;
+  const job = await new DrizzleJobRepository(tx, principal.orgId).findById(asJobId(jobId));
+  if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+  if (!job.isAssignedTo(principal.userId)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "this job isn't assigned to you" });
+  }
+};
+
+// Capture-scoped procedures (rescan/rename/archive) carry no jobId — resolve the capture to its
+// job FIRST, then ask the same assignment question. A missing capture is NOT_FOUND here rather
+// than deeper in the use-case so an unassigned tech probing ids learns nothing extra.
+const assertOnCaptureJobIfTech = async (
+  tx: TenantTx,
+  principal: Principal,
+  repo: DrizzleMeasurementRepository,
+  captureId: string,
+): Promise<void> => {
+  if (principal.role !== "tech") return;
+  const capture = await repo.getCapture(captureId);
+  if (!capture) throw new TRPCError({ code: "NOT_FOUND", message: "room capture not found" });
+  await assertOnJobIfTech(tx, principal, capture.capture.props.jobId);
+};
+
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
 // request's tx + ports, delegate, map the result. No business logic lives here. The repo is
 // built on ctx.tx for every procedure — that per-call transaction is what makes each
 // multi-statement use-case (create-capture-plus-quantities, supersede) atomic.
 export const createMeasurementRouter = () =>
   router({
-    ingestScan: ownerOrOffice
+    ingestScan: anyRole
       .input(ingestScanInput)
       .output(roomCaptureDTO)
       .mutation(async ({ ctx, input }) => {
+        await assertOnJobIfTech(ctx.tx, ctx.principal, input.jobId);
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new IngestScanUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
@@ -151,11 +192,12 @@ export const createMeasurementRouter = () =>
         return toRoomCaptureDTO(orThrow(result));
       }),
 
-    rescan: ownerOrOffice
+    rescan: anyRole
       .input(rescanInput)
       .output(roomCaptureDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
         const useCase = new RescanRoomUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
           {
@@ -169,10 +211,11 @@ export const createMeasurementRouter = () =>
         return toRoomCaptureDTO(orThrow(result));
       }),
 
-    createManualRoom: ownerOrOffice
+    createManualRoom: anyRole
       .input(createManualRoomInput)
       .output(roomCaptureDTO)
       .mutation(async ({ ctx, input }) => {
+        await assertOnJobIfTech(ctx.tx, ctx.principal, input.jobId);
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new CreateManualRoomUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
@@ -187,10 +230,11 @@ export const createMeasurementRouter = () =>
         return toRoomCaptureDTO(orThrow(result));
       }),
 
-    list: ownerOrOffice
+    list: anyRole
       .input(listInput)
       .output(z.array(roomCaptureDTO))
       .query(async ({ ctx, input }) => {
+        await assertOnJobIfTech(ctx.tx, ctx.principal, input.jobId);
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new ListRoomsUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec({ jobId: asJobId(input.jobId) }, ctx.principal.orgId);
@@ -223,11 +267,12 @@ export const createMeasurementRouter = () =>
         return orThrow(result);
       }),
 
-    renameRoom: ownerOrOffice
+    renameRoom: anyRole
       .input(renameRoomInput)
       .output(renamedRoomDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
         const useCase = new RenameRoomUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
           { captureId: input.captureId, roomName: input.roomName },
@@ -236,11 +281,12 @@ export const createMeasurementRouter = () =>
         return orThrow(result);
       }),
 
-    archiveRoom: ownerOrOffice
+    archiveRoom: anyRole
       .input(archiveRoomInput)
       .output(z.object({ ok: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
         const useCase = new ArchiveRoomUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec({ captureId: input.captureId }, ctx.principal.orgId);
         return orThrow(result);

@@ -19,11 +19,16 @@
  * There is no timer here. The one that used to be the hero was local React state that persisted
  * nothing — it lost the technician's time on every remount and never reached a timesheet. His hours
  * come from the day clock on My day plus these visit taps, which write real time entries.
+ *
+ * Estimating part 3: the TECH view is tabbed — Job (the spine above) · Quote (quote-tab.tsx:
+ * scope notes + photos + room scan, the embedded price builder, the estimate-visit dual exit).
+ * No Hours tab: hours never lived in this modal (see the no-timer note above). The OFFICE view
+ * of this shared modal is deliberately tabless and renders exactly as before.
  */
 
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   useActiveModal,
   usePushModal,
@@ -54,11 +59,21 @@ import { FoundWorkSec } from "./found-work-sec";
 import { ChecklistSec } from "./checklist-sec";
 import { NoteFeed } from "./note-feed";
 import { DoneBlock, doneFootAction } from "./done-block";
+import { QuoteTab } from "./quote-tab";
+
+/** The tech view's two tabs. Hours are NOT a tab here on purpose — the clock lives on
+ *  My day (day clock) + the visit step taps; this modal never carried a timer. */
+type TechTab = "job" | "quote";
 
 export function TechJobModalContent() {
   const activeModal = useActiveModal();
   const pushModal = usePushModal();
   const close = useCloseModal();
+
+  // Tech-only tabs: Job (the working spine) · Quote (scope + the price builder —
+  // estimating part 3). The OFFICE mode of this shared modal renders exactly as
+  // before, tabless — its pricing entry stays the PricingSec "Price it on site →".
+  const [tab, setTab] = useState<TechTab>("job");
 
   // Role gate: this modal is shared by owner/office (full controls) and techs.
   // Controls wired to ownerOrOffice endpoints (visit status, add-ons, payments,
@@ -184,11 +199,47 @@ export function TechJobModalContent() {
           ? { label: "Send to the office to bill", run: sendToOffice }
           : { label: "Done", run: close };
 
+  // The viewer's own visit (the one their scope belongs to), else the job's current
+  // visit — an owner-operator scoping their own walkthrough still lands somewhere.
+  const myVisit = placed.find((v) => v.techId === me.data?.userId);
+  const scopeVisit = myVisit ?? curVisit;
+
+  const showTabs = !isOffice;
+  const onQuoteTab = showTabs && tab === "quote";
+
   return (
     <>
       {/* 1. Sticky sheet header — customer name + service word + title. NO status pill. */}
       <TechHeader job={job} custName={custName} />
 
+      {/* 1b. Tech tabs — Job · Quote (underline tab bar, same grammar as the Office page). */}
+      {showTabs && (
+        <div className="otabs" role="tablist" aria-label="Job view">
+          <button
+            className={tab === "job" ? "otab on" : "otab"}
+            role="tab"
+            aria-selected={tab === "job"}
+            onClick={() => setTab("job")}
+          >
+            Job
+          </button>
+          <button
+            className={tab === "quote" ? "otab on" : "otab"}
+            role="tab"
+            aria-selected={tab === "quote"}
+            onClick={() => setTab("quote")}
+          >
+            Quote
+          </button>
+        </div>
+      )}
+
+      {onQuoteTab ? (
+        /* The Quote tab owns its whole body AND its sticky foot (the builder's
+           "Present to customer →" is the sheet's one primary while it shows). */
+        <QuoteTab job={job} scopeVisit={scopeVisit} readOnly={done} />
+      ) : (
+        <>
       {/* 2. Call / Text — the quiet peer-action row. CALL is for everyone: a technician ringing
           the customer on their way is the ordinary field case, and going through Elas is what
           keeps their personal mobile off the customer's phone. myDay now carries the customers
@@ -320,8 +371,9 @@ export function TechJobModalContent() {
         )}
       </div>
 
-      {/* 6. Pricing / Scope (only when not done). */}
-      {!done && (
+      {/* 6. Pricing / Scope — OFFICE only now: the tech's pricing home is the Quote
+          tab (estimating part 3); the office keeps its "Price it on site →" entry. */}
+      {!done && isOffice && (
         <PricingSec
           job={job}
           quoted={quoted}
@@ -362,6 +414,8 @@ export function TechJobModalContent() {
           {footPri.label}
         </button>
       </div>
+        </>
+      )}
     </>
   );
 }

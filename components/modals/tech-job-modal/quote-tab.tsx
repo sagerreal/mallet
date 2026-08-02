@@ -1,0 +1,380 @@
+/**
+ * components/modals/tech-job-modal/quote-tab.tsx
+ * The Quote tab of the tech job view (estimating part 3) — the field half of
+ * the quoting split, top to bottom:
+ *
+ *   1. SCOPE — what the tech saw: the visit's scope notes (tap → edit in-flow;
+ *      saves through v1.field.setVisitNotes — the SAME visit-notes column the
+ *      office pipeline's "quote it ›" card reads via scopedEstimateVisit, so a
+ *      saved scope lights up the office Quoting lane with zero pipeline work),
+ *      the job's photo strip (uploadFieldPhoto — the copilot's capture path),
+ *      and a "Scan a room" row when the org measures (measurementEstimating)
+ *      AND the platform can (useRoomScanAvailable).
+ *   2. On an ESTIMATE visit: the dual exit — "Quote it now" (reveals the same
+ *      builder + present flow the repair path uses) or "Send scope to the
+ *      office" (the notes write IS the handoff; sent-ness is DERIVED from the
+ *      visit carrying scope notes — no new status).
+ *   3. THE PRICE — the TechQuoteBuilder embedded in-flow (lines list, + From
+ *      pricebook, Good & Best opt-in) with "Present to customer →" as the
+ *      tab's sticky primary, then the existing present → Approve & sign flow
+ *      (estimate-backed since part 1). While the builder is in present/sign
+ *      (the phone is in the customer's hand), the Scope section hides.
+ *
+ * The tab owns its .sheet-foot: the host modal suppresses its own foot while
+ * this tab is active so the sheet always has exactly ONE primary.
+ */
+
+"use client";
+
+import { useCallback, useRef, useState } from "react";
+import { useAppStore, usePushModal, useCloseModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import { useRoomScanAvailable } from "@/lib/native/room-scan";
+import { downscaleImage } from "@/lib/images/downscale";
+import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
+import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
+import type { Job, Visit } from "@/lib/store/types";
+import { jobMode, jobQuoted, AO_INPUT } from "./helpers";
+
+const SCOPE_SAVE_FAILED_COPY = "Couldn't save the scope — try again.";
+const SCOPE_EMPTY_SEND_COPY = "Write what you saw first — the office quotes from your notes.";
+const PHOTO_UPLOAD_FAILED_COPY = "Photo upload failed — try again.";
+
+// ---------------------------------------------------------------------------
+// Scope notes row — the visit's scope notes, tap → edit in-flow (no floating
+// UI), Save persists via setVisitNotes. Exported state predicate lives on the
+// tab (sentToOffice) so the dual exit and this row can never disagree.
+// ---------------------------------------------------------------------------
+
+interface ScopeNotesRowProps {
+  scopeNotes: string;
+  disabled: boolean;
+  /** Bumped by the host to force the editor open (the dual exit's "nothing to send" path). */
+  openSignal?: number;
+  onSave: (notes: string) => Promise<{ ok: boolean; error?: string }>;
+}
+
+function ScopeNotesRow({ scopeNotes, disabled, openSignal = 0, onSave }: ScopeNotesRowProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  // Host-forced open: "Send scope to the office" with nothing written lands the
+  // tech in the editor instead of at a dead error.
+  const lastSignal = useRef(openSignal);
+  if (openSignal !== lastSignal.current) {
+    lastSignal.current = openSignal;
+    if (!disabled && !editing) {
+      setDraft(scopeNotes);
+      setError("");
+      setEditing(true);
+    }
+  }
+
+  function open() {
+    if (disabled) return;
+    setDraft(scopeNotes);
+    setError("");
+    setEditing(true);
+  }
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    const { ok, error: serverError } = await onSave(draft);
+    setSaving(false);
+    if (!ok) {
+      setError(serverError ?? SCOPE_SAVE_FAILED_COPY);
+      return;
+    }
+    setEditing(false);
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="jaddr"
+        onClick={open}
+        disabled={disabled}
+        style={{ width: "100%", textAlign: "left" }}
+      >
+        <span style={{ flex: 1, minWidth: 0, whiteSpace: "pre-line" }}>
+          {scopeNotes || <span className="muted">What you saw on site — sizes, access, materials.</span>}
+        </span>
+        {!disabled && <span className="nav">{scopeNotes ? "Edit →" : "Write →"}</span>}
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <textarea
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          if (error) setError("");
+        }}
+        rows={4}
+        maxLength={2000}
+        autoFocus
+        disabled={saving}
+        aria-label="Scope notes"
+        placeholder="What you saw on site — sizes, access, materials."
+        style={{ width: "100%", boxSizing: "border-box", resize: "vertical", ...AO_INPUT }}
+      />
+      <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+        <button className="btn sm primary" disabled={saving} onClick={() => void save()}>
+          {saving ? "Saving…" : "Save scope"}
+        </button>
+        <button className="btn sm ghost" disabled={saving} onClick={() => setEditing(false)}>
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{error}</div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Photo strip — the job's photos as chips (paths are storage keys, not public
+// URLs — the strip is a count-and-capture surface, same as the copilot's photo
+// chips) + the camera capture path the copilot already uses.
+// ---------------------------------------------------------------------------
+
+function ScopePhotos({ job, disabled }: { job: Job; disabled: boolean }) {
+  const adoptJobPhotoPath = useAppStore((s) => s.adoptJobPhotoPath);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const photos = job.photos ?? [];
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (!file) return;
+      setError("");
+      setUploading(true);
+      try {
+        const blob = await downscaleImage(file);
+        const objectId = await uploadFieldPhoto(job.id, blob);
+        // uploadFieldPhoto persisted the row; keep the store strip in step.
+        adoptJobPhotoPath(job.id, objectId);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : PHOTO_UPLOAD_FAILED_COPY);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [job.id, adoptJobPhotoPath],
+  );
+
+  return (
+    <div style={{ marginTop: "var(--space-3)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+        {photos.map((_, i) => (
+          <span key={i} className="cp-chip">
+            Photo {i + 1}
+          </span>
+        ))}
+        {!disabled && (
+          <button
+            type="button"
+            className="btn sm"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploading ? "Uploading…" : "📷 Add photo"}
+          </button>
+        )}
+        {photos.length === 0 && disabled && (
+          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+            No photos on this job.
+          </span>
+        )}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: "none" }}
+        aria-label="Add a job photo"
+        onChange={(e) => void handleFileChange(e)}
+      />
+      {error && (
+        <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{error}</div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The tab
+// ---------------------------------------------------------------------------
+
+export interface QuoteTabProps {
+  job: Job;
+  /** The visit the scope belongs to — the viewer's own visit (resolved by the host). */
+  scopeVisit: Visit | undefined;
+  /** The job is closed — scope and price become read-only (server refuses writes anyway). */
+  readOnly: boolean;
+}
+
+export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
+  const setVisitNotes = useAppStore((s) => s.setVisitNotes);
+  const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
+  const pushModal = usePushModal();
+  const close = useCloseModal();
+  const scanAvailable = useRoomScanAvailable();
+
+  const isEstimate = jobMode(job) === "estimate";
+  const quoted = jobQuoted(job);
+
+  // The dual exit's "Quote it now" reveal (estimate visits only). A job that already
+  // carries priced lines has been quoted — the builder is its standing surface.
+  const [quoteItNow, setQuoteItNow] = useState(false);
+  const [builderMode, setBuilderMode] = useState<TechQuoteMode>("edit");
+  const [sendError, setSendError] = useState("");
+  const [scopeOpenSignal, setScopeOpenSignal] = useState(0);
+
+  const showBuilder = !isEstimate || quoteItNow || quoted;
+  // Sent-ness is DERIVED: the visit carrying scope notes IS the handoff record.
+  const sentToOffice = Boolean(scopeVisit?.scopeNotes?.trim());
+
+  const saveScope = useCallback(
+    async (notes: string) => {
+      if (!scopeVisit) {
+        return { ok: false, error: "No visit on this job yet — the office schedules one first." };
+      }
+      const result = await setVisitNotes(job.id, scopeVisit.id, notes);
+      if (result.ok) setSendError("");
+      return result;
+    },
+    [job.id, scopeVisit, setVisitNotes],
+  );
+
+  // "Send scope to the office" — the saved notes ARE the handoff (sent-ness derives from
+  // them), so with nothing written there is nothing to send: name the real problem and put
+  // the tech in the editor. Once notes exist this button is replaced by the ✓ Sent state.
+  function sendToOffice() {
+    if (!sentToOffice) {
+      setSendError(SCOPE_EMPTY_SEND_COPY);
+      setScopeOpenSignal((n) => n + 1);
+      return;
+    }
+    setSendError("");
+  }
+
+  // Present/sign = the phone is in the customer's hand — only the builder shows.
+  const presenting = showBuilder && builderMode !== "edit";
+
+  return (
+    <>
+      {!presenting && (
+        <div className="fsec">
+          <div className="fsec-h">
+            <span>Scope</span>
+          </div>
+          <ScopeNotesRow
+            scopeNotes={scopeVisit?.scopeNotes ?? ""}
+            disabled={readOnly}
+            openSignal={scopeOpenSignal}
+            onSave={saveScope}
+          />
+          <ScopePhotos job={job} disabled={readOnly} />
+          {measurementEstimating && scanAvailable && !readOnly && (
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <button
+                type="button"
+                className="btn sm"
+                onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
+              >
+                Scan a room
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Estimate visit, not yet quoting: the dual exit. */}
+      {!presenting && isEstimate && !showBuilder && (
+        <div className="fsec">
+          <div className="fsec-h">
+            <span>Next</span>
+          </div>
+          {sentToOffice ? (
+            <div
+              className="muted"
+              style={{ fontSize: "var(--type-base)", marginBottom: "var(--space-3)" }}
+            >
+              <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Sent</span> — the
+              office builds the quote from your scope.
+            </div>
+          ) : null}
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+            <button
+              type="button"
+              className="btn primary"
+              style={{ width: "100%", fontSize: "var(--type-md)", padding: "var(--space-3)" }}
+              onClick={() => setQuoteItNow(true)}
+              disabled={readOnly}
+            >
+              Quote it now
+            </button>
+            {!sentToOffice && (
+              <button
+                type="button"
+                className="btn"
+                style={{ width: "100%", fontSize: "var(--type-md)", padding: "var(--space-3)" }}
+                onClick={sendToOffice}
+                disabled={readOnly}
+              >
+                Send scope to the office
+              </button>
+            )}
+          </div>
+          {sendError && (
+            <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
+              {sendError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* The price — the embedded builder (its own sticky foot is THE foot). */}
+      {showBuilder && !readOnly && (
+        <>
+          {builderMode === "edit" && (
+            <div className="fsec" style={{ marginBottom: 0 }}>
+              <div className="fsec-h">
+                <span>The price</span>
+              </div>
+            </div>
+          )}
+          <TechQuoteBuilder
+            jobId={job.id}
+            embedded
+            onModeChange={setBuilderMode}
+            onSigned={close}
+          />
+        </>
+      )}
+
+      {/* No builder on screen (estimate pre-choice, or closed job) — the tab still
+          docks ONE primary: a plain Done, same as the Job tab's default. */}
+      {(!showBuilder || readOnly) && (
+        <div className="sheet-foot">
+          <button className="sheet-pri" onClick={close}>
+            Done
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
