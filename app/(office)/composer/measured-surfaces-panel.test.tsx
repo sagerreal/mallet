@@ -2,15 +2,19 @@
 /**
  * app/(office)/composer/measured-surfaces-panel.test.tsx
  *
- * The panel's four states — hidden (toggle off / no job context / still
- * loading), rows, load-failed — plus the per-surface seed flow: fetch with the
- * sourceNames filter, append via onSeedLines, seed-once (button disables), the
- * empty-seed notice, and the tracer entry. Derive logic itself is covered in
- * measured-surfaces.test.ts; store/hooks/trpc are mocked here.
+ * The Measure section — satellite measurement's quote-page entry. States under
+ * test: hidden only when the org toggle is off; the always-available "Measure
+ * from satellite" entry (no customer, no job — held-mode params with the
+ * picked customer's address prefilled); held-trace rows with CLIENT-side
+ * seeding (seed-once, pricing-gap notice); the picked customer's job capture
+ * rows with the server seed flow (sourceNames filter, seed-once, empty-seed
+ * notice, load-failed). Derive logic is covered in measured-surfaces.test.ts;
+ * held seed math parity in held-trace-seed.test.ts; store/hooks/trpc mocked.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import type { Job, RoomCard, SiteCard } from "@/lib/store/types";
+import type { Job, Lead, RoomCard, Service, SiteCard } from "@/lib/store/types";
+import type { HeldTrace } from "@/lib/measure/held-trace";
 
 interface QueryStub {
   isError: boolean;
@@ -22,6 +26,8 @@ const okQuery = (): QueryStub => ({ isError: false, isRefetching: false, refetch
 let storeState: {
   toggles: { measurementEstimating: boolean };
   jobs: Job[];
+  leads: Lead[];
+  services: Service[];
   roomsByJob: Record<string, RoomCard[] | undefined>;
   sitesByJob: Record<string, SiteCard[] | undefined>;
 };
@@ -70,10 +76,43 @@ const site = (overrides: Partial<SiteCard> = {}): SiteCard => ({
   ...overrides,
 });
 
+const heldTrace = (overrides: Partial<HeldTrace> = {}): HeldTrace => ({
+  id: "held-1",
+  name: "Driveway",
+  surface: "flat",
+  pitchRise: null,
+  polygon: {
+    vertices: [
+      { lat: 1, lng: 1 },
+      { lat: 1, lng: 2 },
+      { lat: 2, lng: 2 },
+    ],
+    view: { centerLat: 1.5, centerLng: 1.5, zoom: 20 },
+  },
+  footprintSqft: 640,
+  perimeterLnft: 104,
+  areaSqft: 640,
+  ...overrides,
+});
+
+const sqftService = (overrides: Partial<Service> = {}): Service =>
+  ({
+    id: "svc-1",
+    name: "Seal coating",
+    unitPrice: 1.5,
+    cost: 0.4,
+    active: true,
+    position: 0,
+    measuredBy: "site_sqft",
+    ...overrides,
+  }) as Service;
+
 const seededProps = {
   paramJobId: "j1",
   leadId: "lead-1",
   wholeJobSeeded: false,
+  heldTraces: [] as readonly HeldTrace[],
+  onAddHeldTrace: vi.fn(),
   onSeedLines: vi.fn(),
 };
 
@@ -81,6 +120,8 @@ beforeEach(() => {
   storeState = {
     toggles: { measurementEstimating: true },
     jobs: [job({})],
+    leads: [{ id: "lead-1", name: "Pat", address: "12 Elm St" } as Lead],
+    services: [sqftService()],
     roomsByJob: { j1: [] },
     sitesByJob: { j1: [site()] },
   };
@@ -89,6 +130,8 @@ beforeEach(() => {
   openModal.mockClear();
   fetchBuild.mockReset();
   seededProps.onSeedLines = vi.fn();
+  seededProps.onAddHeldTrace = vi.fn();
+  seededProps.heldTraces = [];
 });
 
 describe("MeasuredSurfacesPanel — visibility", () => {
@@ -98,39 +141,87 @@ describe("MeasuredSurfacesPanel — visibility", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders nothing with no job context (no ?job=, lead has no open jobs)", () => {
+  it("renders the Measure entry with NO customer and NO job — zero prerequisites", () => {
     storeState.jobs = [];
-    const { container } = render(
-      <MeasuredSurfacesPanel {...seededProps} paramJobId={null} />,
-    );
-    expect(container.innerHTML).toBe("");
+    storeState.leads = [];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    expect(screen.getByText("Measure")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Measure from satellite" })).toBeTruthy();
   });
 
-  it("renders nothing while the job's measurements are still hydrating (no empty shell)", () => {
+  it("holds JOB rows back while a job's measurements hydrate — the entry still renders", () => {
     storeState.roomsByJob = {};
     storeState.sitesByJob = {};
     render(<MeasuredSurfacesPanel {...seededProps} />);
-    expect(screen.queryByText("Measured surfaces")).toBeNull();
+    expect(screen.getByRole("button", { name: "Measure from satellite" })).toBeTruthy();
+    expect(screen.queryByText("Driveway")).toBeNull();
   });
 });
 
-describe("MeasuredSurfacesPanel — rows", () => {
-  it("lists each capture with its figures and a Seed lines action, plus the tracer entry", () => {
+describe("MeasuredSurfacesPanel — the tracer entry (held mode)", () => {
+  it("opens the tracer with NO job attached — the trace comes back held on the quote", () => {
+    seededProps.heldTraces = [heldTrace({ id: "h-prev", name: "Front walk" })];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Measure from satellite" }));
+    expect(openModal).toHaveBeenCalledWith("site-tracer", {
+      held: true,
+      address: "",
+      // Held names ride along so the tracer's default "Surface N" never collides.
+      existingNames: ["Front walk"],
+      onSaveHeld: seededProps.onAddHeldTrace,
+    });
+  });
+
+  it("prefills the picked customer's address", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Measure from satellite" }));
+    const params = openModal.mock.calls[0]?.[1] as { address: string };
+    expect(params.address).toBe("12 Elm St");
+  });
+});
+
+describe("MeasuredSurfacesPanel — held-trace rows (client seed)", () => {
+  it("lists a held trace with its figures and seeds lines with pure client math", () => {
+    seededProps.heldTraces = [heldTrace()];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    expect(screen.getByText("Driveway")).toBeTruthy();
+    expect(screen.getByText("640 sqft · 104 lnft")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    expect(seededProps.onSeedLines).toHaveBeenCalledWith([
+      { description: "Driveway — Seal coating", quantity: 640, rateCents: 150, costCents: 40 },
+    ]);
+    // Seed-once: the button flips to Seeded and disables.
+    expect((screen.getByRole("button", { name: "Seeded" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(fetchBuild).not.toHaveBeenCalled();
+  });
+
+  it("a held trace with no priced service surfaces the pricing gap instead of silently no-oping", () => {
+    storeState.services = [];
+    seededProps.heldTraces = [heldTrace()];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    expect(
+      screen.getByText(
+        "No priced service covers Driveway yet — add one in the pricebook, then seed again.",
+      ),
+    ).toBeTruthy();
+    expect(seededProps.onSeedLines).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "Seed lines" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("MeasuredSurfacesPanel — job capture rows", () => {
+  it("lists each capture with its figures, a Seed lines action, and Open on site rows", () => {
     render(<MeasuredSurfacesPanel {...seededProps} />);
-    expect(screen.getByText("Measured surfaces")).toBeTruthy();
+    expect(screen.getByText("Measure")).toBeTruthy();
     expect(screen.getByText("Driveway")).toBeTruthy();
     expect(screen.getByText("640 sqft · 104 lnft · traced Aug 1")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Seed lines" }) as HTMLButtonElement).disabled).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "+ Trace from satellite" }));
-    expect(openModal).toHaveBeenCalledWith("site-tracer", { jobId: "j1" });
-  });
-
-  it("a job with no captures still offers the tracer, honestly labeled", () => {
-    storeState.sitesByJob = { j1: [] };
-    render(<MeasuredSurfacesPanel {...seededProps} />);
-    expect(screen.getByText("Nothing measured on this job yet.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "+ Trace from satellite" })).toBeTruthy();
+    // The saved capture opens from here — the job modal's row is gone.
+    fireEvent.click(screen.getByRole("button", { name: "Open Driveway" }));
+    expect(openModal).toHaveBeenCalledWith("site-tracer", { jobId: "j1", captureId: "s1" });
   });
 
   it("shows the in-flow job selector only when 2+ of the lead's jobs have captures", () => {
@@ -157,7 +248,7 @@ describe("MeasuredSurfacesPanel — load failure", () => {
   });
 });
 
-describe("MeasuredSurfacesPanel — seeding", () => {
+describe("MeasuredSurfacesPanel — job-row seeding (server)", () => {
   it("Seed lines fetches only that surface and appends its lines; the button then disables", async () => {
     const lines = [
       {

@@ -36,6 +36,7 @@ import { api } from "@/lib/trpc/client";
 import { fmt$ } from "@/lib/format";
 import {
   INITIAL_STATE,
+  addHeldTrace,
   aiDraftForPayload,
   applyAiDraftLines,
   applyAiDraftTiers,
@@ -442,6 +443,34 @@ export default function ComposerPage() {
     }));
   }, [selectedLead]);
 
+  // Held traces persist as REAL site captures only when this quote's flow has
+  // a job to anchor them to (site_captures FK jobs) — a ?job= boot or a
+  // ?change= change order. An ordinary new quote produces an estimate, not a
+  // job (the job is created at ACCEPT, server-side), so its held traces have
+  // no anchor: the measured value survives as the seeded estimate lines, the
+  // raw trace geometry evaporates with the composer — deliberate, documented.
+  // Best-effort AFTER a successful send/save: the quote is already persisted,
+  // so a failed capture write must not fail the flow — the slice reports it
+  // (reportWriteError) and the trace simply stays quote-local.
+  async function persistHeldTraces() {
+    const anchorJobId = jobId ?? changeOrderJobId;
+    if (!anchorJobId || cs.heldTraces.length === 0) return;
+    const addTracedSite = useAppStore.getState().addTracedSite;
+    await Promise.allSettled(
+      cs.heldTraces.map((t) =>
+        addTracedSite({
+          jobId: anchorJobId,
+          name: t.name,
+          surface: t.surface,
+          pitchRise: t.surface === "pitched" ? (t.pitchRise ?? undefined) : undefined,
+          polygon: { vertices: [...t.polygon.vertices], view: { ...t.polygon.view } },
+          footprintSqft: t.footprintSqft,
+          perimeterLnft: t.perimeterLnft,
+        }),
+      ),
+    );
+  }
+
   // --- persistence helpers --------------------------------------------------
   // The action buttons disable (with the reason inline) while these guards
   // fail — the early returns are defense-in-depth, not the primary gate.
@@ -473,6 +502,9 @@ export default function ComposerPage() {
         : {}),
       ...(cs.terms ? { termsSnapshot: cs.terms.text } : {}),
     });
+    // Traces held on this quote persist onto the flow's job when one exists
+    // (?job=/?change=) — fire-and-forget; the draft is already saved.
+    void persistHeldTraces();
     // Quotes live in the Pipeline rail (the /quotes route just redirects here);
     // the new draft lands in the "in the shop" lane.
     router.push("/pipeline");
@@ -591,6 +623,11 @@ export default function ComposerPage() {
       // addEstimate here would fire a second quoting.draft and orphan a duplicate
       // draft in the shop rail.
       adoptEstimate(sentDto, { on: cs.fuOn, stage: 0 });
+
+      // Traces held on this quote persist onto the flow's job when one exists
+      // (?job=/?change=). Awaited so the job's captures are visible the moment
+      // the pipeline shows the sent quote; failures stay non-fatal (allSettled).
+      await persistHeldTraces();
 
       // A successful send of a REVISION supersedes the original sent quote —
       // archive it so two versions of the same work never sit in the rail. The
@@ -776,14 +813,18 @@ export default function ComposerPage() {
           </div>
         )}
 
-      {/* Measured surfaces — the job's captures, per-surface Seed lines, and the
-          tracer entry. Hidden when the org toggle is off or there is no job
-          context (see measured-surfaces-panel.tsx). A ?job= boot has already
-          seeded the whole job, so its rows start "Seeded". */}
+      {/* Measure — satellite measurement's point of entry, always available on
+          the quote page (no customer or job needed; org toggle gates it). A
+          trace made here is HELD on this quote (cs.heldTraces) and seeded
+          client-side; a picked customer's measured jobs still list their
+          capture rows. A ?job= boot has already seeded the whole job, so its
+          rows start "Seeded". */}
       <MeasuredSurfacesPanel
         paramJobId={jobId}
         leadId={cs.leadId}
         wholeJobSeeded={measurementNotice !== null}
+        heldTraces={cs.heldTraces}
+        onAddHeldTrace={(trace) => setCs((prev) => addHeldTrace(prev, trace))}
         onSeedLines={(lines) =>
           setCs((prev) => appendMeasurementLines(prev, seedLinesToComposerLines(lines)))
         }

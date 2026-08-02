@@ -103,6 +103,8 @@ export interface MeasuredRow {
   readonly kind: "room" | "site";
   /** Key figures + capture date — "640 sqft · 104 lnft · traced Aug 1". */
   readonly summary: string;
+  /** Site rows carry their capture id — the panel's "Open" drills into the saved trace. */
+  readonly captureId?: string;
 }
 
 /**
@@ -156,6 +158,7 @@ export function panelRows(
       name: s.name,
       kind: "site",
       summary: siteRowSummary(s),
+      captureId: s.id,
     })),
   ];
 }

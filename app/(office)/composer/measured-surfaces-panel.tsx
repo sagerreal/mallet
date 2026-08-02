@@ -3,34 +3,26 @@
 /**
  * app/(office)/composer/measured-surfaces-panel.tsx
  *
- * "Measured surfaces" — the composer's own door to a job's measurements. Sits
- * ABOVE the quote card: every capture on the job (scanned/manual rooms + traced
- * site surfaces) as a row with its key figures and a per-surface "Seed lines"
- * action, plus "+ Trace from satellite" opening the existing tracer sheet. The
- * job modal's measure/site blocks remain the second door — this panel exists so
- * an office standing on New quote can SEE the measurements and act on them.
+ * "Measure" — satellite measurement's point of entry, ON THE QUOTE PAGE
+ * (founder's rule: this is an estimating feature; it needs no customer and no
+ * job first). Sits above the quote card. When the org toggle
+ * `measurementEstimating` is on the section ALWAYS renders:
  *
- * Visibility (derive logic in measured-surfaces.ts, unit-tested there):
- *   - org toggle `measurementEstimating` off → nothing renders
- *   - no job context (no ?job= and the picked customer has no open jobs) → nothing
- *   - job context but measurements still loading → nothing yet (never an empty shell)
- *   - fetch FAILED with nothing cached → LoadFailed ("Couldn't load your
- *     measurements"), never a panel pretending nothing exists
+ *   - "Measure from satellite" opens the tracer in HELD mode — an address box
+ *     in its header finds the property (prefilled from the picked customer's
+ *     address when there is one), and the finished trace comes back as a
+ *     HeldTrace on the composer state, not a DB row. Seeding a held row is
+ *     pure client math (held-trace-seed.ts — proven equal to the server's).
+ *   - a picked customer's measured JOBS still show their capture rows (rooms +
+ *     traced sites) exactly as before: per-surface "Seed lines" via
+ *     v1.quoting.buildFromMeasurements with the sourceNames filter, the job
+ *     selector when 2+ jobs have captures, LoadFailed on a dead fetch. Site
+ *     rows open the saved capture (the tracer's view mode) — this panel is the
+ *     office's door to those now that the job modal's row is gone.
  *
- * Job context: ?job= pins the job (the Build-the-price boot). Otherwise the
- * picked customer's open jobs are the candidates; when 2+ of them have captures
- * a compact in-flow selector row (segmented control — no popover) picks one.
- *
- * Seeding: per-surface via v1.quoting.buildFromMeasurements with the additive
- * `sourceNames` filter — only that capture's lines are appended (the page's
- * appendMeasurementLines). Seed-once: the button flips to "Seeded" and disables
- * after success; a ?job= boot already seeded the WHOLE job, so every row starts
- * seeded there. An empty per-surface seed (no priced service for its kinds)
- * surfaces the reason inline instead of silently doing nothing.
- *
- * The tracer round-trip needs no reload: SiteTraceNew persists through the
- * store's addTracedSite, which writes sitesByJob optimistically — this panel
- * reads that same slice, so a saved trace appears the moment the modal closes.
+ * Seed-once: a surface's button flips to "Seeded" and disables after success
+ * (a ?job= boot already seeded the WHOLE job, so its rows start seeded). An
+ * empty seed (no priced service for the kinds) surfaces the reason inline.
  */
 
 import { useState } from "react";
@@ -43,6 +35,8 @@ import { LoadFailed } from "@/components/shared/load-failed";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Row } from "@/components/ui/row";
+import { heldTraceSummary, type HeldTrace } from "@/lib/measure/held-trace";
+import { seedFromHeldTrace } from "./held-trace-seed";
 import type { MeasurementSeedLine } from "./composer-state";
 import {
   candidateJobsForLead,
@@ -59,8 +53,12 @@ export interface MeasuredSurfacesPanelProps {
   paramJobId: string | null;
   /** The composer's current lead (picked customer or ?lead=/?job= boot). */
   leadId: string | null;
-  /** True once the ?job= boot seeded the whole job — every row starts "Seeded". */
+  /** True once the ?job= boot seeded the whole job — every job row starts "Seeded". */
   wholeJobSeeded: boolean;
+  /** Traces held on THIS quote (composer state) — traced before any job exists. */
+  heldTraces: readonly HeldTrace[];
+  /** Receives the tracer's finished held trace. */
+  onAddHeldTrace: (trace: HeldTrace) => void;
   /** Append one surface's seed lines to the composer (cents on the wire). */
   onSeedLines: (lines: MeasurementSeedLine[]) => void;
 }
@@ -76,10 +74,14 @@ export function MeasuredSurfacesPanel({
   paramJobId,
   leadId,
   wholeJobSeeded,
+  heldTraces,
+  onAddHeldTrace,
   onSeedLines,
 }: MeasuredSurfacesPanelProps) {
   const enabled = useAppStore((s) => s.toggles.measurementEstimating);
   const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const services = useAppStore((s) => s.services);
   const roomsByJob = useAppStore((s) => s.roomsByJob);
   const sitesByJob = useAppStore((s) => s.sitesByJob);
   const openModal = useOpenModal();
@@ -95,28 +97,59 @@ export function MeasuredSurfacesPanel({
   const countFor = (id: string) => jobCaptureCount(roomsByJob[id], sitesByJob[id]);
   const jobId = resolvePanelJob({ paramJobId, chosenJobId, candidates, countFor });
 
-  // Hooks run unconditionally (null disables the queries) — the early returns
+  // Hooks run unconditionally (null disables the queries) — the early return
   // below must come after them.
   const roomsQuery = useJobRooms(enabled ? jobId : null);
   const sitesQuery = useJobSites(enabled ? jobId : null);
 
-  if (!enabled || !jobId) return null;
+  if (!enabled) return null;
 
-  const rooms = roomsByJob[jobId];
-  const sites = sitesByJob[jobId];
+  const rooms = jobId ? roomsByJob[jobId] : undefined;
+  const sites = jobId ? sitesByJob[jobId] : undefined;
   // A failed fetch with nothing cached must never read as "nothing measured".
   const loadFailed =
-    (roomsQuery.isError && rooms === undefined) || (sitesQuery.isError && sites === undefined);
-  // Still hydrating (no error, a slice not seeded yet) — render nothing rather
-  // than an empty shell that pops rows in a beat later.
-  if (!loadFailed && (rooms === undefined || sites === undefined)) {
-    return <ProbesOnly candidates={candidates.map((j) => j.id)} selectedJobId={jobId} />;
-  }
+    jobId !== null &&
+    ((roomsQuery.isError && rooms === undefined) || (sitesQuery.isError && sites === undefined));
+  // Job rows still hydrating (no error, a slice not seeded yet) — hold the JOB
+  // rows back rather than popping them in a beat later; the section itself
+  // (held rows + the tracer entry) renders regardless.
+  const jobRowsHydrating = jobId !== null && !loadFailed && (rooms === undefined || sites === undefined);
 
-  const rows = panelRows(rooms ?? [], sites ?? []);
+  const rows = jobId && !jobRowsHydrating && !loadFailed ? panelRows(rooms ?? [], sites ?? []) : [];
   const options = panelJobOptions(candidates, countFor);
   const showSelector = !paramJobId && options.length >= 2;
   const jobSeeded = wholeJobSeeded && jobId === paramJobId;
+
+  const nothingMeasured = heldTraces.length === 0 && rows.length === 0 && !loadFailed;
+
+  function openTracer() {
+    // The tracer needs no prerequisites — a picked customer's address just
+    // saves the typing. Every trace made here is HELD on the quote.
+    const lead = leadId ? leads.find((l) => l.id === leadId) : undefined;
+    const persistedNames = jobId ? (sitesByJob[jobId] ?? []).map((s) => s.name) : [];
+    openModal(MODAL.SITE_TRACER, {
+      held: true,
+      address: lead?.address?.trim() ?? "",
+      existingNames: [...heldTraces.map((t) => t.name), ...persistedNames],
+      onSaveHeld: onAddHeldTrace,
+    });
+  }
+
+  function seedHeld(trace: HeldTrace) {
+    const key = `held::${trace.id}`;
+    if (seedingName !== null || seededKeys.has(key)) return;
+    setSeedError(null);
+    setSeedNotice(null);
+    const built = seedFromHeldTrace(trace, services);
+    if (built.lines.length === 0) {
+      setSeedNotice(
+        `No priced service covers ${trace.name} yet — add one in the pricebook, then seed again.`,
+      );
+      return;
+    }
+    onSeedLines(built.lines);
+    setSeededKeys((prev) => new Set([...prev, key]));
+  }
 
   async function seedSurface(name: string) {
     if (!jobId || seedingName !== null) return;
@@ -149,7 +182,7 @@ export function MeasuredSurfacesPanel({
 
   return (
     <Card style={{ marginTop: "var(--space-5)" }}>
-      <ProbesOnly candidates={candidates.map((j) => j.id)} selectedJobId={jobId} />
+      {jobId && <ProbesOnly candidates={candidates.map((j) => j.id)} selectedJobId={jobId} />}
 
       <div
         style={{
@@ -160,9 +193,9 @@ export function MeasuredSurfacesPanel({
           flexWrap: "wrap",
         }}
       >
-        <h3 style={{ margin: "0" }}>Measured surfaces</h3>
-        <Button size="sm" onClick={() => openModal(MODAL.SITE_TRACER, { jobId })}>
-          + Trace from satellite
+        <h3 style={{ margin: "0" }}>Measure</h3>
+        <Button size="sm" onClick={openTracer}>
+          Measure from satellite
         </Button>
       </div>
 
@@ -181,25 +214,50 @@ export function MeasuredSurfacesPanel({
         </div>
       )}
 
-      <div style={{ marginTop: "var(--space-3)" }}>
-        {loadFailed ? (
-          <LoadFailed
-            noun="measurements"
-            onRetry={() => {
-              void roomsQuery.refetch();
-              void sitesQuery.refetch();
-            }}
-            retrying={roomsQuery.isRefetching || sitesQuery.isRefetching}
-          />
-        ) : (
-          <SurfaceRows
-            rows={rows}
-            isSeeded={(name) => jobSeeded || seededKeys.has(seedKey(jobId, name))}
-            seedingName={seedingName}
-            onSeed={(name) => void seedSurface(name)}
-          />
-        )}
-      </div>
+      {!nothingMeasured && (
+        <div style={{ marginTop: "var(--space-3)" }}>
+          {heldTraces.map((trace) => {
+            const seeded = seededKeys.has(`held::${trace.id}`);
+            return (
+              <Row
+                key={trace.id}
+                label={trace.name}
+                value={heldTraceSummary(trace)}
+                trailing={
+                  <Button
+                    size="sm"
+                    disabled={seeded || seedingName !== null}
+                    onClick={() => seedHeld(trace)}
+                  >
+                    {seeded ? "Seeded" : "Seed lines"}
+                  </Button>
+                }
+              />
+            );
+          })}
+
+          {loadFailed ? (
+            <LoadFailed
+              noun="measurements"
+              onRetry={() => {
+                void roomsQuery.refetch();
+                void sitesQuery.refetch();
+              }}
+              retrying={roomsQuery.isRefetching || sitesQuery.isRefetching}
+            />
+          ) : (
+            jobId !== null && (
+              <SurfaceRows
+                rows={rows}
+                isSeeded={(name) => jobSeeded || seededKeys.has(seedKey(jobId, name))}
+                seedingName={seedingName}
+                onSeed={(name) => void seedSurface(name)}
+                onOpenSite={(captureId) => openModal(MODAL.SITE_TRACER, { jobId, captureId })}
+              />
+            )
+          )}
+        </div>
+      )}
 
       {seedNotice && (
         <p style={{ fontSize: "var(--type-base)", color: "var(--ink-3)", margin: "var(--space-2) 0 0" }}>
@@ -218,38 +276,49 @@ export function MeasuredSurfacesPanel({
   );
 }
 
-/** The capture rows (or the honest empty line) with their per-surface seed action. */
+/** The job's capture rows with their per-surface seed action; site rows open the saved capture. */
 function SurfaceRows({
   rows,
   isSeeded,
   seedingName,
   onSeed,
+  onOpenSite,
 }: {
   rows: readonly MeasuredRow[];
   isSeeded: (name: string) => boolean;
   seedingName: string | null;
   onSeed: (name: string) => void;
+  onOpenSite: (captureId: string) => void;
 }) {
-  if (rows.length === 0) {
-    return <div className="empty-att">Nothing measured on this job yet.</div>;
-  }
   return (
     <>
       {rows.map((row) => {
         const seeded = isSeeded(row.name);
+        const captureId = row.captureId;
         return (
           <Row
             key={`${row.kind}:${row.name}`}
             label={row.name}
             value={row.summary}
             trailing={
-              <Button
-                size="sm"
-                disabled={seeded || seedingName !== null}
-                onClick={() => onSeed(row.name)}
-              >
-                {seeded ? "Seeded" : seedingName === row.name ? "Seeding…" : "Seed lines"}
-              </Button>
+              <span style={{ display: "inline-flex", gap: "var(--space-2)" }}>
+                {row.kind === "site" && captureId != null && (
+                  <Button
+                    size="sm"
+                    aria-label={`Open ${row.name}`}
+                    onClick={() => onOpenSite(captureId)}
+                  >
+                    Open
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  disabled={seeded || seedingName !== null}
+                  onClick={() => onSeed(row.name)}
+                >
+                  {seeded ? "Seeded" : seedingName === row.name ? "Seeding…" : "Seed lines"}
+                </Button>
+              </span>
             }
           />
         );

@@ -4,9 +4,14 @@
  * square-feet / perimeter figures in the anchored bar, close the outline (tap
  * the first vertex or Done), then name it, pick Flat | Pitched, and save.
  *
- * The saved working area is the SERVER's number (footprint + pitch go up, the
- * corrected area comes back) — the pitched figure shown before save is an
- * explicit preview using the same formula.
+ * TWO save targets (satellite measurement is an estimating feature — the
+ * composer opens this with zero prerequisites):
+ *   - "job":  the original flow — persists via addTracedSite (server derives
+ *     the working area), rows land in sitesByJob.
+ *   - "held": the quote-page flow — no job exists yet, so the header carries
+ *     an address input (Places autocomplete) to find the property, and the
+ *     finished trace is handed back to the caller as a HeldTrace (pure client
+ *     math, same formula the server uses — see lib/measure/held-trace.ts).
  */
 
 "use client";
@@ -33,8 +38,10 @@ import {
   pitchCorrectedAreaPreview,
   surfaceSummary,
 } from "@/lib/measure/aerial-geometry";
+import { createHeldTrace, type HeldTrace } from "@/lib/measure/held-trace";
 import { userMessage } from "@/lib/trpc/error-map";
 import { Field } from "@/components/ui/input";
+import { AddressInput } from "@/components/ui/address-input";
 import { SrcPill } from "@/components/shared/stage-pill";
 import { SurfaceToggle, PitchRow } from "./site-surface-controls";
 import { TracerMapCanvas } from "./tracer-map-canvas";
@@ -45,14 +52,17 @@ const MAP_NOT_READY_COPY = "The map isn't ready yet — wait for the imagery, th
 /** Starting pitch when a surface flips to Pitched — the most common roof, one tap to change. */
 const DEFAULT_PITCH_RISE = 6;
 
+/** Where a finished trace goes — a job's site captures, or held on the quote. */
+export type SiteTraceTarget =
+  | { kind: "job"; jobId: string; jobTitle: string | undefined; address: string }
+  | { kind: "held"; initialAddress: string; onSave: (trace: HeldTrace) => void };
+
 interface SiteTraceNewProps {
-  jobId: string;
-  jobTitle: string | undefined;
-  address: string;
+  target: SiteTraceTarget;
   existingNames: readonly string[];
 }
 
-export function SiteTraceNew({ jobId, jobTitle, address, existingNames }: SiteTraceNewProps) {
+export function SiteTraceNew({ target, existingNames }: SiteTraceNewProps) {
   const close = useCloseModal();
   const addTracedSite = useAppStore((s) => s.addTracedSite);
 
@@ -63,13 +73,21 @@ export function SiteTraceNew({ jobId, jobTitle, address, existingNames }: SiteTr
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Held mode: the typed address (live) vs the one the map geocodes (committed
+  // on suggestion select / blur — never per keystroke).
+  const [address, setAddress] = useState(target.kind === "held" ? target.initialAddress : "");
+  const [committedAddress, setCommittedAddress] = useState(
+    target.kind === "held" ? target.initialAddress : "",
+  );
+  const mapAddress = target.kind === "job" ? target.address : committedAddress;
+
   const mapsStatus = useGoogleMaps();
   const mapRef = useRef<HTMLDivElement | null>(null);
   const tracerMap = useTracerMap({
     status: mapsStatus,
     containerRef: mapRef,
     savedView: null,
-    address,
+    address: mapAddress,
     vertices: trace.vertices,
     closed: trace.closed,
     interactive: true,
@@ -95,11 +113,31 @@ export function SiteTraceNew({ jobId, jobTitle, address, existingNames }: SiteTr
       setSaveError(MAP_NOT_READY_COPY);
       return;
     }
+    const surfaceName = name.trim() || nextSurfaceName(existingNames);
+
+    if (target.kind === "held") {
+      // Pure client math — no server call. The composer holds the trace until
+      // the quote's flow has a job to persist it against.
+      target.onSave(
+        createHeldTrace({
+          id: crypto.randomUUID(),
+          name: surfaceName,
+          surface,
+          pitchRise: surface === "pitched" ? pitchRise : undefined,
+          polygon: { vertices: [...trace.vertices], view },
+          footprintSqft: figures.footprintSqft,
+          perimeterLnft: figures.perimeterLnft,
+        }),
+      );
+      close();
+      return;
+    }
+
     setSaving(true);
     try {
       await addTracedSite({
-        jobId,
-        name: name.trim() || nextSurfaceName(existingNames),
+        jobId: target.jobId,
+        name: surfaceName,
         surface,
         pitchRise: surface === "pitched" ? pitchRise : undefined,
         polygon: { vertices: [...trace.vertices], view },
@@ -119,18 +157,36 @@ export function SiteTraceNew({ jobId, jobTitle, address, existingNames }: SiteTr
   return (
     <div>
       <div className="sheet-head">
-        <h2>Trace from satellite</h2>
+        <h2>Measure from satellite</h2>
         <div className="sheet-meta">
           <SrcPill src="Aerial" />
-          {jobTitle && <span>{jobTitle}</span>}
-          {address && <span>{address}</span>}
+          {target.kind === "job" && target.jobTitle && <span>{target.jobTitle}</span>}
+          {target.kind === "job" && target.address && <span>{target.address}</span>}
         </div>
       </div>
+
+      {target.kind === "held" && (
+        <Field label="Property address">
+          <AddressInput
+            value={address}
+            onChange={setAddress}
+            onSelect={(v) => setCommittedAddress(v)}
+            onBlur={() => setCommittedAddress(address)}
+            placeholder="Type the property address"
+            aria-label="Property address"
+          />
+        </Field>
+      )}
 
       <TracerMapCanvas
         status={mapsStatus}
         geocode={tracerMap.geocode}
-        address={address}
+        address={mapAddress}
+        noAddressCopy={
+          target.kind === "held"
+            ? "Type the property address to jump there, or pan and zoom to the site."
+            : undefined
+        }
         mapRef={mapRef}
       />
 

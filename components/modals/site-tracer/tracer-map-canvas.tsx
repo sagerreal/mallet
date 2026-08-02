@@ -17,15 +17,24 @@ interface TracerMapCanvasProps {
   geocode: GeocodeState;
   /** The address being geocoded — named in the failure copy. */
   address: string;
+  /** Overrides the no-address note — the held-trace flow has no job to point at. */
+  noAddressCopy?: string;
   mapRef: RefObject<HTMLDivElement | null>;
 }
 
-function geocodeNote(geocode: GeocodeState, address: string): string | null {
+function geocodeNote(
+  geocode: GeocodeState,
+  address: string,
+  noAddressCopy: string | undefined,
+): string | null {
   switch (geocode) {
     case "pending":
-      return "Finding the job address…";
+      return "Finding the address…";
     case "no-address":
-      return "This job has no address. Set the job's address to start here, or pan and zoom to the site.";
+      return (
+        noAddressCopy ??
+        "This job has no address. Set the job's address to start here, or pan and zoom to the site."
+      );
     case "failed":
       return `Couldn't find "${address}" on the map — pan and zoom to the site.`;
     case "idle":
@@ -33,7 +42,7 @@ function geocodeNote(geocode: GeocodeState, address: string): string | null {
   }
 }
 
-export function TracerMapCanvas({ status, geocode, address, mapRef }: TracerMapCanvasProps) {
+export function TracerMapCanvas({ status, geocode, address, noAddressCopy, mapRef }: TracerMapCanvasProps) {
   if (status === "missing-key") {
     return (
       <p className="tracer-note">
@@ -51,7 +60,8 @@ export function TracerMapCanvas({ status, geocode, address, mapRef }: TracerMapC
     );
   }
 
-  const note = status === "loading" ? "Loading satellite imagery…" : geocodeNote(geocode, address);
+  const note =
+    status === "loading" ? "Loading satellite imagery…" : geocodeNote(geocode, address, noAddressCopy);
 
   return (
     <>
