@@ -7,20 +7,8 @@ import { Field, Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useEnsureProvisioned } from "@/features/identity/hooks";
 import { userMessage } from "@/lib/trpc/error-map";
-import { zipToTimezone } from "@/lib/geo/zip-timezone";
+import { zipToTimezone, TZ_LABEL } from "@/lib/geo/zip-timezone";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
-
-/** Plain names for the zones the ZIP table can produce. A shop reads "Eastern", not "America/New_York". */
-const TZ_LABEL: Record<string, string> = {
-  "America/New_York": "Eastern time",
-  "America/Chicago": "Central time",
-  "America/Denver": "Mountain time",
-  "America/Phoenix": "Arizona time",
-  "America/Los_Angeles": "Pacific time",
-  "America/Anchorage": "Alaska time",
-  "Pacific/Honolulu": "Hawaii time",
-  "America/Puerto_Rico": "Atlantic time",
-};
 
 /**
  * The one screen between signing in and having a workspace.
@@ -71,7 +59,17 @@ export default function WelcomePage() {
           // Fire-and-forget: provisioning is the write that matters, and a failed callback save
           // must not strand the shop outside the workspace it just paid attention to create.
           // It is recoverable from Settings; being locked out of the app is not.
-          void trpcVanilla.v1.calls.setCallbackNumber.mutate({ callbackNumber: mobile }).catch(() => {});
+          //
+          // Still must not swallow the failure silently — this field exists precisely because
+          // only 1 of 81 users had a callback number set, and a silent .catch() here reproduces
+          // that exact bug with no trace. Matches the store's reportWriteError dev-log convention
+          // (lib/store/write-error.ts) without making the write blocking.
+          void trpcVanilla.v1.calls.setCallbackNumber.mutate({ callbackNumber: mobile }).catch((err: unknown) => {
+            if (process.env.NODE_ENV !== "production") {
+              // eslint-disable-next-line no-console
+              console.error("[welcome] setCallbackNumber failed — mobile was not saved", err);
+            }
+          });
           router.replace(me.role === "tech" ? "/my-day" : "/dashboard");
         },
       },

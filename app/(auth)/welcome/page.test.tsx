@@ -88,8 +88,27 @@ describe("the welcome screen", () => {
   });
 
   // Provisioning is the write that matters; a failed callback save must not strand the shop
-  // outside its own workspace.
+  // outside its own workspace. Awaiting the rejected promise itself (rather than just
+  // `Promise.resolve()`, which resolves before router.replace is even reached) is what actually
+  // pins "still enters the workspace" — without it this test passed even with the whole
+  // `.catch()` deleted, because router.replace runs synchronously either way.
   it("still enters the workspace when saving the mobile fails", async () => {
+    const rejection = new Error("offline");
+    setCallback.mockRejectedValue(rejection);
+    render(<WelcomePage />);
+    fill("Business name", "Summit Plumbing");
+    fill("ZIP code", "02189");
+    fill("Your mobile", "(617) 555-0142");
+    fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
+
+    await expect(setCallback.mock.results[0]!.value).rejects.toThrow("offline");
+    expect(replace).toHaveBeenCalledWith("/dashboard");
+  });
+
+  // Losing the number silently is the exact bug this field exists to fix (1 of 81 users had one
+  // set) — a failed fire-and-forget save must leave a trace even though it must not block entry.
+  it("logs (but does not throw) when saving the mobile fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     setCallback.mockRejectedValue(new Error("offline"));
     render(<WelcomePage />);
     fill("Business name", "Summit Plumbing");
@@ -97,7 +116,11 @@ describe("the welcome screen", () => {
     fill("Your mobile", "(617) 555-0142");
     fireEvent.click(screen.getByRole("button", { name: /create workspace/i }));
 
-    await Promise.resolve();
-    expect(replace).toHaveBeenCalledWith("/dashboard");
+    await expect(setCallback.mock.results[0]!.value).rejects.toThrow("offline");
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("setCallbackNumber failed"),
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
   });
 });
