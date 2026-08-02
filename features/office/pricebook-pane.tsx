@@ -25,6 +25,7 @@ import type { Service } from "@/lib/store/types";
 import type { LaborRateKind } from "@/lib/store/slices/settings-slice";
 import { ServiceRow } from "@/app/(office)/settings/service-row";
 import { MaterialsPanel } from "@/features/office/materials-panel";
+import { AssembliesPanel } from "@/features/office/assemblies-panel";
 import { AddServiceRow } from "@/app/(office)/settings/add-service-row";
 import { Field } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
@@ -37,6 +38,7 @@ function sortServices(services: Service[]): Service[] {
 
 export function PricebookPane() {
   const services = useAppStore((s) => s.services);
+  const assemblies = useAppStore((s) => s.assemblies);
   const addService = useAppStore((s) => s.addService);
   const updateService = useAppStore((s) => s.updateService);
   const archiveService = useAppStore((s) => s.archiveService);
@@ -50,8 +52,9 @@ export function PricebookPane() {
   const openModal = useOpenModal();
 
   const [query, setQuery] = useState("");
-  // Services | Materials — one catalog, two sellable item kinds.
-  const [pbSeg, setPbSeg] = useState<"services" | "materials">("services");
+  // Services | Materials (+ Assemblies for measurement-estimating orgs) — one
+  // catalog; assemblies are the recipe-priced scopes traced surfaces seed through.
+  const [pbSeg, setPbSeg] = useState<"services" | "materials" | "assemblies">("services");
   const [seeding, setSeeding] = useState(false);
   const [seedError, setSeedError] = useState<string | null>(null);
   // "Build your own" dismisses first-run into the (empty) register so the inline
@@ -159,6 +162,14 @@ export function PricebookPane() {
                 <button className={pbSeg === "materials" ? "on" : ""} onClick={() => setPbSeg("materials")}>
                   Materials <span className="m">{activeMaterials.length}</span>
                 </button>
+                {measurementEstimating && (
+                  <button
+                    className={pbSeg === "assemblies" ? "on" : ""}
+                    onClick={() => setPbSeg("assemblies")}
+                  >
+                    Assemblies <span className="m">{assemblies.length}</span>
+                  </button>
+                )}
               </div>
               <span className="sp" />
               {canSeeCost && pbSeg === "services" && (
@@ -213,6 +224,7 @@ export function PricebookPane() {
             {pbSeg === "materials" && (
               <MaterialsPanel canSeeCost={canSeeCost} />
             )}
+            {pbSeg === "assemblies" && <AssembliesPanel />}
           </div>
         </div>
       </div>
