@@ -2,10 +2,11 @@
 /**
  * components/modals/job-modal.measurements-gate.test.tsx
  *
- * Guards the org-level measurement gate: the job modal's Measurements SheetRow
- * must not render AT ALL when the org has measurementEstimating off (the
- * plumbing default) — not render collapsed, not render empty. It must render
- * when the toggle is on (measurement-priced trades, e.g. painting).
+ * Guards the job modal against measurement rows coming back: measuring is an
+ * estimating feature, so rooms AND satellite traces live on the quote page's
+ * Measure section (app/(office)/composer/measured-surfaces-panel.tsx). The
+ * modal must render NO Measurements row regardless of the org's
+ * measurementEstimating toggle — the founder removed it deliberately.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -92,23 +93,22 @@ vi.mock("@/lib/trpc/client", () => ({
 
 vi.mock("./dur-field", () => ({ DurField: () => null }));
 vi.mock("./job-checklist-block", () => ({ JobChecklistBlock: () => null }));
-vi.mock("./job-measure-block", () => ({ JobMeasureBlock: () => <div data-testid="job-measure-block" /> }));
 
 beforeEach(() => {
   mockJobs = [makeJob()];
 });
 
-describe("JobModalContent — Measurements section org gate", () => {
-  it("does not render the Measurements row when measurementEstimating is off (plumbing default)", () => {
+describe("JobModalContent — no measurement rows (measurements live on the quote page)", () => {
+  it("renders no Measurements row when measurementEstimating is off", () => {
     mockMeasurementEstimating = false;
     render(<JobModalContent />);
     expect(screen.queryByText("Measurements")).toBeNull();
-    expect(screen.queryByTestId("job-measure-block")).toBeNull();
   });
 
-  it("renders the Measurements row when measurementEstimating is on (measurement-priced trade)", () => {
+  it("renders no Measurements row even when measurementEstimating is on", () => {
     mockMeasurementEstimating = true;
     render(<JobModalContent />);
-    expect(screen.getByText("Measurements")).toBeTruthy();
+    expect(screen.queryByText("Measurements")).toBeNull();
+    expect(screen.queryByText("Site measurements")).toBeNull();
   });
 });

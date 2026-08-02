@@ -14,6 +14,7 @@ import {
   panelJobOptions,
   panelRows,
   resolvePanelJob,
+  roomNeedsConfirm,
   roomRowSummary,
   seedKey,
   siteRowSummary,
@@ -188,10 +189,39 @@ describe("roomRowSummary", () => {
   });
 });
 
+describe("roomNeedsConfirm", () => {
+  it("is true when any quantity is needs_confirm", () => {
+    expect(
+      roomNeedsConfirm([
+        { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived" },
+        { kind: "baseboard_lnft", value: null, derivedValue: 88, status: "needs_confirm" },
+      ]),
+    ).toBe(true);
+  });
+
+  it("is false when every quantity is settled", () => {
+    expect(roomNeedsConfirm(room().quantities)).toBe(false);
+  });
+});
+
 describe("panelRows", () => {
   it("rooms first, then sites — the same order buildFromMeasurements seeds in", () => {
     const rows = panelRows([room()], [site()]);
     expect(rows.map((r) => `${r.kind}:${r.name}`)).toEqual(["room:Living Room", "site:Driveway"]);
+  });
+
+  it("room rows carry their capture id and confirm flag — the panel's door to the room card", () => {
+    const rows = panelRows(
+      [
+        room({
+          quantities: [
+            { kind: "walls_sqft", value: null, derivedValue: 562, status: "needs_confirm" },
+          ],
+        }),
+      ],
+      [],
+    );
+    expect(rows[0]).toMatchObject({ kind: "room", captureId: "r1", needsConfirm: true });
   });
 });
 

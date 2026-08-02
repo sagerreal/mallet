@@ -97,6 +97,7 @@ export function SiteCaptureView({ site, jobTitle }: { site: SiteCard; jobTitle: 
     status: mapsStatus,
     containerRef: mapRef,
     savedView: site.polygon?.view ?? null,
+    seedLocation: null,
     address: "",
     vertices: site.polygon?.vertices ?? [],
     closed: true,

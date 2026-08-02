@@ -8,7 +8,9 @@
  * picked customer's address prefilled); held-trace rows with CLIENT-side
  * seeding (seed-once, pricing-gap notice); the picked customer's job capture
  * rows with the server seed flow (sourceNames filter, seed-once, empty-seed
- * notice, load-failed). Derive logic is covered in measured-surfaces.test.ts;
+ * notice, load-failed); room rows opening the room card + the "+ Add a room" /
+ * "Scan room" entries (with the silent estimate-job creation when the picked
+ * customer has no job yet). Derive logic is covered in measured-surfaces.test.ts;
  * held seed math parity in held-trace-seed.test.ts; store/hooks/trpc mocked.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -30,10 +32,12 @@ let storeState: {
   services: Service[];
   roomsByJob: Record<string, RoomCard[] | undefined>;
   sitesByJob: Record<string, SiteCard[] | undefined>;
+  addJob: ReturnType<typeof vi.fn>;
 };
 const openModal = vi.fn();
 let roomsQuery: QueryStub;
 let sitesQuery: QueryStub;
+let scanAvailable = false;
 const useJobRooms = vi.fn((_jobId: string | null) => roomsQuery);
 const useJobSites = vi.fn((_jobId: string | null) => sitesQuery);
 const fetchBuild = vi.fn<(input: unknown) => Promise<unknown>>();
@@ -41,6 +45,9 @@ const fetchBuild = vi.fn<(input: unknown) => Promise<unknown>>();
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Record<string, unknown>) => unknown) => sel(storeState),
   useOpenModal: () => openModal,
+}));
+vi.mock("@/lib/native/room-scan", () => ({
+  useRoomScanAvailable: () => scanAvailable,
 }));
 vi.mock("@/features/measurements/use-job-rooms", () => ({
   useJobRooms: (jobId: string | null) => useJobRooms(jobId),
@@ -116,6 +123,19 @@ const seededProps = {
   onSeedLines: vi.fn(),
 };
 
+const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
+  id: "r1",
+  jobId: "j1",
+  roomName: "Living room",
+  source: "roomplan_v1",
+  capturedAt: "2026-08-01T12:00:00.000Z",
+  quantities: [
+    { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived" },
+    { kind: "doors_count", value: null, derivedValue: 2, status: "derived" },
+  ],
+  ...overrides,
+});
+
 beforeEach(() => {
   storeState = {
     toggles: { measurementEstimating: true },
@@ -124,9 +144,11 @@ beforeEach(() => {
     services: [sqftService()],
     roomsByJob: { j1: [] },
     sitesByJob: { j1: [site()] },
+    addJob: vi.fn(),
   };
   roomsQuery = okQuery();
   sitesQuery = okQuery();
+  scanAvailable = false;
   openModal.mockClear();
   fetchBuild.mockReset();
   seededProps.onSeedLines = vi.fn();
@@ -231,6 +253,97 @@ describe("MeasuredSurfacesPanel — job capture rows", () => {
     render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} />);
     expect(screen.getByRole("group", { name: "Measured job" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Roof" })).toBeTruthy();
+  });
+});
+
+describe("MeasuredSurfacesPanel — room rows (the rooms home since the job modal's row left)", () => {
+  beforeEach(() => {
+    storeState.roomsByJob = { j1: [room()] };
+    storeState.sitesByJob = { j1: [] };
+  });
+
+  it("lists a room with its figures and opens the room card from Open", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    expect(screen.getByText("Living room")).toBeTruthy();
+    expect(screen.getByText("562 sqft walls · 2 doors · measured Aug 1")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Living room" }));
+    expect(openModal).toHaveBeenCalledWith("room-card", { captureId: "r1", jobId: "j1" });
+  });
+
+  it("shows the Confirm badge when a quantity awaits office confirmation", () => {
+    storeState.roomsByJob = {
+      j1: [
+        room({
+          quantities: [
+            { kind: "baseboard_lnft", value: null, derivedValue: 88, status: "needs_confirm" },
+          ],
+        }),
+      ],
+    };
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    expect(screen.getByText("Confirm")).toBeTruthy();
+  });
+
+  it("does not show a Confirm badge when nothing needs confirmation", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    expect(screen.queryByText("Confirm")).toBeNull();
+  });
+});
+
+describe("MeasuredSurfacesPanel — add / scan a room", () => {
+  it("opens the room card in create mode against the picked customer's job", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add a room" }));
+    expect(openModal).toHaveBeenCalledWith("room-card", { jobId: "j1" });
+    expect(storeState.addJob).not.toHaveBeenCalled();
+  });
+
+  it("shows Scan room only when the native scanner is available, in scan mode", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    expect(screen.queryByRole("button", { name: "Scan room" })).toBeNull();
+  });
+
+  it("opens the room card in scan mode when the scanner is available", () => {
+    scanAvailable = true;
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Scan room" }));
+    expect(openModal).toHaveBeenCalledWith("room-card", { jobId: "j1", mode: "scan" });
+  });
+
+  it("renders no room entries without a picked customer — a room must anchor to a job", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    expect(screen.queryByRole("button", { name: "+ Add a room" })).toBeNull();
+  });
+
+  it("a customer with no job gets an estimate job created silently, then the room card", async () => {
+    storeState.jobs = [];
+    const created = job({ id: "j-new" });
+    storeState.addJob.mockReturnValue({ job: created, persisted: Promise.resolve(created) });
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add a room" }));
+    await waitFor(() => expect(openModal).toHaveBeenCalledWith("room-card", { jobId: "j-new" }));
+    expect(storeState.addJob).toHaveBeenCalledWith(
+      expect.objectContaining({ leadId: "lead-1", svc: "estimate", status: "unscheduled" }),
+    );
+  });
+
+  it("a failed estimate-job create names the problem and opens nothing", async () => {
+    storeState.jobs = [];
+    storeState.addJob.mockReturnValue({
+      job: job({ id: "j-new" }),
+      persisted: Promise.reject(new Error("network")),
+    });
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add a room" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Couldn't create a job to hold this room — check your connection and try again.",
+      ),
+    );
+    expect(openModal).not.toHaveBeenCalled();
   });
 });
 

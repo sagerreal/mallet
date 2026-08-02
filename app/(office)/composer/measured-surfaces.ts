@@ -1,9 +1,10 @@
 /**
  * app/(office)/composer/measured-surfaces.ts
  *
- * Pure derive logic for the composer's "Measured surfaces" panel — the office
- * door to a job's measurements (the job modal's measure/site blocks remain the
- * second door). Everything here is plain data-in/data-out so the panel's
+ * Pure derive logic for the composer's "Measure" panel — the office door to a
+ * job's measurements (the job modal's measure and site blocks are gone; the
+ * tech field Quote tab keeps its scan row). Everything here is plain
+ * data-in/data-out so the panel's
  * visibility rules, job resolution and row summaries are unit-testable without
  * mounting the component:
  *
@@ -103,14 +104,21 @@ export interface MeasuredRow {
   readonly kind: "room" | "site";
   /** Key figures + capture date — "640 sqft · 104 lnft · traced Aug 1". */
   readonly summary: string;
-  /** Site rows carry their capture id — the panel's "Open" drills into the saved trace. */
+  /** The capture id — "Open" drills into the saved trace (site) or the room card (room). */
   readonly captureId?: string;
+  /** Room rows: true when any quantity is awaiting office confirmation. */
+  readonly needsConfirm?: boolean;
+}
+
+/** True when any quantity on the room is awaiting office confirmation. */
+export function roomNeedsConfirm(quantities: readonly RoomQuantity[]): boolean {
+  return quantities.some((q) => q.status === "needs_confirm");
 }
 
 /**
- * Mirrors roomHeadline in components/modals/job-measure-block.tsx (the rooms
- * block's summary) — duplicated rather than imported so this module stays pure
- * (the block file pulls the store, router and native-scan hooks).
+ * The room figures line ("562 sqft walls · 2 doors") — formerly roomHeadline
+ * in the deleted job-measure-block; the composer's Measure panel is the rooms
+ * home now, so the derive lives here, pure.
  */
 function roomFigures(quantities: readonly RoomQuantity[]): string {
   const value = (kind: RoomQuantity["kind"]): number | null => {
@@ -153,6 +161,8 @@ export function panelRows(
       name: r.roomName,
       kind: "room",
       summary: roomRowSummary(r),
+      captureId: r.id,
+      needsConfirm: roomNeedsConfirm(r.quantities),
     })),
     ...sites.map<MeasuredRow>((s) => ({
       name: s.name,
