@@ -17,6 +17,12 @@ export interface JobLeadReader {
 
 export interface BuildFromMeasurementsCommand {
   readonly jobId: JobId;
+  // Optional per-capture filter: when present, only rooms/sites whose CAPTURE name (the
+  // room's roomName, the site's stored name — NOT the pitch-decorated sourceName) is in
+  // this set contribute seed lines, gaps and unconfirmed flags. Absent = whole job,
+  // exactly the pre-filter behavior (additive, backward-compatible). The composer's
+  // "Seed lines" per-surface action is the caller.
+  readonly sourceNames?: readonly string[];
 }
 
 export interface SeedLine {
@@ -143,11 +149,21 @@ export class BuildFromMeasurementsUseCase {
     const leadId = await this.jobs.findLeadId(cmd.jobId);
     if (!leadId) return err(notFound("job"));
 
-    const [rooms, sites, services] = await Promise.all([
+    const [allRooms, allSites, services] = await Promise.all([
       this.rooms.readForJob(cmd.jobId),
       this.sites.readForJob(cmd.jobId),
       this.rates.listMeasuredByActive(),
     ]);
+
+    // Capture-name filter (trimmed exact match — the names come from the same rows the
+    // composer panel lists, so no fuzzier matching is warranted). A name that matches
+    // nothing simply contributes nothing; the caller sees an empty seed, not an error.
+    const nameFilter =
+      cmd.sourceNames === undefined ? null : new Set(cmd.sourceNames.map((n) => n.trim()));
+    const rooms =
+      nameFilter === null ? allRooms : allRooms.filter((r) => nameFilter.has(r.roomName.trim()));
+    const sites =
+      nameFilter === null ? allSites : allSites.filter((s) => nameFilter.has(s.name.trim()));
 
     const serviceByKind = lowestPositionByKind(services);
     const seenKinds = new Set<MeasuredQuantityKind>();

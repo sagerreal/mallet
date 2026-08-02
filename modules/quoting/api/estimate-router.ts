@@ -308,7 +308,12 @@ const paginatedSummaryDTO = z.object({
   nextCursor: z.string().nullable(),
 });
 
-const buildFromMeasurementsInput = z.object({ jobId: z.string().uuid() });
+const buildFromMeasurementsInput = z.object({
+  jobId: z.string().uuid(),
+  // Optional per-capture filter (the composer's per-surface "Seed lines"): capture names —
+  // a room's roomName / a site's stored name. Absent = whole-job seed (unchanged behavior).
+  sourceNames: z.array(z.string().min(1).max(80)).max(50).optional(),
+});
 // Mirrors modules/pricebook/api/pricebook-dto.ts's measuredByKindDTO — kept as its own literal
 // zod enum (rather than importing pricebook) so this boundary schema stays a leaf, same
 // rationale as that file's own comment.
@@ -639,7 +644,9 @@ export const createEstimateRouter = () =>
           new MeasurementSiteQuantitiesReader(measurements),
           new DrizzleRateServicesReader(ctx.tx, ctx.principal.orgId),
         );
-        const built = orThrow(await useCase.exec({ jobId }));
+        const built = orThrow(
+          await useCase.exec({ jobId, ...(input.sourceNames ? { sourceNames: input.sourceNames } : {}) }),
+        );
         return {
           leadId: built.leadId,
           seedLines: built.seedLines.map((line) => ({ ...line })),

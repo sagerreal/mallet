@@ -1,0 +1,173 @@
+/**
+ * app/(office)/composer/measured-surfaces.ts
+ *
+ * Pure derive logic for the composer's "Measured surfaces" panel — the office
+ * door to a job's measurements (the job modal's measure/site blocks remain the
+ * second door). Everything here is plain data-in/data-out so the panel's
+ * visibility rules, job resolution and row summaries are unit-testable without
+ * mounting the component:
+ *
+ *   - which of the customer's jobs the panel reads (?job= wins; else the
+ *     office's pick; else the candidate with the most captures)
+ *   - when the in-flow job selector row shows (2+ jobs with captures)
+ *   - one-line row summaries ("640 sqft · 104 lnft · traced Aug 1")
+ *   - the seed-once key that keeps "Seed lines" from duplicating lines
+ */
+
+import type { Job, RoomCard, RoomQuantity, SiteCard } from "@/lib/store/types";
+import { formatDate } from "@/lib/format";
+import { formatSqft, formatLnft, pitchLabel } from "@/lib/measure/aerial-geometry";
+
+// ---- job resolution --------------------------------------------------------
+
+/** The lead's jobs the panel may read measurements from (archived jobs are out). */
+export function candidateJobsForLead(jobs: readonly Job[], leadId: string | null): Job[] {
+  if (!leadId) return [];
+  return jobs.filter((j) => j.leadId === leadId && !j.archived);
+}
+
+/**
+ * A job's known capture count, or null while its measurements haven't hydrated
+ * yet (`undefined` slice = never fetched — distinct from `[]`, a real zero).
+ */
+export function jobCaptureCount(
+  rooms: readonly RoomCard[] | undefined,
+  sites: readonly SiteCard[] | undefined,
+): number | null {
+  if (rooms === undefined && sites === undefined) return null;
+  return (rooms?.length ?? 0) + (sites?.length ?? 0);
+}
+
+export interface ResolvePanelJobArgs {
+  /** ?job= from the URL — the "Build the price" boot. Authoritative when present. */
+  readonly paramJobId: string | null;
+  /** The job the office picked in the selector row this session, if any. */
+  readonly chosenJobId: string | null;
+  readonly candidates: readonly Job[];
+  /** Known capture count per candidate job id; null = not hydrated yet. */
+  readonly countFor: (jobId: string) => number | null;
+}
+
+/**
+ * Which job the panel reads. ?job= always wins (that boot already seeded the
+ * composer from this exact job). Otherwise the office's explicit pick sticks
+ * while it's still one of the lead's jobs. Otherwise: the candidate with the
+ * most KNOWN captures; when none has any (or counts are still unknown), the
+ * first candidate — the panel still needs a home for "+ Trace from satellite".
+ * Null only when there is no job context at all (panel hidden).
+ */
+export function resolvePanelJob(args: ResolvePanelJobArgs): string | null {
+  if (args.paramJobId) return args.paramJobId;
+  if (args.chosenJobId && args.candidates.some((j) => j.id === args.chosenJobId)) {
+    return args.chosenJobId;
+  }
+  const first = args.candidates[0];
+  if (!first) return null;
+  let best: Job = first;
+  let bestCount = args.countFor(best.id) ?? 0;
+  for (const job of args.candidates.slice(1)) {
+    const count = args.countFor(job.id) ?? 0;
+    if (count > bestCount) {
+      best = job;
+      bestCount = count;
+    }
+  }
+  return best.id;
+}
+
+export interface PanelJobOption {
+  readonly jobId: string;
+  readonly title: string;
+  readonly captureCount: number;
+}
+
+/**
+ * The compact in-flow selector's options: the lead's jobs that actually HAVE
+ * captures. The selector renders only when there are 2+ (one job with captures
+ * needs no chooser; a ?job= boot pins the job, so no selector then either).
+ */
+export function panelJobOptions(
+  candidates: readonly Job[],
+  countFor: (jobId: string) => number | null,
+): PanelJobOption[] {
+  return candidates
+    .map((j) => ({ jobId: j.id, title: j.title, captureCount: countFor(j.id) ?? 0 }))
+    .filter((o) => o.captureCount > 0);
+}
+
+// ---- rows ------------------------------------------------------------------
+
+export interface MeasuredRow {
+  /** Seed-filter key AND display name: the capture's stored name. */
+  readonly name: string;
+  readonly kind: "room" | "site";
+  /** Key figures + capture date — "640 sqft · 104 lnft · traced Aug 1". */
+  readonly summary: string;
+}
+
+/**
+ * Mirrors roomHeadline in components/modals/job-measure-block.tsx (the rooms
+ * block's summary) — duplicated rather than imported so this module stays pure
+ * (the block file pulls the store, router and native-scan hooks).
+ */
+function roomFigures(quantities: readonly RoomQuantity[]): string {
+  const value = (kind: RoomQuantity["kind"]): number | null => {
+    const q = quantities.find((x) => x.kind === kind);
+    if (!q) return null;
+    return q.value ?? q.derivedValue ?? null;
+  };
+  const parts: string[] = [];
+  const walls = value("walls_sqft");
+  if (walls != null) parts.push(`${walls} sqft walls`);
+  const doors = value("doors_count");
+  if (doors != null) parts.push(`${doors} door${doors === 1 ? "" : "s"}`);
+  return parts.length > 0 ? parts.join(" · ") : "Not measured yet";
+}
+
+export function roomRowSummary(room: Pick<RoomCard, "quantities" | "capturedAt">): string {
+  return `${roomFigures(room.quantities)} · measured ${formatDate(room.capturedAt)}`;
+}
+
+export function siteRowSummary(
+  site: Pick<SiteCard, "surface" | "pitchRise" | "areaSqft" | "perimeterLnft" | "createdAt">,
+): string {
+  const area =
+    site.surface === "pitched" && site.pitchRise !== null
+      ? `${formatSqft(site.areaSqft)} at ${pitchLabel(site.pitchRise)}`
+      : formatSqft(site.areaSqft);
+  const parts = [area];
+  if (site.perimeterLnft !== null) parts.push(formatLnft(site.perimeterLnft));
+  parts.push(`traced ${formatDate(site.createdAt)}`);
+  return parts.join(" · ");
+}
+
+/** Rooms first, then traced surfaces — the same order buildFromMeasurements seeds in. */
+export function panelRows(
+  rooms: readonly RoomCard[],
+  sites: readonly SiteCard[],
+): MeasuredRow[] {
+  return [
+    ...rooms.map<MeasuredRow>((r) => ({
+      name: r.roomName,
+      kind: "room",
+      summary: roomRowSummary(r),
+    })),
+    ...sites.map<MeasuredRow>((s) => ({
+      name: s.name,
+      kind: "site",
+      summary: siteRowSummary(s),
+    })),
+  ];
+}
+
+// ---- seed-once -------------------------------------------------------------
+
+/**
+ * One "Seed lines" per surface per job: the key the page tracks after a
+ * successful seed. Re-seeding would duplicate lines, so the button disables
+ * once its key is in the seeded set (a ?job= boot marks the WHOLE job seeded —
+ * the boot already dropped every surface's lines into the table).
+ */
+export function seedKey(jobId: string, name: string): string {
+  return `${jobId}::${name.trim()}`;
+}

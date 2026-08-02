@@ -83,6 +83,9 @@ vi.mock("./quote-card", () => ({
   ),
 }));
 vi.mock("./pricing-card", () => ({ PricingCard: () => null }));
+// The panel has its own test file (measured-surfaces-panel.test.tsx); stubbed here
+// like the other sections so these tests stay focused on ComposerPage's wiring.
+vi.mock("./measured-surfaces-panel", () => ({ MeasuredSurfacesPanel: () => null }));
 vi.mock("./message-card", () => ({ MessageCard: () => null }));
 vi.mock("./send-card", () => ({ SendCard: () => null }));
 

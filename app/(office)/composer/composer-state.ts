@@ -406,6 +406,37 @@ export function applyMeasurementSeed(
   return { ...state, leadId, lines };
 }
 
+/**
+ * Append one surface's seed lines to what's already on screen — the composer
+ * panel's per-surface "Seed lines". Unlike applyMeasurementSeed (the ?job=
+ * boot, which REPLACES the table), this keeps every real line the office
+ * already has and adds the new ones after them; blank placeholder rows are
+ * dropped so a fresh composer doesn't keep an empty first row above the seed.
+ * In GBB format the lines land in the Good tier (same target applyAiDraftLines
+ * uses — Good is the base scope the office builds up from). An empty seed
+ * returns the state unchanged (the caller surfaces why — usually a pricing
+ * gap — instead of silently no-oping).
+ */
+export function appendMeasurementLines(
+  state: ComposerState,
+  seedLines: ComposerLine[]
+): ComposerState {
+  if (seedLines.length === 0) return state;
+  const appended = (existing: ComposerLine[]): ComposerLine[] => [
+    ...realLines(cloneLines(existing)),
+    ...cloneLines(seedLines),
+  ];
+  if (state.format === "gbb" && state.gbb) {
+    const good = state.gbb.opts.find((o) => o.k === "good");
+    if (!good) return state;
+    return {
+      ...state,
+      gbb: updateTier(state.gbb, "good", { lines: appended(good.lines) }),
+    };
+  }
+  return { ...state, lines: appended(state.lines) };
+}
+
 /** One line of a persisted estimate, as the composer's revise seed consumes it (cents in). */
 export interface ReviseSeedLine {
   d: string;
