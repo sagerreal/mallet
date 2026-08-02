@@ -9,7 +9,6 @@ import { useEnsureProvisioned } from "@/features/identity/hooks";
 import { userMessage } from "@/lib/trpc/error-map";
 import { zipToTimezone } from "@/lib/geo/zip-timezone";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
-import { fmtPhone } from "@/lib/format";
 
 /** Plain names for the zones the ZIP table can produce. A shop reads "Eastern", not "America/New_York". */
 const TZ_LABEL: Record<string, string> = {
@@ -117,7 +116,6 @@ export default function WelcomePage() {
         <Input
           value={mobile}
           onChange={(e) => setMobile(e.target.value)}
-          onBlur={(e) => setMobile(fmtPhone(e.target.value))}
           placeholder="(617) 555-0142"
           inputMode="tel"
           autoComplete="tel"
