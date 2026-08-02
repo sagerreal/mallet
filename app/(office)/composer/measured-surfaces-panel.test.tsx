@@ -17,6 +17,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { Job, Lead, RoomCard, Service, SiteCard } from "@/lib/store/types";
 import type { HeldTrace } from "@/lib/measure/held-trace";
+import type { AssemblyView } from "@/lib/store/assemblies-mapper";
+import { DEFAULT_ASSEMBLIES } from "@/modules/assemblies/domain/assembly-defaults";
 
 interface QueryStub {
   isError: boolean;
@@ -30,6 +32,7 @@ let storeState: {
   jobs: Job[];
   leads: Lead[];
   services: Service[];
+  assemblies: AssemblyView[];
   roomsByJob: Record<string, RoomCard[] | undefined>;
   sitesByJob: Record<string, SiteCard[] | undefined>;
   addJob: ReturnType<typeof vi.fn>;
@@ -41,6 +44,26 @@ let scanAvailable = false;
 const useJobRooms = vi.fn((_jobId: string | null) => roomsQuery);
 const useJobSites = vi.fn((_jobId: string | null) => sitesQuery);
 const fetchBuild = vi.fn<(input: unknown) => Promise<unknown>>();
+const fetchAssemblySeed = vi.fn<(input: unknown) => Promise<unknown>>();
+
+/** Store-shaped assembly views straight from the shipped catalog. */
+const catalogViews = (): AssemblyView[] =>
+  DEFAULT_ASSEMBLIES.map(
+    (entry) =>
+      ({
+        id: `catalog:${entry.catalogKey}`,
+        catalogKey: entry.catalogKey,
+        name: entry.name,
+        measurementBasis: entry.measurementBasis,
+        pricingMode: entry.pricingMode,
+        marginBps: entry.marginBps,
+        jobMinimumCents: entry.jobMinimumCents,
+        config: entry.config,
+        active: true,
+        isOverride: false,
+        dials: [],
+      }) as unknown as AssemblyView,
+  );
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Record<string, unknown>) => unknown) => sel(storeState),
@@ -58,7 +81,10 @@ vi.mock("@/features/measurements/use-job-sites", () => ({
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     useUtils: () => ({
-      v1: { quoting: { buildFromMeasurements: { fetch: fetchBuild } } },
+      v1: {
+        quoting: { buildFromMeasurements: { fetch: fetchBuild } },
+        assemblies: { seedFromCapture: { fetch: fetchAssemblySeed } },
+      },
     }),
   },
 }));
@@ -146,6 +172,9 @@ beforeEach(() => {
     jobs: [job({})],
     leads: [{ id: "lead-1", name: "Pat", address: "12 Elm St" } as Lead],
     services: [sqftService()],
+    // Legacy default: no assemblies — every pre-assembly test keeps the direct
+    // one-tap seed; the picker suite opts in via catalogViews().
+    assemblies: [],
     roomsByJob: { j1: [] },
     sitesByJob: { j1: [site()] },
     addJob: vi.fn(),
@@ -155,6 +184,7 @@ beforeEach(() => {
   scanAvailable = false;
   openModal.mockClear();
   fetchBuild.mockReset();
+  fetchAssemblySeed.mockReset();
   seededProps.onSeedLines = vi.fn();
   seededProps.onAddHeldTrace = vi.fn();
   seededProps.heldTraces = [];
@@ -421,5 +451,108 @@ describe("MeasuredSurfacesPanel — job-row seeding (server)", () => {
       ),
     );
     expect((screen.getByRole("button", { name: "Seed lines" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("MeasuredSurfacesPanel — assembly picker (recipe pricing)", () => {
+  it("Seed lines on a held trace opens the in-flow picker when assemblies match its basis", () => {
+    storeState.assemblies = catalogViews();
+    seededProps.heldTraces = [heldTrace({ areaSqft: 800, footprintSqft: 800, perimeterLnft: 120 })];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    // No seed yet — the office picks HOW this surface prices first.
+    expect(seededProps.onSeedLines).not.toHaveBeenCalled();
+    const picker = screen.getByRole("group", { name: "Price this surface with" });
+    expect(picker.textContent).toContain("Driveway replacement, 3-inch");
+    expect(picker.textContent).toContain("Standard rates");
+  });
+
+  it("picking an assembly seeds the full component breakdown client-side (held trace)", () => {
+    storeState.assemblies = catalogViews();
+    seededProps.heldTraces = [heldTrace({ areaSqft: 800, footprintSqft: 800, perimeterLnft: 120 })];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Driveway replacement, 3-inch" }));
+    expect(seededProps.onSeedLines).toHaveBeenCalledTimes(1);
+    const lines = (seededProps.onSeedLines as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      description: string;
+      rateCents: number;
+    }[];
+    expect(lines.map((l) => l.description)).toContain("Hot-mix asphalt, 3 in (16 tons)");
+    expect(lines.map((l) => l.description)).toContain("Mobilization");
+    // Margin applied INTO the visible rate (never a hidden adjustment).
+    expect(lines.find((l) => l.description.startsWith("Hot-mix"))?.rateCents).toBe(15000);
+    // Seeded — the button flips and the picker closes.
+    expect(screen.getByRole("button", { name: "Seeded" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Price this surface with" })).toBeNull();
+  });
+
+  it("a below-minimum assembly seed surfaces the job-minimum notice", () => {
+    storeState.assemblies = catalogViews();
+    seededProps.heldTraces = [heldTrace({ areaSqft: 800, footprintSqft: 800, perimeterLnft: 120 })];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sealcoat, two coats" }));
+    expect(screen.getByText("Below your $350 job minimum — priced at the minimum.")).toBeTruthy();
+    const lines = (seededProps.onSeedLines as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      description: string;
+    }[];
+    expect(lines.map((l) => l.description)).toContain("Job minimum");
+  });
+
+  it("Standard rates inside the picker keeps the service-based seed", () => {
+    storeState.assemblies = catalogViews();
+    seededProps.heldTraces = [heldTrace({ areaSqft: 800, footprintSqft: 800, perimeterLnft: 120 })];
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Standard rates" }));
+    const lines = (seededProps.onSeedLines as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      description: string;
+    }[];
+    expect(lines[0]!.description).toBe("Driveway — Seal coating");
+  });
+
+  it("a persisted site row seeds through v1.assemblies.seedFromCapture (server engine)", async () => {
+    storeState.assemblies = catalogViews();
+    fetchAssemblySeed.mockResolvedValue({
+      lines: [
+        { description: "Driveway — Sealcoat, two coats", quantity: 640, rateCents: 25, costCents: 17, optional: false, componentKey: null },
+      ],
+      totalCents: 35_000,
+      minimum: { minimumCents: 35_000, addedCents: 19_000 },
+      skipped: [],
+    });
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sealcoat, two coats" }));
+    await waitFor(() => expect(seededProps.onSeedLines).toHaveBeenCalledTimes(1));
+    expect(fetchAssemblySeed).toHaveBeenCalledWith({
+      jobId: "j1",
+      sourceName: "Driveway",
+      assemblyId: "catalog:sealcoat_two_coats",
+    });
+    expect(screen.getByText("Below your $350 job minimum — priced at the minimum.")).toBeTruthy();
+    expect(fetchBuild).not.toHaveBeenCalled();
+  });
+
+  it("a room row never offers the picker — painting keeps the service seed", async () => {
+    storeState.assemblies = catalogViews();
+    storeState.roomsByJob = { j1: [room()] };
+    storeState.sitesByJob = { j1: [] };
+    fetchBuild.mockResolvedValue({ seedLines: [], gaps: [], unconfirmedRooms: [] });
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    expect(screen.queryByRole("group", { name: "Price this surface with" })).toBeNull();
+    await waitFor(() => expect(fetchBuild).toHaveBeenCalled());
+  });
+
+  it("a perimeter-less manual capture only offers area assemblies", () => {
+    storeState.assemblies = catalogViews();
+    storeState.sitesByJob = { j1: [site({ perimeterLnft: null })] };
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    fireEvent.click(screen.getByRole("button", { name: "Seed lines" }));
+    const picker = screen.getByRole("group", { name: "Price this surface with" });
+    expect(picker.textContent).not.toContain("Crack filling");
+    expect(picker.textContent).toContain("Sealcoat, two coats");
   });
 });

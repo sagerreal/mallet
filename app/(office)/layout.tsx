@@ -18,6 +18,7 @@ import { CompaniesHydrator } from "@/features/customers/companies-hydrator";
 import { ChecklistsHydrator } from "@/features/checklists/checklists-hydrator";
 import { SettingsHydrator } from "@/features/settings/settings-hydrator";
 import { PricebookHydrator } from "@/features/pricebook/pricebook-hydrator";
+import { AssembliesHydrator } from "@/features/pricebook/assemblies-hydrator";
 import { BrandHydrator } from "@/features/settings/brand-hydrator";
 import { A2pHydrator } from "@/features/a2p/a2p-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
@@ -55,6 +56,7 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
       <ChecklistsHydrator />
       <SettingsHydrator />
       <PricebookHydrator />
+      <AssembliesHydrator />
       <BrandHydrator />
       <A2pHydrator />
     </div>

@@ -391,17 +391,26 @@ export function applyAiDraftLines(
 // deterministic seed (aiDraftForPayload only fires off aiDrafted), so a quote
 // sent from here carries no ai_draft on the wire.
 
-/** One line as v1.quoting.buildFromMeasurements returns it (cents, per-unit). */
+/** One line as v1.quoting.buildFromMeasurements returns it (cents, per-unit).
+ * Assembly seeds (v1.assemblies.seedFromCapture / assembly-held-seed) share the
+ * shape and may flag a line optional (e.g. an overlay's edge milling). */
 export interface MeasurementSeedLine {
   description: string;
   quantity: number;
   rateCents: number;
   costCents: number;
+  opt?: boolean;
 }
 
 /** cents → dollars at the store boundary, same conversion the AI drafters use. */
 export function seedLinesToComposerLines(lines: MeasurementSeedLine[]): ComposerLine[] {
-  return lines.map((l) => ({ d: l.description, q: l.quantity, r: l.rateCents / 100, c: l.costCents / 100 }));
+  return lines.map((l) => ({
+    d: l.description,
+    q: l.quantity,
+    r: l.rateCents / 100,
+    c: l.costCents / 100,
+    ...(l.opt ? { opt: true } : {}),
+  }));
 }
 
 /**

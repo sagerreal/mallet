@@ -47,6 +47,13 @@ import { Row } from "@/components/ui/row";
 import { Badge } from "@/components/ui/badge";
 import { heldTraceSummary, type HeldTrace } from "@/lib/measure/held-trace";
 import { seedFromHeldTrace } from "./held-trace-seed";
+import {
+  assembliesForSurface,
+  seedHeldTraceWithAssembly,
+  minimumNoticeText,
+  skippedNoticeText,
+} from "./assembly-held-seed";
+import type { AssemblyView, AssemblySeedResultDTO } from "@/lib/store/assemblies-mapper";
 import type { MeasurementSeedLine } from "./composer-state";
 import {
   candidateJobsForLead,
@@ -57,6 +64,33 @@ import {
   seedKey,
   type MeasuredRow,
 } from "./measured-surfaces";
+
+/** The engine's lines → the composer's seed shape (still cents; opt carried).
+ * Accepts both the server DTO's lines and the client engine's readonly lines —
+ * structurally the same shape, by design. */
+function assemblyLinesToSeedLines(
+  lines: readonly AssemblySeedResultDTO["lines"][number][],
+): MeasurementSeedLine[] {
+  return lines.map((l) => ({
+    description: l.description,
+    quantity: l.quantity,
+    rateCents: l.rateCents,
+    costCents: l.costCents,
+    ...(l.optional ? { opt: true } : {}),
+  }));
+}
+
+/** The quiet post-seed note: minimum applied and/or components skipped. */
+function assemblySeedNotice(result: {
+  minimum: { minimumCents: number } | null;
+  skipped: readonly string[];
+}): string | null {
+  const parts: string[] = [];
+  if (result.minimum) parts.push(minimumNoticeText(result.minimum));
+  const skipped = skippedNoticeText(result.skipped);
+  if (skipped) parts.push(skipped);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
 
 export interface MeasuredSurfacesPanelProps {
   /** ?job= from the URL — pins the panel to that job. */
@@ -92,6 +126,7 @@ export function MeasuredSurfacesPanel({
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const services = useAppStore((s) => s.services);
+  const assemblies = useAppStore((s) => s.assemblies);
   const roomsByJob = useAppStore((s) => s.roomsByJob);
   const sitesByJob = useAppStore((s) => s.sitesByJob);
   const addJob = useAppStore((s) => s.addJob);
@@ -104,6 +139,8 @@ export function MeasuredSurfacesPanel({
   const [seedingName, setSeedingName] = useState<string | null>(null);
   const [seedNotice, setSeedNotice] = useState<string | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
+  // The seed key whose in-flow assembly picker is open (held::id / jobId::name).
+  const [pickerKey, setPickerKey] = useState<string | null>(null);
   const [creatingRoomJob, setCreatingRoomJob] = useState(false);
   const [roomJobError, setRoomJobError] = useState<string | null>(null);
 
@@ -197,6 +234,28 @@ export function MeasuredSurfacesPanel({
     openModal(MODAL.ROOM_CARD, mode ? { jobId: targetJobId, mode } : { jobId: targetJobId });
   }
 
+  /** The held trace's measurable shape for assembly matching. */
+  const heldShape = (trace: HeldTrace) => ({
+    areaSqft: trace.areaSqft,
+    perimeterLnft: trace.perimeterLnft > 0 ? trace.perimeterLnft : null,
+  });
+
+  /** Assemblies that can price a persisted SITE row (rooms are painting — never). */
+  function assembliesForRow(row: MeasuredRow): AssemblyView[] {
+    if (row.kind !== "site" || !jobId) return [];
+    const site = (sitesByJob[jobId] ?? []).find((s) => s.name === row.name);
+    if (!site) return [];
+    return assembliesForSurface(assemblies, {
+      areaSqft: site.areaSqft,
+      perimeterLnft: site.perimeterLnft,
+    });
+  }
+
+  function markSeeded(key: string) {
+    setSeededKeys((prev) => new Set([...prev, key]));
+    setPickerKey(null);
+  }
+
   function seedHeld(trace: HeldTrace) {
     const key = `held::${trace.id}`;
     if (seedingName !== null || seededKeys.has(key)) return;
@@ -204,13 +263,43 @@ export function MeasuredSurfacesPanel({
     setSeedNotice(null);
     const built = seedFromHeldTrace(trace, services);
     if (built.lines.length === 0) {
+      setPickerKey(null);
       setSeedNotice(
         `No priced service covers ${trace.name} yet — add one in the pricebook, then seed again.`,
       );
       return;
     }
     onSeedLines(built.lines);
-    setSeededKeys((prev) => new Set([...prev, key]));
+    markSeeded(key);
+  }
+
+  /** Held trace × a picked assembly — pure client math, the shared engine. */
+  function seedHeldWithAssembly(trace: HeldTrace, assembly: AssemblyView) {
+    const key = `held::${trace.id}`;
+    if (seedingName !== null || seededKeys.has(key)) return;
+    setSeedError(null);
+    const built = seedHeldTraceWithAssembly(trace, assembly);
+    if (!built.ok) {
+      // The engine names the actual problem ("X has no measured perimeter…").
+      setPickerKey(null);
+      setSeedNotice(built.error.message);
+      return;
+    }
+    onSeedLines(assemblyLinesToSeedLines(built.value.lines));
+    setSeedNotice(assemblySeedNotice(built.value));
+    markSeeded(key);
+  }
+
+  /** "Seed lines" tap: open the assembly picker when any assembly matches this
+   * surface; orgs without matching assemblies keep the one-tap service seed. */
+  function requestSeedHeld(trace: HeldTrace) {
+    const key = `held::${trace.id}`;
+    if (seedingName !== null || seededKeys.has(key)) return;
+    if (assembliesForSurface(assemblies, heldShape(trace)).length === 0) {
+      seedHeld(trace);
+      return;
+    }
+    setPickerKey((prev) => (prev === key ? null : key));
   }
 
   async function seedSurface(name: string) {
@@ -228,18 +317,56 @@ export function MeasuredSurfacesPanel({
       if (built.seedLines.length === 0) {
         // Not a failure, but not a silent no-op either: nothing on this capture
         // is priceable (its kinds have no active priced service).
+        setPickerKey(null);
         setSeedNotice(
           `No priced service covers ${name} yet — add one in the pricebook, then seed again.`,
         );
       } else {
         onSeedLines(built.seedLines.map((l) => ({ ...l })));
-        setSeededKeys((prev) => new Set([...prev, key]));
+        markSeeded(key);
       }
     } catch {
       setSeedError(`Couldn't seed lines from ${name} — check your connection and try again.`);
     } finally {
       setSeedingName(null);
     }
+  }
+
+  /** Persisted capture × a picked assembly — the server runs the same engine. */
+  async function seedSurfaceWithAssembly(name: string, assembly: AssemblyView) {
+    if (!jobId || seedingName !== null) return;
+    const key = seedKey(jobId, name);
+    if (jobSeeded || seededKeys.has(key)) return;
+    setSeedError(null);
+    setSeedNotice(null);
+    setSeedingName(name);
+    try {
+      const built = await utils.v1.assemblies.seedFromCapture.fetch({
+        jobId,
+        sourceName: name,
+        assemblyId: assembly.id,
+      });
+      onSeedLines(assemblyLinesToSeedLines(built.lines));
+      setSeedNotice(assemblySeedNotice(built));
+      markSeeded(key);
+    } catch (err: unknown) {
+      setSeedError(
+        userMessage(err, `Couldn't seed lines from ${name} — check your connection and try again.`),
+      );
+    } finally {
+      setSeedingName(null);
+    }
+  }
+
+  function requestSeedSurface(row: MeasuredRow) {
+    if (!jobId || seedingName !== null) return;
+    const key = seedKey(jobId, row.name);
+    if (jobSeeded || seededKeys.has(key)) return;
+    if (assembliesForRow(row).length === 0) {
+      void seedSurface(row.name);
+      return;
+    }
+    setPickerKey((prev) => (prev === key ? null : key));
   }
 
   return (
@@ -279,22 +406,32 @@ export function MeasuredSurfacesPanel({
       {!nothingMeasured && (
         <div style={{ marginTop: "var(--space-3)" }}>
           {heldTraces.map((trace) => {
-            const seeded = seededKeys.has(`held::${trace.id}`);
+            const key = `held::${trace.id}`;
+            const seeded = seededKeys.has(key);
             return (
-              <Row
-                key={trace.id}
-                label={trace.name}
-                value={heldTraceSummary(trace)}
-                trailing={
-                  <Button
-                    size="sm"
-                    disabled={seeded || seedingName !== null}
-                    onClick={() => seedHeld(trace)}
-                  >
-                    {seeded ? "Seeded" : "Seed lines"}
-                  </Button>
-                }
-              />
+              <div key={trace.id}>
+                <Row
+                  label={trace.name}
+                  value={heldTraceSummary(trace)}
+                  trailing={
+                    <Button
+                      size="sm"
+                      disabled={seeded || seedingName !== null}
+                      onClick={() => requestSeedHeld(trace)}
+                    >
+                      {seeded ? "Seeded" : "Seed lines"}
+                    </Button>
+                  }
+                />
+                {pickerKey === key && (
+                  <AssemblyPicker
+                    options={assembliesForSurface(assemblies, heldShape(trace))}
+                    busy={seedingName !== null}
+                    onPick={(assembly) => seedHeldWithAssembly(trace, assembly)}
+                    onStandard={() => seedHeld(trace)}
+                  />
+                )}
+              </div>
             );
           })}
 
@@ -313,7 +450,15 @@ export function MeasuredSurfacesPanel({
                 rows={rows}
                 isSeeded={(name) => jobSeeded || seededKeys.has(seedKey(jobId, name))}
                 seedingName={seedingName}
-                onSeed={(name) => void seedSurface(name)}
+                pickerName={
+                  pickerKey !== null && pickerKey.startsWith(`${jobId}::`)
+                    ? pickerKey.slice(jobId.length + 2)
+                    : null
+                }
+                assembliesFor={assembliesForRow}
+                onSeed={requestSeedSurface}
+                onPickAssembly={(name, assembly) => void seedSurfaceWithAssembly(name, assembly)}
+                onPickStandard={(name) => void seedSurface(name)}
                 onOpenSite={(captureId) => openModal(MODAL.SITE_TRACER, { jobId, captureId })}
                 onOpenRoom={(captureId) => openModal(MODAL.ROOM_CARD, { captureId, jobId })}
               />
@@ -364,22 +509,76 @@ export function MeasuredSurfacesPanel({
 }
 
 /**
+ * In-flow assembly picker — expands flush under a surface's row when the org
+ * has assemblies matching its basis (no popover, no portal). "Standard rates"
+ * keeps the original service-based seed one tap away.
+ */
+function AssemblyPicker({
+  options,
+  busy,
+  onPick,
+  onStandard,
+}: {
+  options: readonly AssemblyView[];
+  busy: boolean;
+  onPick: (assembly: AssemblyView) => void;
+  onStandard: () => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Price this surface with"
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "var(--space-2)",
+        padding: "var(--space-2) 0 var(--space-3)",
+        borderBottom: "1px solid var(--line-2)",
+      }}
+    >
+      <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+        Price with
+      </span>
+      {options.map((assembly) => (
+        <Button key={assembly.id} size="sm" disabled={busy} onClick={() => onPick(assembly)}>
+          {assembly.name}
+        </Button>
+      ))}
+      <Button size="sm" disabled={busy} onClick={onStandard}>
+        Standard rates
+      </Button>
+    </div>
+  );
+}
+
+/**
  * The job's capture rows with their per-surface seed action. Site rows open
  * the saved capture (tracer view mode); room rows open the room card, where
- * quantities are confirmed/overridden and a re-scan lives.
+ * quantities are confirmed/overridden and a re-scan lives. A site row whose
+ * basis matches org assemblies expands the in-flow picker on "Seed lines".
  */
 function SurfaceRows({
   rows,
   isSeeded,
   seedingName,
+  pickerName,
+  assembliesFor,
   onSeed,
+  onPickAssembly,
+  onPickStandard,
   onOpenSite,
   onOpenRoom,
 }: {
   rows: readonly MeasuredRow[];
   isSeeded: (name: string) => boolean;
   seedingName: string | null;
-  onSeed: (name: string) => void;
+  /** The row name whose picker is open, if any. */
+  pickerName: string | null;
+  assembliesFor: (row: MeasuredRow) => AssemblyView[];
+  onSeed: (row: MeasuredRow) => void;
+  onPickAssembly: (name: string, assembly: AssemblyView) => void;
+  onPickStandard: (name: string) => void;
   onOpenSite: (captureId: string) => void;
   onOpenRoom: (captureId: string) => void;
 }) {
@@ -389,34 +588,43 @@ function SurfaceRows({
         const seeded = isSeeded(row.name);
         const captureId = row.captureId;
         return (
-          <Row
-            key={`${row.kind}:${row.name}`}
-            label={row.name}
-            value={row.summary}
-            trailing={
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
-                {row.needsConfirm && <Badge tone="amber">Confirm</Badge>}
-                {captureId != null && (
+          <div key={`${row.kind}:${row.name}`}>
+            <Row
+              label={row.name}
+              value={row.summary}
+              trailing={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+                  {row.needsConfirm && <Badge tone="amber">Confirm</Badge>}
+                  {captureId != null && (
+                    <Button
+                      size="sm"
+                      aria-label={`Open ${row.name}`}
+                      onClick={() =>
+                        row.kind === "site" ? onOpenSite(captureId) : onOpenRoom(captureId)
+                      }
+                    >
+                      Open
+                    </Button>
+                  )}
                   <Button
                     size="sm"
-                    aria-label={`Open ${row.name}`}
-                    onClick={() =>
-                      row.kind === "site" ? onOpenSite(captureId) : onOpenRoom(captureId)
-                    }
+                    disabled={seeded || seedingName !== null}
+                    onClick={() => onSeed(row)}
                   >
-                    Open
+                    {seeded ? "Seeded" : seedingName === row.name ? "Seeding…" : "Seed lines"}
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  disabled={seeded || seedingName !== null}
-                  onClick={() => onSeed(row.name)}
-                >
-                  {seeded ? "Seeded" : seedingName === row.name ? "Seeding…" : "Seed lines"}
-                </Button>
-              </span>
-            }
-          />
+                </span>
+              }
+            />
+            {pickerName === row.name && (
+              <AssemblyPicker
+                options={assembliesFor(row)}
+                busy={seedingName !== null}
+                onPick={(assembly) => onPickAssembly(row.name, assembly)}
+                onStandard={() => onPickStandard(row.name)}
+              />
+            )}
+          </div>
         );
       })}
     </>
