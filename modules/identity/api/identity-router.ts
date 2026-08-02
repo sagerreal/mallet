@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { and, count, eq } from "drizzle-orm";
 import { orgs, users, orgInvites } from "@mallet/shared/db/schema";
 import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
-import { asOrgId, asUserId } from "@mallet/shared/types";
+import { asOrgId, asUserId, isOk } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { loadConfig } from "@mallet/shared/config";
 import { router, authedNoPrincipal, anyRole, ownerOrOffice } from "@/trpc/init";
@@ -11,6 +11,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { ROLES, type Principal } from "../domain/principal";
 import { ProvisionOrgNumberUseCase } from "@mallet/a2p";
+import { DrizzleSettingsRepository, defaultBooking } from "@mallet/settings";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
 // `callbackNumber` is the mobile Elas rings first on an outbound click-to-call. A call RECORD
@@ -118,6 +119,9 @@ export const createIdentityRouter = () =>
           // Collected on the signup form purely so the shop's business number has a LOCAL area
           // code. A plumber in Weymouth handing customers a 669 California number looks wrong.
           postalCode: z.string().regex(/^\d{5}$/).optional(),
+          // Derived from the ZIP on the client (lib/geo/zip-timezone). Absent when the ZIP is
+          // outside the table — the org then keeps the column default rather than a guess.
+          timezone: z.string().min(1).max(64).optional(),
         }),
       )
       .output(meDTO)
@@ -147,6 +151,17 @@ export const createIdentityRouter = () =>
           return loadMeDTO(tx, { role, orgId: asOrgId(provisioned.orgId), userId: asUserId(row.id) });
         });
         if (!me) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "provisioned user not found" });
+
+        // Timezone derived client-side from the ZIP (lib/geo/zip-timezone). Absent when the ZIP
+        // fell outside that table — the org keeps its column default rather than a silent guess.
+        if (input.timezone) {
+          await withTenant(asOrgId(provisioned.orgId), async (tx) => {
+            const repo = new DrizzleSettingsRepository(tx, asOrgId(provisioned.orgId));
+            const settings = await repo.getConfig(provisioned.orgId, defaultBooking);
+            const patched = settings.patch({ timezone: input.timezone }, ctx.deps.clock.now());
+            if (isOk(patched)) await repo.saveConfig(patched.value);
+          });
+        }
 
         // Buy the shop its business line. AWAITED but never allowed to fail the signup: a Twilio
         // outage must not read to a new customer as "Elas is broken, I could not even sign up".
