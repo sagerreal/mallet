@@ -41,6 +41,21 @@ export function TimezoneCard() {
   const { saved, flash } = useSaveFlash();
   const save = api.v1.settings.updateConfig.useMutation();
 
+  // Gate on the real value having arrived. Rendering DEFAULT_ZONE as a live, editable,
+  // apparently-confirmed Select value while the query is still in flight would show a confident
+  // wrong answer nobody was asked to check — the exact failure this card exists to correct (see
+  // the file comment). Matches the sibling pattern in quickbooks-card.tsx / payments-card.tsx
+  // (`status.isLoading ? "Loading…" : …`).
+  if (!settings.isFetched) {
+    return (
+      <FoldCard title="Time zone" summary="Loading…" defaultOpen>
+        <p className="muted" style={{ fontSize: "var(--type-base)", margin: 0 }}>
+          Loading…
+        </p>
+      </FoldCard>
+    );
+  }
+
   const current = settings.data?.config.timezone ?? DEFAULT_ZONE;
 
   return (
