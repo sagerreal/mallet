@@ -15,6 +15,7 @@
  */
 
 import type { EstimateLine, QuoteTierKey, TierNames } from "@/lib/store/types";
+import type { HeldTrace } from "@/lib/measure/held-trace";
 import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
 
 // ---- composer line + state types --------------------------------------------
@@ -146,6 +147,13 @@ export interface ComposerState {
   terms: { id: string; text: string } | null;
   /** Channel for quote delivery. "text" = SMS via Twilio; "email" = Resend. Default: "text". */
   sendChannel: "text" | "email";
+  /**
+   * Satellite traces made from THIS quote before any job exists — held here
+   * (lib/measure/held-trace.ts), seeded into lines client-side, and persisted
+   * via siteCreate only when the quote's flow has a job to anchor them to
+   * (?job= / ?change=). An abandoned draft takes them with it — deliberate.
+   */
+  heldTraces: HeldTrace[];
 }
 
 export function emptyLine(): ComposerLine {
@@ -176,7 +184,13 @@ export const INITIAL_STATE: ComposerState = {
   intro: "",
   terms: null,
   sendChannel: "text",
+  heldTraces: [],
 };
+
+/** Append a trace held on this quote (immutable — a new state, a new array). */
+export function addHeldTrace(state: ComposerState, trace: HeldTrace): ComposerState {
+  return { ...state, heldTraces: [...state.heldTraces, trace] };
+}
 
 // ---- GBB tier helpers --------------------------------------------------------
 

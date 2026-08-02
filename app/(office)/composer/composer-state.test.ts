@@ -6,8 +6,10 @@
  */
 
 import { describe, it, expect } from "vitest";
+import type { HeldTrace } from "@/lib/measure/held-trace";
 import {
   INITIAL_STATE,
+  addHeldTrace,
   aiDraftForPayload,
   appendMeasurementLines,
   applyAiDraftLines,
@@ -936,5 +938,37 @@ describe("applyReviseSeed", () => {
     // The tier with no lines still renders one empty editable row, never a hole.
     expect(next.gbb?.opts[1]?.lines).toHaveLength(1);
     expect(next.gbb?.opts[1]?.lines[0]?.d).toBe("");
+  });
+});
+
+// ---- held traces (satellite measurement on the quote page) -------------------
+
+describe("addHeldTrace", () => {
+  const trace: HeldTrace = {
+    id: "t1",
+    name: "Driveway",
+    surface: "flat",
+    pitchRise: null,
+    polygon: {
+      vertices: [
+        { lat: 1, lng: 1 },
+        { lat: 1, lng: 2 },
+        { lat: 2, lng: 2 },
+      ],
+      view: { centerLat: 1.5, centerLng: 1.5, zoom: 20 },
+    },
+    footprintSqft: 640,
+    perimeterLnft: 104,
+    areaSqft: 640,
+  };
+
+  it("starts empty and appends immutably — the previous state is untouched", () => {
+    expect(INITIAL_STATE.heldTraces).toEqual([]);
+    const next = addHeldTrace(INITIAL_STATE, trace);
+    expect(next.heldTraces).toEqual([trace]);
+    expect(INITIAL_STATE.heldTraces).toEqual([]);
+    const after = addHeldTrace(next, { ...trace, id: "t2", name: "Patio" });
+    expect(after.heldTraces.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(next.heldTraces).toHaveLength(1);
   });
 });

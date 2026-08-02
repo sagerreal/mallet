@@ -1,9 +1,13 @@
 /**
  * components/modals/site-tracer/site-tracer-modal.tsx
- * Entry point for the aerial tracer sheet. Opened from the job modal's Site
- * measurements block (a drill-in that PUSHES onto the modal back-stack, like
- * ROOM_CARD):
- *   { jobId }             → trace a new surface
+ * Entry point for the aerial tracer sheet. Opened from the composer's Measure
+ * section (satellite measurement is an ESTIMATING feature — the entry lives on
+ * the quote page) with one of:
+ *   { held: true, address?, existingNames?, onSaveHeld }
+ *                         → trace a new surface with NO job: the header carries
+ *                           an address input, the finished trace is handed back
+ *                           to the composer as a HeldTrace (quote-held, not DB)
+ *   { jobId }             → trace a new surface onto a job's site captures
  *   { jobId, captureId }  → view/edit a saved capture
  *
  * Site captures hydrate lazily via useJobSites; a failed list fetch renders
@@ -19,18 +23,30 @@ import { LoadFailed } from "@/components/shared/load-failed";
 import { ModalLoading } from "../modal-loading";
 import { SiteTraceNew } from "./site-trace-new";
 import { SiteCaptureView } from "./site-capture-view";
+import { heldTracerParams } from "./held-tracer-params";
 import type { SiteCard } from "@/lib/store/types";
 
 const EMPTY_SITES: readonly SiteCard[] = [];
 
 export function SiteTracerModalContent() {
   const activeModal = useActiveModal();
+  const held = heldTracerParams(activeModal?.params);
   const jobId = activeModal?.params?.jobId as string | undefined;
   const captureId = activeModal?.params?.captureId as string | undefined;
 
-  const query = useJobSites(jobId);
+  // Hooks run unconditionally — held mode just disables the job-sites query.
+  const query = useJobSites(held ? undefined : jobId);
   const sites = useAppStore((s) => (jobId ? s.sitesByJob[jobId] : undefined)) ?? EMPTY_SITES;
   const job = useAppStore((s) => (jobId ? s.jobs.find((j) => j.id === jobId) : undefined));
+
+  if (held) {
+    return (
+      <SiteTraceNew
+        target={{ kind: "held", initialAddress: held.address, onSave: held.onSaveHeld }}
+        existingNames={held.existingNames}
+      />
+    );
+  }
 
   if (!jobId) {
     return (
@@ -79,9 +95,7 @@ export function SiteTracerModalContent() {
 
   return (
     <SiteTraceNew
-      jobId={jobId}
-      jobTitle={job?.title}
-      address={job?.addr?.trim() ?? ""}
+      target={{ kind: "job", jobId, jobTitle: job?.title, address: job?.addr?.trim() ?? "" }}
       existingNames={sites.map((s) => s.name)}
     />
   );
