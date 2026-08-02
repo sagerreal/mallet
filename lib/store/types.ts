@@ -626,9 +626,38 @@ export interface SiteMapView {
   zoom: number;
 }
 
+/** A classed roof line drawn inside the footprint (a hip roof's ridge). */
+export interface SiteInteriorLineShape {
+  a: SiteVertex;
+  b: SiteVertex;
+  cls: "ridge" | "hip" | "valley";
+}
+
 export interface SitePolygonShape {
   vertices: SiteVertex[];
   view: SiteMapView;
+  /**
+   * Roof edge classes, parallel to vertices (edge i = vertex i → i+1,
+   * wrapping). Absent on legacy captures and flat surfaces — unclassified.
+   */
+  edgeClasses?: ("eave" | "rake" | "ridge" | "hip" | "valley")[];
+  interiorLines?: SiteInteriorLineShape[];
+}
+
+/** Server-derived plan-view feet per edge class; null when unclassified. */
+export interface SiteEdgeTotals {
+  eaveFt: number;
+  rakeFt: number;
+  ridgeFt: number;
+  hipFt: number;
+  valleyFt: number;
+}
+
+/** Waste-relevant complexity hint — any hips/valleys mark the roof cut-up. */
+export interface SiteComplexity {
+  hips: number;
+  valleys: number;
+  cutUp: boolean;
 }
 
 /**
@@ -648,5 +677,8 @@ export interface SiteCard {
   footprintSqft: number | null;
   perimeterLnft: number | null;
   polygon: SitePolygonShape | null; // null for manual entries
+  /** Per-class linears + complexity, server-derived; null when unclassified. */
+  edges: SiteEdgeTotals | null;
+  complexity: SiteComplexity | null;
   createdAt: string; // ISO string
 }

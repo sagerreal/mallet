@@ -16,6 +16,23 @@ export interface SitePolygonVertex {
   readonly lng: number;
 }
 
+// Roof edge classes for PITCHED surfaces. Defined here (not imported from
+// lib/measure/edge-classes.ts) so the domain stays free of app-layer imports —
+// the API mapper bridges the two, and its assignments are the compile-time
+// parity check if the unions ever drift.
+export type SiteEdgeClass = "eave" | "rake" | "ridge" | "hip" | "valley";
+export type SiteInteriorLineClass = "ridge" | "hip" | "valley";
+
+const VALID_EDGE_CLASSES: readonly SiteEdgeClass[] = ["eave", "rake", "ridge", "hip", "valley"];
+const VALID_INTERIOR_CLASSES: readonly SiteInteriorLineClass[] = ["ridge", "hip", "valley"];
+
+/** A classed roof line drawn inside the footprint (a hip roof's ridge). */
+export interface SiteInteriorLine {
+  readonly a: SitePolygonVertex;
+  readonly b: SitePolygonVertex;
+  readonly cls: SiteInteriorLineClass;
+}
+
 // The map view the surface was traced against — persisted so the tracer UI can re-open the
 // capture centered exactly where it was drawn.
 export interface SitePolygonView {
@@ -24,9 +41,16 @@ export interface SitePolygonView {
   readonly zoom: number;
 }
 
+// The polygon jsonb shape is VERSIONED ADDITIVELY: edgeClasses/interiorLines
+// arrived after the first captures shipped, so both are optional — a legacy
+// capture without them is UNCLASSIFIED (readers must treat absence as "no
+// classes", never guess). When edgeClasses is present it is parallel to
+// vertices: edge i runs vertex i → vertex i+1 (wrapping back to vertex 0).
 export interface SitePolygon {
   readonly vertices: readonly SitePolygonVertex[];
   readonly view: SitePolygonView;
+  readonly edgeClasses?: readonly SiteEdgeClass[];
+  readonly interiorLines?: readonly SiteInteriorLine[];
 }
 
 export interface SiteCaptureProps {
@@ -147,6 +171,34 @@ const validatePolygon = (polygon: SitePolygon): ValidationError | null => {
   if (!isFiniteNumber(view?.centerLat) || !isFiniteNumber(view?.centerLng) || !isFiniteNumber(view?.zoom)) {
     return validation("polygon view must have finite centerLat/centerLng/zoom", "polygon");
   }
+  if (polygon.edgeClasses !== undefined) {
+    if (!Array.isArray(polygon.edgeClasses) || polygon.edgeClasses.length !== polygon.vertices.length) {
+      return validation("edgeClasses must have one class per polygon edge", "polygon");
+    }
+    for (const cls of polygon.edgeClasses) {
+      if (!VALID_EDGE_CLASSES.includes(cls)) {
+        return validation(`invalid edge class: "${String(cls)}"`, "polygon");
+      }
+    }
+  }
+  if (polygon.interiorLines !== undefined) {
+    if (!Array.isArray(polygon.interiorLines)) {
+      return validation("interiorLines must be an array", "polygon");
+    }
+    for (const line of polygon.interiorLines) {
+      if (
+        !isFiniteNumber(line?.a?.lat) ||
+        !isFiniteNumber(line?.a?.lng) ||
+        !isFiniteNumber(line?.b?.lat) ||
+        !isFiniteNumber(line?.b?.lng)
+      ) {
+        return validation("interior lines must have finite endpoints", "polygon");
+      }
+      if (!VALID_INTERIOR_CLASSES.includes(line.cls)) {
+        return validation(`invalid interior line class: "${String(line.cls)}"`, "polygon");
+      }
+    }
+  }
   return null;
 };
 
@@ -156,7 +208,12 @@ export const parseSitePolygon = (value: unknown): Result<SitePolygon, Validation
   if (typeof value !== "object" || value === null) {
     return err(validation("polygon must be an object", "polygon"));
   }
-  const candidate = value as { vertices?: unknown; view?: unknown };
+  const candidate = value as {
+    vertices?: unknown;
+    view?: unknown;
+    edgeClasses?: unknown;
+    interiorLines?: unknown;
+  };
   if (!Array.isArray(candidate.vertices)) {
     return err(validation("polygon vertices must be an array", "polygon"));
   }
@@ -172,9 +229,56 @@ export const parseSitePolygon = (value: unknown): Result<SitePolygon, Validation
   if (!isFiniteNumber(view?.centerLat) || !isFiniteNumber(view?.centerLng) || !isFiniteNumber(view?.zoom)) {
     return err(validation("polygon view must have finite centerLat/centerLng/zoom", "polygon"));
   }
+
+  // v2 additive fields — ABSENT on legacy rows (that's valid: unclassified).
+  // Present-but-malformed is corruption and fails loudly like the rest of the
+  // shape; structural rules (length parity, known classes) run in
+  // validatePolygon below.
+  let edgeClasses: SiteEdgeClass[] | undefined;
+  if (candidate.edgeClasses !== undefined) {
+    if (!Array.isArray(candidate.edgeClasses)) {
+      return err(validation("polygon edgeClasses must be an array", "polygon"));
+    }
+    edgeClasses = [];
+    for (const raw of candidate.edgeClasses) {
+      if (typeof raw !== "string" || !VALID_EDGE_CLASSES.includes(raw as SiteEdgeClass)) {
+        return err(validation(`invalid edge class: "${String(raw)}"`, "polygon"));
+      }
+      edgeClasses.push(raw as SiteEdgeClass);
+    }
+  }
+  let interiorLines: SiteInteriorLine[] | undefined;
+  if (candidate.interiorLines !== undefined) {
+    if (!Array.isArray(candidate.interiorLines)) {
+      return err(validation("polygon interiorLines must be an array", "polygon"));
+    }
+    interiorLines = [];
+    for (const raw of candidate.interiorLines) {
+      const line = raw as { a?: { lat?: unknown; lng?: unknown }; b?: { lat?: unknown; lng?: unknown }; cls?: unknown } | null;
+      if (
+        !isFiniteNumber(line?.a?.lat) ||
+        !isFiniteNumber(line?.a?.lng) ||
+        !isFiniteNumber(line?.b?.lat) ||
+        !isFiniteNumber(line?.b?.lng)
+      ) {
+        return err(validation("interior lines must have finite endpoints", "polygon"));
+      }
+      if (typeof line.cls !== "string" || !VALID_INTERIOR_CLASSES.includes(line.cls as SiteInteriorLineClass)) {
+        return err(validation(`invalid interior line class: "${String(line?.cls)}"`, "polygon"));
+      }
+      interiorLines.push({
+        a: { lat: line.a.lat, lng: line.a.lng },
+        b: { lat: line.b.lat, lng: line.b.lng },
+        cls: line.cls as SiteInteriorLineClass,
+      });
+    }
+  }
+
   const polygon: SitePolygon = {
     vertices,
     view: { centerLat: view.centerLat, centerLng: view.centerLng, zoom: view.zoom },
+    ...(edgeClasses !== undefined ? { edgeClasses } : {}),
+    ...(interiorLines !== undefined ? { interiorLines } : {}),
   };
   const structural = validatePolygon(polygon);
   if (structural !== null) return err(structural);

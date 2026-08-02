@@ -22,6 +22,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { MapsStatus } from "./use-google-maps";
 import { MIN_TRACE_VERTICES, type TraceVertex } from "@/lib/measure/trace-state";
+import { EDGE_COLORS, type EdgeClass, type InteriorLineShape } from "@/lib/measure/edge-classes";
 import type { SiteMapView } from "@/lib/store/types";
 
 export type GeocodeState = "idle" | "pending" | "no-address" | "failed";
@@ -60,11 +61,16 @@ const VERTEX_SCALE = 5;
 const FIRST_VERTEX_SCALE = 8;
 const STROKE_WEIGHT = 2;
 const FILL_OPACITY = 0.25;
+/** Classed edges draw heavier than the plain outline — color must read AND tap. */
+const EDGE_STROKE_WEIGHT = 4;
 
 // Overlays draw on satellite PHOTOGRAPHY, not themed UI — theme tokens (near-black
 // in light mode) would vanish on dark rooftops, so the trace is fixed white, the
 // standard for imagery overlays. #FFFFFF already exists in the palette (--pri-fg).
+// Classed edges use EDGE_COLORS (lib/measure/edge-classes.ts) — same rationale.
 const OVERLAY_COLOR = "#FFFFFF";
+
+const EMPTY_INTERIOR_LINES: readonly InteriorLineShape[] = [];
 
 export interface UseTracerMapArgs {
   status: MapsStatus;
@@ -84,6 +90,19 @@ export interface UseTracerMapArgs {
   interactive: boolean;
   onMapClick?: (vertex: TraceVertex) => void;
   onFirstVertexClick?: () => void;
+  /**
+   * Roof edge classification layer (pitched surfaces, closed outline only):
+   * class per perimeter edge (edge i = vertex i → i+1). When present, each
+   * edge draws as its own colored, tappable polyline instead of the plain
+   * white outline. Null/undefined = unclassified — plain outline.
+   */
+  edgeClasses?: readonly EdgeClass[] | null;
+  /** Classed interior lines (a hip roof's ridge), drawn inside the outline. */
+  interiorLines?: readonly InteriorLineShape[];
+  /** First point of an interior line being drawn — marked so the tap registers. */
+  pendingLinePoint?: TraceVertex | null;
+  onEdgeClick?: (edgeIndex: number) => void;
+  onInteriorLineClick?: (lineIndex: number) => void;
 }
 
 export interface TracerMapHandle {
@@ -95,6 +114,9 @@ export interface TracerMapHandle {
 export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
   const { status, containerRef, savedView, seedLocation, address, vertices, closed, interactive } =
     args;
+  const edgeClasses = args.edgeClasses ?? null;
+  const interiorLines = args.interiorLines ?? EMPTY_INTERIOR_LINES;
+  const pendingLinePoint = args.pendingLinePoint ?? null;
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
@@ -102,13 +124,19 @@ export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
   const markerListenersRef = useRef<google.maps.MapsEventListener[]>([]);
   const polylineRef = useRef<google.maps.Polyline | null>(null);
   const polygonRef = useRef<google.maps.Polygon | null>(null);
+  const edgePolylinesRef = useRef<google.maps.Polyline[]>([]);
+  const edgeListenersRef = useRef<google.maps.MapsEventListener[]>([]);
 
   // Latest-callback refs so the map click listener never goes stale and the
   // map-creation effect doesn't depend on unstable function props.
   const onMapClickRef = useRef(args.onMapClick);
   const onFirstVertexClickRef = useRef(args.onFirstVertexClick);
+  const onEdgeClickRef = useRef(args.onEdgeClick);
+  const onInteriorLineClickRef = useRef(args.onInteriorLineClick);
   onMapClickRef.current = args.onMapClick;
   onFirstVertexClickRef.current = args.onFirstVertexClick;
+  onEdgeClickRef.current = args.onEdgeClick;
+  onInteriorLineClickRef.current = args.onInteriorLineClick;
 
   const [mapReady, setMapReady] = useState(false);
   const [geocode, setGeocode] = useState<GeocodeState>("idle");
@@ -229,12 +257,17 @@ export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
     markersRef.current = markers;
     markerListenersRef.current = listeners;
 
+    const classifying = closed && path.length >= MIN_TRACE_VERTICES && edgeClasses !== null;
+
     if (closed && path.length >= MIN_TRACE_VERTICES) {
+      // Classifying: the polygon keeps only its fill — each perimeter edge
+      // draws as its own colored polyline below so it can carry a class and a
+      // tap target. Unclassified: the plain white outline, unchanged.
       polygonRef.current = new google.maps.Polygon({
         paths: path,
         map,
         strokeColor: OVERLAY_COLOR,
-        strokeOpacity: 1,
+        strokeOpacity: classifying ? 0 : 1,
         strokeWeight: STROKE_WEIGHT,
         fillColor: OVERLAY_COLOR,
         fillOpacity: FILL_OPACITY,
@@ -251,6 +284,74 @@ export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
       });
     }
 
+    const edgeLines: google.maps.Polyline[] = [];
+    const edgeListeners: google.maps.MapsEventListener[] = [];
+    if (classifying && edgeClasses !== null) {
+      const edgesTappable = interactive && onEdgeClickRef.current !== undefined;
+      for (let i = 0; i < path.length; i += 1) {
+        const a = path[i];
+        const b = path[(i + 1) % path.length];
+        const cls = edgeClasses[i];
+        if (a === undefined || b === undefined || cls === undefined) continue;
+        const line = new google.maps.Polyline({
+          path: [a, b],
+          map,
+          strokeColor: EDGE_COLORS[cls],
+          strokeOpacity: 1,
+          strokeWeight: EDGE_STROKE_WEIGHT,
+          clickable: edgesTappable,
+          zIndex: 3,
+        });
+        if (edgesTappable) {
+          const index = i;
+          edgeListeners.push(line.addListener("click", () => onEdgeClickRef.current?.(index)));
+        }
+        edgeLines.push(line);
+      }
+    }
+    if (closed) {
+      const linesTappable = interactive && onInteriorLineClickRef.current !== undefined;
+      interiorLines.forEach((interior, i) => {
+        const line = new google.maps.Polyline({
+          path: [
+            { lat: interior.a.lat, lng: interior.a.lng },
+            { lat: interior.b.lat, lng: interior.b.lng },
+          ],
+          map,
+          strokeColor: EDGE_COLORS[interior.cls],
+          strokeOpacity: 1,
+          strokeWeight: EDGE_STROKE_WEIGHT,
+          clickable: linesTappable,
+          zIndex: 4,
+        });
+        if (linesTappable) {
+          edgeListeners.push(line.addListener("click", () => onInteriorLineClickRef.current?.(i)));
+        }
+        edgeLines.push(line);
+      });
+      if (pendingLinePoint !== null) {
+        markersRef.current = [
+          ...markersRef.current,
+          new google.maps.Marker({
+            position: { lat: pendingLinePoint.lat, lng: pendingLinePoint.lng },
+            map,
+            clickable: false,
+            zIndex: 5,
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: VERTEX_SCALE,
+              fillColor: EDGE_COLORS.ridge,
+              fillOpacity: 1,
+              strokeColor: EDGE_COLORS.ridge,
+              strokeWeight: STROKE_WEIGHT,
+            },
+          }),
+        ];
+      }
+    }
+    edgePolylinesRef.current = edgeLines;
+    edgeListenersRef.current = edgeListeners;
+
     return () => {
       markerListenersRef.current.forEach((l) => l.remove());
       markerListenersRef.current = [];
@@ -260,8 +361,12 @@ export function useTracerMap(args: UseTracerMapArgs): TracerMapHandle {
       polylineRef.current = null;
       polygonRef.current?.setMap(null);
       polygonRef.current = null;
+      edgeListenersRef.current.forEach((l) => l.remove());
+      edgeListenersRef.current = [];
+      edgePolylinesRef.current.forEach((l) => l.setMap(null));
+      edgePolylinesRef.current = [];
     };
-  }, [mapReady, vertices, closed, interactive]);
+  }, [mapReady, vertices, closed, interactive, edgeClasses, interiorLines, pendingLinePoint]);
 
   return {
     geocode,

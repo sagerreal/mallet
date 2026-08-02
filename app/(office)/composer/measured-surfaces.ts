@@ -18,6 +18,7 @@
 import type { Job, RoomCard, RoomQuantity, SiteCard } from "@/lib/store/types";
 import { formatDate } from "@/lib/format";
 import { formatSqft, formatLnft, pitchLabel } from "@/lib/measure/aerial-geometry";
+import { edgeReadout } from "@/lib/measure/edge-classes";
 
 // ---- job resolution --------------------------------------------------------
 
@@ -139,14 +140,22 @@ export function roomRowSummary(room: Pick<RoomCard, "quantities" | "capturedAt">
 }
 
 export function siteRowSummary(
-  site: Pick<SiteCard, "surface" | "pitchRise" | "areaSqft" | "perimeterLnft" | "createdAt">,
+  site: Pick<SiteCard, "surface" | "pitchRise" | "areaSqft" | "perimeterLnft" | "edges" | "createdAt">,
 ): string {
   const area =
     site.surface === "pitched" && site.pitchRise !== null
       ? `${formatSqft(site.areaSqft)} at ${pitchLabel(site.pitchRise)}`
       : formatSqft(site.areaSqft);
   const parts = [area];
-  if (site.perimeterLnft !== null) parts.push(formatLnft(site.perimeterLnft));
+  // A classified PITCHED surface shows its per-class linears ("Eaves 160 ft ·
+  // Ridge 40 ft") in place of the bare perimeter; flat and legacy captures
+  // keep the perimeter figure.
+  const classed = site.surface === "pitched" && site.edges !== null ? edgeReadout(site.edges) : "";
+  if (classed !== "") {
+    parts.push(classed);
+  } else if (site.perimeterLnft !== null) {
+    parts.push(formatLnft(site.perimeterLnft));
+  }
   parts.push(`traced ${formatDate(site.createdAt)}`);
   return parts.join(" · ");
 }

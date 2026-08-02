@@ -960,6 +960,8 @@ describe("addHeldTrace", () => {
     footprintSqft: 640,
     perimeterLnft: 104,
     areaSqft: 640,
+    edges: null,
+    complexity: null,
   };
 
   it("starts empty and appends immutably — the previous state is untouched", () => {

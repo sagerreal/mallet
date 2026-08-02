@@ -15,13 +15,14 @@
  * is proven in held-trace-seed.test.ts against the real server use-case.
  */
 
-import type { SitePolygonShape } from "@/lib/store/types";
+import type { SiteComplexity, SiteEdgeTotals, SitePolygonShape } from "@/lib/store/types";
 import {
   formatLnft,
   pitchCorrectedAreaPreview,
   round2,
   surfaceSummary,
 } from "@/lib/measure/aerial-geometry";
+import { edgeReadout, edgeTotalsFt, isClassified, roofComplexity } from "@/lib/measure/edge-classes";
 
 export interface HeldTrace {
   /** Client-authored id — becomes the site capture's id if the trace persists. */
@@ -37,6 +38,14 @@ export interface HeldTrace {
   readonly perimeterLnft: number;
   /** WORKING area, 2dp — pitch-corrected via the server's exact formula. */
   readonly areaSqft: number;
+  /**
+   * Per-class linears from the polygon's edge classification — the SAME pure
+   * math the server's DTO derives with (lib/measure/edge-classes.ts), so a
+   * held trace and its later persisted capture show identical numbers. Null
+   * when unclassified (flat surfaces).
+   */
+  readonly edges: SiteEdgeTotals | null;
+  readonly complexity: SiteComplexity | null;
 }
 
 export interface CreateHeldTraceInput {
@@ -60,6 +69,7 @@ export function createHeldTrace(input: CreateHeldTraceInput): HeldTrace {
   const footprintSqft = round2(input.footprintSqft);
   const perimeterLnft = round2(input.perimeterLnft);
   const pitchRise = input.surface === "pitched" ? (input.pitchRise ?? null) : null;
+  const classified = isClassified(input.polygon.edgeClasses, input.polygon.interiorLines);
   return {
     id: input.id,
     name: input.name,
@@ -68,19 +78,46 @@ export function createHeldTrace(input: CreateHeldTraceInput): HeldTrace {
     polygon: {
       vertices: input.polygon.vertices.map((v) => ({ ...v })),
       view: { ...input.polygon.view },
+      ...(input.polygon.edgeClasses !== undefined
+        ? { edgeClasses: [...input.polygon.edgeClasses] }
+        : {}),
+      ...(input.polygon.interiorLines !== undefined
+        ? {
+            interiorLines: input.polygon.interiorLines.map((l) => ({
+              a: { ...l.a },
+              b: { ...l.b },
+              cls: l.cls,
+            })),
+          }
+        : {}),
     },
     footprintSqft,
     perimeterLnft,
     areaSqft: pitchCorrectedAreaPreview(footprintSqft, pitchRise ?? 0),
+    edges: classified
+      ? edgeTotalsFt(input.polygon.vertices, input.polygon.edgeClasses, input.polygon.interiorLines)
+      : null,
+    complexity: classified
+      ? roofComplexity(input.polygon.edgeClasses, input.polygon.interiorLines)
+      : null,
   };
 }
 
-/** Row summary — "640 sqft · 104 lnft", pitched adds the footprint/pitch detail. */
+/**
+ * Row summary — "640 sqft · 104 lnft", pitched adds the footprint/pitch
+ * detail; a CLASSIFIED pitched trace shows its per-class linears instead of
+ * the bare perimeter ("… · Eaves 160 ft · Ridge 40 ft").
+ */
 export function heldTraceSummary(trace: HeldTrace): string {
-  return `${surfaceSummary({
+  const head = surfaceSummary({
     surface: trace.surface,
     pitchRise: trace.pitchRise,
     areaSqft: trace.areaSqft,
     footprintSqft: trace.footprintSqft,
-  })} · ${formatLnft(trace.perimeterLnft)}`;
+  });
+  if (trace.surface === "pitched" && trace.edges !== null) {
+    const readout = edgeReadout(trace.edges);
+    if (readout !== "") return `${head} · ${readout}`;
+  }
+  return `${head} · ${formatLnft(trace.perimeterLnft)}`;
 }

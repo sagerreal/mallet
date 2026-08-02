@@ -82,11 +82,13 @@ declare namespace google.maps {
     strokeOpacity?: number;
     strokeWeight?: number;
     clickable?: boolean;
+    zIndex?: number;
   }
 
   class Polyline {
     constructor(opts?: PolylineOptions);
     setMap(map: Map | null): void;
+    addListener(event: string, cb: () => void): MapsEventListener;
   }
 
   interface PolygonOptions {

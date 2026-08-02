@@ -79,6 +79,8 @@ const site = (overrides: Partial<SiteCard> = {}): SiteCard => ({
   footprintSqft: 640,
   perimeterLnft: 104,
   polygon: null,
+  edges: null,
+  complexity: null,
   createdAt: "2026-08-01T12:00:00.000Z",
   ...overrides,
 });
@@ -99,6 +101,8 @@ const heldTrace = (overrides: Partial<HeldTrace> = {}): HeldTrace => ({
   footprintSqft: 640,
   perimeterLnft: 104,
   areaSqft: 640,
+  edges: null,
+  complexity: null,
   ...overrides,
 });
 
