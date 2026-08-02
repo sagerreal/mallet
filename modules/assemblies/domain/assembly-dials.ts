@@ -1,4 +1,5 @@
-import type { AssemblyComponent, AssemblyConfig } from "./assembly-config";
+import type { AssemblyComponent, AssemblyConfig, EdgeClassKey, WasteByComplexity } from "./assembly-config";
+import { EDGE_CLASS_KEYS } from "./assembly-config";
 
 /**
  * Dials — the org-tunable constants of an assembly, addressed structurally so
@@ -14,9 +15,10 @@ import type { AssemblyComponent, AssemblyConfig } from "./assembly-config";
  *  - percentBps:   bps ⇄ percent input
  *  - wastePercent: multiplier (1.07) ⇄ percent input (7)
  *  - number:       raw number, with unitSuffix ("in", "sq ft")
+ *  - toggle:       0/1 ⇄ a checkbox (the ice-dam-region switch)
  */
 
-export type DialFormat = "dollars" | "percentBps" | "wastePercent" | "number";
+export type DialFormat = "dollars" | "percentBps" | "wastePercent" | "number" | "toggle";
 
 export type DialTarget =
   | { readonly kind: "marginBps" }
@@ -35,7 +37,14 @@ export type DialTarget =
         | "perQuantity";
     }
   | { readonly kind: "componentFactor"; readonly componentKey: string; readonly index: number }
-  | { readonly kind: "tierRate"; readonly index: number };
+  | { readonly kind: "tierRate"; readonly index: number }
+  /** One tier of the config's derived-waste table (wastePercent format). */
+  | { readonly kind: "configWasteTier"; readonly tier: keyof WasteByComplexity }
+  /** A COUNT component's dialed quantity ({count:n} basis; number format). */
+  | { readonly kind: "componentCount"; readonly componentKey: string }
+  /** Whether an edges-sum component includes one class (toggle format) — the
+   * ice-dam switch adds/removes the eave courses from ice & water shield. */
+  | { readonly kind: "componentEdgeToggle"; readonly componentKey: string; readonly edge: EdgeClassKey };
 
 export interface AssemblyDial {
   readonly key: string;
@@ -84,6 +93,21 @@ export function getDialValue(assembly: DialableAssembly, target: DialTarget): nu
     }
     case "tierRate":
       return assembly.config.tiers?.[target.index]?.rateCents ?? null;
+    case "configWasteTier":
+      return assembly.config.wasteByComplexity?.[target.tier] ?? null;
+    case "componentCount": {
+      const component = componentByKey(assembly.config, target.componentKey);
+      if (component === null || component.kind === "fixed" || component.kind === "equipment") return null;
+      return typeof component.basis === "object" && "count" in component.basis
+        ? component.basis.count
+        : null;
+    }
+    case "componentEdgeToggle": {
+      const component = componentByKey(assembly.config, target.componentKey);
+      if (component === null || component.kind === "fixed" || component.kind === "equipment") return null;
+      if (typeof component.basis !== "object" || !("edges" in component.basis)) return null;
+      return component.basis.edges.includes(target.edge) ? 1 : 0;
+    }
   }
 }
 
@@ -148,10 +172,53 @@ export function setDialValue(
         },
       };
     }
+    case "configWasteTier": {
+      const table = assembly.config.wasteByComplexity;
+      if (table === undefined) return null;
+      return {
+        ...assembly,
+        config: { ...assembly.config, wasteByComplexity: { ...table, [target.tier]: raw } },
+      };
+    }
+    case "componentCount": {
+      if (getDialValue(assembly, target) === null) return null;
+      return {
+        ...assembly,
+        config: setComponent(assembly.config, target.componentKey, (component) => ({
+          ...component,
+          basis: { count: Math.max(0, Math.round(raw)) },
+        })),
+      };
+    }
+    case "componentEdgeToggle": {
+      if (getDialValue(assembly, target) === null) return null;
+      let refused = false;
+      const config = setComponent(assembly.config, target.componentKey, (component) => {
+        if (component.kind === "fixed" || component.kind === "equipment") return component;
+        const basis = component.basis;
+        if (typeof basis !== "object" || !("edges" in basis)) return component;
+        const on = raw !== 0;
+        if (on) {
+          if (basis.edges.includes(target.edge)) return component;
+          // Insert in canonical class order so equal configs stay byte-equal.
+          const edges = EDGE_CLASS_KEYS.filter(
+            (key) => key === target.edge || basis.edges.includes(key),
+          );
+          return { ...component, basis: { edges } };
+        }
+        const edges = basis.edges.filter((key) => key !== target.edge);
+        if (edges.length === 0) {
+          refused = true; // an edges component must keep ≥1 class — never a silent no-op
+          return component;
+        }
+        return { ...component, basis: { edges } };
+      });
+      return refused ? null : { ...assembly, config };
+    }
   }
 }
 
-/** Display value for a dial (dollars/percent/number) from its raw value. */
+/** Display value for a dial (dollars/percent/number/toggle) from its raw value. */
 export function dialDisplayValue(format: DialFormat, raw: number): number {
   switch (format) {
     case "dollars":
@@ -162,6 +229,8 @@ export function dialDisplayValue(format: DialFormat, raw: number): number {
       return Math.round((raw - 1) * 1000) / 10;
     case "number":
       return raw;
+    case "toggle":
+      return raw === 0 ? 0 : 1;
   }
 }
 
@@ -177,5 +246,7 @@ export function dialRawValue(format: DialFormat, display: number): number | null
       return 1 + display / 100;
     case "number":
       return display;
+    case "toggle":
+      return display === 0 ? 0 : 1;
   }
 }

@@ -136,7 +136,8 @@ export const createAssemblyRouter = () =>
           lines: built.lines.map((line) => ({ ...line })),
           totalCents: built.totalCents,
           minimum: built.minimum === null ? null : { ...built.minimum },
-          skipped: [...built.skipped],
+          skipped: built.skipped.map((component) => ({ ...component })),
+          derivedWaste: built.derivedWaste === null ? null : { ...built.derivedWaste },
         };
       }),
   });

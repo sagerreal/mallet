@@ -201,12 +201,116 @@ const PAVER_DRIVEWAY: CatalogAssembly = {
   ],
 };
 
+// ---- roofing --------------------------------------------------------------
+// Roofing constants from the estimating research (Roofr/AccuLynx coverage
+// models): 3 bundles per square; one hip-and-ridge bundle caps 25 lnft; a
+// starter roll runs 105 lnft of eaves+rakes; a synthetic underlayment roll
+// covers 10 squares; an ice & water roll covers 200 sqft laid 3 ft up from
+// eaves and 3 ft wide in valleys; a drip-edge stick is 10 ft (buy 2 spares);
+// a coil-nail box drives ~20 squares; a 24-square tear-off fills one dumpster.
+// Edge linears are the tracer's PLAN-VIEW classed totals — the recipes price
+// waste over them rather than slope-correcting each class.
+
+const ROOF_WASTE_DEFAULTS = { simple: 1.1, moderate: 1.12, cutUp: 1.15 };
+
+const SHINGLE_REROOF: CatalogAssembly = {
+  catalogKey: "asphalt_shingle_reroof",
+  name: "Asphalt shingle reroof",
+  measurementBasis: "area",
+  pricingMode: "cost_plus",
+  marginBps: 2500,
+  jobMinimumCents: 350_000,
+  position: 5,
+  config: {
+    version: 1,
+    surface: "pitched",
+    // Derived waste: simple gable 10%, hips or valleys 12%, cut-up (hips AND
+    // valleys, or either count ≥3) 15% — each tier org-dialable; the flat
+    // wasteFactor below is the unclassified-surface fallback (moderate).
+    wasteByComplexity: ROOF_WASTE_DEFAULTS,
+    components: [
+      // squares = sqft/100; 3 bundles per square.
+      { kind: "material", key: "shingles", label: "Field shingles", basis: "area", factors: [1 / 100, 3], wasteFactor: 1.12, usesDerivedWaste: true, packSize: 1, unit: "bundles", unitCostCents: 4200 },
+      // One cap bundle covers 25 lnft of ridge + hip.
+      { kind: "material", key: "cap", label: "Hip and ridge cap", basis: { edges: ["ridgeFt", "hipFt"] }, factors: [1 / 25], wasteFactor: 1.12, usesDerivedWaste: true, packSize: 1, unit: "bundles", unitCostCents: 6500 },
+      // One starter roll runs 105 lnft of eaves + rakes.
+      { kind: "material", key: "starter", label: "Starter strip", basis: { edges: ["eaveFt", "rakeFt"] }, factors: [1 / 105], wasteFactor: 1, packSize: 1, unit: "rolls", unitCostCents: 5800 },
+      // One synthetic roll covers 10 squares (waste rides the squares).
+      { kind: "material", key: "underlayment", label: "Synthetic underlayment", basis: "area", factors: [1 / 100, 1 / 10], wasteFactor: 1.12, usesDerivedWaste: true, packSize: 1, unit: "rolls", unitCostCents: 9500 },
+      // 3 ft up from every eave + 3 ft wide in every valley, 200 sqft rolls.
+      // The ice-dam dial (componentEdgeToggle) drops the eave courses for
+      // no-ice climates; the valley courses always stay.
+      { kind: "material", key: "iw", label: "Ice and water shield", basis: { edges: ["eaveFt", "valleyFt"] }, factors: [3, 1 / 200], wasteFactor: 1, packSize: 1, unit: "rolls", unitCostCents: 11000 },
+      // 10 ft sticks along eaves + rakes, plus two spares.
+      { kind: "material", key: "drip", label: "Drip edge", basis: { edges: ["eaveFt", "rakeFt"] }, factors: [1 / 10], wasteFactor: 1, packSize: 1, extraUnits: 2, unit: "sticks", unitCostCents: 1400 },
+      { kind: "material", key: "nails", label: "Coil nails", basis: "area", factors: [1 / 100, 1 / 20], wasteFactor: 1.12, usesDerivedWaste: true, packSize: 1, unit: "boxes", unitCostCents: 7500 },
+      // The tracer doesn't count penetrations (v1) — the office dials it.
+      { kind: "material", key: "boots", label: "Pipe boots", basis: { count: 3 }, factors: [1], wasteFactor: 1, packSize: 1, unit: "boots", unitCostCents: 1200 },
+      // Tear-off and install price per SQUARE: basis sqft × [1/100].
+      { kind: "labor", key: "tearoff", label: "Tear-off", basis: "area", factors: [1 / 100], mode: "per_unit", unitsPerDay: null, unitsPerHour: null, rateCents: 5500 },
+      { kind: "equipment", key: "dumpster", label: "Dumpster", source: { basis: "area" }, perQuantity: 2400, unit: "loads", rateCents: 55000 },
+      { kind: "labor", key: "install", label: "Install labor", basis: "area", factors: [1 / 100], mode: "per_unit", unitsPerDay: null, unitsPerHour: null, rateCents: 23500 },
+      { kind: "fixed", key: "permit", label: "Permit", amountCents: 15000 },
+    ],
+    tiers: null,
+  },
+  dials: [
+    { key: "shingle_price", label: "Shingle bundles", format: "dollars", unitSuffix: "per bundle", target: { kind: "componentField", componentKey: "shingles", field: "unitCostCents" } },
+    { key: "install_rate", label: "Install labor", format: "dollars", unitSuffix: "per square", target: { kind: "componentField", componentKey: "install", field: "rateCents" } },
+    { key: "tearoff_rate", label: "Tear-off", format: "dollars", unitSuffix: "per square", target: { kind: "componentField", componentKey: "tearoff", field: "rateCents" } },
+    { key: "waste_simple", label: "Waste on a simple roof", format: "wastePercent", target: { kind: "configWasteTier", tier: "simple" } },
+    { key: "waste_moderate", label: "Waste with hips or valleys", format: "wastePercent", target: { kind: "configWasteTier", tier: "moderate" } },
+    { key: "waste_cutup", label: "Waste on a cut-up roof", format: "wastePercent", target: { kind: "configWasteTier", tier: "cutUp" } },
+    { key: "cap_price", label: "Hip and ridge cap", format: "dollars", unitSuffix: "per bundle", target: { kind: "componentField", componentKey: "cap", field: "unitCostCents" } },
+    { key: "starter_price", label: "Starter strip", format: "dollars", unitSuffix: "per roll", target: { kind: "componentField", componentKey: "starter", field: "unitCostCents" } },
+    { key: "underlayment_price", label: "Synthetic underlayment", format: "dollars", unitSuffix: "per roll", target: { kind: "componentField", componentKey: "underlayment", field: "unitCostCents" } },
+    { key: "iw_price", label: "Ice and water shield", format: "dollars", unitSuffix: "per roll", target: { kind: "componentField", componentKey: "iw", field: "unitCostCents" } },
+    { key: "ice_dam", label: "Ice-dam region", format: "toggle", unitSuffix: "eave courses of ice and water", target: { kind: "componentEdgeToggle", componentKey: "iw", edge: "eaveFt" } },
+    { key: "drip_price", label: "Drip edge", format: "dollars", unitSuffix: "per stick", target: { kind: "componentField", componentKey: "drip", field: "unitCostCents" } },
+    { key: "nails_price", label: "Coil nails", format: "dollars", unitSuffix: "per box", target: { kind: "componentField", componentKey: "nails", field: "unitCostCents" } },
+    { key: "boot_count", label: "Pipe boots", format: "number", unitSuffix: "boots", target: { kind: "componentCount", componentKey: "boots" } },
+    { key: "boot_price", label: "Pipe boot cost", format: "dollars", unitSuffix: "per boot", target: { kind: "componentField", componentKey: "boots", field: "unitCostCents" } },
+    { key: "dumpster_rate", label: "Dumpster", format: "dollars", unitSuffix: "per load", target: { kind: "componentField", componentKey: "dumpster", field: "rateCents" } },
+    { key: "permit", label: "Permit", format: "dollars", target: { kind: "componentField", componentKey: "permit", field: "amountCents" } },
+    { key: "margin", label: "Margin", format: "percentBps", target: { kind: "marginBps" } },
+    { key: "job_min", label: "Job minimum", format: "dollars", target: { kind: "jobMinimumCents" } },
+  ],
+};
+
+const ROOF_TUNEUP: CatalogAssembly = {
+  catalogKey: "roof_tuneup",
+  name: "Roof tune-up / repair allowance",
+  measurementBasis: "area",
+  pricingMode: "cost_plus",
+  marginBps: 2500,
+  jobMinimumCents: 45_000,
+  position: 6,
+  config: {
+    version: 1,
+    surface: "pitched",
+    components: [
+      { kind: "fixed", key: "inspection", label: "Inspection and minor sealing", amountCents: 20000 },
+      // Nail pops, pipe-boot swaps, a bundle of shingles — priced per square.
+      { kind: "labor", key: "repairs", label: "Repair allowance", basis: "area", factors: [1 / 100], mode: "per_unit", unitsPerDay: null, unitsPerHour: null, rateCents: 1500 },
+    ],
+    tiers: null,
+  },
+  dials: [
+    { key: "inspection_fee", label: "Inspection and minor sealing", format: "dollars", target: { kind: "componentField", componentKey: "inspection", field: "amountCents" } },
+    { key: "repair_rate", label: "Repair allowance", format: "dollars", unitSuffix: "per square", target: { kind: "componentField", componentKey: "repairs", field: "rateCents" } },
+    { key: "margin", label: "Margin", format: "percentBps", target: { kind: "marginBps" } },
+    { key: "job_min", label: "Job minimum", format: "dollars", target: { kind: "jobMinimumCents" } },
+  ],
+};
+
 export const DEFAULT_ASSEMBLIES: readonly CatalogAssembly[] = [
   DRIVEWAY_REPLACEMENT,
   ASPHALT_OVERLAY,
   SEALCOAT,
   CRACK_FILLING,
   PAVER_DRIVEWAY,
+  SHINGLE_REROOF,
+  ROOF_TUNEUP,
 ];
 
 export function catalogAssemblyByKey(key: string): CatalogAssembly | null {

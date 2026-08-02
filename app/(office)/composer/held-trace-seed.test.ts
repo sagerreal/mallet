@@ -74,6 +74,8 @@ async function serverSeed(trace: HeldTrace, services: readonly RateService[]) {
     pitchRise: trace.pitchRise,
     areaSqft: pitchCorrectedArea(trace.footprintSqft, trace.pitchRise ?? 0),
     perimeterLnft: trace.perimeterLnft,
+    edges: trace.edges,
+    complexity: trace.complexity,
   };
   const useCase = new BuildFromMeasurementsUseCase(
     { findLeadId: async () => "lead-1" as never },

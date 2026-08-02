@@ -47,13 +47,21 @@ describe("getDialValue / setDialValue", () => {
   it("a dial edit changes what the engine computes (asphalt depth 3→2 in)", () => {
     const a = dialable(driveway);
     const next = setDialValue(a, { kind: "componentFactor", componentKey: "hma", index: 0 }, 2)!;
+    const input = {
+      areaSqft: 800,
+      perimeterLnft: null,
+      surface: "flat" as const,
+      edges: null,
+      complexity: null,
+      sourceName: "Drive",
+    };
     const before = computeAssemblySeed(
       { name: "d", measurementBasis: "area", pricingMode: "cost_plus", ...a },
-      { areaSqft: 800, perimeterLnft: null, sourceName: "Drive" },
+      input,
     );
     const after = computeAssemblySeed(
       { name: "d", measurementBasis: "area", pricingMode: "cost_plus", ...next },
-      { areaSqft: 800, perimeterLnft: null, sourceName: "Drive" },
+      input,
     );
     if (!before.ok || !after.ok) throw new Error("compute failed");
     const tons = (r: typeof after.value) => r.lines.find((l) => l.componentKey === "hma")?.quantity;
@@ -65,6 +73,65 @@ describe("getDialValue / setDialValue", () => {
     const a = dialable(driveway);
     expect(setDialValue(a, { kind: "tierRate", index: 0 }, 99)).toBeNull();
     expect(setDialValue(a, { kind: "componentField", componentKey: "ghost", field: "rateCents" }, 1)).toBeNull();
+  });
+});
+
+describe("the roofing dial targets", () => {
+  const reroof = catalogAssemblyByKey("asphalt_shingle_reroof")!;
+
+  it("configWasteTier reads and writes one tier of the waste table, immutably", () => {
+    const a = dialable(reroof);
+    expect(getDialValue(a, { kind: "configWasteTier", tier: "simple" })).toBe(1.1);
+    expect(getDialValue(a, { kind: "configWasteTier", tier: "cutUp" })).toBe(1.15);
+    const next = setDialValue(a, { kind: "configWasteTier", tier: "cutUp" }, 1.12);
+    expect(next).not.toBeNull();
+    expect(getDialValue(next!, { kind: "configWasteTier", tier: "cutUp" })).toBe(1.12);
+    expect(getDialValue(next!, { kind: "configWasteTier", tier: "simple" })).toBe(1.1);
+    expect(getDialValue(a, { kind: "configWasteTier", tier: "cutUp" })).toBe(1.15); // untouched
+    // A config with no waste table refuses the write.
+    expect(setDialValue(dialable(driveway), { kind: "configWasteTier", tier: "simple" }, 1.05)).toBeNull();
+  });
+
+  it("componentCount reads/writes a {count:n} basis and rounds to whole units", () => {
+    const a = dialable(reroof);
+    expect(getDialValue(a, { kind: "componentCount", componentKey: "boots" })).toBe(3);
+    const next = setDialValue(a, { kind: "componentCount", componentKey: "boots" }, 4.6);
+    expect(getDialValue(next!, { kind: "componentCount", componentKey: "boots" })).toBe(5);
+    // Not a count component → unresolvable, refused.
+    expect(getDialValue(a, { kind: "componentCount", componentKey: "shingles" })).toBeNull();
+    expect(setDialValue(a, { kind: "componentCount", componentKey: "shingles" }, 2)).toBeNull();
+  });
+
+  it("componentEdgeToggle removes/adds a class in an edges sum, in canonical order", () => {
+    const a = dialable(reroof);
+    const target = { kind: "componentEdgeToggle", componentKey: "iw", edge: "eaveFt" } as const;
+    expect(getDialValue(a, target)).toBe(1); // shipped ON: eaves + valleys
+    const off = setDialValue(a, target, 0);
+    expect(getDialValue(off!, target)).toBe(0);
+    const backOn = setDialValue(off!, target, 1);
+    expect(getDialValue(backOn!, target)).toBe(1);
+    // Round-trips byte-identically: the class re-inserts in canonical order.
+    expect(JSON.stringify(backOn!.config)).toBe(JSON.stringify(a.config));
+  });
+
+  it("componentEdgeToggle refuses to empty an edges sum (never a silent no-op)", () => {
+    const a = dialable(reroof);
+    const noEaves = setDialValue(
+      a,
+      { kind: "componentEdgeToggle", componentKey: "iw", edge: "eaveFt" },
+      0,
+    )!;
+    // iw is now valleys-only; removing the last class must refuse.
+    expect(
+      setDialValue(noEaves, { kind: "componentEdgeToggle", componentKey: "iw", edge: "valleyFt" }, 0),
+    ).toBeNull();
+  });
+
+  it("toggle format maps 0/1 both ways", () => {
+    expect(dialDisplayValue("toggle", 1)).toBe(1);
+    expect(dialDisplayValue("toggle", 0)).toBe(0);
+    expect(dialRawValue("toggle", 1)).toBe(1);
+    expect(dialRawValue("toggle", 0)).toBe(0);
   });
 });
 

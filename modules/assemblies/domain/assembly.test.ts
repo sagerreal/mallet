@@ -36,8 +36,17 @@ describe("Assembly.create", () => {
     expect(Assembly.create({ ...base, jobMinimumCents: -1 }).ok).toBe(false);
   });
 
-  it("rejects the admitted-but-unbuilt line/count bases (enum ready, math later)", () => {
-    const result = Assembly.create({ ...base, measurementBasis: "line" });
+  it("accepts the line basis; rejects a count assembly priced unit-rate", () => {
+    // Line assemblies price from classed roof linears — live since the roofing
+    // recipes PR.
+    expect(Assembly.create({ ...base, measurementBasis: "line" }).ok).toBe(true);
+    expect(Assembly.create({ ...base, measurementBasis: "count" }).ok).toBe(true);
+    const result = Assembly.create({
+      ...base,
+      measurementBasis: "count",
+      pricingMode: "unit_rate",
+      config: sealcoat.config, // has tiers, so only the count×unit_rate rule can fail
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.field).toBe("measurementBasis");
   });

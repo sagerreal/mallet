@@ -43,6 +43,11 @@ export class SeedFromCaptureUseCase {
     return computeAssemblySeed(assembly.value, {
       areaSqft: site.areaSqft,
       perimeterLnft: site.perimeterLnft,
+      surface: site.surface,
+      // Reader-derived from the stored polygon (the same shared edge math the
+      // held-trace path uses) — the structural assignment is the parity check.
+      edges: site.edges,
+      complexity: site.complexity,
       sourceName: siteSourceName(site),
     });
   }

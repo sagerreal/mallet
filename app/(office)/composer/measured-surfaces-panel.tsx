@@ -52,6 +52,7 @@ import {
   seedHeldTraceWithAssembly,
   minimumNoticeText,
   skippedNoticeText,
+  derivedWasteNoticeText,
 } from "./assembly-held-seed";
 import type { AssemblyView, AssemblySeedResultDTO } from "@/lib/store/assemblies-mapper";
 import type { MeasurementSeedLine } from "./composer-state";
@@ -80,12 +81,16 @@ function assemblyLinesToSeedLines(
   }));
 }
 
-/** The quiet post-seed note: minimum applied and/or components skipped. */
+/** The quiet post-seed note: derived waste, minimum applied, components
+ * skipped — in that order (why the quantity grew, then price adjustments,
+ * then the gaps to fix). */
 function assemblySeedNotice(result: {
   minimum: { minimumCents: number } | null;
-  skipped: readonly string[];
+  skipped: readonly { label: string; need: "area" | "perimeter" | "edges" }[];
+  derivedWaste: { percent: number; reason: string } | null;
 }): string | null {
   const parts: string[] = [];
+  if (result.derivedWaste) parts.push(derivedWasteNoticeText(result.derivedWaste));
   if (result.minimum) parts.push(minimumNoticeText(result.minimum));
   const skipped = skippedNoticeText(result.skipped);
   if (skipped) parts.push(skipped);
@@ -238,6 +243,8 @@ export function MeasuredSurfacesPanel({
   const heldShape = (trace: HeldTrace) => ({
     areaSqft: trace.areaSqft,
     perimeterLnft: trace.perimeterLnft > 0 ? trace.perimeterLnft : null,
+    surface: trace.surface,
+    edges: trace.edges,
   });
 
   /** Assemblies that can price a persisted SITE row (rooms are painting — never). */
@@ -248,6 +255,8 @@ export function MeasuredSurfacesPanel({
     return assembliesForSurface(assemblies, {
       areaSqft: site.areaSqft,
       perimeterLnft: site.perimeterLnft,
+      surface: site.surface,
+      edges: site.edges,
     });
   }
 
