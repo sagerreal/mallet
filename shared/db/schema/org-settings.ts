@@ -29,7 +29,10 @@ export const orgSettings = pgTable(
     visitInstallMinutes: integer("visit_install_minutes").notNull().default(240),
     techSeesPrice: boolean("tech_sees_price").notNull().default(true),
     techTexts: boolean("tech_texts").notNull().default(true),
-    frontDesk: boolean("front_desk").notNull().default(true),
+    // Defaults OFF. It used to default true, which handed every new shop a phone number pointed at
+    // an assistant that knew nobody's hours, no service area and no services. It switches on when
+    // frontDeskReadiness says it can — see modules/settings/domain/front-desk-readiness.ts.
+    frontDesk: boolean("front_desk").notNull().default(false),
     scopeOn: boolean("scope_on").notNull().default(false),
     // Money's "Auto-remind" switch. It was useState(true) in the header — a control that promised
     // reminder texts on a schedule and was wired to nothing at all.

@@ -1,0 +1,1 @@
+ALTER TABLE "org_settings" ALTER COLUMN "front_desk" SET DEFAULT false;
