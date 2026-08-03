@@ -762,18 +762,27 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
         {/* 9. Sticky foot — ONE filled primary (the terminal create), Cancel
             quiet beside it. Stays inside the form so type="submit" keeps
-            submit-on-Enter and the shared submit path intact. */}
+            submit-on-Enter and the shared submit path intact. Two-button foot
+            (#362): `.sheet-pri` is width:100% at the class level, so beside
+            Cancel it takes flex:1 / width:auto and Cancel keeps its intrinsic
+            width — otherwise the flex line is over-constrained and the primary
+            crushes into Cancel. */}
         <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <button
             type="button"
             className="btn ghost"
-            style={{ minHeight: 44 }}
+            style={{ flexShrink: 0, minHeight: 44 }}
             onClick={handleClose}
             disabled={createMutation.isPending}
           >
             Cancel
           </button>
-          <button type="submit" className="sheet-pri" disabled={busy || Boolean(dedupLeadId)}>
+          <button
+            type="submit"
+            className="sheet-pri"
+            style={{ flex: 1, width: "auto" }}
+            disabled={busy || Boolean(dedupLeadId)}
+          >
             {busy ? "Saving…" : submitLabel()}
           </button>
         </div>
