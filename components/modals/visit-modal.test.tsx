@@ -115,3 +115,20 @@ describe("VisitModalContent — createJobForLead race fix", () => {
     expect(addVisit).not.toHaveBeenCalled();
   });
 });
+
+describe("VisitModalContent — two-button sheet foot (#362)", () => {
+  // .sheet-pri is width:100% at the class level; beside Cancel that over-constrains
+  // the flex line. The cure: Cancel keeps its intrinsic width (flexShrink 0),
+  // the primary takes the remaining space (flex 1, width auto).
+  it("Cancel keeps its intrinsic width and the primary takes the remaining space", () => {
+    render(<VisitModalContent />);
+    const cancel = document.querySelector<HTMLButtonElement>(".sheet-foot .btn.ghost");
+    const pri = document.querySelector<HTMLButtonElement>(".sheet-foot .sheet-pri");
+    expect(cancel).toBeTruthy();
+    expect(pri).toBeTruthy();
+    expect(cancel?.style.flexShrink).toBe("0");
+    expect(cancel?.style.minHeight).toBe("44px");
+    expect(pri?.style.flexGrow).toBe("1");
+    expect(pri?.style.width).toBe("auto");
+  });
+});

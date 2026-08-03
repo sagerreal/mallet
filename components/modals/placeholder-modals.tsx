@@ -40,16 +40,20 @@ export function CleanUpModalContent() {
           ? "Mark as lost or archive this customer."
           : "No customer selected — close and pick one to clean up."}
       </p>
+      {/* Two-button foot (#362): `.sheet-pri` is width:100% at the class level,
+          so beside Cancel it takes flex:1 / width:auto and Cancel keeps its
+          intrinsic width — otherwise the flex line is over-constrained and the
+          primary crushes into Cancel. */}
       <div className="sheet-foot" style={{ display: "flex", gap: "var(--space-3)" }}>
         <button
           className="sheet-pri"
           onClick={handleArchive}
           disabled={lead == null}
-          style={lead == null ? { opacity: 0.45 } : undefined}
+          style={{ flex: 1, width: "auto", ...(lead == null ? { opacity: 0.45 } : null) }}
         >
           Mark lost &amp; archive
         </button>
-        <button className="btn ghost" onClick={close} style={{ flexShrink: 0 }}>
+        <button className="btn ghost" onClick={close} style={{ flexShrink: 0, minHeight: 44 }}>
           Cancel
         </button>
       </div>
