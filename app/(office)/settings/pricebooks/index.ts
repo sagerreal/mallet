@@ -33,4 +33,25 @@ export function pricebookFor(trade: string): TradePricebook | undefined {
 }
 
 export const SEEDED_TRADES: readonly string[] = REGISTRY.map((p) => p.key);
+
+/**
+ * Does this trade price off measurements?
+ *
+ * Derived from the trade's own pricebook rather than kept as a second list: a pack with lines
+ * priced per sq ft or per linear foot IS a measured trade, by definition. Add a measured line to
+ * a pack and the answer updates itself, which is the point — a hand-maintained list of "measured
+ * trades" beside a list of measured prices is two things to keep in sync and one to forget.
+ *
+ * `hour` is excluded. It is a measuredBy value, but hourly work is LABOR — a painting shop billing
+ * touch-ups by the hour is not thereby measuring rooms.
+ *
+ * This replaces the Settings toggle a shop used to flip by hand. Owen's rule: the industry decides
+ * this, and it should not be exposed to the customer. The card's own comment already agreed —
+ * "a plumbing shop must never see it" — it just had no way to know what the shop was.
+ */
+export function tradeMeasures(trade: string): boolean {
+  const pack = pricebookFor(trade);
+  if (!pack) return false;
+  return pack.services.some((s) => s.measuredBy != null && s.measuredBy !== "hour");
+}
 export type { TradePricebook };

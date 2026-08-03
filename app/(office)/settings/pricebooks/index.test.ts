@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pricebookFor, SEEDED_TRADES } from "./index";
+import { pricebookFor, SEEDED_TRADES, tradeMeasures } from "./index";
 import { TRADE_PLAYBOOKS } from "../trade-playbooks";
 
 /**
@@ -103,5 +103,38 @@ describe("pricebookFor", () => {
         expect(pack.categories, `${key}/${svc.name}`).toContain(svc.categoryName);
       }
     }
+  });
+
+  /**
+   * Which trades price off measurements — the answer that used to be a toggle in Settings.
+   *
+   * A shop was asked to decide this about itself, in a card whose own copy said "a plumbing shop
+   * must never see it". The trade already answers it; nothing should have been asking.
+   */
+  describe("tradeMeasures", () => {
+    it("is true for the trades that sell by area or by the foot", () => {
+      for (const t of ["roofing", "painting", "fencing", "concrete", "siding", "gutters"]) {
+        expect(tradeMeasures(t), t).toBe(true);
+      }
+    });
+
+    it("is false for the service trades, which price per job", () => {
+      for (const t of ["hvac", "mechanical", "electrical", "plumbing"]) {
+        expect(tradeMeasures(t), t).toBe(false);
+      }
+    });
+
+    it("is false for a trade we know nothing about, including Other", () => {
+      expect(tradeMeasures("other")).toBe(false);
+      expect(tradeMeasures("nonesuch")).toBe(false);
+    });
+
+    // `hour` is a measuredBy value, but hourly work is labor. A pack whose only non-null
+    // measuredBy is "hour" is not a measured trade.
+    it("does not count hourly labor as measuring", () => {
+      const painting = pricebookFor("painting")!;
+      const nonHour = painting.services.filter((s) => s.measuredBy != null && s.measuredBy !== "hour");
+      expect(nonHour.length).toBeGreaterThan(0);
+    });
   });
 });
