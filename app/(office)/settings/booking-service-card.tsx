@@ -11,7 +11,7 @@ import { fmt$ } from "@/lib/format";
 import type { ServiceLane } from "@mallet/settings";
 import {
   LANE_OPTIONS,
-  isBookableLane,
+  emergencyWordsApply,
   flatPriceMissing,
   laneChipLabel,
   laneConsequence,
@@ -54,7 +54,7 @@ const CERT_MAX = 10;
 interface ServiceCertChipsEditorProps {
   index: number;
   certs: string[];
-  updateBookingService: (index: number, field: keyof BookingService, value: string | string[]) => void;
+  updateBookingService: (index: number, field: keyof BookingService, value: string | string[] | boolean) => void;
 }
 
 function ServiceCertChipsEditor({ index, certs, updateBookingService }: ServiceCertChipsEditorProps) {
@@ -166,7 +166,7 @@ export interface ServiceRowProps {
   index: number;
   isExpanded: boolean;
   onToggle: () => void;
-  updateBookingService: (index: number, field: keyof BookingService, value: string | string[]) => void;
+  updateBookingService: (index: number, field: keyof BookingService, value: string | string[] | boolean) => void;
   onRemove: () => void;
   isLast: boolean;
 }
@@ -242,6 +242,7 @@ function ExpandedEditor({
   serviceFee,
 }: Pick<ServiceRowProps, "service" | "index" | "updateBookingService" | "onRemove" | "isLast" | "serviceFee">) {
   const [lane, setLane] = useState<ServiceLane>(service.lane);
+  const [feeApplies, setFeeApplies] = useState<boolean>(service.feeApplies ?? false);
   const [price, setPrice] = useState<string>(
     service.lane === "flat" && (service.price ?? 0) > 0 ? String(service.price) : "",
   );
@@ -309,6 +310,19 @@ function ExpandedEditor({
             options={LANE_OPTIONS}
             aria-labelledby={laneGroup.labelProps.id}
           />
+          {lane === "estimate" && (
+            <label className="colchk" style={{ marginTop: "var(--space-2)" }}>
+              <input
+                type="checkbox"
+                checked={feeApplies}
+                onChange={(e) => {
+                  setFeeApplies(e.target.checked);
+                  updateBookingService(index, "feeApplies", e.target.checked);
+                }}
+              />
+              Visit fee applies — the tech prices it on site
+            </label>
+          )}
           {lane === "flat" && !linkedService && (
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>
@@ -362,7 +376,7 @@ function ExpandedEditor({
             color: priceMissing ? "var(--red, #B3261E)" : "var(--ink-2)",
           }}
         >
-          {laneConsequence(lane, linkedService ? String(linkedService.unitPrice) : price, serviceFee)}
+          {laneConsequence(lane, linkedService ? String(linkedService.unitPrice) : price, serviceFee, feeApplies)}
         </p>
       </div>
 
@@ -376,7 +390,7 @@ function ExpandedEditor({
         />
       </Field>
 
-      {isBookableLane(lane) && showEmergency && (
+      {emergencyWordsApply({ lane, feeApplies }) && showEmergency && (
         <Field label="Emergency words">
           <input
             type="text"
@@ -444,7 +458,7 @@ function ExpandedEditor({
         }}
       >
         <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-          {isBookableLane(lane) && !showEmergency && (
+          {emergencyWordsApply({ lane, feeApplies }) && !showEmergency && (
             <button type="button" className="btn sm ghost" onClick={() => setShowEmergency(true)}>
               + Emergency words
             </button>

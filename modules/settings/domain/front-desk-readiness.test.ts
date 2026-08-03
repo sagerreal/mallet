@@ -19,7 +19,7 @@ const props = (over: Partial<OrgSettingsProps> = {}): OrgSettingsProps => {
     serviceOriginAddress: "123 Main St, Pleasanton, CA 94566",
     booking: {
       ...base.booking,
-      services: [{ name: "Drain clearing", price: 189, lane: "repair", triggers: "" }],
+      services: [{ name: "Drain clearing", price: 189, lane: "estimate", feeApplies: true, triggers: "" }],
     },
     ...over,
   });

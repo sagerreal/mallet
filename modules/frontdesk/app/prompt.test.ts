@@ -35,7 +35,7 @@ const baseFacts = (o: Partial<PromptFacts> = {}): PromptFacts => ({
   emergencyTransfer: false,
   services: [
     { name: "Drain cleaning", lane: "flat", price: 149, triggers: "clogged drain, slow drain" },
-    { name: "Faucet repair", lane: "repair", triggers: "leaky faucet, dripping" },
+    { name: "Faucet repair", lane: "estimate", feeApplies: true, triggers: "leaky faucet, dripping" },
     { name: "Water heater replacement", lane: "estimate", triggers: "no hot water, old heater" },
   ],
   ...o,
@@ -123,7 +123,7 @@ describe("buildSystemPrompt — business facts", () => {
     expect(p).not.toMatch(/credited/i);
   });
 
-  it("scopes the service fee to the repair lane and forbids it on an estimate call", () => {
+  it("scopes the visit fee to fee-flagged services and forbids it on a free estimate call", () => {
     // Unscoped, the prompt said "book a FREE estimate visit" and "Service/diagnostic fee: $89"
     // with nothing connecting the fee to a lane — and the IRON GUARDRAIL only bans amounts NOT
     // written in the prompt, so quoting $89 on a free-estimate call was permitted.
@@ -131,8 +131,8 @@ describe("buildSystemPrompt — business facts", () => {
     const feeLine = p.split("\n").find((l) => l.includes("$89") && /fee/i.test(l));
 
     expect(feeLine).toBeDefined();
-    expect(feeLine).toMatch(/repair/i);
-    expect(feeLine).toMatch(/never state it on an estimate/i);
+    expect(feeLine).toMatch(/visit fee applies/i);
+    expect(feeLine).toMatch(/never state any price on a no-fee estimate/i);
   });
 });
 
@@ -143,14 +143,14 @@ describe("buildSystemPrompt — services table & lane scripts", () => {
     expect(p).toContain("$149");
   });
 
-  it("renders a REPAIR service with NO price", () => {
+  it("renders a fee-visit service with NO price of its own", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     // Faucet repair line must not carry a dollar amount.
     const faucetLine = p.split("\n").find((l) => l.includes("Faucet repair")) ?? "";
     expect(faucetLine).not.toMatch(/\$\d/);
   });
 
-  it("includes the repair fee-credit framing and a discrete start-time close", () => {
+  it("includes the fee-visit framing and a discrete start-time close", () => {
     const p = buildSystemPrompt({ facts: baseFacts(), caller: unknownCaller });
     expect(p).toMatch(/exact price on-site|diagnoses/i);
     // the close now offers a few discrete START TIMES spread across the day, not consecutive ranges
@@ -376,7 +376,7 @@ describe("buildSystemPrompt — PRICE GUARDRAIL (the heart)", () => {
   it("emits no stray dollar amount even when there are no flat services", () => {
     const facts = baseFacts({
       services: [
-        { name: "Faucet repair", lane: "repair", triggers: "leak" },
+        { name: "Faucet repair", lane: "estimate", feeApplies: true, triggers: "leak" },
         { name: "Water heater replacement", lane: "estimate", triggers: "no hot water" },
       ],
     });
@@ -394,7 +394,7 @@ describe("buildSystemPrompt — PRICE GUARDRAIL (owner free-text injection)", ()
     const facts = baseFacts({
       services: [
         { name: "Drain cleaning", lane: "flat", price: 149, triggers: "clog, $50 off promo" },
-        { name: "Faucet repair", lane: "repair", triggers: "leaky faucet" },
+        { name: "Faucet repair", lane: "estimate", feeApplies: true, triggers: "leaky faucet" },
       ],
     });
     const p = buildSystemPrompt({ facts, caller: unknownCaller });
@@ -475,7 +475,7 @@ describe("buildSystemPrompt — per-service emergencyTriggers", () => {
           triggers: "clogged drain",
           emergencyTriggers: "backed up sewage, flooding",
         },
-        { name: "Faucet repair", lane: "repair", triggers: "leaky faucet" },
+        { name: "Faucet repair", lane: "estimate", feeApplies: true, triggers: "leaky faucet" },
       ],
     });
     const p = buildSystemPrompt({ facts, caller: unknownCaller });
@@ -486,7 +486,7 @@ describe("buildSystemPrompt — per-service emergencyTriggers", () => {
 
   it("does NOT render an 'emergency:' suffix on a service without emergencyTriggers", () => {
     const facts = baseFacts({
-      services: [{ name: "Faucet repair", lane: "repair", triggers: "leaky faucet" }],
+      services: [{ name: "Faucet repair", lane: "estimate", feeApplies: true, triggers: "leaky faucet" }],
     });
     const p = buildSystemPrompt({ facts, caller: unknownCaller });
     const faucetLine = p.split("\n").find((l) => l.includes("Faucet repair")) ?? "";
@@ -498,7 +498,7 @@ describe("buildSystemPrompt — per-service emergencyTriggers", () => {
       services: [
         {
           name: "Burst pipe",
-          lane: "repair",
+          lane: "estimate", feeApplies: true,
           triggers: "pipe burst",
           emergencyTriggers: "no water, burst pipe, $99 after-hours",
         },
@@ -583,7 +583,7 @@ describe("buildSystemPrompt — PRICE GUARDRAIL (emergencyTriggers + deferKeywor
       services: [
         {
           name: "Pipe repair",
-          lane: "repair",
+          lane: "estimate", feeApplies: true,
           triggers: "burst pipe",
           emergencyTriggers: "flooding, $99 emergency fee",
         },
@@ -656,7 +656,7 @@ describe("buildSystemPrompt — ballpark (estimate-lane owner price range)", () 
 
   it("does NOT render a 'ballpark:' label on a service without a ballpark field", () => {
     const facts = baseFacts({
-      services: [{ name: "Faucet repair", lane: "repair", triggers: "leaky faucet" }],
+      services: [{ name: "Faucet repair", lane: "estimate", feeApplies: true, triggers: "leaky faucet" }],
     });
     const p = buildSystemPrompt({ facts, caller: unknownCaller });
     const line = p.split("\n").find((l) => l.includes("Faucet repair")) ?? "";

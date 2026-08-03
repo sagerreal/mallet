@@ -541,16 +541,12 @@ export function NewJobModalContent() {
         <h2>New job</h2>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        // ENTER NEVER CREATES THE JOB. This form is a long multi-field sheet, and the browser's
-        // implicit submission meant Enter in any text field — the phone, the address, a checklist
-        // item — created and saved the job mid-thought. Creation is the button's job alone.
-        // Textareas keep Enter (newlines), and the submit button keeps its native activation.
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault();
-        }}
-      >
+      {/* ENTER NEVER CREATES THE JOB. The browser's implicit submission meant Enter in any text
+          field — the phone, the address, a checklist item — created and saved the job mid-thought.
+          Per the HTML spec, implicit submission needs a DEFAULT BUTTON: this form deliberately has
+          no type="submit" control (the primary is type="button"), so a multi-field form like this
+          one submits only when that button is clicked. onSubmit stays for programmatic submits. */}
+      <form onSubmit={handleSubmit}>
         {/* What's the job? */}
         <Field label="What's the job?">
           <input
@@ -836,7 +832,13 @@ export function NewJobModalContent() {
               a cramped in-body "Build the price" row and a "Price (optional)" label that
               contradicted the type's own definition. Closing the builder still leaves the job —
               a nudge, not a wall. Estimates create plain: their price comes later by definition. */}
-          <button type="submit" className="sheet-pri" style={{ flex: 1, width: "auto" }} disabled={saving}>
+          <button
+            type="button"
+            onClick={() => void submitCreate(njType !== "estimate")}
+            className="sheet-pri"
+            style={{ flex: 1, width: "auto" }}
+            disabled={saving}
+          >
             {saving ? "Creating…" : njType === "estimate" ? "Create job" : "Create & price it"}
           </button>
         </div>

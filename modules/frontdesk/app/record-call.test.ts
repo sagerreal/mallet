@@ -30,7 +30,7 @@ const settingsWith = (): OrgSettings => {
       brandName: "Acme Plumbing",
       booking: {
         services: [
-          { name: "Drain clear", lane: "repair", triggers: "clog" },
+          { name: "Drain clear", lane: "estimate", feeApplies: true, triggers: "clog" },
           { name: "Faucet swap", lane: "flat", price: 150, triggers: "faucet" },
         ],
         notServices: "septic",
@@ -51,7 +51,7 @@ const settingsWithBallpark = (): OrgSettings => {
       brandName: "Acme Plumbing",
       booking: {
         services: [
-          { name: "Drain clear", lane: "repair", triggers: "clog" },
+          { name: "Drain clear", lane: "estimate", feeApplies: true, triggers: "clog" },
           { name: "Faucet swap", lane: "flat", price: 150, triggers: "faucet" },
           {
             name: "Water heater install",

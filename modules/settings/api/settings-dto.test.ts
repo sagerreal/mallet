@@ -109,7 +109,8 @@ describe("bookingServiceDTO", () => {
 describe("bookingCfgDTO", () => {
   const baseService = {
     name: "Drain cleaning",
-    lane: "repair" as const,
+    lane: "estimate" as const,
+    feeApplies: true,
     triggers: "leak",
   };
 

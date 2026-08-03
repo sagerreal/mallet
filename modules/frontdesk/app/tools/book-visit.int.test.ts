@@ -114,7 +114,7 @@ suite("book_visit against live Supabase RLS", () => {
     await closeDb();
   });
 
-  it("books a work-kind job + seeded visit and states the service fee, visible under RLS", async () => {
+  it("books an ESTIMATE-kind fee visit + seeded visit and states the visit fee, visible under RLS", async () => {
     const org = asOrgId(orgId);
     const result = await withTenant(org, async (tx) => {
       const ctx: VoiceToolContext = {
@@ -128,7 +128,7 @@ suite("book_visit against live Supabase RLS", () => {
 
     // The default settings row (lazily created) has serviceFee 89 + feeCredited true.
     expect(result.speak).toContain("$89");
-    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.data).toMatchObject({ kind: "estimate", emergency: false });
 
     // The lead, work job, and seeded morning (08:00) visit all persisted for this org.
     const leads = await admin<{ id: string; source: string }[]>`
@@ -139,7 +139,9 @@ suite("book_visit against live Supabase RLS", () => {
     const jobs = await admin<{ id: string; kind: string; svc: string }[]>`
       select id, kind, svc from jobs where org_id = ${orgId}`;
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]!.kind).toBe("work");
+    // The old repair lane books kind='estimate' now: a service call IS an estimate visit, priced
+    // at the door. kind='work' here was how voice bookings rendered as priced work they never were.
+    expect(jobs[0]!.kind).toBe("estimate");
     expect(jobs[0]!.svc).toBe("Leaky faucet");
 
     // Cast date/time to text so the driver returns the raw stored strings (a bare `date` column

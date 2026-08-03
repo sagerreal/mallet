@@ -806,15 +806,17 @@ describe("NewJobModalContent — booking fixes", () => {
     });
   });
 
-  // ENTER SAVED THE JOB MID-THOUGHT. The form's implicit submission meant Enter in any text
-  // field created the job. Creation is the button's job alone now.
-  it("Enter in a text field does not create the job", () => {
+  /**
+   * ENTER SAVED THE JOB MID-THOUGHT. Implicit submission needs a default button (HTML spec), so
+   * the guarantee is structural: the form contains NO type="submit" control — the primary is
+   * type="button". jsdom does not implement implicit submission, so asserting a keydown here
+   * would pass vacuously; asserting the mechanism is what actually pins the fix.
+   */
+  it("the form has no submit button, so Enter cannot implicitly create the job", () => {
     render(<NewJobModalContent />);
-    const title = screen.getByPlaceholderText("e.g. water heater repair");
-    fireEvent.change(title, { target: { value: "fix boiler" } });
-    fireEvent.keyDown(title, { key: "Enter" });
-    expect(addJob).not.toHaveBeenCalled();
-    expect(addLead).not.toHaveBeenCalled();
+    const form = screen.getByRole("button", { name: /^Create/ }).closest("form")!;
+    expect(form.querySelector('button[type="submit"], input[type="submit"]')).toBeNull();
+    expect((screen.getByRole("button", { name: /^Create/ }) as HTMLButtonElement).type).toBe("button");
   });
 
   // FLAT RATE MEANS THE PRICE IS KNOWN — creating one lands in the price builder in one motion.

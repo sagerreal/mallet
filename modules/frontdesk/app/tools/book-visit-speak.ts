@@ -81,7 +81,14 @@ const arrivalFragment = (slot: string): string => `Someone will arrive ${slot}.`
 // redactPriceTokens BEFORE it reaches the spoken line — the sanctioned config $price is appended
 // AFTER redaction so only that one dollar amount can ever be spoken. `slot` = "{day} at {startTime}".
 export const confirmationSpeak = (input: BookVisitInput, settings: OrgSettings, slot: string): string => {
-  if (input.lane === "estimate") return `You're booked ${slot} for a free estimate visit.`;
+  if (input.lane === "estimate") {
+    // The fee is the SERVICE's flag (the old "service call"), not a lane: a fee visit quotes the
+    // visit fee, a free estimate quotes nothing at all.
+    const wanted = input.service_name.trim().toLowerCase();
+    const svc = settings.props.booking.services.find((b) => b.name.trim().toLowerCase() === wanted);
+    if (svc?.feeApplies) return `${feeFragment(settings)} ${arrivalFragment(slot)}`;
+    return `You're booked ${slot} for a free estimate visit.`;
+  }
   if (input.lane === "flat") {
     const price = flatPriceFor(input.service_name, settings);
     const safeName = redactPriceTokens(input.service_name);
@@ -89,7 +96,7 @@ export const confirmationSpeak = (input: BookVisitInput, settings: OrgSettings, 
     // No configured flat price for this name → safe fallback: state the service fee, never invent.
     return `${feeFragment(settings)} ${arrivalFragment(slot)}`;
   }
-  // repair
+  // Legacy "repair" from a stale prompt — the fee visit by its old name.
   return `${feeFragment(settings)} ${arrivalFragment(slot)}`;
 };
 

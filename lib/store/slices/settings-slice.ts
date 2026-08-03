@@ -55,7 +55,10 @@ export type AddSourceResult = { ok: true } | { ok: false; reason: "empty" | "dup
 
 export interface BookingService {
   name: string;
-  lane: "repair" | "flat" | "estimate";
+  lane: "flat" | "estimate";
+  /** Estimate lane only: the org's visit fee applies and the tech prices it on site — the old
+   *  "service call". Absent/false = free estimate, quoted after the visit. */
+  feeApplies?: boolean;
   price?: number;
   /** Link to a pricebook entry — the phone speaks THAT entry's current price (server-resolved).
    * null/absent = unlinked, `price` above is spoken as before. */
@@ -283,7 +286,7 @@ export interface SettingsSlice {
   removeSource: (id: string) => void;
 
   // booking
-  updateBookingService: (index: number, field: keyof BookingService, value: string | string[]) => void;
+  updateBookingService: (index: number, field: keyof BookingService, value: string | string[] | boolean) => void;
   addBookingService: (name: string) => void;
   // Append a starter-playbook batch (deduped case-insensitively by name against existing
   // services) and persist ONCE. Used by trade onboarding — never replaces owner services.
@@ -455,6 +458,8 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
         services: s.booking.services.map((svc, i) => {
           if (i !== index) return svc;
           if (field === "price") return { ...svc, price: Math.max(0, Number(value) || 0) };
+          // false → undefined keeps untouched services clean in the blob (requiredCerts pattern).
+          if (field === "feeApplies") return { ...svc, feeApplies: value === true ? true : undefined };
           // "" = unlink (undefined keeps the blob clean, matching requiredCerts below).
           if (field === "pricebookServiceId") return { ...svc, pricebookServiceId: value === "" ? undefined : (value as string) };
           if (field === "requiredCerts") {
@@ -476,7 +481,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     set((s) => ({
       booking: {
         ...s.booking,
-        services: [...s.booking.services, { name: nm, lane: "repair", triggers: "" }],
+        services: [...s.booking.services, { name: nm, lane: "estimate", feeApplies: true, triggers: "" }],
       },
     }));
     persistBooking(get, set, snapshot);

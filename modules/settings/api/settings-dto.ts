@@ -20,15 +20,36 @@ export const beginOnboardingResultDTO = z.object({ url: z.string().url() });
 
 // --- Sub-schemas -----------------------------------------------------------
 
+/**
+ * OUTPUT: two lanes only. The domain normalises the legacy "repair" lane to estimate+feeApplies
+ * at its own boundary (normalizeBookingService), so a "repair" here would be a bug — the enum
+ * enforces that rather than documenting it.
+ */
 export const bookingServiceDTO = z.object({
   name: z.string(),
-  lane: z.enum(["repair", "estimate", "flat"]),
+  lane: z.enum(["estimate", "flat"]),
+  feeApplies: z.boolean().optional(),
   price: z.number().min(0).optional(),
   pricebookServiceId: z.string().uuid().nullable().optional(),
   triggers: z.string(),
   emergencyTriggers: z.string().optional(),
   ballpark: z.string().optional(),
   requiredCerts: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
+});
+
+/** INPUT: additionally tolerates the legacy "repair" lane from stale clients and stored blobs —
+ *  the domain maps it before anything reads it. */
+export const bookingServiceInputDTO = bookingServiceDTO.extend({
+  lane: z.enum(["repair", "estimate", "flat"]),
+});
+
+export const bookingCfgInputDTO = z.object({
+  services: z.array(bookingServiceInputDTO),
+  notServices: z.string(),
+  serviceFee: z.number().min(0),
+  feeCredited: z.boolean(),
+  deferKeywords: z.string().optional(),
+  emergencyTransferNumber: z.string().optional(),
 });
 
 export const bookingCfgDTO = z.object({

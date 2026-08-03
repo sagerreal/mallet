@@ -29,14 +29,14 @@ export function AddServiceModal({
   onAdd: (svc: NewServiceInput) => void;
 }) {
   const [name, setName] = useState("");
-  const [lane, setLane] = useState<ServiceLane>("repair");
+  const [lane, setLane] = useState<ServiceLane>("estimate");
   const laneGroup = useGroupLabel();
   const [price, setPrice] = useState("");
   const [triggers, setTriggers] = useState("");
 
   function reset() {
     setName("");
-    setLane("repair");
+    setLane("estimate");
     setPrice("");
     setTriggers("");
   }

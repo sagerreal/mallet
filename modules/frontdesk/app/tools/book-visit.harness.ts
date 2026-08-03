@@ -337,6 +337,8 @@ export const buildHarness = (over: HarnessOverrides = {}): Harness => {
   return { ctx: { tx: {} as never, orgId: ORG, principal: PRINCIPAL, deps }, leads, jobs, tasks, sms };
 };
 
+// LEGACY-lane input: an assistant built from the pre-collapse prompt still calls with "repair".
+// The tool normalises it to an estimate-with-fee booking — this fixture is what pins that.
 export const REPAIR_INPUT = {
   caller_name: "Jane Doe",
   phone: "(925) 555-0182",

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 import {
   LANE_OPTIONS,
-  isBookableLane,
+  emergencyWordsApply,
   flatPriceMissing,
   laneChipLabel,
   laneConsequence,
@@ -11,22 +11,26 @@ import {
 } from "./booking-lanes";
 
 const svc = (over: Partial<BookingService> = {}): BookingService =>
-  ({ name: "Drain cleaning", lane: "repair", triggers: "clog", ...over }) as BookingService;
+  ({ name: "Drain cleaning", lane: "estimate", feeApplies: true, triggers: "clog", ...over }) as BookingService;
 
 describe("LANE_OPTIONS", () => {
-  it("offers all three lanes as first-class choices", () => {
-    // The whole point of the change: "service call" used to be what you got by leaving the price
-    // blank, so it was never a thing you could pick or read off the list.
-    expect(LANE_OPTIONS.map((o) => o.value)).toEqual(["repair", "flat", "estimate"]);
+  /**
+   * TWO lanes since the flat-rate/estimate rework — the same two the job record has. The old
+   * "service call" lane was an estimate booking with the visit fee attached; that is the
+   * per-service feeApplies flag now, not a type a caller can be filed under.
+   */
+  it("offers the two lanes the job model has", () => {
+    expect(LANE_OPTIONS.map((o) => o.value)).toEqual(["flat", "estimate"]);
   });
 });
 
-describe("isBookableLane", () => {
-  it("is true for the lanes that book real work, false for an estimate visit", () => {
-    // Emergency words gate on this — an estimate visit is never the answer to a burst pipe.
-    expect(isBookableLane("repair")).toBe(true);
-    expect(isBookableLane("flat")).toBe(true);
-    expect(isBookableLane("estimate")).toBe(false);
+describe("emergencyWordsApply", () => {
+  it("allows emergency words on flat work and fee visits, never on a free quote-first estimate", () => {
+    // An emergency caller needs someone who will FIX something — a free estimate visit is never
+    // the answer to a burst pipe.
+    expect(emergencyWordsApply({ lane: "flat" })).toBe(true);
+    expect(emergencyWordsApply({ lane: "estimate", feeApplies: true })).toBe(true);
+    expect(emergencyWordsApply({ lane: "estimate" })).toBe(false);
   });
 });
 
@@ -45,16 +49,15 @@ describe("flatPriceMissing", () => {
     expect(flatPriceMissing("flat", "285.50")).toBe(false);
   });
 
-  it("never flags the lanes that have no price field at all", () => {
-    expect(flatPriceMissing("repair", "")).toBe(false);
+  it("never flags the estimate lane, which has no price field at all", () => {
     expect(flatPriceMissing("estimate", "")).toBe(false);
   });
 });
 
 describe("laneChipLabel", () => {
-  it("names the type on the collapsed row", () => {
-    expect(laneChipLabel(svc({ lane: "repair" }))).toBe("Service call");
-    expect(laneChipLabel(svc({ lane: "estimate" }))).toBe("Free estimate");
+  it("names the type on the collapsed row, fee state included", () => {
+    expect(laneChipLabel(svc({ lane: "estimate", feeApplies: true }))).toBe("Estimate · fee");
+    expect(laneChipLabel(svc({ lane: "estimate", feeApplies: undefined }))).toBe("Estimate · free");
   });
 
   it("carries the flat price itself, so the list is readable without opening a row", () => {
@@ -68,11 +71,15 @@ describe("laneChipLabel", () => {
 });
 
 describe("laneConsequence", () => {
-  it("states the service call fee against the lane that charges it", () => {
+  it("states the visit fee against the service that charges it", () => {
     // This is the sentence the old two-button control had nowhere to put, which is why the $95
     // read as if it came from nowhere.
-    expect(laneConsequence("repair", "", 95)).toContain("$95");
-    expect(laneConsequence("repair", "", 95)).toContain("prices it on site");
+    expect(laneConsequence("estimate", "", 95, true)).toContain("$95");
+    expect(laneConsequence("estimate", "", 95, true)).toContain("prices it on site");
+  });
+
+  it("promises no price at all on a free estimate", () => {
+    expect(laneConsequence("estimate", "", 95)).not.toContain("$");
   });
 
   it("quotes the flat price back as the caller will hear it", () => {

@@ -150,7 +150,7 @@ describe("bookVisitTool — service-area check", () => {
       geocoder: fixedGeocoder(IN_AREA_POINT),
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
-    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.data).toMatchObject({ kind: "estimate", emergency: false });
     expect(h.jobs.jobs.size).toBe(1);
     expect(result.speak).not.toBe(BOOK_VISIT_OUT_OF_AREA_SPEAK);
   });
@@ -159,7 +159,7 @@ describe("bookVisitTool — service-area check", () => {
     // Default fixture has null origin → the check is "unknown" regardless of the geocoded point.
     const h = buildHarness({ geocoder: fixedGeocoder(OUT_OF_AREA_POINT) });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
     expect(h.jobs.jobs.size).toBe(1);
     expect(result.speak).not.toBe(BOOK_VISIT_OUT_OF_AREA_SPEAK);
   });

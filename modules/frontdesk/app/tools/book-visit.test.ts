@@ -68,7 +68,13 @@ describe("bookVisitTool", () => {
     );
   });
 
-  it("repair: books a work-kind job + visit and states the service fee (credited)", async () => {
+  /**
+   * The old "repair" lane — the service call — IS an estimate visit under the two-type model:
+   * someone goes to look, prices it at the door, and probably fixes it same trip. It books
+   * kind='estimate' now (it used to book kind='work', which is how a voice-booked service call
+   * rendered as priced work it never was). The fee speech and the repair-length visit stay.
+   */
+  it("legacy repair lane: books an ESTIMATE-kind fee visit and states the visit fee (credited)", async () => {
     const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
 
     // lead ensured with the AI source + problem as notes + parsed phone
@@ -77,9 +83,9 @@ describe("bookVisitTool", () => {
     expect(h.leads.ensured[0]!.notes).toBe("kitchen faucet dripping");
     expect(h.leads.ensured[0]!.phone).toBe(asPhone("+19255550182"));
 
-    // a work-kind job with the service name + notes
+    // an estimate-kind job with the service name + notes — the trade label stays the SPOKEN name
     const job = onlyJob(h);
-    expect(job.props.kind).toBe<JobKind>("work");
+    expect(job.props.kind).toBe<JobKind>("estimate");
     expect(job.props.svc).toBe("Leaky faucet");
     expect(job.props.leadId).toBe(asLeadId(LEAD_UUID));
 
@@ -97,10 +103,10 @@ describe("bookVisitTool", () => {
     // confirmation quotes the DISCRETE start time booked (day + start), not a range
     expect(result.speak).toContain("Someone will arrive Thursday at 8am.");
     expect(result.speak).not.toContain("between"); // no range phrasing in the spoken line
-    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.data).toMatchObject({ kind: "estimate", emergency: false });
   });
 
-  it("repair: omits the credited phrase when feeCredited is off", async () => {
+  it("legacy repair lane: omits the credited phrase when feeCredited is off", async () => {
     const h2 = buildHarness({ settings: settingsFrom({ booking: { services: [], notServices: "", serviceFee: 120, feeCredited: false } }) });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     expect(result.speak).toContain("$120");
@@ -219,7 +225,7 @@ describe("bookVisitTool", () => {
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     const visit = onlyJob(h2).props.visits[0]!;
     expect(visit.props.assigneeUserId).toBe(crewB);
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
   });
 
   it("proximity tie-break: nearer crew wins (crew A nearer jobPoint)", async () => {
@@ -240,7 +246,7 @@ describe("bookVisitTool", () => {
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewA);
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
   });
 
   it("proximity tie-break: flip nearer crew → assigns the other (proves distance, not order)", async () => {
@@ -259,7 +265,7 @@ describe("bookVisitTool", () => {
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBe(crewB);
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
   });
 
   it("persists the geocoded point on the created visit when area.point is non-null", async () => {
@@ -281,14 +287,14 @@ describe("bookVisitTool", () => {
     // default harness → no sameDayCrewLoads → chooseCrew([], ...) → null → UNASSIGNED.
     const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
     expect(onlyJob(h).props.visits[0]!.props.assigneeUserId).toBeNull();
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
   });
 
   it("degrades to UNASSIGNED (never fails the booking) when readSameDayCrewLoads throws", async () => {
     const h2 = buildHarness({ sameDayLoadsThrows: true });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     // the booking STILL succeeds; the visit is just unassigned (office places it).
-    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.data).toMatchObject({ kind: "estimate", emergency: false });
     expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBeNull();
   });
 
@@ -341,7 +347,7 @@ describe("bookVisitTool", () => {
 
   it("emergency: files an EMERGENCY task and sets data.emergency=true", async () => {
     const result = await bookVisitTool.handle({ ...REPAIR_INPUT, urgency: "emergency" }, h.ctx);
-    expect(result.data).toMatchObject({ emergency: true, kind: "work" });
+    expect(result.data).toMatchObject({ emergency: true, kind: "estimate" });
     expect(h.tasks.created).toHaveLength(1);
     expect(h.tasks.created[0]!.text).toContain("EMERGENCY");
     expect(h.tasks.created[0]!.text).toContain("Leaky faucet");
@@ -404,7 +410,7 @@ describe("bookVisitTool", () => {
     const h2 = buildHarness({ smsMode: "err" });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     // the confirmation speak is unchanged — the booking succeeded
-    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.data).toMatchObject({ kind: "estimate", emergency: false });
     expect(result.speak).toContain("$89");
     expect(h2.jobs.jobs.size).toBe(1);
     expect(h2.sms.sent).toHaveLength(1); // attempted once
@@ -417,7 +423,7 @@ describe("bookVisitTool", () => {
   it("SMS send THROWS: booking STILL succeeds (never throws from the SMS step)", async () => {
     const h2 = buildHarness({ smsMode: "throw" });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
     expect(result.speak).toContain("$89");
     expect(h2.jobs.jobs.size).toBe(1);
   });
@@ -431,7 +437,7 @@ describe("bookVisitTool", () => {
     const inactive = buildHarness({ smsA2pActive: false });
     const result = await bookVisitTool.handle(REPAIR_INPUT, inactive.ctx);
     // the booking itself is entirely unaffected — same outcome as the A2P-active happy path
-    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.data).toMatchObject({ kind: "estimate", emergency: false });
     expect(result.speak).toContain("$89");
     expect(inactive.jobs.jobs.size).toBe(1);
     // this is a SKIP, not a degraded send: the sender is never invoked and no notifications row
@@ -510,13 +516,13 @@ describe("bookVisitTool — scope_signal capture", () => {
   it("books successfully when scope_signal is omitted (scope is null on the job)", async () => {
     // scope_signal is optional — a caller with nothing to add must not dead-end.
     const result = await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
-    expect(result.data).toMatchObject({ kind: "work", emergency: false });
+    expect(result.data).toMatchObject({ kind: "estimate", emergency: false });
     expect(onlyJob(h).props.scope).toBeNull();
   });
 
   it("books successfully when scope_signal is explicitly undefined", async () => {
     const result = await bookVisitTool.handle({ ...REPAIR_INPUT, scope_signal: undefined }, h.ctx);
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
     expect(onlyJob(h).props.scope).toBeNull();
   });
 
@@ -525,7 +531,7 @@ describe("bookVisitTool — scope_signal capture", () => {
       { ...REPAIR_INPUT, scope_signal: "  just a dripping faucet  " },
       h.ctx,
     );
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
     const job = onlyJob(h);
     expect(job.props.scope).toBe(decorateScope("  just a dripping faucet  "));
     expect(job.props.scope).toBe("just a dripping faucet");
@@ -537,7 +543,7 @@ describe("bookVisitTool — scope_signal capture", () => {
       { ...REPAIR_INPUT, scope_signal: foundWorkNote },
       h.ctx,
     );
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
     const job = onlyJob(h);
     expect(job.props.scope).toBe(decorateScope(foundWorkNote));
     expect(job.props.scope).toBe("[likely found-work] the water heater is really old");
@@ -571,7 +577,7 @@ describe("bookVisitTool — scope_signal capture", () => {
     const crewB = asUserId(SECOND_CREW_UUID);  // lacks it
     const withCertService = settingsFrom({
       booking: {
-        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["gas"] }],
+        services: [{ name: "Leaky faucet", lane: "estimate" as const, feeApplies: true, price: 0, triggers: "", requiredCerts: ["gas"] }],
         notServices: "",
         serviceFee: 89,
         feeCredited: true,
@@ -596,7 +602,7 @@ describe("bookVisitTool — scope_signal capture", () => {
     const crewB = asUserId(SECOND_CREW_UUID);  // unqualified, idle
     const withCertService = settingsFrom({
       booking: {
-        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["gas"] }],
+        services: [{ name: "Leaky faucet", lane: "estimate" as const, feeApplies: true, price: 0, triggers: "", requiredCerts: ["gas"] }],
         notServices: "",
         serviceFee: 89,
         feeCredited: true,
@@ -617,7 +623,7 @@ describe("bookVisitTool — scope_signal capture", () => {
     const crewA = asUserId(FIRST_CREW_UUID);
     const withCertService = settingsFrom({
       booking: {
-        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["backflow"] }],
+        services: [{ name: "Leaky faucet", lane: "estimate" as const, feeApplies: true, price: 0, triggers: "", requiredCerts: ["backflow"] }],
         notServices: "",
         serviceFee: 89,
         feeCredited: true,
@@ -631,7 +637,7 @@ describe("bookVisitTool — scope_signal capture", () => {
     });
     const result = await bookVisitTool.handle(REPAIR_INPUT, h2.ctx);
     // Booking still succeeds
-    expect(result.data).toMatchObject({ kind: "work" });
+    expect(result.data).toMatchObject({ kind: "estimate" });
     // But nobody was assigned
     expect(onlyJob(h2).props.visits[0]!.props.assigneeUserId).toBeNull();
   });
@@ -652,7 +658,7 @@ describe("bookVisitTool — scope_signal capture", () => {
   it("gate: booked job persists the resolved requiredCerts", async () => {
     const withCertService = settingsFrom({
       booking: {
-        services: [{ name: "Leaky faucet", lane: "repair" as const, price: 0, triggers: "", requiredCerts: ["gas"] }],
+        services: [{ name: "Leaky faucet", lane: "estimate" as const, feeApplies: true, price: 0, triggers: "", requiredCerts: ["gas"] }],
         notServices: "",
         serviceFee: 89,
         feeCredited: true,
