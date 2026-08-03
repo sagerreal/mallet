@@ -61,6 +61,41 @@ describe("pricebookFor", () => {
     }
   });
 
+  /**
+   * WHICH LINE THE TRACER AUTO-SEEDS.
+   *
+   * The measurement tracer picks ONE service per measured quantity via `lowestPositionByKind`
+   * (modules/quoting/app/build-from-measurements.ts), lowest position wins. SeedPricebookUseCase
+   * now passes each service's index as its position, so THE FIRST LINE OF EACH MEASURED KIND IN
+   * THE FILE is what gets auto-quoted.
+   *
+   * That used to be nobody's decision: every seeded service got position 0, and the tie-break
+   * fell through to name-alphabetical. A traced gutter run auto-seeded "Copper gutter
+   * installation" at $50/ln ft — 20x the aluminum line — with no human involved.
+   *
+   * These expectations are the deliberate default per kind. Changing one means changing what a
+   * shop gets quoted before it touches anything, so it should be a conscious edit here too.
+   */
+  const AUTO_SEEDED: Record<string, Record<string, string>> = {
+    roofing:  { site_sqft: "Tear-off & replace — architectural/dimensional shingle" },
+    siding:   { site_sqft: "Vinyl siding installation — standard" },
+    gutters:  { site_lnft: "Seamless aluminum gutter installation" },
+    fencing:  { site_lnft: "Wood privacy fence — 6ft (per linear ft)" },
+    concrete: { site_sqft: "Concrete driveway — broom finish (per sqft)" },
+    painting: { walls_sqft: "Interior wall painting (2 coats)" },
+  };
+
+  it("auto-seeds the option a shop sells most of, not whichever sorts first", () => {
+    for (const [trade, expected] of Object.entries(AUTO_SEEDED)) {
+      const pack = pricebookFor(trade);
+      expect(pack, `no pack for ${trade}`).toBeTruthy();
+      for (const [kind, name] of Object.entries(expected)) {
+        const first = pack!.services.find((s) => s.measuredBy === kind);
+        expect(first?.name, `${trade}/${kind} auto-seeds the wrong line`).toBe(name);
+      }
+    }
+  });
+
   it("files every line under a category the pack actually declares", () => {
     for (const key of SEEDED_TRADES) {
       const pack = pricebookFor(key)!;

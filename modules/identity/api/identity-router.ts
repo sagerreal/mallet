@@ -218,7 +218,15 @@ export const createIdentityRouter = () =>
               // than another trade's — the same rule the pricebook registry follows. Empty is
               // also what keeps the front desk switched off, since frontDeskReadiness requires at
               // least one bookable service.
-              const playbook = input.trade ? playbookFor(input.trade) : undefined;
+              // "Other" is excluded deliberately. Its playbook exists — a generic service call
+              // plus a quote-first job — and is useful when somebody picks "Starter playbook" off
+              // the Front Desk tab, because that is a deliberate choice made while looking at the
+              // screen. Seeding it at SIGNUP is not: a shop that would not name its trade has told
+              // us we have nothing honest to offer it, and two generic rows would just be two rows
+              // to delete. Empty also keeps the front desk switched off, since frontDeskReadiness
+              // requires a bookable service.
+              const playbook =
+                input.trade && input.trade !== "other" ? playbookFor(input.trade) : undefined;
               const booking = playbook
                 ? { ...settings.props.booking, services: [...playbook.services] }
                 : settings.props.booking;

@@ -88,7 +88,20 @@ export class SeedPricebookUseCase {
     }
 
     const services: Service[] = [];
-    for (const svc of input.services) {
+    // POSITION IS THE PACK'S OWN ORDER, and it is load-bearing rather than cosmetic.
+    //
+    // The measurement tracer auto-seeds ONE service per measured quantity onto a quote, and picks
+    // it with `lowestPositionByKind` (modules/quoting/app/build-from-measurements.ts). Every
+    // seeded service used to be created without a position, so create-service defaulted them all
+    // to 0 — and the tie-break fell through to NAME, ALPHABETICALLY.
+    //
+    // That auto-quoted whichever line happened to sort first. A traced gutter run seeded "Copper
+    // gutter installation" at $50/ln ft, 20x the aluminum line nobody chose; siding seeded cedar
+    // at 13.8x vinyl; fencing seeded aluminum at 18.9x chain link. No human picked any of them.
+    //
+    // Passing the index makes the file's order the priority order, so each pack lists the option
+    // a shop sells most of FIRST for each measured kind. Enforced by index.test.ts.
+    for (const [position, svc] of input.services.entries()) {
       const result = await createService.exec(
         {
           name: svc.name,
@@ -96,6 +109,7 @@ export class SeedPricebookUseCase {
           unitPriceCents: svc.unitPriceCents,
           costCents: svc.costCents,
           measuredBy: svc.measuredBy ?? null,
+          position,
         },
         orgId,
       );

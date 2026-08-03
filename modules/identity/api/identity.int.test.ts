@@ -42,6 +42,89 @@ suite("v1.identity (live RLS)", () => {
     await closeDb();
   });
 
+  /**
+   * The trade a shop picks at /welcome decides what its AI front desk can book.
+   *
+   * Before this, defaultBooking() handed EVERY org nine hard-coded residential plumbing services
+   * with prices we invented — so a roofing shop's receptionist offered water heater repair, and
+   * would have quoted "$99 drain cleaning" to a real caller on that shop's behalf.
+   */
+  it("seeds the front desk from the shop's OWN trade, not plumbing", async () => {
+    const authUserId = randomUUID();
+    const caller = appRouter.createCaller(
+      unmappedCtx({ authUserId, email: `roof-${authUserId}@e2e.test`, orgNameHint: "Something Roofing", name: null }),
+    );
+    const me = await caller.v1.identity.signup({ trade: "roofing", postalCode: "02189" });
+    createdOrgIds.push(me.orgId);
+
+    const [row] = await admin<{ trade: string; booking: { services: { name: string }[] } }[]>`
+      select trade, booking from org_settings where org_id = ${me.orgId}`;
+    expect(row!.trade).toBe("roofing");
+
+    const names = row!.booking.services.map((s) => s.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.join(" ")).toMatch(/roof/i);
+    // The specific regression: no plumbing anywhere near a roofer's front desk.
+    expect(names.join(" ")).not.toMatch(/water heater|drain|sewer/i);
+  });
+
+  // Prices are the owner's, never ours. A seeded price would be quoted to a real caller by an
+  // assistant speaking for the shop.
+  it("seeds no prices with those services", async () => {
+    const authUserId = randomUUID();
+    const caller = appRouter.createCaller(
+      unmappedCtx({ authUserId, email: `hvac-${authUserId}@e2e.test`, orgNameHint: "Cold Air HVAC", name: null }),
+    );
+    const me = await caller.v1.identity.signup({ trade: "hvac" });
+    createdOrgIds.push(me.orgId);
+
+    const [row] = await admin<{ booking: { services: { price?: number; lane: string }[] } }[]>`
+      select booking from org_settings where org_id = ${me.orgId}`;
+    for (const svc of row!.booking.services) {
+      expect(svc.price).toBeUndefined();
+      expect(svc.lane).not.toBe("flat");
+    }
+  });
+
+  /**
+   * "Other" means the shop would not name its trade, so we have nothing honest to seed. Empty is
+   * also what keeps the front desk switched OFF — frontDeskReadiness needs a bookable service —
+   * rather than answering with a list it cannot honour.
+   */
+  it("seeds nothing for Other, rather than guessing a trade", async () => {
+    const authUserId = randomUUID();
+    const caller = appRouter.createCaller(
+      unmappedCtx({ authUserId, email: `other-${authUserId}@e2e.test`, orgNameHint: "Mixed Trades", name: null }),
+    );
+    const me = await caller.v1.identity.signup({ trade: "other" });
+    createdOrgIds.push(me.orgId);
+
+    const [row] = await admin<{ booking: { services: unknown[] }; front_desk: boolean }[]>`
+      select booking, front_desk from org_settings where org_id = ${me.orgId}`;
+    expect(row!.booking.services).toEqual([]);
+    expect(row!.front_desk).toBe(false);
+  });
+
+  /**
+   * A signup that names no trade must not fall back to somebody else's services.
+   *
+   * With neither a trade nor a timezone to write, the first-run block does not run at all, so no
+   * org_settings row is created yet — the row is written lazily on first read. Either outcome is
+   * correct; what must never happen is services appearing from nowhere.
+   */
+  it("seeds nothing when no trade is given", async () => {
+    const authUserId = randomUUID();
+    const caller = appRouter.createCaller(
+      unmappedCtx({ authUserId, email: `none-${authUserId}@e2e.test`, orgNameHint: "No Trade Co", name: null }),
+    );
+    const me = await caller.v1.identity.signup({});
+    createdOrgIds.push(me.orgId);
+
+    const [row] = await admin<{ booking: { services: unknown[] } }[]>`
+      select booking from org_settings where org_id = ${me.orgId}`;
+    expect(row?.booking.services ?? []).toEqual([]);
+  });
+
   it("signup provisions org+owner for an unmapped identity, idempotently", async () => {
     const authUserId = randomUUID();
     const caller = appRouter.createCaller(unmappedCtx({ authUserId, email: "own@e2e.test", orgNameHint: "Duggan Electric", name: null }));
