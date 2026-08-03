@@ -153,3 +153,10 @@ export const TRADE_PLAYBOOKS: readonly TradePlaybook[] = [
 export function playbookFor(key: string): TradePlaybook | undefined {
   return TRADE_PLAYBOOKS.find((t) => t.key === key);
 }
+
+/**
+ * The trade keys as a zod-ready tuple, so a router validates against the real list rather than
+ * accepting free text. A trade nothing in the app knows about seeds no playbook and no pricebook,
+ * which would look to the shop like the question did nothing.
+ */
+export const TRADE_KEYS = TRADE_PLAYBOOKS.map((t) => t.key) as unknown as [string, ...string[]];

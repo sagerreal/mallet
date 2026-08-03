@@ -71,7 +71,11 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     const snap = await caller.v1.settings.get();
     expect(snap.config.trade).toBe("plumbing");
     expect(snap.config.markupBps).toBe(3500);
-    expect(snap.config.booking.services.length).toBeGreaterThan(0);
+    // NO services of our invention. This asserted the opposite until the plumbing blob was
+    // deleted: nine hard-coded residential plumbing services with prices we made up
+    // ("Drain cleaning $99"), handed to every org whatever its trade. Services now come from the
+    // shop's own trade playbook at signup, and those carry no prices at all.
+    expect(snap.config.booking.services).toEqual([]);
     expect(snap.pricebook).toEqual([]);
     expect(snap.laborRates).toEqual([]);
     expect(snap.terms).toEqual([]);
