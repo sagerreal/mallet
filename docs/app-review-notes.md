@@ -6,8 +6,13 @@ Regenerate the demo shop before every submission or resubmission:
 
 ```
 node --env-file=.env.local scripts/seed-app-review-org.mjs
-node scripts/verify-app-review-path.mjs            # 13 checks + screenshots
+node scripts/verify-app-review-path.mjs            # 13 checks — scanner LIVE (an iPhone Pro)
+node scripts/verify-app-review-path.mjs --no-lidar # the same path on a BASE iPhone
+node scripts/verify-app-review-path.mjs --no-stub  # the same path in a plain browser
 ```
+
+All three must pass. The last two are what a reviewer on a non-Pro device sees, and you do not
+get to choose the device Apple reviews on.
 
 The seed is idempotent — re-running converges onto the same shop and the same credentials, so
 notes Apple already has stay valid.
@@ -39,13 +44,14 @@ notes Apple already has stay valid.
 > price work that is billed by the square foot.
 >
 > **Requires an iPhone Pro, iPhone Pro Max or iPad Pro** — RoomPlan needs the LiDAR scanner and
-> reports itself unavailable on models without it, so the **Scan room** button is hidden on those
-> devices. On a non-LiDAR device the rest of the app works normally.
+> reports itself unavailable on models without it. On a model without LiDAR the **Scan room**
+> button is still shown, disabled, reading "Needs an iPhone Pro or iPad Pro — room scanning uses
+> the LiDAR sensor." The rest of the app works normally on any device.
 >
 > A second route to the same scanner: tap **⋯** (top right) → **My day** → the 8:30 job
 > **Estimate — whole-house repipe** → the **Quote** tab → **Scan a room**.
 
-Word count: 195.
+Word count: 255.
 
 ---
 
@@ -66,7 +72,9 @@ load only once the field layout also mounts `SettingsHydrator`. Before that chan
 `/my-day` left `measurementEstimating` at its `false` placeholder and the **Scan a room** row was
 absent — while the same row appeared if you happened to soft-navigate in from an office route
 first. `scripts/verify-app-review-path.mjs` check **4d** is that regression: run it against the
-deployed app and confirm 4d passes before relying on the second route. The composer route in the
+deployed app and confirm 4d passes before relying on the second route. It still catches the same
+thing now that the row renders on every device, because `measurementEstimating` gates the row
+itself — a cold load without the hydrator has no row in any state. The composer route in the
 numbered steps is unaffected either way.
 
 **The LiDAR sentence is the 4.2 argument, placed where the reviewer reads it.** Minimum-
@@ -74,37 +82,52 @@ functionality rejections for a web-backed app turn on whether the app does somet
 cannot. Stating the sensor, the framework, that the work happens on-device, and what the
 contractor does with the output answers that in three lines.
 
-**The device requirement is stated plainly.** If a reviewer picks a non-Pro iPhone, the button is
-correctly hidden and the app looks like it is missing its headline feature. Naming the requirement
-converts a silent absence into an expected one.
+**The device requirement is stated plainly, and the app now says it too.** The scan control used
+to be HIDDEN whenever it could not run. A reviewer on a base iPhone therefore saw no scanner at
+all — no native functionality, on the exact capability the 4.2 argument rests on — and had no way
+to tell a missing feature from an unsupported device. The control now renders on every device and
+states the reason it cannot run, so the note above and the screen agree.
 
 ---
 
 ## Exactly what makes the scan control appear
 
-`components/modals/tech-job-modal/quote-tab.tsx` renders the **Scan a room** row only when all
-three of these hold:
+`components/modals/tech-job-modal/quote-tab.tsx` renders the **Scan a room** row whenever:
 
 ```
-measurementEstimating && scanAvailable && !readOnly
+measurementEstimating && !readOnly
 ```
 
 | Condition | Source | True in the demo shop because |
 | --- | --- | --- |
 | `measurementEstimating` | `store.toggles`, written only by `SettingsHydrator` from `org_settings.measurement_estimating` | the seed sets that column to `true` |
-| `scanAvailable` | `useRoomScanAvailable()` → the native `MalletRoomScan` plugin's `available()`, which returns `RoomCaptureSession.isSupported` | the shell registers the plugin and the device has LiDAR |
 | `!readOnly` | the job is not closed | the demo job is `scheduled` |
 
-The composer's **Scan room** button (`app/(office)/composer/measured-surfaces-panel.tsx`) uses the
-same two gates plus a selected customer.
+**Whether the device can scan decides LIVE vs DISABLED, never shown vs hidden.**
+`useRoomScanAvailability()` returns a status, not a boolean, and the row renders in all of them:
 
-**The row is invisible in a browser, and that is correct.** `roomScanPlugin()` reads
+| Status | Reached when | The row |
+| --- | --- | --- |
+| `ready` | in the shell, plugin registered, `available()` true | live |
+| `no-lidar` | in the shell, `available()` false — `RoomCaptureSession.isSupported` is false on a non-Pro model | disabled — "Needs an iPhone Pro or iPad Pro — room scanning uses the LiDAR sensor." |
+| `no-native-app` | no Capacitor bridge at all: any browser | disabled — "Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor." |
+| `scanner-missing` | bridge present but the plugin is not registered on it, or its probe rejected | disabled — "The scanner did not load. Close the Mallet app and open it again." |
+| `checking` | the one-time native probe is still in flight (shell only, one tick) | disabled — "Checking whether this device can scan." |
+
+The composer's **Scan room** button (`app/(office)/composer/measured-surfaces-panel.tsx`) and the
+room card's **Re-scan room** control behave identically. The copy for every status lives in one
+place, `components/shared/scan-unavailable.tsx`.
+
+**Two different "no"s, two different sentences.** `roomScanPlugin()` reads
 `window.Capacitor.Plugins.MalletRoomScan`, which only exists inside the native shell — Capacitor
-injects it with a `WKUserScript` scoped to the webview. In mobile Safari, in Chrome, and in any
-Playwright run without a stub, `scanAvailable` is `false` and no scan control renders anywhere.
-Testing the app at `app.trymallet.com` in a browser will therefore never show it. The reviewer is
-in the shell, so this does not affect them; `scripts/verify-app-review-path.mjs` installs the same
-plugin shape the shell injects in order to exercise the render path from a desktop browser.
+injects it with a `WKUserScript` scoped to the webview. So a browser is `no-native-app` and a base
+iPhone is `no-lidar`, and they must not share a message: telling a desktop user to buy an iPhone
+Pro is wrong, and telling someone already holding the app to open the app is useless.
+`scripts/verify-app-review-path.mjs` proves all three states from a desktop browser — default
+(stub says LiDAR), `--no-lidar` (stub says no LiDAR), `--no-stub` (no stub at all).
+
+**Testing at `app.trymallet.com` in a browser now shows the scanner**, disabled, with the browser
+reason. It previously showed nothing, which read as a broken build every time.
 
 `available()` reflects the LiDAR gate only. It does **not** check camera permission: a Pro device
 whose owner denied camera can still report `available: true`, and the denial surfaces later as a

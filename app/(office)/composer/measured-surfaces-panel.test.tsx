@@ -18,6 +18,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { Job, Lead, RoomCard, Service, SiteCard } from "@/lib/store/types";
 import type { HeldTrace } from "@/lib/measure/held-trace";
 import type { AssemblyView } from "@/lib/store/assemblies-mapper";
+import type { RoomScanAvailability } from "@/lib/native/room-scan";
 import { DEFAULT_ASSEMBLIES } from "@/modules/assemblies/domain/assembly-defaults";
 
 interface QueryStub {
@@ -40,7 +41,7 @@ let storeState: {
 const openModal = vi.fn();
 let roomsQuery: QueryStub;
 let sitesQuery: QueryStub;
-let scanAvailable = false;
+let scan: RoomScanAvailability = { status: "no-native-app" };
 const useJobRooms = vi.fn((_jobId: string | null) => roomsQuery);
 const useJobSites = vi.fn((_jobId: string | null) => sitesQuery);
 const fetchBuild = vi.fn<(input: unknown) => Promise<unknown>>();
@@ -70,7 +71,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useOpenModal: () => openModal,
 }));
 vi.mock("@/lib/native/room-scan", () => ({
-  useRoomScanAvailable: () => scanAvailable,
+  useRoomScanAvailability: () => scan,
 }));
 vi.mock("@/features/measurements/use-job-rooms", () => ({
   useJobRooms: (jobId: string | null) => useJobRooms(jobId),
@@ -181,7 +182,8 @@ beforeEach(() => {
   };
   roomsQuery = okQuery();
   sitesQuery = okQuery();
-  scanAvailable = false;
+  // The office opens the composer in a browser — that is this surface's normal case.
+  scan = { status: "no-native-app" };
   openModal.mockClear();
   fetchBuild.mockReset();
   fetchAssemblySeed.mockReset();
@@ -333,16 +335,60 @@ describe("MeasuredSurfacesPanel — add / scan a room", () => {
     expect(storeState.addJob).not.toHaveBeenCalled();
   });
 
-  it("shows Scan room only when the native scanner is available, in scan mode", () => {
+  // Scan room — three states. The office works in a browser, where the old
+  // hidden-when-unavailable behaviour read as a missing feature rather than a platform limit.
+  it("state 1 — opens the room card in scan mode when the scanner is ready", () => {
+    scan = { status: "ready" };
     render(<MeasuredSurfacesPanel {...seededProps} />);
-    expect(screen.queryByRole("button", { name: "Scan room" })).toBeNull();
+    const button = screen.getByRole("button", { name: "Scan room" });
+
+    expect(button).toHaveProperty("disabled", false);
+    fireEvent.click(button);
+    expect(openModal).toHaveBeenCalledWith("room-card", { jobId: "j1", mode: "scan" });
   });
 
-  it("opens the room card in scan mode when the scanner is available", () => {
-    scanAvailable = true;
+  it("state 2 — Scan room is present and disabled without LiDAR, naming the device", () => {
+    scan = { status: "no-lidar" };
     render(<MeasuredSurfacesPanel {...seededProps} />);
-    fireEvent.click(screen.getByRole("button", { name: "Scan room" }));
-    expect(openModal).toHaveBeenCalledWith("room-card", { jobId: "j1", mode: "scan" });
+    const button = screen.getByRole("button", { name: "Scan room" });
+
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Needs an iPhone Pro or iPad Pro — room scanning uses the LiDAR sensor."),
+    ).toBeTruthy();
+  });
+
+  it("state 3 — Scan room is present and disabled in a browser, naming the app", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    const button = screen.getByRole("button", { name: "Scan room" });
+
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/iPhone Pro or iPad Pro/)).toBeNull();
+  });
+
+  it.each(["no-lidar", "no-native-app"] as const)(
+    "a %s Scan room button cannot be activated, and announces its reason",
+    (status) => {
+      scan = { status };
+      render(<MeasuredSurfacesPanel {...seededProps} />);
+      const button = screen.getByRole("button", { name: "Scan room" });
+
+      fireEvent.click(button);
+      expect(openModal).not.toHaveBeenCalled();
+
+      const reasonId = button.getAttribute("aria-describedby");
+      expect(reasonId).toBeTruthy();
+      expect(document.getElementById(reasonId as string)?.textContent).toBeTruthy();
+    },
+  );
+
+  it("keeps + Add a room live in every scan state — manual rooms need no LiDAR", () => {
+    scan = { status: "no-native-app" };
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    expect(screen.getByRole("button", { name: "+ Add a room" })).toHaveProperty("disabled", false);
   });
 
   it("renders no room entries without a picked customer — a room must anchor to a job", () => {

@@ -21,7 +21,8 @@ import { useActiveModal, useAppStore, useCloseModal, usePushModal } from "@/lib/
 import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
-import { useRoomScanAvailable, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
+import { useRoomScanAvailability, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
+import { ScanUnavailable } from "@/components/shared/scan-unavailable";
 import { SheetRow } from "./sheet-row";
 import { Field } from "@/components/ui/input";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -344,7 +345,8 @@ function RemoveRoomRow({ onRemove }: { onRemove: () => void }) {
   );
 }
 
-// ---- live re-scan (two-tap armed control, roomplan_v1 + plugin available only) ---
+// ---- live re-scan (two-tap armed control; only when scanning is actually ready — the
+//      caller renders ScanUnavailable in its place on any device that cannot scan) ----
 
 function RescanRow({
   jobId,
@@ -424,7 +426,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
   const renameRoom = useAppStore((s) => s.renameRoom);
   const archiveRoom = useAppStore((s) => s.archiveRoom);
   const close = useCloseModal();
-  const scanAvailable = useRoomScanAvailable();
+  const scan = useRoomScanAvailability();
 
   function commitQuantity(kind: RoomQuantityKind, value: number) {
     setRoomQuantity(jobId, room.id, kind, value);
@@ -463,12 +465,16 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
           );
         })}
 
+        {/* A scanned room always offers Re-scan. When this device/platform cannot scan, the
+            control is disabled and says why — the old fallback here printed "Re-scan replaces
+            these numbers and clears edits", which described a re-scan the reader had no way to
+            start and never mentioned that they couldn't. */}
         {room.source === "roomplan_v1" &&
-          (scanAvailable ? (
+          (scan.status === "ready" ? (
             <RescanRow jobId={jobId} captureId={room.id} roomName={room.roomName} />
           ) : (
-            <div className="muted" style={{ padding: "var(--space-3) 0" }}>
-              Re-scan replaces these numbers and clears edits.
+            <div style={{ padding: "var(--space-3) 0" }}>
+              <ScanUnavailable availability={scan} label="Re-scan room" variant="link" />
             </div>
           ))}
       </div>

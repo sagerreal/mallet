@@ -21,11 +21,15 @@
  *     room card (rename / confirm / override quantities / re-scan) — this
  *     panel is the office's door to ALL measurements now that the job modal's
  *     rows are gone (the tech field Quote tab keeps its scan row).
- *   - "+ Add a room" (and "Scan room" when the native scanner is available)
- *     live here too, for the picked customer. Rooms anchor to jobs in the DB —
- *     room scans ingest server-first (unlike traces, which are pure client
- *     geometry and can be HELD on the quote), so a customer with no job yet
- *     gets an estimate job created silently on the first add/scan.
+ *   - "+ Add a room" and "Scan room" live here too, for the picked customer.
+ *     "Scan room" renders on every platform: live when the native scanner is
+ *     usable, disabled-with-its-reason otherwise (no LiDAR, or a browser rather
+ *     than the iPhone app) — the office opens this page in a browser, where the
+ *     old hidden-when-unavailable behaviour just looked like a missing feature.
+ *     Rooms anchor to jobs in the DB — room scans ingest server-first (unlike
+ *     traces, which are pure client geometry and can be HELD on the quote), so a
+ *     customer with no job yet gets an estimate job created silently on the
+ *     first add/scan.
  *
  * Seed-once: a surface's button flips to "Seeded" and disables after success
  * (a ?job= boot already seeded the WHOLE job, so its rows start seeded). An
@@ -38,7 +42,8 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useJobSites } from "@/features/measurements/use-job-sites";
-import { useRoomScanAvailable } from "@/lib/native/room-scan";
+import { useRoomScanAvailability } from "@/lib/native/room-scan";
+import { ScanUnavailable } from "@/components/shared/scan-unavailable";
 import { userMessage } from "@/lib/trpc/error-map";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { Card } from "@/components/ui/card";
@@ -137,7 +142,7 @@ export function MeasuredSurfacesPanel({
   const addJob = useAppStore((s) => s.addJob);
   const openModal = useOpenModal();
   const utils = api.useUtils();
-  const scanAvailable = useRoomScanAvailable();
+  const scan = useRoomScanAvailability();
 
   const [chosenJobId, setChosenJobId] = useState<string | null>(null);
   const [seededKeys, setSeededKeys] = useState<ReadonlySet<string>>(() => new Set());
@@ -479,16 +484,33 @@ export function MeasuredSurfacesPanel({
 
       {/* Rooms are created/scanned from here now (the job modal's Measurements
           row is gone). Needs a picked customer — a room must anchor to one of
-          their jobs; with none yet, openRoomCard creates the estimate job. */}
+          their jobs; with none yet, openRoomCard creates the estimate job.
+          "Scan room" is always offered — disabled with its reason on a device or
+          browser that cannot scan, never hidden. flexWrap + .scanwhy's flex-basis
+          drop that reason onto its own full-width line under the two buttons. */}
       {leadId !== null && (
-        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "var(--space-2)",
+            marginTop: "var(--space-3)",
+          }}
+        >
           <Button size="sm" disabled={creatingRoomJob} onClick={() => void openRoomCard()}>
             + Add a room
           </Button>
-          {scanAvailable && (
-            <Button size="sm" disabled={creatingRoomJob} onClick={() => void openRoomCard("scan")}>
+          {scan.status === "ready" ? (
+            <Button
+              size="sm"
+              className="scanbtn"
+              disabled={creatingRoomJob}
+              onClick={() => void openRoomCard("scan")}
+            >
               Scan room
             </Button>
+          ) : (
+            <ScanUnavailable availability={scan} label="Scan room" />
           )}
         </div>
       )}

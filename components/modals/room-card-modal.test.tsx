@@ -34,7 +34,7 @@ let activeModalParams: Record<string, unknown>;
 const closeMock = vi.fn();
 const pushModalMock = vi.fn();
 const useJobRoomsMock = vi.fn();
-const useRoomScanAvailableMock = vi.fn();
+const useRoomScanAvailabilityMock = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "room-card", params: activeModalParams }),
@@ -58,7 +58,7 @@ vi.mock("@/lib/native/room-scan", async () => {
   const actual = await vi.importActual<typeof import("@/lib/native/room-scan")>("@/lib/native/room-scan");
   return {
     ...actual,
-    useRoomScanAvailable: () => useRoomScanAvailableMock(),
+    useRoomScanAvailability: () => useRoomScanAvailabilityMock(),
   };
 });
 
@@ -91,8 +91,9 @@ beforeEach(() => {
   closeMock.mockReset();
   pushModalMock.mockReset();
   useJobRoomsMock.mockReset();
-  useRoomScanAvailableMock.mockReset();
-  useRoomScanAvailableMock.mockReturnValue(false);
+  useRoomScanAvailabilityMock.mockReset();
+  // A browser is the honest default for this suite — the office opens room cards on a desktop.
+  useRoomScanAvailabilityMock.mockReturnValue({ status: "no-native-app" });
   storeState = {
     roomsByJob: { [JOB_ID]: [room()] },
     jobs: [job()],
@@ -228,15 +229,15 @@ describe("RoomCardModalContent — view mode", () => {
     expect(container.querySelector(".sheet-pri")).toBeNull();
   });
 
-  it("shows the rescan note only for roomplan_v1 rooms", () => {
+  it("offers a re-scan control only for roomplan_v1 rooms", () => {
     render(<RoomCardModalContent />);
-    expect(screen.getByText(/Re-scan replaces these numbers/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Re-scan room" })).toBeTruthy();
   });
 
-  it("does not show the rescan note for a manual room", () => {
+  it("does not offer a re-scan control for a manual room", () => {
     storeState.roomsByJob[JOB_ID] = [room({ source: "manual" })];
     render(<RoomCardModalContent />);
-    expect(screen.queryByText(/Re-scan replaces these numbers/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Re-scan room" })).toBeNull();
   });
 
   it("commits a typed value on blur via setRoomQuantity", () => {
@@ -384,38 +385,82 @@ describe("RoomCardModalContent — create mode", () => {
 });
 
 // ---------------------------------------------------------------------------
-// View mode — live re-scan row (roomplan_v1 + roomScanAvailable() only)
+// View mode — re-scan row, three states. The old unavailable branch printed
+// "Re-scan replaces these numbers and clears edits" — describing an action the
+// reader had no way to start, and never saying they couldn't. Now the control is
+// there, disabled, with the reason.
 // ---------------------------------------------------------------------------
 
 describe("RoomCardModalContent — view mode rescan row", () => {
-  it("stays text-only when scanning is unavailable — web-unchanged, no diff", () => {
-    useRoomScanAvailableMock.mockReturnValue(false);
+  it("state 3 — disabled in a browser, naming the app rather than the device", () => {
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "no-native-app" });
+    render(<RoomCardModalContent />);
+    const button = screen.getByRole("button", { name: "Re-scan room" });
+
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/iPhone Pro or iPad Pro/)).toBeNull();
+  });
+
+  it("state 2 — disabled without LiDAR, naming the device", () => {
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "no-lidar" });
+    render(<RoomCardModalContent />);
+    const button = screen.getByRole("button", { name: "Re-scan room" });
+
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Needs an iPhone Pro or iPad Pro — room scanning uses the LiDAR sensor."),
+    ).toBeTruthy();
+  });
+
+  it.each(["no-lidar", "no-native-app"] as const)(
+    "a %s re-scan control cannot be armed or fired, and announces its reason",
+    (status) => {
+      useRoomScanAvailabilityMock.mockReturnValue({ status });
+      render(<RoomCardModalContent />);
+      const button = screen.getByRole("button", { name: "Re-scan room" });
+
+      fireEvent.click(button);
+      fireEvent.click(button);
+      expect(storeState.rescanRoom).not.toHaveBeenCalled();
+      // Never arms: the two-tap confirmation copy belongs to the live control only.
+      expect(screen.queryByText(/tap again/i)).toBeNull();
+
+      const reasonId = button.getAttribute("aria-describedby");
+      expect(reasonId).toBeTruthy();
+      expect(document.getElementById(reasonId as string)?.textContent).toBeTruthy();
+    },
+  );
+
+  it("keeps the disabled control on the room card's .linklike shape, not a .btn", () => {
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "no-lidar" });
     const { container } = render(<RoomCardModalContent />);
 
-    expect(screen.getByText("Re-scan replaces these numbers and clears edits.")).toBeTruthy();
-    expect(screen.queryByText("Re-scan room")).toBeNull();
-    expect(container.querySelector("button.linklike")).toBeNull();
+    expect(container.querySelector("button.linklike.scanbtn")).toBeTruthy();
+    expect(container.querySelector("button.btn.scanbtn")).toBeNull();
   });
 
   it("does not show any rescan row for a manual room even when scanning is available", () => {
-    useRoomScanAvailableMock.mockReturnValue(true);
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "ready" });
     storeState.roomsByJob[JOB_ID] = [room({ source: "manual" })];
     render(<RoomCardModalContent />);
 
     expect(screen.queryByText("Re-scan room")).toBeNull();
-    expect(screen.queryByText("Re-scan replaces these numbers and clears edits.")).toBeNull();
   });
 
-  it("becomes a two-tap armed control when scanning is available", () => {
-    useRoomScanAvailableMock.mockReturnValue(true);
+  it("state 1 — becomes a live two-tap armed control when scanning is ready", () => {
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "ready" });
     render(<RoomCardModalContent />);
+    const button = screen.getByRole("button", { name: "Re-scan room" });
 
-    expect(screen.getByText("Re-scan room")).toBeTruthy();
-    expect(screen.queryByText("Re-scan replaces these numbers and clears edits.")).toBeNull();
+    expect(button).toHaveProperty("disabled", false);
+    expect(button.getAttribute("aria-describedby")).toBeNull();
   });
 
   it("arms on first tap, fires rescanRoom on second tap, and re-opens on the new capture id", async () => {
-    useRoomScanAvailableMock.mockReturnValue(true);
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "ready" });
     storeState.rescanRoom.mockResolvedValue(room({ id: "room-2" }));
     render(<RoomCardModalContent />);
 
@@ -431,7 +476,7 @@ describe("RoomCardModalContent — view mode rescan row", () => {
   });
 
   it("disarms silently (no error) when the native scan is cancelled", async () => {
-    useRoomScanAvailableMock.mockReturnValue(true);
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "ready" });
     storeState.rescanRoom.mockResolvedValue(null);
     render(<RoomCardModalContent />);
 
@@ -445,7 +490,7 @@ describe("RoomCardModalContent — view mode rescan row", () => {
   });
 
   it("shows the named payload-error copy and disarms on RoomScanPayloadError", async () => {
-    useRoomScanAvailableMock.mockReturnValue(true);
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "ready" });
     storeState.rescanRoom.mockRejectedValue(new RoomScanPayloadError("geometry", new Error("bad json")));
     render(<RoomCardModalContent />);
 
@@ -460,7 +505,7 @@ describe("RoomCardModalContent — view mode rescan row", () => {
   });
 
   it("capture-phase failure (RoomScanCaptureError) surfaces the native message verbatim, not the connection copy", async () => {
-    useRoomScanAvailableMock.mockReturnValue(true);
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "ready" });
     storeState.rescanRoom.mockRejectedValue(
       new RoomScanCaptureError(new Error("The scan didn't capture a floor — walk the room's perimeter and scan again.")),
     );
@@ -479,7 +524,7 @@ describe("RoomCardModalContent — view mode rescan row", () => {
   });
 
   it("ingest-phase failure (generic Error from the mutate call) still shows the connection copy", async () => {
-    useRoomScanAvailableMock.mockReturnValue(true);
+    useRoomScanAvailabilityMock.mockReturnValue({ status: "ready" });
     storeState.rescanRoom.mockRejectedValue(new Error("network down"));
     render(<RoomCardModalContent />);
 

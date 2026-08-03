@@ -8,8 +8,10 @@
  *      office pipeline's "quote it ›" card reads via scopedEstimateVisit, so a
  *      saved scope lights up the office Quoting lane with zero pipeline work),
  *      the job's photo strip (uploadFieldPhoto — the copilot's capture path),
- *      and a "Scan a room" row when the org measures (measurementEstimating)
- *      AND the platform can (useRoomScanAvailable).
+ *      and a "Scan a room" row whenever the org measures (measurementEstimating)
+ *      on an open job. That row renders on EVERY device: live when this one can
+ *      scan, disabled-with-its-reason when it cannot (no LiDAR, or a browser
+ *      rather than the iPhone app) — see components/shared/scan-unavailable.
  *   2. On an ESTIMATE visit: the dual exit — "Quote it now" (reveals the same
  *      builder + present flow the repair path uses) or "Send scope to the
  *      office" (the notes write IS the handoff; sent-ness is DERIVED from the
@@ -29,7 +31,8 @@
 import { useCallback, useRef, useState } from "react";
 import { useAppStore, usePushModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import { useRoomScanAvailable } from "@/lib/native/room-scan";
+import { useRoomScanAvailability } from "@/lib/native/room-scan";
+import { ScanUnavailable } from "@/components/shared/scan-unavailable";
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
@@ -231,7 +234,7 @@ export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
   const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
   const pushModal = usePushModal();
   const close = useCloseModal();
-  const scanAvailable = useRoomScanAvailable();
+  const scan = useRoomScanAvailability();
 
   const isEstimate = jobMode(job) === "estimate";
   const quoted = jobQuoted(job);
@@ -288,15 +291,23 @@ export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
             onSave={saveScope}
           />
           <ScopePhotos job={job} disabled={readOnly} />
-          {measurementEstimating && scanAvailable && !readOnly && (
+          {/* Scanning is offered whenever the org measures and the job is still open. Whether
+              THIS device can scan decides live-vs-disabled, never shown-vs-hidden: a reviewer
+              on a base iPhone, or anyone in a browser, must still see the scanner and be told
+              what it needs. `readOnly` (a closed job) is a different thing and does hide it. */}
+          {measurementEstimating && !readOnly && (
             <div style={{ marginTop: "var(--space-3)" }}>
-              <button
-                type="button"
-                className="btn sm"
-                onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
-              >
-                Scan a room
-              </button>
+              {scan.status === "ready" ? (
+                <button
+                  type="button"
+                  className="btn sm scanbtn"
+                  onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
+                >
+                  Scan a room
+                </button>
+              ) : (
+                <ScanUnavailable availability={scan} label="Scan a room" />
+              )}
             </div>
           )}
         </div>
