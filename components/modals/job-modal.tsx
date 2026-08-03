@@ -1018,7 +1018,11 @@ export function JobModalContent() {
         onOpenInvoice={(invId) => { close(); openModal(MODAL.INVOICE, { invoiceId: invId }); }}
       />
 
-      {/* Sticky footer — Done is THE primary; Delete stays quiet and red. */}
+      {/* Sticky footer — Done is THE primary; Delete stays quiet and red.
+          Two-button foot (#362): `.sheet-pri` is width:100% at the class level,
+          so beside Delete it takes flex:1 / width:auto and Delete keeps its
+          intrinsic width — otherwise the flex line is over-constrained and the
+          primary crushes into its sibling. */}
       <div className="sheet-foot">
         <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "stretch" }}>
           <button
@@ -1027,12 +1031,13 @@ export function JobModalContent() {
               color: "var(--red)",
               borderColor: deleteArmed ? "var(--red)" : undefined,
               flexShrink: 0,
+              minHeight: 44,
             }}
             onClick={confirmDelete}
           >
             {deleteArmed ? "Yes, delete job" : "Delete job"}
           </button>
-          <button className="sheet-pri" onClick={close}>
+          <button className="sheet-pri" style={{ flex: 1, width: "auto" }} onClick={close}>
             Done
           </button>
         </div>
