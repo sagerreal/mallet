@@ -12,6 +12,7 @@ function repoWith(archiveResult: number): JobRepository {
     insertManual: async () => {},
     archiveByLead: () => Promise.resolve(0),
     archive: async () => archiveResult,
+    adoptEstimateOnJob: async () => false,
     insertForEstimate: async () => true,
     findById: async () => null,
     findBySourceEstimate: async () => null,

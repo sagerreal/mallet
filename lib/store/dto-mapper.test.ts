@@ -36,6 +36,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     taxBps: 800,     // 8%
     depBps: 2000,    // 20%
     validDays: 30,
+    jobId: null,
     lines: [
       {
         id: "line-1",

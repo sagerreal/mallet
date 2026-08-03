@@ -56,6 +56,8 @@ class FakeJobRepository implements JobRepository {
     return this.store.get(id) ?? null;
   }
 
+  // Convert-on-accept (create-job-from-estimate) — not exercised by this suite.
+  async adoptEstimateOnJob(): Promise<boolean> { return false; }
   async insertForEstimate(): Promise<boolean> { return true; }
   async insertManual(): Promise<void> {}
   async archiveByLead(): Promise<number> { return 0; }

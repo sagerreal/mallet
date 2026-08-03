@@ -50,6 +50,7 @@ const estimate = (overrides: Partial<EstimateProps> = {}): Estimate => {
     declineReason: null,
     changeRequestedAt: null,
     changeOrderForJobId: null,
+    jobId: null,
     changeRequest: null,
     publicToken: null,
     recommendedTier: null,
@@ -135,14 +136,18 @@ describe("Estimate lifecycle", () => {
     expect(empty.send(now).ok).toBe(false);
   });
 
-  it("accepts only from sent and stamps the derived deposit", () => {
+  it("accepts only from sent and leaves depPaid at zero — a deposit is recorded when PAID, not assumed at accept", () => {
     const draft = estimate({ depBps: 2_000, lines: [line({ rate: money(100_000) })] });
     expect(draft.accept(now).ok).toBe(false); // draft -> accept rejected
     const sent = draft.send(now);
     if (!isOk(sent)) throw new Error("send failed");
     const accepted = sent.value.accept(now);
     expect(isOk(accepted) && accepted.value.props.status).toBe("accepted");
-    if (isOk(accepted)) expect(accepted.value.props.depPaid).toBe(20_000);
+    // depositDue stays derived (the ask); depPaid stays 0 until a payment actually lands.
+    if (isOk(accepted)) {
+      expect(accepted.value.depositDue()).toBe(20_000);
+      expect(accepted.value.props.depPaid).toBe(0);
+    }
   });
 
   it("declines only from sent and is terminal after accept", () => {
@@ -495,8 +500,9 @@ describe("Estimate tiered accept", () => {
     // 150_000 → disc 15_000 → net 135_000 → tax round(11137.5)=11_138 → total 146_138.
     expect(accepted.subtotal()).toBe(150_000);
     expect(accepted.total()).toBe(146_138);
-    // depPaid stamped from the CHOSEN tier's chain, not the recommended tier's.
-    expect(accepted.props.depPaid).toBe(29_228); // round(146138 * 2000 / 10000)
+    // depositDue derives from the CHOSEN tier's chain; depPaid stays 0 — nothing was paid yet.
+    expect(accepted.depositDue()).toBe(29_228); // round(146138 * 2000 / 10000)
+    expect(accepted.props.depPaid).toBe(0);
   });
 
   it("accept keeps already-resolved (untiered) lines committed by the accept use-case", () => {
@@ -512,13 +518,14 @@ describe("Estimate tiered accept", () => {
     expect(r.value.props.acceptedTier).toBe("better");
   });
 
-  it("single-format accept still stamps the deposit from the unchanged line set", () => {
+  it("single-format accept keeps depPaid at zero — the deposit ask stays a derivation", () => {
     const sent = estimate({ depBps: 2_000, lines: [line({ rate: money(100_000) })] }).send(now);
     if (!isOk(sent)) throw new Error("send failed");
     const r = sent.value.accept(now);
     expect(isOk(r)).toBe(true);
     if (!isOk(r)) return;
-    expect(r.value.props.depPaid).toBe(20_000);
+    expect(r.value.depositDue()).toBe(20_000);
+    expect(r.value.props.depPaid).toBe(0);
     expect(r.value.props.acceptedTier).toBeNull();
   });
 });

@@ -47,6 +47,14 @@ export interface DraftEstimateCommand {
    */
   readonly changeOrderForJobId?: string | null;
   /**
+   * The scope-visit job this quote prices — the walkthrough it came from.
+   *
+   * Absent on a quote with no visit behind it. Present when the composer was opened from the
+   * pipeline's scoped card: accept then CONVERTS that job into the sold work instead of minting
+   * a duplicate. The transport validates the job (org-scoped, kind='estimate') before it gets here.
+   */
+  readonly jobId?: string | null;
+  /**
    * The AI drafter's ORIGINAL lines, sent by the composer only when this
    * draft originated from the AI. Persisted write-once to estimates.ai_draft;
    * the send path diffs it against the sent lines (edit-delta mining).
@@ -70,25 +78,9 @@ export class DraftEstimateUseCase {
       return err(validation("an estimate needs at least one line", "lines"));
     }
 
-    const built: EstimateLine[] = [];
-    for (let i = 0; i < cmd.lines.length; i += 1) {
-      const input = cmd.lines[i];
-      if (!input) continue;
-      const line = EstimateLine.create({
-        id: asEstimateLineId(this.ids.newId()),
-        description: input.description,
-        quantity: input.quantity,
-        rate: money(input.rateCents),
-        cost: money(input.costCents),
-        isOptional: input.isOptional,
-        needsPhoto: input.needsPhoto,
-        position: i,
-        tier: input.tier ?? null,
-        materialId: input.materialId ?? null,
-      });
-      if (!isOk(line)) return line;
-      built.push(line.value);
-    }
+    const lines = this.buildLines(cmd.lines);
+    if (!isOk(lines)) return lines;
+    const built = lines.value;
     if (!built.some((line) => !line.props.isOptional)) {
       return err(validation("an estimate needs at least one non-optional line", "lines"));
     }
@@ -115,6 +107,8 @@ export class DraftEstimateUseCase {
       changeRequest: null,
       // The job this quote adds work to, when it was raised from inside a running job.
       changeOrderForJobId: cmd.changeOrderForJobId ?? null,
+      // The scope-visit job this quote prices — accept converts it instead of minting a new job.
+      jobId: cmd.jobId ?? null,
       publicToken: generatePublicToken(),
       recommendedTier: cmd.recommendedTier ?? null,
       acceptedTier: null,
@@ -142,5 +136,31 @@ export class DraftEstimateUseCase {
       occurredAt: now,
     });
     return ok(estimate.value);
+  }
+
+  /** Validate + build the line value objects, positions preserved. First bad line fails fast. */
+  private buildLines(
+    inputs: readonly EstimateLineInput[],
+  ): Result<EstimateLine[], AppError> {
+    const built: EstimateLine[] = [];
+    for (let i = 0; i < inputs.length; i += 1) {
+      const input = inputs[i];
+      if (!input) continue;
+      const line = EstimateLine.create({
+        id: asEstimateLineId(this.ids.newId()),
+        description: input.description,
+        quantity: input.quantity,
+        rate: money(input.rateCents),
+        cost: money(input.costCents),
+        isOptional: input.isOptional,
+        needsPhoto: input.needsPhoto,
+        position: i,
+        tier: input.tier ?? null,
+        materialId: input.materialId ?? null,
+      });
+      if (!isOk(line)) return line;
+      built.push(line.value);
+    }
+    return ok(built);
   }
 }

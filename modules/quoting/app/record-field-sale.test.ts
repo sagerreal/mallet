@@ -206,6 +206,7 @@ describe("RecordFieldSaleUseCase", () => {
       changeRequestedAt: null,
       changeRequest: null,
       changeOrderForJobId: null,
+      jobId: null,
       publicToken: null,
       recommendedTier: null,
       acceptedTier: null,

@@ -20,6 +20,8 @@ export class DrizzleEstimateReader implements EstimateReader {
       leadId: estimate.props.leadId,
       title: estimate.props.title,
       status: estimate.props.status,
+      // The scope-visit job the quote priced — the convert-at-accept path keys off this.
+      jobId: estimate.props.jobId,
       totalCents: estimate.total(),
       // Read from the estimate's own rounding chain rather than recomputed here — one money
       // implementation, so the split can never disagree with the total it came from.

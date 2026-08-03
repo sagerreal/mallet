@@ -162,6 +162,101 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     expect(matchCount).toBe(1);
   });
 
+  it("accept with jobId CONVERTS the scope-visit job — same job flips to work, no duplicate row", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Convert Test Customer" });
+
+    // The walkthrough already on the books: a kind='estimate' job for this lead.
+    const scopeJob = await caller.v1.jobs.create({
+      leadId: lead.id,
+      title: "Walkthrough",
+      kind: "estimate",
+    });
+    expect(scopeJob.kind).toBe("estimate");
+    const walkthroughVisits = scopeJob.visits.length;
+
+    // The composer's draft carries the scope-visit job; the DTO reads it back.
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Repipe",
+      taxBps: 1_000, // 10%
+      lines: [{ description: "Repipe supply lines", quantity: 1, rateCents: 200_000 }],
+      jobId: scopeJob.id,
+    });
+    expect(drafted.jobId).toBe(scopeJob.id);
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+
+    // The SAME job came back, converted — not a second job minted next to the walkthrough.
+    expect(accepted.job).not.toBeNull();
+    expect(accepted.job!.id).toBe(scopeJob.id);
+    expect(accepted.job!.kind).toBe("work");
+
+    const full = await caller.v1.jobs.get({ jobId: scopeJob.id });
+    expect(full.kind).toBe("work");
+    expect(full.sourceEstimateId).toBe(drafted.id);
+    expect(full.title).toBe("Repipe");
+    expect(full.svc).toBeNull(); // stale estimate signal cleared, same as the mint path
+    expect(full.total!.cents).toBe(220_000); // tax-inclusive snapshot
+    expect(full.status).toBe("scheduled"); // live work again, not "done, not billed"
+    // The sold scope landed on the job. Read straight off the table — v1.jobs.get returns the
+    // header + visits only (execution lines ride their own batched reads).
+    const lineRows = await admin<{ description: string }[]>`
+      select description from job_lines where job_id = ${scopeJob.id} and deleted_at is null`;
+    expect(lineRows.map((r) => r.description)).toEqual(["Repipe supply lines"]);
+    // ONE pending visit appended AFTER the walkthrough's — history preserved, positions ordered.
+    expect(full.visits).toHaveLength(walkthroughVisits + 1);
+    const appended = full.visits[full.visits.length - 1]!;
+    expect(appended.status).toBe("pending");
+    expect(appended.durationMinutes).toBe(120);
+
+    // Exactly ONE job row for this lead — the assertion the whole task exists for.
+    const jobsPage = await caller.v1.jobs.listByLead({ leadId: lead.id, limit: 50 });
+    expect(jobsPage.items).toHaveLength(1);
+
+    // Re-running the job-creation path (the manual fallback endpoint) is idempotent:
+    // same job id, and no second pending visit gets seeded onto it.
+    const again = await caller.v1.jobs.createFromEstimate({ estimateId: drafted.id });
+    expect(again.id).toBe(scopeJob.id);
+    const reloaded = await caller.v1.jobs.get({ jobId: scopeJob.id });
+    expect(reloaded.visits).toHaveLength(walkthroughVisits + 1);
+  });
+
+  it("cross-tenant jobId is refused at draft — org B cannot claim org A's walkthrough", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const leadA = await callerA.v1.customers.create({ name: "Tenant A Walkthrough Customer" });
+    const scopeJobA = await callerA.v1.jobs.create({
+      leadId: leadA.id,
+      title: "Walkthrough A",
+      kind: "estimate",
+    });
+
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const leadB = await callerB.v1.customers.create({ name: "Tenant B Customer" });
+    // The org-scoped job read cannot see org A's row → refused as a validation error,
+    // never stored (no mangled cross-tenant link, no FK explosion).
+    await expect(
+      callerB.v1.quoting.draft({
+        leadId: leadB.id,
+        lines: [{ description: "Steal", quantity: 1, rateCents: 1_000 }],
+        jobId: scopeJobA.id,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("a quote cannot claim existing WORK at draft — jobId must point at an estimate visit", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Work Job Guard Customer" });
+    const workJob = await caller.v1.jobs.create({ leadId: lead.id, title: "Real work" }); // kind defaults to 'work'
+    await expect(
+      caller.v1.quoting.draft({
+        leadId: lead.id,
+        lines: [{ description: "Grab", quantity: 1, rateCents: 1_000 }],
+        jobId: workJob.id,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("archiving a lead archives its estimates (cascade)", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
 
@@ -338,8 +433,10 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     if (result.kind !== "ok") throw new Error("expected ok");
     expect(result.estimate.props.status).toBe("accepted");
     expect(result.estimate.total()).toBe(11_202);
-    // depPaid is stamped from the COMMITTED (tuned) lines.
-    expect(result.estimate.props.depPaid).toBe(3_697);
+    // The deposit ASK derives from the COMMITTED (tuned) lines; depPaid stays 0 —
+    // accepting agrees to the work, it pays nothing.
+    expect(result.estimate.depositDue()).toBe(3_697);
+    expect(result.estimate.props.depPaid).toBe(0);
     expect(result.estimate.props.lines.every((l) => !l.props.isOptional)).toBe(true);
 
     // Stored state matches what was returned: the office sees the tuned total.
@@ -447,7 +544,8 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
       result.estimate.props.lines.every((l) => l.props.tier === null && !l.props.isOptional),
     ).toBe(true);
     expect(result.estimate.total()).toBe(44_000); // (35_000 + 5_000) + 10% tax
-    expect(result.estimate.props.depPaid).toBe(22_000);
+    expect(result.estimate.depositDue()).toBe(22_000);
+    expect(result.estimate.props.depPaid).toBe(0); // agreed, not paid
 
     // The office sees the resolved quote.
     const fetched = await caller.v1.quoting.get({ estimateId: drafted.id });

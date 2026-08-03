@@ -65,6 +65,7 @@ const draftEstimate = (
     declineReason: null,
     changeRequestedAt: null,
     changeOrderForJobId: null,
+    jobId: null,
     changeRequest: null,
     publicToken: null,
     recommendedTier: null,

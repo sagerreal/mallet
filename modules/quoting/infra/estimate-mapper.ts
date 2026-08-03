@@ -58,6 +58,7 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     declineReason: row.declineReason,
     changeRequestedAt: row.changeRequestedAt,
     changeOrderForJobId: row.changeOrderForJobId,
+    jobId: row.jobId,
     changeRequest: row.changeRequest,
     publicToken: row.publicToken,
     // Tier columns are DB CHECK-constrained; Estimate.create re-validates (incl. jsonb shape).

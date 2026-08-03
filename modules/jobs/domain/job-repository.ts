@@ -1,4 +1,5 @@
 import type {
+  OrgId,
   JobId,
   LeadId,
   EstimateId,
@@ -93,6 +94,16 @@ export interface JobExecution {
   photos: JobPhoto[];
 }
 
+/** What an accepted estimate stamps onto the scope-visit job it converts. See adoptEstimateOnJob. */
+export interface AdoptEstimatePatch {
+  readonly sourceEstimateId: string;
+  /** Tax-INCLUSIVE, snapshotted from the estimate's own rounding chain (same as the mint path). */
+  readonly totalCents: number;
+  readonly taxBps: number;
+  readonly taxCents: number;
+  readonly title: string | null;
+}
+
 export interface JobRepository {
   // Allocate the next gapless per-org job number ("JOB-<n>") inside the caller's tx.
   nextNumber(): Promise<string>;
@@ -112,6 +123,26 @@ export interface JobRepository {
   findById(id: JobId): Promise<Job | null>;
   // Underpins createFromEstimate idempotency (one active job per accepted estimate).
   findBySourceEstimate(estimateId: EstimateId): Promise<Job | null>;
+  /**
+   * Convert a scope-visit job into the sold work IN PLACE — the walkthrough, the quote and the
+   * work stay ONE job instead of a duplicate appearing at accept.
+   *
+   * One UPDATE flips kind='estimate' → 'work' and stamps source_estimate_id, totals and title;
+   * then the sold lines replace the job's lines and ONE pending visit is appended AFTER the
+   * existing ones (max position + 1) — all inside the caller's transaction, so a failure rolls
+   * the whole conversion back.
+   *
+   * Returns false — converting NOTHING — when the job is missing/archived, already kind='work'
+   * (someone's existing work order must never be grabbed), or canceled. The caller falls back to
+   * the mint path on false; re-accept idempotency is the caller's findBySourceEstimate pre-check.
+   */
+  adoptEstimateOnJob(
+    orgId: OrgId,
+    jobId: JobId,
+    patch: AdoptEstimatePatch,
+    lines: readonly JobLine[],
+    now: Date,
+  ): Promise<boolean>;
   list(page: CursorPage, filter?: JobFilter, sort?: JobSort, sortDir?: "asc" | "desc"): Promise<Paginated<Job>>;
 
   /** How many jobs match the filter, ignoring pagination. Same predicates as list(). */

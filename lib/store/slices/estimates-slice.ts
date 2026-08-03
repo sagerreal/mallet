@@ -160,6 +160,9 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         recommendedTier: draft.recommendedTier,
         tierNames: draft.tierNames,
         termsSnapshot: draft.termsSnapshot?.trim() ? draft.termsSnapshot : undefined,
+        // The scope-visit job this quote prices (composer ?job=) — accept converts that job
+        // into the sold work instead of minting a duplicate.
+        jobId: draft.jobId ?? undefined,
       })
       .then((dto) => {
         invalidateLists("estimates", "customers", "jobs");

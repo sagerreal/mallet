@@ -180,6 +180,12 @@ export interface Estimate {
   /** The customer's change request message. */
   changeRequest?: string;
   /**
+   * The scope-visit job this quote prices — the walkthrough the composer was opened from
+   * (?job=). Accepting the quote CONVERTS that job into the sold work instead of minting a
+   * duplicate. Absent on quotes with no visit behind them.
+   */
+  jobId?: string | null;
+  /**
    * Good/Better/Best: set = tiered estimate (every line carries a tier tag).
    * Totals derive from this tier pre-accept; absent on single quotes.
    */

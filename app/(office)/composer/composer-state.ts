@@ -114,6 +114,13 @@ export function matchServiceByName<T extends { id: string; name: string }>(
 
 export interface ComposerState {
   leadId: string | null;
+  /**
+   * The scope-visit job this quote prices — seeded once from ?job= (the pipeline's scoped
+   * card / a measured job's Build-the-price). Sent as the draft's jobId so accepting the
+   * quote CONVERTS that job into the sold work instead of minting a duplicate. null = the
+   * quote has no walkthrough behind it.
+   */
+  jobId: string | null;
   custQuery: string;
   /** Quote format — toggled in the quote-card header, both directions, any time. */
   format: QuoteFormat;
@@ -166,6 +173,7 @@ export function cloneLines(lines: ComposerLine[]): ComposerLine[] {
 
 export const INITIAL_STATE: ComposerState = {
   leadId: null, // overridden from ?lead= in ComposerPage; else the customer picker shows
+  jobId: null, // overridden from ?job= in ComposerPage (scoped card / Build-the-price)
   custQuery: "",
   format: "single",
   lines: [emptyLine()],

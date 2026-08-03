@@ -407,6 +407,8 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     publicUrl: dto.publicUrl ?? undefined,
     changeRequestedAt: dto.changeRequestedAt ?? undefined,
     changeRequest: dto.changeRequest ?? undefined,
+    // The scope-visit job this quote prices — accept converts it (see Estimate.jobId).
+    jobId: dto.jobId ?? undefined,
     // Good/Better/Best — tier fields ride the DTO as-is (no money units involved;
     // the DTO's total above already derives from the recommended/accepted tier).
     recommendedTier: dto.recommendedTier ?? undefined,

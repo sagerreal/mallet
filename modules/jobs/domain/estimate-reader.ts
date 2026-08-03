@@ -19,6 +19,12 @@ export interface EstimateSummary {
   readonly title: string | null;
   readonly status: EstimateStatus;
   /**
+   * The scope-visit job this quote priced, or null. When set (and that job is still
+   * kind='estimate'), accept CONVERTS it into the sold work in place — the walkthrough and the
+   * work stay one job — instead of minting a second job for the same sale.
+   */
+  readonly jobId: string | null;
+  /**
    * The work the customer bought, in order.
    *
    * The job used to receive a title and a total and nothing else, so the SCOPE stayed on the

@@ -19,6 +19,8 @@ class FakeRepo implements JobRepository {
   async insertManual(j: Job) { this.saved = j; }
   async archiveByLead(): Promise<number> { return 0; }
   async archive() { return 1; }
+  // Convert-on-accept (create-job-from-estimate) — not exercised by this suite.
+  async adoptEstimateOnJob(): Promise<boolean> { return false; }
   async insertForEstimate() { return true; }
   async findById() { return null; }
   async findBySourceEstimate() { return null; }

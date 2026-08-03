@@ -21,13 +21,27 @@ export function leadVal(lead: Lead, estimates: Estimate[]): number {
 const estimateJobs = (leadId: string, jobs: Job[]): Job[] =>
   jobs.filter((j) => j.leadId === leadId && isEstimateJob(j) && !j.archived);
 
-/** The visit that came back with scope notes, or undefined. */
-export function scopedEstimateVisit(leadId: string, jobs: Job[]): Visit | undefined {
+/**
+ * The visit that came back with scope notes AND the job it belongs to, or undefined.
+ *
+ * The job rides along because the scoped card's "quote it ›" hands the composer that job id
+ * (?job=) — the quote it drafts then points back at this walkthrough, and accepting it CONVERTS
+ * the job into the sold work instead of minting a duplicate.
+ */
+export function scopedEstimateVisitWithJob(
+  leadId: string,
+  jobs: Job[],
+): { job: Job; visit: Visit } | undefined {
   for (const j of estimateJobs(leadId, jobs)) {
     const v = (j.visits ?? []).find((v) => v.scopeNotes);
-    if (v) return v;
+    if (v) return { job: j, visit: v };
   }
   return undefined;
+}
+
+/** The visit that came back with scope notes, or undefined. */
+export function scopedEstimateVisit(leadId: string, jobs: Job[]): Visit | undefined {
+  return scopedEstimateVisitWithJob(leadId, jobs)?.visit;
 }
 
 /** A walkthrough on the books: scheduled, dated, not yet scoped. */
