@@ -4,11 +4,21 @@
  * The submit button must actually create the booked work it names:
  *   "Create job"            → addJob + one unplaced visit (after persist reconcile)
  *   "Create estimate visit" → a real estimate job on the created lead
- *   dedup hit               → NO work created (the phone belongs to someone else)
+ *   dedup hit               → NO work created (the phone belongs to someone else),
+ *                             and editing the phone releases the lock
+ *   "Build the price"       → customer ONLY, then the composer (?lead=) — the job
+ *                             is born when the quote is accepted, never before
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { NewCustomerModal } from "./new-customer-modal";
+
+// ---- router mock ----------------------------------------------------------------
+
+const routerPush = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: routerPush }),
+}));
 
 // ---- store mock ---------------------------------------------------------------
 
@@ -18,6 +28,7 @@ const addCompany = vi.fn();
 const addSource = vi.fn();
 const updateLead = vi.fn();
 const setLeads = vi.fn();
+const adoptLead = vi.fn();
 
 // Mutable store state — tests may push leads in to exercise the "already in
 // store" estimate path. Reset in beforeEach.
@@ -28,6 +39,7 @@ const storeState = {
   addSource,
   updateLead,
   setLeads,
+  adoptLead,
   companies: [] as unknown[],
   sources: [] as unknown[],
   leads: [] as { id: string }[],
@@ -197,10 +209,52 @@ describe("NewCustomerModal — submit with the Job purpose", () => {
   });
 });
 
-describe("NewCustomerModal — Build the price", () => {
-  it("double-click creates ONE customer + ONE job and opens the builder once", async () => {
+describe("NewCustomerModal — Build the price (customer only, then the composer)", () => {
+  // This modal books no schedule (its jobs are created unscheduled with an
+  // unplaced visit), so Build-the-price never drops a chosen time by skipping
+  // the job. Booked work stays on the "Create job" submit button.
+
+  it("creates the CUSTOMER ONLY and routes to the composer with the lead id — no job, no builder modal", async () => {
     resolveCreateWith(createdDto());
-    addJob.mockReturnValue({ job: { id: "job-9" }, persisted: Promise.resolve() });
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
+
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/composer?lead=srv-lead-1"));
+    expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
+    expect(addJob).not.toHaveBeenCalled();
+    expect(addVisit).not.toHaveBeenCalled();
+    expect(openModalMock).not.toHaveBeenCalled();
+    expect(closeMock).toHaveBeenCalled();
+    // The composer reads the lead from the store — the created DTO is adopted
+    // (no network re-write) so the selector resolves it immediately.
+    expect(adoptLead).toHaveBeenCalledWith(expect.objectContaining({ id: "srv-lead-1" }));
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("carries the typed job description to the composer as ?desc=", async () => {
+    resolveCreateWith(createdDto());
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.change(screen.getByPlaceholderText("water heater making noise"), {
+      target: { value: "swap 50-gal water heater" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
+
+    await waitFor(() =>
+      expect(routerPush).toHaveBeenCalledWith(
+        `/composer?lead=srv-lead-1&desc=${encodeURIComponent("swap 50-gal water heater")}`,
+      ),
+    );
+    expect(addJob).not.toHaveBeenCalled();
+  });
+
+  it("double-click creates ONE customer and routes once", async () => {
+    resolveCreateWith(createdDto());
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
@@ -209,13 +263,44 @@ describe("NewCustomerModal — Build the price", () => {
     fireEvent.click(build);
     fireEvent.click(build);
 
-    // The flow now opens the job then pushes the builder over it (one flow,
-    // two modal writes through the same mocked hook).
-    await waitFor(() => expect(openModalMock).toHaveBeenCalledTimes(2));
-    expect(openModalMock).toHaveBeenCalledWith("job", { jobId: "job-9" });
-    expect(openModalMock).toHaveBeenCalledWith("price-builder", { jobId: "job-9" });
+    await waitFor(() => expect(routerPush).toHaveBeenCalledTimes(1));
     expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
-    expect(addJob).toHaveBeenCalledTimes(1);
+    expect(addJob).not.toHaveBeenCalled();
+  });
+
+  it("a dedup hit on Build the price shows the notice and does NOT route to the composer", async () => {
+    resolveCreateWith(createdDto({ created: false, id: "existing-9" }));
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/customer with that phone already exists/i)).toBeTruthy(),
+    );
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(adoptLead).not.toHaveBeenCalled();
+    expect(addJob).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a pending state while the create round-trip is in flight", async () => {
+    let resolveCreate: (d: unknown) => void = () => {};
+    mutateAsyncMock.mockReturnValue(new Promise((res) => { resolveCreate = res; }));
+
+    render(<NewCustomerModal open />);
+    fillNameAndOpenBooking("Gary Waters");
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
+
+    const pending = (await screen.findByRole("button", { name: "Creating…" })) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
+
+    await act(async () => {
+      resolveCreate(createdDto());
+    });
+    expect(routerPush).toHaveBeenCalledWith("/composer?lead=srv-lead-1");
   });
 });
 
@@ -320,6 +405,38 @@ describe("NewCustomerModal — dedup hit", () => {
     expect(updateLead).not.toHaveBeenCalled();
     expect(setLeads).not.toHaveBeenCalled();
     expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("editing the phone releases the dedup lock — notice gone, submit enabled, resubmit fires", async () => {
+    resolveCreateWith(createdDto({ created: false, id: "existing-9" }));
+
+    render(<NewCustomerModal open />);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Gary Waters" } });
+    const phoneInput = screen.getByPlaceholderText("(925) 555-0123");
+    fireEvent.change(phoneInput, { target: { value: "9255550100" } });
+    const submit = screen.getByRole("button", { name: "Add customer" }) as HTMLButtonElement;
+    fireEvent.click(submit);
+
+    // Dedup hit: notice shown, submit locked.
+    await waitFor(() =>
+      expect(screen.getByText(/customer with that phone already exists/i)).toBeTruthy(),
+    );
+    expect(submit.disabled).toBe(true);
+
+    // The office edits the phone to a NEW number — the notice describes a
+    // submission that no longer exists, so it must clear and the form unlock.
+    fireEvent.change(phoneInput, { target: { value: "9255550199" } });
+    expect(screen.queryByText(/customer with that phone already exists/i)).toBeNull();
+    expect(submit.disabled).toBe(false);
+
+    // Resubmitting fires the create mutation again with the new number.
+    resolveCreateWith(createdDto({ id: "srv-lead-2", phone: "9255550199" }));
+    fireEvent.click(submit);
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledTimes(2));
+    expect(mutateAsyncMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phone: "9255550199" }),
+    );
+    await waitFor(() => expect(closeMock).toHaveBeenCalled());
   });
 
   it("a dedup response landing AFTER the modal was closed does not re-arm the notice", async () => {

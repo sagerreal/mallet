@@ -79,7 +79,10 @@ vi.mock("./customer-selector", () => ({
 }));
 vi.mock("./quote-card", () => ({
   QuoteCard: ({ state }: { state: ComposerState }) => (
-    <div data-testid="lines">{JSON.stringify(state.lines)}</div>
+    <>
+      <div data-testid="lines">{JSON.stringify(state.lines)}</div>
+      <div data-testid="desc">{state.desc}</div>
+    </>
   ),
 }));
 vi.mock("./pricing-card", () => ({ PricingCard: () => null }));
@@ -269,5 +272,18 @@ describe("ComposerPage — ?lead= boot (regression, untouched by ?job=)", () => 
       { jobId: "" },
       expect.objectContaining({ enabled: false }),
     );
+  });
+
+  it("seeds the describe-the-job text from ?desc= alongside ?lead= (new-customer Build-the-price handoff)", () => {
+    searchParamsValue = { lead: "lead-99", desc: "swap 50-gal water heater" };
+    render(<ComposerPage />);
+    expect(screen.getByTestId("lead-id").textContent).toBe("lead-99");
+    expect(screen.getByTestId("desc").textContent).toBe("swap 50-gal water heater");
+  });
+
+  it("leaves the description empty when there is no ?desc=", () => {
+    searchParamsValue = { lead: "lead-99" };
+    render(<ComposerPage />);
+    expect(screen.getByTestId("desc").textContent).toBe("");
   });
 });

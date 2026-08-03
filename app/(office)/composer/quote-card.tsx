@@ -84,7 +84,10 @@ export function QuoteCard({
 }) {
   // Command-bar text — local to the card; mirrored into state.desc in build/
   // rebuild modes (the drafter reads it there), cleared after a refine.
-  const [barText, setBarText] = useState("");
+  // Initialized FROM state.desc so a seeded description (the composer's ?desc=
+  // handoff from the new-customer modal) lands visibly in the bar; later seeds
+  // (?job=/?revise=, which set desc post-mount) don't retro-fill it.
+  const [barText, setBarText] = useState(state.desc);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   // View-only: show/hide the owner "Your cost" column (single table + tier
   // panels alike). Never touches the store — hiding only omits cells; entered

@@ -15,11 +15,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Modal } from "./modal";
-import { useCloseModal, useOpenModal, usePushModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
+import { useCloseModal, useOpenModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
-import type { Job, Visit } from "@/lib/store/types";
 import { AddressInput } from "@/components/ui/address-input";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { DEFAULT_SOURCES, mergeSources } from "@/features/customers/merge-sources";
@@ -46,12 +46,13 @@ type CreatedCustomer = RouterOutputs["v1"]["customers"]["create"];
 const ESTIMATE_VISIT_HOURS = 0.5;
 
 export function NewCustomerModal({ open }: { open: boolean }) {
+  const router = useRouter();
   const close = useCloseModal();
   const openModal = useOpenModal();
-  const pushModal = usePushModal();
   const activeModal = useActiveModal();
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
+  const adoptLead = useAppStore((s) => s.adoptLead);
   const companies = useAppStore((s) => s.companies);
   const addCompany = useAppStore((s) => s.addCompany);
   const storeSources = useAppStore((s) => s.sources);
@@ -71,7 +72,15 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const submitSeqRef = useRef(0);
 
   // Dedup message shown when the submitted phone matches an existing customer.
+  // Released the moment the phone is edited (see the phone input's onChange) —
+  // the notice describes a submission that no longer exists once the number changes.
   const [dedupLeadId, setDedupLeadId] = useState<string | null>(null);
+
+  // Render-visible mirror of inFlightRef, spanning the WHOLE submit (customer
+  // create + any booked-work persist). createMutation.isPending only covers the
+  // first round trip, so the buttons read idle during the job persist — this
+  // keeps them in their pending state until the flow actually finishes.
+  const [submitting, setSubmitting] = useState(false);
 
   // Core fields
   const [name, setName] = useState("");
@@ -192,14 +201,12 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   }
 
   /**
-   * Create the booked work for a just-created customer — shared by the submit
-   * button ("Create job" / "Create estimate visit") and "✦ Build the price →".
-   * Returns { ok, job } — job is the created job for the "job" purpose (so
-   * Build-price can open the price builder on it), null otherwise. ok:false
-   * means the job persist failed: the error is surfaced and the modal must
-   * stay open (no silent failures on interactive paths).
+   * Create the booked work for a just-created customer — the submit button's
+   * "Create job" / "Create estimate visit" paths. Returns false when the job
+   * persist failed: the error is surfaced and the modal must stay open (no
+   * silent failures on interactive paths).
    */
-  async function createBookedWork(data: CreatedCustomer): Promise<{ ok: boolean; job: Job | null }> {
+  async function createBookedWork(data: CreatedCustomer): Promise<boolean> {
     if (visitPurpose === "job") {
       // addJob returns { job, persisted }; the lead (data.id) is already
       // persisted by createMutation, so addJob fires v1.jobs.create immediately.
@@ -228,13 +235,13 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         await persisted;
       } catch (err) {
         setError(userMessage(err, "The customer was saved, but the job wasn't — check your connection and try again."));
-        return { ok: false, job: null };
+        return false;
       }
       // Every job starts with one editable unplaced visit (same default as
       // quote-created jobs and the other manual-create flows). addVisit only
       // persists once the job is DB-origin, so it must run after the reconcile.
       addVisit(created.id);
-      return { ok: true, job: created };
+      return true;
     }
     if (visitPurpose === "look") {
       // "Create estimate visit" — a REAL job (svc "estimate") with an unplaced visit.
@@ -260,27 +267,54 @@ export function NewCustomerModal({ open }: { open: boolean }) {
         await persisted;
       } catch (err) {
         setError(userMessage(err, "The customer was saved, but the estimate visit wasn't — check your connection and try again."));
-        return { ok: false, job: null };
+        return false;
       }
       addVisit(created.id, ESTIMATE_VISIT_HOURS);
-      return { ok: true, job: created };
+      return true;
     }
-    return { ok: true, job: null };
+    return true;
   }
 
   /**
    * Shared create-success handler: dedup guard → booked work → refresh/close.
    * A dedup hit (data.created === false) surfaces the existing record and MUST
    * NOT create work — a job would attach to someone else's customer.
+   *
+   * toComposer ("✦ Build the price →") is a quoting intent, not a booking:
+   * the customer is created ALONE and the office lands in the composer — the
+   * job is born when the quote is ACCEPTED (CreateJobFromEstimateUseCase),
+   * exactly like every other composer quote. Nothing unpriced reaches the
+   * board if pricing is abandoned. This modal books no schedule (its jobs are
+   * created unscheduled with an unplaced visit), so skipping the job here can
+   * never drop a chosen time — booked work stays on the "Create job" submit.
+   * If a schedule picker is ever added, a picked time must go back through
+   * createBookedWork.
    */
-  async function handleCreated(data: CreatedCustomer, openBuilder: boolean): Promise<void> {
+  async function handleCreated(data: CreatedCustomer, toComposer: boolean): Promise<void> {
     if (!data.created) {
       // Dedup hit — the phone matched an existing customer. Surface it instead of
       // silently closing, which would leave the user wondering why nothing appeared.
       setDedupLeadId(data.id);
       return;
     }
-    const { ok, job } = await createBookedWork(data);
+    if (toComposer) {
+      // Adopt the persisted lead into the store (no network re-write) so the
+      // composer's customer selector resolves it the moment the route lands.
+      adoptLead(toStoreLead(data));
+      utils.v1.customers.list.invalidate();
+      // Carry the typed job description into the composer's describe-the-job
+      // lane; captured before reset() for clarity (reset clears the field).
+      const desc = jobDesc.trim();
+      reset();
+      close();
+      router.push(
+        desc
+          ? `/composer?lead=${data.id}&desc=${encodeURIComponent(desc)}`
+          : `/composer?lead=${data.id}`,
+      );
+      return;
+    }
+    const ok = await createBookedWork(data);
     if (!ok) {
       // The customer row persisted even though the job didn't — refresh the
       // list so it shows up; the error keeps the modal open for a retry.
@@ -293,11 +327,6 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     if (visitPurpose !== "look") utils.v1.customers.list.invalidate();
     reset();
     close();
-    if (openBuilder && job) {
-      // Land the builder ON the new job: ✕ / Done pop back to the job modal.
-      openModal(MODAL.JOB, { jobId: job.id });
-      pushModal(MODAL.PRICE_BUILDER, { jobId: job.id });
-    }
   }
 
   /**
@@ -316,6 +345,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     if (badPhone) { setPhoneError(badPhone); return; }
 
     inFlightRef.current = true;
+    setSubmitting(true);
     const submission = submitSeqRef.current;
     try {
       const resolved = resolveCompany();
@@ -338,6 +368,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       }
     } finally {
       inFlightRef.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -354,7 +385,11 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     openModal(MODAL.LEAD, { leadId: id });
   }
 
-  /** "✦ Build the price →" — create the customer + job, then open the price builder. */
+  /**
+   * "✦ Build the price →" — create the CUSTOMER only, then hand off to the
+   * composer (?lead=, plus ?desc= when a job description was typed). The job
+   * is created when the quote is accepted, never before (see handleCreated).
+   */
   function handleBuildPrice() {
     void submitCreate(true);
   }
@@ -404,6 +439,10 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   ].filter(Boolean);
   const moreSummary = moreParts.length ? moreParts.join(" · ") : "Add";
 
+  // The create buttons key off the FULL flight (customer create + booked-work
+  // persist), not just the mutation's own round trip — see `submitting` above.
+  const busy = submitting || createMutation.isPending;
+
   return (
     <Modal open={open} onClose={handleClose}>
       {/* Sticky sheet header — the shell renders the ✕; .sheet-head's own
@@ -433,6 +472,10 @@ export function NewCustomerModal({ open }: { open: boolean }) {
             onChange={(e) => {
               setPhone(e.target.value);
               if (phoneError) setPhoneError(null);
+              // A dedup notice belongs to the phone that was SUBMITTED — once
+              // the number changes, that submission no longer exists, so the
+              // notice clears and the submit buttons unlock.
+              if (dedupLeadId) setDedupLeadId(null);
             }}
           />
           {phoneError && (
@@ -605,9 +648,9 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                   className="btn"
                   style={{ width: "100%", justifyContent: "center" }}
                   onClick={handleBuildPrice}
-                  disabled={createMutation.isPending || Boolean(dedupLeadId)}
+                  disabled={busy || Boolean(dedupLeadId)}
                 >
-                  ✦ Build the price →
+                  {busy ? "Creating…" : "✦ Build the price →"}
                 </button>
                 <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
                   Same builder your crew uses — or price later.
@@ -730,8 +773,8 @@ export function NewCustomerModal({ open }: { open: boolean }) {
           >
             Cancel
           </button>
-          <button type="submit" className="sheet-pri" disabled={createMutation.isPending || Boolean(dedupLeadId)}>
-            {createMutation.isPending ? "Saving…" : submitLabel()}
+          <button type="submit" className="sheet-pri" disabled={busy || Boolean(dedupLeadId)}>
+            {busy ? "Saving…" : submitLabel()}
           </button>
         </div>
       </form>
