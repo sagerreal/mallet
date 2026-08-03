@@ -757,7 +757,7 @@ export default function ComposerPage() {
       });
       // Refetch the customer list so the leads hydrator writes the new lead into
       // the store; then select it by its server id.
-      await utils.v1.customers.list.invalidate();
+      await utils.v1.customers.invalidate();
       update({ leadId: data.id, custQuery: "" });
     } catch {
       setCustError("Couldn't add the customer — check your connection and try again.");

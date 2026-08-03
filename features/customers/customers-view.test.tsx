@@ -7,6 +7,7 @@ import type { Lead } from "@/lib/store/types";
 // The view no longer reads the lead collection from the store — it queries the server a page at a
 // time — so the fixture is the QUERY's shape, not the store's.
 let leads: Lead[] = [];
+let bookTotalOverride: number | undefined;
 let custSeg = "people";
 // total defaults to the fixture's row count — the view gates first-run on the SERVER total,
 // so a fixture with rows but total 0 would render the first-run screen and prove nothing.
@@ -28,7 +29,9 @@ vi.mock("./use-customers-query", () => ({
     shown: leads.length,
     ...listState,
     total: listState.total ?? leads.length,
-    bookTotal: listState.total ?? leads.length,
+    // Independently settable: bookTotal is its OWN query on the real hook, so a test must be able
+    // to hold it at a stale 0 while rows are on screen (the fresh-signup bug).
+    bookTotal: bookTotalOverride ?? listState.total ?? leads.length,
     isStale: false,
     stageCounts: {},
     sources: [],
@@ -70,6 +73,7 @@ describe("CustomersView — first-run empty state", () => {
   beforeEach(() => {
     leads = [];
     custSeg = "people";
+    bookTotalOverride = undefined;
     // A full reset, not a spread of the previous value — spreading leaked isLoading and total
     // from one test into the next.
     listState = { total: undefined, isFetched: true, isError: false, isLoading: false, isRefetching: false };
@@ -89,6 +93,19 @@ describe("CustomersView — first-run empty state", () => {
     render(<CustomersView />);
     expect(screen.queryByText("No customers yet")).toBeNull();
     expect(screen.getByTestId("toolbar")).toBeTruthy();
+  });
+
+  it("shows the list when rows are loaded even if the book count is still a stale 0", () => {
+    // The fresh-signup bug: a brand-new shop adds its first customer, the rows arrive, but
+    // bookTotal — its own unfiltered count query — has not refetched yet. First-run short-circuits
+    // the table, so the screen stayed on "No customers yet" until a manual page refresh. Rows on
+    // screen are proof the shop is not empty, whatever the count currently says.
+    leads = [aLead()];
+    bookTotalOverride = 0;
+    render(<CustomersView />);
+    expect(screen.queryByText("No customers yet")).toBeNull();
+    expect(screen.getByTestId("toolbar")).toBeTruthy();
+    expect(screen.getByTestId("lead-row")).toBeTruthy();
   });
 
   it("shows the quiet loading state on cold load — not the first-run flash, not the list chrome", () => {

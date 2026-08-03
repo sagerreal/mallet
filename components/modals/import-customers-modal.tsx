@@ -91,7 +91,7 @@ export function ImportCustomersModalContent() {
         failed += res.failed;
         done = Math.min(i + CHUNK, built.rows.length);
         setProgress({ done, created, deduped, failed });
-        await utils.v1.customers.list.invalidate(); // refresh after each chunk, not only at the end
+        await utils.v1.customers.invalidate(); // refresh after each chunk, not only at the end
       }
       setSummary({ created, deduped, failed });
       setPhase("done");
