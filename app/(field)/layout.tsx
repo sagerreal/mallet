@@ -11,6 +11,7 @@ import { FieldJobsHydrator } from "@/features/field/field-jobs-hydrator";
 import { JobsHydrator } from "@/features/jobs/jobs-hydrator";
 import { LeadsHydrator } from "@/features/customers/leads-hydrator";
 import { InvoicesHydrator } from "@/features/money/invoices-hydrator";
+import { SettingsHydrator } from "@/features/settings/settings-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 /**
@@ -38,12 +39,22 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           /my-day their store was empty and tapping a job opened a blank modal. Mount the
           office hydrators the shared field components read — jobs (the modal's data
           source), leads (customer name + Call), invoices (the done close-out branches).
-          Role is known server-side; techs would only get FORBIDDEN from these queries. */}
+          Role is known server-side; techs would only get FORBIDDEN from these queries.
+
+          SettingsHydrator is here for the same reason and one more: it is the ONLY writer of
+          store.toggles, and the tech job modal's Quote tab gates its "Scan a room" row on
+          toggles.measurementEstimating. Without it, a COLD load of /my-day left that toggle at
+          its `false` placeholder (the store has no persist middleware), so a measuring org's
+          scan entry point was invisible on the field surface until the user happened to visit
+          an office route first — a feature that appeared or vanished depending on the route
+          you arrived by. v1.settings.get is ownerOrOffice, hence the same !isTech gate; a
+          tech's own field surface still needs a tech-readable settings read. */}
       {!isTech && (
         <>
           <JobsHydrator />
           <LeadsHydrator />
           <InvoicesHydrator />
+          <SettingsHydrator />
         </>
       )}
       <div className="layout">
