@@ -14,6 +14,7 @@ import { DrizzleLeadRepository } from "@mallet/customers";
 import { INVOICE_SORTS } from "../infra/invoice-sorts";
 import { INVOICE_VIEWS } from "../infra/invoice-views";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
+import { DrizzleEstimateDepositReader } from "../infra/drizzle-estimate-deposit-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
@@ -340,9 +341,11 @@ export const createInvoiceRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const jobs = new DrizzleJobReader(ctx.tx, ctx.principal.orgId);
+        const deposits = new DrizzleEstimateDepositReader(ctx.tx);
         const useCase = new CreateInvoiceFromJobUseCase(
           repo,
           jobs,
+          deposits,
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,

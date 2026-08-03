@@ -6,6 +6,7 @@ export type { PaymentMethod } from "./domain/payment";
 export { PAYMENT_METHODS } from "./domain/payment";
 export type { InvoiceRepository } from "./domain/invoice-repository";
 export type { JobReader } from "./domain/job-reader";
+export type { EstimateDepositReader } from "./domain/estimate-deposit-reader";
 export type { PaymentGateway } from "./domain/payment-gateway";
 export type { PaymentLinkGateway } from "./domain/payment-link-gateway";
 export { StripePaymentLinkGateway } from "./infra/stripe-payment-link-gateway";
@@ -14,6 +15,8 @@ export { DrizzleInvoiceRepository } from "./infra/drizzle-invoice-repository";
 // Exposed for the AI invoice_create_from_job tool — ONE JobReader adapter, so the
 // unpriced-estimate guard reads the same priced-ness everywhere.
 export { DrizzleJobReader } from "./infra/drizzle-job-reader";
+// Same seam, same reason: the AI tool credits the estimate deposit exactly like the router does.
+export { DrizzleEstimateDepositReader } from "./infra/drizzle-estimate-deposit-reader";
 export { RecordCardPaymentUseCase } from "./app/record-card-payment";
 export { processStripeEvent } from "./app/stripe-webhook";
 export { DraftInvoiceUseCase } from "./app/draft-invoice";

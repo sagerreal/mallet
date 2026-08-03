@@ -3,6 +3,7 @@ import {
   asOrgId,
   asLeadId,
   asJobId,
+  asEstimateId,
   asInvoiceId,
   money,
   FixedClock,
@@ -26,7 +27,8 @@ import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
 import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
 import type { Payment } from "../domain/payment";
-import type { JobReader, JobSummary } from "../domain/job-reader";
+import type { JobReader, JobSummary, JobLineSummary } from "../domain/job-reader";
+import type { EstimateDepositReader } from "../domain/estimate-deposit-reader";
 import type {
   PaymentGateway,
   RecordPaymentGatewayCmd,
@@ -141,6 +143,9 @@ class FakeJobReader implements JobReader {
   }
 }
 
+// Explicit stub: every estimate reads as "no deposit paid". Tests that care supply their own.
+const noDeposits: EstimateDepositReader = { depositPaidCents: async () => 0 };
+
 class CountingManualGateway implements PaymentGateway {
   public calls = 0;
   private readonly inner: ManualPaymentGateway;
@@ -163,11 +168,23 @@ const completeJob = (): JobSummary => ({
   title: "Deck",
   status: "complete",
   kind: "work",
-  hasPricedLines: false,
+  num: "JOB-1042",
+  sourceEstimateId: null,
+  lines: [],
   totalCents: 100_000,
   // A real split — a use-case that dropped it would be caught, not pass on two zeroes.
   taxBps: 875,
   taxCents: 8_855,
+});
+
+const jobLine = (over: Partial<JobLineSummary> = {}): JobLineSummary => ({
+  id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  description: "Drain cleaning",
+  quantity: 1,
+  rateCents: 9_900,
+  costCents: 0,
+  position: 0,
+  ...over,
 });
 
 describe("DraftInvoiceUseCase", () => {
@@ -217,8 +234,8 @@ describe("CreateInvoiceFromJobUseCase", () => {
     bus = new InMemoryEventBus();
   });
 
-  const useCase = (reader: JobReader) =>
-    new CreateInvoiceFromJobUseCase(repo, reader, bus, clock, seqIds());
+  const useCase = (reader: JobReader, deposits: EstimateDepositReader = noDeposits) =>
+    new CreateInvoiceFromJobUseCase(repo, reader, deposits, bus, clock, seqIds());
 
   it("rejects a job that is not complete (conflict) and a missing job (not_found)", async () => {
     const notComplete = await useCase(new FakeJobReader({ ...completeJob(), status: "scheduled" })).exec({
@@ -271,7 +288,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
       kind: "estimate",
       totalCents: 0,
       taxCents: 0,
-      hasPricedLines: false,
+      lines: [],
     };
     const result = await useCase(new FakeJobReader(scopingVisit)).exec({ orgId: ORG, jobId: JOB });
     expect(result.ok).toBe(false);
@@ -284,13 +301,13 @@ describe("CreateInvoiceFromJobUseCase", () => {
 
   it("still invoices an estimate signed on site (priced lines; total_cents never synced)", async () => {
     // The sign path writes priced job_lines and does NOT update the total_cents snapshot —
-    // hasPricedLines is what keeps a sold estimate billable.
+    // the priced lines are what keep a sold estimate billable.
     const signed: JobSummary = {
       ...completeJob(),
       kind: "estimate",
       totalCents: 0,
       taxCents: 0,
-      hasPricedLines: true,
+      lines: [jobLine()],
     };
     const result = await useCase(new FakeJobReader(signed)).exec({ orgId: ORG, jobId: JOB });
     expect(isOk(result)).toBe(true);
@@ -301,6 +318,73 @@ describe("CreateInvoiceFromJobUseCase", () => {
     const result = await useCase(new FakeJobReader(accepted)).exec({ orgId: ORG, jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (isOk(result)) expect(result.value.props.total).toBe(100_000);
+  });
+
+  it("copies priced job lines onto the invoice (sourceJobLineId set) and totals them", async () => {
+    const priced: JobSummary = {
+      ...completeJob(),
+      totalCents: 9_900,
+      taxBps: 0,
+      taxCents: 0,
+      lines: [jobLine()],
+    };
+    const result = await useCase(new FakeJobReader(priced)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    const lines = result.value.props.lines;
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.props.description).toBe("Drain cleaning");
+    expect(lines[0]?.props.quantity).toBe(1);
+    expect(lines[0]?.props.rate).toBe(9_900);
+    expect(lines[0]?.props.sourceJobLineId).toBe("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    expect(result.value.props.total).toBe(9_900);
+    expect(result.value.props.tax).toBe(0);
+  });
+
+  it("derives the total from priced lines when the job's totalCents snapshot is stale 0", async () => {
+    // The on-site sign path writes job_lines and never updates total_cents — the snapshot lies.
+    const stale: JobSummary = {
+      ...completeJob(),
+      totalCents: 0,
+      taxCents: 0,
+      taxBps: 875,
+      lines: [jobLine({ quantity: 2, rateCents: 10_000 })],
+    };
+    const result = await useCase(new FakeJobReader(stale)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // subtotal 20_000 + round(20_000 × 875 / 10_000) = 20_000 + 1_750
+    expect(result.value.props.total).toBe(21_750);
+    expect(result.value.props.tax).toBe(1_750);
+    expect(result.value.props.taxBps).toBe(875);
+  });
+
+  it("credits the source estimate's paid deposit onto the invoice", async () => {
+    const EST = asEstimateId("55555555-5555-5555-5555-555555555555");
+    const fromEstimate: JobSummary = { ...completeJob(), sourceEstimateId: EST };
+    const deposits: EstimateDepositReader = {
+      depositPaidCents: async (orgId, estimateId) =>
+        orgId === ORG && estimateId === EST ? 5_000 : 0,
+    };
+    const result = await useCase(new FakeJobReader(fromEstimate), deposits).exec({
+      orgId: ORG,
+      jobId: JOB,
+    });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.depositPaid).toBe(5_000);
+    // The bill asks for what is still owed: total − deposit − paid.
+    expect(result.value.due()).toBe(95_000);
+  });
+
+  it("keeps the snapshot fallback when the job has no priced lines: total from the job, no lines", async () => {
+    const result = await useCase(new FakeJobReader(completeJob())).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.total).toBe(100_000);
+    expect(result.value.props.tax).toBe(8_855);
+    expect(result.value.props.lines).toHaveLength(0);
+    expect(result.value.props.depositPaid).toBe(0);
   });
 
   it("uses zeroMoney when the job totalCents is 0", async () => {
@@ -326,7 +410,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
       // does not pollute the shared bus we assert against below
       const seedBus = new InMemoryEventBus();
       const seedRepo = new FakeInvoiceRepository();
-      const seedUc = new CreateInvoiceFromJobUseCase(seedRepo, new FakeJobReader(completeJob()), seedBus, clock, seqIds());
+      const seedUc = new CreateInvoiceFromJobUseCase(seedRepo, new FakeJobReader(completeJob()), noDeposits, seedBus, clock, seqIds());
       return seedUc.exec({ orgId: ORG, jobId: JOB }).then((r) => {
         if (!isOk(r)) throw new Error("seed failed");
         return r.value;
@@ -353,7 +437,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
     }
 
     const raceRepo = new RaceRepo();
-    const uc = new CreateInvoiceFromJobUseCase(raceRepo, new FakeJobReader(completeJob()), bus, clock, seqIds());
+    const uc = new CreateInvoiceFromJobUseCase(raceRepo, new FakeJobReader(completeJob()), noDeposits, bus, clock, seqIds());
     const result = await uc.exec({ orgId: ORG, jobId: JOB });
 
     // Must return the winner row (ok), NOT a conflict error
@@ -384,7 +468,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
     }
 
     const ghostRepo = new GhostRaceRepo();
-    const uc = new CreateInvoiceFromJobUseCase(ghostRepo, new FakeJobReader(completeJob()), bus, clock, seqIds());
+    const uc = new CreateInvoiceFromJobUseCase(ghostRepo, new FakeJobReader(completeJob()), noDeposits, bus, clock, seqIds());
     const result = await uc.exec({ orgId: ORG, jobId: JOB });
 
     // Must return a conflict error, not crash and not return ok

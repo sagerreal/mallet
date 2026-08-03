@@ -5,6 +5,7 @@ import { DrizzleLeadRepository, EnsureCustomerUseCase } from "@mallet/customers"
 import {
   DrizzleInvoiceRepository,
   DrizzleJobReader,
+  DrizzleEstimateDepositReader,
   SendInvoiceUseCase,
   DraftInvoiceUseCase,
   CreateInvoiceFromJobUseCase,
@@ -915,9 +916,10 @@ export const invoiceCreateFromJobTool: AgentTool = {
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new CreateInvoiceFromJobUseCase(
       new DrizzleInvoiceRepository(ctx.tx, ctx.orgId),
-      // The invoicing module's own JobReader adapter — the ONE place that derives a job's
-      // priced-ness (svc + total + priced lines), so the unpriced-estimate guard holds here too.
+      // The invoicing module's own JobReader adapter — the ONE place that reads a job's
+      // priced lines, so the unpriced-estimate guard and the line copy hold here too.
       new DrizzleJobReader(ctx.tx, ctx.orgId),
+      new DrizzleEstimateDepositReader(ctx.tx),
       ctx.deps.bus,
       ctx.deps.clock,
       ctx.deps.ids,
