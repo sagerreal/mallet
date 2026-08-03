@@ -87,6 +87,8 @@ vi.mock("@/lib/trpc/client", () => ({
       },
       // fetch-on-miss for jobs the store never hydrated; disabled in these tests (job present)
       jobs: { get: { useQuery: () => ({ data: undefined, isError: false }) } },
+      // The customer's note trail behind the Customer notes row — idle here.
+      customers: { listNotes: { useQuery: () => ({ data: undefined }) } },
     },
   },
 }));

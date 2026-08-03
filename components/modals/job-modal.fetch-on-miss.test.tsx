@@ -63,6 +63,8 @@ vi.mock("@/lib/trpc/client", () => ({
           },
         },
       },
+      // The customer's note trail behind the Customer notes row — idle here.
+      customers: { listNotes: { useQuery: () => ({ data: undefined }) } },
     },
   },
 }));

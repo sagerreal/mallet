@@ -15,6 +15,13 @@
  * office set (line items + Total) and at most ONE anchored money pointer —
  * never cost / margin / profit / P&L.
  *
+ * Two note rows, deliberately apart. "Job notes" is this job's own feed (office
+ * note, field notes, found work, completion). "Customer notes" is the CUSTOMER
+ * record's trail, read-only — the gate code lives on the customer, and until it
+ * was mirrored here it was reachable only from the customer sheet ("I had notes
+ * on Cole, why aren't they here on the job?"). Editing stays on the customer
+ * record; the name link in the header is the way there.
+ *
  * Deferred (surfaces not built yet):
  *   - the tech quote builder ("Build the price" / Edit) — a Field-area surface (tq)
  *   - the signed-agreement viewer (openSignedDoc)
@@ -45,6 +52,9 @@ import { SignatureRecord } from "@/components/shared/signature-record";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { SheetRow } from "./sheet-row";
+import { latestNoteSnippet } from "./lead-modal/lead-notes";
+import { NoteRow, gatherNotes } from "./lead-modal/note-row";
+import { dtoLeadNoteToStore } from "@/lib/store/dto-mapper";
 import { JobChecklistBlock } from "./job-checklist-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
@@ -638,6 +648,7 @@ export function JobModalContent() {
   const updateVisit = useAppStore((s) => s.updateVisit);
   const removeVisit = useAppStore((s) => s.removeVisit);
   const deleteJob = useAppStore((s) => s.deleteJob);
+  const adoptLeadNotes = useAppStore((s) => s.adoptLeadNotes);
 
   const [deleteArmed, setDeleteArmed] = useState(false);
   // Billing hooks live ABOVE the fetch-on-miss early returns below — hook order must be
@@ -663,6 +674,29 @@ export function JobModalContent() {
     if (missing && jobQ.data) adoptJob(jobQ.data as unknown as Parameters<typeof adoptJob>[0]);
   }, [missing, jobQ.data, adoptJob]);
 
+  // THE CUSTOMER'S TRAIL, from the database — the same fetch the customer sheet runs, with the
+  // same input and the same options, so the two share ONE react-query entry (identical key →
+  // identical query; the client's 30s staleTime means opening both costs one request).
+  //
+  // Without it this row would only ever show `lead.notes`, the single field the hydrator rides
+  // along on the list — every note logged since (calls, texts, the gate code typed into the
+  // customer sheet) lives in the lead_notes trail and would be missing exactly when the office
+  // opens the job to read it.
+  const custLeadId = job?.leadId ?? "";
+  const custNotesQ = api.v1.customers.listNotes.useQuery(
+    { leadId: custLeadId },
+    { enabled: Boolean(custLeadId), refetchOnWindowFocus: false },
+  );
+  // Keyed off the id STRING, never the lead object: adoptLeadNotes returns a fresh lead every
+  // call, so a lead-object dep would re-fire itself forever.
+  useEffect(() => {
+    const items = custNotesQ.data?.items;
+    if (!items || !custLeadId) return;
+    adoptLeadNotes(custLeadId, items.map(dtoLeadNoteToStore));
+  }, [custNotesQ.data, custLeadId, adoptLeadNotes]);
+
+  const lead: Lead | undefined = leads.find((l) => l.id === job?.leadId);
+
   if (!job) {
     if (missing && jobQ.isError) {
       return (
@@ -679,7 +713,6 @@ export function JobModalContent() {
     return <ModalLoading size="lg" />;
   }
 
-  const lead: Lead | undefined = leads.find((l) => l.id === job.leadId);
   const custName = lead?.name ?? job.title ?? "Customer";
   const phone = job.phone || lead?.phone || "";
   const invoice = invoices.find((i) => i.jobId === job.id);
@@ -748,6 +781,10 @@ export function JobModalContent() {
 
   const status = JST[job.status] ?? JST.scheduled!;
   const noteCount = jobNoteEntries(job).length;
+  // The latest customer note on the CLOSED row — the whole point of the row. A count would say
+  // "3" to a plumber standing at a gate who needs "Gate code 4482". Reused from the customer
+  // sheet, which is where that reasoning was written down.
+  const custNoteSnippet = lead ? latestNoteSnippet(lead) : null;
   const hasLines = (job.lines ?? []).length > 0;
   // The row says there is SCOPE inside it, not just a number. "$730" reads as the whole story and
   // gives no reason to open the row — so the line items, and the "+ More work" that raises a
@@ -980,10 +1017,26 @@ export function JobModalContent() {
           </button>
         </SheetRow>
 
-        {/* Notes — read-only feed, only when there is something to read. */}
+        {/* Job notes — read-only feed, only when there is something to read. Named "Job"
+            now that Customer notes sits beside it: two rows both called "Notes" would
+            leave nobody able to tell which record they were reading. */}
         {noteCount > 0 && (
-          <SheetRow label="Notes" value={String(noteCount)} expandable>
+          <SheetRow label="Job notes" value={String(noteCount)} expandable>
             <NoteFeed job={job} />
+          </SheetRow>
+        )}
+
+        {/* Customer notes — the customer record's own trail, READ-ONLY, and only when the
+            customer has one. No composer on purpose: one record, one edit path, and that
+            path is the customer link in the header above (the same read-only-provenance
+            shape as the invoice modal's "From job" row). */}
+        {lead && custNoteSnippet && (
+          <SheetRow label="Customer notes" value={custNoteSnippet} expandable>
+            <div className="nfeed">
+              {gatherNotes(lead).map((entry) => (
+                <NoteRow key={entry.key} entry={entry} />
+              ))}
+            </div>
           </SheetRow>
         )}
 

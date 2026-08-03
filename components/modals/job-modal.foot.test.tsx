@@ -63,6 +63,8 @@ vi.mock("@/lib/trpc/client", () => ({
     v1: {
       jobs: { get: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) } },
       invoicing: { createFromJob: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) } },
+      // The customer's note trail behind the Customer notes row — idle here.
+      customers: { listNotes: { useQuery: () => ({ data: undefined }) } },
     },
   },
 }));
