@@ -60,14 +60,42 @@ describe("UpdateJobUseCase", () => {
   it("patches title/svc/notes and saves", async () => {
     const repo = new FakeRepo(makeJob());
     const uc = new UpdateJobUseCase(repo, new InMemoryEventBus(), clock);
-    const r = await uc.exec({ jobId: JID, title: "New", svc: "estimate", notes: "code 4" });
+    const r = await uc.exec({ jobId: JID, title: "New", svc: "AC repair", notes: "code 4" });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       expect(r.value.props.title).toBe("New");
-      expect(r.value.props.svc).toBe("estimate");
+      expect(r.value.props.svc).toBe("AC repair");
       expect(r.value.props.notes).toBe("code 4");
     }
     expect(repo.saved).toBeDefined();
+  });
+
+  /**
+   * The retired magic value, normalised at the boundary. A stale pre-0133 browser bundle still
+   * sends svc='estimate' with no kind; accepted verbatim it would land as kind='work' +
+   * svc='estimate' — readable as an estimate only by the client's legacy fallback, invisible to
+   * every kind-based server predicate, and unrepairable from the UI.
+   */
+  it("normalises svc='estimate' from a stale bundle into kind='estimate'", async () => {
+    const repo = new FakeRepo(makeJob());
+    const uc = new UpdateJobUseCase(repo, new InMemoryEventBus(), clock);
+    const r = await uc.exec({ jobId: JID, svc: "estimate" });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.kind).toBe("estimate");
+      expect(r.value.props.svc).toBeNull();
+    }
+  });
+
+  it("an explicit kind alongside the magic svc wins — svc still clears", async () => {
+    const repo = new FakeRepo(makeJob());
+    const uc = new UpdateJobUseCase(repo, new InMemoryEventBus(), clock);
+    const r = await uc.exec({ jobId: JID, svc: "estimate", kind: "work" });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.kind).toBe("work");
+      expect(r.value.props.svc).toBeNull();
+    }
   });
 
   it("attaches a checklist, then detaches it with an explicit null", async () => {

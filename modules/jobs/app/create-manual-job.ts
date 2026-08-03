@@ -44,6 +44,24 @@ export interface CreateManualJobCommand {
 // server-seeded visit would stay invisible until the next hydrate and then appear
 // as a duplicate. If a server-side caller with no client flow ever creates manual
 // jobs (e.g. an AI tool), seed the default visit THERE.
+
+/**
+ * The retired magic value, normalised at the boundary.
+ *
+ * Before 0133, "this is an estimate visit" travelled as svc='estimate'. A stale browser bundle
+ * (SPAs outlive deploys; shops keep tabs open for days) still sends that shape — accepted
+ * verbatim it would land as kind='work', svc='estimate': readable as an estimate by the client's
+ * legacy fallback, invisible to every kind-based server predicate, and unrepairable by the Type
+ * toggle. Normalising here turns the stale write into the correct row instead.
+ */
+const normalizeSvcKind = (
+  svc: string | null | undefined,
+  kind: JobKind | undefined,
+): { svc: string | null; kind: JobKind | undefined } =>
+  svc?.trim().toLowerCase() === "estimate"
+    ? { svc: null, kind: kind ?? "estimate" }
+    : { svc: svc ?? null, kind };
+
 export class CreateManualJobUseCase {
   constructor(
     private readonly repo: JobRepository,
@@ -55,6 +73,7 @@ export class CreateManualJobUseCase {
   async exec(cmd: CreateManualJobCommand): Promise<Result<Job, AppError>> {
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
+    const norm = normalizeSvcKind(cmd.svc, cmd.kind);
     const job = Job.create({
       id: asJobId(cmd.id ?? this.ids.newId()),
       orgId: cmd.orgId,
@@ -63,10 +82,10 @@ export class CreateManualJobUseCase {
       sourceEstimateId: null,
       assigneeUserId: null,
       title: cmd.title,
-      svc: cmd.svc,
+      svc: norm.svc,
       addr: cmd.addr,
       phone: cmd.phone,
-      kind: cmd.kind ?? "work",
+      kind: norm.kind ?? "work",
       status: "scheduled",
       scheduledStart: null,
       scheduledEnd: null,

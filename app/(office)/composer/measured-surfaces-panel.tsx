@@ -208,7 +208,8 @@ export function MeasuredSurfacesPanel({
       // Same estimate-job shape new-job-modal creates for a walkthrough visit.
       const { job, persisted } = addJob({
         leadId: lead.id,
-        svc: "estimate",
+        kind: "estimate",
+        svc: "",
         origin: "manual",
         title: lead.job?.trim() || "Estimate",
         addr: lead.address?.trim() ?? "",

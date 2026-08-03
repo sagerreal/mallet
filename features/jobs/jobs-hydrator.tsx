@@ -89,6 +89,7 @@ function toStoreJob(dto: JobSummaryDTO): Job {
     leadId: dto.leadId,
     sourceEstimateId: dto.sourceEstimateId ?? null,
     svc: dto.svc ?? "service",
+    kind: dto.kind,
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
     // Were hard-coded empty here (no columns existed), so even after the write started persisting

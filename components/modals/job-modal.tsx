@@ -35,6 +35,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isEstimateJob, isUnpricedEstimateJob } from "@/features/jobs/job-status-meta";
 import { useRouter } from "next/navigation";
 import {
   useActiveModal,
@@ -94,7 +95,7 @@ function jobTotal(j: Job): number {
 
 /** priced → "install" (blue), unpriced job → "service" (brown), estimate → estimate */
 function jobMode(j: Job): string {
-  if (j.svc === "estimate") return "estimate";
+  if (isEstimateJob(j)) return "estimate";
   const priced = (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
   return priced ? "install" : "service";
 }
@@ -362,7 +363,10 @@ export function estDisplayTotal(est: Estimate): number | null {
 export function PriceSummary({ job, onBuildPrice, onViewQuote, onAddWork }: PriceSummaryProps) {
   const estimates = useAppStore((s) => s.estimates);
 
-  if (jobMode(job) === "estimate") return null;
+  // Unpriced estimate → nothing to show. But ONLY unpriced: a quote signed at the door writes
+  // priced lines onto this job, and the old svc-based gate hid the price of a job with a
+  // signature behind it — the one record that most certainly has a price.
+  if (isUnpricedEstimateJob(job)) return null;
   const hasLines = (job.lines ?? []).length > 0;
 
   // When this job was created from an accepted quote and has no lines of its own,
@@ -425,9 +429,15 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote, onAddWork }: Pric
           <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onAddWork}>
             + More work
           </span>
-          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
-            Edit
-          </span>
+          {/* NO Edit on signed lines. A signature is evidence of what the customer agreed to —
+              Build-the-price replaces the lines while the signature record stays on screen, and
+              billing would then invoice a total the customer never signed. Changes to signed work
+              go through "+ More work", which re-presents and re-signs. */}
+          {!job.signature && (
+            <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
+              Edit
+            </span>
+          )}
         </span>
       </div>
       {(job.lines ?? []).map((x, i) => (
@@ -582,17 +592,19 @@ function NoteFeed({ job }: { job: Job }) {
 
 interface TypeFieldProps {
   job: Job;
-  onSetSvc: (svc: string) => void;
+  onSetKind: (kind: "work" | "estimate") => void;
 }
 
+// Flat rate first — the common case. "Job" was the old label for it, and it was wrong twice:
+// an estimate visit IS a job, and what the chip really means is that the price is known.
 const TYPE_CHIPS: ReadonlyArray<{ t: string; lbl: string; sub: string }> = [
-  ["estimate", "Estimate", "scope on site, the office quotes after"],
-  ["service", "Job", "do the work — priced ahead or priced on site"],
+  ["service", "Flat rate", "the price is known"],
+  ["estimate", "Estimate", "no price yet — priced at the door, or quoted by the office after"],
 ].map(([t, lbl, sub]) => ({ t: t as string, lbl: lbl as string, sub: sub as string }));
 
 /** Always the two-chip toggle — one look for Type everywhere. */
-function TypeField({ job, onSetSvc }: TypeFieldProps) {
-  const isEst = job.svc === "estimate";
+function TypeField({ job, onSetKind }: TypeFieldProps) {
+  const isEst = isEstimateJob(job);
 
   return (
     <FieldGroup label="Type" style={{ margin: "0" }} groupClassName="chips">
@@ -602,7 +614,7 @@ function TypeField({ job, onSetSvc }: TypeFieldProps) {
             <button
               key={t}
               className={`chip ${sel ? "sel" : ""}`}
-              onClick={() => onSetSvc(t)}
+              onClick={() => onSetKind(t === "estimate" ? "estimate" : "work")}
               title={sub}
               aria-pressed={sel}
             >
@@ -639,7 +651,6 @@ export function JobModalContent() {
   const techs = useAppStore((s) => s.techs);
   const invoices = useAppStore((s) => s.invoices);
   const updateJob = useAppStore((s) => s.updateJob);
-  const setJobSvc = useAppStore((s) => s.setJobSvc);
   const addVisit = useAppStore((s) => s.addVisit);
   const updateVisit = useAppStore((s) => s.updateVisit);
   const removeVisit = useAppStore((s) => s.removeVisit);
@@ -902,10 +913,10 @@ export function JobModalContent() {
 
         <SheetRow
           label="Type"
-          value={job.svc === "estimate" ? "Estimate" : "Job"}
+          value={isEstimateJob(job) ? "Estimate" : "Flat rate"}
           expandable
         >
-          <TypeField job={job} onSetSvc={(svc) => setJobSvc(job.id, svc)} />
+          <TypeField job={job} onSetKind={(kind) => updateJob(job.id, { kind })} />
         </SheetRow>
 
         <SheetRow
@@ -925,8 +936,8 @@ export function JobModalContent() {
         </SheetRow>
 
         {/* Price — PRICE + Total only, never cost/margin/profit (LOCKED rule).
-            PriceSummary renders nothing for estimate-type jobs, so hide the row. */}
-        {jobMode(job) !== "estimate" && (
+            Hidden only for UNPRICED estimates: one signed at the door has real lines to show. */}
+        {!isUnpricedEstimateJob(job) && (
           <SheetRow
             label="Price"
             value={priceValue}

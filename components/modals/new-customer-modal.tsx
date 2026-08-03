@@ -244,12 +244,13 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       return true;
     }
     if (visitPurpose === "look") {
-      // "Create estimate visit" — a REAL job (svc "estimate") with an unplaced visit.
+      // "Create estimate visit" — a REAL job (kind "estimate") with an unplaced visit.
       // It used to be a client-store-only evisit: gone on refresh and invisible to the
       // schedule window / crew-load / conflict checks.
       const { job: created, persisted } = addJob({
         leadId: data.id,
-        svc: "estimate",
+        kind: "estimate",
+        svc: "",
         origin: "manual",
         title: jobDesc.trim() || "Estimate visit",
         addr: address.trim() || "",

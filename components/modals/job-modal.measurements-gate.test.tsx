@@ -59,7 +59,6 @@ vi.mock("@/lib/store/app-store", () => ({
       techs: [],
       invoices: [],
       updateJob: noop,
-      setJobSvc: noop,
       addVisit: noop,
       updateVisit: noop,
       removeVisit: noop,

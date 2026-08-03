@@ -141,12 +141,39 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     expect(created.svc).toBe("service");
     expect(created.status).toBe("scheduled");
 
-    const updated = await caller.v1.jobs.update({ jobId: created.id, title: "Water heater swap", svc: "estimate" });
+    // The Type toggle writes kind now — svc stays what it was declared as, the trade label.
+    const updated = await caller.v1.jobs.update({ jobId: created.id, title: "Water heater swap", kind: "estimate" });
     expect(updated.title).toBe("Water heater swap");
-    expect(updated.svc).toBe("estimate");
+    expect(updated.kind).toBe("estimate");
+    expect(updated.svc).toBe("service"); // untouched by the type flip
 
     const listed = await caller.v1.jobs.list({ limit: 500 });
-    expect(listed.items.some((j) => j.id === created.id && j.svc === "estimate")).toBe(true);
+    expect(listed.items.some((j) => j.id === created.id && j.kind === "estimate")).toBe(true);
+
+    // …and back to flat rate.
+    const reverted = await caller.v1.jobs.update({ jobId: created.id, kind: "work" });
+    expect(reverted.kind).toBe("work");
+  });
+
+  /**
+   * A STALE BROWSER BUNDLE from before the kind migration still sends the retired shape:
+   * svc='estimate' with no kind. Accepted verbatim it would land as kind='work', svc='estimate' —
+   * readable as an estimate by the client's legacy fallback, invisible to every kind-based server
+   * predicate (Money, the pipeline, the $0-invoice guard), and unrepairable by the Type toggle.
+   * The boundary normalises it into the correct row instead.
+   */
+  it("normalises the retired svc='estimate' shape from a stale bundle", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const [lead] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name, stage) values (${orgAId}, 'Stale Bundle', 'new') returning id`;
+
+    const created = await caller.v1.jobs.create({ leadId: lead!.id, title: "Old-bundle walkthrough", svc: "estimate" });
+    expect(created.kind).toBe("estimate");
+    expect(created.svc).toBeNull();
+
+    const updated = await caller.v1.jobs.update({ jobId: created.id, svc: "estimate" });
+    expect(updated.kind).toBe("estimate");
+    expect(updated.svc).toBeNull();
   });
 
   it("attaches a checklist via update; it persists, survives a re-read, and detaches with null", async () => {

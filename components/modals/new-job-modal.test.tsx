@@ -60,9 +60,11 @@ describe("NewJobModalContent — createEstimate", () => {
     await waitFor(() => {
       expect(addJob).toHaveBeenCalledOnce();
     });
-    const [jobDraft] = addJob.mock.calls[0] as [{ leadId: string; svc: string }];
+    const [jobDraft] = addJob.mock.calls[0] as [{ leadId: string; kind: string; svc: string }];
     expect(jobDraft.leadId).toBe("srv-1");
-    expect(jobDraft.svc).toBe("estimate");
+    // kind carries estimate-ness now; svc is purely the trade label (empty for a walkthrough).
+    expect(jobDraft.kind).toBe("estimate");
+    expect(jobDraft.svc).not.toBe("estimate");
     // The unplaced visit rides the persisted job.
     await waitFor(() => {
       expect(addVisit).toHaveBeenCalledWith("job-1", expect.any(Number));
@@ -203,7 +205,7 @@ describe("NewJobModalContent — createJob (Job type)", () => {
     fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
       target: { value: "fix boiler" },
     });
-    // Default type is "Job" (service), so no type switch needed.
+    // Default type is "Flat rate" (internally: service), so no type switch needed.
     fireEvent.change(screen.getByPlaceholderText("search or add"), {
       target: { value: "Maria Garcia" },
     });
@@ -520,7 +522,9 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     fireEvent.click(screen.getByText("Estimate"));
     expect(screen.queryByText("No checklist")).toBeNull();
     // Back to Job: create without picking → no checklist attach.
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    // The chip reads "Flat rate" now — "Job" was wrong twice: an estimate visit IS a job, and
+    // what the chip means is that the price is known.
+    fireEvent.click(screen.getByRole("button", { name: "Flat rate" }));
     fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
       target: { value: "plain job" },
     });

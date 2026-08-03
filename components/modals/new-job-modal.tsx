@@ -288,13 +288,14 @@ export function NewJobModalContent() {
     if (addr.trim() && !lead.address) patch.address = addr.trim();
     updateLead(lead.id, patch);
 
-    // The estimate visit is a REAL job (svc "estimate") with unplaced visits. It used
+    // The estimate visit is a REAL job (kind "estimate") with unplaced visits. It used
     // to be a client-store-only evisit on the lead: gone on refresh, invisible to the
     // schedule window, ignored by crew-load and conflict checks — a placed walkthrough
     // could double-book a tech with no warning (same fix as visit-modal / new-customer).
     const { job: created, persisted: jobPersisted } = addJob({
       leadId: lead.id,
-      svc: "estimate",
+      kind: "estimate",
+      svc: "",
       origin: "manual",
       title: job,
       addr: addr.trim() || (lead.address ?? ""),
@@ -534,9 +535,12 @@ export function NewJobModalContent() {
         {/* Type chips — Estimate | Job */}
         <FieldGroup label="Type" groupClassName="chips">
           {(
+            // Flat rate first — the common booking. "Job" was the old label, and it was wrong
+            // twice: an estimate visit IS a job, and what this chip really means is that the
+            // price is known.
             [
+              ["service", "Flat rate"],
               ["estimate", "Estimate"],
-              ["service", "Job"],
             ] as const
           ).map(([t, lbl]) => (
               <button

@@ -15,7 +15,7 @@ import type { Lead } from "@/lib/store/types";
 // v1.field.setVisitNotes — the tech scope write (estimating part 3). The critical unlock this
 // endpoint provides: a tech-scoped walkthrough must light up the office pipeline's Quoting
 // column "quote it ›" card with ZERO pipeline changes. That read path keys on
-// scopedEstimateVisit(leadId, jobs) finding a visit with scopeNotes on an svc:"estimate" job —
+// scopedEstimateVisit(leadId, jobs) finding a visit with scopeNotes on a kind:"estimate" job —
 // so the last test here maps the returned jobDTO through the SAME dto-mapper the client uses
 // and asserts the pipeline predicate fires.
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
@@ -51,7 +51,7 @@ suite("v1.field.setVisitNotes — the tech scope write (live RLS)", () => {
   let techBId = "";
   let ownerUserId = "";
   let leadId = "";
-  let estJobId = ""; // svc:"estimate" job assigned to techA
+  let estJobId = ""; // kind:"estimate" job assigned to techA
   let visitId = "";
   let doneJobId = ""; // terminal job assigned to techA
   let doneVisitId = "";
@@ -80,10 +80,12 @@ suite("v1.field.setVisitNotes — the tech scope write (live RLS)", () => {
       insert into leads (org_id, name, stage) values (${orgId}, 'Scope Customer', 'new') returning id`;
     leadId = lead!.id;
 
-    // The walkthrough: an svc:"estimate" job with a scheduled visit assigned to techA.
+    // The walkthrough: a kind:"estimate" job with a scheduled visit assigned to techA. The svc
+    // deliberately holds a TRADE NAME — this is the exact shape the AI front desk writes, which
+    // used to render as regular work because every predicate read svc instead of kind.
     const [j] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, total_cents, svc, assignee_user_id)
-      values (${orgId}, ${leadId}, 'JOB-SCOPE-1', 'scheduled', 0, 'estimate', ${techAId})
+      insert into jobs (org_id, lead_id, num, status, total_cents, kind, svc, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-SCOPE-1', 'scheduled', 0, 'estimate', 'Water heater repair', ${techAId})
       returning id`;
     estJobId = j!.id;
     const [v] = await admin<{ id: string }[]>`
@@ -153,7 +155,7 @@ suite("v1.field.setVisitNotes — the tech scope write (live RLS)", () => {
     const office = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
     const dto = await office.v1.jobs.get({ jobId: estJobId });
     const storeJob = dtoJobToStoreJob(dto);
-    expect(storeJob.svc).toBe("estimate");
+    expect(storeJob.kind).toBe("estimate");
 
     const scoped = scopedEstimateVisit(storeJob.leadId, [storeJob]);
     expect(scoped?.id).toBe(visitId);

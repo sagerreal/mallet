@@ -52,14 +52,18 @@ suite("A4 frontdesk readers against live Supabase RLS", () => {
     await closeDb();
   });
 
-  it("settings reader returns the org's booking playbook (lazy-created defaults)", async () => {
+  it("settings reader returns the org's booking config (lazy-created defaults)", async () => {
     const org = asOrgId(orgId);
     await withTenant(org, async (tx) => {
       const settings = await new DrizzleSettingsReader(tx, org).getByOrg(org);
       expect(settings).not.toBeNull();
-      expect(settings!.props.booking.services.length).toBeGreaterThan(0);
+      // EMPTY services and front desk OFF are the deliberate first-run state now: services come
+      // from the shop's own trade playbook at signup (the nine invented plumbing services are
+      // deleted), and an unconfigured assistant must not be the thing answering the phone.
+      // This test used to assert the old defaults and was simply never updated when they changed.
+      expect(settings!.props.booking.services).toEqual([]);
       expect(settings!.props.booking.serviceFee).toBe(89);
-      expect(settings!.props.frontDesk).toBe(true);
+      expect(settings!.props.frontDesk).toBe(false);
     });
   });
 

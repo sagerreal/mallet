@@ -162,7 +162,7 @@ const completeJob = (): JobSummary => ({
   leadId: LEAD,
   title: "Deck",
   status: "complete",
-  svc: null,
+  kind: "work",
   hasPricedLines: false,
   totalCents: 100_000,
   // A real split — a use-case that dropped it would be caught, not pass on two zeroes.
@@ -268,7 +268,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
   it("rejects a zero-total estimate with no priced lines (conflict, named)", async () => {
     const scopingVisit: JobSummary = {
       ...completeJob(),
-      svc: "estimate",
+      kind: "estimate",
       totalCents: 0,
       taxCents: 0,
       hasPricedLines: false,
@@ -287,7 +287,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
     // hasPricedLines is what keeps a sold estimate billable.
     const signed: JobSummary = {
       ...completeJob(),
-      svc: "estimate",
+      kind: "estimate",
       totalCents: 0,
       taxCents: 0,
       hasPricedLines: true,
@@ -297,7 +297,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
   });
 
   it("still invoices an estimate whose job carries an accepted-quote total", async () => {
-    const accepted: JobSummary = { ...completeJob(), svc: "estimate" };
+    const accepted: JobSummary = { ...completeJob(), kind: "estimate" };
     const result = await useCase(new FakeJobReader(accepted)).exec({ orgId: ORG, jobId: JOB });
     expect(isOk(result)).toBe(true);
     if (isOk(result)) expect(result.value.props.total).toBe(100_000);

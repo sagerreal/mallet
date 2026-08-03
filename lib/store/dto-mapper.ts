@@ -333,6 +333,7 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     // correctly has none until the record is opened.
     signature: "signature" in dto ? (dto.signature ?? undefined) : undefined,
     svc: dto.svc ?? "service",
+    kind: dto.kind,
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
     addr: dto.addr ?? "",

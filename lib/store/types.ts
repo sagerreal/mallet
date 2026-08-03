@@ -370,6 +370,9 @@ export interface Job {
    */
   signature?: EstimateSignature;
   svc: string | null;
+  /** 'work' | 'estimate' — is this a scoping visit? Source of truth since 0133; svc is
+      purely the trade label. */
+  kind?: string;
   origin: string;
   title: string;
   addr: string;

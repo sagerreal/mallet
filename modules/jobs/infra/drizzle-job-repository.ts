@@ -801,7 +801,11 @@ export class DrizzleJobRepository implements JobRepository {
         callbackReason: jobs.callbackReason,
       })
       .from(jobs)
-      .where(and(isNull(jobs.deletedAt), gte(jobs.createdAt, since), eq(jobs.orgId, this.orgId)));
+      // kind='work' only: an estimate visit is a sales walkthrough, not work that can "not hold".
+      // Without this, a voice-booked estimate (kind='estimate', svc='Water heater repair') that
+      // completes becomes a callback ORIGINAL, and the real repair booked days later gets flagged
+      // as "the original work didn't hold" — a false accusation against a job that never existed.
+      .where(and(isNull(jobs.deletedAt), gte(jobs.createdAt, since), eq(jobs.orgId, this.orgId), eq(jobs.kind, "work")));
     return rows.map((r) => ({
       ...r,
       id: asJobId(r.id),

@@ -65,7 +65,6 @@ vi.mock("@/lib/store/app-store", () => ({
       updateJob: vi.fn(),
       deleteJob: vi.fn(),
       adoptJob: vi.fn(),
-      setJobSvc: vi.fn(),
       setJobLines: vi.fn(),
       addLeadNote: vi.fn(),
     }),

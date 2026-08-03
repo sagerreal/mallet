@@ -23,6 +23,40 @@ export type SvcKind = (typeof SVC_KIND)[keyof typeof SVC_KIND];
 export const BOARD_ITEM_KIND = { job: "job" } as const;
 export type BoardItemKind = (typeof BOARD_ITEM_KIND)[keyof typeof BOARD_ITEM_KIND];
 
+/**
+ * Is this an ESTIMATE job — someone still has to look at the work before there is a price?
+ *
+ * `jobs.kind` is the source of truth (the closed enum the DB constrains; backfilled in 0133).
+ * The `svc === 'estimate'` fallback covers only a record hydrated into the store before the
+ * writers switched — the column itself carries no 'estimate' values anymore.
+ *
+ * ONE predicate on purpose. Four hand-maintained copies of `svc === "estimate"` (board, office
+ * modal, tech modal, pipeline) are how a voice-booked estimate — which set `kind` and put the
+ * spoken service name in `svc` — rendered as regular work on every one of them.
+ */
+export function isEstimateJob(j: { kind?: string; svc?: string | null }): boolean {
+  return j.kind === "estimate" || j.svc === SVC_KIND.estimate;
+}
+
+/** The job carries at least one real priced line — a signed on-site quote writes these. */
+export function hasPricedLines(j: { lines?: { q?: number | null; r?: number | null }[] }): boolean {
+  return (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
+}
+
+/**
+ * A PURE scoping visit: an estimate job nobody has priced yet. This — not "is an estimate" — is
+ * what hides the Price section and keeps the job out of billing. The distinction is the fix for
+ * a real bug: a quote signed at the door writes priced lines onto the job, and the old
+ * `svc === 'estimate'` gate kept hiding the price of a job that had a signature behind it.
+ */
+export function isUnpricedEstimateJob(j: {
+  kind?: string;
+  svc?: string | null;
+  lines?: { q?: number | null; r?: number | null }[];
+}): boolean {
+  return isEstimateJob(j) && !hasPricedLines(j);
+}
+
 /** Status pill display (label · text color · background). */
 export const JST: Record<string, { l: string; c: string; bg: string }> = {
   unscheduled: { l: "Unscheduled", c: "var(--amber)", bg: "var(--amber-bg)" },
