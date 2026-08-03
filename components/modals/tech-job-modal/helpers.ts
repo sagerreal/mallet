@@ -56,6 +56,16 @@ export function jobQuoted(j: Job): boolean {
   return (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
 }
 
+/**
+ * A pure scoping visit: an ESTIMATE job with no priced work. Nothing to bill —
+ * completing it hands the scope to the office, never a payment ask. A quote
+ * signed on site writes real priced lines onto the job (jobQuoted flips true),
+ * so signed estimates fall OUT of this predicate and stay billable.
+ */
+export function isUnpricedEstimate(j: Job): boolean {
+  return jobMode(j) === "estimate" && !jobQuoted(j);
+}
+
 /** Customer name (prototype custName, 3582) — the linked lead's name, else the job title. */
 export function custNameOf(j: Job, lead: Lead | undefined): string {
   if (lead) return lead.name;

@@ -20,10 +20,12 @@
  * nothing — it lost the technician's time on every remount and never reached a timesheet. His hours
  * come from the day clock on My day plus these visit taps, which write real time entries.
  *
- * Estimating part 3: the TECH view is tabbed — Job (the spine above) · Quote (quote-tab.tsx:
+ * Estimating part 3: the view is tabbed — Job (the spine above) · Quote (quote-tab.tsx:
  * scope notes + photos + room scan, the embedded price builder, the estimate-visit dual exit).
- * No Hours tab: hours never lived in this modal (see the no-timer note above). The OFFICE view
- * of this shared modal is deliberately tabless and renders exactly as before.
+ * No Hours tab: hours never lived in this modal (see the no-timer note above). The tabs are
+ * SURFACE-based, not role-based: this modal's only entry is My day, and an owner-operator
+ * scoping their own walkthrough needs the Quote tab exactly as a tech does (every endpoint
+ * the tab writes through is anyRole). Per-CONTROL gates inside the spine stay role-based.
  */
 
 "use client";
@@ -46,6 +48,7 @@ import {
   custNameOf,
   hmLabel,
   invDue,
+  isUnpricedEstimate,
   jobMode,
   jobQuoted,
   jobTotal,
@@ -53,15 +56,14 @@ import {
 } from "./helpers";
 import { TechHeader } from "./tech-header";
 import { VisitRow } from "./visit-row";
-import { PricingSec } from "./pricing-sec";
 import { WorkOrderSec } from "./work-order-sec";
 import { FoundWorkSec } from "./found-work-sec";
 import { ChecklistSec } from "./checklist-sec";
 import { NoteFeed } from "./note-feed";
-import { DoneBlock, doneFootAction } from "./done-block";
+import { DoneBlock, ScopeHandoffBlock, doneFootAction } from "./done-block";
 import { QuoteTab } from "./quote-tab";
 
-/** The tech view's two tabs. Hours are NOT a tab here on purpose — the clock lives on
+/** The modal's two tabs. Hours are NOT a tab here on purpose — the clock lives on
  *  My day (day clock) + the visit step taps; this modal never carried a timer. */
 type TechTab = "job" | "quote";
 
@@ -70,9 +72,9 @@ export function TechJobModalContent() {
   const pushModal = usePushModal();
   const close = useCloseModal();
 
-  // Tech-only tabs: Job (the working spine) · Quote (scope + the price builder —
-  // estimating part 3). The OFFICE mode of this shared modal renders exactly as
-  // before, tabless — its pricing entry stays the PricingSec "Price it on site →".
+  // Tabs for EVERY role: Job (the working spine) · Quote (scope + the price
+  // builder — estimating part 3). The Quote tab is this surface's one pricing
+  // home; per-control gates inside the Job tab stay role-based below.
   const [tab, setTab] = useState<TechTab>("job");
 
   // Role gate: this modal is shared by owner/office (full controls) and techs.
@@ -175,19 +177,21 @@ export function TechJobModalContent() {
     if (addr) window.open(`https://maps.google.com/?q=${encodeURIComponent(addr)}`, "_blank");
   }, [addr]);
 
-  const onPriceOnSite = useCallback(() => {
-    if (!jobId) return;
-    pushModal(MODAL.TECH_QUOTE, { jobId });
-  }, [jobId, pushModal]);
-
   // Early return AFTER all hooks (rules of hooks).
   if (!job) return null;
+
+  // A done, unpriced ESTIMATE is a finished scoping visit — its close-out is a
+  // scope handoff, never a billing branch. Signed-on-site estimates carry priced
+  // lines, fall out of this predicate, and keep the payment close-out.
+  const scoping = isUnpricedEstimate(job);
+  const hasScope = placed.some((v) => Boolean(v.scopeNotes?.trim()));
 
   // --- The ONE foot primary (sheet grammar) ----------------------------------
   // Close-out states hand the DoneBlock branch's terminal action to the sticky
   // foot; every other state gets a plain full-width Done so the field view is
-  // never dismissable only via the tiny shell ✕. All non-destructive.
-  const footKind = done && isOffice ? doneFootAction(job, lead, invoice) : null;
+  // never dismissable only via the tiny shell ✕. All non-destructive. An
+  // unpriced estimate never gets a billing foot — its close-out is the handoff.
+  const footKind = done && isOffice && !scoping ? doneFootAction(job, lead, invoice) : null;
   const footDue = invoice ? invDue(invoice) : jobTotal(job);
   const footCard = lead?.card;
   const footPri =
@@ -204,35 +208,33 @@ export function TechJobModalContent() {
   const myVisit = placed.find((v) => v.techId === me.data?.userId);
   const scopeVisit = myVisit ?? curVisit;
 
-  const showTabs = !isOffice;
-  const onQuoteTab = showTabs && tab === "quote";
+  const onQuoteTab = tab === "quote";
 
   return (
     <>
       {/* 1. Sticky sheet header — customer name + service word + title. NO status pill. */}
       <TechHeader job={job} custName={custName} />
 
-      {/* 1b. Tech tabs — Job · Quote (underline tab bar, same grammar as the Office page). */}
-      {showTabs && (
-        <div className="otabs" role="tablist" aria-label="Job view">
-          <button
-            className={tab === "job" ? "otab on" : "otab"}
-            role="tab"
-            aria-selected={tab === "job"}
-            onClick={() => setTab("job")}
-          >
-            Job
-          </button>
-          <button
-            className={tab === "quote" ? "otab on" : "otab"}
-            role="tab"
-            aria-selected={tab === "quote"}
-            onClick={() => setTab("quote")}
-          >
-            Quote
-          </button>
-        </div>
-      )}
+      {/* 1b. Tabs — Job · Quote (underline tab bar, same grammar as the Office page).
+          Surface-based, not role-based: owner-operators quote on site too. */}
+      <div className="otabs" role="tablist" aria-label="Job view">
+        <button
+          className={tab === "job" ? "otab on" : "otab"}
+          role="tab"
+          aria-selected={tab === "job"}
+          onClick={() => setTab("job")}
+        >
+          Job
+        </button>
+        <button
+          className={tab === "quote" ? "otab on" : "otab"}
+          role="tab"
+          aria-selected={tab === "quote"}
+          onClick={() => setTab("quote")}
+        >
+          Quote
+        </button>
+      </div>
 
       {onQuoteTab ? (
         /* The Quote tab owns its whole body AND its sticky foot (the builder's
@@ -297,11 +299,15 @@ export function TechJobModalContent() {
         </div>
       )}
 
-      {/* 4. The on-site close-out HERO — office-only: charge-on-file / take-payment /
-          send-to-office all write through ownerOrOffice endpoints. A job that is NOT done has no
-          hero of its own: the address above and the visit row below are what the technician needs
-          on the doorstep, and they are already there. */}
-      {done && isOffice ? (
+      {/* 4. The close-out HERO. A done, UNPRICED ESTIMATE gets the scope handoff for every
+          role — there is no bill on a scoping visit, so no billing branch may render. Otherwise
+          the billing DoneBlock stays office-only: charge-on-file / take-payment / send-to-office
+          all write through ownerOrOffice endpoints. A job that is NOT done has no hero of its
+          own: the address above and the visit row below are what the technician needs on the
+          doorstep, and they are already there. */}
+      {done && scoping ? (
+        <ScopeHandoffBlock scoped={hasScope} onOpenQuoteTab={() => setTab("quote")} />
+      ) : done && isOffice ? (
         <DoneBlock
           job={job}
           lead={lead}
@@ -371,15 +377,9 @@ export function TechJobModalContent() {
         )}
       </div>
 
-      {/* 6. Pricing / Scope — OFFICE only now: the tech's pricing home is the Quote
-          tab (estimating part 3); the office keeps its "Price it on site →" entry. */}
-      {!done && isOffice && (
-        <PricingSec
-          job={job}
-          quoted={quoted}
-          onPriceOnSite={onPriceOnSite}
-        />
-      )}
+      {/* 6. Pricing lives in the Quote tab — the one pricing home on this surface for
+          every role. The old office-only PricingSec entry (a second door to the same
+          builder) was removed with the role gate on the tabs. */}
 
       {/* Copilot (field AI advisor — camera + ask + found-work card). Tech only. */}
       {!isOffice && jobId && (

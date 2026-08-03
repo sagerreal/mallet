@@ -162,6 +162,8 @@ const completeJob = (): JobSummary => ({
   leadId: LEAD,
   title: "Deck",
   status: "complete",
+  svc: null,
+  hasPricedLines: false,
   totalCents: 100_000,
   // A real split — a use-case that dropped it would be caught, not pass on two zeroes.
   taxBps: 875,
@@ -257,6 +259,49 @@ describe("CreateInvoiceFromJobUseCase", () => {
     expect(res.value.props.tax).toBe(8_855);
   });
 
+
+  /**
+   * The belt-and-braces behind the UI gates: a done, UNPRICED estimate is a scoping visit —
+   * minting a $0 draft from it buries real receivables under meaningless paper. The founder hit
+   * exactly this: "Create the invoice →" on a finished scoping visit produced an empty $0 draft.
+   */
+  it("rejects a zero-total estimate with no priced lines (conflict, named)", async () => {
+    const scopingVisit: JobSummary = {
+      ...completeJob(),
+      svc: "estimate",
+      totalCents: 0,
+      taxCents: 0,
+      hasPricedLines: false,
+    };
+    const result = await useCase(new FakeJobReader(scopingVisit)).exec({ orgId: ORG, jobId: JOB });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("conflict");
+      expect(result.error.message).toBe("this estimate has no price — quote it before billing");
+    }
+    expect(bus.recorded).toHaveLength(0);
+  });
+
+  it("still invoices an estimate signed on site (priced lines; total_cents never synced)", async () => {
+    // The sign path writes priced job_lines and does NOT update the total_cents snapshot —
+    // hasPricedLines is what keeps a sold estimate billable.
+    const signed: JobSummary = {
+      ...completeJob(),
+      svc: "estimate",
+      totalCents: 0,
+      taxCents: 0,
+      hasPricedLines: true,
+    };
+    const result = await useCase(new FakeJobReader(signed)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+  });
+
+  it("still invoices an estimate whose job carries an accepted-quote total", async () => {
+    const accepted: JobSummary = { ...completeJob(), svc: "estimate" };
+    const result = await useCase(new FakeJobReader(accepted)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) expect(result.value.props.total).toBe(100_000);
+  });
 
   it("uses zeroMoney when the job totalCents is 0", async () => {
     // Tax is a part of the total, so a zero total carries none.

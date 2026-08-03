@@ -11,6 +11,9 @@ export type { PaymentLinkGateway } from "./domain/payment-link-gateway";
 export { StripePaymentLinkGateway } from "./infra/stripe-payment-link-gateway";
 // Exposed for the Stripe webhook route (records via the same tenant-scoped repo path).
 export { DrizzleInvoiceRepository } from "./infra/drizzle-invoice-repository";
+// Exposed for the AI invoice_create_from_job tool — ONE JobReader adapter, so the
+// unpriced-estimate guard reads the same priced-ness everywhere.
+export { DrizzleJobReader } from "./infra/drizzle-job-reader";
 export { RecordCardPaymentUseCase } from "./app/record-card-payment";
 export { processStripeEvent } from "./app/stripe-webhook";
 export { DraftInvoiceUseCase } from "./app/draft-invoice";

@@ -76,6 +76,20 @@ suite("jobs scoped views", () => {
     await admin`
       insert into invoices (org_id, lead_id, source_job_id, num, status, total_cents)
       values (${orgId}, ${leadId}, ${billed}, 'INV-V1', 'sent', 50000)`;
+
+    // Estimate visits. A completed SCOPING visit (svc estimate, no money anywhere) is not
+    // billable work — it must land in `done`, not "Done, not billed". A completed estimate
+    // SIGNED on site carries priced job_lines while total_cents stays 0 (the sign path never
+    // updates that snapshot) — it IS billable and must stay in needsInvoice.
+    await admin`
+      insert into jobs (org_id, lead_id, num, status, svc, total_cents)
+      values (${orgId}, ${leadId}, 'V-EST-SCOPE', 'complete', 'estimate', 0)`;
+    const [signed] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, svc, total_cents)
+      values (${orgId}, ${leadId}, 'V-EST-SIGNED', 'complete', 'estimate', 0) returning id`;
+    await admin`
+      insert into job_lines (org_id, job_id, description, quantity, rate_cents, cost_cents, position)
+      values (${orgId}, ${signed!.id}, 'Water heater swap', 1, 90000, 0, 0)`;
   });
 
   afterAll(async () => {
@@ -91,8 +105,10 @@ suite("jobs scoped views", () => {
     expect(c.today).toBe(3);
     expect(c.week).toBe(3);        // 2 within 7 days + 1 overdue
     expect(c.upcoming).toBe(1);
-    expect(c.needsInvoice).toBe(2);
-    expect(c.done).toBe(1);
+    // The two 50000-cent unbilled jobs + the SIGNED estimate (priced lines, total_cents 0).
+    // The unpriced scoping estimate is NOT money on the floor — it counts as done.
+    expect(c.needsInvoice).toBe(3);
+    expect(c.done).toBe(2);
   });
 
   // The Dashboard's money tiles. They were added up from the loaded page, so a shop with more
@@ -100,10 +116,12 @@ suite("jobs scoped views", () => {
   it("sums the money for each band in the database, not from a page", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const r = await caller.v1.jobs.viewCounts({ today: TODAY });
-    // Every seeded job carries 50000 cents, so each sum is its band's count times that.
+    // Every visit-seeded job carries 50000 cents, so those sums are count × 50000.
     expect(r.needsSlotCents).toBe(r.counts.needsSlot * 50000);
-    expect(r.needsInvoiceCents).toBe(r.counts.needsInvoice * 50000);
     expect(r.todayCents).toBe(r.counts.today * 50000);
+    // needsInvoice holds V-UNBILLED1 + V-UNBILLED2 (50000 each) + V-EST-SIGNED, whose
+    // total_cents is 0 because on-site signed prices live in job_lines, not the snapshot.
+    expect(r.needsInvoiceCents).toBe(100_000);
   });
 
   it("views are MUTUALLY EXCLUSIVE and account for every job", async () => {
@@ -172,9 +190,22 @@ suite("jobs scoped views", () => {
   it("separates finished work by whether it was billed", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const unbilled = await caller.v1.jobs.list({ view: "needsInvoice", today: TODAY, limit: 50 });
-    expect(unbilled.items.map((j) => j.num).sort()).toEqual(["V-UNBILLED1", "V-UNBILLED2"]);
+    expect(unbilled.items.map((j) => j.num).sort()).toEqual(["V-EST-SIGNED", "V-UNBILLED1", "V-UNBILLED2"]);
     const done = await caller.v1.jobs.list({ view: "done", today: TODAY, limit: 50 });
-    expect(done.items.map((j) => j.num)).toEqual(["V-DONE1"]);
+    expect(done.items.map((j) => j.num).sort()).toEqual(["V-DONE1", "V-EST-SCOPE"]);
+  });
+
+  it("a finished scoping visit is never 'money on the floor'; a signed estimate is", async () => {
+    // The founder's completed estimate walkthrough showed up under "Done, not billed" and its
+    // modal offered to invoice it — a $0 draft for a visit whose deliverable is a QUOTE. The
+    // view must split estimates by priced-ness, and priced-ness must read job_lines: the sign
+    // path writes lines and never syncs total_cents.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const unbilled = await caller.v1.jobs.list({ view: "needsInvoice", today: TODAY, limit: 50 });
+    expect(unbilled.items.map((j) => j.num)).not.toContain("V-EST-SCOPE");
+    expect(unbilled.items.map((j) => j.num)).toContain("V-EST-SIGNED");
+    const done = await caller.v1.jobs.list({ view: "done", today: TODAY, limit: 50 });
+    expect(done.items.map((j) => j.num)).toContain("V-EST-SCOPE");
   });
 
   it("view counts respect an active search", async () => {

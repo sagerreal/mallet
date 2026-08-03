@@ -48,6 +48,44 @@ export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boole
 
 export type DoneFootKind = "charge" | "collect" | "sendoffice";
 
+export interface ScopeHandoffBlockProps {
+  /** A visit on this job carries scope notes — the office handoff already happened. */
+  scoped: boolean;
+  /** Switches the modal to the Quote tab, where scope is captured and read. */
+  onOpenQuoteTab: () => void;
+}
+
+/**
+ * The done state for an UNPRICED ESTIMATE — a scoping visit. There is no money
+ * on this job (see isUnpricedEstimate in helpers.ts), so the close-out is a
+ * handoff, never a billing branch: the office builds the quote from the scope.
+ * Rendered in DoneBlock's slot; the modal's foot stays a plain Done.
+ */
+export function ScopeHandoffBlock({ scoped, onOpenQuoteTab }: ScopeHandoffBlockProps) {
+  if (scoped) {
+    return (
+      <div className="tjpaid ok">
+        <div className="tjpaid-top">
+          <b>✓ Scoped — the office builds the quote</b>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="tjpaid">
+      <div className="tjpaid-top">
+        <b>✓ Estimate visit done</b>
+      </div>
+      <div className="tjpaid-sub" style={{ marginBottom: "var(--space-2)" }}>
+        No scope captured — the office has nothing to quote from.
+      </div>
+      <button className="tjpaid-btn2" onClick={onOpenQuoteTab}>
+        Open the Quote tab →
+      </button>
+    </div>
+  );
+}
+
 /**
  * Which terminal action the modal's sticky .sheet-foot carries for a done job
  * (office view). Mirrors the branch order of DoneBlockFn below — the two must

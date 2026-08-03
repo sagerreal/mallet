@@ -4,6 +4,7 @@ import { toPage, isOk, asLeadId, asInvoiceId, asEstimateId, asJobId, asTaskId, a
 import { DrizzleLeadRepository, EnsureCustomerUseCase } from "@mallet/customers";
 import {
   DrizzleInvoiceRepository,
+  DrizzleJobReader,
   SendInvoiceUseCase,
   DraftInvoiceUseCase,
   CreateInvoiceFromJobUseCase,
@@ -912,25 +913,11 @@ export const invoiceCreateFromJobTool: AgentTool = {
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = parseTool(invoiceCreateFromJobInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
-    const jobRepo = new DrizzleJobRepository(ctx.tx, ctx.orgId);
     const uc = new CreateInvoiceFromJobUseCase(
       new DrizzleInvoiceRepository(ctx.tx, ctx.orgId),
-      {
-        // The jobs module exports DrizzleJobRepository which satisfies the JobReader port.
-        read: async (id) => {
-          const job = await jobRepo.findById(id);
-          if (!job) return null;
-          return {
-            id: job.props.id,
-            leadId: job.props.leadId,
-            status: job.props.status,
-            taxBps: job.props.taxBps,
-            taxCents: job.props.tax,
-            title: job.props.title,
-            totalCents: job.props.total,
-          };
-        },
-      },
+      // The invoicing module's own JobReader adapter — the ONE place that derives a job's
+      // priced-ness (svc + total + priced lines), so the unpriced-estimate guard holds here too.
+      new DrizzleJobReader(ctx.tx, ctx.orgId),
       ctx.deps.bus,
       ctx.deps.clock,
       ctx.deps.ids,

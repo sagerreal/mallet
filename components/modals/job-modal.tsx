@@ -52,6 +52,7 @@ import { dayLoad } from "@/features/jobs/jobs-helpers";
 import { Field, FieldGroup } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { ModalLoading } from "./modal-loading";
+import { MoneyPointer } from "./money-pointer";
 
 // ---- helpers ported 1:1 from the prototype --------------------------------
 
@@ -123,15 +124,7 @@ function colLabel(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
-// ---- invoice helpers (prototype invPaid / invDue) --------------------------
-
-function invPaid(i: Invoice): number {
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+// ---- invoice helpers (invPaid / invDue) live in ./tech-job-modal/helpers ----
 
 // ---- minute-precise Length field: extracted to ./dur-field (draft-input
 // rewrite — commit on blur/Enter instead of per-keystroke clamping) ----------
@@ -576,49 +569,8 @@ function NoteFeed({ job }: { job: Job }) {
 // ---- job checklist block — extracted to ./job-checklist-block (file-size cap).
 // Template picker + in-flow create form + persisted attach live there now.
 
-// ---- money pointer (prototype moneyPointer, line 6379) ---------------------
-// ONE anchored pointer — never the P&L. Opens the invoice if one exists,
-// otherwise a "Bill it in Money →" nudge once the work is done.
-
-interface MoneyPointerProps {
-  job: Job;
-  invoice: Invoice | undefined;
-  /** Creates the invoice and opens it. Null while the request is in flight. */
-  onBill: () => void;
-  billing: boolean;
-  billError: string | null;
-  onOpenInvoice: (invoiceId: string) => void;
-}
-
-function MoneyPointer({ job, invoice, onBill, billing, billError, onOpenInvoice }: MoneyPointerProps) {
-  if (invoice && (invoice.total ?? 0) > 0) {
-    const due = invDue(invoice);
-    return (
-      <div className="jmoney">
-        <span>{due > 0 ? `${invoice.num} — ${fmt$(due)} due` : `✓ ${invoice.num} paid in full`}</span>
-        <span className="linklike" onClick={() => onOpenInvoice(invoice.id)}>
-          open invoice →
-        </span>
-      </div>
-    );
-  }
-
-  if (job.status === "done") {
-    // BILLS IT, rather than pointing at where billing happens. This modal is opened FROM the Money
-    // ledger's "ready to bill" rows, so "Bill it in Money →" navigated the user to the page they
-    // had just come from — a link whose only effect was to close the thing they were reading.
-    return (
-      <div className="jmoney">
-        <span>{billError ? billError : "✓ Work done — not billed yet"}</span>
-        <button type="button" className="linklike" onClick={onBill} disabled={billing}>
-          {billing ? "Creating invoice…" : "Create the invoice →"}
-        </button>
-      </div>
-    );
-  }
-
-  return null;
-}
+// ---- money pointer: extracted to ./money-pointer (unpriced-estimate gate +
+// unit tests live there) -----------------------------------------------------
 
 // ---- type chips (prototype openJob §Type, lines 4712-4715) -----------------
 

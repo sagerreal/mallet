@@ -15,11 +15,16 @@ export class DrizzleJobReader implements JobReader {
   async read(jobId: JobId): Promise<JobSummary | null> {
     const job = await this.repo.findById(jobId);
     if (!job) return null;
+    // Lines live outside the aggregate (execution collections). Priced-ness must read them:
+    // on-site signed quotes write job_lines and never touch the total_cents snapshot.
+    const { lines } = await this.repo.listExecution(jobId);
     return {
       id: job.props.id,
       leadId: job.props.leadId,
       title: job.props.title,
       status: job.props.status,
+      svc: job.props.svc,
+      hasPricedLines: lines.some((l) => l.props.quantity * l.props.rate > 0),
       totalCents: job.props.total,
       taxBps: job.props.taxBps,
       taxCents: job.props.tax,
