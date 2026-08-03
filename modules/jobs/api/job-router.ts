@@ -66,11 +66,30 @@ const assignInput = z.object({
 const jobIdInput = z.object({ jobId: z.string().uuid() });
 const cancelInput = z.object({ jobId: z.string().uuid(), reason: z.string().min(1) });
 const fromEstimateInput = z.object({ estimateId: z.string().uuid() });
+/**
+ * `view` is date-relative, so it is meaningless without the client's local date. Silently dropping
+ * the filter — which is what the repository does when `today` is missing — returns the whole book
+ * wearing a filtered label, so the boundary rejects it instead.
+ */
+const requiresTodayWithView = <T extends { view?: string; today?: string }>(i: T): boolean =>
+  !i.view || Boolean(i.today);
+// A fresh object per call: zod stores the `path` array it is handed, and sharing one mutable array
+// between two schemas is how a later zod version quietly reports the error on the wrong field.
+const todayRequired = () => ({
+  message: "today is required when view is set — the date-relative views cannot be evaluated without the client's local date",
+  path: ["today"],
+});
+
 const listInput = z.object({
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
   status: statusEnum.optional(),
   assigneeUserId: z.string().uuid().optional(),
+  /**
+   * Open work only — excludes complete and canceled. What the Jobs list's "Active" tab means, and
+   * what the nav badge counts. Not expressible as `status`, which is a single value.
+   */
+  activeOnly: z.boolean().optional(),
   /**
    * Named sort — never a column name. A client-supplied column is an injection surface and it
    * welds the public API to the table layout. Absent keeps the historical newest-first order, so
@@ -87,7 +106,7 @@ const listInput = z.object({
   /** The dispatch board's window: jobs with a live visit in [visitFrom, visitTo], inclusive. */
   visitFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   visitTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
+}).refine(requiresTodayWithView, todayRequired());
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
   limit: z.number().int().positive().max(100).optional(),
@@ -246,6 +265,7 @@ export const createJobRouter = () =>
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
           filter: {
             status: input.status,
+            activeOnly: input.activeOnly,
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
             search: input.search,
             view: input.view,
@@ -320,13 +340,24 @@ export const createJobRouter = () =>
 
     count: ownerOrOffice
       .input(
-        z.object({
-          status: statusEnum.optional(),
-          assigneeUserId: z.string().uuid().optional(),
-          search: z.string().trim().min(1).max(200).optional(),
-          /** Open jobs only — excludes complete and canceled. What the nav badge means. */
-          activeOnly: z.boolean().optional(),
-        }),
+        z
+          .object({
+            status: statusEnum.optional(),
+            assigneeUserId: z.string().uuid().optional(),
+            search: z.string().trim().min(1).max(200).optional(),
+            /** Open jobs only — excludes complete and canceled. What the nav badge means. */
+            activeOnly: z.boolean().optional(),
+            /**
+             * The same scoped view the list is showing.
+             *
+             * The header reads "50 of N", and N is only worth printing if it counts the set on
+             * screen. Without these the count answered a DIFFERENT question from the rows beneath
+             * it — the whole book, on every tab and every filter.
+             */
+            view: z.enum(JOB_VIEWS).optional(),
+            today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          })
+          .refine(requiresTodayWithView, todayRequired()),
       )
       .output(z.object({ total: z.number().int() }))
       .query(async ({ ctx, input }) => {
@@ -337,6 +368,8 @@ export const createJobRouter = () =>
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
             search: input.search,
             activeOnly: input.activeOnly,
+            view: input.view,
+            today: input.today,
           }),
         };
       }),

@@ -32,6 +32,14 @@ export interface JobsQueryState {
   readonly search: string;
   readonly sort: JobSort | null;
   readonly sortDir: "asc" | "desc" | null;
+  /**
+   * Open work only — everything except complete and canceled. What the Active tab MEANS.
+   *
+   * It had no predicate behind it at all: "Active" left the view null and the repository filtered
+   * nothing but deleted_at, so Active and Archived returned the same 1,528 rows and the header
+   * counted the whole book on both.
+   */
+  readonly activeOnly: boolean;
 }
 
 /** Today in the browser's own timezone — never toISOString(), which is UTC and shifts the day. */
@@ -52,9 +60,24 @@ export function useJobsQuery(state: JobsQueryState) {
     limit: PAGE_SIZE,
     today,
     ...(state.view ? { view: state.view } : {}),
+    ...(state.activeOnly ? { activeOnly: true } : {}),
     ...(search ? { search } : {}),
     ...(state.sort ? { sort: state.sort } : {}),
     ...(state.sortDir ? { sortDir: state.sortDir } : {}),
+  };
+
+  /**
+   * The count's filters, which must be the LIST's filters exactly.
+   *
+   * "50 of 1528" was true of neither tab: the count sent only `search`, so it reported the whole
+   * book while the rows below it were a filtered slice. A header total is only worth showing if it
+   * counts the set on screen — so every predicate the page carries is carried here too. `today`
+   * rides along with `view` because the date-relative views cannot be evaluated without it.
+   */
+  const countArgs = {
+    ...(search ? { search } : {}),
+    ...(state.activeOnly ? { activeOnly: true } : {}),
+    ...(state.view ? { view: state.view, today } : {}),
   };
 
   const page = api.v1.jobs.list.useInfiniteQuery(listArgs, {
@@ -68,10 +91,10 @@ export function useJobsQuery(state: JobsQueryState) {
 
   // The honest "of N". Its own query so it survives paging and matches the list's filters exactly
   // — count and list share one predicate builder on the server.
-  const total = api.v1.jobs.count.useQuery(
-    { ...(search ? { search } : {}) },
-    { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
-  );
+  const total = api.v1.jobs.count.useQuery(countArgs, {
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
   // Unfiltered book size — the only honest first-run input (a no-match search reads 0).
   const bookTotal = api.v1.jobs.count.useQuery({}, { refetchOnWindowFocus: false });
 

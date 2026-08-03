@@ -14,8 +14,9 @@ import { useAppStore } from "@/lib/store/app-store";
 import { fmt$ } from "@/lib/format";
 import type { Lead, Tech } from "@/lib/store/types";
 import { custName, leadAgeOf } from "./jobs-helpers";
-import { jobTotal, type JobBand } from "./today-derive";
+import { jobTotal } from "./today-derive";
 import { jobWhenLabel, jobStatusView, jobCrewTech, type WhenLabel, type StatusView } from "./job-row";
+import type { JobListItem } from "./server-rows";
 import type { JobsSort, JobsSortCol } from "./use-jobs-sort";
 import { JOB_COLS, type JobColKey } from "./jobs-list-config";
 
@@ -29,34 +30,44 @@ interface ListRow {
   tech: Tech | null;
 }
 
-/** Flatten the lifecycle bands into display rows, keeping the grouped order. */
-function deriveListRows(bands: JobBand[], leads: Lead[], techs: Tech[]): ListRow[] {
-  return bands.flatMap((band) =>
-    band.jobs.map((job) => ({
-      id: job.id,
-      title: job.title,
-      cust: custName(job, leads),
-      amt: jobTotal(job),
-      when: jobWhenLabel(band.key, job, leadAgeOf(job, leads)),
-      status: jobStatusView(band.key, job),
-      tech: jobCrewTech(band.key, job, techs),
-    }))
-  );
+/** One display row per server row, in the order the server sent them. */
+function deriveListRows(items: readonly JobListItem[], leads: Lead[], techs: Tech[]): ListRow[] {
+  return items.map(({ job, bandKey }) => ({
+    id: job.id,
+    title: job.title,
+    cust: custName(job, leads),
+    amt: jobTotal(job),
+    when: jobWhenLabel(bandKey, job, leadAgeOf(job, leads)),
+    status: jobStatusView(bandKey, job),
+    tech: jobCrewTech(bandKey, job, techs),
+  }));
 }
 
-/** Sort rows by the chosen column; "when" keeps the natural grouped order. */
-function sortRows(rows: ListRow[], sort: JobsSort): ListRow[] {
-  const indexed = rows.map((r, i) => ({ r, i }));
-  indexed.sort((a, b) => {
-    const c =
-      sort.col === "amount"
-        ? a.r.amt - b.r.amt
-        : sort.col === "customer"
-          ? a.r.cust.localeCompare(b.r.cust)
-          : a.i - b.i;
-    return sort.dir === "asc" ? c : -c;
-  });
-  return indexed.map((x) => x.r);
+/**
+ * Client-side ordering for the columns the SERVER does not order.
+ *
+ * "WHEN" IS ABSENT DELIBERATELY. The server now orders on the visit date that column prints, so
+ * the page arrives in the order it must render. Re-deriving it here from row POSITION and flipping
+ * on direction is what turned a descending page into an ascending one — the header said one thing
+ * and the rows did the other. Ordering the page a second time can only disagree with the paging
+ * the cursor is walking.
+ *
+ * Amount and Customer stay: Amount reads jobTotal() (the sum of the job's LINES) while the server
+ * pages on jobs.total_cents, so re-sorting keeps the visible order agreeing with the visible
+ * numbers; Customer has no server sort at all, and a header that does nothing is a dead control.
+ * Both are page-local by nature — see SORT_COL_TO_SERVER.
+ */
+function sortRows(rows: readonly ListRow[], sort: JobsSort): ListRow[] {
+  if (sort.col === "when") return [...rows];
+  const dir = sort.dir === "asc" ? 1 : -1;
+  return rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const c = sort.col === "amount" ? a.r.amt - b.r.amt : a.r.cust.localeCompare(b.r.cust);
+      // Ties keep the server's order rather than whatever the sort implementation lands on.
+      return c !== 0 ? dir * c : a.i - b.i;
+    })
+    .map((x) => x.r);
 }
 
 /** A keyboard-operable, screen-reader-announced sortable column header. */
@@ -181,18 +192,19 @@ function JobsListRow({ row, visibleCols, onOpenJob }: { row: ListRow; visibleCol
 }
 
 export interface JobsListViewProps {
-  bands: JobBand[];
+  /** The server's page, in server order. Each row carries the band its labels derive from. */
+  items: readonly JobListItem[];
   sort: JobsSort;
   onSort: (s: JobsSort) => void;
   onOpenJob: (id: string) => void;
   visibleCols: JobColKey[];
 }
 
-export function JobsListView({ bands, sort, onSort, onOpenJob, visibleCols }: JobsListViewProps) {
+export function JobsListView({ items, sort, onSort, onOpenJob, visibleCols }: JobsListViewProps) {
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
 
-  const rows = sortRows(deriveListRows(bands, leads, techs), sort);
+  const rows = sortRows(deriveListRows(items, leads, techs), sort);
 
   function clickCol(col: JobsSortCol) {
     if (sort.col === col) onSort({ col, dir: sort.dir === "asc" ? "desc" : "asc" });

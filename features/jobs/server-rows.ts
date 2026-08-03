@@ -1,4 +1,4 @@
-import { jobTotal, type JobBand, type BandKey } from "./today-derive";
+import type { BandKey } from "./today-derive";
 import type { Job } from "@/lib/store/types";
 import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
 import type { RouterOutputs } from "@/lib/trpc/client";
@@ -8,17 +8,20 @@ import type { JobsSortCol } from "./use-jobs-sort";
 import type { JobSort } from "@/modules/jobs/infra/job-sorts";
 
 /**
- * Adapt a server page of jobs into the shape the existing list view renders.
+ * Adapt a server page of jobs into the rows the list renders.
  *
- * The table, its columns, its keyboard-operable headers and its empty states all already work.
- * Rebuilding them to consume a different row type would put a large, untested rewrite in the same
- * change as the pagination — so the page is wrapped in ONE synthetic band instead, and the table
- * is untouched.
+ * ONE FLAT SEQUENCE, IN THE ORDER THE SERVER SENT IT. That is the whole contract, and it is what
+ * this file previously broke: it bucketed the page into lifecycle bands (done / needsSlot / later)
+ * and the view flat-mapped the buckets, so whichever band the FIRST row belonged to absorbed every
+ * same-band row further down the page and floated them to the top. On a shop whose first row was a
+ * finished job, the Jobs list opened on a wall of "Done" from last week and the work that was
+ * actually coming up sat below it. The old code even carried a comment claiming the order was
+ * preserved; grouping and then concatenating groups cannot preserve it.
  *
- * The band is synthetic because the grouping now happens in SQL: when a view is selected every row
- * on screen belongs to it, so one band with that key is not an approximation, it is the truth. The
- * key is what drives the "when" and status labels (see job-row.ts), which is why it is carried
- * through rather than defaulted.
+ * The band key survives as a PER-ROW value rather than a container, because that is all it was ever
+ * used for: job-row.ts derives the WHEN text, the status pill and the crew avatar from
+ * (bandKey, job). Nothing renders a band header on this screen, so grouping bought nothing and
+ * cost the sort.
  */
 
 /** Server view → the band key the row helpers already understand. */
@@ -34,7 +37,8 @@ const BAND_FOR_VIEW: Record<JobView, BandKey> = {
 
 /**
  * With no view selected the list is mixed, so the band key is derived per row from the job's own
- * state. It is a display hint only — the row still renders its real date and status.
+ * state. It is a display hint only — the row still renders its real date and status, and it no
+ * longer influences where the row appears.
  */
 const bandForJob = (job: Job): BandKey => {
   if (job.status === "done") return "done";
@@ -42,17 +46,18 @@ const bandForJob = (job: Job): BandKey => {
   return "later";
 };
 
+/** A row as the list renders it: the job, plus the band its labels are derived from. */
+export interface JobListItem {
+  readonly job: Job;
+  readonly bandKey: BandKey;
+}
+
 export interface ServerRowsResult {
-  readonly bands: JobBand[];
+  /** The page, in server order. */
+  readonly rows: JobListItem[];
   readonly jobs: Job[];
 }
 
-/**
- * One band holding the page, keyed by the active view.
- *
- * Returns an empty array rather than an empty band when there are no rows: an empty band renders
- * a header with nothing under it, which reads as a loading failure rather than "no matches".
- */
 /** A row as the LIST returns it — the summary shape, not the full job record. */
 export type JobListRow = RouterOutputs["v1"]["jobs"]["list"]["items"][number];
 
@@ -72,46 +77,19 @@ const asStoreJob = (row: JobListRow) =>
     ...row,
   } as unknown as JobDTO);
 
-export function serverRowsToBands(dtos: readonly JobListRow[], view: JobView | null): ServerRowsResult {
+/**
+ * The page, in server order, each row tagged with the band its labels come from.
+ *
+ * When a view is selected every row on screen belongs to it, so the view's band key is not an
+ * approximation — it is the truth, and it is the same for every row. With no view the key is
+ * derived per row. Either way the SEQUENCE is untouched: the server owns the sort.
+ */
+export function serverPageToRows(dtos: readonly JobListRow[], view: JobView | null): ServerRowsResult {
   const jobs = dtos.map(asStoreJob);
-  if (jobs.length === 0) return { bands: [], jobs };
-
-  if (view) {
-    return {
-      jobs,
-      bands: [
-        {
-          key: BAND_FOR_VIEW[view],
-          label: "",
-          // Amber is the screen's "money leak" marker. The band header is not rendered in this
-          // mode, so it carries no signal here and is left off rather than guessed at.
-          amber: false,
-          jobs,
-          count: jobs.length,
-          sum: jobs.reduce((t, j) => t + jobTotal(j), 0),
-        },
-      ],
-    };
-  }
-
-  // Mixed list: group by the per-row key so each row still gets a sensible label, while the
-  // ORDER stays exactly as the server returned it — the server owns the sort now.
-  const seen: BandKey[] = [];
-  const byKey = new Map<BandKey, Job[]>();
-  for (const j of jobs) {
-    const k = bandForJob(j);
-    if (!byKey.has(k)) {
-      byKey.set(k, []);
-      seen.push(k);
-    }
-    byKey.get(k)!.push(j);
-  }
+  const viewBand = view ? BAND_FOR_VIEW[view] : null;
   return {
     jobs,
-    bands: seen.map((k) => {
-      const group = byKey.get(k)!;
-      return { key: k, label: "", amber: false, jobs: group, count: group.length, sum: group.reduce((t, j) => t + jobTotal(j), 0) };
-    }),
+    rows: jobs.map((job) => ({ job, bandKey: viewBand ?? bandForJob(job) })),
   };
 }
 
@@ -119,7 +97,8 @@ export function serverRowsToBands(dtos: readonly JobListRow[], view: JobView | n
  * The table's column headers speak in display columns; the server speaks in named sorts.
  *
  * "when" maps to `scheduled` rather than `created`: the column shows when the work HAPPENS, and
- * sorting it by row-creation date would be a different question wearing the same label.
+ * sorting it by row-creation date would be a different question wearing the same label. `scheduled`
+ * now orders on the visit date the column actually prints — see job-sorts.ts.
  *
  * CUSTOMER IS DELIBERATELY ABSENT. Sorting jobs by customer name needs an ORDER BY on a joined
  * column, which the keyset cursor would have to carry too — real work, not yet done. Mapping it
