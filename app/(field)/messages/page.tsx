@@ -116,7 +116,7 @@ function AiPhone({ onBack }: AiPhoneProps) {
                 ‹
               </span>
               <span className="av">✦</span>
-              <span className="nm">Elas</span>
+              <span className="nm">Mallet</span>
               <span className="sb">(925) 555-0100</span>
             </div>
             {/* Body */}

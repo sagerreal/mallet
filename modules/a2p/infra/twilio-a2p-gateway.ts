@@ -27,7 +27,7 @@ const SECONDARY_CUSTOMER_PROFILE_POLICY_SID = "RNdfbf3fae0e1107f8aded0e7cead80bf
 // friendlyName ~ "A2P Messaging Profile") or by reading that guide section directly, then replace
 // this placeholder before any live submission.
 const A2P_TRUST_BUNDLE_POLICY_SID = "RNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-// Low-throughput, mixed-content use case — matches Elas's SMB (1-50 emp) service-message volume.
+// Low-throughput, mixed-content use case — matches Mallet's SMB (1-50 emp) service-message volume.
 // Confirmed a valid enum member of usAppToPersonUsecase (alongside 2FA, MARKETING, EMERGENCY, …).
 const CAMPAIGN_USECASE = "LOW_VOLUME";
 
@@ -358,7 +358,7 @@ function mapProfileStatus(status: string): RemoteStatus {
 // (rather than "unknown") matters because AdvanceA2pRegistrationUseCase's rejectionReason() only
 // acts on "rejected" and calls markFailed; "unknown" would leave a previously-active org frozen at
 // status "active" (canText: true) forever after Twilio cuts it off. DELETION_PENDING is not
-// reachable via any Elas-initiated flow today (no brand-deletion code path exists), so its exact
+// reachable via any Mallet-initiated flow today (no brand-deletion code path exists), so its exact
 // handling is a low-stakes judgment call, not a live-blocking unknown.
 function mapBrandStatus(status: string): RemoteStatus {
   if (status === "APPROVED") return "approved";
@@ -437,13 +437,13 @@ export class TwilioA2pGateway implements A2pGateway {
       // business_type, business_regions_of_operation, website_url are all real, used keys.
       //
       // Enum VALUES, confirmed via https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info:
-      //  - business_industry: CONSTRUCTION (used by Elas's plumbing/trades ICP) is a documented
+      //  - business_industry: CONSTRUCTION (used by Mallet's plumbing/trades ICP) is a documented
       //    member of the published industry list (AGRICULTURE, ..., CONSTRUCTION, ..., TRAVEL).
       //    cmd.info.industry is real per-org input (BusinessInfo.industry), not a guess — but it is
       //    NOT validated against this enum at any boundary today; an org with a free-text industry
       //    outside the documented list would only fail at Twilio evaluation time, not before.
       //  - business_regions_of_operation: "USA_AND_CANADA" is a documented member (alongside
-      //    AFRICA, ASIA, EUROPE, LATIN_AMERICA). Hardcoded deliberately, not a guess — Elas's ICP
+      //    AFRICA, ASIA, EUROPE, LATIN_AMERICA). Hardcoded deliberately, not a guess — Mallet's ICP
       //    (CLAUDE.md) is US trade shops only, so this is a legitimate constant, not a per-org input.
       //  - business_registration_identifier: the documented enum is EIN, DUNS, CBN, CN, ACN, CIN,
       //    VAT, VATRN, RN, Other. "EIN" (used when cmd.info.ein is present) is a confirmed member.
@@ -518,7 +518,7 @@ export class TwilioA2pGateway implements A2pGateway {
       });
       await this.ops.assignEntity({ profileSid: profile.sid, objectSid: supportingDoc.sid });
 
-      // Attaches Elas's APPROVED Primary Customer Profile as an entity on this secondary
+      // Attaches Mallet's APPROVED Primary Customer Profile as an entity on this secondary
       // profile, establishing the ISV/reseller relationship (the Owen prerequisite in the task
       // brief header — the primary profile must already be approved as "ISV Reseller or Partner").
       await this.ops.assignEntity({ profileSid: profile.sid, objectSid: this.primaryProfileSid });
@@ -580,7 +580,7 @@ export class TwilioA2pGateway implements A2pGateway {
   }): Promise<Result<{ messagingServiceSid: string }, ExternalServiceError>> {
     return this.wrap("createMessagingService", async () => {
       const service = await this.ops.createMessagingService({
-        friendlyName: `Elas A2P — ${cmd.orgId}`,
+        friendlyName: `Mallet A2P — ${cmd.orgId}`,
       });
       return { messagingServiceSid: service.sid };
     });

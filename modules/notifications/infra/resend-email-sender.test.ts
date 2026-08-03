@@ -16,7 +16,7 @@ const cmd = (): SendNotificationCmd => ({
 });
 
 // A counting fake transport lets us assert retry behaviour (attempts per send) and the mapping.
-const sender = (transport: EmailTransport) => new ResendEmailSender("re_test_dummy", "Elas <x@example.com>", CLOCK, transport);
+const sender = (transport: EmailTransport) => new ResendEmailSender("re_test_dummy", "Mallet <x@example.com>", CLOCK, transport);
 
 describe("ResendEmailSender", () => {
   it("maps a successful send to a receipt with the provider message id (one attempt)", async () => {

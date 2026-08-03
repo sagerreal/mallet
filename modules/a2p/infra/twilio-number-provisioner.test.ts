@@ -31,7 +31,7 @@ describe("TwilioNumberProvisioner", () => {
     if (isOk(r)) expect(r.value.phoneNumberSid).toBe("PN_test");
   });
 
-  it("points the new number's SMS webhook at Elas", async () => {
+  it("points the new number's SMS webhook at Mallet", async () => {
     const t = makeTransport();
     await make(t).provision({ postalCode: "02189" });
     expect(t.buy).toHaveBeenCalledWith(expect.objectContaining({ smsUrl: SMS_URL }));

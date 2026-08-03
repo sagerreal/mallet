@@ -1,6 +1,6 @@
 /**
  * Turns a parsed foreign-CRM CSV into clean Mallet customer rows.
- * `autoMap` best-guesses which columns map to which Elas field (handling
+ * `autoMap` best-guesses which columns map to which Mallet field (handling
  * split First/Last name); `buildImportRows` applies a mapping, classifying each
  * source row as ready / skipped (no name) / warning (unreadable phone or email —
  * the field is dropped but the row still imports, since name is the only
@@ -38,7 +38,7 @@ export interface BuildResult {
   warnings: RowIssue[];
 }
 
-// Header synonyms → Elas field. Matched case-insensitively by substring.
+// Header synonyms → Mallet field. Matched case-insensitively by substring.
 const SYNONYMS: Record<keyof Omit<MappingConfig, "sourceTag" | "lastName">, string[]> = {
   name: ["first name", "full name", "customer name", "customer", "contact", "name", "display name"],
   phone: ["mobile", "cell", "phone", "telephone", "primary phone"],

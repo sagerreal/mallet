@@ -73,7 +73,7 @@ export class TwilioNumberProvisioner implements NumberProvisioner {
       const bought = await this.transport.buy({
         phoneNumber: candidate,
         smsUrl: this.smsWebhookUrl,
-        friendlyName: "Elas business line",
+        friendlyName: "Mallet business line",
       });
 
       logger.info({ phoneNumber: bought.phoneNumber }, "a2p.number.provisioned");

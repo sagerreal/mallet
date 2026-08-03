@@ -385,7 +385,7 @@ export class HttpQboApiGateway implements QboApiGateway {
       ],
     };
     if (input.dueDate) body.DueDate = input.dueDate;
-    // Elas already charged this exact amount, so it is sent as an OVERRIDE rather than letting
+    // Mallet already charged this exact amount, so it is sent as an OVERRIDE rather than letting
     // Automated Sales Tax compute its own — a QuickBooks-computed figure that differed would leave
     // the customer owing one number and the books showing another, and payments would stop
     // reconciling.

@@ -90,7 +90,7 @@ export interface QboApiGateway {
    */
   readInvoiceToken(access: QboAccess, qboId: string): Promise<Result<string | null, AppError>>;
 
-  /** Replace a QuickBooks invoice's amount, tax and dates with Elas's current ones. */
+  /** Replace a QuickBooks invoice's amount, tax and dates with Mallet's current ones. */
   updateInvoice(
     access: QboAccess,
     qboId: string,

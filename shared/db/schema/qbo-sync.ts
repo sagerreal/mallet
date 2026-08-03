@@ -44,7 +44,7 @@ export const qboEntityLinks = pgTable(
   ],
 );
 
-// One row per attempt to push a Elas record to QuickBooks.
+// One row per attempt to push a Mallet record to QuickBooks.
 //
 // THIS TABLE IS THE IDEMPOTENCY GUARD, not just an audit trail. The outbox relay is at-least-once
 // by design (claim / dispatch / mark are separate transactions), so the same approved week can be
@@ -68,7 +68,7 @@ export const qboSyncLog = pgTable(
     attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    // Partial unique: at most ONE succeeded row per Elas record. A retry of an already-pushed
+    // Partial unique: at most ONE succeeded row per Mallet record. A retry of an already-pushed
     // entry hits this and is skipped rather than duplicated. Failures may repeat freely.
     uniqueIndex("qbo_sync_log_succeeded_uidx")
       .on(t.orgId, t.entityType, t.malletId)

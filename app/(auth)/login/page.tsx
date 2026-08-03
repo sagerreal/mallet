@@ -29,7 +29,7 @@ export default function LoginPage() {
   return (
     <>
       <h1 className="auth-title">Welcome back</h1>
-      <p className="auth-sub">Sign in to your Elas account.</p>
+      <p className="auth-sub">Sign in to your Mallet account.</p>
       <form onSubmit={onSubmit} method="post">
         <label className="auth-field">
           <span>Email</span>

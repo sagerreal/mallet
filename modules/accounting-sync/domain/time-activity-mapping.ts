@@ -42,9 +42,9 @@ const toMinutes = (t: string): number | null => {
  * - **Hours + Minutes, not StartTime/EndTime.** Our `time` columns are naive local wall-clock with
  *   no zone, while TimeActivity's start/end carry an offset and a flag about whether it has already
  *   been applied. Getting that wrong shifts an entry to the wrong DAY. Duration is unambiguous and
- *   is what payroll actually consumes; the clock times stay visible in Elas.
+ *   is what payroll actually consumes; the clock times stay visible in Mallet.
  * - **No HourlyRate / CostRate.** QuickBooks already knows what the person is paid. Sending a rate
- *   would let Elas silently contradict payroll — and Elas does not even store a wage (HOURS
+ *   would let Mallet silently contradict payroll — and Mallet does not even store a wage (HOURS
  *   only, by design).
  * - **No PayrollItemRef — a KNOWN GAP, not a preference.** That field ties an entry to a pay TYPE
  *   (regular / overtime / holiday), which is what a payroll run consumes. Its value is a

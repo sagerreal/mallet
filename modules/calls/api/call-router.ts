@@ -162,7 +162,7 @@ export const createCallRouter = () =>
         return toOutboundCallDTO(call);
       }),
 
-    // The durable write for "which phone should Elas ring". Scoped to the caller themselves.
+    // The durable write for "which phone should Mallet ring". Scoped to the caller themselves.
     setCallbackNumber: anyRole
       .input(setCallbackNumberInput)
       .output(callbackNumberOutput)

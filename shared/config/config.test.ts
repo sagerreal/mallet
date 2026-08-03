@@ -50,14 +50,14 @@ describe("loadConfig", () => {
     const cfg = loadConfig({
       ...validEnv,
       RESEND_API_KEY: "re_x",
-      EMAIL_FROM: "Elas <notifications@example.com>",
+      EMAIL_FROM: "Mallet <notifications@example.com>",
       TWILIO_ACCOUNT_SID: "ACxxx",
       TWILIO_AUTH_TOKEN: "tok",
       TWILIO_FROM_NUMBER: "+15555550123",
       ANTHROPIC_API_KEY: "sk-ant-x",
     } as NodeJS.ProcessEnv);
     expect(cfg.RESEND_API_KEY).toBe("re_x");
-    expect(cfg.EMAIL_FROM).toBe("Elas <notifications@example.com>");
+    expect(cfg.EMAIL_FROM).toBe("Mallet <notifications@example.com>");
     expect(cfg.TWILIO_FROM_NUMBER).toBe("+15555550123");
     expect(cfg.ANTHROPIC_API_KEY).toBe("sk-ant-x");
   });

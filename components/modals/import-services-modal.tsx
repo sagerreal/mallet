@@ -148,7 +148,7 @@ export function ImportServicesModalContent() {
       {phase === "map" && map && built && (
         <>
           <p className="muted" style={{ fontSize: "var(--type-base)", marginTop: "var(--space-1)", marginBottom: "var(--space-1)" }}>
-            We matched your columns to Elas fields — adjust any that look wrong.
+            We matched your columns to Mallet fields — adjust any that look wrong.
           </p>
 
           <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", margin: "var(--space-3) 0 var(--space-3)" }}>
