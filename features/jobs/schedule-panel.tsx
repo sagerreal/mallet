@@ -23,6 +23,7 @@ import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/fir
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Visit } from "@/lib/store/types";
+import { isVisitPlaced } from "@/lib/store/visit-placement";
 import { timeLabelShort, hmLabel, colLabel } from "@/lib/time";
 import { svcMeta } from "./job-status-meta";
 import {
@@ -54,7 +55,6 @@ import { ListLoading } from "@/components/shared/list-loading";
 
 type SchedView = "day" | "week";
 
-const isPlaced = (v: Visit) => Boolean(v.date && v.techId != null && v.start != null);
 /** Snap hours to the quarter, never below the minimum. */
 const snapDuration = (h: number) => Math.max(MIN_VISIT_DURATION, Math.round(h / QUARTER_HOUR) * QUARTER_HOUR);
 
@@ -122,7 +122,7 @@ export function SchedulePanel() {
   const shown = useScheduleWindow({ from: windowFrom, to: windowTo });
 
   function firstUnplaced(j: Job): Visit | undefined {
-    return (j.visits ?? []).find((v) => !isPlaced(v));
+    return (j.visits ?? []).find((v) => !isVisitPlaced(v));
   }
   function place(held: Held, techId: string, iso: string, hour: number) {
     placeVisit(held.ownerId, held.visitId, { techId, date: iso, start: hour });
@@ -153,7 +153,7 @@ export function SchedulePanel() {
   // "+" on a TRAY card (prototype visitAddTray): split the job's unplaced hours
   // into one more visit — total preserved, each snapped to the quarter hour.
   function splitTray(j: Job) {
-    const unplaced = (j.visits ?? []).filter((v) => !isPlaced(v));
+    const unplaced = (j.visits ?? []).filter((v) => !isVisitPlaced(v));
     const total = unplaced.length ? unplaced.reduce((a, v) => a + (v.dur ?? 0), 0) : 2;
     const n = (unplaced.length || 1) + 1;
     const each = snapDuration(total / n);
@@ -562,7 +562,7 @@ export function SchedulePanel() {
                 if (v) setDrag({ kind: "job", ownerId: card.j.id, visitId: v.id });
               }
               // Several unplaced visits → each chip schedules its own (prototype card branch).
-              const unplacedList = (card.j.visits ?? []).filter((v) => !isPlaced(v));
+              const unplacedList = (card.j.visits ?? []).filter((v) => !isVisitPlaced(v));
               function openRecord() {
                 openModal(MODAL.JOB, { jobId: card.j.id });
               }

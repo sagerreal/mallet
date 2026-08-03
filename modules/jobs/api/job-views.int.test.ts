@@ -39,15 +39,25 @@ suite("jobs scoped views", () => {
   let admin: Sql;
   let orgId = "";
   let leadId = "";
+  let crewUserId = "";
 
-  const addJob = async (num: string, status: string, visitDate: string | null) => {
+  // A visit is PLACED only with a day AND a crew (see PLACED in job-views.ts). Every dated
+  // fixture therefore carries an assignee: a dated visit with nobody on it is "Needs a slot",
+  // which is what the half-planned case below asserts deliberately.
+  const addJob = async (
+    num: string,
+    status: string,
+    visitDate: string | null,
+    opts: { assign?: boolean } = {},
+  ) => {
+    const assign = opts.assign ?? visitDate !== null;
     const [j] = await admin<{ id: string }[]>`
       insert into jobs (org_id, lead_id, num, status, total_cents)
       values (${orgId}, ${leadId}, ${num}, ${status}, 50000) returning id`;
     if (visitDate !== undefined) {
       await admin`
-        insert into job_visits (org_id, job_id, scheduled_date, duration_minutes, status)
-        values (${orgId}, ${j!.id}, ${visitDate}, 120, 'pending')`;
+        insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status)
+        values (${orgId}, ${j!.id}, ${visitDate}, ${assign ? crewUserId : null}, 120, 'pending')`;
     }
     return j!.id;
   };
@@ -60,6 +70,12 @@ suite("jobs scoped views", () => {
     const [l] = await admin<{ id: string }[]>`
       insert into leads (org_id, name) values (${orgId}, 'View Customer') returning id`;
     leadId = l!.id;
+    const [u] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, name, role, is_field_crew)
+      values (${orgId}, gen_random_uuid(), 'crew-' || gen_random_uuid() || '@jobviews.test',
+              'View Crew', 'tech', true)
+      returning id`;
+    crewUserId = u!.id;
 
     await addJob("V-SLOT1", "scheduled", null);          // visit with no date -> needs a slot
     await addJob("V-SLOT2", "scheduled", null);
@@ -93,7 +109,12 @@ suite("jobs scoped views", () => {
   });
 
   afterAll(async () => {
-    if (orgId) await admin`delete from orgs where id = ${orgId}`;
+    // job_visits_assignee_fk has no ON DELETE action, so the crew row cannot go while a visit
+    // still points at it — drop this org's visits first, then let the org cascade take the rest.
+    if (orgId) {
+      await admin`delete from job_visits where org_id = ${orgId}`;
+      await admin`delete from orgs where id = ${orgId}`;
+    }
     await admin.end({ timeout: 5 });
     await closeDb();
   });
@@ -154,8 +175,8 @@ suite("jobs scoped views", () => {
     // A job with two visits inside the same week — the row-multiplication trap.
     const twice = await addJob("V-TWICE", "scheduled", "2026-08-18");
     await admin`
-      insert into job_visits (org_id, job_id, scheduled_date, duration_minutes, status)
-      values (${orgId}, ${twice}, '2026-08-19', 120, 'pending')`;
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status)
+      values (${orgId}, ${twice}, '2026-08-19', ${crewUserId}, 120, 'pending')`;
 
     const page = await caller.v1.jobs.list({ visitFrom: "2026-08-17", visitTo: "2026-08-23", limit: 100 });
     const nums = page.items.map((j) => j.num);

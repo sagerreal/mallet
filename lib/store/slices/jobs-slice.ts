@@ -71,6 +71,7 @@
 
 import type { StateCreator } from "zustand";
 import type { Job, Visit, Addon, VerifyAns, JobLine } from "../types";
+import { isVisitPlaced } from "../visit-placement";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, type JobDTO } from "@/lib/store/dto-mapper";
@@ -259,14 +260,9 @@ function isPersistableLine(l: JobLine): boolean {
   return l.r != null && l.d.trim().length > 0;
 }
 
-/** True once a visit has crew + day + start. */
-function isPlaced(v: Visit): boolean {
-  return !!(v.date && v.techId != null && v.start != null);
-}
-
 /** Derive job status from its placed visits. */
 function recalcStatus(visits: Visit[]): string {
-  const placed = visits.filter(isPlaced);
+  const placed = visits.filter(isVisitPlaced);
   if (!placed.length) return "unscheduled";
   if (placed.every((v) => v.status === "done")) return "done";
   return "scheduled";
@@ -792,7 +788,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     // when a snapshot merge briefly raced the create. Settled creates are no
     // longer in the set, so adding a real second visit later is not blocked.
     const pendingUnplaced = job.visits.find(
-      (v) => !isPlaced(v) && _pendingVisitCreates.has(v.id),
+      (v) => !isVisitPlaced(v) && _pendingVisitCreates.has(v.id),
     );
     if (pendingUnplaced) {
       // An explicitly-requested duration must not be silently dropped — apply

@@ -21,6 +21,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import type { Job } from "@/lib/store/types";
 import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS, HYDRATOR_PAGE_LIMIT, JOB_ORIGIN } from "@/lib/store/hydrator-config";
+import { isVisitPlaced } from "@/lib/store/visit-placement";
 import {
   hhmmToHour,
   hoursBetween,
@@ -54,12 +55,8 @@ function toStoreStatus(s: string): string {
   return "unscheduled";
 }
 
-function isPlacedVisit(v: { date: string | null; techId: string | null; start: number | null }): boolean {
-  return !!(v.date && v.techId != null && v.start != null);
-}
-
 function recalcStatus(visits: ReturnType<typeof toStoreVisit>[]): string {
-  const placed = visits.filter(isPlacedVisit);
+  const placed = visits.filter(isVisitPlaced);
   if (!placed.length) return "unscheduled";
   if (placed.every((v) => v.status === "done")) return "done";
   return "scheduled";

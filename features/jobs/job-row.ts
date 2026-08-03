@@ -9,7 +9,7 @@
 import type { Job, Tech } from "@/lib/store/types";
 import type { BandKey } from "./today-derive";
 import { todayVisit } from "./today-derive";
-import { jobNextVisit, techById } from "./jobs-helpers";
+import { jobNextVisit, jobDatedUnassignedVisit, techById } from "./jobs-helpers";
 import { colLabel, timeLabelShort } from "@/lib/time";
 
 /** The right-hand "when" text: appointment time, the live on-site pill, done date,
@@ -20,7 +20,20 @@ export interface WhenLabel {
   onsiteAt?: string;
 }
 
-function soldWhen(leadAge: number): WhenLabel {
+/**
+ * The "Needs a slot" cell. Usually how long the job has been sold — but a job can also be in that
+ * band HALF PLANNED: a day was picked and no crew was ever put on it, which the board cannot draw
+ * (there is no lane for nobody) and the server now correctly counts as unplaced. Printing "sold 4d
+ * ago" over one of those states the wrong thing — the day is decided, the crew is not — so the row
+ * shows the day it is pencilled in for and names what is missing, in the same shorthand the
+ * Scheduled rows use.
+ */
+function soldWhen(job: Job, leadAge: number): WhenLabel {
+  const half = jobDatedUnassignedVisit(job);
+  if (half?.date) {
+    const at = half.start != null ? ` ${timeLabelShort(half.start)}` : "";
+    return { label: `${colLabel(half.date)}${at} · no crew`, live: false };
+  }
   return { label: leadAge >= 1 ? `sold ${leadAge}d ago` : "sold today", live: false };
 }
 
@@ -43,7 +56,7 @@ function scheduledWhen(job: Job): WhenLabel {
 export function jobWhenLabel(bandKey: BandKey, job: Job, leadAge: number): WhenLabel {
   switch (bandKey) {
     case "needsSlot":
-      return soldWhen(leadAge);
+      return soldWhen(job, leadAge);
     case "today":
       return todayWhen(job);
     case "doneUnbilled":

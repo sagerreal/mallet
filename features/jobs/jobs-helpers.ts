@@ -7,6 +7,7 @@
 
 import { todayISO } from "@/lib/clock";
 import type { Job, Lead, Tech, Visit } from "@/lib/store/types";
+import { isVisitPlaced, isVisitDatedUnassigned } from "@/lib/store/visit-placement";
 import { SVC_KIND } from "./job-status-meta";
 
 // A job visit held for board placement (estimate visits are jobs too — svc "estimate").
@@ -20,8 +21,6 @@ export interface BoardItem {
   mode: string;
   v: Visit;
 }
-
-const isPlaced = (v: Visit) => v.date != null && v.techId != null && v.start != null;
 
 /** Total date+start ordering — a proper (transitive) comparator for visits. */
 function byDateStart(a: Visit, b: Visit): number {
@@ -58,15 +57,28 @@ export function jobMode(j: Job): string {
 /** The next placed visit (today or later), else the latest placed visit, else null. */
 export function jobNextVisit(j: Job): Visit | null {
   const today = todayISO();
-  const placed = (j.visits ?? []).filter(isPlaced);
+  const placed = (j.visits ?? []).filter(isVisitPlaced);
   const future = placed.filter((v) => (v.date ?? "") >= today);
   if (future.length) return [...future].sort(byDateStart)[0] as Visit;
   return [...placed].sort(byDateStart).at(-1) ?? null;
 }
 
+/**
+ * The earliest visit that has a day but NOBODY on it — a half-planned job, or null.
+ *
+ * A job in "Needs a slot" is usually there because nothing has been put on a day at all, and the
+ * row says how long it has been sold. Some are there because a day was chosen and the crew was
+ * never assigned (or was unassigned again): those DO have a date, and printing "sold 4d ago" over
+ * a job that is already pencilled in for Friday hides the half of the plan that exists.
+ */
+export function jobDatedUnassignedVisit(j: Job): Visit | null {
+  const half = (j.visits ?? []).filter(isVisitDatedUnassigned);
+  return half.length ? ([...half].sort(byDateStart)[0] as Visit) : null;
+}
+
 export function jobsUnscheduled(jobs: Job[]): Job[] {
   return liveJobs(jobs).filter(
-    (j) => j.status !== "done" && ((j.visits ?? []).length === 0 || (j.visits ?? []).some((v) => !isPlaced(v)))
+    (j) => j.status !== "done" && ((j.visits ?? []).length === 0 || (j.visits ?? []).some((v) => !isVisitPlaced(v)))
   );
 }
 

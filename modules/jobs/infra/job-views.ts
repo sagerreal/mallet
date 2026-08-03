@@ -63,7 +63,34 @@ const visitWhere = (tx: TenantTx, extra: SQL): SQL =>
       ),
   );
 
-const PLACED = sql`${jobVisits.scheduledDate} IS NOT NULL`;
+/**
+ * DATED — the visit has landed on a day. NOT the same question as placed; see below.
+ *
+ * Kept as its own named predicate rather than folded into PLACED because one consumer genuinely
+ * asks the date-only question: the dispatch board's window (visitsBetween) loads "what falls in
+ * these days", crewed or not.
+ */
+const DATED = sql`${jobVisits.scheduledDate} IS NOT NULL`;
+
+/** ASSIGNED — somebody is going. The board has no lane to draw a visit without this. */
+const ASSIGNED = sql`${jobVisits.assigneeUserId} IS NOT NULL`;
+
+/**
+ * PLACED — a day AND a crew. The SQL twin of the client's `isVisitPlaced`
+ * (lib/store/visit-placement.ts), and the rule the whole Jobs screen splits on.
+ *
+ * NO TECH MEANS NOT PLACED. This used to be the date alone, and the two rules disagreeing is how
+ * work went missing: the dispatch board draws a visit in its ASSIGNEE'S lane, so a visit with a
+ * day and a time but nobody on it has no row to occupy and renders nowhere — while the server,
+ * seeing a date, called it placed and kept it OUT of "Needs a slot". The job was invisible in both
+ * of the two places it should have appeared, and the only way to find it was to already know it
+ * existed. Reachable through `createVisit` (assignee optional) and `patchVisitSchedule`
+ * (unassigning a crew from a dated visit); three such rows were live when this was fixed.
+ *
+ * (The client rule also requires a start time. That one clause still differs — documented at the
+ * client twin, zero rows in the live database.)
+ */
+export const PLACED = and(DATED, ASSIGNED) as SQL;
 
 /**
  * Jobs with a live visit landing in [from, to], inclusive — the dispatch board's window.
@@ -72,6 +99,12 @@ const PLACED = sql`${jobVisits.scheduledDate} IS NOT NULL`;
  * week. It used to filter the loaded jobs collection, which is capped at the hydrator's page size,
  * so any date past that window drew an empty board that looked exactly like a day with nothing on
  * it. Exported for the repository's filter.
+ *
+ * DATE-ONLY ON PURPOSE — this is `DATED`, not `PLACED`. The window's question is "what falls in
+ * these days", and its answer is MERGED into the shared jobs collection a dozen surfaces read
+ * (see useScheduleWindow); narrowing it to crewed visits would drop half-planned work out of the
+ * store for everyone, to hide a card the board was never going to draw anyway. Half-planned work
+ * is surfaced through "Needs a slot" instead, which is where it can be acted on.
  */
 export const visitsBetween = (tx: TenantTx, from: string, to: string): SQL =>
   visitWhere(tx, and(gte(jobVisits.scheduledDate, from), lte(jobVisits.scheduledDate, to)) as SQL);
@@ -148,12 +181,17 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
   const open = notInArray(jobs.status, [...TERMINAL]);
   const weekEnd = sql`(${p.today}::date + interval '7 days')`;
 
-  const onToday = visitWhere(tx, eq(jobVisits.scheduledDate, p.today));
+  // EVERY dispatch band reads PLACED, not the date. `today` and `upcoming` used to test the date
+  // alone, which was survivable while `needsSlot` did too — the moment needsSlot started meaning
+  // "no crew on it either", a dated, crewless visit would have satisfied BOTH bands and broken the
+  // mutual exclusivity the counts depend on. They also mean the right thing this way round: a day
+  // with nobody assigned to it is not work that is going out today.
+  const onToday = visitWhere(tx, and(PLACED, eq(jobVisits.scheduledDate, p.today)) as SQL);
   const byWeekEnd = visitWhere(tx, and(PLACED, lte(jobVisits.scheduledDate, weekEnd)) as SQL);
 
   switch (view) {
     case "needsSlot":
-      // Open, and nothing has been put on a day yet — sold work going nowhere.
+      // Open, and nothing has been put on a day WITH A CREW yet — sold work going nowhere.
       return and(open, sql`NOT ${visitWhere(tx, PLACED)}`) as SQL;
     case "today":
       return and(open, onToday) as SQL;
@@ -161,7 +199,11 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
       // Anything due on or before today+7 that is not already in Today. Includes overdue.
       return and(open, byWeekEnd, sql`NOT ${onToday}`) as SQL;
     case "upcoming":
-      return and(open, visitWhere(tx, gt(jobVisits.scheduledDate, weekEnd)), sql`NOT ${byWeekEnd}`) as SQL;
+      return and(
+        open,
+        visitWhere(tx, and(PLACED, gt(jobVisits.scheduledDate, weekEnd)) as SQL),
+        sql`NOT ${byWeekEnd}`,
+      ) as SQL;
     case "needsInvoice":
       // Finished work nobody has billed — money on the floor. Unpriced estimates are NOT money
       // on the floor: a scoping visit's deliverable is a quote, so it lands in done/archived.
