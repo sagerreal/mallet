@@ -12,6 +12,7 @@ import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { ROLES, type Principal } from "../domain/principal";
 import { ProvisionOrgNumberUseCase } from "@mallet/a2p";
 import { playbookFor, TRADE_KEYS } from "@/app/(office)/settings/trade-playbooks";
+import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
 import { DrizzleSettingsRepository, defaultBooking } from "@mallet/settings";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
@@ -234,7 +235,13 @@ export const createIdentityRouter = () =>
               const patched = settings.patch(
                 {
                   ...(input.timezone ? { timezone: input.timezone } : {}),
-                  ...(input.trade ? { trade: input.trade, booking } : {}),
+                  // measurementEstimating is DERIVED from the trade, never asked. It gates the
+                  // job modal's Measurements section, and Owen's rule is that the industry
+                  // decides it — a plumbing shop must never see that section, and should not have
+                  // to know to switch it off. See tradeMeasures().
+                  ...(input.trade
+                    ? { trade: input.trade, booking, measurementEstimating: tradeMeasures(input.trade) }
+                    : {}),
                 },
                 ctx.deps.clock.now(),
               );

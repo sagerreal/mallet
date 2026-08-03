@@ -481,12 +481,29 @@ describe("settings-slice persistence", () => {
 
   // --- misc config -----------------------------------------------------------
 
-  it("setTrade persists via updateConfig", async () => {
+  /**
+   * The trade decides whether the shop measures, so changing one changes both.
+   *
+   * measurementEstimating gates the job modal's Measurements section. It used to be a switch the
+   * owner flipped by hand, in a card whose own copy read "a plumbing shop must never see it" — the
+   * trade already answered that, and asking twice let the two disagree.
+   */
+  it("setTrade persists the trade AND whether that trade measures", async () => {
     const store = makeStore();
     store.get().setTrade("hvac");
     expect(store.get().trade).toBe("hvac");
+    // HVAC prices per job, so the Measurements section stays hidden.
+    expect(store.get().toggles.measurementEstimating).toBe(false);
     await Promise.resolve();
-    expect(mockUpdateConfig).toHaveBeenCalledWith({ trade: "hvac" });
+    expect(mockUpdateConfig).toHaveBeenCalledWith({ trade: "hvac", measurementEstimating: false });
+  });
+
+  it("switching to a measured trade turns measurement estimating on, unasked", async () => {
+    const store = makeStore();
+    store.get().setTrade("painting");
+    expect(store.get().toggles.measurementEstimating).toBe(true);
+    await Promise.resolve();
+    expect(mockUpdateConfig).toHaveBeenCalledWith({ trade: "painting", measurementEstimating: true });
   });
 
   it("setToggle persists via updateConfig with explicit field mapping", async () => {

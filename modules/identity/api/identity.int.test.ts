@@ -87,6 +87,36 @@ suite("v1.identity (live RLS)", () => {
   });
 
   /**
+   * Whether the shop measures is DERIVED from its trade, never asked.
+   *
+   * It was a switch in Settings — in a card whose own copy said "a plumbing shop must never see
+   * it" — so a shop was asked to decide something its trade already answered, and the two could
+   * disagree. It gates the job modal's Measurements section.
+   */
+  it("turns measurement estimating on for a measured trade, and off for a service trade", async () => {
+    const measured = randomUUID();
+    const a = appRouter.createCaller(
+      unmappedCtx({ authUserId: measured, email: `paint-${measured}@e2e.test`, orgNameHint: "Fresh Coat", name: null }),
+    );
+    const paintOrg = await a.v1.identity.signup({ trade: "painting" });
+    createdOrgIds.push(paintOrg.orgId);
+
+    const service = randomUUID();
+    const b = appRouter.createCaller(
+      unmappedCtx({ authUserId: service, email: `pipe-${service}@e2e.test`, orgNameHint: "Pipe Co", name: null }),
+    );
+    const plumbOrg = await b.v1.identity.signup({ trade: "plumbing" });
+    createdOrgIds.push(plumbOrg.orgId);
+
+    const [paint] = await admin<{ measurement_estimating: boolean }[]>`
+      select measurement_estimating from org_settings where org_id = ${paintOrg.orgId}`;
+    const [plumb] = await admin<{ measurement_estimating: boolean }[]>`
+      select measurement_estimating from org_settings where org_id = ${plumbOrg.orgId}`;
+    expect(paint!.measurement_estimating).toBe(true);
+    expect(plumb!.measurement_estimating).toBe(false);
+  });
+
+  /**
    * "Other" means the shop would not name its trade, so we have nothing honest to seed. Empty is
    * also what keeps the front desk switched OFF — frontDeskReadiness needs a bookable service —
    * rather than answering with a list it cannot honour.
