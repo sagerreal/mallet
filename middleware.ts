@@ -1,40 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-
-/**
- * The app answers on several hostnames, and nothing used to send them to one place.
- *
- * Both `app.trymallet.com` and the project's `.vercel.app` aliases serve the app independently, so
- * whichever one you landed on is the one you stayed on — every in-app navigation is relative. It
- * also self-perpetuated: signup sets the confirmation link to `window.location.origin`, so
- * confirming from a vercel host sent you back to that host for the next session too. A customer
- * could end up holding either hostname depending on where the shop happened to be standing.
- *
- * An explicit list rather than "anything ending .vercel.app": preview deployments get their own
- * *.vercel.app hostnames, and redirecting those would make every preview untestable.
- *
- * 307 rather than 308 on purpose. A permanent redirect is the textbook canonical-domain answer,
- * but browsers cache it indefinitely — and if the custom domain's DNS ever broke, the fallback
- * host would be unreachable from any browser that had already seen the redirect. There is no SEO
- * argument here to trade against that: this is a logged-in app, not indexed content.
- */
-const CANONICAL_HOST = "app.trymallet.com";
-const REDIRECT_TO_CANONICAL = new Set([
-  "mallet-app-snowy.vercel.app",
-  "mallet-app-owenduggan2003-5496s-projects.vercel.app",
-]);
+import { canonicalRedirectUrl, CANONICAL_REDIRECT_STATUS } from "@/lib/canonical-host";
 
 export async function middleware(request: NextRequest) {
-  const host = request.headers.get("host");
-  if (host && REDIRECT_TO_CANONICAL.has(host)) {
-    const url = new URL(request.url);
-    url.protocol = "https:";
-    url.host = CANONICAL_HOST;
-    url.port = "";
-    // Before the Supabase client is built: a request that is leaving does not need its session
-    // refreshed, and the auth round-trip would be pure latency on a response nobody renders.
-    return NextResponse.redirect(url, 307);
-  }
+  // Before the Supabase client is built: a request that is leaving does not need its session
+  // refreshed, and the auth round-trip would be pure latency on a response nobody renders.
+  // See lib/canonical-host.ts for why this exists and why it is a 307.
+  const canonical = canonicalRedirectUrl(request.headers.get("host"), request.url);
+  if (canonical) return NextResponse.redirect(canonical, CANONICAL_REDIRECT_STATUS);
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
