@@ -4,7 +4,8 @@
  * lines 4381-4502): a clean job-creation form that mirrors the New-customer modal.
  *
  * Field order (exact): What's the job? · Type chips (Estimate | Job) · Customer
- * (datalist over live leads) + Phone · Service address · Price (optional, Job only) ·
+ * (in-flow search-or-add picker over live leads) + Phone · Service address ·
+ * Price (optional, Job only) ·
  * Visits (unplaced hours rows + "Add a visit") · Before-you-leave checklist picker
  * (Job type only; collapsed summary that expands in-flow) · ▸ More reveal (Notes) ·
  * footer.
@@ -33,6 +34,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead } from "@/lib/store/types";
 import { Field, FieldGroup } from "@/components/ui/input";
+import { CustomerPicker } from "./new-job-customer-picker";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
 
@@ -177,11 +179,15 @@ export function NewJobModalContent() {
   }
 
   /** On picking an existing customer, prefill phone/address (don't clobber typed). */
-  function fillFromCustomer(name: string) {
-    const l = matchLead(name);
-    if (!l) return;
+  function fillFromLead(l: Lead) {
     if (!phone && l.phone && l.phone !== "—") setPhone(l.phone);
     if (!addr && l.address) setAddr(l.address);
+  }
+
+  /** The blur path — a typed-exact name resolves to its lead and prefill runs. */
+  function fillFromCustomer(name: string) {
+    const l = matchLead(name);
+    if (l) fillFromLead(l);
   }
 
   // ---- checklist picker (mirror njPickChk / njAddChkItem) -------------------
@@ -549,25 +555,19 @@ export function NewJobModalContent() {
           ))}
         </FieldGroup>
 
-        {/* Customer (datalist picker) + Phone */}
+        {/* Customer (in-flow search-or-add picker) + Phone */}
         <div
           className="row2"
           style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}
         >
           <Field label="Customer" style={{ marginBottom: "0" }}>
-            <input
-              type="text"
-              list="njCustList"
-              placeholder="search or add"
+            <CustomerPicker
               value={customer}
-              onChange={(e) => setCustomer(e.target.value)}
-              onBlur={(e) => fillFromCustomer(e.target.value)}
+              leads={liveLeads}
+              onChange={setCustomer}
+              onPick={fillFromLead}
+              onBlur={() => fillFromCustomer(customer)}
             />
-            <datalist id="njCustList">
-              {liveLeads.map((l) => (
-                <option key={l.id} value={l.name} />
-              ))}
-            </datalist>
           </Field>
           <Field label="Phone" style={{ marginBottom: "0" }}>
             <input
@@ -796,14 +796,26 @@ export function NewJobModalContent() {
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
         )}
 
-        {/* Sticky footer — exactly Cancel (quiet) + Create job (.sheet-pri
-            full-width primary), the sheet-grammar shape. Stays INSIDE the
+        {/* Sticky footer — exactly Cancel (quiet) + Create job, the canonical
+            two-button sheet-grammar foot (import-customers / price-builder
+            precedent). `.sheet-pri` is width:100% at the class level — correct
+            for a foot it has to itself, but beside Cancel it over-constrains
+            the flex line (base widths sum past the container), which is what
+            crushed/overlapped the buttons and bled the primary past the modal
+            edge. `flex:1, width:auto` gives it the REMAINING space instead;
+            Cancel keeps its intrinsic width (flexShrink 0). Stays INSIDE the
             form so Enter-to-submit keeps working. */}
         <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <button type="button" className="btn ghost" onClick={close} disabled={saving}>
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ flexShrink: 0, minHeight: 44 }}
+            onClick={close}
+            disabled={saving}
+          >
             Cancel
           </button>
-          <button type="submit" className="sheet-pri" disabled={saving}>
+          <button type="submit" className="sheet-pri" style={{ flex: 1, width: "auto" }} disabled={saving}>
             {saving ? "Creating…" : "Create job"}
           </button>
         </div>
