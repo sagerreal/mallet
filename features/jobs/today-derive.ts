@@ -7,17 +7,16 @@
 
 import { todayISO } from "@/lib/clock";
 import type { Job, Visit } from "@/lib/store/types";
+import { isVisitPlaced } from "@/lib/store/visit-placement";
 
 export function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
 
-const placed = (v: Visit) => v.date != null && v.techId != null && v.start != null;
-
 /** Today's visit for a job (placed, dated today), or null. */
 export function todayVisit(j: Job): Visit | null {
   const today = todayISO();
-  return (j.visits ?? []).find((v) => v.date === today && placed(v)) ?? null;
+  return (j.visits ?? []).find((v) => v.date === today && isVisitPlaced(v)) ?? null;
 }
 
 // ---- the banded ledger — each job lands in exactly one band ------------------

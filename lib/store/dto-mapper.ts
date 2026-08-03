@@ -18,6 +18,7 @@
 
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { daysSince } from "@/lib/clock";
+import { isVisitPlaced } from "./visit-placement";
 import { shortWhen } from "@/lib/format";
 import type { Addon, Estimate, Invoice, Job, JobLine, LeadNote, TimeEntry, Visit } from "./types";
 import { JOB_ORIGIN } from "./hydrator-config";
@@ -170,12 +171,8 @@ function toStoreJobStatusInternal(s: string): string {
 // DTO → store mappers (public)
 // ---------------------------------------------------------------------------
 
-function isPlacedVisit(v: Visit): boolean {
-  return !!(v.date && v.techId != null && v.start != null);
-}
-
 function recalcJobStatus(visits: Visit[]): string {
-  const placed = visits.filter(isPlacedVisit);
+  const placed = visits.filter(isVisitPlaced);
   if (!placed.length) return "unscheduled";
   if (placed.every((v) => v.status === "done")) return "done";
   return "scheduled";

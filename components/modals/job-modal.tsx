@@ -47,6 +47,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { userMessage } from "@/lib/trpc/error-map";
 import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
+import { isVisitPlaced } from "@/lib/store/visit-placement";
 import { fmt$ } from "@/lib/format";
 import { SignatureRecord } from "@/components/shared/signature-record";
 import { todayISO } from "@/lib/clock";
@@ -96,11 +97,6 @@ function jobMode(j: Job): string {
   if (j.svc === "estimate") return "estimate";
   const priced = (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
   return priced ? "install" : "service";
-}
-
-/** A visit is PLACED once it has a day + crew + start (prototype vPlaced). */
-function vPlaced(v: Visit): boolean {
-  return !!(v.date && v.techId != null && v.start != null);
 }
 
 function stpillStyle(status: string): { color: string; background: string } {
@@ -180,7 +176,7 @@ function crewOptions(techs: Tech[], req: readonly string[] | null): { value: str
 
 function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onGoToSchedule }: VisitRowProps) {
   // UNPLACED — dashed row with a "Not placed" pill, Length, and where-to-next hint.
-  if (!vPlaced(visit)) {
+  if (!isVisitPlaced(visit)) {
     return (
       <div
         style={{
@@ -728,11 +724,11 @@ export function JobModalContent() {
 
   // Per-visit overlap check across THIS job's placed visits (visitConflict).
   function conflictsWith(v: Visit): boolean {
-    if (!vPlaced(v)) return false;
+    if (!isVisitPlaced(v)) return false;
     return visits.some(
       (o) =>
         o.id !== v.id &&
-        vPlaced(o) &&
+        isVisitPlaced(o) &&
         o.techId === v.techId &&
         o.date === v.date &&
         (v.start ?? 0) < (o.start ?? 0) + o.dur &&

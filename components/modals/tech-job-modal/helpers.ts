@@ -46,10 +46,9 @@ export function jobMode(j: Job): string {
   return priced ? "install" : "service";
 }
 
-/** A visit is PLACED once it has a day + crew + start — the tech only sees these (prototype vPlaced). */
-export function vPlaced(v: Visit): boolean {
-  return !!(v.date && v.techId != null && v.start != null);
-}
+/** A visit is PLACED once it has a day + crew + start — the tech only sees these (prototype vPlaced).
+ *  One rule, one definition: see lib/store/visit-placement.ts. */
+export { isVisitPlaced as vPlaced } from "@/lib/store/visit-placement";
 
 /** The repair has an agreed price — a service-call fee alone doesn't count (prototype `quoted`, 4567). */
 export function jobQuoted(j: Job): boolean {
