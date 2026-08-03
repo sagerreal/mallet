@@ -3,10 +3,8 @@ import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asServiceId, asMaterialId, toPage, isOk } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
-import {
-  PLUMBING_SEED_CATEGORIES,
-  PLUMBING_SEED_SERVICES,
-} from "@/app/(office)/settings/pricebook-seed";
+import { pricebookFor } from "@/app/(office)/settings/pricebooks";
+import { DrizzleSettingsRepository, OrgSettings } from "@mallet/settings";
 import { DrizzleServiceRepository } from "../infra/drizzle-service-repository";
 import { DrizzleCategoryRepository } from "../infra/drizzle-category-repository";
 import { DrizzleMaterialRepository } from "../infra/drizzle-material-repository";
@@ -610,9 +608,18 @@ export const createPricebookRouter = () =>
           ctx.deps.clock,
           ctx.deps.ids,
         );
+        // The shop's OWN trade decides the pack. This used to hand every org the plumbing
+        // catalogue regardless — a roofer opening their pricebook to "Replace 40gal gas water
+        // heater · $2,400" is being told the product was not built for them.
+        const settings = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId)
+          .getConfig(ctx.principal.orgId, OrgSettings.defaultBooking);
+        const pack = pricebookFor(settings.props.trade);
+        // No pack for this trade (including "Other") seeds NOTHING rather than falling back to
+        // another trade's prices — a wrong catalogue is worse than an empty one.
+        if (!pack) return { services: [], categories: [] };
         const result = await useCase.exec(ctx.principal.orgId, {
-          categories: PLUMBING_SEED_CATEGORIES.map((name) => ({ name })),
-          services: PLUMBING_SEED_SERVICES,
+          categories: pack.categories.map((name: string) => ({ name })),
+          services: pack.services,
         });
         const seeded = orThrow(result);
         return {
