@@ -53,6 +53,16 @@ describe("invalidateLists", () => {
     expect(keys).toContain("invoicing");
   });
 
+  // A reassignment is a jobs write, but the tech reads v1.field.myDay (and the time editor
+  // v1.field.myJobs). Before these keys joined the jobs domain, a dispatched visit never reached
+  // the phone until a manual reload.
+  it("a job write reaches the field surface: myDay and myJobs are in the jobs domain", () => {
+    invalidateLists("jobs");
+    const keys = keysInvalidated().join(" ");
+    expect(keys).toContain("myDay");
+    expect(keys).toContain("myJobs");
+  });
+
   it("does nothing, and does not throw, before the provider has registered a client", () => {
     resetListCache();
     expect(() => invalidateLists("jobs")).not.toThrow();

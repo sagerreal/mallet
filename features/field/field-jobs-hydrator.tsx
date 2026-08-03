@@ -36,6 +36,7 @@ import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
 import { myHoursListInput, MY_HOURS_STALE_MS } from "./my-hours-input";
+import { INBOX_POLL_MS } from "./inbox-query-options";
 
 type MyDayItem = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -63,9 +64,13 @@ export function FieldJobsHydrator() {
   const me = useMe();
   const isTech = me.data?.role === "tech";
   const myUserId = me.data?.userId;
+  // Focus refetch is ON here, unlike the other hydrators: myDay is the tech's agenda on a phone
+  // that a dispatcher changes from a different device, so returning to the app is exactly the
+  // moment a reassignment is most likely to be waiting. The office hydrators keep focus refetch
+  // off — their surfaces are refreshed by the store's own invalidations on the same device.
   const { data, isError, error } = api.v1.field.myDay.useQuery(undefined, {
     staleTime: HYDRATOR_STALE_MS,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
   });
 
   const utils = api.useUtils();
@@ -89,7 +94,7 @@ export function FieldJobsHydrator() {
       if (myUserId) {
         void utils.v1.timesheets.list.prefetch(myHoursListInput(myUserId), { staleTime: MY_HOURS_STALE_MS });
       }
-      void utils.v1.messaging.listConversations.prefetch(undefined, { staleTime: 15_000 });
+      void utils.v1.messaging.listConversations.prefetch(undefined, { staleTime: INBOX_POLL_MS });
     }
 
     if (typeof window !== "undefined" && "requestIdleCallback" in window) {

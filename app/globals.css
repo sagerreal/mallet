@@ -39,5 +39,7 @@ h1,
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 120ms;
+  /* Input is frozen while the crossfade plays, and it stacks ON TOP of the navigation wait —
+     120ms read as lag on the field tabs. 70ms still smooths the cut without being felt. */
+  animation-duration: 70ms;
 }

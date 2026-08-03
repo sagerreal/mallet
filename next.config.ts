@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   experimental: {
-    // View Transitions API — crossfade on route changes (120 ms, see globals.css).
+    // View Transitions API — crossfade on route changes (70 ms, see globals.css).
     // If this flag causes build failures, hydration warnings, or modal breakage, remove it
     // and keep only the inert CSS rules (they are safe in non-supporting browsers).
     viewTransition: true,

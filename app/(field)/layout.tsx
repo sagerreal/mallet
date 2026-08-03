@@ -10,14 +10,15 @@ import { ModalHost } from "@/components/modals/modal-host";
 import { FieldJobsHydrator } from "@/features/field/field-jobs-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
-export const dynamic = "force-dynamic";
-
 /**
  * The Field shell — the technician's app. Phone-first: no office sidebar, just
  * the top bar, the content, the Ask-Mallet bar, and the field tab bar (My day /
  * My hours / Messages / More). Its guard admits techs (who live ONLY here) plus
  * owner/office (an owner-operator who also works jobs). The office group's guard
  * blocks techs and redirects them here, so a tech can never reach office pages.
+ *
+ * No `dynamic = "force-dynamic"` here: guardRole reads the session cookie, which already makes
+ * every field route dynamic — the explicit override added nothing.
  */
 export default async function FieldLayout({ children }: { children: ReactNode }) {
   const principal = await guardRole(["owner", "office", "tech"]);
