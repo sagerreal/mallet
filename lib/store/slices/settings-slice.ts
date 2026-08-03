@@ -21,6 +21,7 @@ import type { StateCreator } from "zustand";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { isDefaultSourceLabel } from "@/lib/store/default-sources";
 import { reportWriteError } from "../write-error";
+import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
 
 // ---- shapes ----------------------------------------------------------------
 
@@ -569,10 +570,22 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
       .catch((err: unknown) => { set(snapshot); reportWriteError("setMarkup", err); });
   },
 
+  /**
+   * Changing the trade also changes whether this shop measures.
+   *
+   * measurementEstimating gates the job modal's Measurements section, and it used to be a switch
+   * the owner flipped by hand — in a card whose own copy read "a plumbing shop must never see it".
+   * The trade already answers that, so the answer follows the trade rather than being asked for
+   * twice. A shop that switches from plumbing to painting gets the Measurements section without
+   * having to discover a setting.
+   */
   setTrade: (t) => {
-    const snapshot = { trade: get().trade };
-    set({ trade: t });
-    void trpcVanilla.v1.settings.updateConfig.mutate({ trade: t }).catch((err: unknown) => { set(snapshot); reportWriteError("setTrade", err); });
+    const snapshot = { trade: get().trade, toggles: get().toggles };
+    const measures = tradeMeasures(t);
+    set((s) => ({ trade: t, toggles: { ...s.toggles, measurementEstimating: measures } }));
+    void trpcVanilla.v1.settings.updateConfig
+      .mutate({ trade: t, measurementEstimating: measures })
+      .catch((err: unknown) => { set(snapshot); reportWriteError("setTrade", err); });
   },
 
   setToggle: (key, value) => {
