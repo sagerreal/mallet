@@ -60,10 +60,17 @@ export function resetListCache(): void {
 const queriesFor = (domain: ListDomain): unknown[][] => {
   switch (domain) {
     case "jobs":
+      // The FIELD reads ride along: v1.field.myDay is the tech's agenda and v1.field.myJobs the
+      // time editor's job picker. Reassigning a visit is a jobs write, and before these keys were
+      // here it never reached the tech's phone — the dispatcher moved the job, My day kept showing
+      // yesterday's answer until a manual reload. (My hours needs no entry: it reads
+      // v1.timesheets.list, which the "timesheets" domain already covers by prefix.)
       return [
         getQueryKey(api.v1.jobs.list),
         getQueryKey(api.v1.jobs.count),
         getQueryKey(api.v1.jobs.viewCounts),
+        getQueryKey(api.v1.field.myDay),
+        getQueryKey(api.v1.field.myJobs),
       ];
     case "customers":
       return [

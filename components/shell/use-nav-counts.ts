@@ -2,6 +2,7 @@
 
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { useMe } from "@/features/identity/hooks";
 
 /**
  * The numbers on the nav badges, counted by the DATABASE.
@@ -28,9 +29,16 @@ export interface NavCounts {
 }
 
 export function useNavCounts(): NavCounts {
+  // All three counts are ownerOrOffice procedures. A tech's shell mounts this hook too (sidebar +
+  // mobile tabs render the field items off the same components), and used to fire all three
+  // anyway — six doomed FORBIDDEN requests (3 queries × retry) on every mount and focus, for
+  // badges a tech never sees. The me query is server-seeded by the layouts (initialData), so the
+  // role is known on first render and gating adds no waterfall for office users.
+  const me = useMe();
+  const enabled = me.data?.role !== "tech";
   // staleTime matches the hydrators so a badge and the list it labels refresh together rather
   // than disagreeing for a window after a mutation.
-  const opts = { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: true } as const;
+  const opts = { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: true, enabled } as const;
   const jobs = api.v1.jobs.count.useQuery({ activeOnly: true }, opts);
   const customers = api.v1.customers.count.useQuery({}, opts);
   // Money owed, counted in the database for the same reason as the other two: the store holds the

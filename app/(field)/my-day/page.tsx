@@ -123,9 +123,14 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
 
 export default function MyDayPage() {
   const utils = api.useUtils();
+  // The agenda must stay live once mounted: the dispatcher reassigns a visit at a desk while this
+  // page sits open on a phone in the truck, and no store invalidation can reach a different
+  // device. Focus refetch covers "picked the phone back up"; the interval covers "screen was on
+  // the whole time".
   const { data, isLoading, isFetching, refetch } = api.v1.field.myDay.useQuery(undefined, {
     staleTime: 30_000,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
 
   /**
