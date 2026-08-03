@@ -16,6 +16,11 @@ const mockFieldSetVisitEnroute = vi.fn();
 // jobs-slice imports RouterOutputs from @/lib/trpc/client for type purposes only.
 vi.mock("@/lib/trpc/client", () => ({ api: {} }));
 
+// The Jobs list renders a server PAGE, not the store, so a create that does not invalidate leaves
+// the new row off screen until the window loses and regains focus — saved, but invisible.
+const mockInvalidate = vi.fn();
+vi.mock("@/lib/trpc/list-cache", () => ({ invalidateLists: (...d: unknown[]) => mockInvalidate(...d) }));
+
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
     v1: {
@@ -88,7 +93,7 @@ function makeJobDTO(id: string, overrides: Record<string, unknown> = {}) {
 }
 
 describe("addJob persist", () => {
-  beforeEach(() => { mockCreate.mockReset(); });
+  beforeEach(() => { mockCreate.mockReset(); mockInvalidate.mockReset(); });
 
   it("optimistically inserts the job and returns { job } synchronously", () => {
     mockCreate.mockResolvedValue(makeJobDTO("srv"));
@@ -161,6 +166,26 @@ describe("addJob persist", () => {
     const resolved = await persisted;
     expect(resolved.id).toBe(job.id);
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("refetches the jobs lists once the create COMMITS, so the new row appears without a reload", async () => {
+    // The Jobs list renders a server page, not the store, so the optimistic prepend is invisible to
+    // it. Only an invalidation after the write lands puts the new job on screen — and it must be
+    // after, or the refetch races the commit and returns a page that predates it.
+    mockCreate.mockResolvedValue(makeJobDTO("srv-inv"));
+    const { get } = makeStore();
+    const { persisted } = get().addJob(draft);
+    expect(mockInvalidate).not.toHaveBeenCalled(); // not before the server answers
+    await persisted;
+    expect(mockInvalidate).toHaveBeenCalledWith("jobs", "invoices");
+  });
+
+  it("does NOT refetch when the create failed — there is nothing new to show", async () => {
+    mockCreate.mockRejectedValue(new Error("server error"));
+    const { get } = makeStore();
+    const { persisted } = get().addJob(draft);
+    await expect(persisted).rejects.toThrow();
+    expect(mockInvalidate).not.toHaveBeenCalled();
   });
 });
 
