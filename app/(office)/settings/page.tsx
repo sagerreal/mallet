@@ -29,6 +29,7 @@ import { PaymentsCard } from "./payments-card";
 import { QuickbooksCard } from "./quickbooks-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { JobFeaturesCard } from "./job-features-card";
+import { TimezoneCard } from "./timezone-card";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
@@ -60,6 +61,7 @@ function SecWorkspace() {
       <BrandingCard />
       <A2pRegistrationCard />
       <JobFeaturesCard />
+      <TimezoneCard />
     </>
   );
 }

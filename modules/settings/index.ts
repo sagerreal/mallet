@@ -19,3 +19,4 @@ export type { ConnectGateway, ConnectAccountStatus } from "./domain/connect-gate
 export { StripeConnectGateway } from "./infra/stripe-connect-gateway";
 export { BeginConnectOnboardingUseCase, RefreshConnectStatusUseCase } from "./app/connect-onboarding";
 export type { ConnectStatusView } from "./app/connect-onboarding";
+export { frontDeskReadiness, type FrontDeskGap, type FrontDeskReadiness } from "./domain/front-desk-readiness";

@@ -224,6 +224,41 @@ suite("v1.identity (live RLS)", () => {
     expect(inv!.status).toBe("accepted");
   });
 
+  it("a fresh owner signup with a timezone patches the brand-new org's org_settings row", async () => {
+    const authUserId = randomUUID();
+    const caller = appRouter.createCaller(unmappedCtx({ authUserId, email: "tz-owner@e2e.test", orgNameHint: "TZ Owner Org", name: null }));
+
+    const result = await caller.v1.identity.signup({ postalCode: "02189", timezone: "America/New_York" });
+    createdOrgIds.push(result.orgId);
+    expect(result.role).toBe("owner");
+
+    const [row] = await admin<{ timezone: string }[]>`select timezone from org_settings where org_id = ${result.orgId}`;
+    expect(row!.timezone).toBe("America/New_York");
+  });
+
+  // CRITICAL: an invited joiner's ZIP must never overwrite an org's already-set timezone.
+  // app_signup_create_org's `role: org_id` result covers BOTH "created a new org" and "joined an
+  // existing one via a pending invite" — signup must only ever patch org_settings.timezone on the
+  // former, and only when the org has no settings row yet (never re-patch a corrected value).
+  it("an invited joiner's ZIP-derived timezone never overwrites the inviting org's existing timezone", async () => {
+    const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('TZ Invite Org') returning id`;
+    createdOrgIds.push(org!.id);
+    // Owner already corrected the timezone by hand (simulates the Settings control having been used).
+    await admin`insert into org_settings (org_id, timezone, booking) values (${org!.id}, 'America/Denver', '{"services":[],"notServices":"","serviceFee":0,"feeCredited":false}'::jsonb)`;
+    await admin`insert into org_invites (org_id, email, role, status) values (${org!.id}, 'tz-jointest@e2e.test', 'office', 'pending')`;
+
+    const authUserId = randomUUID();
+    // A different ZIP than the org's real one — this must NOT land in org_settings.
+    const caller = appRouter.createCaller(unmappedCtx({ authUserId, email: "tz-jointest@e2e.test", orgNameHint: "Ignored", name: null }));
+    const result = await caller.v1.identity.signup({ postalCode: "90001", timezone: "America/Los_Angeles" });
+
+    expect(result.orgId).toBe(org!.id);
+    expect(result.role).toBe("office");
+
+    const [row] = await admin<{ timezone: string }[]>`select timezone from org_settings where org_id = ${org!.id}`;
+    expect(row!.timezone).toBe("America/Denver");
+  });
+
   it("office cannot invite an owner (FORBIDDEN)", async () => {
     const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('PrivEsc Invite Org') returning id`;
     createdOrgIds.push(org!.id);

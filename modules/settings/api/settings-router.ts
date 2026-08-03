@@ -48,6 +48,9 @@ const okDTO = z.object({ ok: z.boolean() });
 // Bounds match the domain aggregate's clamping logic to fail fast at the boundary.
 const updateConfigInput = z.object({
   trade: z.string().min(1).max(50).optional(),
+  // IANA name. The domain validates it against the runtime's own tz database (isValidTimeZone),
+  // so an unknown zone is a BAD_REQUEST rather than a stored value nothing can interpret.
+  timezone: z.string().min(1).max(64).optional(),
   markupBps: z.number().int().min(0).max(1_000_000).optional(),
   visitScopeMinutes: z.number().int().min(0).max(1440).optional(),
   visitRepairMinutes: z.number().int().min(0).max(1440).optional(),

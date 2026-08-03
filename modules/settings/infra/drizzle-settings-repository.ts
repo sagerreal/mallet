@@ -184,6 +184,21 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
   }
 
   /**
+   * Existence check with no lazy create — mirrors getTechSeesPrice/getTimezone. Callers that
+   * need to tell "brand-new org" from "org already has settings" (signup's one-time timezone
+   * derivation) must call this BEFORE getConfig, whose lazy insert would otherwise make every
+   * org look pre-existing by the time anyone checks.
+   */
+  async hasConfig(): Promise<boolean> {
+    const rows = await this.tx
+      .select({ id: orgSettings.id })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
    * Focused, side-effect-free read of the org's Connect charge target (PR1 onboarding state) —
    * used by the invoicing charge path to route a destination charge and gate on charges-enabled.
    * No lazy create (mirrors getTechSeesPrice): a shop that never onboarded reads as not-enabled.

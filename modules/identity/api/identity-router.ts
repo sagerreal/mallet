@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { and, count, eq } from "drizzle-orm";
 import { orgs, users, orgInvites } from "@mallet/shared/db/schema";
 import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
-import { asOrgId, asUserId } from "@mallet/shared/types";
+import { asOrgId, asUserId, isOk } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { loadConfig } from "@mallet/shared/config";
 import { router, authedNoPrincipal, anyRole, ownerOrOffice } from "@/trpc/init";
@@ -11,6 +11,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { ROLES, type Principal } from "../domain/principal";
 import { ProvisionOrgNumberUseCase } from "@mallet/a2p";
+import { DrizzleSettingsRepository, defaultBooking } from "@mallet/settings";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
 // `callbackNumber` is the mobile Elas rings first on an outbound click-to-call. A call RECORD
@@ -118,6 +119,9 @@ export const createIdentityRouter = () =>
           // Collected on the signup form purely so the shop's business number has a LOCAL area
           // code. A plumber in Weymouth handing customers a 669 California number looks wrong.
           postalCode: z.string().regex(/^\d{5}$/).optional(),
+          // Derived from the ZIP on the client (lib/geo/zip-timezone). Absent when the ZIP is
+          // outside the table — the org then keeps the column default rather than a guess.
+          timezone: z.string().min(1).max(64).optional(),
         }),
       )
       .output(meDTO)
@@ -167,6 +171,50 @@ export const createIdentityRouter = () =>
             logger.error(
               { err: error instanceof Error ? error.message : String(error), orgId: provisioned.orgId },
               "signup.number_provision_threw",
+            );
+          }
+        }
+
+        // Timezone derived client-side from the ZIP (lib/geo/zip-timezone). Absent when the ZIP
+        // fell outside that table — the org keeps its column default rather than a silent guess.
+        //
+        // ONLY for a genuinely brand-new org: `provisioned` also covers the invited-joiner path
+        // (app_signup_create_org joins a pending invite into an EXISTING org and returns ITS id +
+        // the invited role — this is not "create a new org" every time). Patching unconditionally
+        // would let an invited tech's ZIP silently revert a timezone the owner had already
+        // corrected in Settings, and would do it through a role (`authedNoPrincipal`) that bypasses
+        // the `ownerOrOffice` guard on settings.updateConfig. Both conditions below must hold:
+        // the provisioned role is 'owner', AND no org_settings row exists yet for that org — read
+        // BEFORE calling getConfig, whose lazy insert would otherwise make every org look
+        // pre-existing by the time anything checks.
+        //
+        // Wrapped in try/catch and placed after number provisioning (not before it): this write is
+        // best-effort, not the point of signup. `createOrgForUser` already committed on its own
+        // SECURITY DEFINER connection, so an unguarded throw here used to 500 the whole mutation —
+        // and because the identity was already mapped, a retry took the `if (ctx.principal)` early
+        // return above and never reached number provisioning again, permanently stranding the org
+        // with twilio_number = null. Matches the adjacent Twilio block's pattern for the same reason.
+        if (input.timezone && role === "owner") {
+          try {
+            await withTenant(asOrgId(provisioned.orgId), async (tx) => {
+              const repo = new DrizzleSettingsRepository(tx, asOrgId(provisioned.orgId));
+              const alreadyHasSettings = await repo.hasConfig();
+              if (alreadyHasSettings) return;
+              const settings = await repo.getConfig(provisioned.orgId, defaultBooking);
+              const patched = settings.patch({ timezone: input.timezone }, ctx.deps.clock.now());
+              if (isOk(patched)) {
+                await repo.saveConfig(patched.value);
+              } else {
+                logger.warn(
+                  { orgId: provisioned.orgId, timezone: input.timezone, reason: patched.error.message },
+                  "signup.timezone_patch_rejected",
+                );
+              }
+            });
+          } catch (error) {
+            logger.error(
+              { err: error instanceof Error ? error.message : String(error), orgId: provisioned.orgId },
+              "signup.timezone_patch_threw",
             );
           }
         }

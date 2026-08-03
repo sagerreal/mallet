@@ -80,6 +80,15 @@ export interface SettingsRepository {
    */
   getTimezone(): Promise<string>;
 
+  /**
+   * Side-effect-free existence check: does an org_settings row already exist for the current
+   * tenant? Unlike getConfig, this never lazy-creates the row — callers that need to
+   * distinguish "brand-new org, no settings yet" from "org has settings, possibly already
+   * corrected by hand" (e.g. signup's one-time timezone derivation) must call this BEFORE
+   * getConfig, since getConfig's lazy insert would make every org look pre-existing.
+   */
+  hasConfig(): Promise<boolean>;
+
   // --- pricebook_items ---------------------------------------------------
 
   /**
