@@ -2,7 +2,7 @@ import type { JobId, Result, AppError, Clock } from "@mallet/shared/types";
 import { notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import type { Job, JobChecklistProps } from "../domain/job";
+import type { Job, JobChecklistProps, JobKind } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
 
 export interface UpdateJobCommand {
@@ -16,6 +16,7 @@ export interface UpdateJobCommand {
   readonly phone?: string | null;
   readonly completion?: string | null;
   readonly invRequested?: boolean;
+  readonly kind?: JobKind;
 }
 
 // Edit a job's DB-backed fields. addr/phone/completion/invRequested USED to be accepted here and
@@ -44,6 +45,7 @@ export class UpdateJobUseCase {
         phone: cmd.phone,
         completion: cmd.completion,
         invRequested: cmd.invRequested,
+        kind: cmd.kind,
       },
       now,
     );

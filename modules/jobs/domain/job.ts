@@ -532,6 +532,7 @@ export class Job {
       phone?: string | null;
       completion?: string | null;
       invRequested?: boolean;
+      kind?: JobKind;
     },
     now: Date,
   ): Result<Job, ValidationError> {
@@ -545,7 +546,8 @@ export class Job {
       fields.notes === undefined &&
       fields.checklist === undefined &&
       fields.addr === undefined &&
-      fields.phone === undefined;
+      fields.phone === undefined &&
+      fields.kind === undefined;
     if (isTerminal(this.p.status) && !closeOutOnly) {
       return err(validation("cannot edit a completed or canceled job", "status"));
     }
@@ -559,6 +561,7 @@ export class Job {
       phone: fields.phone !== undefined ? fields.phone : this.p.phone,
       completion: fields.completion !== undefined ? fields.completion : this.p.completion,
       invRequested: fields.invRequested !== undefined ? fields.invRequested : this.p.invRequested,
+      kind: fields.kind !== undefined ? fields.kind : this.p.kind,
       updatedAt: now,
     });
   }

@@ -318,7 +318,7 @@ describe("NewCustomerModal — submit with the Estimate-visit purpose", () => {
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     const [draft] = addJob.mock.calls[0] as [{ svc: string; leadId: string; title: string }];
-    expect(draft).toMatchObject({ svc: "estimate", leadId: "srv-lead-1", title: "quote a repipe" });
+    expect(draft).toMatchObject({ kind: "estimate", leadId: "srv-lead-1", title: "quote a repipe" });
     await waitFor(() => expect(addVisit).toHaveBeenCalledOnce());
     // No store-local evisit path anymore — it vanished on refresh and was invisible
     // to the schedule window and crew-load checks.

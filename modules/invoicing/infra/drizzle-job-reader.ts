@@ -23,7 +23,7 @@ export class DrizzleJobReader implements JobReader {
       leadId: job.props.leadId,
       title: job.props.title,
       status: job.props.status,
-      svc: job.props.svc,
+      kind: job.props.kind,
       hasPricedLines: lines.some((l) => l.props.quantity * l.props.rate > 0),
       totalCents: job.props.total,
       taxBps: job.props.taxBps,

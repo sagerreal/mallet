@@ -74,7 +74,7 @@ const hasScopedEstimateVisit = (tx: TenantTx): SQL =>
         and(
           eq(jobVisits.orgId, leads.orgId),
           eq(jobs.leadId, leads.id),
-          eq(jobs.svc, "estimate"),
+          eq(jobs.kind, "estimate"),
           isNotNull(jobVisits.notes),
           ne(jobVisits.notes, ""),
           ne(jobVisits.status, "canceled"),

@@ -8,7 +8,7 @@
 import { todayISO } from "@/lib/clock";
 import type { Job, Lead, Tech, Visit } from "@/lib/store/types";
 import { isVisitPlaced, isVisitDatedUnassigned } from "@/lib/store/visit-placement";
-import { SVC_KIND } from "./job-status-meta";
+import { SVC_KIND, isEstimateJob, hasPricedLines } from "./job-status-meta";
 
 // A job visit held for board placement (estimate visits are jobs too — svc "estimate").
 // ownerId is a Job.id (UUID string).
@@ -49,9 +49,8 @@ export function leadAgeOf(j: Job, leads: Lead[]): number {
 
 /** The board lane a job reads as: estimate, priced install, or price-on-site. */
 export function jobMode(j: Job): string {
-  if (j.svc === SVC_KIND.estimate) return SVC_KIND.estimate;
-  const priced = (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
-  return priced ? SVC_KIND.install : SVC_KIND.service;
+  if (isEstimateJob(j)) return SVC_KIND.estimate;
+  return hasPricedLines(j) ? SVC_KIND.install : SVC_KIND.service;
 }
 
 /** The next placed visit (today or later), else the latest placed visit, else null. */

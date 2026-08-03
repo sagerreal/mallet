@@ -141,12 +141,18 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     expect(created.svc).toBe("service");
     expect(created.status).toBe("scheduled");
 
-    const updated = await caller.v1.jobs.update({ jobId: created.id, title: "Water heater swap", svc: "estimate" });
+    // The Type toggle writes kind now — svc stays what it was declared as, the trade label.
+    const updated = await caller.v1.jobs.update({ jobId: created.id, title: "Water heater swap", kind: "estimate" });
     expect(updated.title).toBe("Water heater swap");
-    expect(updated.svc).toBe("estimate");
+    expect(updated.kind).toBe("estimate");
+    expect(updated.svc).toBe("service"); // untouched by the type flip
 
     const listed = await caller.v1.jobs.list({ limit: 500 });
-    expect(listed.items.some((j) => j.id === created.id && j.svc === "estimate")).toBe(true);
+    expect(listed.items.some((j) => j.id === created.id && j.kind === "estimate")).toBe(true);
+
+    // …and back to flat rate.
+    const reverted = await caller.v1.jobs.update({ jobId: created.id, kind: "work" });
+    expect(reverted.kind).toBe("work");
   });
 
   it("attaches a checklist via update; it persists, survives a re-read, and detaches with null", async () => {

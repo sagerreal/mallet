@@ -93,16 +93,18 @@ suite("jobs scoped views", () => {
       insert into invoices (org_id, lead_id, source_job_id, num, status, total_cents)
       values (${orgId}, ${leadId}, ${billed}, 'INV-V1', 'sent', 50000)`;
 
-    // Estimate visits. A completed SCOPING visit (svc estimate, no money anywhere) is not
+    // Estimate visits. A completed SCOPING visit (kind estimate, no money anywhere) is not
     // billable work — it must land in `done`, not "Done, not billed". A completed estimate
     // SIGNED on site carries priced job_lines while total_cents stays 0 (the sign path never
-    // updates that snapshot) — it IS billable and must stay in needsInvoice.
+    // updates that snapshot) — it IS billable and must stay in needsInvoice. The svc columns
+    // deliberately hold a trade name: that is the voice-booking shape the old svc-based
+    // predicate misread as billable work.
     await admin`
-      insert into jobs (org_id, lead_id, num, status, svc, total_cents)
-      values (${orgId}, ${leadId}, 'V-EST-SCOPE', 'complete', 'estimate', 0)`;
+      insert into jobs (org_id, lead_id, num, status, kind, svc, total_cents)
+      values (${orgId}, ${leadId}, 'V-EST-SCOPE', 'complete', 'estimate', 'Water heater repair', 0)`;
     const [signed] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, svc, total_cents)
-      values (${orgId}, ${leadId}, 'V-EST-SIGNED', 'complete', 'estimate', 0) returning id`;
+      insert into jobs (org_id, lead_id, num, status, kind, svc, total_cents)
+      values (${orgId}, ${leadId}, 'V-EST-SIGNED', 'complete', 'estimate', 'Water heater repair', 0) returning id`;
     await admin`
       insert into job_lines (org_id, job_id, description, quantity, rate_cents, cost_cents, position)
       values (${orgId}, ${signed!.id}, 'Water heater swap', 1, 90000, 0, 0)`;

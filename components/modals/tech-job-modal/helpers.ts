@@ -6,6 +6,7 @@
  */
 
 import type { CSSProperties } from "react";
+import { isEstimateJob } from "@/features/jobs/job-status-meta";
 import { todayISO } from "@/lib/clock";
 import type { Job, Visit, Lead, Invoice } from "@/lib/store/types";
 
@@ -41,7 +42,7 @@ export function invDue(i: Invoice): number {
 
 /** priced → "install" (blue), unpriced job → "service" (brown), estimate → estimate (prototype jobMode, 4002). */
 export function jobMode(j: Job): string {
-  if (j.svc === "estimate") return "estimate";
+  if (isEstimateJob(j)) return "estimate";
   const priced = (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
   return priced ? "install" : "service";
 }

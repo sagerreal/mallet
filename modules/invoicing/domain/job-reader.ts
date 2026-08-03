@@ -8,8 +8,9 @@ export interface JobSummary {
   readonly leadId: LeadId;
   readonly title: string | null;
   readonly status: JobStatus;
-  /** Service type; "estimate" marks a scoping visit whose deliverable is a quote, not a bill. */
-  readonly svc: string | null;
+  /** 'estimate' marks a scoping visit whose deliverable is a quote, not a bill. Source of truth
+   *  since 0133 — svc is only the trade label and no longer carries this. */
+  readonly kind: string;
   /**
    * Any live job line with quantity × rate > 0. On-site signed prices live in `job_lines` —
    * `totalCents` is a creation-time snapshot the sign path never updates — so priced-ness

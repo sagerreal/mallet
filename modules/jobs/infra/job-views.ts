@@ -140,7 +140,10 @@ const invoiceExists = (tx: TenantTx): SQL =>
  */
 const unpricedEstimate = (tx: TenantTx): SQL =>
   and(
-    eq(jobs.svc, "estimate"),
+    // kind is the source of truth since 0133 — svc carries only the trade label now, which is
+    // exactly why a voice-booked estimate (kind='estimate', svc='Water heater repair') used to
+    // fall through this predicate and land in Money as billable work.
+    eq(jobs.kind, "estimate"),
     eq(jobs.totalCents, 0),
     not(
       exists(

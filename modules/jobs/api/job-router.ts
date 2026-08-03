@@ -115,6 +115,8 @@ const listByLeadInput = z.object({
 
 // Named input schemas for the manual-job mutation surface (exported so the store can
 // reuse them for client-side validation without duplicating the bounds).
+const kindInputEnum = z.enum(["work", "estimate"]);
+
 export const createJobInput = z.object({
   id: z.string().uuid().optional(),
   leadId: z.string().uuid(),
@@ -123,6 +125,9 @@ export const createJobInput = z.object({
   addr: z.string().max(1000).optional(),
   phone: z.string().max(50).optional(),
   notes: z.string().max(10_000).optional(),
+  // 'estimate' = a scoping visit, no price yet. The office modal used to encode this as
+  // svc='estimate', squatting in the free-text trade-label column; kind is the enum built for it.
+  kind: kindInputEnum.optional(),
 });
 // Before-you-leave checklist payload — bounds come from the domain constants
 // (name ≤ 200, item text ≤ 500, ≤ 50 items — matched to the checklist TEMPLATE
@@ -149,6 +154,8 @@ export const updateJobInput = z.object({
   phone: z.string().max(50).nullable().optional(),
   completion: z.string().max(2000).nullable().optional(),
   invRequested: z.boolean().optional(),
+  // The office Type toggle: estimate ↔ flat rate. Terminal jobs still refuse (patchFields gate).
+  kind: kindInputEnum.optional(),
   // undefined = keep; null = detach; object = attach/replace.
   checklist: jobChecklistInput.nullable().optional(),
 });
@@ -236,6 +243,7 @@ export const createJobRouter = () =>
               leadId: asLeadId(input.leadId),
               title: input.title ?? null,
               svc: input.svc ?? null,
+              kind: input.kind,
               addr: input.addr ?? null,
               phone: input.phone ?? null,
               notes: input.notes ?? null,
@@ -619,6 +627,7 @@ export const createJobRouter = () =>
               phone: input.phone,
               completion: input.completion,
               invRequested: input.invRequested,
+              kind: input.kind,
             }),
           ),
         );

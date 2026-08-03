@@ -174,7 +174,7 @@ let _nextAuxId = 6000; // addons + other field-created ids (mirrors state.nextId
 // the office job modal's Service address row and the close-out sheet's "What was done" wrote to
 // the store and nowhere else — erased by the next jobs.list refetch.
 const JOB_UPDATE_KEYS = new Set<keyof Job>([
-  "title", "svc", "notes", "checklist", "addr", "phone", "completion", "invRequested",
+  "title", "svc", "notes", "checklist", "addr", "phone", "completion", "invRequested", "kind",
 ]);
 
 /** Wire shape of a checklist item for v1.jobs.update (no store-only `position` —
@@ -196,6 +196,7 @@ export interface JobUpdatePayload {
   phone?: string | null;
   completion?: string | null;
   invRequested?: boolean;
+  kind?: "work" | "estimate";
 }
 
 /**
@@ -223,6 +224,7 @@ export function buildJobUpdatePayload(
     else if (key === "phone") payload.phone = patch.phone;
     else if (key === "completion") payload.completion = patch.completion;
     else if (key === "invRequested") payload.invRequested = patch.invRequested;
+    else if (key === "kind") payload.kind = patch.kind === "estimate" ? "estimate" : "work";
     else if (key === "checklist") {
       payload.checklist = patch.checklist
         ? {
@@ -598,6 +600,8 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         leadId: newJob.leadId,
         title: newJob.title || undefined,
         svc: newJob.svc || undefined,
+        // 'estimate' = scoping visit. Used to ride in svc, squatting in the trade-label column.
+        kind: newJob.kind === "estimate" ? "estimate" : undefined,
         addr: newJob.addr || undefined,
         phone: newJob.phone || undefined,
         notes: newJob.notes || undefined,
@@ -661,6 +665,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
                   phone: dto.phone ?? j.phone,
                   completion: dto.completion ?? j.completion,
                   invRequested: dto.invRequested,
+                  kind: dto.kind,
                   checklist: dtoChecklistToStore(dto.checklist),
                 }
               : j,

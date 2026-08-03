@@ -5,7 +5,7 @@
  */
 
 import { estTotal } from "@/lib/estimates";
-import { SVC_KIND } from "@/features/jobs/job-status-meta";
+import { isEstimateJob, SVC_KIND } from "@/features/jobs/job-status-meta";
 import type { Lead, Estimate, Job, Visit } from "@/lib/store/types";
 
 /** A lead's board value — its first non-draft quote total, else the stated value. */
@@ -15,11 +15,11 @@ export function leadVal(lead: Lead, estimates: Estimate[]): number {
 }
 
 /**
- * Estimate visits are real jobs (svc "estimate") since the evisit machinery was
+ * Estimate visits are real jobs (kind 'estimate') since the evisit machinery was
  * deleted — a lead's walkthrough state is read off its estimate jobs' visits.
  */
 const estimateJobs = (leadId: string, jobs: Job[]): Job[] =>
-  jobs.filter((j) => j.leadId === leadId && j.svc === SVC_KIND.estimate && !j.archived);
+  jobs.filter((j) => j.leadId === leadId && isEstimateJob(j) && !j.archived);
 
 /** The visit that came back with scope notes, or undefined. */
 export function scopedEstimateVisit(leadId: string, jobs: Job[]): Visit | undefined {

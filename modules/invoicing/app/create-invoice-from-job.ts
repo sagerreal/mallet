@@ -33,7 +33,7 @@ export class CreateInvoiceFromJobUseCase {
     // An unpriced ESTIMATE is a scoping visit — there is nothing to bill, and minting a $0
     // draft only buries real receivables. Signed-on-site estimates carry priced job lines
     // (hasPricedLines) and office-accepted ones carry totalCents; both stay invoiceable.
-    if (job.svc === "estimate" && job.totalCents <= 0 && !job.hasPricedLines) {
+    if (job.kind === "estimate" && job.totalCents <= 0 && !job.hasPricedLines) {
       return err(conflict("this estimate has no price — quote it before billing"));
     }
 

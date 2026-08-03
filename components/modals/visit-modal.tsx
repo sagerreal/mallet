@@ -82,12 +82,13 @@ export function VisitModalContent() {
    *
    *  Returns the optimistic Job on success, or null on failure (error already set).
    */
-  async function createJobForLead(svc: "service" | "estimate" = "service"): Promise<Job | null> {
+  async function createJobForLead(kind: "service" | "estimate" = "service"): Promise<Job | null> {
     const { job, persisted } = addJob({
       leadId: lead!.id,
-      svc,
+      kind: kind === "estimate" ? "estimate" : "work",
+      svc: "",
       origin: "manual",
-      title: jobDesc.trim() || lead!.job || (svc === "estimate" ? "Estimate visit" : "Site visit"),
+      title: jobDesc.trim() || lead!.job || (kind === "estimate" ? "Estimate visit" : "Site visit"),
       addr: addr.trim() || lead!.address || "",
       phone: lead!.phone ?? "",
       status: "unscheduled",

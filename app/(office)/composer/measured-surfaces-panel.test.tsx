@@ -359,7 +359,7 @@ describe("MeasuredSurfacesPanel — add / scan a room", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add a room" }));
     await waitFor(() => expect(openModal).toHaveBeenCalledWith("room-card", { jobId: "j-new" }));
     expect(storeState.addJob).toHaveBeenCalledWith(
-      expect.objectContaining({ leadId: "lead-1", svc: "estimate", status: "unscheduled" }),
+      expect.objectContaining({ leadId: "lead-1", kind: "estimate", status: "unscheduled" }),
     );
   });
 
