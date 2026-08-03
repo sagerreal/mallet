@@ -1,20 +1,37 @@
 import type { BookingCfg } from "../domain/org-settings";
 
-// First-run defaults for a brand-new org. Ported verbatim from the prototype's SEED_BOOKING so a
-// fresh workspace opens with a usable booking playbook rather than an empty screen.
+/**
+ * First-run booking config for a brand-new org: NO services.
+ *
+ * This used to return nine hard-coded residential plumbing services with invented flat prices —
+ * "Drain cleaning $99", "Sewer camera inspection $285" — to every org regardless of trade. Its own
+ * comment admitted the provenance: "Ported verbatim from the prototype's SEED_BOOKING so a fresh
+ * workspace opens with a usable booking playbook rather than an empty screen."
+ *
+ * Two things were wrong with that, and the second is the serious one:
+ *
+ *  1. A roofing shop's front desk offered water heater repair.
+ *  2. Those prices were OURS, not the shop's. Had the front desk been switched on, it would have
+ *     quoted $99 drain cleaning to a real caller on the shop's behalf. The trade playbooks
+ *     (app/(office)/settings/trade-playbooks.ts) have always refused to seed a price for exactly
+ *     this reason — "prices are the owner's, never ours" — and this file contradicted that rule
+ *     for every org in the product.
+ *
+ * Services now come from the shop's OWN trade, applied at signup from its trade playbook, which
+ * carries trigger phrases and lanes but no dollar amounts. A trade with no playbook, and "Other",
+ * get nothing at all.
+ *
+ * Empty is also the safe default rather than merely the honest one: frontDeskReadiness requires at
+ * least one bookable service, so an org that never picks a trade keeps its front desk switched off
+ * instead of answering with a service list it cannot honour.
+ *
+ * The non-service fields stay. A service-call fee and whether it is credited are shop POLICY
+ * rather than trade content, and these are the conventional starting values — the owner sees them
+ * on the Front Desk tab and can change them there.
+ */
 export const defaultBooking = (): BookingCfg => ({
-  services: [
-    { name: "Water heater repair", lane: "repair", triggers: "leaking, no hot water, pilot out, rusty water, water heater not working" },
-    { name: "Water heater replacement", lane: "estimate", triggers: "replace water heater, new water heater, tankless install, old one died" },
-    { name: "AC / heating repair", lane: "repair", triggers: "not cooling, warm air, no heat, ac stopped, furnace, no power" },
-    { name: "AC / system replacement", lane: "estimate", triggers: "replace my whole, new system, replace my ac, new ac unit" },
-    { name: "Drain cleaning", lane: "flat", price: 99, triggers: "drain cleaning, clogged, slow drain, backed up, snake" },
-    { name: "Sewer camera inspection", lane: "flat", price: 285, triggers: "sewer camera, camera inspection, locate the line" },
-    { name: "Leak detection & repair", lane: "repair", triggers: "leak, dripping, water damage" },
-    { name: "Toilet & fixture install", lane: "repair", triggers: "running toilet, leaking toilet, wont flush, faucet" },
-    { name: "Whole-house repipe / re-pipe", lane: "estimate", triggers: "repipe, re-pipe, galvanized, whole house repipe, low pressure everywhere, old pipes" },
-  ],
-  notServices: "New construction · septic · well pumps",
+  services: [],
+  notServices: "",
   serviceFee: 89,
   feeCredited: true,
 });

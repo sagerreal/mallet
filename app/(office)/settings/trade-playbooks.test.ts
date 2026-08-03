@@ -2,12 +2,26 @@ import { describe, it, expect } from "vitest";
 import { TRADE_PLAYBOOKS, playbookFor } from "./trade-playbooks";
 
 describe("trade starter playbooks", () => {
-  it("covers the 10 ICP trades plus Other", () => {
+  /**
+   * The list IS the positioning. Service trades first (priced per job), then the
+   * measurement-priced ones (priced off site_sqft / site_lnft / room quantities), then Other.
+   * Garage door, tree service, septic, handyman and appliance repair were removed deliberately:
+   * offering a trade in this dropdown implies the rest of the product was built around it.
+   */
+  it("covers the four service trades, the six measured trades, and Other — in that order", () => {
     const keys = TRADE_PLAYBOOKS.map((t) => t.key);
     expect(keys).toEqual([
-      "plumbing", "garage_door", "electrical", "tree", "roofing",
-      "hvac", "septic", "handyman", "appliance", "fencing", "other",
+      "hvac", "mechanical", "electrical", "plumbing",
+      "roofing", "painting", "fencing", "concrete", "siding", "gutters",
+      "other",
     ]);
+  });
+
+  it("offers no trade the product was not built around", () => {
+    const keys = TRADE_PLAYBOOKS.map((t) => t.key);
+    for (const dropped of ["garage_door", "tree", "septic", "handyman", "appliance"]) {
+      expect(keys).not.toContain(dropped);
+    }
   });
 
   it("every trade has at least 2 services with valid lanes, names and triggers", () => {
@@ -52,7 +66,9 @@ describe("trade starter playbooks", () => {
   });
 
   it("the emergency-heavy ICP trades ship emergency words out of the box", () => {
-    for (const key of ["plumbing", "garage_door", "electrical", "roofing", "hvac", "septic"]) {
+    // Painting and concrete are absent on purpose: a repaint is never an emergency, and
+    // inventing urgency words for one would teach the front desk to escalate a nothing.
+    for (const key of ["plumbing", "electrical", "roofing", "hvac", "mechanical", "siding", "gutters"]) {
       const t = playbookFor(key);
       expect(t?.services.some((s) => (s.emergencyTriggers ?? "").length > 0)).toBe(true);
     }

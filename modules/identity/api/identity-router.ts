@@ -11,6 +11,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { ROLES, type Principal } from "../domain/principal";
 import { ProvisionOrgNumberUseCase } from "@mallet/a2p";
+import { playbookFor, TRADE_KEYS } from "@/app/(office)/settings/trade-playbooks";
 import { DrizzleSettingsRepository, defaultBooking } from "@mallet/settings";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
@@ -122,6 +123,10 @@ export const createIdentityRouter = () =>
           // Derived from the ZIP on the client (lib/geo/zip-timezone). Absent when the ZIP is
           // outside the table — the org then keeps the column default rather than a guess.
           timezone: z.string().min(1).max(64).optional(),
+          // A TRADE_PLAYBOOKS key. Decides the front desk's starter services and, later, which
+          // pricebook the shop is offered. Validated against the real list rather than as free
+          // text, so a stale client cannot write a trade nothing in the app knows about.
+          trade: z.enum(TRADE_KEYS).optional(),
         }),
       )
       .output(meDTO)
@@ -194,27 +199,58 @@ export const createIdentityRouter = () =>
         // and because the identity was already mapped, a retry took the `if (ctx.principal)` early
         // return above and never reached number provisioning again, permanently stranding the org
         // with twilio_number = null. Matches the adjacent Twilio block's pattern for the same reason.
-        if (input.timezone && role === "owner") {
+        if ((input.timezone || input.trade) && role === "owner") {
           try {
             await withTenant(asOrgId(provisioned.orgId), async (tx) => {
               const repo = new DrizzleSettingsRepository(tx, asOrgId(provisioned.orgId));
               const alreadyHasSettings = await repo.hasConfig();
               if (alreadyHasSettings) return;
               const settings = await repo.getConfig(provisioned.orgId, defaultBooking);
-              const patched = settings.patch({ timezone: input.timezone }, ctx.deps.clock.now());
+
+              // The trade's starter playbook becomes the front desk's bookable services. Before
+              // this, defaultBooking() handed EVERY org nine hard-coded plumbing services with
+              // invented flat prices ("Drain cleaning $99", "Sewer camera inspection $285") — a
+              // roofing shop's AI receptionist would have quoted those to its callers. The
+              // playbooks carry no prices at all, on the standing rule that prices are the
+              // owner's and never ours.
+              //
+              // A trade with no playbook (including "other") gets an EMPTY service list rather
+              // than another trade's — the same rule the pricebook registry follows. Empty is
+              // also what keeps the front desk switched off, since frontDeskReadiness requires at
+              // least one bookable service.
+              // "Other" is excluded deliberately. Its playbook exists — a generic service call
+              // plus a quote-first job — and is useful when somebody picks "Starter playbook" off
+              // the Front Desk tab, because that is a deliberate choice made while looking at the
+              // screen. Seeding it at SIGNUP is not: a shop that would not name its trade has told
+              // us we have nothing honest to offer it, and two generic rows would just be two rows
+              // to delete. Empty also keeps the front desk switched off, since frontDeskReadiness
+              // requires a bookable service.
+              const playbook =
+                input.trade && input.trade !== "other" ? playbookFor(input.trade) : undefined;
+              const booking = playbook
+                ? { ...settings.props.booking, services: [...playbook.services] }
+                : settings.props.booking;
+
+              const patched = settings.patch(
+                {
+                  ...(input.timezone ? { timezone: input.timezone } : {}),
+                  ...(input.trade ? { trade: input.trade, booking } : {}),
+                },
+                ctx.deps.clock.now(),
+              );
               if (isOk(patched)) {
                 await repo.saveConfig(patched.value);
               } else {
                 logger.warn(
-                  { orgId: provisioned.orgId, timezone: input.timezone, reason: patched.error.message },
-                  "signup.timezone_patch_rejected",
+                  { orgId: provisioned.orgId, timezone: input.timezone, trade: input.trade, reason: patched.error.message },
+                  "signup.first_run_settings_rejected",
                 );
               }
             });
           } catch (error) {
             logger.error(
               { err: error instanceof Error ? error.message : String(error), orgId: provisioned.orgId },
-              "signup.timezone_patch_threw",
+              "signup.first_run_settings_threw",
             );
           }
         }

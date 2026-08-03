@@ -199,12 +199,21 @@ describe("GetSettingsUseCase", () => {
     useCase = new GetSettingsUseCase(repo);
   });
 
-  it("lazily creates a defaults config on first read", async () => {
+  /**
+   * A first read creates the row, and its booking list is EMPTY.
+   *
+   * This used to assert the opposite — that a fresh org arrived with services already in it — and
+   * what it was really pinning was nine hard-coded plumbing services with invented prices, handed
+   * to every org whatever its trade. The services now come from the shop's own trade playbook at
+   * signup; a trade with no playbook, and "Other", get none. Empty also keeps the front desk
+   * switched off, since frontDeskReadiness needs at least one bookable service.
+   */
+  it("lazily creates a defaults config on first read, with no services of our invention", async () => {
     const result = await useCase.exec(ORG);
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       expect(result.value.config.props.trade).toBe("plumbing");
-      expect(result.value.config.props.booking.services.length).toBeGreaterThan(0);
+      expect(result.value.config.props.booking.services).toEqual([]);
     }
   });
 

@@ -7,6 +7,9 @@
  * the module itself never hardcodes "plumbing". All prices/costs for a residential
  * plumbing shop are flat-rate estimates; no magic numbers live outside this file.
  *
+ * A trip or after-hours fee's COST is a loaded technician hour including drive time, never zero.
+ * Both were seeded at 0 originally, which made every margin rollup report them as pure profit.
+ *
  * Money: integer cents (unitPriceCents/costCents), matching CreateServiceCommand/DTO —
  * conversion to store dollars happens only in lib/store/pricebook-mapper.ts.
  */
@@ -73,8 +76,8 @@ export const PLUMBING_SEED_SERVICES: readonly PlumbingSeedService[] = [
   { name: "Gas line pressure test", categoryName: "Gas", unitPriceCents: 22500, costCents: 4000 },
 
   // ── Service & Diagnostic ────────────────────────────────────────────────────
-  { name: "Diagnostic / trip fee", categoryName: "Service & Diagnostic", unitPriceCents: 9500, costCents: 0 },
-  { name: "Emergency after-hours call", categoryName: "Service & Diagnostic", unitPriceCents: 22500, costCents: 0 },
+  { name: "Diagnostic / trip fee", categoryName: "Service & Diagnostic", unitPriceCents: 9500, costCents: 4500 },
+  { name: "Emergency after-hours call", categoryName: "Service & Diagnostic", unitPriceCents: 22500, costCents: 11000 },
   { name: "Annual plumbing inspection", categoryName: "Service & Diagnostic", unitPriceCents: 18500, costCents: 4000 },
   { name: "Backflow preventer test", categoryName: "Service & Diagnostic", unitPriceCents: 15500, costCents: 3000 },
 ];
