@@ -303,6 +303,7 @@ const buildServicesSection = (services: readonly PromptService[]): string => {
   return [
     `## ${SECTIONS.services}`,
     "Each service: name · lane[ · visit fee applies] · triggers[ · price]. Lane tells you how to handle price:",
+    "When you call check_availability or book_visit, pass service_name EXACTLY as written above — the fee, the visit length and the confirmation script are looked up by that name, and a paraphrase books the caller a free visit they were told costs money.",
     ...lines,
     "",
     `estimate lane with "visit fee applies": ${REPAIR_SCRIPT}`,

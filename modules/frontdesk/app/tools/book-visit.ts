@@ -148,7 +148,7 @@ const visitMinutesFor = (lane: BookLane, feeApplies: boolean, settings: OrgSetti
 const feeAppliesFor = (input: { service_name: string; lane: BookLane }, settings: OrgSettings): boolean => {
   const wanted = input.service_name.trim().toLowerCase();
   const svc = settings.props.booking.services.find((s) => s.name.trim().toLowerCase() === wanted);
-  if (svc) return svc.feeApplies === true;
+  if (svc) return svc.lane === "estimate" && svc.feeApplies === true;
   return input.lane === "repair";
 };
 

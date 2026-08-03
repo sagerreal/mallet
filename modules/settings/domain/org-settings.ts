@@ -28,8 +28,11 @@ export type LegacyServiceLane = ServiceLane | "repair";
 export function normalizeBookingService<T extends { lane: LegacyServiceLane; feeApplies?: boolean }>(
   svc: T,
 ): Omit<T, "lane"> & { lane: ServiceLane } {
-  if (svc.lane !== "repair") return svc as Omit<T, "lane"> & { lane: ServiceLane };
-  return { ...svc, lane: "estimate", feeApplies: true };
+  if (svc.lane === "repair") return { ...svc, lane: "estimate", feeApplies: true };
+  // The flag only means something on the estimate lane; a flat service carrying it is a dormant
+  // misread for any reader that forgets to gate on lane first, so it is stripped here.
+  if (svc.lane === "flat" && svc.feeApplies) return { ...svc, lane: "flat", feeApplies: undefined };
+  return svc as Omit<T, "lane"> & { lane: ServiceLane };
 }
 
 export interface BookingService {

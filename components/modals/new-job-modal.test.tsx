@@ -19,6 +19,7 @@ let storeLeads: unknown[] = [];
 const openModalMock = vi.fn();
 const pushModalMock = vi.fn();
 const adoptLead = vi.fn();
+const vanillaSearch = vi.fn(async () => ({ items: [], nextCursor: null }));
 let closeMock = vi.fn();
 
 // The customer picker's server search — settled and empty for these tests, which exercise the
@@ -27,6 +28,11 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: { customers: { list: { useQuery: () => ({ data: undefined, isFetched: true }) } } },
   },
+}));
+// The submit path awaits a DIRECT search (not the debounced hook) before deciding whether the
+// typed name is an existing customer — that is the fix for the race that minted duplicates.
+vi.mock("@/lib/trpc/vanilla", () => ({
+  trpcVanilla: { v1: { customers: { list: { query: (...a: unknown[]) => vanillaSearch(...a) } } } },
 }));
 
 vi.mock("@/lib/store/app-store", () => ({
@@ -66,7 +72,8 @@ describe("NewJobModalContent — createEstimate", () => {
     fireEvent.click(screen.getByText("Estimate"));
     fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
 
-    expect(addLead).toHaveBeenCalledOnce();
+    // Submit resolves the typed customer against the server first, so the chain is async now.
+    await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
     // The estimate job must attach to the reconciled server lead id, not the optimistic one.
     await waitFor(() => {
       expect(addJob).toHaveBeenCalledOnce();
@@ -222,8 +229,8 @@ describe("NewJobModalContent — createJob (Job type)", () => {
     });
     fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
 
-    // addLead must be called to create the new customer.
-    expect(addLead).toHaveBeenCalledOnce();
+    // addLead must be called to create the new customer (after the async server resolution).
+    await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
 
     // Wait for the full async createJob to complete.
     await waitFor(() => {
@@ -596,14 +603,16 @@ describe("NewJobModalContent — one press, one job", () => {
     fireEvent.submit(form);
 
     // The customer is the first step of the chain and the one the server cannot de-duplicate.
-    expect(addLead).toHaveBeenCalledOnce();
+    // The chain opens with an async server resolution now, so the first call lands a tick later —
+    // the guard's job is that three submits still produce exactly ONE.
+    await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
 
     release();
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     expect(addVisit).toHaveBeenCalledOnce();
   });
 
-  it("says it is working, and refuses the button while it is", () => {
+  it("says it is working, and refuses the button while it is", async () => {
     armSlowChain();
     render(<NewJobModalContent />);
     fillForm();
@@ -620,7 +629,7 @@ describe("NewJobModalContent — one press, one job", () => {
    * the builder in one motion ("Create & price it"), because a flat-rate job's price is the point
    * of the type. The double-submit guard still has to hold across that single entry point.
    */
-  it("guards a second submit while the create-and-price chain is in flight", () => {
+  it("guards a second submit while the create-and-price chain is in flight", async () => {
     armSlowChain();
     render(<NewJobModalContent />);
     fillForm();
@@ -628,7 +637,7 @@ describe("NewJobModalContent — one press, one job", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Create/ }));
     fireEvent.submit(screen.getByText("Creating…").closest("form")!);
 
-    expect(addLead).toHaveBeenCalledOnce();
+    await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
   });
 });
 
@@ -740,15 +749,21 @@ describe("NewJobModalContent — customer picker", () => {
     expect(addLead).toHaveBeenCalledWith(expect.objectContaining({ name: "Brand New Person" }));
   });
 
-  it("Enter with the list open commits the top match instead of submitting the form", () => {
+  /**
+   * Bare Enter — nothing highlighted — KEEPS the typed text and just closes the list. It used to
+   * commit the top match, which silently swapped a typed NEW customer for whichever existing name
+   * sorted first; with the whole server book now searchable, that stopped being a rare collision.
+   * Only an explicitly highlighted row commits (true AddressInput parity).
+   */
+  it("Enter with the list open but nothing highlighted keeps the typed text", () => {
     render(<NewJobModalContent />);
     fireEvent.change(custInput(), { target: { value: "bo" } });
     expect(screen.getByRole("listbox")).toBeTruthy();
 
     fireEvent.keyDown(custInput(), { key: "Enter" });
-    expect((custInput() as HTMLInputElement).value).toBe("Bob Beta");
+    expect((custInput() as HTMLInputElement).value).toBe("bo");
     expect(screen.queryByRole("listbox")).toBeNull();
-    // Committing a pick is not a form submit.
+    // And it is never a form submit either way.
     expect(addLead).not.toHaveBeenCalled();
     expect(addJob).not.toHaveBeenCalled();
   });

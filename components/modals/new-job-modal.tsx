@@ -39,6 +39,7 @@ import { AddressInput } from "@/components/ui/address-input";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { api } from "@/lib/trpc/client";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
 
@@ -268,11 +269,45 @@ export function NewJobModalContent() {
     return rows.map((v) => ({ h: clampHours(v.h) }));
   }
 
+
+  /**
+   * Resolve the typed customer to a real lead at SUBMIT time — the moment that matters.
+   *
+   * Three holes this closes, all found in review:
+   *  - A name matched from the server search but never CLICKED was used for the job while the
+   *    store never adopted it — the job modal then opened on "No linked customer".
+   *  - The search is debounced 250ms; typing an exact name and submitting fast raced it, missed
+   *    the match, and minted a duplicate customer. This awaits a direct search instead of hoping
+   *    the debounced one settled.
+   *  - The typed name might sit outside the debounced query's first page entirely.
+   * Falls back to null (create a new customer) only after the server has actually been asked.
+   */
+  async function resolveTypedCustomer(name: string): Promise<Lead | null> {
+    const local = matchLead(name);
+    if (local) {
+      if (!leads.some((x) => x.id === local.id)) adoptLead(local);
+      return local;
+    }
+    if (name.length < 2) return null;
+    try {
+      const page = await trpcVanilla.v1.customers.list.query({ search: name, limit: 8 });
+      const exact = page.items.find((d: { name: string }) => d.name.trim().toLowerCase() === name.toLowerCase());
+      if (!exact) return null;
+      const adopted = toStoreLead(exact);
+      adoptLead(adopted);
+      return adopted;
+    } catch {
+      // Offline or erroring search must not block booking — worst case is the pre-existing
+      // behaviour (a duplicate the office merges later), never a lost job.
+      return null;
+    }
+  }
+
   /** Returns true on success, false if the server create failed (error already set). */
   async function createEstimate(job: string): Promise<boolean> {
     const rows = resolvedVisits();
     const custName = customer.trim();
-    const match = matchLead(custName);
+    const match = await resolveTypedCustomer(custName);
 
     // Resolve the matched lead, or create a new one and AWAIT the server id.
     // addLead returns { lead, persisted }; the estimate job must attach to the
@@ -370,7 +405,7 @@ export function NewJobModalContent() {
 
     const rows = resolvedVisits();
     const custName = customer.trim();
-    const match = matchLead(custName);
+    const match = await resolveTypedCustomer(custName);
 
     // Resolve the lead — either an existing match (already in the DB) or a newly
     // created one.  For a new lead we MUST await the server-assigned id before
@@ -815,8 +850,9 @@ export function NewJobModalContent() {
             the flex line (base widths sum past the container), which is what
             crushed/overlapped the buttons and bled the primary past the modal
             edge. `flex:1, width:auto` gives it the REMAINING space instead;
-            Cancel keeps its intrinsic width (flexShrink 0). Stays INSIDE the
-            form so Enter-to-submit keeps working. */}
+            Cancel keeps its intrinsic width (flexShrink 0). NOTE: this form
+            deliberately has NO type="submit" control — Enter must never
+            create the job (see the comment on the <form>). */}
         <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <button
             type="button"

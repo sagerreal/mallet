@@ -69,10 +69,17 @@ export function CustomerPicker({ value, leads, onChange, onPick, onBlur, id }: C
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, -1));
     } else if (e.key === "Enter") {
-      // While picking, Enter chooses — it must not submit the whole form.
+      // While picking, Enter must not submit the form — but it only CHOOSES when a row is
+      // actually highlighted. Committing the top match on a bare Enter silently swapped a
+      // typed NEW customer for whichever existing name sorted first, and with the whole book
+      // now searchable that was no longer a rare collision. True AddressInput parity.
       e.preventDefault();
-      const chosen = matches[activeIdx >= 0 ? activeIdx : 0];
-      if (chosen) commit(chosen);
+      if (activeIdx >= 0) {
+        const chosen = matches[activeIdx];
+        if (chosen) commit(chosen);
+      } else {
+        closeList();
+      }
     } else if (e.key === "Escape") {
       // Close the LIST only — the Modal shell closes the whole sheet on a
       // document-level Escape, so this must not reach it.
