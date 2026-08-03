@@ -1,5 +1,5 @@
-import { and, eq, exists, gt, gte, isNull, lte, ne, notInArray, sql, type SQL } from "drizzle-orm";
-import { jobs, jobVisits, invoices } from "@mallet/shared/db/schema";
+import { and, eq, exists, gt, gte, isNull, lte, ne, not, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { jobs, jobVisits, jobLines, invoices } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 
 /**
@@ -81,6 +81,58 @@ export interface ViewParams {
   readonly today: string;
 }
 
+/** A live invoice minted from this job — the "it was billed" fact the finished bands split on. */
+const invoiceExists = (tx: TenantTx): SQL =>
+  exists(
+    tx
+      .select({ one: sql`1` })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.orgId, jobs.orgId),
+          eq(invoices.sourceJobId, jobs.id),
+          isNull(invoices.deletedAt),
+        ),
+      ),
+  );
+
+/**
+ * An UNPRICED ESTIMATE — a scoping visit with nothing to bill. The SQL twin of the client's
+ * isUnpricedEstimate (tech-job-modal/helpers.ts); the two must agree or the list shows a band
+ * the modal refuses to act on.
+ *
+ * Priced-ness needs BOTH checks: `total_cents` is a creation-time snapshot from the source
+ * estimate that the on-site sign path never updates — a quote signed in the field writes priced
+ * `job_lines` rows instead. Either one makes the job real money and keeps it billable.
+ */
+const unpricedEstimate = (tx: TenantTx): SQL =>
+  and(
+    eq(jobs.svc, "estimate"),
+    eq(jobs.totalCents, 0),
+    not(
+      exists(
+        tx
+          .select({ one: sql`1` })
+          .from(jobLines)
+          .where(
+            and(
+              eq(jobLines.orgId, jobs.orgId),
+              eq(jobLines.jobId, jobs.id),
+              isNull(jobLines.deletedAt),
+              sql`${jobLines.quantity} * ${jobLines.rateCents} > 0`,
+            ),
+          ),
+      ),
+    ),
+  ) as SQL;
+
+/**
+ * Nothing left to bill on this finished job: it was invoiced, OR it is an unpriced estimate
+ * (the deliverable is a quote, not an invoice). The complement of needsInvoice among complete
+ * jobs — keeping the three finished bands a partition is what keeps the counts honest.
+ */
+const settled = (tx: TenantTx): SQL => or(invoiceExists(tx), unpricedEstimate(tx)) as SQL;
+
 /**
  * The predicate for one view.
  *
@@ -111,40 +163,20 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
     case "upcoming":
       return and(open, visitWhere(tx, gt(jobVisits.scheduledDate, weekEnd)), sql`NOT ${byWeekEnd}`) as SQL;
     case "needsInvoice":
-      // Finished work nobody has billed — money on the floor.
+      // Finished work nobody has billed — money on the floor. Unpriced estimates are NOT money
+      // on the floor: a scoping visit's deliverable is a quote, so it lands in done/archived.
       return and(
         eq(jobs.status, "complete"),
-        sql`NOT ${exists(
-          tx
-            .select({ one: sql`1` })
-            .from(invoices)
-            .where(
-              and(
-                eq(invoices.orgId, jobs.orgId),
-                eq(invoices.sourceJobId, jobs.id),
-                isNull(invoices.deletedAt),
-              ),
-            ),
-        )}`,
+        not(invoiceExists(tx)),
+        not(unpricedEstimate(tx)),
       ) as SQL;
     case "archived":
-      // Auto-archived: finished, billed, and old enough to have fallen off the working list.
+      // Auto-archived: finished, settled, and old enough to have fallen off the working list.
       // The client derived this from the loaded collection; in SQL it is a date predicate.
       return and(
         eq(jobs.status, "complete"),
         sql`${jobs.completedAt} < (${p.today}::date - interval '${sql.raw(String(ARCHIVE_AFTER_DAYS))} days')`,
-        exists(
-          tx
-            .select({ one: sql`1` })
-            .from(invoices)
-            .where(
-              and(
-                eq(invoices.orgId, jobs.orgId),
-                eq(invoices.sourceJobId, jobs.id),
-                isNull(invoices.deletedAt),
-              ),
-            ),
-        ),
+        settled(tx),
       ) as SQL;
     case "done":
     default:
@@ -153,18 +185,7 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
       return and(
         eq(jobs.status, "complete"),
         sql`(${jobs.completedAt} IS NULL OR ${jobs.completedAt} >= (${p.today}::date - interval '${sql.raw(String(ARCHIVE_AFTER_DAYS))} days'))`,
-        exists(
-          tx
-            .select({ one: sql`1` })
-            .from(invoices)
-            .where(
-              and(
-                eq(invoices.orgId, jobs.orgId),
-                eq(invoices.sourceJobId, jobs.id),
-                isNull(invoices.deletedAt),
-              ),
-            ),
-        ),
+        settled(tx),
       ) as SQL;
   }
 };

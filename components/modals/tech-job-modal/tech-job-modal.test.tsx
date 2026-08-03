@@ -442,16 +442,40 @@ it("MODAL.TECH_JOB matches the id the mock returns", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tabs (estimating part 3): the TECH view is Job · Quote; the OFFICE view is
-// tabless and renders exactly as before.
+// Tabs (estimating part 3): Job · Quote for EVERY role — the tabs are
+// surface-based, not role-based. An owner-operator opening a job from My day
+// (this modal's only entry) needs the Quote tab exactly as a tech does; every
+// endpoint the tab writes through is anyRole.
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — tabs", () => {
-  it("office: NO tab bar, and the PricingSec entry stays", () => {
+  it("owner: Job · Quote tabs render — the tabs are surface-based, not role-based", () => {
     mockRole = "owner";
     render(<TechJobModalContent />);
-    expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getByText("Price it on site →")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Job" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Quote" })).toBeTruthy();
+    // The one pricing home on this surface is the Quote tab — the old
+    // office-only PricingSec entry is gone.
+    expect(screen.queryByText("Price it on site →")).toBeNull();
+    expect(screen.queryByText("Pricing")).toBeNull();
+  });
+
+  it("owner: the Quote tab opens with Scope + the embedded builder", () => {
+    mockRole = "owner";
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    expect(screen.getByText("Scope")).toBeTruthy();
+    expect(screen.getByText("The price")).toBeTruthy();
+    expect(screen.getByText("Present to customer →")).toBeTruthy();
+  });
+
+  it("owner: an estimate job's Quote tab offers the dual exit (scope capture + quote now)", () => {
+    mockRole = "owner";
+    mockJobs = [makeJob({ svc: "estimate" })];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    expect(screen.getByText("Quote it now")).toBeTruthy();
+    expect(screen.getByText("Send scope to the office")).toBeTruthy();
   });
 
   it("tech: Job · Quote tabs render; the Job tab carries no pricing section", () => {
@@ -459,7 +483,7 @@ describe("TechJobModalContent — tabs", () => {
     render(<TechJobModalContent />);
     expect(screen.getByRole("tab", { name: "Job" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Quote" })).toBeTruthy();
-    // The tech's pricing home moved to the Quote tab.
+    // The pricing home is the Quote tab.
     expect(screen.queryByText("Price it on site →")).toBeNull();
     expect(screen.queryByText("Pricing")).toBeNull();
   });
@@ -497,6 +521,84 @@ describe("TechJobModalContent — tabs", () => {
     await vi.waitFor(() => {
       expect(mockSetVisitNotes2).toHaveBeenCalledWith("job-1", "v1", "two doors");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Done ESTIMATE (unpriced): the close-out is a scope handoff — no role may be
+// asked for money on a scoping visit. The founder finished a scoping visit and
+// was offered "Set a bill & take payment →" + "Send to the office to bill".
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — done estimate is a scope handoff, never billing", () => {
+  const doneEstimate = (scopeNotes?: string) =>
+    makeJob({
+      svc: "estimate",
+      status: "done",
+      lines: [],
+      addons: [],
+      visits: [
+        { id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done", scopeNotes },
+      ],
+    });
+
+  for (const role of ["owner", "tech"] as const) {
+    it(`${role}: a scoped done estimate shows the handoff card, no billing branch`, () => {
+      mockRole = role;
+      mockJobs = [doneEstimate("Two doors, tight attic access")];
+      render(<TechJobModalContent />);
+      expect(screen.getByText("✓ Scoped — the office builds the quote")).toBeTruthy();
+      // None of the billing surfaces may render on a scoping visit.
+      expect(screen.queryByText(/No price set/)).toBeNull();
+      expect(screen.queryByText(/Set a bill/)).toBeNull();
+      expect(screen.queryByText(/Send to the office to bill/)).toBeNull();
+      expect(screen.queryByText(/Take payment/)).toBeNull();
+      expect(screen.queryByText(/Charge/)).toBeNull();
+      // The foot is a plain Done, not a billing action.
+      expect(screen.getByText("Done")).toBeTruthy();
+    });
+
+    it(`${role}: an unscoped done estimate names the gap and opens the Quote tab`, () => {
+      mockRole = role;
+      mockJobs = [doneEstimate()];
+      render(<TechJobModalContent />);
+      expect(screen.getByText(/No scope captured/)).toBeTruthy();
+      expect(screen.queryByText(/Set a bill/)).toBeNull();
+      fireEvent.click(screen.getByText("Open the Quote tab →"));
+      // The tab switched: the Quote tab body replaces the Job spine.
+      expect(screen.getByText("Scope")).toBeTruthy();
+      expect(screen.queryByText("Your visit")).toBeNull();
+    });
+  }
+
+  it("owner: a done estimate SIGNED on site keeps the billing close-out (it has a real price)", () => {
+    mockRole = "owner";
+    mockJobs = [
+      makeJob({
+        svc: "estimate",
+        status: "done",
+        lines: [{ d: "Repaint hall", q: 1, r: 400 }],
+        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText(/Take payment/)).toBeTruthy();
+    expect(screen.queryByText(/Scoped — the office builds the quote/)).toBeNull();
+  });
+
+  it("tech: a done estimate SIGNED on site still shows no billing (charge/collect are office endpoints)", () => {
+    mockRole = "tech";
+    mockJobs = [
+      makeJob({
+        svc: "estimate",
+        status: "done",
+        lines: [{ d: "Repaint hall", q: 1, r: 400 }],
+        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/Take payment/)).toBeNull();
+    expect(screen.queryByText(/Scoped — the office builds the quote/)).toBeNull();
   });
 });
 

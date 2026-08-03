@@ -8,6 +8,9 @@ import { CommandBar } from "@/components/shell/command-bar";
 import { CallBar } from "@/components/shell/call-bar";
 import { ModalHost } from "@/components/modals/modal-host";
 import { FieldJobsHydrator } from "@/features/field/field-jobs-hydrator";
+import { JobsHydrator } from "@/features/jobs/jobs-hydrator";
+import { LeadsHydrator } from "@/features/customers/leads-hydrator";
+import { InvoicesHydrator } from "@/features/money/invoices-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 /**
@@ -30,6 +33,19 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           ownerOrOffice-only, so without this a tech's store (and the
           tech-job-modal it feeds) would stay empty. */}
       <FieldJobsHydrator />
+      {/* Owner/office on the field surface: FieldJobsHydrator is tech-only (it must not
+          replace the office's full lists with a personal subset), so on a COLD load of
+          /my-day their store was empty and tapping a job opened a blank modal. Mount the
+          office hydrators the shared field components read — jobs (the modal's data
+          source), leads (customer name + Call), invoices (the done close-out branches).
+          Role is known server-side; techs would only get FORBIDDEN from these queries. */}
+      {!isTech && (
+        <>
+          <JobsHydrator />
+          <LeadsHydrator />
+          <InvoicesHydrator />
+        </>
+      )}
       <div className="layout">
         <Sidebar initialMe={initialMe} />
         <div className="appmain">
