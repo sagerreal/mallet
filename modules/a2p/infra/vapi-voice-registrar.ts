@@ -7,7 +7,7 @@ import type { VoiceRegistrar } from "../domain/voice-registrar";
  * Hands a Twilio number to Vapi so inbound calls reach the AI front desk.
  *
  * ONE WEBHOOK SERVES EVERY SHOP. The number is registered with a `server.url` and NO assistantId,
- * so Vapi asks Elas for an assistant on each call (`assistant-request`) and
+ * so Vapi asks Mallet for an assistant on each call (`assistant-request`) and
  * app/api/frontdesk/vapi resolves the org from the To-number. Baking a per-org assistant into Vapi
  * instead would mean a second copy of every shop's playbook living outside the database, drifting
  * the moment somebody edits their booking rules.

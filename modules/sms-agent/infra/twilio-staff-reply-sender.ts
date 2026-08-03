@@ -25,8 +25,8 @@ export interface StaffReplySenderConfig {
  * talking to its own user, and it rides Mallet's registration so no shop has to register anything.
  *
  * NO A2P gate here, and that is correct rather than an oversight. The per-org gate asks "may this
- * SHOP text its customers" — a question about the shop's own campaign. This traffic is Elas's,
- * on Mallet's number, under Elas's campaign, to Mallet's own user. Gating it on a shop's
+ * SHOP text its customers" — a question about the shop's own campaign. This traffic is Mallet's,
+ * on Mallet's number, under Mallet's campaign, to Mallet's own user. Gating it on a shop's
  * registration would mean a brand-new shop's crew could not use the assistant until that shop
  * finished a registration that has nothing to do with this message.
  */

@@ -4,7 +4,7 @@
  * the sheet grammar: a sticky .sheet-head (customer name · number on file) and a
  * sticky .sheet-foot whose one .sheet-pri is the call itself.
  *
- * Two paths: "Call from Elas" (hands off to the global call bar) and
+ * Two paths: "Call from Mallet" (hands off to the global call bar) and
  * "Log a call" (an inline form that records a past call to the timeline).
  * The pathpick2 card stays tappable alongside the foot primary on purpose — the
  * card is where the transport explanation lives (rings YOUR phone / through this
@@ -142,7 +142,7 @@ export function CallModalContent() {
       {phoneOnFile && (
         <div className="pathpick2">
           <div className="path" onClick={callFromMallet} role="button">
-            <b>Call from Elas</b>
+            <b>Call from Mallet</b>
             <p>
               {carriedHere ? (
                 <>
@@ -151,7 +151,7 @@ export function CallModalContent() {
                 </>
               ) : (
                 <>
-                  Elas rings <b>your phone</b> first, then connects them. They see
+                  Mallet rings <b>your phone</b> first, then connects them. They see
                   your <b>business number</b>, not your cell.
                 </>
               )}
@@ -170,7 +170,7 @@ export function CallModalContent() {
       {needsCallbackNumber && (
         <div style={{ marginTop: "var(--space-3)" }}>
           <div style={{ fontSize: "var(--type-md)", fontWeight: 700, color: "var(--ink)" }}>
-            Elas needs a number to ring you on
+            Mallet needs a number to ring you on
           </div>
           <p className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
             Add your mobile under Your account, then press Call again.

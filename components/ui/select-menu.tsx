@@ -9,7 +9,7 @@ import type { CSSProperties, KeyboardEvent } from "react";
  * A native select renders its list with the OPERATING SYSTEM, not with our CSS — blue macOS
  * highlight, system font, system metrics, ignoring every token in the design system. It is the one
  * control in the app that cannot be styled at all, so on any screen with a select next to a real
- * Elas control the two do not look like the same product.
+ * Mallet control the two do not look like the same product.
  *
  * ANCHORED, NOT FLOATING. The list is absolutely positioned inside a relative wrapper, flush under
  * the trigger — the same shape address-input.tsx already uses for its suggestions, and what the

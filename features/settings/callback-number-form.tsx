@@ -94,7 +94,7 @@ export function CallbackNumberForm() {
   return (
     <>
       <div className="muted" style={{ fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>
-        The phone Elas rings first when you press Call. Your customer sees the business line,
+        The phone Mallet rings first when you press Call. Your customer sees the business line,
         never this number.
       </div>
       <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>

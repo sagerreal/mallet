@@ -77,7 +77,7 @@ export class DrizzleSyncLabelReader implements SyncLabelReader {
    * Payments by the invoice they settle plus their amount — "INV-1001 · $1,100.00".
    *
    * A payment has no name of its own, and left unlabelled it would render as "(no longer in
-   * Elas)": the fallback for a DELETED record, which would read as data loss on a row that is
+   * Mallet)": the fallback for a DELETED record, which would read as data loss on a row that is
    * perfectly fine.
    */
   private async paymentLabels(malletIds: readonly string[]): Promise<ReadonlyMap<string, string>> {

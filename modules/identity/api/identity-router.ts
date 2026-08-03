@@ -16,7 +16,7 @@ import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
 import { DrizzleSettingsRepository, defaultBooking } from "@mallet/settings";
 
 const roleEnum = z.enum(ROLES as unknown as ["owner", "office", "tech"]);
-// `callbackNumber` is the mobile Elas rings first on an outbound click-to-call. A call RECORD
+// `callbackNumber` is the mobile Mallet rings first on an outbound click-to-call. A call RECORD
 // deliberately keeps it off the wire (it can name a colleague — staff PII); `me` is scoped to
 // ctx.principal.userId, so it only ever returns the caller their own number.
 const meDTO = z.object({ role: roleEnum, orgId: z.string().uuid(), orgName: z.string(), twilioNumber: z.string().nullable(), email: z.string(), name: z.string().nullable(), userId: z.string().uuid(), callbackNumber: z.string().nullable() });
@@ -159,7 +159,7 @@ export const createIdentityRouter = () =>
         if (!me) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "provisioned user not found" });
 
         // Buy the shop its business line. AWAITED but never allowed to fail the signup: a Twilio
-        // outage must not read to a new customer as "Elas is broken, I could not even sign up".
+        // outage must not read to a new customer as "Mallet is broken, I could not even sign up".
         // The Front Desk header already renders "Getting your number — we'll email you when it's
         // live" while orgs.twilio_number is null, so no-number-yet is a designed state.
         //

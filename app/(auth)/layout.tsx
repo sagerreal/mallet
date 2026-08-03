@@ -5,7 +5,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
     <div className="auth-wrap">
       {/* Brand panel — hidden on mobile */}
       <div className="auth-brand">
-        <div className="auth-brand-logo">Elas</div>
+        <div className="auth-brand-logo">Mallet</div>
         <div className="auth-brand-body">
           <p className="auth-brand-tag">
             The field service OS for trades businesses.
@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       {/* Form panel */}
       <div className="auth-panel">
         <div className="auth-box">
-          <div className="auth-mob-logo">Elas</div>
+          <div className="auth-mob-logo">Mallet</div>
           {children}
         </div>
       </div>

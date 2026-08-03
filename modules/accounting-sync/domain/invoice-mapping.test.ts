@@ -25,7 +25,7 @@ const invoice = (over: Partial<SyncableInvoice> = {}): SyncableInvoice => ({
 describe("toQboInvoice — the tax arithmetic", () => {
   /**
    * THE bug this mapping exists to avoid. QuickBooks computes an invoice total as
-   * `Σ(lines) + TxnTaxDetail.TotalTax`, while Elas's `total` is TAX-INCLUSIVE. Sending the full
+   * `Σ(lines) + TxnTaxDetail.TotalTax`, while Mallet's `total` is TAX-INCLUSIVE. Sending the full
    * total as the line amount AND the tax would charge the tax twice — $1,188.55 on an invoice the
    * customer agreed at $1,100.
    */
@@ -101,7 +101,7 @@ describe("toQboInvoice — dates and labels", () => {
     expect(r.ok && r.value.dueDate).toBeNull();
   });
 
-  it("carries Elas's invoice number so the two can be reconciled by eye", () => {
+  it("carries Mallet's invoice number so the two can be reconciled by eye", () => {
     const r = toQboInvoice(invoice(), CUSTOMER, ITEM);
     expect(r.ok && r.value.docNumber).toBe("INV-1001");
   });

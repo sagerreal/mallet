@@ -320,7 +320,7 @@ export function FrontDeskPane() {
               <ol style={{ margin: "0", paddingLeft: "var(--space-5)", fontSize: "var(--type-sm)", color: "var(--ink-2)" }}>
                 <li>From the phone that has your business number, dial your carrier&rsquo;s forwarding code
                   {" "}(most: <span className="mono">*72</span>, then{" "}
-                  <span className="mono">{bizNumber ? fmtPhone(bizNumber) : "your Elas number"}</span>).</li>
+                  <span className="mono">{bizNumber ? fmtPhone(bizNumber) : "your Mallet number"}</span>).</li>
                 <li>Or forward only unanswered calls (<span className="mono">*71</span> on most carriers) — you
                   pick up when you can, the Front Desk catches the rest.</li>
                 <li>To stop forwarding, dial <span className="mono">*73</span>.</li>
