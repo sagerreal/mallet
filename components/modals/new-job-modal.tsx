@@ -275,10 +275,17 @@ export function NewJobModalContent() {
     }
 
     // Merge fill-ins onto an existing lead without clobbering (prototype behavior).
+    //
+    // Notes are deliberately NOT in this patch. This field is the JOB's notes (it rides
+    // addJob below, and the row says so), and sending it here did the opposite of what the
+    // line above promises: buildLeadUpdatePayload skips `notes`, so the write never reached
+    // the database, while updateLead's optimistic set overwrote the customer's real notes in
+    // the store for the rest of the session — the gate code typed on the customer record,
+    // replaced by an estimate description. The customer sheet's Notes composer is the way to
+    // write a customer note; it persists through addLeadNote.
     const patch: Partial<Lead> = { job };
     if (phone.trim() && (!lead.phone || lead.phone === "—")) patch.phone = phone.trim();
     if (addr.trim() && !lead.address) patch.address = addr.trim();
-    if (notes.trim()) patch.notes = notes.trim();
     updateLead(lead.id, patch);
 
     // The estimate visit is a REAL job (svc "estimate") with unplaced visits. It used
@@ -745,13 +752,16 @@ export function NewJobModalContent() {
             </DisclosureRow>
           )}
 
+          {/* "Job notes", not "Notes" — this writes THIS job's notes and nothing else. The
+              customer's own notes now show on the job sheet as their own row, so an
+              unqualified "Notes" here would read as though it were writing those. */}
           <DisclosureRow
-            label="Notes"
+            label="Job notes"
             value={notesSummary}
             open={openRow === "notes"}
             onToggle={() => toggleRow("notes")}
           >
-            <Field label="Notes" style={{ marginBottom: "0" }}>
+            <Field label="Job notes" style={{ marginBottom: "0" }}>
               <input
                 type="text"
                 placeholder="gate code, what to bring…"

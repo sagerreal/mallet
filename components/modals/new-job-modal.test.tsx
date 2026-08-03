@@ -96,6 +96,85 @@ describe("NewJobModalContent — createEstimate", () => {
   });
 });
 
+/**
+ * The Job-notes field must not touch the CUSTOMER's notes.
+ *
+ * createEstimate used to fold `notes` into the lead patch. That write was doubly wrong:
+ * buildLeadUpdatePayload deliberately skips `notes`, so it never reached the database, while
+ * updateLead's optimistic set replaced the customer's real notes in the store for the rest of
+ * the session — the gate code on Cole's record, overwritten by an estimate description. With
+ * customer notes now rendered on the job sheet, that overwrite is visible where it does damage.
+ */
+describe("NewJobModalContent — the job's notes stay on the job", () => {
+  const cole = {
+    id: "lead-cole",
+    name: "Cole Hayes",
+    phone: "9255550100",
+    address: "12 Pine St",
+    notes: "Gate code 4482",
+    archived: false,
+  };
+
+  beforeEach(() => {
+    addLead.mockReset();
+    updateLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
+    closeMock = vi.fn();
+    storeLeads = [cole];
+  });
+
+  const fillEstimateWithNotes = () => {
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "water heater" },
+    });
+    fireEvent.click(screen.getByText("Estimate"));
+    fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Cole Hayes" } });
+    fireEvent.blur(screen.getByPlaceholderText("search or add"));
+    // The notes field lives behind its own row — now named for the record it writes.
+    fireEvent.click(screen.getByText("Job notes"));
+    fireEvent.change(screen.getByPlaceholderText("gate code, what to bring…"), {
+      target: { value: "Attic access is through the closet" },
+    });
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+  };
+
+  it("never patches lead.notes when creating an estimate", async () => {
+    addJob.mockReturnValue({
+      job: { id: "job-est", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-est", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fillEstimateWithNotes();
+
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    // The existing customer is matched, so no new one is minted and the patch is a merge.
+    expect(addLead).not.toHaveBeenCalled();
+    expect(updateLead).toHaveBeenCalledOnce();
+    const [leadId, patch] = updateLead.mock.calls[0] as [string, Record<string, unknown>];
+    expect(leadId).toBe("lead-cole");
+    expect(patch).not.toHaveProperty("notes");
+    // The rest of the merge is untouched — this is a targeted removal, not a gutting.
+    expect(patch.job).toBe("water heater");
+  });
+
+  it("still carries the typed text onto the JOB, which is what the field is for", async () => {
+    addJob.mockReturnValue({
+      job: { id: "job-est", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-est", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fillEstimateWithNotes();
+
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    expect(addJob).toHaveBeenCalledWith(
+      expect.objectContaining({ notes: "Attic access is through the closet" }),
+    );
+  });
+});
+
 describe("NewJobModalContent — createJob (Job type)", () => {
   beforeEach(() => {
     addLead.mockReset();
