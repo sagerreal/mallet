@@ -28,13 +28,17 @@
 
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useCloseModal, useOpenModal, usePushModal, useLeads, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead } from "@/lib/store/types";
 import { Field, FieldGroup } from "@/components/ui/input";
 import { CustomerPicker } from "./new-job-customer-picker";
+import { AddressInput } from "@/components/ui/address-input";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
+import { toStoreLead } from "@/features/customers/leads-hydrator";
+import { api } from "@/lib/trpc/client";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
 
@@ -92,6 +96,7 @@ export function NewJobModalContent() {
   const addLead = useAppStore((s) => s.addLead);
   const updateLead = useAppStore((s) => s.updateLead);
   const updateJob = useAppStore((s) => s.updateJob);
+  const adoptLead = useAppStore((s) => s.adoptLead);
   const checklists = useAppStore((s) => s.checklists);
 
   // Saved before-you-leave checklists feed the picker (hydrated from the DB).
@@ -99,6 +104,7 @@ export function NewJobModalContent() {
 
   // Only live (non-archived) leads feed the customer picker (prototype liveLeads()).
   const liveLeads = leads.filter((l) => !l.archived);
+
 
   // Core fields
   const [title, setTitle] = useState("");
@@ -120,6 +126,24 @@ export function NewJobModalContent() {
   const [chkTpl, setChkTpl] = useState<string | null>(null);
   const [chkItems, setChkItems] = useState<string[]>([]);
   const [chkDraft, setChkDraft] = useState("");
+
+
+  // THE PICKER SEARCHES THE BOOK, NOT THE PAGE. The store holds one hydrated page (~50 rows), so
+  // typing any customer outside it found nothing — "no customers come up". The server search runs
+  // the same v1.customers.list the Customers screen uses; results are ADOPTED into the store on
+  // pick so the submit path's matchLead (which resolves by name against the store) finds them.
+  const custQuery = useDebouncedValue(customer.trim(), 250);
+  const custSearch = api.v1.customers.list.useQuery(
+    { search: custQuery, limit: 8 },
+    { enabled: custQuery.length >= 2, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  const pickerLeads = useMemo(() => {
+    const seen = new Set(liveLeads.map((l) => l.id));
+    const fromServer = (custSearch.data?.items ?? [])
+      .filter((dto) => !seen.has(dto.id))
+      .map(toStoreLead);
+    return [...liveLeads, ...fromServer];
+  }, [liveLeads, custSearch.data]);
 
   const [error, setError] = useState<string | null>(null);
   // Inline, field-level error — set before any network round trip so a bad
@@ -171,11 +195,12 @@ export function NewJobModalContent() {
 
   // ---- customer picker (mirror njCustFill / njMatchLead) --------------------
 
-  /** Resolve the typed name to a live lead by exact (case-insensitive) name. */
+  /** Resolve the typed name to a live lead by exact (case-insensitive) name — against the
+   *  merged store+search list, so a customer outside the hydrated page still resolves. */
   function matchLead(name: string): Lead | undefined {
     const n = name.trim().toLowerCase();
     if (!n) return undefined;
-    return liveLeads.find((l) => l.name.toLowerCase() === n);
+    return pickerLeads.find((l) => l.name.toLowerCase() === n);
   }
 
   /** On picking an existing customer, prefill phone/address (don't clobber typed). */
@@ -489,12 +514,8 @@ export function NewJobModalContent() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    await submitCreate(false);
-  }
-
-  async function handleBuildPrice() {
-    // Create the job, then hand off to the price builder (prototype saveNewJob(true)).
-    await submitCreate(true);
+    // Flat rate lands in the price builder after creating — the price is the point of the type.
+    await submitCreate(njType !== "estimate");
   }
 
   // ---- collapsed row summaries (the value IS the state) ---------------------
@@ -520,7 +541,16 @@ export function NewJobModalContent() {
         <h2>New job</h2>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      <form
+        onSubmit={handleSubmit}
+        // ENTER NEVER CREATES THE JOB. This form is a long multi-field sheet, and the browser's
+        // implicit submission meant Enter in any text field — the phone, the address, a checklist
+        // item — created and saved the job mid-thought. Creation is the button's job alone.
+        // Textareas keep Enter (newlines), and the submit button keeps its native activation.
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault();
+        }}
+      >
         {/* What's the job? */}
         <Field label="What's the job?">
           <input
@@ -574,9 +604,14 @@ export function NewJobModalContent() {
           <Field label="Customer" style={{ marginBottom: "0" }}>
             <CustomerPicker
               value={customer}
-              leads={liveLeads}
+              leads={pickerLeads}
               onChange={setCustomer}
-              onPick={fillFromLead}
+              onPick={(l) => {
+                // A server-found customer is not in the store yet; adopt so matchLead resolves
+                // them at submit instead of silently creating a duplicate.
+                if (!leads.some((x) => x.id === l.id)) adoptLead(l);
+                fillFromLead(l);
+              }}
               onBlur={() => fillFromCustomer(customer)}
             />
           </Field>
@@ -600,14 +635,10 @@ export function NewJobModalContent() {
           </Field>
         </div>
 
-        {/* Service address */}
+        {/* Service address — the shared autocomplete, same as the customer sheet. A plain input
+            here was the one address field in the app without suggestions. */}
         <Field label="Service address">
-          <input
-            type="text"
-            placeholder="add the address"
-            value={addr}
-            onChange={(e) => setAddr(e.target.value)}
-          />
+          <AddressInput value={addr} onChange={setAddr} placeholder="add the address" />
         </Field>
 
         {/* The staged details — a definition list of disclosure rows (front-desk
@@ -776,35 +807,6 @@ export function NewJobModalContent() {
           </DisclosureRow>
         </div>
 
-        {/* Build-the-price — a terminal action too (creates the job, then opens
-            the builder), so it lives here as its own full-width quiet row, NOT
-            crammed into the sticky foot beside Cancel/Create job (that crush
-            wrapped this button to 3 lines at 393px). Mirrors the same row in
-            visit-modal.tsx / new-customer-modal.tsx's Book-a-visit panel. Jobs
-            only: estimates are quoted by the office after the visit. */}
-        {njType !== "estimate" && (
-          <FieldGroup
-            label="Price"
-            hint={
-              <span
-                className="muted"
-                style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
-              >
-                (optional)
-              </span>
-            }
-          >
-            <button
-              type="button"
-              className="btn"
-              style={{ width: "100%", justifyContent: "center" }}
-              onClick={handleBuildPrice}
-              disabled={saving}
-            >
-              Build the price
-            </button>
-          </FieldGroup>
-        )}
 
         {error && (
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
@@ -829,8 +831,13 @@ export function NewJobModalContent() {
           >
             Cancel
           </button>
+          {/* FLAT RATE MEANS THE PRICE IS KNOWN — so for flat rate, creating IS pricing: the
+              primary creates the job and lands in the price builder in one motion. This replaced
+              a cramped in-body "Build the price" row and a "Price (optional)" label that
+              contradicted the type's own definition. Closing the builder still leaves the job —
+              a nudge, not a wall. Estimates create plain: their price comes later by definition. */}
           <button type="submit" className="sheet-pri" style={{ flex: 1, width: "auto" }} disabled={saving}>
-            {saving ? "Creating…" : "Create job"}
+            {saving ? "Creating…" : njType === "estimate" ? "Create job" : "Create & price it"}
           </button>
         </div>
       </form>
