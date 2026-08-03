@@ -11,6 +11,8 @@ const addVisit = vi.fn();
 const updateJob = vi.fn();
 // Saved checklists feeding the picker — set per test, reset in beforeEach.
 let storeChecklists: unknown[] = [];
+// Live leads feeding the customer picker — set per test, reset in beforeEach.
+let storeLeads: unknown[] = [];
 
 // close mock at module scope — reassigned in beforeEach so each test gets a fresh spy.
 // Declared before vi.mock so the factory closure captures the binding (not the value).
@@ -20,7 +22,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useCloseModal: () => closeMock,
   useOpenModal: () => vi.fn(),
   usePushModal: () => vi.fn(),
-  useLeads: () => [],
+  useLeads: () => storeLeads,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ addLead, updateLead, addJob, addVisit, updateJob, checklists: storeChecklists }),
 }));
@@ -528,5 +530,161 @@ describe("NewJobModalContent — one press, one job", () => {
     fireEvent.submit(screen.getByText("Creating…").closest("form")!);
 
     expect(addLead).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * The customer picker — an IN-FLOW suggestion list under the input, replacing
+ * the native <input list>/<datalist> whose OS popup overlaid the whole modal
+ * (and could not be styled). Search-or-ADD: picking fills the field with the
+ * lead's exact name (matchLead resolves by trimmed case-insensitive name), and
+ * free-typed new names still create a new customer.
+ */
+describe("NewJobModalContent — customer picker", () => {
+  const ann = {
+    id: "lead-ann",
+    name: "Ann Alpha",
+    phone: "9255550100",
+    address: "1 Alpha St",
+    archived: false,
+  };
+  const bob = { id: "lead-bob", name: "Bob Beta", phone: "—", archived: false };
+  const gone = { id: "lead-gone", name: "Anna Archived", phone: "9255550199", archived: true };
+
+  beforeEach(() => {
+    addLead.mockReset();
+    updateLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
+    updateJob.mockReset();
+    closeMock = vi.fn();
+    storeLeads = [ann, bob, gone];
+  });
+
+  const custInput = () => screen.getByPlaceholderText("search or add");
+
+  it("typing filters live leads into in-flow option rows; archived leads never appear", () => {
+    render(<NewJobModalContent />);
+    // No list until the user types.
+    expect(screen.queryByRole("listbox")).toBeNull();
+
+    fireEvent.change(custInput(), { target: { value: "an" } });
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual([expect.stringContaining("Ann Alpha")]);
+    // The archived "Anna Archived" matched the query but must not be offered.
+    expect(screen.queryByText("Anna Archived")).toBeNull();
+  });
+
+  it("caps the list at 8 rows", () => {
+    storeLeads = Array.from({ length: 12 }, (_, i) => ({
+      id: `lead-${i}`,
+      name: `Match Customer ${i}`,
+      phone: "—",
+      archived: false,
+    }));
+    render(<NewJobModalContent />);
+    fireEvent.change(custInput(), { target: { value: "match" } });
+    expect(screen.getAllByRole("option")).toHaveLength(8);
+  });
+
+  it("picking a row fills the input and prefills empty phone/address (no clobber of typed)", () => {
+    render(<NewJobModalContent />);
+    fireEvent.change(custInput(), { target: { value: "ann" } });
+    // mousedown, not click — the pick must land before the input's blur.
+    fireEvent.mouseDown(screen.getByRole("option"));
+
+    expect((custInput() as HTMLInputElement).value).toBe("Ann Alpha");
+    expect((screen.getByPlaceholderText("(925) 555-0123") as HTMLInputElement).value).toBe("9255550100");
+    expect((screen.getByPlaceholderText("add the address") as HTMLInputElement).value).toBe("1 Alpha St");
+    // The pick closes the list.
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("the committed value round-trips through matchLead — submit uses the EXISTING lead", async () => {
+    addJob.mockReturnValue({
+      job: { id: "job-ann", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-ann", origin: "db", visits: [] }),
+    });
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "fix disposal" },
+    });
+    fireEvent.change(custInput(), { target: { value: "ann" } });
+    fireEvent.mouseDown(screen.getByRole("option"));
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    // Matched by name → no new customer minted, the job rides the existing lead.
+    expect(addLead).not.toHaveBeenCalled();
+    expect(addJob).toHaveBeenCalledWith(expect.objectContaining({ leadId: "lead-ann" }));
+  });
+
+  it("free-typed new names pass through — search or ADD", async () => {
+    addLead.mockReturnValue({
+      lead: { id: "opt-new", name: "Brand New Person" },
+      persisted: Promise.resolve({ id: "srv-new", name: "Brand New Person" }),
+    });
+    addJob.mockReturnValue({
+      job: { id: "job-new", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-new", origin: "db", visits: [] }),
+    });
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "new build rough-in" },
+    });
+    fireEvent.change(custInput(), { target: { value: "Brand New Person" } });
+    // No match → no list, and the typed name is what gets created.
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.submit(screen.getByText("Create job").closest("form")!);
+
+    await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
+    expect(addLead).toHaveBeenCalledWith(expect.objectContaining({ name: "Brand New Person" }));
+  });
+
+  it("Enter with the list open commits the top match instead of submitting the form", () => {
+    render(<NewJobModalContent />);
+    fireEvent.change(custInput(), { target: { value: "bo" } });
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.keyDown(custInput(), { key: "Enter" });
+    expect((custInput() as HTMLInputElement).value).toBe("Bob Beta");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    // Committing a pick is not a form submit.
+    expect(addLead).not.toHaveBeenCalled();
+    expect(addJob).not.toHaveBeenCalled();
+  });
+
+  it("ArrowDown moves the highlight and Enter commits the highlighted row", () => {
+    render(<NewJobModalContent />);
+    // "a" matches both live leads: "Ann Alpha" and "Bob Beta" (the a in Beta).
+    fireEvent.change(custInput(), { target: { value: "a" } });
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+
+    fireEvent.keyDown(custInput(), { key: "ArrowDown" });
+    fireEvent.keyDown(custInput(), { key: "ArrowDown" });
+    expect(screen.getAllByRole("option")[1]!.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.keyDown(custInput(), { key: "Enter" });
+    expect((custInput() as HTMLInputElement).value).toBe("Bob Beta");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("Escape closes the list only — the modal stays open", () => {
+    render(<NewJobModalContent />);
+    fireEvent.change(custInput(), { target: { value: "ann" } });
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.keyDown(custInput(), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(closeMock).not.toHaveBeenCalled();
+  });
+
+  it("blur closes the list and still prefills from a typed-exact name", () => {
+    render(<NewJobModalContent />);
+    fireEvent.change(custInput(), { target: { value: "Ann Alpha" } });
+    fireEvent.blur(custInput());
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect((screen.getByPlaceholderText("(925) 555-0123") as HTMLInputElement).value).toBe("9255550100");
   });
 });
