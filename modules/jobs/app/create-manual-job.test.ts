@@ -206,4 +206,44 @@ describe("CreateManualJobUseCase", () => {
     expect(repo.saved).toBeUndefined();
     expect(repo.replaced).toBeUndefined();
   });
+
+  // The estimate invariant, enforced in the DOMAIN — not by caller discipline: a kind='estimate'
+  // create must NEVER carry priced lines, no matter which caller (router, voice tool, a future
+  // server-side flow) combines the two.
+
+  it("rejects kind='estimate' + priced lines (estimates never carry money at create)", async () => {
+    const r = await useCase.exec({
+      ...BASE,
+      kind: "estimate",
+      lines: [{ description: "x", quantity: 1, rateCents: 50_000 }],
+    });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+    expect(repo.replaced).toBeUndefined();
+  });
+
+  it("rejects the stale-bundle svc='estimate' shape + priced lines (guard runs on the NORMALIZED kind)", async () => {
+    // A pre-0133 bundle encodes "estimate visit" as svc='estimate' with no kind. normalizeSvcKind
+    // turns that into kind='estimate' — the money guard must fire on that normalized kind too.
+    const r = await useCase.exec({
+      ...BASE,
+      svc: "estimate",
+      lines: [{ description: "x", quantity: 1, rateCents: 50_000 }],
+    });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+    expect(repo.replaced).toBeUndefined();
+  });
+
+  it("kind='estimate' with NO lines still creates normally (the guard only blocks money)", async () => {
+    const r = await useCase.exec({ ...BASE, kind: "estimate", lines: [] });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value.props.kind).toBe("estimate");
+      expect(r.value.props.total).toBe(0);
+    }
+    expect(repo.replaced).toBeUndefined();
+  });
 });

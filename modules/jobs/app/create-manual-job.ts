@@ -82,13 +82,23 @@ const normalizeSvcKind = (
     ? { svc: null, kind: kind ?? "estimate" }
     : { svc: svc ?? null, kind };
 
-// Boundary validation for the priced lines, run BEFORE any write. JobLine.create re-checks the
-// sign bounds; the integer-cents checks live here because money() treats a fractional cent as a
-// programmer error (throw), and a caller-supplied fraction must surface as a validation Result
-// instead. Returns null when the lines are clean.
+// Boundary validation for the priced lines, run BEFORE any write, on the NORMALIZED kind. The
+// estimate invariant lives here in the DOMAIN — not in caller discipline: an estimate visit
+// NEVER carries money at create (the router's zod has no cross-field constraint and book_visit
+// only gates by lane, so any future caller could combine the two — this is where that dies).
+// JobLine.create re-checks the sign bounds; the integer-cents checks live here because money()
+// treats a fractional cent as a programmer error (throw), and a caller-supplied fraction must
+// surface as a validation Result instead. Returns null when the command is clean.
 const validateLines = (
+  kind: JobKind,
   lines: readonly CreateManualJobLineInput[],
 ): ValidationError | null => {
+  if (kind === "estimate" && lines.length > 0) {
+    return validation(
+      "estimate visits cannot carry priced lines at create — price at the door or quote from the office",
+      "lines",
+    );
+  }
   if (lines.length > MAX_LINES) {
     return validation(`a job accepts at most ${MAX_LINES} lines`, "lines");
   }
@@ -121,12 +131,14 @@ export class CreateManualJobUseCase {
 
   async exec(cmd: CreateManualJobCommand): Promise<Result<Job, AppError>> {
     const lines = cmd.lines ?? [];
-    const linesError = validateLines(lines);
+    // Normalized BEFORE the line validation: the estimate-money guard must hold for the
+    // stale-bundle svc='estimate' shape too, which only reads as an estimate after normalization.
+    const norm = normalizeSvcKind(cmd.svc, cmd.kind);
+    const linesError = validateLines(norm.kind ?? "work", lines);
     if (linesError) return err(linesError);
 
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
-    const norm = normalizeSvcKind(cmd.svc, cmd.kind);
     const job = Job.create({
       id: asJobId(cmd.id ?? this.ids.newId()),
       orgId: cmd.orgId,

@@ -222,6 +222,76 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  // ── Three-flows money task 3: priced lines on jobs.create ─────────────────────
+
+  it("creates a manual job WITH priced lines: lines and total round-trip through the live DB", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Flat Price Cust" });
+
+    const created = await caller.v1.jobs.create({
+      leadId: lead.id,
+      title: "Drain cleaning",
+      svc: "service",
+      lines: [{ description: "Drain cleaning", quantity: 1, rateCents: 9_900 }],
+    });
+    expect(created.total?.cents).toBe(9_900);
+
+    // A fresh read (separate request/tx) proves the line rows hit job_lines, not just the DTO:
+    // list loads execution data batched, so the summary carries the persisted lines.
+    const listed = await caller.v1.jobs.list({ limit: 500 });
+    const row = listed.items.find((j) => j.id === created.id);
+    expect(row).toBeDefined();
+    expect(row!.total?.cents).toBe(9_900);
+    expect(row!.lines).toHaveLength(1);
+    expect(row!.lines[0]?.description).toBe("Drain cleaning");
+    expect(row!.lines[0]?.quantity).toBe(1);
+    expect(row!.lines[0]?.rate?.cents).toBe(9_900);
+  });
+
+  it("rejects fractional-cent lines at the zod boundary (BAD_REQUEST)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Bad Cents Cust" });
+    await expect(
+      caller.v1.jobs.create({
+        leadId: lead.id,
+        title: "Bad cents",
+        lines: [{ description: "x", quantity: 1, rateCents: 12.5 }],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects an empty line description and >200 lines at the zod boundary (BAD_REQUEST)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Bad Lines Cust" });
+    await expect(
+      caller.v1.jobs.create({
+        leadId: lead.id,
+        lines: [{ description: "", quantity: 1, rateCents: 100 }],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const tooMany = Array.from({ length: 201 }, (_, i) => ({
+      description: `Line ${i}`, quantity: 1, rateCents: 100,
+    }));
+    await expect(
+      caller.v1.jobs.create({ leadId: lead.id, lines: tooMany }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects kind='estimate' + priced lines (the domain invariant surfaces as BAD_REQUEST)", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Priced Estimate Cust" });
+    await expect(
+      caller.v1.jobs.create({
+        leadId: lead.id,
+        kind: "estimate",
+        lines: [{ description: "x", quantity: 1, rateCents: 50_000 }],
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // No half-written job: the guard fires before any insert.
+    const listed = await caller.v1.jobs.list({ limit: 500 });
+    expect(listed.items.some((j) => j.leadId === lead.id)).toBe(false);
+  });
+
   it("archive soft-deletes a job; it disappears from list", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const lead = await caller.v1.customers.create({ name: "Archive Job Cust" });
