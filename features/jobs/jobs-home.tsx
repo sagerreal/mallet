@@ -32,7 +32,7 @@ import { DEFAULT_JOB_COLS, JOB_COL_ORDER, type JobColKey, type JobsArchiveSet } 
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 import { useJobsQuery, useJobsQueryState } from "./use-jobs-query";
-import { serverRowsToBands, SORT_COL_TO_SERVER } from "./server-rows";
+import { serverPageToRows, SORT_COL_TO_SERVER } from "./server-rows";
 
 export interface JobsHomeProps {
   onOpenJob: (id: string) => void;
@@ -72,18 +72,30 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   // archived work and a live band at once is not a question the screen can answer.
   const view = archiveSet === "archived" ? "archived" : q.view;
 
+  // "Active" means the OPEN book — everything not complete and not canceled. The toggle used to
+  // apply no filter whatsoever (view stayed null, the repository filtered only deleted_at), so
+  // both tabs returned the same rows and the same total. The label promised a filter that did not
+  // exist.
+  //
+  // NOT stacked on a chosen view. Each view is already a precise slice, and two of them (Done,
+  // Done not billed) are finished work by definition — ANDing "not finished" on top would return
+  // nothing while the filter's own count pill promised rows, which is a dead control. When a view
+  // is chosen the view IS the filter; Archived is a view too, so it is covered by the same rule.
+  const activeOnly = archiveSet === "active" && !view;
+
   // The table's headers speak in display columns; the server in named sorts. A column with no
   // server sort (Customer — it needs a joined ORDER BY the cursor would have to carry too) maps
   // to null and is left inert rather than pointed at a different column.
   const serverSort = SORT_COL_TO_SERVER[sort.col];
   const list = useJobsQuery({
     view,
+    activeOnly,
     search: q.search,
     sort: serverSort,
     sortDir: serverSort ? sort.dir : null,
   });
 
-  const { bands } = useMemo(() => serverRowsToBands(list.rows, view), [list.rows, view]);
+  const { rows } = useMemo(() => serverPageToRows(list.rows, view), [list.rows, view]);
 
   // Today's money, summed by the database in the same query as the view counts — not by adding up
   // whichever rows the browser happens to be holding.
@@ -197,7 +209,7 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
           ) : (
             <>
               <JobsListView
-                bands={bands}
+                items={rows}
                 sort={sort}
                 onSort={setSort}
                 onOpenJob={onOpenJob}

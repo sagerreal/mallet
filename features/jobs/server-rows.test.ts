@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { serverRowsToBands, SORT_COL_TO_SERVER } from "./server-rows";
+import { serverPageToRows, SORT_COL_TO_SERVER } from "./server-rows";
 import type { JobListRow } from "./server-rows";
 
 const dto = (over: Partial<JobListRow> = {}): JobListRow =>
@@ -31,52 +31,97 @@ const dto = (over: Partial<JobListRow> = {}): JobListRow =>
     ...over,
   }) as unknown as JobListRow;
 
-describe("serverRowsToBands", () => {
-  it("puts a whole page in ONE band when a view is active", () => {
-    // The grouping now happens in SQL, so every row on screen belongs to the selected view. One
-    // band with that key is the truth, not an approximation.
-    const r = serverRowsToBands([dto({ id: "a" }), dto({ id: "b" })], "today");
-    expect(r.bands).toHaveLength(1);
-    expect(r.bands[0]!.key).toBe("today");
-    expect(r.bands[0]!.jobs).toHaveLength(2);
+/**
+ * A placed visit, which is what the store mapper derives a job's status FROM: a job with no placed
+ * visit reads "unscheduled" no matter what the backend column says, and one whose placed visits are
+ * all complete reads "done". The band derivation keys on that store status, so a fixture that only
+ * sets `status` is testing nothing.
+ */
+const visit = (over: Record<string, unknown> = {}) => ({
+  id: "v1",
+  assigneeUserId: "t1",
+  scheduledDate: "2026-08-05",
+  scheduledStart: "09:00",
+  scheduledEnd: "11:00",
+  durationMinutes: 120,
+  status: "pending",
+  enrouteAt: null,
+  startedAt: null,
+  completedAt: null,
+  notes: null,
+  position: 0,
+  ...over,
+});
+
+describe("serverPageToRows", () => {
+  it("tags every row with the selected view's band key", () => {
+    // The grouping happens in SQL, so every row on screen belongs to the selected view. That key
+    // is not an approximation — it is the truth, and it is the same for every row.
+    const r = serverPageToRows([dto({ id: "a" }), dto({ id: "b" })], "today");
+    expect(r.rows).toHaveLength(2);
+    expect(r.rows.map((x) => x.bandKey)).toEqual(["today", "today"]);
   });
 
   it("maps each server view to the band key the row helpers understand", () => {
-    const key = (v: Parameters<typeof serverRowsToBands>[1]) => serverRowsToBands([dto()], v).bands[0]!.key;
+    const key = (v: Parameters<typeof serverPageToRows>[1]) => serverPageToRows([dto()], v).rows[0]!.bandKey;
     expect(key("needsSlot")).toBe("needsSlot");
     expect(key("week")).toBe("thisWeek");
     expect(key("upcoming")).toBe("later");
     expect(key("needsInvoice")).toBe("doneUnbilled");
     expect(key("done")).toBe("done");
+    expect(key("archived")).toBe("archived");
   });
 
-  it("returns NO bands for an empty page, not an empty band", () => {
-    // An empty band renders a header with nothing under it, which reads as a failed load rather
-    // than "no matches".
-    expect(serverRowsToBands([], "today").bands).toEqual([]);
-    expect(serverRowsToBands([], null).bands).toEqual([]);
+  it("returns no rows for an empty page", () => {
+    expect(serverPageToRows([], "today").rows).toEqual([]);
+    expect(serverPageToRows([], null).rows).toEqual([]);
   });
 
-  it("preserves the SERVER's row order in a mixed list", () => {
-    // The server owns the sort now. Grouping for display must not reorder rows within a group.
-    const rows = [dto({ id: "a", num: "JOB-A" }), dto({ id: "b", num: "JOB-B" }), dto({ id: "c", num: "JOB-C" })];
-    const r = serverRowsToBands(rows, null);
-    expect(r.jobs.map((j) => j.id)).toEqual(["a", "b", "c"]);
+  it("keeps the SERVER's order in a mixed list, whatever the rows' bands are", () => {
+    // THE BUG THIS EXISTS TO CATCH. The page used to be bucketed by lifecycle band and the buckets
+    // concatenated, so the first row's band absorbed every same-band row further down and floated
+    // them up. A page of [done, scheduled, done, scheduled] rendered as [done, done, scheduled,
+    // scheduled] — which is how the Jobs list came to open on a wall of last week's finished work
+    // while the sort said otherwise.
+    const done = { status: "complete", visits: [visit({ status: "complete" })] };
+    const booked = { status: "scheduled", visits: [visit()] };
+    const rows = [
+      dto({ id: "a", ...done } as never),
+      dto({ id: "b", ...booked } as never),
+      dto({ id: "c", ...done } as never),
+      dto({ id: "d", status: "scheduled", visits: [] } as never),
+      dto({ id: "e", ...booked } as never),
+    ];
+    const r = serverPageToRows(rows, null);
+    expect(r.rows.map((x) => x.job.id)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(r.jobs.map((j) => j.id)).toEqual(["a", "b", "c", "d", "e"]);
+    // The bands really are interleaved — this is the arrangement the old grouping destroyed.
+    expect(r.rows.map((x) => x.bandKey)).toEqual(["done", "later", "done", "needsSlot", "later"]);
   });
 
-  it("sums each band's money from its LINE ITEMS, which is where the amount lives", () => {
-    // jobTotal() sums lines, not the job's total_cents column. The list resolver has to batch-load
-    // execution data or every row reads $0 — which is exactly what the Jobs screen was showing
-    // while the jobs carried real prices.
-    const line = (r: number) => ({ id: "x", description: "Repair", quantity: 1, rate: { cents: r, currency: "USD" }, cost: { cents: 0, currency: "USD" }, position: 0 });
-    const r = serverRowsToBands(
+  it("still derives a per-row band key in a mixed list, so labels stay right", () => {
+    // Order is flat, but each row must keep its OWN band or every row renders the first row's
+    // status pill and "when" text.
+    const r = serverPageToRows(
       [
-        dto({ id: "a", lines: [line(50000)] } as never),
-        dto({ id: "b", lines: [line(25000)] } as never),
+        dto({ id: "a", status: "complete", visits: [visit({ status: "complete" })] } as never),
+        dto({ id: "b", status: "scheduled", visits: [] } as never),
+        dto({ id: "c", status: "scheduled", visits: [visit()] } as never),
       ],
-      "today",
+      null,
     );
-    expect(r.bands[0]!.sum).toBe(750);
+    expect(r.rows.map((x) => x.bandKey)).toEqual(["done", "needsSlot", "later"]);
+  });
+
+  it("a selected view overrides the per-row derivation", () => {
+    const r = serverPageToRows(
+      [
+        dto({ id: "a", status: "complete", visits: [visit({ status: "complete" })] } as never),
+        dto({ id: "b", status: "scheduled", visits: [visit()] } as never),
+      ],
+      "needsSlot",
+    );
+    expect(r.rows.map((x) => x.bandKey)).toEqual(["needsSlot", "needsSlot"]);
   });
 });
 
