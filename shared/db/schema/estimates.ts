@@ -116,6 +116,9 @@ export const estimates = pgTable(
      * the one on the original quote.
      */
     changeOrderForJobId: uuid("change_order_for_job_id"),
+    // The job this estimate produced (or is attached to) once accepted — the read-side link back
+    // from a quote to the job it became. Null until a job exists for it.
+    jobId: uuid("job_id"),
     // Unguessable URL-safe token for the customer-facing public quote page (no login required).
     // Generated at draft time; null only for estimates created before the migration (backfilled).
     publicToken: text("public_token"),
@@ -147,6 +150,11 @@ export const estimates = pgTable(
       columns: [t.orgId, t.leadId],
       foreignColumns: [leads.orgId, leads.id],
     }).onDelete("cascade"),
+    // estimates_job_fk (composite FK to jobs(org_id, id)) is hand-written into the generated
+    // migration SQL rather than declared here: jobs.ts already imports estimates.ts, and adding
+    // `import { jobs } from "./jobs"` here creates a circular import that breaks `tsc --noEmit`
+    // (TS7022/TS7024 implicit-any on both estimates and jobs). The constraint still exists in the
+    // live DB — see the migration file — this comment is the only place it's declared in code.
     index("estimates_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
     // Backs the `sent` sort. Without it, ordering by sent_at is a sequential scan over the whole
     // tenant — fine at a few hundred quotes, a timeout at forty thousand.

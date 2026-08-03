@@ -46,6 +46,11 @@ export const invoices = pgTable(
     termsDays: integer("terms_days").notNull().default(7),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }),
+    // Customer-supplied purchase order number, free text. Null when the customer didn't issue one.
+    poNumber: text("po_number"),
+    // Unguessable URL-safe token for the customer-facing public invoice page (no login required).
+    // Generated at draft time; null only for invoices created before the migration (backfilled).
+    publicToken: text("public_token"),
     // Per-document follow-up: is the shop still chasing this one, and how many nudges in.
     // Was client-local, and the hydrator reset it to off on every refetch — so a toggle the user
     // switched ON read back OFF, disagreeing with whether reminders were actually being sent.
@@ -80,6 +85,13 @@ export const invoices = pgTable(
     uniqueIndex("invoices_org_source_job_uidx")
       .on(t.orgId, t.sourceJobId)
       .where(sql`${t.sourceJobId} is not null and ${t.deletedAt} is null`),
+    // Partial unique index: public_token must be globally unique when present. NULL rows
+    // (pre-migration invoices without a token) are excluded — PostgreSQL nulls are always
+    // distinct in unique indexes, but the explicit WHERE makes the intent clear and keeps the
+    // index compact.
+    uniqueIndex("invoices_public_token_uidx")
+      .on(t.publicToken)
+      .where(sql`${t.publicToken} is not null`),
     check("invoices_status_check", sql`${t.status} in ('draft', 'sent', 'partial', 'paid', 'void')`),
     check("invoices_total_check", sql`${t.totalCents} >= 0`),
     check("invoices_tax_bps_check", sql`${t.taxBps} >= 0`),
