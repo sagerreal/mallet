@@ -301,7 +301,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       // Adopt the persisted lead into the store (no network re-write) so the
       // composer's customer selector resolves it the moment the route lands.
       adoptLead(toStoreLead(data));
-      utils.v1.customers.list.invalidate();
+      utils.v1.customers.invalidate();
       // Carry the typed job description into the composer's describe-the-job
       // lane; captured before reset() for clarity (reset clears the field).
       const desc = jobDesc.trim();
@@ -318,13 +318,13 @@ export function NewCustomerModal({ open }: { open: boolean }) {
     if (!ok) {
       // The customer row persisted even though the job didn't — refresh the
       // list so it shows up; the error keeps the modal open for a retry.
-      utils.v1.customers.list.invalidate();
+      utils.v1.customers.invalidate();
       return;
     }
     // The "look" path skips the list invalidate: the refetch would rehydrate the
     // store and wipe the just-attached store-local evisit. createBookedWork
     // already inserted the lead into the store, so the list stays current.
-    if (visitPurpose !== "look") utils.v1.customers.list.invalidate();
+    if (visitPurpose !== "look") utils.v1.customers.invalidate();
     reset();
     close();
   }

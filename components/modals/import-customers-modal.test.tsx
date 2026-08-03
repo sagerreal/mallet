@@ -7,7 +7,7 @@ const mutateAsync = vi.fn();
 const invalidate = vi.fn();
 vi.mock("@/lib/trpc/client", () => ({
   api: {
-    useUtils: () => ({ v1: { customers: { list: { invalidate: invalidate } } } }),
+    useUtils: () => ({ v1: { customers: { invalidate, list: { invalidate } } } }),
     v1: { customers: { importCustomers: { useMutation: () => ({ mutateAsync, isPending: false }) } } },
   },
 }));

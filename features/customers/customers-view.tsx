@@ -88,7 +88,14 @@ export function CustomersView() {
   // First-run gates on the UNFILTERED book size — the filtered total reads 0 for any
   // no-match search, and that told a 600-customer shop "No customers yet" (Owen hit it).
   // `?? 1` while the count is in flight keeps the screen from flashing before it lands.
-  const firstRun = shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: list.bookTotal ?? 1 });
+  // AND no rows on screen. The book count is its OWN query (bookTotal, unfiltered) while the
+  // table renders list.rows — two queries, so one can go stale while the other is current. A
+  // brand-new shop created its first customer and the rows arrived while bookTotal was still 0,
+  // and first-run short-circuits the table, so the only way out was a page refresh (Owen hit it
+  // on a fresh signup). Rows on screen are proof the shop is not empty, whatever the count says.
+  const firstRun =
+    shouldShowFirstRun({ isFetched: list.isFetched, isError: list.isError, count: list.bookTotal ?? 1 }) &&
+    sorted.length === 0;
   const loadFailed = shouldShowLoadFailed({ isFetched: list.isFetched, isError: list.isError, count: list.bookTotal ?? 0 });
   // Only the genuine cold load swaps the page for the loader; a filter change keeps the
   // previous rows on screen (dimmed via isStale) instead of "reloading the page".
