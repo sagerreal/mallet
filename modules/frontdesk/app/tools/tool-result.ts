@@ -10,6 +10,7 @@ import type { SendNotificationUseCase } from "@mallet/notifications";
 import type { VoiceToolSpec, SettingsReader } from "../../domain/assistant";
 import type { AvailabilityReader } from "../../domain/availability";
 import type { Geocoder } from "../../domain/geocoder";
+import type { PricebookPriceReader } from "../../domain/pricebook-price-reader";
 
 // The outcome of one voice tool, serialized into Vapi's `results[].result`. `speak` is the spoken
 // confirmation the agent reads back to the caller (never an opaque code — the caller hears it).
@@ -40,6 +41,12 @@ export interface VoiceToolDeps {
   // A geocode miss returns null and NEVER throws, so the service-area check degrades to "book
   // normally" (see service-area.ts) rather than blocking a booking on flaky geocoding.
   readonly geocoder: Geocoder;
+  // Current pricebook unit prices (DOLLARS) for playbook-LINKED services — the same reader the
+  // assistant builder and the post-call price audit resolve through. book_visit resolves a flat
+  // service's effective price here so the SPOKEN confirmation and the PERSISTED job line carry
+  // one number. Optional: when absent the stored playbook price is used (legacy fallback, same
+  // as resolveBookingPrices without a reader).
+  readonly pricebookPrices?: PricebookPriceReader;
   // Comms egress (SMS/email) routed through the notification USE-CASE (not the raw sender) so every
   // send writes an observable notifications row. book_visit fires a one-time transactional booking
   // confirmation through it; a send failure NEVER fails a booking (background-path semantics) — see

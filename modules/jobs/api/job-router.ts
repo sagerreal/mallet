@@ -128,6 +128,19 @@ export const createJobInput = z.object({
   // 'estimate' = a scoping visit, no price yet. The office modal used to encode this as
   // svc='estimate', squatting in the free-text trade-label column; kind is the enum built for it.
   kind: kindInputEnum.optional(),
+  // Priced lines arriving WITH the create — a booked flat price the customer was already quoted.
+  // Optional: absent → today's behavior (a zero-total job, no lines).
+  lines: z
+    .array(
+      z.object({
+        description: z.string().min(1),
+        quantity: z.number().min(0),
+        rateCents: z.number().int().min(0),
+        costCents: z.number().int().min(0).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
 });
 // Before-you-leave checklist payload — bounds come from the domain constants
 // (name ≤ 200, item text ≤ 500, ≤ 50 items — matched to the checklist TEMPLATE
@@ -247,6 +260,7 @@ export const createJobRouter = () =>
               addr: input.addr ?? null,
               phone: input.phone ?? null,
               notes: input.notes ?? null,
+              lines: input.lines,
             }),
           ),
         );

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { asOrgId, asLeadId, asJobId, FixedClock, isOk, type OrgId, type LeadId } from "@mallet/shared/types";
+import { asOrgId, asLeadId, asJobId, FixedClock, isOk, isErr, type OrgId, type LeadId, type JobId } from "@mallet/shared/types";
 import { InMemoryEventBus } from "@mallet/shared/ports";
 import { CreateManualJobUseCase } from "./create-manual-job";
 import type { JobRepository } from "../domain/job-repository";
 import type { Job } from "../domain/job";
+import type { JobLine } from "../domain/job-execution";
 
 const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
 const LEAD: LeadId = asLeadId("33333333-3333-3333-3333-333333333333");
@@ -12,6 +13,7 @@ const MINTED = "44444444-4444-4444-4444-444444444444";
 class FakeRepo implements JobRepository {
   saved?: Job;
   numCalls = 0;
+  replaced?: { jobId: JobId; lines: readonly JobLine[]; now: Date };
   async nextNumber() { this.numCalls++; return "JOB-1000"; }
   async save(j: Job) { this.saved = j; }
   async insertManual(j: Job) { this.saved = j; }
@@ -28,7 +30,7 @@ class FakeRepo implements JobRepository {
   async addLine() {}
   async updateLine() { return 0; }
   async removeLine() { return 0; }
-  async replaceLines() {}
+  async replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date) { this.replaced = { jobId, lines, now }; }
   async saveOnSiteSignature(): Promise<void> {}
   async count(): Promise<number> { return 0; }
   async viewCounts(): Promise<{ counts: Record<string, number>; todayCents: number }> { return { counts: {}, todayCents: 0 } as never; }
@@ -104,5 +106,104 @@ describe("CreateManualJobUseCase", () => {
     const r = await useCase.exec({ orgId: ORG, leadId: LEAD, title: null, svc: null, addr: null, phone: null, notes: null });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) expect(r.value.props.scope).toBeNull();
+  });
+
+  // ── booked flat price → priced lines on the job (three-flows money, task 3) ──
+
+  const BASE = { orgId: ORG, leadId: LEAD, title: null, svc: null, addr: null, phone: null, notes: null } as const;
+
+  it("one priced line: replaceLines is called with rate 9900 and the job total is 9900", async () => {
+    const r = await useCase.exec({
+      ...BASE,
+      lines: [{ description: "Drain cleaning", quantity: 1, rateCents: 9900 }],
+    });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.total).toBe(9900);
+    expect(repo.replaced).toBeDefined();
+    expect(repo.replaced!.jobId).toBe(asJobId(MINTED));
+    expect(repo.replaced!.lines).toHaveLength(1);
+    const line = repo.replaced!.lines[0]!.props;
+    expect(line.description).toBe("Drain cleaning");
+    expect(line.quantity).toBe(1);
+    expect(line.rate).toBe(9900);
+    expect(line.cost).toBe(0);
+    expect(line.position).toBe(1);
+  });
+
+  it("no lines: total stays zero and replaceLines is never called (today's behavior)", async () => {
+    const r = await useCase.exec({ ...BASE });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.total).toBe(0);
+    expect(repo.replaced).toBeUndefined();
+    expect(repo.saved).toBeDefined();
+  });
+
+  it("an empty lines array behaves exactly like no lines", async () => {
+    const r = await useCase.exec({ ...BASE, lines: [] });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.total).toBe(0);
+    expect(repo.replaced).toBeUndefined();
+  });
+
+  it("sums multiple lines with per-line quantity×rate rounding", async () => {
+    const r = await useCase.exec({
+      ...BASE,
+      lines: [
+        { description: "Drain cleaning", quantity: 1, rateCents: 9900 },
+        { description: "Extra footage", quantity: 2, rateCents: 2500, costCents: 1000 },
+      ],
+    });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) expect(r.value.props.total).toBe(14900);
+    expect(repo.replaced!.lines).toHaveLength(2);
+    expect(repo.replaced!.lines[1]!.props.cost).toBe(1000);
+    expect(repo.replaced!.lines[1]!.props.position).toBe(2);
+  });
+
+  it("rejects more than 200 lines with a validation error and writes nothing", async () => {
+    const lines = Array.from({ length: 201 }, (_, i) => ({
+      description: `Line ${i}`, quantity: 1, rateCents: 100,
+    }));
+    const r = await useCase.exec({ ...BASE, lines });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+    expect(repo.replaced).toBeUndefined();
+  });
+
+  it("rejects a non-integer rateCents (validation), nothing written", async () => {
+    const r = await useCase.exec({ ...BASE, lines: [{ description: "Drain", quantity: 1, rateCents: 99.5 }] });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+  });
+
+  it("rejects a non-integer costCents (validation), nothing written", async () => {
+    const r = await useCase.exec({ ...BASE, lines: [{ description: "Drain", quantity: 1, rateCents: 9900, costCents: 10.1 }] });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+  });
+
+  it("rejects a negative quantity (validation), nothing written", async () => {
+    const r = await useCase.exec({ ...BASE, lines: [{ description: "Drain", quantity: -1, rateCents: 9900 }] });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+  });
+
+  it("rejects a negative rateCents (validation), nothing written", async () => {
+    const r = await useCase.exec({ ...BASE, lines: [{ description: "Drain", quantity: 1, rateCents: -100 }] });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+  });
+
+  it("rejects an empty line description (validation), nothing written", async () => {
+    const r = await useCase.exec({ ...BASE, lines: [{ description: "   ", quantity: 1, rateCents: 9900 }] });
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+    expect(repo.saved).toBeUndefined();
+    expect(repo.replaced).toBeUndefined();
   });
 });

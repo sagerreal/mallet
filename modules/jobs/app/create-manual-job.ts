@@ -1,9 +1,22 @@
-import type { OrgId, LeadId, JobId, Result, AppError, Clock } from "@mallet/shared/types";
-import { asJobId, zeroMoney, ok, isOk } from "@mallet/shared/types";
+import type { OrgId, LeadId, JobId, Result, AppError, Money, ValidationError, Clock } from "@mallet/shared/types";
+import { asJobId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import { Job, type JobKind, type CallbackReason } from "../domain/job";
+import { JobLine } from "../domain/job-execution";
 import type { JobRepository } from "../domain/job-repository";
+
+/** One priced line arriving WITH the create (a booked flat price). Cents are integers. */
+export interface CreateManualJobLineInput {
+  readonly description: string;
+  readonly quantity: number;
+  readonly rateCents: number;
+  readonly costCents?: number;
+}
+
+// Matches the router's zod bound (createJobInput lines max 200) so a direct server-side caller
+// (the voice front desk) hits the same ceiling as the API boundary.
+const MAX_LINES = 200;
 
 export interface CreateManualJobCommand {
   readonly id?: string; // client-authored id for optimistic UI; minted when absent
@@ -30,10 +43,17 @@ export interface CreateManualJobCommand {
   // the AI front desk's book_visit tool). null / undefined → no requirement; office-created
   // jobs always leave this null.
   readonly requiredCerts?: readonly string[] | null;
+  // Priced lines arriving WITH the create — the sanctioned money-at-create exception: a booked
+  // FLAT price the caller was already quoted (voice front desk) or an office create that books
+  // a flat-priced service. Absent/empty → today's behavior (total 0, no lines).
+  readonly lines?: readonly CreateManualJobLineInput[];
 }
 
-// A dispatcher creating a standalone job by hand (no source estimate). total is 0:
-// money lives in Finance/invoicing, not on the work order (mirrors ScheduleJobUseCase).
+// A dispatcher creating a standalone job by hand (no source estimate). Money on the work order
+// at create is allowed for exactly ONE case: a booked FLAT price (cmd.lines) — the caller was
+// quoted that number, so it persists as job lines and the job total. Everything else keeps
+// total 0: estimate visits NEVER carry money at create, and ad-hoc pricing still lives in
+// Finance/invoicing (mirrors ScheduleJobUseCase).
 //
 // VISITS: deliberately NOT seeded here (visits: []) — unlike CreateJobFromEstimateUseCase,
 // which seeds a default 2h unplaced visit because no client flow follows the accept.
@@ -62,6 +82,35 @@ const normalizeSvcKind = (
     ? { svc: null, kind: kind ?? "estimate" }
     : { svc: svc ?? null, kind };
 
+// Boundary validation for the priced lines, run BEFORE any write. JobLine.create re-checks the
+// sign bounds; the integer-cents checks live here because money() treats a fractional cent as a
+// programmer error (throw), and a caller-supplied fraction must surface as a validation Result
+// instead. Returns null when the lines are clean.
+const validateLines = (
+  lines: readonly CreateManualJobLineInput[],
+): ValidationError | null => {
+  if (lines.length > MAX_LINES) {
+    return validation(`a job accepts at most ${MAX_LINES} lines`, "lines");
+  }
+  for (const l of lines) {
+    if (!Number.isInteger(l.rateCents)) return validation("rate must be integer cents", "rateCents");
+    if (l.costCents !== undefined && !Number.isInteger(l.costCents)) {
+      return validation("cost must be integer cents", "costCents");
+    }
+    if (l.quantity < 0) return validation("quantity cannot be negative", "quantity");
+    if (l.rateCents < 0) return validation("rate cannot be negative", "rateCents");
+    if (l.costCents !== undefined && l.costCents < 0) return validation("cost cannot be negative", "costCents");
+  }
+  return null;
+};
+
+// The priced sum, Σ round(quantity × rateCents) — the same per-line rounding the on-site
+// signature snapshot uses (job-signature.ts), so a fractional quantity never drifts the total.
+const pricedTotal = (lines: readonly CreateManualJobLineInput[]): Money => {
+  const cents = lines.reduce((sum, l) => sum + Math.round(l.quantity * l.rateCents), 0);
+  return cents > 0 ? money(cents) : zeroMoney;
+};
+
 export class CreateManualJobUseCase {
   constructor(
     private readonly repo: JobRepository,
@@ -71,6 +120,10 @@ export class CreateManualJobUseCase {
   ) {}
 
   async exec(cmd: CreateManualJobCommand): Promise<Result<Job, AppError>> {
+    const lines = cmd.lines ?? [];
+    const linesError = validateLines(lines);
+    if (linesError) return err(linesError);
+
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
     const norm = normalizeSvcKind(cmd.svc, cmd.kind);
@@ -93,7 +146,7 @@ export class CreateManualJobUseCase {
       completedAt: null,
       canceledAt: null,
       cancelReason: null,
-      total: zeroMoney,
+      total: pricedTotal(lines),
       notes: cmd.notes,
       scope: cmd.scope ?? null,
       callbackOf: cmd.callbackOf ?? null,
@@ -106,7 +159,28 @@ export class CreateManualJobUseCase {
     });
     if (!isOk(job)) return job;
 
+    // THE BOOKED PRICE, snapshotted as job lines — built before the insert so a bad line fails
+    // the whole create (nothing written), mirroring CreateJobFromEstimateUseCase's line copy.
+    const jobLines: JobLine[] = [];
+    for (const [i, l] of lines.entries()) {
+      const line = JobLine.create({
+        id: this.ids.newId(),
+        jobId: job.value.props.id,
+        description: l.description,
+        quantity: l.quantity,
+        rateCents: l.rateCents,
+        costCents: l.costCents ?? 0,
+        position: i + 1,
+      });
+      if (!isOk(line)) return line;
+      jobLines.push(line.value);
+    }
+
     await this.repo.insertManual(job.value);
+    // Written after the job row exists, in the same tenant transaction (the repo is tx-bound).
+    if (jobLines.length > 0) {
+      await this.repo.replaceLines(job.value.props.id, jobLines, now);
+    }
     await this.bus.emit({
       // A manually-created job is UNSCHEDULED — emit a distinct event so a future
       // job.scheduled handler (which would assume a scheduledStart) never misfires.
