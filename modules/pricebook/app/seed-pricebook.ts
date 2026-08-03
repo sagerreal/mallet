@@ -2,7 +2,7 @@ import type { Result, AppError, Clock } from "@mallet/shared/types";
 import { ok, err, toPage } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import type { Service } from "../domain/service";
+import type { Service, ServicePricedBy } from "../domain/service";
 import type { Category } from "../domain/category";
 import type { ServiceRepository } from "../domain/service-repository";
 import type { CategoryRepository } from "../domain/category-repository";
@@ -18,6 +18,14 @@ export interface SeedServiceInput {
   readonly categoryName: string;
   readonly unitPriceCents: number;
   readonly costCents: number;
+  /**
+   * The measured quantity this line is priced PER, when the trade does not price per job.
+   * Roofing sells by the square, fencing by the linear foot, painting by wall area — seeding
+   * those as a flat per-job number would be worse than not seeding them, because the figure
+   * reads as a whole-job price and is off by an order of magnitude.
+   * Absent (undefined) means a flat per-job price, which is how the service trades work.
+   */
+  readonly measuredBy?: ServicePricedBy | null;
 }
 
 // Vertical-agnostic seed spec — this use-case has no idea what "plumbing" is. The concrete
@@ -80,13 +88,28 @@ export class SeedPricebookUseCase {
     }
 
     const services: Service[] = [];
-    for (const svc of input.services) {
+    // POSITION IS THE PACK'S OWN ORDER, and it is load-bearing rather than cosmetic.
+    //
+    // The measurement tracer auto-seeds ONE service per measured quantity onto a quote, and picks
+    // it with `lowestPositionByKind` (modules/quoting/app/build-from-measurements.ts). Every
+    // seeded service used to be created without a position, so create-service defaulted them all
+    // to 0 — and the tie-break fell through to NAME, ALPHABETICALLY.
+    //
+    // That auto-quoted whichever line happened to sort first. A traced gutter run seeded "Copper
+    // gutter installation" at $50/ln ft, 20x the aluminum line nobody chose; siding seeded cedar
+    // at 13.8x vinyl; fencing seeded aluminum at 18.9x chain link. No human picked any of them.
+    //
+    // Passing the index makes the file's order the priority order, so each pack lists the option
+    // a shop sells most of FIRST for each measured kind. Enforced by index.test.ts.
+    for (const [position, svc] of input.services.entries()) {
       const result = await createService.exec(
         {
           name: svc.name,
           categoryId: categoryIdByName.get(svc.categoryName) ?? null,
           unitPriceCents: svc.unitPriceCents,
           costCents: svc.costCents,
+          measuredBy: svc.measuredBy ?? null,
+          position,
         },
         orgId,
       );

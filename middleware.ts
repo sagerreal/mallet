@@ -1,7 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { canonicalRedirectUrl, CANONICAL_REDIRECT_STATUS } from "@/lib/canonical-host";
 
 export async function middleware(request: NextRequest) {
+  // Before the Supabase client is built: a request that is leaving does not need its session
+  // refreshed, and the auth round-trip would be pure latency on a response nobody renders.
+  // See lib/canonical-host.ts for why this exists and why it is a 307.
+  const canonical = canonicalRedirectUrl(request.headers.get("host"), request.url);
+  if (canonical) return NextResponse.redirect(canonical, CANONICAL_REDIRECT_STATUS);
+
   let response = NextResponse.next({ request });
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {
