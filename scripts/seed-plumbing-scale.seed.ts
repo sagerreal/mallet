@@ -157,7 +157,11 @@ describe("seed: 20 jobs/day plumbing shop", () => {
     await pool(slots, async (s, idx) => {
       const [title, svc, cents] = pick(WORK, idx * 3 + s.n);
       const leadId = pick(custIds, idx * 13);
-      const job = await office.v1.jobs.create({ leadId, title, svc });
+      // 'estimate' rides in kind since 0133 — sending it as svc would re-mint the split-brain
+      // rows that migration cleared, into the SHARED prod database, every benchmark run.
+      const job = await office.v1.jobs.create(
+        svc === "estimate" ? { leadId, title, kind: "estimate" } : { leadId, title, svc },
+      );
       // A manual job is created with total_cents = 0 — it has no lines. Without this the invoice
       // comes out at $0 and recordPayment refuses it (amountCents must be positive), which is
       // exactly how the first run produced zero invoices while reporting success.

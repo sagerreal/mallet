@@ -64,6 +64,41 @@ describe("a job priced from its quote", () => {
   });
 });
 
+describe("a job signed at the door", () => {
+  const signed = job({
+    kind: "estimate",
+    lines: [{ d: "Replace 50gal gas water heater", q: 1, r: 2650 }],
+    signature: { name: "M. Rivera", at: "2026-08-03T16:00:00Z", svg: "<svg/>" } as never,
+  });
+
+  /**
+   * THE PRICE SHOWS. The old svc-based gate hid the Price section on every estimate job forever
+   * — including one a customer had signed at the door, the record that most certainly has a
+   * price. The gate is isUnpricedEstimateJob now: estimate AND no priced lines.
+   */
+  it("shows its signed price — the record with a signature must show money", () => {
+    render(<PriceSummary job={signed} {...handlers()} />);
+    expect(screen.getByText("Replace 50gal gas water heater")).toBeTruthy();
+  });
+
+  /**
+   * …BUT NOT AN EDIT PATH. A signature is evidence of what the customer agreed to. Build-the-
+   * price replaces the lines while the signature record stays on screen — billing would then
+   * invoice a total the customer never signed. Changes go through "+ More work", which
+   * re-presents and re-signs.
+   */
+  it("offers no Edit on signed lines", () => {
+    render(<PriceSummary job={signed} {...handlers()} />);
+    expect(screen.queryByText("Edit")).toBeNull();
+    expect(screen.getByText("+ More work")).toBeTruthy();
+  });
+
+  it("a pure scoping visit still shows no price section at all", () => {
+    render(<PriceSummary job={job({ kind: "estimate", lines: [] })} {...handlers()} />);
+    expect(screen.queryByText("Price")).toBeNull();
+  });
+});
+
 describe("a job carrying its own scope", () => {
   const priced = job({
     lines: [

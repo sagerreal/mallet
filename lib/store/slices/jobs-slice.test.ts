@@ -275,25 +275,29 @@ describe("updateJob persist", () => {
   });
 });
 
-describe("setJobSvc persist", () => {
+/**
+ * setJobSvc is GONE. It existed to push the retired magic value ('estimate') through the trade-
+ * label column — kind carries that now, and the Type toggle writes it via updateJob({ kind }).
+ */
+describe("the Type toggle persists kind", () => {
   beforeEach(() => { mockUpdate.mockReset(); });
 
-  it("routes through update with { svc }", () => {
+  it("routes through update with { kind }", () => {
     mockUpdate.mockResolvedValue({} as never);
     const { get } = makeStore();
     const { job: created } = get().addJob({ ...draft, leadId: "" });
-    get().setJobSvc(created.id, "estimate");
-    expect(get().jobs.find((j) => j.id === created.id)!.svc).toBe("estimate");
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ jobId: created.id, svc: "estimate" }));
+    void get().updateJob(created.id, { kind: "estimate" });
+    expect(get().jobs.find((j) => j.id === created.id)!.kind).toBe("estimate");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ jobId: created.id, kind: "estimate" }));
   });
 
-  it("sends svc: null to mutate and clears the store svc when called with null", () => {
+  it("flips back to flat rate as kind 'work'", () => {
     mockUpdate.mockResolvedValue({} as never);
     const { get } = makeStore();
-    const { job: created } = get().addJob({ ...draft, leadId: "", svc: "estimate" });
-    get().setJobSvc(created.id, null);
-    expect(get().jobs.find((j) => j.id === created.id)!.svc).toBeNull();
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ jobId: created.id, svc: null }));
+    const { job: created } = get().addJob({ ...draft, leadId: "", kind: "estimate" });
+    void get().updateJob(created.id, { kind: "work" });
+    expect(get().jobs.find((j) => j.id === created.id)!.kind).toBe("work");
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ jobId: created.id, kind: "work" }));
   });
 });
 

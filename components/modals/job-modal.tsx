@@ -429,9 +429,15 @@ export function PriceSummary({ job, onBuildPrice, onViewQuote, onAddWork }: Pric
           <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onAddWork}>
             + More work
           </span>
-          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
-            Edit
-          </span>
+          {/* NO Edit on signed lines. A signature is evidence of what the customer agreed to —
+              Build-the-price replaces the lines while the signature record stays on screen, and
+              billing would then invoice a total the customer never signed. Changes to signed work
+              go through "+ More work", which re-presents and re-signs. */}
+          {!job.signature && (
+            <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={onBuildPrice}>
+              Edit
+            </span>
+          )}
         </span>
       </div>
       {(job.lines ?? []).map((x, i) => (

@@ -155,6 +155,27 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     expect(reverted.kind).toBe("work");
   });
 
+  /**
+   * A STALE BROWSER BUNDLE from before the kind migration still sends the retired shape:
+   * svc='estimate' with no kind. Accepted verbatim it would land as kind='work', svc='estimate' —
+   * readable as an estimate by the client's legacy fallback, invisible to every kind-based server
+   * predicate (Money, the pipeline, the $0-invoice guard), and unrepairable by the Type toggle.
+   * The boundary normalises it into the correct row instead.
+   */
+  it("normalises the retired svc='estimate' shape from a stale bundle", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const [lead] = await admin<{ id: string }[]>`
+      insert into leads (org_id, name, stage) values (${orgAId}, 'Stale Bundle', 'new') returning id`;
+
+    const created = await caller.v1.jobs.create({ leadId: lead!.id, title: "Old-bundle walkthrough", svc: "estimate" });
+    expect(created.kind).toBe("estimate");
+    expect(created.svc).toBeNull();
+
+    const updated = await caller.v1.jobs.update({ jobId: created.id, svc: "estimate" });
+    expect(updated.kind).toBe("estimate");
+    expect(updated.svc).toBeNull();
+  });
+
   it("attaches a checklist via update; it persists, survives a re-read, and detaches with null", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const lead = await caller.v1.customers.create({ name: "Checklist Job Cust" });

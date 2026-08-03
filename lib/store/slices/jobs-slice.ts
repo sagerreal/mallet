@@ -336,7 +336,6 @@ export interface JobsSlice {
       signatureSvg?: string;
     },
   ) => Promise<{ ok: boolean; error?: string }>;
-  setJobSvc: (id: string, svc: string | null) => void;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
@@ -776,8 +775,6 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         return { ok: false, error: userMessage(err) };
       });
   },
-
-  setJobSvc: (id, svc) => get().updateJob(id, { svc }),
 
   // ---------------------------------------------------------------------------
   // addVisit — optimistic temp id; persist via createVisit; reconcile with
