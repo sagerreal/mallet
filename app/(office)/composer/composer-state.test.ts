@@ -903,6 +903,7 @@ describe("applyReviseSeed", () => {
     depBps: 2500,
     recommendedTier: null,
     tierNames: null,
+    jobId: null,
     lines: [
       { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, tier: null },
       { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, tier: null },
@@ -938,6 +939,35 @@ describe("applyReviseSeed", () => {
     // The tier with no lines still renders one empty editable row, never a hole.
     expect(next.gbb?.opts[1]?.lines).toHaveLength(1);
     expect(next.gbb?.opts[1]?.lines[0]?.d).toBe("");
+  });
+
+  // The walkthrough link must survive a revision. Every re-entry into the composer (Edit on a
+  // draft, Edit & resend, the change-request card) routes through ?revise=, and a revision that
+  // dropped jobId would send a quote whose accept mints a DUPLICATE job — the exact defect
+  // convert-on-accept exists to fix.
+  it("carries the original quote's scope-visit jobId onto the revision (flat and tiered)", () => {
+    const flat = applyReviseSeed(base, { ...flatSeed, jobId: "job-9" });
+    expect(flat.jobId).toBe("job-9");
+    const tiered = applyReviseSeed(base, {
+      ...flatSeed,
+      jobId: "job-9",
+      recommendedTier: "best" as const,
+      tierNames: { good: "Basic", better: "Standard", best: "Premium" },
+      lines: [
+        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, tier: "good" as const },
+      ],
+    });
+    expect(tiered.jobId).toBe("job-9");
+  });
+
+  // The seed SETS jobId, never merges: revising a quote with no walkthrough behind it (an
+  // ordinary quote, or a ?change= change order — that flow drafts with changeOrderForJobId and
+  // never touches cs.jobId) must CLEAR any stale ?job= the composer happened to mount with,
+  // or the revision would claim a walkthrough the original never priced.
+  it("a null-jobId seed clears stale ?job= state rather than inheriting it", () => {
+    const staleJobState = { ...INITIAL_STATE, jobId: "job-stale" };
+    const next = applyReviseSeed(staleJobState, flatSeed); // flatSeed.jobId is null
+    expect(next.jobId).toBeNull();
   });
 });
 

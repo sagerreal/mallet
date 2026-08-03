@@ -123,6 +123,10 @@ class FakeJobRepository implements JobRepository {
   async replaceLines(jobId: string, lines: readonly never[]) {
     this.linesWritten.push({ jobId, lines });
   }
+  /** Every adopt attempt, recorded at ENTRY — proves a fallback actually RAN the convert and
+   *  was refused, rather than being skipped by an earlier guard in the use case. */
+  adoptAttempts: string[] = [];
+
   /**
    * Convert-on-accept twin of the Drizzle method: flip the scope-visit job to sold work IN
    * PLACE — no new row. Mirrors the real contract exactly: refuses a missing job, anything
@@ -136,6 +140,7 @@ class FakeJobRepository implements JobRepository {
     lines: readonly JobLine[],
     now: Date,
   ): Promise<boolean> {
+    this.adoptAttempts.push(jobId);
     const job = this.store.get(jobId);
     if (!job || job.props.kind !== "estimate" || job.props.status === "canceled") return false;
     const maxPos = job.props.visits.reduce((max, v) => Math.max(max, v.props.position), 0);
@@ -606,6 +611,40 @@ describe("CreateJobFromEstimateUseCase — convert-on-accept (estimate.jobId)", 
     expect(untouched!.props.title).toBe("Someone else's sold work");
     expect(untouched!.props.total).toBe(50_000);
     expect(untouched!.props.visits).toHaveLength(1);
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
+    expect(bus.recorded.filter((e) => e.name === "job.updated")).toHaveLength(0);
+  });
+
+  it("(f) a CANCELED walkthrough refuses conversion — adopt RUNS, returns false, accept mints", async () => {
+    await seedScopeVisitJob({
+      status: "canceled",
+      canceledAt: new Date("2026-05-30T00:00:00Z"),
+      cancelReason: "customer canceled the walkthrough",
+    });
+    const r = await useCase(new FakeEstimateReader(estimateWithJob())).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+
+    // The convert path genuinely EXECUTED and was refused — this is the adopted===false → mint
+    // branch, not one of the earlier guards (missing job / work-kind) that never reach adopt.
+    expect(repo.adoptAttempts).toEqual([SCOPE_JOB]);
+
+    // The fallback minted a fresh work job; the canceled walkthrough was never resurrected.
+    expect(r.value.props.id).not.toBe(SCOPE_JOB);
+    expect(r.value.props.sourceEstimateId).toBe(EST);
+    expect(repo.all).toHaveLength(2);
+    const untouched = await repo.findById(SCOPE_JOB);
+    expect(untouched!.props.kind).toBe("estimate");
+    expect(untouched!.props.status).toBe("canceled");
+    expect(untouched!.props.visits).toHaveLength(1); // no pending visit seeded onto the corpse
+
+    // The sold scope landed on the MINTED job, not the canceled walkthrough.
+    expect(repo.linesWritten).toHaveLength(1);
+    expect(repo.linesWritten[0]!.jobId).toBe(r.value.props.id);
+
     expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
     expect(bus.recorded.filter((e) => e.name === "job.updated")).toHaveLength(0);
   });

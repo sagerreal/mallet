@@ -488,6 +488,13 @@ export interface ReviseSeed {
   lines: ReviseSeedLine[];
   recommendedTier: TierKey | null;
   tierNames: { good: string; better: string; best: string } | null;
+  /**
+   * The scope-visit job the ORIGINAL quote priced — carried onto the revision, or the edited
+   * quote would accept into a duplicate job (the exact defect convert-on-accept exists to fix,
+   * resurfacing through Edit / Edit & resend). null when the original had no walkthrough behind
+   * it — and the seed then CLEARS any stale ?job= state, it never merges.
+   */
+  jobId: string | null;
 }
 
 /**
@@ -511,7 +518,15 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
 
   if (!tiered) {
     const lines = seed.lines.length > 0 ? seed.lines.map(toLine) : [emptyLine()];
-    return { ...state, leadId: seed.leadId, desc: seed.title, pricing, format: "single", lines };
+    return {
+      ...state,
+      leadId: seed.leadId,
+      jobId: seed.jobId,
+      desc: seed.title,
+      pricing,
+      format: "single",
+      lines,
+    };
   }
 
   const tierLines = (k: TierKey): ComposerLine[] => {
@@ -530,7 +545,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       lines: tierLines(k),
     })),
   };
-  return { ...state, leadId: seed.leadId, desc: seed.title, pricing, format: "gbb", gbb };
+  return { ...state, leadId: seed.leadId, jobId: seed.jobId, desc: seed.title, pricing, format: "gbb", gbb };
 }
 
 export interface MeasurementGap {

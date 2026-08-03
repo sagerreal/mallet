@@ -188,6 +188,10 @@ export default function ComposerPage() {
         depBps: dto.depBps,
         recommendedTier: dto.recommendedTier ?? null,
         tierNames: dto.tierNames ?? null,
+        // The walkthrough link survives a revision — without it, "Edit & resend" would send a
+        // quote whose accept mints a duplicate job. Server-side validation re-guards it on the
+        // revision's own draft (assertScopeVisitJob runs on every v1.quoting.draft).
+        jobId: dto.jobId ?? null,
         lines: dto.lines.map((l) => ({
           d: l.description,
           q: l.quantity,
