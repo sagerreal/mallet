@@ -20,6 +20,8 @@ import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DayClock } from "@/features/field/day-clock";
 import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
+import { shouldShowLoadFailed } from "@/lib/first-run";
+import { LoadFailed } from "@/components/shared/load-failed";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -127,7 +129,7 @@ export default function MyDayPage() {
   // page sits open on a phone in the truck, and no store invalidation can reach a different
   // device. Focus refetch covers "picked the phone back up"; the interval covers "screen was on
   // the whole time".
-  const { data, isLoading, isFetching, refetch } = api.v1.field.myDay.useQuery(undefined, {
+  const { data, isLoading, isFetching, isFetched, isError, isRefetching, refetch } = api.v1.field.myDay.useQuery(undefined, {
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     refetchInterval: 60_000,
@@ -216,6 +218,12 @@ export default function MyDayPage() {
 
   const items = data?.items ?? [];
 
+  // A dead fetch is not a free afternoon. Until now ANY myDay error fell through to
+  // `data?.items ?? []` and rendered "No jobs assigned to you today" — indistinguishable from a
+  // genuinely empty day, and the tech's only recourse was to guess. If rows are already in hand
+  // (a refetch failed) they stay: slightly stale beats a wall.
+  const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: items.length });
+
   return (
     <>
       <h1>My day</h1>
@@ -236,6 +244,10 @@ export default function MyDayPage() {
               </div>
             </div>
           ))}
+        </div>
+      ) : loadFailed ? (
+        <div className="card agenda">
+          <LoadFailed noun="jobs" onRetry={() => void refetch()} retrying={isRefetching} />
         </div>
       ) : (
         <div className="card agenda">

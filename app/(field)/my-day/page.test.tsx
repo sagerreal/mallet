@@ -15,7 +15,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 const setData = vi.fn();
 const refetch = vi.fn();
-let queryState: { data: unknown; isLoading: boolean; isFetching: boolean };
+let queryState: {
+  data: unknown;
+  isLoading: boolean;
+  isFetching: boolean;
+  isError?: boolean;
+  isRefetching?: boolean;
+};
 let startOpts: { onMutate?: (v: { jobId: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
 let completeOpts: typeof startOpts = {};
 let startPending = false;
@@ -113,5 +119,58 @@ describe("My day — the screen moves when you press", () => {
     completeOpts.onError?.(new Error("job already complete"));
     expect(errors).toEqual(["field.complete"]);
     expect(refetch).toHaveBeenCalled();
+  });
+});
+
+describe("My day — a failed load is not a free afternoon", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+  });
+
+  it("names the failure and offers a retry instead of 'no jobs assigned'", () => {
+    queryState = {
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      isRefetching: false,
+    };
+    render(<MyDayPage />);
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByText(/No jobs assigned to you today/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("keeps the rows it already has when a refetch fails, rather than replacing them", () => {
+    // Stale rows beat an error screen: the tech can still drive to the next stop.
+    queryState = {
+      data: { items: [job()], customers: [] },
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      isRefetching: false,
+    };
+    render(<MyDayPage />);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("random job")).toBeTruthy();
+  });
+
+  it("still says 'no jobs' on a successful empty day", () => {
+    queryState = {
+      data: { items: [], customers: [] },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      isRefetching: false,
+    };
+    render(<MyDayPage />);
+
+    expect(screen.getByText(/No jobs assigned to you today/i)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
