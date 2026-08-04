@@ -28,6 +28,7 @@ import {
   toStoreVisit,
   mapExecution,
   dtoChecklistToStore,
+  isTerminalBackendJobStatus,
 } from "@/lib/store/dto-mapper";
 
 // Re-export the pure time helpers so existing unit tests importing from here
@@ -73,8 +74,8 @@ export function toStoreJob(dto: JobSummaryDTO): Job {
   );
   const visits = activeVisitDTOs.map(toStoreVisit);
 
-  const isTerminal =
-    dto.status === BACKEND_JOB_STATUS.COMPLETE || dto.status === BACKEND_JOB_STATUS.CANCELED;
+  // The SHARED predicate — see its docstring in dto-mapper.ts. One rule, three call sites.
+  const isTerminal = isTerminalBackendJobStatus(dto.status);
   // A terminal backend status (complete/canceled) ALWAYS wins over the visit-placement
   // recalc below — mirrors dtoJobToStoreJob in dto-mapper.ts. Without this, a job
   // completed straight from My Day (one visit, complete, never placed on the Schedule

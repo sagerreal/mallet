@@ -25,6 +25,7 @@ const voidMutate = vi.fn();
 const createFromJobMutate = vi.fn();
 const draftMutate = vi.fn();
 const sendMutate = vi.fn();
+const recordPaymentMutate = vi.fn();
 
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
@@ -35,7 +36,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         createFromJob: { mutate: (...a: unknown[]) => createFromJobMutate(...a) },
         draft: { mutate: (...a: unknown[]) => draftMutate(...a) },
         send: { mutate: (...a: unknown[]) => sendMutate(...a) },
-        recordPayment: { mutate: vi.fn() },
+        recordPayment: { mutate: (...a: unknown[]) => recordPaymentMutate(...a) },
         void: { mutate: (...a: unknown[]) => voidMutate(...a) },
       },
     },
@@ -45,6 +46,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
 // Static imports — resolved AFTER the mock above is registered.
 import { buildInvoiceMetadataPayload, createInvoicesSlice, type InvoicesSlice } from "./invoices-slice";
 import type { Invoice, InvoiceLine } from "@/lib/store/types";
+import { invDue, invPaid } from "@/lib/store/invoice-balance";
 
 // ---------------------------------------------------------------------------
 // Minimal Invoice builder
@@ -553,6 +555,24 @@ describe("setInvoices — summary rows merge, never clobber", () => {
       partial: true, total: 1000, due: 400, paidTotal: 600, ...over,
     });
 
+  // The deposit is ALREADY inside the summary's paidTotal (= total − due). Carrying the prior
+  // record's depPaid forward beside it made close-out's DueCard itemise the same $200 twice —
+  // "− $200 deposit paid / − $200 paid / $800 due" on a $1,000 invoice, credits plus balance
+  // adding to $1,200 in front of the customer. Close-out never refetches a partial row, so that
+  // was its steady state, not a frame.
+  it("does not carry a deposit forward beside paidTotal — credits + due must equal the total", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", jobId: "job-1", total: 1000, depPaid: 200 })]);
+
+    s.state.setInvoices([
+      summaryRow({ id: "inv-1", total: 1000, due: 800, paidTotal: 200 }),
+    ]);
+
+    const merged = s.state.invoices[0]!;
+    expect(merged.depPaid).toBe(0);
+    expect(merged.depPaid + invPaid(merged) + invDue(merged)).toBe(merged.total);
+  });
+
   it("keeps the job link, the payment history and the lines a full record already had", () => {
     const s = makeSlice();
     s.seed([
@@ -662,5 +682,91 @@ describe("addInvoice — a failed create removes ONE row", () => {
     s.seed([]);
 
     await expect(s.state.addInvoice(fromJobDraft()).persisted).resolves.toEqual({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Optimistic money on a SUMMARY row.
+//
+// invDue reads the server's `due` and invPaid reads `paidTotal` on a row built from a list DTO —
+// the list sends no payment history, so summing `payments` would report every ledger row as
+// fully unpaid. That means an optimistic write which only touches `payments` (or only `total`)
+// moves NEITHER derivation: recording $1,000 in full still read "Approved · $1,000 · $1,000
+// still due" for a full round trip, with the customer standing there.
+// ---------------------------------------------------------------------------
+
+describe("optimistic writes move a summary row's money immediately", () => {
+  const partialRow = (over: Partial<Invoice> = {}): Invoice =>
+    makeInvoice({
+      lines: [], payments: [], depPaid: 0, partial: true,
+      total: 1000, due: 1000, paidTotal: 0, status: "sent", ...over,
+    });
+
+  beforeEach(() => {
+    // Never-settling: these assertions are about the OPTIMISTIC leg, before any reconcile.
+    patchLinesMutate.mockReset();
+    patchLinesMutate.mockReturnValue(new Promise(() => {}));
+    recordPaymentMutate.mockReset();
+    recordPaymentMutate.mockReturnValue(new Promise(() => {}));
+  });
+
+  it("recording the full amount drops the balance to zero on the spot", () => {
+    const s = makeSlice();
+    s.seed([partialRow()]);
+
+    s.state.recordPayment("inv-1", { amt: 1000, when: "Just now", method: "cash" });
+
+    const inv = s.state.invoices[0]!;
+    expect(invDue(inv)).toBe(0);
+    expect(invPaid(inv)).toBe(1000);
+  });
+
+  it("a part payment leaves the balance and the paid figure consistent", () => {
+    const s = makeSlice();
+    s.seed([partialRow({ due: 800, paidTotal: 200 })]);
+
+    s.state.recordPayment("inv-1", { amt: 300, when: "Just now", method: "cash" });
+
+    const inv = s.state.invoices[0]!;
+    expect(invDue(inv)).toBe(500);
+    expect(invPaid(inv)).toBe(500);
+    expect(invPaid(inv) + invDue(inv)).toBe(inv.total);
+  });
+
+  it("leaves a FULL record alone — there the payments themselves are the balance", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ total: 1000, payments: [] })]);
+
+    s.state.recordPayment("inv-1", { amt: 400, when: "Just now", method: "cash" });
+
+    const inv = s.state.invoices[0]!;
+    expect(inv.due).toBeUndefined();
+    expect(inv.paidTotal).toBeUndefined();
+    expect(invDue(inv)).toBe(600);
+  });
+
+  // The same class, found while fixing the one above: the server's `due` was computed against
+  // the OLD total, so setting an on-site bill on a hydrated $0 draft left it reading "$0 due" —
+  // the close-out foot offered "Log & send to office" instead of "Take payment — $450".
+  it("re-pricing the lines re-derives the balance against the new total", () => {
+    const s = makeSlice();
+    s.seed([partialRow({ total: 0, due: 0, paidTotal: 0 })]);
+
+    s.state.setInvoiceLines("inv-1", [{ d: "Flat rate — drain clear", q: 1, r: 450 }]);
+
+    const inv = s.state.invoices[0]!;
+    expect(inv.total).toBe(450);
+    expect(invDue(inv)).toBe(450);
+  });
+
+  it("re-pricing keeps what was already paid", () => {
+    const s = makeSlice();
+    s.seed([partialRow({ total: 1000, due: 800, paidTotal: 200 })]);
+
+    s.state.setInvoiceLines("inv-1", [{ d: "Repipe", q: 1, r: 1500 }]);
+
+    const inv = s.state.invoices[0]!;
+    expect(invPaid(inv)).toBe(200);
+    expect(invDue(inv)).toBe(1300);
   });
 });

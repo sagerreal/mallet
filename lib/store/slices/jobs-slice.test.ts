@@ -1484,13 +1484,41 @@ describe("optimistic visit writes never derive away a terminal status", () => {
     expect(get().jobs[0]!.status).toBe("unscheduled");
   });
 
-  it("still lets Reopen move a done job with a PLACED visit back to scheduled", () => {
-    mockSetVisitStatus.mockReturnValue(new Promise(() => {}));
+  // The reviewer's divergence case: cancel-job.ts does not cascade to visits, so a canceled job
+  // can still carry a placed PENDING one, and those jobs are still drawn on the board. Guarding
+  // only the no-placed-visit branch left the three copies disagreeing — both mappers said "done",
+  // this one said "scheduled".
+  it("keeps a terminal job terminal even with a placed, still-pending visit", () => {
+    mockUpdateVisitDuration.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDoneJob(get, [{ ...PLACED_DONE_VISIT, status: "scheduled" }]);
+
+    get().updateVisit("j-done", PLACED_DONE_VISIT.id, { dur: 3 });
+
+    expect(get().jobs[0]!.status).toBe("done");
+  });
+
+  // Reopen's JOB-level flip is the server's call (set-visit-status.ts reopens a complete job
+  // before the visit write, and re-completes it if the set still ends up all-complete) — not
+  // something this optimistic leg may guess from a stale status. The VISIT moves instantly; the
+  // job follows on the reconcile.
+  it("moves the visit instantly on Reopen and lets the reconcile move the job", async () => {
+    mockSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-done", {
+        status: "scheduled",
+        visits: [makeVisitDTO(PLACED_DONE_VISIT.id, {
+          status: "pending", assigneeUserId: "tech-1",
+          scheduledDate: "2026-07-30", scheduledStart: "09:00", scheduledEnd: "10:00",
+        })],
+      }),
+    );
     const { get } = makeStore();
     seedDoneJob(get, [PLACED_DONE_VISIT]);
 
     get().setVisitStatus("j-done", PLACED_DONE_VISIT.id, "scheduled", "office");
+    expect(get().jobs[0]!.visits[0]!.status).toBe("scheduled");
 
+    await flush();
     expect(get().jobs[0]!.status).toBe("scheduled");
   });
 });

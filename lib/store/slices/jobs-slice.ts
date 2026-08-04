@@ -272,19 +272,28 @@ function isPersistableLine(l: JobLine): boolean {
  * Derive job status from its placed visits — the OPTIMISTIC copy of the rule the two DTO
  * mappers apply on the way back from the server (dtoJobToStoreJob, jobs-hydrator's toStoreJob).
  *
- * Placement state must never derive AWAY a terminal status. A job completed straight from My Day
- * has one complete visit that nobody dragged onto the Schedule board, so `scheduled_date` is
- * null, nothing counts as placed, and the old rule read that job back as "unscheduled" — its
- * revenue vanished from Money's ready-to-bill list and the field's done card swapped out from
- * under the technician on the next optimistic visit write. Both mappers were given this guard;
- * this third copy was missed, and no test covered it.
+ * A TERMINAL status short-circuits the whole recalc, exactly as it does in both mappers (see
+ * isTerminalBackendJobStatus's docstring in dto-mapper.ts — one rule, two vocabularies). This
+ * copy carried no guard at all, so a job completed straight from My Day — one complete visit
+ * that nobody dragged onto the Schedule board, so nothing counts as placed — was derived back to
+ * "unscheduled" by the next optimistic visit write: its revenue vanished from Money's
+ * ready-to-bill list and the field's done card swapped out from under the technician
+ * mid-close-out.
  *
- * A visit that genuinely MOVES still moves the job (Reopen, a re-drag): those paths act on a
- * PLACED visit, so the recalc below runs exactly as before.
+ * Guarding only the no-placed-visit branch would have left the copies STILL disagreeing: a
+ * backend-canceled job with a placed pending visit (cancel-job.ts does not cascade to visits,
+ * and those jobs are still drawn on the board) would read "done" from either mapper and
+ * "scheduled" from here.
+ *
+ * The cost is that Reopen's JOB-level flip waits for the server instead of being optimistic —
+ * the visit itself still moves instantly, and set-visit-status.ts is what decides whether the
+ * job reopens with it. Predicting that here is guesswork; a stale-status-driven guess is what
+ * this function has been getting wrong.
  */
 function recalcStatus(job: Job, visits: Visit[]): string {
+  if (isTerminalStoreJobStatus(job.status)) return job.status;
   const placed = visits.filter(isVisitPlaced);
-  if (!placed.length) return isTerminalStoreJobStatus(job.status) ? job.status : "unscheduled";
+  if (!placed.length) return "unscheduled";
   if (placed.every((v) => v.status === "done")) return "done";
   return "scheduled";
 }

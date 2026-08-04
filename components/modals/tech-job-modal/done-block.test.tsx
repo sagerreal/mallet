@@ -101,11 +101,13 @@ describe("ScopeHandoffBlock — visit fee collection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// DoneBlock — Reopen is a VISIT write, so it must not render when there is no visit to move.
+// DoneBlock carries NO Reopen.
 //
-// THE BUG: a job completed straight from My Day has no PLACED visit (the field only shows
-// placed ones), so the handler had nothing to call. The button rendered anyway, took the tap
-// and did nothing.
+// Reopen writes a VISIT status, so it lives once — in the "Your visit(s)" section, beside the
+// visit it moves. It used to render here too, which meant a done job with a placed visit showed
+// the office the SAME control twice, both firing the same write; and for a job completed
+// straight from My Day (no placed visit at all) both copies were dead — the button took the tap
+// and did nothing, because a job-level reopen does not exist.
 // ---------------------------------------------------------------------------
 
 const doneJob = {
@@ -122,21 +124,18 @@ const doneBlockProps = {
   onOpenInvoice: vi.fn(),
   onChargeOnFile: vi.fn(),
   onSendToOffice: vi.fn(),
-  onReopen: vi.fn(),
 };
 
-describe("DoneBlock — Reopen is hidden when there is nothing to reopen", () => {
-  it("no placed visit → no Reopen button", () => {
-    render(<DoneBlock {...doneBlockProps} canReopen={false} />);
+describe("DoneBlock — the money card, and only the money card", () => {
+  it("renders no Reopen of its own", () => {
+    render(<DoneBlock {...doneBlockProps} />);
     expect(screen.queryByText("↩ Reopen")).toBeNull();
-    // The card itself still renders — hiding a dead control must not blank the hero.
     expect(screen.getByText("✓ Job done")).toBeTruthy();
   });
 
-  it("a placed visit → Reopen renders and fires", () => {
-    const onReopen = vi.fn();
-    render(<DoneBlock {...doneBlockProps} onReopen={onReopen} canReopen={true} />);
-    fireEvent.click(screen.getByText("↩ Reopen"));
-    expect(onReopen).toHaveBeenCalledTimes(1);
+  it("renders no Reopen on the already-billed branch either", () => {
+    render(<DoneBlock {...doneBlockProps} job={{ ...doneJob, invRequested: true }} />);
+    expect(screen.queryByText("↩ Reopen")).toBeNull();
+    expect(screen.getByText("✓ Sent to the office")).toBeTruthy();
   });
 });

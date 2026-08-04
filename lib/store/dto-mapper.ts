@@ -172,13 +172,23 @@ function toStoreJobStatusInternal(s: string): string {
 export const STORE_JOB_STATUS_DONE = "done";
 
 /**
- * Is this STORE job status terminal — i.e. the backend has closed the job?
+ * ONE rule with two entry points: **a terminal job's status always outranks the visit-placement
+ * recalc.** Whether the job's visits ever reached the Schedule board says nothing about whether
+ * the backend has closed it.
  *
- * Exported because three places derive a job's status from its visits and all three must give a
- * terminal status precedence over visit placement: this module, features/jobs/jobs-hydrator.tsx,
- * and the optimistic leg in lib/store/slices/jobs-slice.ts. The slice copy carried no guard,
- * which is how a completed job kept reading back as "unscheduled".
+ * Three places derive a job's status from its visits, and they must not disagree:
+ *   - `dtoJobToStoreJob` below and `toStoreJob` in features/jobs/jobs-hydrator.tsx read a DTO,
+ *     so they ask `isTerminalBackendJobStatus(dto.status)`;
+ *   - the optimistic leg in lib/store/slices/jobs-slice.ts has no DTO — only the record already
+ *     in the store — so it asks `isTerminalStoreJobStatus(job.status)`.
+ * Two predicates because the two vocabularies differ (`complete`/`canceled` on the wire collapse
+ * to `done` in the store), not two rules. Both callers short-circuit the WHOLE recalc.
  */
+export function isTerminalBackendJobStatus(status: string): boolean {
+  return status === BACKEND_JOB_STATUS.COMPLETE || status === BACKEND_JOB_STATUS.CANCELED;
+}
+
+/** The store-vocabulary half of the rule above. */
 export function isTerminalStoreJobStatus(status: string): boolean {
   return status === STORE_JOB_STATUS_DONE;
 }
@@ -330,8 +340,7 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     (v) => v.status !== BACKEND_VISIT_STATUS.CANCELED,
   );
   const visits = activeVisitDTOs.map(toStoreVisit);
-  const isTerminal =
-    dto.status === BACKEND_JOB_STATUS.COMPLETE || dto.status === BACKEND_JOB_STATUS.CANCELED;
+  const isTerminal = isTerminalBackendJobStatus(dto.status);
   // A terminal backend status (complete/canceled) ALWAYS wins over the visit-placement
   // recalc below. The backend already decided the job is done; whether its visit ever got
   // dragged onto the Schedule board is irrelevant to that fact. Without this, a job

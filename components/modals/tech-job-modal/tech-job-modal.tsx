@@ -168,7 +168,7 @@ export function TechJobModalContent() {
   // These are referentially stable across re-renders when their captured
   // store-action dependencies don't change (store actions are stable by
   // Zustand's contract). jobId is a primitive string — stable once the modal is
-  // open. curVisit.id can change, so the reopen handler captures curVisit.
+  // open.
 
   // Which API the visit writes go to. A tech's taps must reach the assignment-gated field
   // endpoints — those are the ones that also move his clock; owner/office keep v1.visits.
@@ -210,10 +210,6 @@ export function TechJobModalContent() {
     updateJob(jobId, { invRequested: true });
     close();
   }, [jobId, updateJob, close]);
-
-  const onReopen = useCallback(() => {
-    if (curVisit) onVisitStatus(curVisit.id, "scheduled");
-  }, [curVisit, onVisitStatus]);
 
   // Remove a failed fee-send's LOCAL record only when it never reached the server at all
   // (origin still "manual" — a true local orphan). A send-leg failure after a successful draft
@@ -465,9 +461,6 @@ export function TechJobModalContent() {
           onOpenInvoice={openInvoiceModal}
           onChargeOnFile={chargeOnFile}
           onSendToOffice={sendToOffice}
-          onReopen={onReopen}
-          // Reopen writes a VISIT status; with no placed visit there is nothing for it to move.
-          canReopen={Boolean(curVisit)}
         />
       ) : null}
 

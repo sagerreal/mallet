@@ -128,7 +128,13 @@ function mergeIncomingInvoice(prior: Invoice, incoming: Invoice): Invoice {
     jobId: incoming.jobId ?? prior.jobId,
     lines: incoming.lines?.length ? incoming.lines : prior.lines,
     payments: incoming.payments?.length ? incoming.payments : prior.payments,
-    depPaid: incoming.depPaid || prior.depPaid,
+    // depPaid is NOT preserved, deliberately. The summary's `paidTotal` is total − due, which
+    // ALREADY contains the deposit, and the close-out's DueCard itemises the two separately:
+    // carrying a $200 deposit forward beside a $200 paidTotal rendered "− $200 deposit paid /
+    // − $200 paid / $800 due" on a $1,000 invoice — credits plus balance adding to $1,200 in
+    // front of the customer. The headline was right; the itemisation lied. The summary's own 0
+    // is the honest value here: this row does not know what part of the paid figure was a
+    // deposit, and the full record (which does) overwrites this wholesale.
     termsDays: incoming.termsDays ?? prior.termsDays,
     poNumber: incoming.poNumber ?? prior.poNumber,
     publicToken: incoming.publicToken ?? prior.publicToken,
@@ -140,6 +146,36 @@ function mergeIncomingInvoice(prior: Invoice, incoming: Invoice): Invoice {
     phone: incoming.phone || prior.phone,
     email: incoming.email ?? prior.email,
   };
+}
+
+/**
+ * The summary-row money figures after `amount` more dollars are paid, or `{}` when this record
+ * carries none (a fully-loaded invoice, where the payments themselves ARE the balance).
+ *
+ * A row built from a LIST DTO answers "what is owed" with the server's `due` and "what is paid"
+ * with `paidTotal`, NOT by summing `payments` — the list sends no payment history. So an
+ * optimistic write that only appends to `payments` is invisible to both derivations. These two
+ * move together and stay in the relationship the server guarantees: paidTotal === total − due.
+ */
+function creditSummaryPayment(inv: Invoice, amount: number): Partial<Invoice> {
+  if (inv.due === undefined && inv.paidTotal === undefined) return {};
+  const patch: Partial<Invoice> = {};
+  if (inv.due !== undefined) patch.due = Math.max(0, inv.due - amount);
+  if (inv.paidTotal !== undefined) patch.paidTotal = inv.paidTotal + amount;
+  return patch;
+}
+
+/**
+ * The summary-row money figures after the invoice's TOTAL is re-priced to `total`.
+ *
+ * The server's `due` was computed against the OLD total, so an on-site bill set through
+ * setInvoiceLines left a freshly-priced $450 invoice reading "$0 due" — the close-out foot
+ * offered "Log & send to office" instead of "Take payment — $450". What is already paid does
+ * not change when the price does; the balance is what moves.
+ */
+function repriceSummaryTotal(inv: Invoice, total: number): Partial<Invoice> {
+  if (inv.due === undefined) return {};
+  return { due: Math.max(0, total - (inv.paidTotal ?? 0)) };
 }
 
 export interface InvoicesSlice {
@@ -342,10 +378,13 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   setInvoiceLines: (id, lines) => {
     const prior = snapshotInv(get().invoices, id);
 
-    // 1. Optimistic update — recompute the total from lines.
+    // 1. Optimistic update — recompute the total from lines, and re-derive a summary row's
+    //    balance against the new total (the server's `due` was computed against the old one).
     set((s) => ({
       invoices: s.invoices.map((i) =>
-        i.id === id ? { ...i, lines, total: linesTotal(lines) } : i,
+        i.id === id
+          ? { ...i, lines, total: linesTotal(lines), ...repriceSummaryTotal(i, linesTotal(lines)) }
+          : i,
       ),
     }));
 
@@ -394,6 +433,13 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
               ...i,
               payments: [...(i.payments ?? []), payment],
               status: i.status === "draft" ? "sent" : i.status,
+              // …and move the SUMMARY figures by the same amount. On a row built from a list
+              // DTO, invDue reads the server's `due` and invPaid reads `paidTotal`; appending
+              // to `payments` alone moved neither, so recording a payment in full still read
+              // "Approved · $1,000 · $1,000 still due" until the server round trip landed —
+              // with the customer standing there. Both stay mutually consistent
+              // (paidTotal === total − due) so the itemisation never contradicts the headline.
+              ...creditSummaryPayment(i, payment.amt),
             }
           : i
       ),

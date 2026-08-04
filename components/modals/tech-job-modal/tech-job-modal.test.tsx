@@ -1019,7 +1019,7 @@ describe("done job whose visit was never placed", () => {
     expect(screen.queryByText("↩ Reopen")).toBeNull();
   });
 
-  it("still offers Reopen when the visit WAS placed", () => {
+  it("offers EXACTLY ONE Reopen when the visit WAS placed", () => {
     mockJobs = [
       makeJob({
         status: "done",
@@ -1029,7 +1029,9 @@ describe("done job whose visit was never placed", () => {
       }),
     ];
     render(<TechJobModalContent />);
-    fireEvent.click(screen.getAllByText("↩ Reopen")[0]!);
+    // getByText, not getAllByText[0]: the done hero used to render a SECOND Reopen firing the
+    // same write, so the office saw one control twice.
+    fireEvent.click(screen.getByText("↩ Reopen"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "scheduled", "office");
   });
 });
