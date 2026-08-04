@@ -43,6 +43,14 @@ export interface InvoiceRepository {
   save(invoice: Invoice): Promise<void>;
   // Idempotent create keyed on the source job (ON CONFLICT DO NOTHING RETURNING). true if inserted.
   insertForJob(invoice: Invoice): Promise<boolean>;
+  /**
+   * Insert a brand-new invoice, non-destructively. false when ANY unique constraint collided
+   * (primary key or the scope index) and nothing was written.
+   *
+   * Every path that mints an invoice from a CLIENT-AUTHORED id must use this rather than `save`.
+   * `save` upserts, which turns that id into "overwrite the invoice of my choosing".
+   */
+  insertNew(invoice: Invoice): Promise<boolean>;
   // Append a payment to the ledger, deduped on (org_id, idempotency_key) via ON CONFLICT DO
   // NOTHING RETURNING. true if this call applied it; false if the key was already used.
   insertPayment(orgId: OrgId, invoiceId: InvoiceId, payment: Payment): Promise<boolean>;
@@ -51,7 +59,20 @@ export interface InvoiceRepository {
   // races a void/pay cannot resurrect the invoice. Returns whether it applied + the current invoice.
   applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<ApplyResult>;
   findById(id: InvoiceId): Promise<Invoice | null>;
+  /**
+   * Token lookup for the public pay page. Deliberately takes NO org id — the unguessable token IS
+   * the credential; the caller resolved the org from it before opening this tenant tx, and RLS
+   * still scopes the read so another org's token resolves to nothing here. Soft-delete filtered.
+   */
+  findByPublicToken(token: string): Promise<Invoice | null>;
   findBySourceJob(jobId: JobId): Promise<Invoice | null>;
+  /**
+   * Every non-deleted invoice SCOPED to a job (see InvoiceProps.scopeJobId), newest first.
+   *
+   * A list, not a single row: the uniqueness index excludes voided and soft-deleted rows, so a job
+   * whose fee was voided and re-raised genuinely has several. Callers narrow it themselves.
+   */
+  listByScopeJob(jobId: JobId): Promise<Invoice[]>;
   list(page: CursorPage, filter?: InvoiceFilter, sort?: InvoiceSort, sortDir?: "asc" | "desc"): Promise<Paginated<Invoice>>;
 
   /**

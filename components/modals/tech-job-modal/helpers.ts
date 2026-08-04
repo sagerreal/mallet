@@ -30,15 +30,31 @@ export function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
 
-/** invPaid — sum of payment amounts (prototype invPaid). */
-export function invPaid(i: Invoice): number {
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
+/**
+ * The shop withheld this job's prices from THIS device — a third state, distinct from "$0".
+ *
+ * `redactMoneyForTech` nulls every line rate (and the aggregate total) when the org has
+ * `techSeesPrice` off, and `mapExecution` keeps the null all the way into the store precisely so
+ * the UI can tell "hidden from you" from "free". A genuine $0 line arrives as `{cents: 0}` and maps
+ * to `0`, so `r === null` is exactly and only the redaction signal.
+ *
+ * Every derivation that reduces a rate with `?? 0` collapses that third state back into "$0",
+ * which is why this predicate has to be asked alongside them: a priced job read through a redacted
+ * device sums to zero, and a UI that believes it routes the technician to "Send to the office to
+ * bill" on the job he was sent out to collect on.
+ */
+export function pricesHidden(j: Job): boolean {
+  return (j.lines ?? []).some((l) => l.r === null);
 }
 
-/** invDue — total − deposit − payments, floored at 0 (prototype invDue). */
-export function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+/**
+ * invPaid / invDue — ONE definition, in lib/store/invoice-balance.ts.
+ *
+ * This module's own copy re-derived the balance from `depPaid` + `payments`, neither of which a
+ * LIST row carries, so the done card read the full total as owed until a mutation reconcile
+ * loaded the real record — and back again on the next refetch.
+ */
+export { invPaid, invDue } from "@/lib/store/invoice-balance";
 
 /** priced → "install" (blue), unpriced job → "service" (brown), estimate → estimate (prototype jobMode, 4002). */
 export function jobMode(j: Job): string {
@@ -61,9 +77,14 @@ export function jobQuoted(j: Job): boolean {
  * completing it hands the scope to the office, never a payment ask. A quote
  * signed on site writes real priced lines onto the job (jobQuoted flips true),
  * so signed estimates fall OUT of this predicate and stay billable.
+ *
+ * `pricesHidden` is the third clause, and it is load-bearing: an estimate signed on the doorstep
+ * of a shop that hides prices from techs arrives with every rate nulled, so `jobQuoted` reads
+ * false and this predicate would call a genuinely sold job "unpriced" — handing the technician a
+ * scope-handoff card for work the customer just agreed to pay for. Invisible is not unpriced.
  */
 export function isUnpricedEstimate(j: Job): boolean {
-  return jobMode(j) === "estimate" && !jobQuoted(j);
+  return jobMode(j) === "estimate" && !jobQuoted(j) && !pricesHidden(j);
 }
 
 /** Customer name (prototype custName, 3582) — the linked lead's name, else the job title. */

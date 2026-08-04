@@ -3,7 +3,7 @@ import { notFound, validation, err } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import type { Notification, NotificationChannel } from "../domain/notification";
 import type { ReminderTargetReader } from "../domain/reminder-target-reader";
-import { composeInvoiceSent } from "../templates/invoice-reminder";
+import { composeInvoiceSent, invoicePayUrl } from "../templates/invoice-reminder";
 import type { SendNotificationUseCase } from "./send-notification";
 
 export interface SendInvoiceNotificationCommand {
@@ -14,12 +14,16 @@ export interface SendInvoiceNotificationCommand {
 
 // Compose an "here is your invoice" message from the invoice + its lead's contact, then send it.
 // A manual send/resend (fresh idempotency key each time). Requires the lead to have the matching
-// contact field for the chosen channel — no silent channel switch.
+// contact field for the chosen channel — no silent channel switch. The message carries the public
+// pay link when one can be built (canonical origin configured AND the invoice has its token).
 export class SendInvoiceNotificationUseCase {
   constructor(
     private readonly reader: ReminderTargetReader,
     private readonly send: SendNotificationUseCase,
     private readonly ids: IdGenerator,
+    // resolvePublicAppOrigin(config) — injected so the compose stays testable and the origin
+    // decision lives in one place (the wiring), not re-read per message.
+    private readonly publicOrigin: string | null,
   ) {}
 
   async exec(cmd: SendInvoiceNotificationCommand): Promise<Result<Notification, AppError>> {
@@ -36,7 +40,7 @@ export class SendInvoiceNotificationUseCase {
       channel: cmd.channel,
       to,
       kind: "invoice_sent",
-      body: composeInvoiceSent(target),
+      body: composeInvoiceSent(target, invoicePayUrl(this.publicOrigin, target.publicToken)),
       relatedType: "invoice",
       relatedId: cmd.invoiceId,
       reminderStage: null,

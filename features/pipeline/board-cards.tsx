@@ -205,8 +205,13 @@ export function GettingCard({ row }: { row: GettingRow }) {
   }
   function verbAction(e: React.MouseEvent) {
     e.stopPropagation();
-    if (row.kind === "scoped") router.push(`/composer?lead=${row.lead.id}`);
-    else if (row.est) openModal(MODAL.EST, { estId: row.est.id });
+    if (row.kind === "scoped") {
+      // The scope-visit JOB rides along: the quote drafted from this card points back at the
+      // walkthrough, and accepting it CONVERTS that job into the sold work — one job for the
+      // whole sale, never a twin appearing next to the visit that earned it.
+      const job = row.scopeVisitJobId ? `&job=${row.scopeVisitJobId}` : "";
+      router.push(`/composer?lead=${row.lead.id}${job}`);
+    } else if (row.est) openModal(MODAL.EST, { estId: row.est.id });
   }
 
   return (

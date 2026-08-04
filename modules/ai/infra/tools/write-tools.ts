@@ -5,6 +5,7 @@ import { DrizzleLeadRepository, EnsureCustomerUseCase } from "@mallet/customers"
 import {
   DrizzleInvoiceRepository,
   DrizzleJobReader,
+  DrizzleEstimateDepositReader,
   SendInvoiceUseCase,
   DraftInvoiceUseCase,
   CreateInvoiceFromJobUseCase,
@@ -233,7 +234,7 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
     //
     // AdvanceReminder resolves the due stage, sends that stage's copy, and keys idempotency on
     // `reminder:<id>:<stage>` so the stage is recorded and cannot repeat.
-    const uc = new AdvanceReminderUseCase(reader, repo, sendUc, new FollowUpPolicy(), ctx.deps.clock);
+    const uc = new AdvanceReminderUseCase(reader, repo, sendUc, new FollowUpPolicy(), ctx.deps.clock, publicOrigin());
     const result = await uc.exec({ orgId: ctx.orgId, relatedType: "invoice", relatedId: parsed.data.invoiceId });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     // Null means the policy says nothing is due — a real answer, not a failure. Saying so stops the
@@ -915,9 +916,10 @@ export const invoiceCreateFromJobTool: AgentTool = {
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new CreateInvoiceFromJobUseCase(
       new DrizzleInvoiceRepository(ctx.tx, ctx.orgId),
-      // The invoicing module's own JobReader adapter — the ONE place that derives a job's
-      // priced-ness (svc + total + priced lines), so the unpriced-estimate guard holds here too.
+      // The invoicing module's own JobReader adapter — the ONE place that reads a job's
+      // priced lines, so the unpriced-estimate guard and the line copy hold here too.
       new DrizzleJobReader(ctx.tx, ctx.orgId),
+      new DrizzleEstimateDepositReader(ctx.tx),
       ctx.deps.bus,
       ctx.deps.clock,
       ctx.deps.ids,
@@ -1011,6 +1013,9 @@ export const invoiceRecordPaymentTool: AgentTool = {
       amount: asMoney(parsed.data.amountCents),
       method: parsed.data.method,
       idempotencyKey: parsed.data.idempotencyKey,
+      // The agent acts FOR a signed-in person, and this tool is approval-gated — the ledger records
+      // the human who approved it, from the principal, not from the model's arguments.
+      recordedByUserId: ctx.principal.userId,
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     const p = result.value.props;

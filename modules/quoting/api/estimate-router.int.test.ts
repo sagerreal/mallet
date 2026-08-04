@@ -9,6 +9,11 @@ import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 import { acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
+import { recordEstimateDeposit } from "@/modules/quoting/app/public-quote-deposit";
+import { withTenant } from "@mallet/shared/db/tx";
+import { sql as sqlRaw } from "drizzle-orm";
+import { asEstimateId } from "@mallet/shared/types";
+import { DrizzleEstimateDepositLedger } from "@/modules/quoting/infra/drizzle-estimate-deposit-ledger";
 import { GET as publicQuoteGET } from "@/app/api/public/quote/[token]/route";
 
 // Capstone: the whole quoting stack via createCaller — auth, RBAC, org-scoped tx, use-cases,
@@ -160,6 +165,101 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
       if (full.sourceEstimateId === drafted.id) matchCount++;
     }
     expect(matchCount).toBe(1);
+  });
+
+  it("accept with jobId CONVERTS the scope-visit job — same job flips to work, no duplicate row", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Convert Test Customer" });
+
+    // The walkthrough already on the books: a kind='estimate' job for this lead.
+    const scopeJob = await caller.v1.jobs.create({
+      leadId: lead.id,
+      title: "Walkthrough",
+      kind: "estimate",
+    });
+    expect(scopeJob.kind).toBe("estimate");
+    const walkthroughVisits = scopeJob.visits.length;
+
+    // The composer's draft carries the scope-visit job; the DTO reads it back.
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Repipe",
+      taxBps: 1_000, // 10%
+      lines: [{ description: "Repipe supply lines", quantity: 1, rateCents: 200_000 }],
+      jobId: scopeJob.id,
+    });
+    expect(drafted.jobId).toBe(scopeJob.id);
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+
+    // The SAME job came back, converted — not a second job minted next to the walkthrough.
+    expect(accepted.job).not.toBeNull();
+    expect(accepted.job!.id).toBe(scopeJob.id);
+    expect(accepted.job!.kind).toBe("work");
+
+    const full = await caller.v1.jobs.get({ jobId: scopeJob.id });
+    expect(full.kind).toBe("work");
+    expect(full.sourceEstimateId).toBe(drafted.id);
+    expect(full.title).toBe("Repipe");
+    expect(full.svc).toBeNull(); // stale estimate signal cleared, same as the mint path
+    expect(full.total!.cents).toBe(220_000); // tax-inclusive snapshot
+    expect(full.status).toBe("scheduled"); // live work again, not "done, not billed"
+    // The sold scope landed on the job. Read straight off the table — v1.jobs.get returns the
+    // header + visits only (execution lines ride their own batched reads).
+    const lineRows = await admin<{ description: string }[]>`
+      select description from job_lines where job_id = ${scopeJob.id} and deleted_at is null`;
+    expect(lineRows.map((r) => r.description)).toEqual(["Repipe supply lines"]);
+    // ONE pending visit appended AFTER the walkthrough's — history preserved, positions ordered.
+    expect(full.visits).toHaveLength(walkthroughVisits + 1);
+    const appended = full.visits[full.visits.length - 1]!;
+    expect(appended.status).toBe("pending");
+    expect(appended.durationMinutes).toBe(120);
+
+    // Exactly ONE job row for this lead — the assertion the whole task exists for.
+    const jobsPage = await caller.v1.jobs.listByLead({ leadId: lead.id, limit: 50 });
+    expect(jobsPage.items).toHaveLength(1);
+
+    // Re-running the job-creation path (the manual fallback endpoint) is idempotent:
+    // same job id, and no second pending visit gets seeded onto it.
+    const again = await caller.v1.jobs.createFromEstimate({ estimateId: drafted.id });
+    expect(again.id).toBe(scopeJob.id);
+    const reloaded = await caller.v1.jobs.get({ jobId: scopeJob.id });
+    expect(reloaded.visits).toHaveLength(walkthroughVisits + 1);
+  });
+
+  it("cross-tenant jobId is refused at draft — org B cannot claim org A's walkthrough", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const leadA = await callerA.v1.customers.create({ name: "Tenant A Walkthrough Customer" });
+    const scopeJobA = await callerA.v1.jobs.create({
+      leadId: leadA.id,
+      title: "Walkthrough A",
+      kind: "estimate",
+    });
+
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    const leadB = await callerB.v1.customers.create({ name: "Tenant B Customer" });
+    // The org-scoped job read cannot see org A's row → refused as a validation error,
+    // never stored (no mangled cross-tenant link, no FK explosion).
+    await expect(
+      callerB.v1.quoting.draft({
+        leadId: leadB.id,
+        lines: [{ description: "Steal", quantity: 1, rateCents: 1_000 }],
+        jobId: scopeJobA.id,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("a quote cannot claim existing WORK at draft — jobId must point at an estimate visit", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Work Job Guard Customer" });
+    const workJob = await caller.v1.jobs.create({ leadId: lead.id, title: "Real work" }); // kind defaults to 'work'
+    await expect(
+      caller.v1.quoting.draft({
+        leadId: lead.id,
+        lines: [{ description: "Grab", quantity: 1, rateCents: 1_000 }],
+        jobId: workJob.id,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("archiving a lead archives its estimates (cascade)", async () => {
@@ -338,8 +438,10 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     if (result.kind !== "ok") throw new Error("expected ok");
     expect(result.estimate.props.status).toBe("accepted");
     expect(result.estimate.total()).toBe(11_202);
-    // depPaid is stamped from the COMMITTED (tuned) lines.
-    expect(result.estimate.props.depPaid).toBe(3_697);
+    // The deposit ASK derives from the COMMITTED (tuned) lines; depPaid stays 0 —
+    // accepting agrees to the work, it pays nothing.
+    expect(result.estimate.depositDue()).toBe(3_697);
+    expect(result.estimate.props.depPaid).toBe(0);
     expect(result.estimate.props.lines.every((l) => !l.props.isOptional)).toBe(true);
 
     // Stored state matches what was returned: the office sees the tuned total.
@@ -447,7 +549,8 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
       result.estimate.props.lines.every((l) => l.props.tier === null && !l.props.isOptional),
     ).toBe(true);
     expect(result.estimate.total()).toBe(44_000); // (35_000 + 5_000) + 10% tax
-    expect(result.estimate.props.depPaid).toBe(22_000);
+    expect(result.estimate.depositDue()).toBe(22_000);
+    expect(result.estimate.props.depPaid).toBe(0); // agreed, not paid
 
     // The office sees the resolved quote.
     const fetched = await caller.v1.quoting.get({ estimateId: drafted.id });
@@ -775,4 +878,241 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
+
+  // ── deposits are COLLECTED, not assumed ────────────────────────────────────
+  //
+  // Task 4 removed the fake depPaid stamping at accept, so the only thing that can record a
+  // deposit is a real payment landing through recordEstimateDeposit — the recorder BOTH Stripe
+  // entry points (webhook + /pay/success reconcile) call. These run it against the live DB, under
+  // real RLS, against the real estimate_deposits ledger and its UNIQUE (org_id, payment_ref).
+
+  /** dep_paid_cents as the DB actually holds it (admin connection — bypasses RLS deliberately). */
+  const depPaidOf = async (estimateId: string): Promise<number> => {
+    const [row] = await admin<{ dep_paid_cents: number }[]>`
+      select dep_paid_cents from estimates where id = ${estimateId}`;
+    return row!.dep_paid_cents;
+  };
+
+  /** The ledger rows behind that number. */
+  const ledgerOf = async (
+    estimateId: string,
+  ): Promise<{ payment_ref: string; amount_cents: number }[]> =>
+    admin<{ payment_ref: string; amount_cents: number }[]>`
+      select payment_ref, amount_cents from estimate_deposits
+       where estimate_id = ${estimateId} order by amount_cents`;
+
+  const acceptedQuote = async (title: string, depBps: number, rateCents: number) => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const drafted = await caller.v1.quoting.draft({
+      leadId: leadAId,
+      title,
+      depBps,
+      lines: [{ description: "Labor", quantity: 1, rateCents }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    return { id: drafted.id, accepted };
+  };
+
+  it("records a deposit, and the SAME payment delivered twice writes exactly one ledger row", async () => {
+    const { id, accepted } = await acceptedQuote("Deposit — happy path", 3_000, 100_000);
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.depositDue.cents).toBe(30_000);
+    expect(await depPaidOf(id)).toBe(0); // accepted, not paid
+
+    // The webhook lands.
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_same")).toBe(true);
+    expect(await depPaidOf(id)).toBe(30_000);
+
+    // The success-page reconcile lands for the SAME payment_intent. It reports success — the money
+    // IS on the quote — while the UNIQUE (org_id, payment_ref) index makes the write a no-op.
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_same")).toBe(true);
+    expect(await depPaidOf(id)).toBe(30_000); // not 60_000
+    expect(await ledgerOf(id)).toHaveLength(1);
+  });
+
+  it("TWO DIFFERENT payments on one quote both persist, and dep_paid_cents is their SUM", async () => {
+    // The case a bare mutable integer could not express. Reachable in production: resignOnSite
+    // re-prices an accepted quote, so a second checkout session can exist alongside the first and
+    // both can settle. `SET` lost one of them; the ledger keeps both.
+    const { id } = await acceptedQuote("Deposit — two payments", 3_000, 100_000);
+
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_A")).toBe(true);
+    expect(await recordEstimateDeposit(orgAId, id, 60_000, "pi_int_B")).toBe(true);
+
+    expect(await depPaidOf(id)).toBe(90_000); // A + B, derived by SUM — not the larger, not one
+    expect(await ledgerOf(id)).toEqual([
+      { payment_ref: "pi_int_A", amount_cents: 30_000 },
+      { payment_ref: "pi_int_B", amount_cents: 60_000 },
+    ]);
+  });
+
+  it("a SMALLER later payment is kept too — arrival order decides nothing", async () => {
+    const { id } = await acceptedQuote("Deposit — smaller second", 3_000, 100_000);
+
+    expect(await recordEstimateDeposit(orgAId, id, 60_000, "pi_int_big")).toBe(true);
+    // Under the old `dep_paid_cents < amount` guard this wrote nothing AND reported success.
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_small")).toBe(true);
+
+    expect(await depPaidOf(id)).toBe(90_000);
+    expect(await ledgerOf(id)).toHaveLength(2);
+  });
+
+  it("CONCURRENT payments: overlapping transactions cannot leave the cached total behind", async () => {
+    // The regression for the READ COMMITTED anomaly. Two recorders overlap: T1 appends A and holds
+    // its transaction open; T2 appends B while T1's estimate row lock is still held.
+    //
+    // Without `FOR UPDATE` on the estimate scan, T2 inserted its ledger row FIRST and only then
+    // blocked, inside its `UPDATE … SET dep_paid_cents = (SELECT sum(…))` — and that subquery had
+    // already been planned against T2's pre-block snapshot, which cannot see A. The ledger ended
+    // up holding both payments while dep_paid_cents held one, permanently: every consumer reads
+    // the cache and nothing re-derives, so the invoice credited less than the customer paid.
+    //
+    // With FOR UPDATE, T2 blocks BEFORE inserting, so its later statements take fresh snapshots.
+    // Sequential tests structurally cannot catch this — the transactions must genuinely overlap.
+    const { id } = await acceptedQuote("Deposit — concurrent", 3_000, 100_000);
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const append = (tx: Parameters<Parameters<typeof withTenant>[1]>[0], ref: string, cents: number) =>
+      new DrizzleEstimateDepositLedger(tx, asOrgId(orgAId)).append({
+        estimateId: asEstimateId(id),
+        paymentRef: ref,
+        amountCents: cents,
+        receivedAt: new Date(),
+      });
+
+    // Warm TWO pool connections first. Opening a cold TLS connection to the DB costs several
+    // hundred ms, and if T2 spends the hold window connecting instead of blocking, the two
+    // transactions never overlap and the test proves nothing.
+    await Promise.all([
+      withTenant(asOrgId(orgAId), async (tx) => tx.execute(sqlRaw`select 1`)),
+      withTenant(asOrgId(orgAId), async (tx) => tx.execute(sqlRaw`select 1`)),
+    ]);
+
+    let releaseT1 = (): void => undefined;
+    const t1Held = new Promise<void>((resolve) => {
+      releaseT1 = resolve;
+    });
+
+    const t1 = withTenant(asOrgId(orgAId), async (tx) => {
+      const result = await append(tx, "pi_concurrent_A", 30_000);
+      await t1Held; // hold the estimate row lock open while T2 tries to record
+      return result;
+    });
+
+    await sleep(1_000); // T1 has taken its lock
+
+    const t2 = withTenant(asOrgId(orgAId), async (tx) => append(tx, "pi_concurrent_B", 60_000));
+
+    await sleep(3_000); // T2 is now blocked inside append, waiting on T1
+    releaseT1();
+
+    const [a, b] = await Promise.all([t1, t2]);
+    expect(a.kind).toBe("appended");
+    expect(b.kind).toBe("appended");
+
+    // Both payments are on the ledger AND the cached total is their sum — the two agree.
+    expect(await ledgerOf(id)).toHaveLength(2);
+    expect(await depPaidOf(id)).toBe(90_000);
+    // The winner's own return value reports the full total too, not just its own payment.
+    expect(b.kind === "appended" && b.depositPaidCents).toBe(90_000);
+  }, 30_000);
+
+  it("refuses a payment_ref already recorded against a DIFFERENT quote in the same org", async () => {
+    // The org-wide unique index means such a ref conflicts here too. Answering "duplicate" would
+    // report THIS quote's total (0) as though the payment had landed on it; the truth is that it
+    // cannot be recorded here at all.
+    const first = await acceptedQuote("Deposit — ref owner", 3_000, 100_000);
+    const second = await acceptedQuote("Deposit — ref thief", 3_000, 100_000);
+
+    expect(await recordEstimateDeposit(orgAId, first.id, 30_000, "pi_shared_ref")).toBe(true);
+    expect(await recordEstimateDeposit(orgAId, second.id, 30_000, "pi_shared_ref")).toBe(false);
+
+    expect(await depPaidOf(first.id)).toBe(30_000);
+    expect(await depPaidOf(second.id)).toBe(0);
+    expect(await ledgerOf(second.id)).toHaveLength(0);
+  });
+
+  it("refuses a deposit against a quote in another org, and against an unapproved quote", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const drafted = await caller.v1.quoting.draft({
+      leadId: leadAId,
+      title: "Deposit — refusals",
+      depBps: 5_000,
+      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+    });
+
+    // Not approved yet — a deposit on an unapproved quote is not a deposit.
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000, "pi_int_unapproved")).toBe(false);
+    expect(await ledgerOf(drafted.id)).toHaveLength(0);
+
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    await caller.v1.quoting.accept({ estimateId: drafted.id });
+
+    // Cross-tenant: org B naming org A's estimate id. RLS scopes both the read and the ledger
+    // write, so it resolves to nothing — indistinguishable from a missing estimate.
+    expect(await recordEstimateDeposit(orgBId, drafted.id, 50_000, "pi_int_crosstenant")).toBe(false);
+    expect(await depPaidOf(drafted.id)).toBe(0);
+    expect(await ledgerOf(drafted.id)).toHaveLength(0);
+
+    // Its own org still can.
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000, "pi_int_ownorg")).toBe(true);
+    expect(await depPaidOf(drafted.id)).toBe(50_000);
+  });
+
+  it("a save() on an accepted quote cannot wipe a collected deposit", async () => {
+    // save() upserts the whole aggregate, and setFollowUp / clearChangeRequest / resignOnSite all
+    // call it on accepted estimates from an in-memory copy loaded before the deposit landed.
+    // dep_paid_cents is therefore INSERT-ONLY in that upsert — collected money is written only by
+    // the ledger path. Before that, a follow-up toggle silently zeroed a real deposit.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const { id } = await acceptedQuote("Deposit — save() clobber", 3_000, 100_000);
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_clobber")).toBe(true);
+    expect(await depPaidOf(id)).toBe(30_000);
+
+    // A perfectly ordinary office action that goes through save() with no status guard.
+    await caller.v1.quoting.setFollowUp({ estimateId: id, on: true, stage: 1 });
+
+    expect(await depPaidOf(id)).toBe(30_000); // still there
+    expect(await ledgerOf(id)).toHaveLength(1);
+    // And the office can SEE it — the DTO carries what was collected, not just the ask.
+    const fetched = await caller.v1.quoting.get({ estimateId: id });
+    expect(fetched.depositPaid.cents).toBe(30_000);
+    expect(fetched.depositDue.cents).toBe(30_000);
+  });
+
+  it("END TO END: accepted quote → deposit collected → job billed → invoice nets the deposit out", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Deposit Chain Customer" });
+
+    // 1. Quote it: $1,000 of work, 30% deposit asked for.
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Water heater swap",
+      depBps: 3_000,
+      lines: [{ description: "Install", quantity: 1, rateCents: 100_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    expect(accepted.total.cents).toBe(100_000);
+    expect(accepted.depositDue.cents).toBe(30_000);
+    expect(accepted.depositPaid.cents).toBe(0); // agreed, not paid
+
+    // 2. The deposit is COLLECTED (this is what Task 8 added; before it, nothing did this).
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000, "pi_int_chain")).toBe(true);
+
+    // 3. The job accept created runs and completes.
+    const jobId = accepted.job!.id;
+    await caller.v1.jobs.start({ jobId });
+    const done = await caller.v1.jobs.complete({ jobId });
+    expect(done.status).toBe("complete");
+
+    // 4. Billing the job credits the deposit through invoicing's EstimateDepositReader (Task 2).
+    const invoice = await caller.v1.invoicing.createFromJob({ jobId });
+    expect(invoice.total.cents).toBe(100_000);
+    expect(invoice.depositPaid.cents).toBe(30_000);
+    // The bill asks for what is actually still owed — total minus the deposit already in hand.
+    expect(invoice.total.cents - invoice.depositPaid.cents - invoice.amountPaid.cents).toBe(70_000);
+  });
+
 });

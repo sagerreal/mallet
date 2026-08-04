@@ -162,6 +162,13 @@ export interface Estimate {
    */
   cachedTotal?: number;
   /**
+   * Deposit actually COLLECTED on this quote, in DOLLARS. Distinct from pricing.dep, which is the
+   * percentage ASKED for — a quote can be accepted with a 30% deposit due and nothing paid, and
+   * telling those apart is the whole point of showing it. Absent until a full estimateDTO lands
+   * (the list summary omits it) and for locally-created estimates, where it is necessarily 0.
+   */
+  depPaid?: number;
+  /**
    * The unguessable share token for the customer-facing quote page (/q/<token>).
    * Populated by dtoEstimateToStore when the full estimateDTO is returned by a
    * mutation (draft/send/accept/decline/restore). Absent for list-hydrated
@@ -179,6 +186,12 @@ export interface Estimate {
   changeRequestedAt?: string;
   /** The customer's change request message. */
   changeRequest?: string;
+  /**
+   * The scope-visit job this quote prices — the walkthrough the composer was opened from
+   * (?job=). Accepting the quote CONVERTS that job into the sold work instead of minting a
+   * duplicate. Absent on quotes with no visit behind them.
+   */
+  jobId?: string | null;
   /**
    * Good/Better/Best: set = tiered estimate (every line carries a tier tag).
    * Totals derive from this tier pre-accept; absent on single quotes.
@@ -429,6 +442,12 @@ export interface Invoice {
   title: string;
   email?: string;
   termsDays?: number | null;
+  /** Customer-supplied purchase order number. Read-only in the store (edit UI is Task 9). */
+  poNumber?: string;
+  /** The public pay-link token, minted server-side on first send. */
+  publicToken?: string;
+  /** Absolute customer-facing pay URL (server-composed from the canonical origin). */
+  publicUrl?: string;
   lines: InvoiceLine[];
   pricing?: { disc: number; tax: number };
   /** Dollars, TAX-INCLUSIVE — the snapshot from the job, not a sum of `lines`. */
@@ -451,6 +470,14 @@ export interface Invoice {
    * `invPaid` prefers it. Absent on a fully-loaded invoice, where the payments ARE the truth.
    */
   paidTotal?: number;
+  /**
+   * The balance the SERVER says is still owed, in dollars — present only on a `partial` row.
+   *
+   * A summary DTO carries no deposit and no payment history, so a balance re-derived from the
+   * parts on this record reads the whole total as owed. `invDue` prefers this figure while
+   * `partial` is set; a fully-loaded invoice has none, because there the parts ARE the truth.
+   */
+  due?: number;
   /**
    * True when this row was built from a LIST/summary DTO — no lines, no jobId, no payment
    * history. A surface that DECIDES anything from those fields (the invoice modal choosing

@@ -25,11 +25,14 @@ class FakeInvoiceRepository implements InvoiceRepository {
   saveCallCount = 0;
   async nextNumber() { return "INV-1"; }
   async save(i: Invoice) { this.saveCallCount += 1; this.store.set(i.props.id, i); }
+  async insertNew(i: Invoice) { if (this.store.has(i.props.id)) return false; this.store.set(i.props.id, i); return true; }
   async insertForJob(i: Invoice) { this.store.set(i.props.id, i); return true; }
   async insertPayment(_o: OrgId, _i: InvoiceId, _p: Payment) { return true; }
   async applyPayment(_i: InvoiceId, _a: number): Promise<ApplyResult> { return { applied: false, invoice: null }; }
   async findById(id: InvoiceId) { return this.store.get(id) ?? null; }
+  async listByScopeJob() { return []; }
   async findBySourceJob(_j: JobId) { return null; }
+  async findByPublicToken(_t: string) { return null; }
   async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
     return { openCents: 0, overdueCents: 0, openCount: 0 };
   }

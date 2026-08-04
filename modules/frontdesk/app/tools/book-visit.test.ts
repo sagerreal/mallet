@@ -675,3 +675,136 @@ describe("bookVisitTool — scope_signal capture", () => {
     expect(onlyJob(h).props.requiredCerts).toBeNull();
   });
 });
+
+// ── booked flat price lands on the job (three-flows money, task 3) ─────────────
+// A flat booking quoted a real dollar amount to the caller — that number must persist as a
+// priced job line (and the job total), so the invoice later carries what was promised on the
+// phone. Estimate lanes carry NO price at create — money arrives with the estimate.
+
+describe("bookVisitTool — booked flat price lands on the job", () => {
+  let h: Harness;
+  beforeEach(() => {
+    h = buildHarness();
+  });
+
+  const flatSettings = (services: object[]) =>
+    settingsFrom({
+      booking: { services: services as never, notServices: "", serviceFee: 89, feeCredited: true },
+    });
+
+  it("flat with a stored price: persists ONE line at the quoted price and total (9900)", async () => {
+    const h2 = buildHarness({
+      settings: flatSettings([{ name: "Drain cleaning", lane: "flat", price: 99, triggers: "clogged" }]),
+    });
+    const result = await bookVisitTool.handle(
+      { ...REPAIR_INPUT, lane: "flat", service_name: "Drain cleaning" },
+      h2.ctx,
+    );
+    const job = onlyJob(h2);
+    const lines = h2.jobs.linesByJob.get(job.props.id);
+    expect(lines).toBeDefined();
+    expect(lines).toHaveLength(1);
+    expect(lines![0]!.props.description).toBe("Drain cleaning");
+    expect(lines![0]!.props.quantity).toBe(1);
+    expect(lines![0]!.props.rate).toBe(9900);
+    expect(job.props.total).toBe(9900);
+    expect(result.speak).toContain("$99");
+  });
+
+  it("flat with a pricebook-LINKED service: persists the RESOLVED price and speaks the same number", async () => {
+    // The playbook stores $99 but links the service to pricebook entry pb-1, whose CURRENT price
+    // is $129 — the line AND the spoken confirmation must both carry the resolved $129.
+    const h2 = buildHarness({
+      settings: flatSettings([
+        { name: "Drain cleaning", lane: "flat", price: 99, pricebookServiceId: "pb-1", triggers: "clogged" },
+      ]),
+      pricebookPrices: {
+        async unitPricesByIds() {
+          return new Map([["pb-1", 129]]);
+        },
+      },
+    });
+    const result = await bookVisitTool.handle(
+      { ...REPAIR_INPUT, lane: "flat", service_name: "Drain cleaning" },
+      h2.ctx,
+    );
+    const job = onlyJob(h2);
+    const lines = h2.jobs.linesByJob.get(job.props.id);
+    expect(lines).toHaveLength(1);
+    expect(lines![0]!.props.rate).toBe(12900);
+    expect(job.props.total).toBe(12900);
+    // speech and persisted line agree: the resolved price, never the stale stored copy
+    expect(result.speak).toContain("$129");
+    expect(result.speak).not.toContain("$99");
+  });
+
+  it("flat with a DANGLING pricebook link: falls back to the stored price (never a silent zero)", async () => {
+    const h2 = buildHarness({
+      settings: flatSettings([
+        { name: "Drain cleaning", lane: "flat", price: 99, pricebookServiceId: "pb-gone", triggers: "clogged" },
+      ]),
+      pricebookPrices: {
+        async unitPricesByIds() {
+          return new Map(); // entry archived/deleted → no resolved price
+        },
+      },
+    });
+    const result = await bookVisitTool.handle(
+      { ...REPAIR_INPUT, lane: "flat", service_name: "Drain cleaning" },
+      h2.ctx,
+    );
+    const lines = h2.jobs.linesByJob.get(onlyJob(h2).props.id);
+    expect(lines).toHaveLength(1);
+    expect(lines![0]!.props.rate).toBe(9900);
+    expect(result.speak).toContain("$99");
+  });
+
+  it("flat with an UNCONFIGURED name: persists NO lines (fee spoken, nothing invented)", async () => {
+    const h2 = buildHarness({
+      settings: flatSettings([{ name: "Drain cleaning", lane: "flat", price: 99, triggers: "clogged" }]),
+    });
+    await bookVisitTool.handle({ ...REPAIR_INPUT, lane: "flat", service_name: "Mystery service" }, h2.ctx);
+    const job = onlyJob(h2);
+    expect(h2.jobs.linesByJob.size).toBe(0);
+    expect(job.props.total).toBe(0);
+  });
+
+  it("estimate lane: persists NO lines and a zero total (money arrives with the estimate)", async () => {
+    const result = await bookVisitTool.handle(
+      { ...REPAIR_INPUT, lane: "estimate", service_name: "Repipe estimate" },
+      h.ctx,
+    );
+    const job = onlyJob(h);
+    expect(h.jobs.linesByJob.size).toBe(0);
+    expect(job.props.total).toBe(0);
+    expect(result.data).toMatchObject({ kind: "estimate" });
+  });
+
+  it("legacy repair lane: persists NO lines (a fee visit is not priced work)", async () => {
+    await bookVisitTool.handle(REPAIR_INPUT, h.ctx);
+    expect(h.jobs.linesByJob.size).toBe(0);
+    expect(onlyJob(h).props.total).toBe(0);
+  });
+
+  it("price-reader THROWS: booking still succeeds on the stored price (graceful degrade)", async () => {
+    const h2 = buildHarness({
+      settings: flatSettings([
+        { name: "Drain cleaning", lane: "flat", price: 99, pricebookServiceId: "pb-1", triggers: "clogged" },
+      ]),
+      pricebookPrices: {
+        async unitPricesByIds(): Promise<ReadonlyMap<string, number>> {
+          throw new Error("pricebook read failed");
+        },
+      },
+    });
+    const result = await bookVisitTool.handle(
+      { ...REPAIR_INPUT, lane: "flat", service_name: "Drain cleaning" },
+      h2.ctx,
+    );
+    expect(h2.jobs.jobs.size).toBe(1);
+    const lines = h2.jobs.linesByJob.get(onlyJob(h2).props.id);
+    expect(lines).toHaveLength(1);
+    expect(lines![0]!.props.rate).toBe(9900);
+    expect(result.speak).toContain("$99");
+  });
+});

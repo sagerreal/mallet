@@ -96,9 +96,14 @@ class FakeRepo implements InvoiceRepository {
     return "INV-1";
   }
   async save(): Promise<void> {}
+  async insertNew(): Promise<boolean> { return true; }
   async insertForJob(): Promise<boolean> {
     return true;
   }
+  async findByPublicToken(): Promise<Invoice | null> {
+    return null;
+  }
+  async listByScopeJob() { return []; }
   async findBySourceJob(): Promise<Invoice | null> {
     return null;
   }
@@ -286,6 +291,11 @@ describe("processStripeEvent", () => {
       deps: {
         record: async (orgId: string, invoiceId: string, cents: number, pi: string) => {
           calls.push({ orgId, invoiceId, cents, pi });
+        },
+        // Every case here is an invoice payment; throwing makes an accidental route to the
+        // deposit arm a loud failure instead of a silently-passing test.
+        recordDeposit: async (): Promise<boolean> => {
+          throw new Error("deposit recorder must not be reached by an invoice-payment session");
         },
         log: () => undefined,
       },

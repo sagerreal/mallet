@@ -3,7 +3,7 @@ import { createFrontdeskRouter } from "@mallet/frontdesk";
 import { createLeadRouter } from "@mallet/customers";
 import { createEstimateRouter } from "@mallet/quoting";
 import { createJobRouter, createFieldRouter, createVisitRouter } from "@mallet/jobs";
-import { createInvoiceRouter } from "@mallet/invoicing";
+import { createInvoiceRouter, createFieldInvoiceRouter } from "@mallet/invoicing";
 import { createNotificationRouter } from "@mallet/notifications";
 import { createAiRouter, createFieldCopilotRouter } from "@mallet/ai";
 import { createIdentityRouter } from "@mallet/identity";
@@ -32,6 +32,9 @@ export const appRouter = router({
     field: createFieldRouter(),
     visits: createVisitRouter(),
     invoicing: createInvoiceRouter(),
+    // The technician's own money surface — field-scoped siblings of `invoicing`, mounted beside it
+    // rather than folded into it so the office router's role guards stay exactly as they were.
+    fieldInvoicing: createFieldInvoiceRouter(),
     notifications: createNotificationRouter(),
     ai: createAiRouter(),
     fieldCopilot: createFieldCopilotRouter(),

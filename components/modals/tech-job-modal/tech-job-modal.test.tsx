@@ -29,41 +29,73 @@ let mockLeads: Lead[] = [];
 let mockInvoices: Invoice[] = [];
 let mockSeesPrice = true;
 let mockRole: "owner" | "office" | "tech" | undefined = "owner";
+// The field shell never hydrates the settings slice (SettingsHydrator mounts only in the
+// office layout) — the tech job modal reads the org's visit fee via useOrgServiceFee instead.
+// Mocked directly here (see use-org-service-fee.test.ts for the hook's own fetch/fallback tests).
+let mockOrgFee: number | null = 89;
 
 const noop = vi.fn();
 const mockOpenModal = vi.fn();
 const mockUpdateJob = vi.fn();
 const mockSetVisitStatus = vi.fn();
 const mockSetVisitNotes2 = vi.fn(() => Promise.resolve({ ok: true }));
+// The store's own paths, which the fee flow must NOT use any more: a client-side draft+send
+// through v1.invoicing.draft was office-only and stamped no scope link. They stay mocked so the
+// tests can assert they are never called.
+const mockAddInvoice = vi.fn((draft: Record<string, unknown>) => {
+  const inv = { ...draft, id: "inv-fee-1", num: "INV-900", origin: "manual" } as Invoice;
+  mockInvoices = [...mockInvoices, inv];
+  return { invoice: inv, persisted: Promise.resolve({ ok: true }) };
+});
+const mockSendInvoice = vi.fn(
+  (_id: string): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
+);
+// The slice action that replaced them. Resolves the SERVER's id — the raise refuses a
+// client-authored one, so the store adopts what comes back.
+const mockRaiseVisitFee = vi.fn(
+  (_jobId: string): Promise<{ ok: boolean; invoiceId?: string; error?: string }> =>
+    Promise.resolve({ ok: true, invoiceId: "inv-fee-server" }),
+);
+
+function mockStoreState(): Record<string, unknown> {
+  return {
+    jobs: mockJobs,
+    leads: mockLeads,
+    invoices: mockInvoices,
+    toggles: { techSeesPrice: mockSeesPrice },
+    setVisitStatus: mockSetVisitStatus,
+    updateJob: mockUpdateJob,
+    recordPayment: noop,
+    addAddon: noop,
+    setAddonStatus: noop,
+    checkVerifyItem: noop,
+    overrideVerifyItem: noop,
+    uncheckVerifyItem: noop,
+    addJobPhoto: noop,
+    addInvoice: mockAddInvoice,
+    sendInvoice: mockSendInvoice,
+    raiseVisitFee: mockRaiseVisitFee,
+    // Quote tab (estimating part 3) selectors.
+    services: [],
+    laborRates: [],
+    brand: { name: "E2E Plumbing" },
+    setVisitNotes: mockSetVisitNotes2,
+    adoptJobPhotoPath: noop,
+    signJobQuote: noop,
+  };
+}
+
+function useAppStoreMock(selector: (s: Record<string, unknown>) => unknown) {
+  return selector(mockStoreState());
+}
+useAppStoreMock.getState = mockStoreState;
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
   useOpenModal: () => mockOpenModal,
   usePushModal: () => mockOpenModal,
   useCloseModal: () => noop,
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      jobs: mockJobs,
-      leads: mockLeads,
-      invoices: mockInvoices,
-      toggles: { techSeesPrice: mockSeesPrice },
-      setVisitStatus: mockSetVisitStatus,
-      updateJob: mockUpdateJob,
-      recordPayment: noop,
-      addAddon: noop,
-      setAddonStatus: noop,
-      checkVerifyItem: noop,
-      overrideVerifyItem: noop,
-      uncheckVerifyItem: noop,
-      addJobPhoto: noop,
-      // Quote tab (estimating part 3) selectors.
-      services: [],
-      laborRates: [],
-      brand: { name: "E2E Plumbing" },
-      setVisitNotes: mockSetVisitNotes2,
-      adoptJobPhotoPath: noop,
-      signJobQuote: noop,
-    }),
+  useAppStore: useAppStoreMock,
 }));
 
 // Keep native/scan + supabase out of jsdom (the Quote tab imports both modules).
@@ -77,6 +109,10 @@ vi.mock("@/features/identity/hooks", () => ({
     data: mockRole ? { role: mockRole, userId: MOCK_USER_ID } : undefined,
     isLoading: !mockRole,
   }),
+}));
+
+vi.mock("@/features/settings/use-org-service-fee", () => ({
+  useOrgServiceFee: () => mockOrgFee,
 }));
 
 // Deterministic date stamp for the notes composer ("[Jul 13] …").
@@ -128,10 +164,14 @@ beforeEach(() => {
   mockInvoices = [];
   mockSeesPrice = true;
   mockRole = "owner";
+  mockOrgFee = 89;
   mockOpenModal.mockClear();
   mockUpdateJob.mockReset();
   mockUpdateJob.mockResolvedValue({ ok: true });
   mockSetVisitStatus.mockReset();
+  mockAddInvoice.mockClear();
+  mockSendInvoice.mockClear();
+  mockRaiseVisitFee.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -266,15 +306,83 @@ describe("TechJobModalContent — tech", () => {
     expect(screen.getByText("Water back on")).toBeTruthy();
   });
 
-  it("hides the payment hero on a done job (charge/collect are office endpoints)", () => {
-    mockJobs = [makeJob({ status: "done", visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }] })];
+  // OWNER'S DECISION, Aug 2026: a technician assigned to the job takes the payment at the door.
+  // The hero renders for them; only the writes with no field sibling stay behind.
+  it("SHOWS the payment hero on their own done job", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: MOCK_USER_ID, start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    mockInvoices = [
+      { id: "inv-1", num: "INV-1", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "", title: "x", lines: [], total: 300, depPaid: 0, payments: [], status: "sent", age: 0, archived: false } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Take payment →")).toBeTruthy();
+    expect(screen.getByText("$300")).toBeTruthy();
+    // …and the office-only hand-off is not offered, because job.invRequested is v1.jobs.update.
+    expect(screen.queryByText(/Send to the office/)).toBeNull();
+  });
+
+  // Assignment, not role, is the gate — mirroring the server's own Job.isAssignedTo guard.
+  it("shows NO payment hero on a colleague's done job", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "someone-else", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
     mockInvoices = [
       { id: "inv-1", num: "INV-1", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "", title: "x", lines: [], total: 300, depPaid: 0, payments: [], status: "sent", age: 0, archived: false } as unknown as Invoice,
     ];
     render(<TechJobModalContent />);
     expect(screen.queryByText(/Take payment/)).toBeNull();
     expect(screen.queryByText(/Charge/)).toBeNull();
+  });
+
+  // A1: the invoice's own balance is ALWAYS theirs to read — you cannot collect $840 without
+  // displaying "$840" — but the per-line breakdown still follows the shop's techSeesPrice.
+  it("hide-prices shop: the BALANCE renders, the redacted line rates do not", () => {
+    mockSeesPrice = false;
+    mockJobs = [
+      makeJob({
+        status: "done",
+        // What the server sends a redacted device: descriptions, rate NULLED.
+        lines: [{ d: "Water heater", q: 1, r: null }],
+        addons: [],
+        visits: [{ id: "v1", date: "2026-07-12", techId: MOCK_USER_ID, start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    mockInvoices = [
+      { id: "inv-1", num: "INV-1", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "", title: "x", lines: [], total: 840, depPaid: 0, payments: [], status: "sent", age: 0, archived: false } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("$840")).toBeTruthy();
+    expect(screen.getByText("Take payment →")).toBeTruthy();
+    // The nulled rate is never drawn as a price of any kind — least of all as $0.
+    expect(screen.queryByText(/\$0\b/)).toBeNull();
+  });
+
+  // The PR-C1 failure this whole third state exists for: with no invoice loaded yet, a redacted
+  // job sums to $0 and the old code offered "Send to the office to bill" — an office write the
+  // technician cannot make, on a job they were sent out to collect on.
+  it("hide-prices shop, no invoice yet: offers the bill, never 'No price set'", () => {
+    mockSeesPrice = false;
+    mockJobs = [
+      makeJob({
+        status: "done",
+        lines: [{ d: "Water heater", q: 1, r: null }],
+        addons: [],
+        visits: [{ id: "v1", date: "2026-07-12", techId: MOCK_USER_ID, start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    mockInvoices = [];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/No price set/)).toBeNull();
     expect(screen.queryByText(/Send to the office/)).toBeNull();
+    expect(screen.getByText(/Prices are hidden on your device/)).toBeTruthy();
+    expect(screen.getByText("Take payment →")).toBeTruthy();
   });
 
   it("never renders a server-redacted (null) rate as $0", () => {
@@ -587,19 +695,267 @@ describe("TechJobModalContent — done estimate is a scope handoff, never billin
     expect(screen.queryByText(/Scoped — the office builds the quote/)).toBeNull();
   });
 
-  it("tech: a done estimate SIGNED on site still shows no billing (charge/collect are office endpoints)", () => {
+  it("tech: a done estimate SIGNED on site gets the billing close-out — they close their own sale", () => {
     mockRole = "tech";
     mockJobs = [
       makeJob({
         svc: "estimate",
         status: "done",
         lines: [{ d: "Repaint hall", q: 1, r: 400 }],
-        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+        visits: [{ id: "v1", date: "2026-07-12", techId: MOCK_USER_ID, start: 9, dur: 2, status: "done" }],
       }),
     ];
     render(<TechJobModalContent />);
-    expect(screen.queryByText(/Take payment/)).toBeNull();
+    expect(screen.getByText("Take payment →")).toBeTruthy();
     expect(screen.queryByText(/Scoped — the office builds the quote/)).toBeNull();
+  });
+
+  // The signed-estimate case a hide-prices shop would otherwise get catastrophically wrong: every
+  // rate arrives null, jobQuoted reads false, and the sold job would be filed as an unpriced
+  // scoping visit — a handoff card in front of a customer who just agreed to pay.
+  it("tech, hide-prices shop: a SIGNED estimate is not mistaken for an unpriced scoping visit", () => {
+    mockRole = "tech";
+    mockSeesPrice = false;
+    mockJobs = [
+      makeJob({
+        svc: "estimate",
+        status: "done",
+        lines: [{ d: "Repaint hall", q: 1, r: null }],
+        visits: [{ id: "v1", date: "2026-07-12", techId: MOCK_USER_ID, start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/Scoped — the office builds the quote/)).toBeNull();
+    expect(screen.queryByText(/Estimate visit done/)).toBeNull();
+    expect(screen.getByText("Take payment →")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The visit fee on a declined estimate.
+//
+// THE ONE LINE THAT MATTERS: the raise goes to `v1.fieldInvoicing.raiseVisitFee` with the JOB ID
+// AND NOTHING ELSE. Not an invoice id (the guard authorizes the job, so a caller-supplied id
+// would be an unchecked write target) and not an amount (the server reads the shop's own fee, so
+// the person holding the tablet cannot choose what the customer is charged).
+//
+// It replaced a client-side draft+send against `v1.invoicing.draft`, which was ownerOrOffice —
+// the technician standing at the door, the only person who knows the customer declined, got
+// FORBIDDEN — and stamped no scope link, so even the office's fee invoice was uncollectable by
+// the person sent to collect it. Being server-idempotent per job also retires the whole
+// orphaned-duplicate-draft problem the old flow needed local cleanup for.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — collecting the visit fee on a declined estimate", () => {
+  const doneEstimate = (scopeNotes?: string) =>
+    makeJob({
+      svc: "estimate",
+      status: "done",
+      lines: [],
+      addons: [],
+      visits: [
+        { id: "v1", date: "2026-07-12", techId: MOCK_USER_ID, start: 9, dur: 2, status: "done", scopeNotes },
+      ],
+    });
+
+  it("owner: renders the fee button reading the org's real fee", () => {
+    mockRole = "owner";
+    mockOrgFee = 129;
+    mockJobs = [doneEstimate()];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Collect the visit fee — $129")).toBeTruthy();
+    // The quiet handoff is never blocked by the secondary fee action.
+    expect(screen.getByText("Open the Quote tab →")).toBeTruthy();
+  });
+
+  // The field shell cannot read v1.settings.get, so the button names no figure. It does not need
+  // to — the server reads the fee and the close-out sheet shows the real amount a moment later.
+  it("tech ON the job: gets the fee button with no amount on it", () => {
+    mockRole = "tech";
+    mockOrgFee = null;
+    mockJobs = [doneEstimate()];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Collect the visit fee →")).toBeTruthy();
+  });
+
+  it("tech NOT on the job: no fee button (the server would refuse them anyway)", () => {
+    mockRole = "tech";
+    mockOrgFee = null;
+    mockJobs = [
+      makeJob({
+        svc: "estimate",
+        status: "done",
+        lines: [],
+        addons: [],
+        visits: [
+          { id: "v1", date: "2026-07-12", techId: "someone-else", start: 9, dur: 2, status: "done" },
+        ],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
+  });
+
+  it("owner: hides the fee button once a fee invoice already exists for this lead", () => {
+    mockRole = "owner";
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-1", num: "INV-1", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [], total: 89, depPaid: 0, payments: [],
+        status: "sent", age: 0, archived: false,
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
+  });
+
+  // The durable shape: after a reload the invoices hydrator reconstructs the record from the
+  // server DTO, which never carries sourceJobId for a lead-tied invoice — jobId reads back null.
+  // The guard must still hold on title + leadId alone.
+  it("owner: hides the fee button from hydrator-shaped state (jobId null, title + leadId present)", () => {
+    mockRole = "owner";
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-1", num: "INV-1", jobId: null, leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [{ d: "Visit fee — service call", q: 1, r: 89 }],
+        total: 89, depPaid: 0, payments: [], status: "sent", age: 3, archived: false,
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
+  });
+
+  it("owner: does NOT hide the button for a void/archived fee invoice on this lead", () => {
+    mockRole = "owner";
+    mockOrgFee = 89;
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-1", num: "INV-1", jobId: null, leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [], total: 89, depPaid: 0, payments: [],
+        status: "void", age: 3, archived: true,
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+  });
+
+  it("owner: an unsent draft fee invoice keeps the button visible — a tap resumes it", () => {
+    mockRole = "owner";
+    mockOrgFee = 89;
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-1", num: "INV-1", jobId: null, leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [{ d: "Visit fee — service call", q: 1, r: 89 }],
+        total: 89, depPaid: 0, payments: [], status: "draft", age: 0, archived: false, origin: "db",
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+  });
+
+  it("owner: hides the fee button when the org fee is 0/unset", () => {
+    mockRole = "owner";
+    mockOrgFee = 0;
+    mockJobs = [doneEstimate()];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
+  });
+
+  // ── THE SECURITY ASSERTION ────────────────────────────────────────────────────────────────
+  for (const role of ["owner", "tech"] as const) {
+    it(`${role}: the fee raise carries the jobId and NOTHING else — no invoice id, no amount`, async () => {
+      mockRole = role;
+      mockOrgFee = role === "owner" ? 89 : null;
+      mockJobs = [doneEstimate()];
+      render(<TechJobModalContent />);
+
+      fireEvent.click(screen.getByText(role === "owner" ? "Collect the visit fee — $89" : "Collect the visit fee →"));
+
+      await vi.waitFor(() => {
+        expect(mockRaiseVisitFee).toHaveBeenCalledWith("job-1");
+      });
+      // Exactly one argument. An `id` here was an arbitrary-invoice overwrite — "raise a fee on
+      // my own job, into THAT invoice" — and it must never come back through the client either.
+      expect(mockRaiseVisitFee.mock.calls[0]).toHaveLength(1);
+      // …and the store's manual draft path is not involved at all any more.
+      expect(mockAddInvoice).not.toHaveBeenCalled();
+      expect(mockSendInvoice).not.toHaveBeenCalled();
+    });
+  }
+
+  it("opens close-out on the id the SERVER minted, only once the raise landed", async () => {
+    mockRole = "tech";
+    mockOrgFee = null;
+    mockJobs = [doneEstimate()];
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText("Collect the visit fee →"));
+
+    await vi.waitFor(() => {
+      expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, {
+        jobId: "job-1",
+        invoiceId: "inv-fee-server",
+      });
+    });
+  });
+
+  it("a refused raise names the server's own sentence in place and opens nothing", async () => {
+    mockRole = "tech";
+    mockOrgFee = null;
+    mockJobs = [doneEstimate()];
+    mockRaiseVisitFee.mockResolvedValueOnce({
+      ok: false,
+      error: "this shop hasn't set a visit fee — add one in Settings before charging it",
+    });
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText("Collect the visit fee →"));
+
+    expect(
+      await screen.findByText("this shop hasn't set a visit fee — add one in Settings before charging it"),
+    ).toBeTruthy();
+    expect(mockOpenModal).not.toHaveBeenCalledWith(MODAL.CLOSE_OUT, expect.anything());
+    // Still offered: the raise is idempotent per job server-side, so a retry resumes rather
+    // than mints — there is no orphan to clean up and no reason to hide the control.
+    expect(screen.getByText("Collect the visit fee →")).toBeTruthy();
+  });
+
+  it("falls back to functional copy when the raise fails without a server message", async () => {
+    mockRole = "tech";
+    mockOrgFee = null;
+    mockJobs = [doneEstimate()];
+    mockRaiseVisitFee.mockResolvedValueOnce({ ok: false });
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText("Collect the visit fee →"));
+
+    expect(
+      await screen.findByText("Couldn't raise the visit fee — check your connection and try again."),
+    ).toBeTruthy();
+  });
+
+  it("an already-sent fee goes straight to collection without raising again", async () => {
+    mockRole = "tech";
+    mockOrgFee = null;
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-fee-1", num: "INV-1", jobId: null, leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [], total: 89, depPaid: 0, payments: [],
+        status: "draft", age: 0, archived: false, origin: "db",
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    // A draft keeps the button (resumable) — flip it to sent and the button goes, so drive the
+    // resume path through the draft and assert the raise is still the ONE call made.
+    fireEvent.click(screen.getByText("Collect the visit fee →"));
+    await vi.waitFor(() => {
+      expect(mockRaiseVisitFee).toHaveBeenCalledWith("job-1");
+    });
   });
 });
 
@@ -685,5 +1041,78 @@ describe("Task A2 — section memos skip re-render on checklist tap", () => {
       ?.textContent ?? "";
     expect(clAfter).not.toContain("○");
     expect(clAfter).toContain("✓");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The FLAT-RATE done job that was completed straight from My Day: its visit was never placed
+// on the Schedule board, so the field has no visit to show and none to reopen.
+//
+// Two regressions from this branch land here: Reopen buttons that took the tap and did nothing
+// (a job-level reopen does not exist — the write is per VISIT), and the close-out sheet being
+// opened without the invoice id it already knows.
+// ---------------------------------------------------------------------------
+
+const UNPLACED_DONE_JOB = () =>
+  makeJob({
+    status: "done",
+    lines: [{ d: "Flat rate — drain clear", q: 1, r: 185 }],
+    addons: [],
+    // Completed from My Day, never dragged onto the board: no date, no crew, no start.
+    visits: [{ id: "v1", date: null, techId: null, start: null, dur: 1, status: "done" }],
+  });
+
+describe("done job whose visit was never placed", () => {
+  it("renders no Reopen control at all — there is no visit for it to move", () => {
+    mockJobs = [UNPLACED_DONE_JOB()];
+    render(<TechJobModalContent />);
+    // The done hero renders (this is the surface Owen was on)…
+    expect(screen.getByText("✓ Job done")).toBeTruthy();
+    // …and neither the hero's Reopen nor the visit section's is on screen.
+    expect(screen.queryByText("↩ Reopen")).toBeNull();
+  });
+
+  it("offers EXACTLY ONE Reopen when the visit WAS placed", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        lines: [{ d: "Flat rate — drain clear", q: 1, r: 185 }],
+        addons: [],
+        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    // getByText, not getAllByText[0]: the done hero used to render a SECOND Reopen firing the
+    // same write, so the office saw one control twice.
+    fireEvent.click(screen.getByText("↩ Reopen"));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "scheduled", "office");
+  });
+});
+
+describe("opening close-out from the done hero", () => {
+  it("passes the invoice id this surface already knows, so the sheet matches on a durable id", () => {
+    mockJobs = [UNPLACED_DONE_JOB()];
+    mockInvoices = [
+      {
+        id: "inv-7", num: "INV-7", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Flat rate", lines: [], total: 185, depPaid: 0, payments: [],
+        status: "draft", age: 0, archived: false,
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText(/Take payment/));
+
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", invoiceId: "inv-7" });
+  });
+
+  it("passes the job alone when no invoice exists yet — the sheet raises one", () => {
+    mockJobs = [UNPLACED_DONE_JOB()];
+    mockInvoices = [];
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText(/Take payment/));
+
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1" });
   });
 });

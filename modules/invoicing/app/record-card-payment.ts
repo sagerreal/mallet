@@ -31,6 +31,9 @@ export class RecordCardPaymentUseCase {
       method: "card",
       idempotencyKey: cmd.paymentIntentId,
       externalId: cmd.paymentIntentId,
+      // No in-app actor: the CUSTOMER paid online and Stripe told us. Attributing this to whoever
+      // sent the invoice would be a lie on an audit column, so it stays null.
+      recordedByUserId: null,
       receivedAt: this.clock.now(),
     });
     if (!isOk(payment)) return payment;

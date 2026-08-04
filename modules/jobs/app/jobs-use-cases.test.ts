@@ -5,6 +5,7 @@ import {
   asEstimateId,
   asJobId,
   asUserId,
+  asVisitId,
   FixedClock,
   toPage,
   buildPage,
@@ -12,6 +13,8 @@ import {
   isOk,
   err,
   validation,
+  money,
+  zeroMoney,
   type OrgId,
   type LeadId,
   type EstimateId,
@@ -20,8 +23,9 @@ import {
   type Paginated,
 } from "@mallet/shared/types";
 import { InMemoryEventBus, type IdGenerator } from "@mallet/shared/ports";
-import { JobVisit, type Job } from "../domain/job";
-import type { JobRepository, JobFilter } from "../domain/job-repository";
+import { Job, JobVisit } from "../domain/job";
+import type { JobRepository, JobFilter, AdoptEstimatePatch } from "../domain/job-repository";
+import type { JobLine } from "../domain/job-execution";
 import type { EstimateReader, EstimateSummary } from "../domain/estimate-reader";
 import { ScheduleJobUseCase } from "./schedule-job";
 import { CreateJobFromEstimateUseCase } from "./create-job-from-estimate";
@@ -48,6 +52,11 @@ const seqIds = (): IdGenerator => {
 class FakeJobRepository implements JobRepository {
   private readonly store = new Map<JobId, Job>();
   private seq = 1000;
+
+  /** Every stored job — lets a test assert "converted, not duplicated" by counting rows. */
+  get all(): Job[] {
+    return [...this.store.values()];
+  }
 
   async nextNumber(): Promise<string> {
     const value = this.seq;
@@ -114,6 +123,64 @@ class FakeJobRepository implements JobRepository {
   async replaceLines(jobId: string, lines: readonly never[]) {
     this.linesWritten.push({ jobId, lines });
   }
+  /** Every adopt attempt, recorded at ENTRY — proves a fallback actually RAN the convert and
+   *  was refused, rather than being skipped by an earlier guard in the use case. */
+  adoptAttempts: string[] = [];
+
+  /**
+   * Convert-on-accept twin of the Drizzle method: flip the scope-visit job to sold work IN
+   * PLACE — no new row. Mirrors the real contract exactly: refuses a missing job, anything
+   * already kind='work', and canceled jobs (returns false → the use case falls back to mint);
+   * replaces the lines and appends ONE pending visit positioned after the existing ones.
+   */
+  async adoptEstimateOnJob(
+    _orgId: OrgId,
+    jobId: JobId,
+    patch: AdoptEstimatePatch,
+    lines: readonly JobLine[],
+    now: Date,
+  ): Promise<boolean> {
+    this.adoptAttempts.push(jobId);
+    const job = this.store.get(jobId);
+    if (!job || job.props.kind !== "estimate" || job.props.status === "canceled") return false;
+    const maxPos = job.props.visits.reduce((max, v) => Math.max(max, v.props.position), 0);
+    const visit = JobVisit.create({
+      id: asVisitId(`aaaaaaaa-aaaa-aaaa-aaaa-${String(maxPos + 1).padStart(12, "0")}`),
+      assigneeUserId: null,
+      scheduledDate: null,
+      scheduledStart: null,
+      scheduledEnd: null,
+      durationMinutes: 120,
+      status: "pending",
+      enrouteAt: null,
+      startedAt: null,
+      completedAt: null,
+      notes: null,
+      position: maxPos + 1,
+    });
+    if (!isOk(visit)) throw new Error("fake visit build failed");
+    const flipped = Job.create({
+      ...job.props,
+      kind: "work",
+      sourceEstimateId: asEstimateId(patch.sourceEstimateId),
+      title: patch.title,
+      svc: null,
+      status: "scheduled",
+      startedAt: null,
+      completedAt: null,
+      total: money(patch.totalCents),
+      taxBps: patch.taxBps,
+      tax: money(patch.taxCents),
+      visits: [...job.props.visits, visit.value],
+      updatedAt: now,
+    });
+    if (!isOk(flipped)) throw new Error("fake convert rebuild failed");
+    this.store.set(jobId, flipped.value);
+    // The real method swaps the lines inside the same tx — record them the same way
+    // replaceLines does so the scope-copy assertions read one ledger.
+    this.linesWritten.push({ jobId, lines: lines as never[] });
+    return true;
+  }
   async saveOnSiteSignature(): Promise<void> {}
   async count(): Promise<number> { return 0; }
   async viewCounts(): Promise<{ counts: Record<string, number>; todayCents: number }> { return { counts: {}, todayCents: 0 } as never; }
@@ -140,6 +207,8 @@ const acceptedEstimate = (): EstimateSummary => ({
   leadId: LEAD,
   title: "Deck",
   status: "accepted",
+  // Ordinary office quote: no scope-visit job behind it — accept mints a fresh job.
+  jobId: null,
   // $1,100 total, of which $88 is 8.75% tax on the $1,012 net — a real split, so a use-case that
   // silently dropped it would be caught rather than passing on two zeroes.
   totalCents: 110_000,
@@ -380,6 +449,215 @@ describe("CreateJobFromEstimateUseCase", () => {
       expect(r.error.message).toMatch(/already exists/);
     }
     expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(0);
+  });
+});
+
+describe("CreateJobFromEstimateUseCase — convert-on-accept (estimate.jobId)", () => {
+  const SCOPE_JOB = asJobId("55555555-5555-5555-5555-555555555555");
+
+  let clock: FixedClock;
+  let repo: FakeJobRepository;
+  let bus: InMemoryEventBus;
+
+  beforeEach(() => {
+    clock = new FixedClock(new Date("2026-06-01T00:00:00Z"));
+    repo = new FakeJobRepository();
+    bus = new InMemoryEventBus();
+  });
+
+  const useCase = (reader: EstimateReader) =>
+    new CreateJobFromEstimateUseCase(repo, reader, bus, clock, seqIds());
+
+  /** A scope-visit job already on the books: kind='estimate', one completed walkthrough visit. */
+  const seedScopeVisitJob = async (
+    overrides: Partial<Parameters<typeof Job.create>[0]> = {},
+  ): Promise<Job> => {
+    const visit = JobVisit.create({
+      id: asVisitId("66666666-6666-6666-6666-666666666666"),
+      assigneeUserId: null,
+      scheduledDate: "2026-05-28",
+      scheduledStart: null,
+      scheduledEnd: null,
+      durationMinutes: 60,
+      status: "complete",
+      enrouteAt: null,
+      startedAt: new Date("2026-05-28T15:00:00Z"),
+      completedAt: new Date("2026-05-28T16:00:00Z"),
+      notes: "scoped: repipe, drywall patch",
+      position: 1,
+    });
+    if (!isOk(visit)) throw new Error("seed visit failed");
+    const job = Job.create({
+      id: SCOPE_JOB,
+      orgId: ORG,
+      num: "JOB-900",
+      leadId: LEAD,
+      sourceEstimateId: null,
+      assigneeUserId: null,
+      title: "Walkthrough",
+      svc: null,
+      kind: "estimate",
+      status: "complete",
+      scheduledStart: null,
+      scheduledEnd: null,
+      startedAt: new Date("2026-05-28T15:00:00Z"),
+      completedAt: new Date("2026-05-28T16:00:00Z"),
+      canceledAt: null,
+      cancelReason: null,
+      total: zeroMoney,
+      notes: null,
+      checklist: null,
+      visits: [visit.value],
+      createdAt: new Date("2026-05-28T00:00:00Z"),
+      updatedAt: new Date("2026-05-28T16:00:00Z"),
+      ...overrides,
+    });
+    if (!isOk(job)) throw new Error("seed job failed");
+    await repo.save(job.value);
+    return job.value;
+  };
+
+  const estimateWithJob = (): EstimateSummary => ({ ...acceptedEstimate(), jobId: SCOPE_JOB });
+
+  it("(a) converts the scope-visit job in place — no second job, kind flips, scope lands, one visit appended", async () => {
+    await seedScopeVisitJob();
+    const r = await useCase(new FakeEstimateReader(estimateWithJob())).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+
+    // The SAME job came back — converted, not duplicated.
+    expect(r.value.props.id).toBe(SCOPE_JOB);
+    expect(repo.all).toHaveLength(1);
+    expect(r.value.props.kind).toBe("work");
+    expect(r.value.props.sourceEstimateId).toBe(EST);
+    expect(r.value.props.title).toBe("Deck");
+    expect(r.value.props.svc).toBeNull(); // stale estimate signal cleared (mint sets svc null too)
+    expect(r.value.props.total).toBe(110_000);
+    expect(r.value.props.taxBps).toBe(875);
+    expect(r.value.props.tax).toBe(8_855);
+
+    // The sold scope replaced the (empty) walkthrough lines.
+    expect(repo.linesWritten).toHaveLength(1);
+    expect(repo.linesWritten[0]!.jobId).toBe(SCOPE_JOB);
+    expect(repo.linesWritten[0]!.lines.map((l) => l.props.description)).toEqual([
+      "Deck boards — cedar",
+      "Railing",
+    ]);
+
+    // ONE new pending visit, appended AFTER the walkthrough — history stays intact.
+    const visits = r.value.props.visits;
+    expect(visits).toHaveLength(2);
+    expect(visits[0]!.props.status).toBe("complete"); // the walkthrough, untouched
+    const appended = visits[1]!.props;
+    expect(appended.status).toBe("pending");
+    expect(appended.position).toBe(2);
+
+    // Vocabulary: an existing job changing is job.updated, never a second job.created.
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(0);
+    expect(bus.recorded.filter((e) => e.name === "job.updated")).toHaveLength(1);
+  });
+
+  it("(b) no jobId on the estimate → mints a fresh job exactly as before", async () => {
+    await seedScopeVisitJob();
+    const r = await useCase(new FakeEstimateReader(acceptedEstimate())).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.id).not.toBe(SCOPE_JOB);
+    expect(repo.all).toHaveLength(2); // walkthrough untouched + the minted work job
+    const scope = await repo.findById(SCOPE_JOB);
+    expect(scope!.props.kind).toBe("estimate");
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
+  });
+
+  it("(c) re-accept is idempotent — returns the converted job, no second visit, no second event", async () => {
+    await seedScopeVisitJob();
+    const uc = useCase(new FakeEstimateReader(estimateWithJob()));
+    const first = await uc.exec({ orgId: ORG, estimateId: EST });
+    const second = await uc.exec({ orgId: ORG, estimateId: EST });
+    expect(isOk(first) && isOk(second)).toBe(true);
+    if (!isOk(first) || !isOk(second)) return;
+    expect(second.value.props.id).toBe(SCOPE_JOB);
+    expect(second.value.props.visits).toHaveLength(2); // walkthrough + ONE appended visit, not two
+    expect(repo.all).toHaveLength(1);
+    expect(bus.recorded.filter((e) => e.name === "job.updated")).toHaveLength(1);
+  });
+
+  it("(d) jobId pointing at a kind='work' job with a different source → falls back to mint, never mangles it", async () => {
+    const OTHER_EST = asEstimateId("77777777-7777-7777-7777-777777777777");
+    await seedScopeVisitJob({
+      kind: "work",
+      sourceEstimateId: OTHER_EST,
+      title: "Someone else's sold work",
+      status: "scheduled",
+      total: money(50_000),
+    });
+    const r = await useCase(new FakeEstimateReader(estimateWithJob())).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.id).not.toBe(SCOPE_JOB);
+    expect(r.value.props.sourceEstimateId).toBe(EST);
+    // The hand-linked work job is exactly as it was.
+    const untouched = await repo.findById(SCOPE_JOB);
+    expect(untouched!.props.sourceEstimateId).toBe(OTHER_EST);
+    expect(untouched!.props.title).toBe("Someone else's sold work");
+    expect(untouched!.props.total).toBe(50_000);
+    expect(untouched!.props.visits).toHaveLength(1);
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
+    expect(bus.recorded.filter((e) => e.name === "job.updated")).toHaveLength(0);
+  });
+
+  it("(f) a CANCELED walkthrough refuses conversion — adopt RUNS, returns false, accept mints", async () => {
+    await seedScopeVisitJob({
+      status: "canceled",
+      canceledAt: new Date("2026-05-30T00:00:00Z"),
+      cancelReason: "customer canceled the walkthrough",
+    });
+    const r = await useCase(new FakeEstimateReader(estimateWithJob())).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+
+    // The convert path genuinely EXECUTED and was refused — this is the adopted===false → mint
+    // branch, not one of the earlier guards (missing job / work-kind) that never reach adopt.
+    expect(repo.adoptAttempts).toEqual([SCOPE_JOB]);
+
+    // The fallback minted a fresh work job; the canceled walkthrough was never resurrected.
+    expect(r.value.props.id).not.toBe(SCOPE_JOB);
+    expect(r.value.props.sourceEstimateId).toBe(EST);
+    expect(repo.all).toHaveLength(2);
+    const untouched = await repo.findById(SCOPE_JOB);
+    expect(untouched!.props.kind).toBe("estimate");
+    expect(untouched!.props.status).toBe("canceled");
+    expect(untouched!.props.visits).toHaveLength(1); // no pending visit seeded onto the corpse
+
+    // The sold scope landed on the MINTED job, not the canceled walkthrough.
+    expect(repo.linesWritten).toHaveLength(1);
+    expect(repo.linesWritten[0]!.jobId).toBe(r.value.props.id);
+
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
+    expect(bus.recorded.filter((e) => e.name === "job.updated")).toHaveLength(0);
+  });
+
+  it("jobId pointing at a job that no longer exists → mints rather than failing the accept", async () => {
+    const r = await useCase(new FakeEstimateReader(estimateWithJob())).exec({
+      orgId: ORG,
+      estimateId: EST,
+    });
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.sourceEstimateId).toBe(EST);
+    expect(bus.recorded.filter((e) => e.name === "job.created")).toHaveLength(1);
   });
 });
 

@@ -19,13 +19,20 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useAppStore,
   useActiveModal,
   useCloseModal,
 } from "@/lib/store/app-store";
+import { useMe } from "@/features/identity/hooks";
+import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
+import { ListLoading } from "@/components/shared/list-loading";
+import { CardCheckoutStep } from "./close-out-card-step";
+import { invDue, invPaid } from "@/lib/store/invoice-balance";
+import { readInvoice, type InvoiceWriteSurface } from "@/lib/store/invoice-write";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import type {
   Invoice,
   InvoiceLine,
@@ -44,20 +51,22 @@ function fmt$(n: number): string {
   return "$" + Math.round(n).toLocaleString("en-US");
 }
 
-/** jobTotal — sum of the job's line amounts (prototype jobTotal / tech-job-modal). */
+/**
+ * jobTotal — sum of the job's line amounts (prototype jobTotal / tech-job-modal).
+ *
+ * OFFICE-GRADE ONLY. `?? 0` swallows the server's redaction, so on a field device this returns 0
+ * for a fully-priced job; and even unredacted it is the raw line sum, with no deposit credited and
+ * no recorded tax. Never render it to a technician — see the surface gate in CloseOutModalContent.
+ */
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
 
-/** invPaid — sum of payment amounts (prototype invPaid). */
-function invPaid(i: Invoice): number {
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-/** invDue — total − deposit − payments, floored at 0 (prototype invDue). */
-function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+/**
+ * invPaid / invDue — ONE definition, in lib/store/invoice-balance.ts. The sheet's own copy
+ * ignored the server's balance on a summary row, so the amount on the Take-payment button
+ * disagreed with the ledger's.
+ */
 
 /** custCard — the saved card lives on the linked lead (prototype custCard). */
 function custCard(lead: Lead | undefined): Lead["card"] | null {
@@ -142,12 +151,19 @@ interface BillDraft {
   lines: BillLine[];
 }
 
-interface BillAskProps {
+export interface BillAskProps {
   job: Job;
   suggested: number;
   onCommit: (invoiceLines: InvoiceLine[]) => void | Promise<void>;
   /** Persist failure surfaced by the parent (setJobLines rejected). */
   error?: string | null;
+  /**
+   * The org's real visit/diagnostic fee, dollars — read outside the store on this surface
+   * (this modal's only entry, the tech job modal, lives in the field shell, which never
+   * hydrates settings; see features/settings/use-org-service-fee.ts). null/0 = not genuinely
+   * set yet, so presetFee falls back to 89, the ultimate fallback.
+   */
+  serviceFee?: number | null;
 }
 
 const NUM_INPUT: React.CSSProperties = {
@@ -159,7 +175,7 @@ const NUM_INPUT: React.CSSProperties = {
   fontWeight: 700,
 };
 
-function BillAsk({ job, suggested, onCommit, error }: BillAskProps) {
+export function BillAsk({ job, suggested, onCommit, error, serviceFee }: BillAskProps) {
   const [draft, setDraft] = useState<BillDraft>({ mode: "flat", lines: [] });
   const [flatAmt, setFlatAmt] = useState<number>(suggested);
   const [addDesc, setAddDesc] = useState("");
@@ -209,7 +225,8 @@ function BillAsk({ job, suggested, onCommit, error }: BillAskProps) {
 
   function presetFee() {
     setAddDesc("Service / diagnostic call");
-    if (!addAmt) setAddAmt("89");
+    // The org's real fee; 89 is the ultimate fallback only when it isn't genuinely set (0/null).
+    if (!addAmt) setAddAmt(String(serviceFee || 89));
   }
 
   function addFlatLine() {
@@ -467,47 +484,40 @@ function DueCard({ invoice }: { invoice: Invoice }) {
 }
 
 // ===========================================================================
-//  PAY BLOCK — the on-site Tap-to-Pay sheet (prototype coPayBlock / coPay)
-//  Local pay state machine: method | tap | record | done.
+//  PAY BLOCK — the on-site payment sheet (prototype coPayBlock / coPay)
+//  Local pay state machine: method | card | record | done. The card step is a
+//  REAL Stripe Checkout (QR + link, poll to paid) — see close-out-card-step.tsx.
 // ===========================================================================
 
-// Contactless ring icon (prototype ICON_CONTACTLESS, 5547).
-const ICON_CONTACTLESS = (
-  <svg
-    width="44"
-    height="44"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.1"
-    strokeLinecap="round"
-  >
-    <path d="M8.6 16.5a6 6 0 000-9M12 19a10 10 0 000-14M15.4 21a14 14 0 000-18" />
-  </svg>
-);
-
 type PayMethod = "card" | "cash" | "check" | "ach";
-type PayStep = "method" | "tap" | "record" | "done";
+type PayStep = "method" | "card" | "record" | "done";
 
 interface PayState {
   step: PayStep;
   method?: PayMethod;
   amt: number;
-  save: boolean;
   onFile?: boolean;
-  last4?: string;
-  saved?: boolean;
 }
 
 interface PayBlockProps {
   invoice: Invoice;
   lead: Lead | undefined;
+  /**
+   * Record a payment taken outside the app. Resolves only once the record can genuinely
+   * proceed (draft sent first; fresh paid-check done) — `alreadyPaid` means the checkout
+   * QR beat the manual record and the money is ALREADY in: jump to done, record nothing.
+   */
   onApprove: (args: {
     amt: number;
     method: PayMethod;
     onFile: boolean;
-    save: boolean;
-  }) => void;
+  }) => Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }>;
+  /** The store's sendInvoice — the card step must SEND a draft before minting. */
+  sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Which API the card step's mint + poll go to. See CardCheckoutStepProps.surface. */
+  surface: InvoiceWriteSurface;
+  /** The card step's poll saw paid/partial — the parent adopts the fresh record. */
+  onCardPaid: (invoice: Invoice) => void;
   onFinish: () => void;
   onCancel: () => void;
 }
@@ -518,11 +528,31 @@ function clampAmt(amt: number, due: number): number {
   return a;
 }
 
-function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProps) {
+function PayBlock({
+  invoice,
+  lead,
+  onApprove,
+  sendInvoice,
+  surface,
+  onCardPaid,
+  onFinish,
+  onCancel,
+}: PayBlockProps) {
   const due = invDue(invoice);
   const card = custCard(lead);
-  const [p, setP] = useState<PayState>({ step: "method", amt: due, save: !card });
+  const [p, setP] = useState<PayState>({ step: "method", amt: due });
   const [chk, setChk] = useState("");
+  // A record that could NOT proceed (draft send failed, server refused) — named in
+  // place on the step the tech is looking at, never a silent "Approved".
+  const [payErr, setPayErr] = useState<string | null>(null);
+  // SINGLE-FLIGHT. approve() is async (fresh read + possibly an awaited send), so the
+  // button stays mounted through a network round-trip — and every recordPayment mints a
+  // FRESH idempotency key, so the server cannot dedupe a double tap. On a PARTIAL amount
+  // the invoice stays payable and a second record genuinely applies. The ref is the
+  // re-entry gate (synchronous — two taps in one tick both see stale state); the state
+  // drives the visible busy treatment.
+  const inFlightRef = useRef(false);
+  const [busy, setBusy] = useState(false);
 
   const amtIn = (
     <>
@@ -544,63 +574,75 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
     </>
   );
 
-  // ---- charge card on file → record immediately, jump to done (coPay 'onfile') ---
-  function chargeOnFile() {
-    const amt = clampAmt(p.amt, due);
-    onApprove({ amt, method: "card", onFile: true, save: false });
-    setP({ step: "done", method: "card", amt, last4: card?.last4 ?? "4242", onFile: true, save: false });
+  // ---- charge card on file → record, jump to done (coPay 'onfile') -----------
+  async function chargeOnFile() {
+    if (inFlightRef.current) return; // single-flight — a double tap must not double-record
+    inFlightRef.current = true;
+    setBusy(true);
+    setPayErr(null);
+    try {
+      const amt = clampAmt(p.amt, due);
+      const res = await onApprove({ amt, method: "card", onFile: true });
+      if (!res.ok) {
+        setPayErr(res.error ?? "Couldn't record the payment — try again.");
+        return;
+      }
+      if (res.alreadyPaid) {
+        // The checkout QR (or an emailed link) already collected the balance.
+        setP({ step: "done", method: "card", amt: due });
+        return;
+      }
+      setP({ step: "done", method: "card", amt, onFile: true });
+    } finally {
+      inFlightRef.current = false;
+      setBusy(false);
+    }
   }
 
-  // ---- approve tap / recorded payment (coPay 'approve') ----------------------
-  function approve() {
-    const amt = clampAmt(p.amt, due);
-    const method = p.method ?? "card";
-    const saveCard = method === "card" && !!p.save && !!lead && !lead.card;
-    onApprove({ amt, method, onFile: false, save: saveCard });
-    setP({ step: "done", method, amt, last4: "4242", saved: saveCard, save: p.save });
+  // ---- record a payment taken outside the app (coPay 'approve') --------------
+  // Done only renders once onApprove genuinely succeeded — a refused record must
+  // never show "Approved" (the old fire-and-forget did exactly that).
+  async function approve() {
+    if (inFlightRef.current) return; // single-flight — a double tap must not double-record
+    inFlightRef.current = true;
+    setBusy(true);
+    setPayErr(null);
+    try {
+      const amt = clampAmt(p.amt, due);
+      const method = p.method ?? "cash";
+      const res = await onApprove({ amt, method, onFile: false });
+      if (!res.ok) {
+        setPayErr(res.error ?? "Couldn't record the payment — try again.");
+        return;
+      }
+      if (res.alreadyPaid) {
+        setP({ step: "done", method: "card", amt: due });
+        return;
+      }
+      setP({ step: "done", method, amt });
+    } finally {
+      inFlightRef.current = false;
+      setBusy(false);
+    }
   }
 
-  // step: tap ----------------------------------------------------------------
-  if (p.step === "tap") {
+  // step: card — a REAL Stripe Checkout as a QR (the simulated tap is gone) ----
+  if (p.step === "card") {
     return (
-      <div className="cotap">
-        <div className="cotap-amt fig">{fmt$(p.amt || due)}</div>
-        <div className="cotap-ring">{ICON_CONTACTLESS}</div>
-        <div className="cotap-msg">
-          Hold the customer&rsquo;s card or phone
-          <br />
-          to the back of your device
-        </div>
-        <div className="cotap-sub">Tap to Pay · powered by Stripe</div>
-        {!card ? (
-          <label
-            style={{
-              display: "flex",
-              gap: "var(--space-2)",
-              alignItems: "center",
-              justifyContent: "center",
-              marginTop: "var(--space-3)",
-              fontSize: "var(--type-base)",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={!!p.save}
-              onChange={() => setP((s) => ({ ...s, save: !s.save }))}
-            />{" "}
-            Save card on file — charge the balance &amp; next visit in one tap
-          </label>
-        ) : null}
-        <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "center", marginTop: "var(--space-4)" }}>
-          <button className="btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn primary" onClick={approve}>
-            Simulate tap →
-          </button>
-        </div>
-      </div>
+      <CardCheckoutStep
+        invoice={invoice}
+        amount={due}
+        surface={surface}
+        sendInvoice={sendInvoice}
+        onPaid={(fresh) => {
+          // The webhook already recorded the money; adopt the fresh record (no
+          // recordPayment double-write) and land on the existing done step.
+          onCardPaid(fresh);
+          setP({ step: "done", method: "card", amt: due });
+        }}
+        onRecordInstead={() => setP({ step: "record", method: "cash", amt: due })}
+        onCancel={onCancel}
+      />
     );
   }
 
@@ -609,6 +651,7 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
     const lbl = p.method === "ach" ? "bank transfer" : p.method;
     return (
       <div
+        className="copay-record"
         style={{ marginTop: "var(--space-2)", display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}
       >
         {amtIn}
@@ -626,8 +669,8 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
             }}
           />
         ) : null}
-        <button className="btn primary" onClick={approve}>
-          Record {lbl} — paid
+        <button className="btn primary" disabled={busy} onClick={approve}>
+          {busy ? "Recording…" : <>Record {lbl} — paid</>}
         </button>
         <span
           className="linklike"
@@ -635,6 +678,20 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
         >
           back
         </span>
+        {payErr ? (
+          <p
+            role="alert"
+            style={{
+              color: "var(--red)",
+              fontSize: "var(--type-sm)",
+              fontWeight: 600,
+              width: "100%",
+              margin: "var(--space-1) 0 0",
+            }}
+          >
+            {payErr}
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -644,7 +701,7 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
     const detail = p.onFile
       ? `${card ? card.brand + " ···· " + card.last4 : "Card"} on file`
       : p.method === "card"
-      ? `Visa ···· ${p.last4 || "4242"} · Tap to Pay`
+      ? "Card · Stripe checkout"
       : p.method === "ach"
       ? "Bank transfer"
       : p.method === "check"
@@ -658,7 +715,6 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
         <div className="cotap-sub">
           {detail}
           {nowDue > 0 ? ` · ${fmt$(nowDue)} still due` : " · paid in full"}
-          {p.saved ? " · card saved on file ✓" : ""}
         </div>
         <div
           style={{
@@ -694,22 +750,25 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
         {card ? (
           <button
             className="btn primary copay-tap"
+            disabled={busy}
             onClick={chargeOnFile}
           >
             <b>
-              Charge {card.brand} ···· {card.last4}
+              {busy ? "Charging…" : <>Charge {card.brand} ···· {card.last4}</>}
             </b>
             <span>
               {card.via ? "saved from " + card.via + " · " : ""}instant, no tap
             </span>
           </button>
         ) : null}
+        {/* The amount box above applies to RECORDED methods only — a checkout
+            session always charges the full balance, so the button says so. */}
         <button
           className={`btn ${card ? "" : "primary"} copay-tap`}
-          onClick={() => setP((s) => ({ ...s, step: "tap", method: "card" }))}
+          onClick={() => setP((s) => ({ ...s, step: "card", method: "card" }))}
         >
-          <b>Tap to Pay</b>
-          <span>card or phone · contactless</span>
+          <b>Card</b>
+          <span>scan to pay · charges the full balance</span>
         </button>
         <button
           className="btn"
@@ -730,6 +789,19 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
           Bank
         </button>
       </div>
+      {payErr ? (
+        <p
+          role="alert"
+          style={{
+            color: "var(--red)",
+            fontSize: "var(--type-sm)",
+            fontWeight: 600,
+            margin: "var(--space-2) 0 0",
+          }}
+        >
+          {payErr}
+        </p>
+      ) : null}
       <span
         className="linklike"
         onClick={onCancel}
@@ -751,30 +823,58 @@ interface FoundWorkSettleProps {
   pending: Addon[];
   onInclude: (addon: Addon) => void;
   onSkip: (addon: Addon) => void;
+  /**
+   * May settle found work — `v1.jobs.setAddonStatus` / `setAddonInvSkip`, both ownerOrOffice.
+   * The office OK-pill IS the approval gate and `v1.field.addAddon` hard-codes `status:
+   * "proposed"` for exactly that reason, so letting a technician approve their own found work
+   * would invert a stated law. False renders the list READ-ONLY.
+   */
+  canSettle: boolean;
 }
 
-function FoundWorkSettle({ pending, onInclude, onSkip }: FoundWorkSettleProps) {
+function FoundWorkSettle({ pending, onInclude, onSkip, canSettle }: FoundWorkSettleProps) {
   if (!pending.length) return null;
+  // `a.r === null` is the server's redaction, not a free add-on (money-redaction.ts nulls addon
+  // rates on a techSeesPrice-off device). Reducing it with `?? 0` prints "$0 in found work", which
+  // reads as "nothing extra was found" — the opposite of the warning this card exists to give. If
+  // even one rate is withheld the total is unknowable on this device, so name none. Same rule the
+  // job tab's FoundWorkSec already follows.
+  const anyHidden = pending.some((a) => a.r === null);
   const sum = pending.reduce((s, a) => s + (a.q ?? 1) * (a.r ?? 0), 0);
+  const what = anyHidden ? "Found work" : `${fmt$(sum)} in found work`;
 
   return (
     <div className="reqcard" style={{ marginBottom: "var(--space-3)" }}>
       <b>
-        ⚠ {fmt$(sum)} in found work awaiting the customer&rsquo;s OK
+        {canSettle
+          ? `⚠ ${what} awaiting the customer’s OK`
+          : `⚠ ${what} — not on this bill`}
       </b>
+      {canSettle ? null : (
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
+          The office quotes it. Collect what was agreed.
+        </div>
+      )}
       <div style={{ marginTop: "var(--space-2)" }}>
         {pending.map((a) => (
           <div key={a.id} className="stage-row">
             <div style={{ flex: 1 }}>
               <b style={{ fontWeight: 600 }}>{a.d}</b>{" "}
-              <span className="muted">· {fmt$((a.q ?? 1) * (a.r ?? 0))}</span>
+              {/* Redacted rate: show nothing, never $0 (see anyHidden above). */}
+              {a.r != null ? (
+                <span className="muted">· {fmt$((a.q ?? 1) * a.r)}</span>
+              ) : null}
             </div>
-            <button className="btn sm primary" onClick={() => onInclude(a)}>
-              ✓ OK&rsquo;d — include
-            </button>
-            <button className="btn sm ghost" onClick={() => onSkip(a)}>
-              Leave off
-            </button>
+            {canSettle ? (
+              <>
+                <button className="btn sm primary" onClick={() => onInclude(a)}>
+                  ✓ OK&rsquo;d — include
+                </button>
+                <button className="btn sm ghost" onClick={() => onSkip(a)}>
+                  Leave off
+                </button>
+              </>
+            ) : null}
           </div>
         ))}
       </div>
@@ -864,12 +964,75 @@ function VerifyGaps({ job, onCheck, onRephoto, onOverride }: VerifyGapsProps) {
 }
 
 // ===========================================================================
+//  A sheet that cannot show the close-out yet — but never a blank one
+// ===========================================================================
+
+interface CloseOutNoticeProps {
+  /** The sticky sheet title, so the technician still knows which sheet this is. */
+  title: string;
+  /** The job line under it, when a job is loaded. */
+  subtitle?: string;
+  /** What went wrong, in the shop's words. */
+  heading?: string;
+  /** The next step. Never a bare apology. */
+  message: string;
+  /** Present only when there is genuinely something to re-fire. */
+  onRetry?: () => void;
+}
+
+/**
+ * The honest stand-in for the close-out sheet. Composed from the same .sheet-head + .loadfail
+ * primitives the office list surfaces use (see components/shared/load-failed.tsx) — the copy
+ * differs because a bill that could not be RAISED is not a list that failed to load, and the
+ * reason is usually a domain refusal ("job must be complete before it can be invoiced",
+ * "Your role can't do that") that the technician needs to read verbatim.
+ */
+function CloseOutNotice({ title, subtitle, heading, message, onRetry }: CloseOutNoticeProps) {
+  return (
+    <>
+      <div className="sheet-head">
+        <h2>{title}</h2>
+        {subtitle ? (
+          <div className="sheet-meta">
+            <span>{subtitle}</span>
+          </div>
+        ) : null}
+      </div>
+      <div className="loadfail" role="alert">
+        {heading ? <p className="loadfail-h">{heading}</p> : null}
+        <p className="loadfail-s">{message}</p>
+        {onRetry ? (
+          <button className="btn" onClick={onRetry}>
+            Try again
+          </button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+// ===========================================================================
 //  THE MODAL BODY — "Wrap up — {custName}" (prototype openCloseOut)
 // ===========================================================================
 
 export function CloseOutModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
+
+  // WHO IS HOLDING THIS SHEET. Until this change the close-out had zero role checks and was
+  // protected only by being unreachable — the tech job modal never opened it for a technician.
+  // It opens for them now, so every write below has to say which API it goes to, and the office
+  // capabilities with no field sibling have to say so themselves. Fail closed: an unresolved role
+  // reads as the field.
+  const me = useMe();
+  const isOffice = me.data?.role === "owner" || me.data?.role === "office";
+  const surface: InvoiceWriteSurface = isOffice ? "office" : "field";
+  // The layout seeds this query, so the role is normally on the very first render. `roleKnown`
+  // exists for the frame where it is not: `surface` fails closed to "field", and the mount effect
+  // below RAISES AN INVOICE — an owner who lost that race would land their office bill in the
+  // redacted field shape (no recorded tax, no pay-link) and never re-fetch it, because the effect
+  // short-circuits once an invoice exists. Nothing is written until identity is settled.
+  const roleKnown = !me.isLoading;
 
   // RAW arrays only — never a derived array inside a selector.
   const jobs = useAppStore((s) => s.jobs);
@@ -878,12 +1041,12 @@ export function CloseOutModalContent() {
   const pricebook = useAppStore((s) => s.services);
 
   const addInvoice = useAppStore((s) => s.addInvoice);
+  const adoptInvoice = useAppStore((s) => s.adoptInvoice);
   const setInvoiceLines = useAppStore((s) => s.setInvoiceLines);
   const updateJob = useAppStore((s) => s.updateJob);
   const setJobLines = useAppStore((s) => s.setJobLines);
   const recordPayment = useAppStore((s) => s.recordPayment);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
-  const updateLead = useAppStore((s) => s.updateLead);
   const setAddonStatus = useAppStore((s) => s.setAddonStatus);
   const setAddonInvSkip = useAppStore((s) => s.setAddonInvSkip);
   const checkVerifyItem = useAppStore((s) => s.checkVerifyItem);
@@ -900,34 +1063,164 @@ export function CloseOutModalContent() {
 
   const lead = leads.find((l) => l.id === job?.leadId);
 
+  // The visit-fee flow (tech-job-modal.tsx's collectVisitFee) already raised a LEAD-tied
+  // manual invoice before pushing this modal, and passes its id — that invoice's jobId is NOT
+  // reliable (the server never stamps sourceJobId on a manual invoice, so the async draft/send
+  // reconcile wipes any local jobId hint back to null). Matching by id when provided is the
+  // durable way to find it regardless of that flap.
+  const invoiceIdParam = activeModal?.params?.invoiceId as string | undefined;
+
   // ---- ensureInvoiceForJob (prototype) — find the job's invoice, else create
   //      one from the job. Creation runs in an effect (never mutate the store
   //      during render); a ref guards against a duplicate before the new invoice
-  //      shows up in `invoices`. Until it exists we render nothing (one frame). --
-  const invoice = job ? invoices.find((i) => i.jobId === job.id) : undefined;
+  //      shows up in `invoices`.
+  const invoice = job
+    ? invoices.find((i) => (invoiceIdParam ? i.id === invoiceIdParam : i.jobId === job.id))
+    : undefined;
   const creatingRef = useRef<string | null>(null);
+  // The create's outcome, so this sheet always has something honest to render. It used to
+  // return null while `creatingRef` was stamped — and the ref was never cleared, so a create
+  // that FAILED (a technician hitting the ownerOrOffice gate on createFromJob gets FORBIDDEN)
+  // left an empty white panel with nothing but a ✕ on it, forever.
+  const [createError, setCreateError] = useState<string | null>(null);
+  // Bumped by Retry: clears the guard ref and re-runs the effect below.
+  const [createAttempt, setCreateAttempt] = useState(0);
 
   useEffect(() => {
     if (!job || invoice) return;
+    // Never raise a bill against a role we have not resolved yet — see roleKnown.
+    if (!roleKnown) return;
+    // The visit-fee flow already raised (or is still raising) this job's invoice — never race
+    // it with createFromJob, which would CONFLICT outright on a genuinely unpriced estimate
+    // and, even when it wouldn't, would mint a SECOND invoice fighting the lead-tied one.
+    if (invoiceIdParam) return;
     if (creatingRef.current === job.id) return;
     creatingRef.current = job.id;
-    addInvoice({
-      jobId: job.id,
-      leadId: job.leadId,
-      cust: custNameOf(job, lead),
-      phone: job.phone || lead?.phone || "",
-      title: job.title,
-      lines: (job.lines ?? []).map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0, c: l.c ?? 0 })),
-      total: jobTotal(job),
-      depPaid: 0,
-      payments: [],
-      status: "draft",
-      age: 0,
-      archived: false,
+    setCreateError(null);
+    const { persisted } = addInvoice(
+      {
+        jobId: job.id,
+        leadId: job.leadId,
+        cust: custNameOf(job, lead),
+        phone: job.phone || lead?.phone || "",
+        title: job.title,
+        // The optimistic draw only. The server snapshots the job's OWN lines onto the invoice
+        // and answers with them, so a device that cannot see rates (`r: null` → 0 here) never
+        // writes a fabricated $0 anywhere — this shape is replaced wholesale by the reconcile.
+        lines: (job.lines ?? []).map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0, c: l.c ?? 0 })),
+        total: jobTotal(job),
+        depPaid: 0,
+        payments: [],
+        status: "draft",
+        age: 0,
+        archived: false,
+      },
+      surface,
+    );
+    // Never rejects (the slice resolves { ok, error }). Clearing the guard on BOTH outcomes is
+    // what makes Retry possible at all.
+    void persisted.then(({ ok, error }) => {
+      creatingRef.current = null;
+      if (!ok) setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
     });
-  }, [job, invoice, lead, addInvoice]);
+  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface, roleKnown]);
 
-  if (!job || !invoice) return null;
+  const retryCreate = useCallback(() => {
+    creatingRef.current = null;
+    setCreateError(null);
+    setCreateAttempt((n) => n + 1);
+  }, []);
+
+  // The org's real visit fee for BillAsk's "+ Service / diagnostic fee" preset — read outside
+  // the store (this modal's only entry, the tech job modal, lives in the field shell, which
+  // never hydrates settings; see features/settings/use-org-service-fee.ts). Only fetched when
+  // BillAsk will actually render (mirrors its own render condition below), so an already-priced
+  // close-out never fires the extra request.
+  //
+  // OFFICE ONLY, twice over. BillAsk commits through `v1.jobs.setLines` + `v1.invoicing.patchLines`
+  // — both ownerOrOffice, both bulk REPLACES, and neither was widened (an append-only field
+  // sibling is still owed), so for a technician the builder has no route at all. And per the
+  // owner's price-visibility rule, a shop that hides prices from techs hides the price BUILDER
+  // from them too: they may read the balance they are collecting, they may not author it.
+  const needsBillAsk = Boolean(
+    isOffice && job && invoice && (invoice.total ?? 0) <= 0 && jobTotal(job) <= 0,
+  );
+  const orgServiceFee = useOrgServiceFee(needsBillAsk);
+
+  // ---- states before the sheet can render. NONE of them may be blank: this modal's shell is
+  //      already on screen by the time this component mounts, so returning null leaves the
+  //      technician holding a white panel with a ✕ and no way to tell what went wrong.
+  if (!job) {
+    return (
+      <CloseOutNotice
+        title="Wrap up"
+        message="This job isn't loaded. Close this and open it again from My day."
+      />
+    );
+  }
+  if (!invoice) {
+    if (createError) {
+      return (
+        <CloseOutNotice
+          title={`Wrap up — ${custNameOf(job, lead)}`}
+          subtitle={job.title}
+          message={createError}
+          heading="Couldn't raise the invoice"
+          onRetry={retryCreate}
+        />
+      );
+    }
+    if (invoiceIdParam) {
+      // Handed an invoice id that isn't in the store. Nothing to retry here — the sheet was
+      // opened against a record this device never loaded.
+      return (
+        <CloseOutNotice
+          title={`Wrap up — ${custNameOf(job, lead)}`}
+          subtitle={job.title}
+          heading="That invoice isn't loaded"
+          message="Close this and tap Take payment again from the job."
+        />
+      );
+    }
+    return (
+      <>
+        <div className="sheet-head">
+          <h2>Wrap up — {custNameOf(job, lead)}</h2>
+          <div className="sheet-meta">
+            <span>{job.title}</span>
+          </div>
+        </div>
+        <ListLoading rows={3} label="Raising the invoice…" />
+      </>
+    );
+  }
+
+  // A TECHNICIAN NEVER RENDERS AN OPTIMISTIC TOTAL. This sheet raises the bill on mount and draws
+  // the row it just asked for, carrying `total: jobTotal(job)` — a figure the field device is in no
+  // position to compute. It is 0 when the shop withholds rates (`pricesHidden`), and even when the
+  // rates ARE visible it is the raw line sum: no deposit credited, no tax as recorded. On a $1,000
+  // job with a $200 deposit the sheet would say "Take payment — $1,000", pre-fill the amount box
+  // with 1000, and a tap inside the round-trip records $1,000 against an $880 invoice.
+  //
+  // The gate is the SURFACE, not `pricesHidden`: the deposit skew has nothing to do with redaction,
+  // and `pricesHidden` is false for a job with no lines at all, which is reachable. The server's
+  // answer always carries the balance (modules/invoicing/api/field-invoice-dto.ts), so wait for it
+  // and say what is happening. The office is untouched — its invoices are hydrated, so it rarely
+  // draws an optimistic row at all, and every existing expectation of its behaviour is unchanged.
+  // A failed create rolls the row back, so this state never outlives the error notice above.
+  if (invoice.origin !== "db" && surface === "field") {
+    return (
+      <>
+        <div className="sheet-head">
+          <h2>Wrap up — {custNameOf(job, lead)}</h2>
+          <div className="sheet-meta">
+            <span>{job.title}</span>
+          </div>
+        </div>
+        <ListLoading rows={3} label="Reading the balance…" />
+      </>
+    );
+  }
 
   const custName = custNameOf(job, lead);
   const due = invDue(invoice);
@@ -970,24 +1263,68 @@ export function CloseOutModalContent() {
     setInvoiceLines(invoice.id, [...(invoice.lines ?? []), ...newLines]);
   }
 
-  // ---- take a payment (coPay approve/onfile) --------------------------------
-  function approvePayment({
+  // ---- record a payment taken outside the app (coPay approve/onfile) --------
+  // ORDER MATTERS, twice over:
+  //  1. The customer may have JUST paid the checkout QR (or an emailed link)
+  //     while the tech reached for "record it instead" — one fresh read first;
+  //     an already-paid invoice jumps to done instead of recording a second
+  //     payment the server would refuse (and the slice would silently roll back).
+  //  2. recordPayment refuses drafts server-side (sent|partial only), so a draft
+  //     is SENT — awaited, genuinely ok — before recording, the same ordering the
+  //     card step uses. Recording first made every first-record on a fresh draft
+  //     fail behind an "Approved" screen.
+  async function approvePayment({
     amt,
     method,
     onFile,
-    save,
   }: {
     amt: number;
     method: PayMethod;
     onFile: boolean;
-    save: boolean;
-  }) {
-    if (!invoice) return;
-    recordPayment(invoice.id, { amt, when: "Just now", method, onFile });
+  }): Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }> {
+    if (!invoice) return { ok: false, error: "invoice not found" };
+    // The server's answer outranks the store's for the send decision below: a store row
+    // optimistically flipped to "sent" over a server row still in draft would otherwise
+    // record straight into the draft guard — silent rollback behind "Approved".
+    let liveStatus = invoice.status;
+    if (invoice.origin === "db") {
+      try {
+        const fresh = await readInvoice(surface, invoice.id, invoice);
+        if (fresh.status === "paid") {
+          adoptPaidInvoice(fresh);
+          return { ok: true, alreadyPaid: true };
+        }
+        liveStatus = fresh.status;
+      } catch {
+        // Unreadable (offline blip) — proceed with the record; the server remains
+        // the final guard and the slice rolls back an optimistic write it refuses.
+      }
+    }
+    if (liveStatus === "draft") {
+      const sent = await sendInvoice(invoice.id, surface);
+      if (!sent.ok) {
+        return {
+          ok: false,
+          error: sent.error ?? "Couldn't send the invoice — check your connection and try again.",
+        };
+      }
+    }
+    recordPayment(invoice.id, { amt, when: "Just now", method, onFile }, surface);
     // A card on file is NOT recorded here. This used to write a hardcoded
     // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
     // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.
-    if (invoice.status === "draft") sendInvoice(invoice.id);
+    return { ok: true };
+  }
+
+  // ---- a checkout payment landed (card-step poll, or the pre-record check) ---
+  // The Stripe webhook already RECORDED the payment server-side; adopting the
+  // fresh record (local id kept stable, mirroring the slice's reconcile convention)
+  // flips DueCard/status immediately — no recordPayment double-write. The read that
+  // produced it already picked the caller's own API and mapper (see invoice-write.ts).
+  function adoptPaidInvoice(fresh: Invoice) {
+    if (!invoice) return;
+    invalidateLists("invoices", "jobs");
+    adoptInvoice({ ...fresh, id: invoice.id });
   }
 
   // ---- send to office (sendForInvoicing) ------------------------------------
@@ -1007,35 +1344,43 @@ export function CloseOutModalContent() {
         </div>
       </div>
 
-      {/* What was done — goes on the invoice the customer sees (completionNote). */}
-      <Field
-        label="What was done"
-        style={{ marginBottom: "var(--space-3)" }}
-        hint={
-          <span className="muted" style={{ fontWeight: 500 }}>
-            — goes on the invoice the customer sees
-          </span>
-        }
-      >
-        {/* The placeholder is short enough to READ on a phone. The old hint needed
-            490px inside a 309px field, so it was cut off mid-word on every device a
-            tech actually owns. */}
-        <input
-          type="text"
-          defaultValue={job.completion || ""}
-          placeholder="e.g. Replaced 40-gal water heater"
-          onChange={(e) => updateJob(job.id, { completion: e.target.value })}
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            border: "1.5px solid var(--line)",
-            borderRadius: "var(--radius-sm)",
-            padding: "var(--space-2) var(--space-3)",
-            fontFamily: "inherit",
-            fontSize: "var(--type-base)",
-          }}
-        />
-      </Field>
+      {/* What was done — goes on the invoice the customer sees (completionNote).
+          OFFICE ONLY: `job.completion` rides `v1.jobs.update`, ownerOrOffice, and the field
+          router has no `setCompletion` sibling yet (`v1.field.setVisitNotes` is a different
+          column — visit notes are not the job's completion line). A technician typing here would
+          watch the text save and silently roll back, so the field gets no box rather than a
+          lying one. This is the one control the person who did the work should own; it is owed
+          a field endpoint, not a disabled input. */}
+      {isOffice ? (
+        <Field
+          label="What was done"
+          style={{ marginBottom: "var(--space-3)" }}
+          hint={
+            <span className="muted" style={{ fontWeight: 500 }}>
+              — goes on the invoice the customer sees
+            </span>
+          }
+        >
+          {/* The placeholder is short enough to READ on a phone. The old hint needed
+              490px inside a 309px field, so it was cut off mid-word on every device a
+              tech actually owns. */}
+          <input
+            type="text"
+            defaultValue={job.completion || ""}
+            placeholder="e.g. Replaced 40-gal water heater"
+            onChange={(e) => updateJob(job.id, { completion: e.target.value })}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              border: "1.5px solid var(--line)",
+              borderRadius: "var(--radius-sm)",
+              padding: "var(--space-2) var(--space-3)",
+              fontFamily: "inherit",
+              fontSize: "var(--type-base)",
+            }}
+          />
+        </Field>
+      ) : null}
 
       {/* Bill-ask — ONLY when there is GENUINELY no price. A persisted on-site
           price flows job.lines → invoice.total via ensureInvoiceForJob, so we
@@ -1043,17 +1388,24 @@ export function CloseOutModalContent() {
           lines summing above zero (covers the frame before the invoice effect
           re-derives). Never show the suggestBill heuristic once a real price
           exists — that produced the phantom $475. */}
-      {(invoice.total ?? 0) <= 0 && jobTotal(job) <= 0 ? (
+      {needsBillAsk ? (
         <BillAsk
           job={job}
           suggested={suggestBill(job, pricebook)}
           onCommit={commitBill}
           error={commitError}
+          serviceFee={orgServiceFee}
         />
       ) : null}
 
-      {/* Found-work settlement — pending add-ons awaiting the customer's OK. */}
-      <FoundWorkSettle pending={pending} onInclude={includeAddon} onSkip={skipAddon} />
+      {/* Found-work settlement — pending add-ons awaiting the customer's OK. Read-only for the
+          field, where the OK-pill is not the technician's to press. */}
+      <FoundWorkSettle
+        pending={pending}
+        onInclude={includeAddon}
+        onSkip={skipAddon}
+        canSettle={isOffice}
+      />
 
       {/* Verify gaps — required checks still open (collapsible; never blocks). */}
       <VerifyGaps
@@ -1066,7 +1418,7 @@ export function CloseOutModalContent() {
       {/* Due summary card — the money side. */}
       <DueCard invoice={invoice} />
 
-      {/* Pay block — its steps carry their own buttons (Simulate tap, Record,
+      {/* Pay block — its steps carry their own buttons (the card checkout, Record,
           Done), so while it is open it renders in-flow and the foot is skipped. */}
       {payOpen ? (
         <div style={{ marginTop: "var(--space-3)" }}>
@@ -1074,6 +1426,9 @@ export function CloseOutModalContent() {
             invoice={invoice}
             lead={lead}
             onApprove={approvePayment}
+            sendInvoice={(id) => sendInvoice(id, surface)}
+            surface={surface}
+            onCardPaid={adoptPaidInvoice}
             onFinish={() => {
               setPayOpen(false);
               close();
@@ -1084,7 +1439,13 @@ export function CloseOutModalContent() {
       ) : (
         /* THE terminal action, docked where the thumb is. Money due → Take
            payment is the primary with send-to-office quiet beside it; nothing
-           due → send-to-office IS the wrap-up confirm. */
+           due → send-to-office IS the wrap-up confirm.
+
+           Take payment is BLOCKED on unsettled found work for the office only. Clearing
+           `pending` means calling setAddonStatus, which is ownerOrOffice by law — so the same
+           disable on a technician's device is a button that can never become live, on the one
+           screen where the customer is standing there with cash. They collect what was agreed;
+           the found-work list above says, read-only, what is not on this bill. */
         <div
           className="sheet-foot"
           style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}
@@ -1093,19 +1454,30 @@ export function CloseOutModalContent() {
             <>
               <button
                 className="sheet-pri"
-                style={{ flex: 1, ...(pending.length > 0 ? { opacity: 0.55, cursor: "not-allowed" } : {}) }}
-                disabled={pending.length > 0}
+                style={{
+                  flex: 1,
+                  ...(isOffice && pending.length > 0 ? { opacity: 0.55, cursor: "not-allowed" } : {}),
+                }}
+                disabled={isOffice && pending.length > 0}
                 onClick={() => setPayOpen(true)}
               >
                 Take payment — {fmt$(due)}
               </button>
-              <button className="btn" style={{ minHeight: 48 }} onClick={sendToOffice}>
-                Log &amp; send to office →
-              </button>
+              {isOffice ? (
+                <button className="btn" style={{ minHeight: 48 }} onClick={sendToOffice}>
+                  Log &amp; send to office →
+                </button>
+              ) : null}
             </>
-          ) : (
+          ) : isOffice ? (
             <button className="sheet-pri" onClick={sendToOffice}>
               Log &amp; send to office →
+            </button>
+          ) : (
+            /* Nothing owed and no office writes to offer — the bill is settled or unpriced, and
+               either way the technician is done here. Never a dead hand-off button. */
+            <button className="sheet-pri" onClick={close}>
+              Done
             </button>
           )}
         </div>

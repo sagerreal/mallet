@@ -21,6 +21,11 @@ export { isEstimateOrigin } from "./domain/estimate";
 // Public (unauthenticated) quote functions — used by the customer-facing quote page routes.
 export { getPublicQuote, acceptPublicQuote, declinePublicQuote } from "./app/public-quote";
 export type { PublicQuoteView } from "./app/public-quote";
+// Quote deposits. createPublicDepositCheckout is the customer-facing mint; recordEstimateDeposit
+// is the recorder BOTH Stripe entry points call (the webhook route and the /pay/success reconcile),
+// so the two can never drift into recording a deposit differently.
+export { createPublicDepositCheckout, recordEstimateDeposit } from "./app/public-quote-deposit";
+export type { PublicDepositCheckoutOutcome } from "./app/public-quote-deposit";
 // The estimator's learned rules — modules/ai reads confirmed rules through this seam.
 export { QuotingRule } from "./domain/quoting-rule";
 export type { QuotingRuleProps, QuotingRuleStatus, QuotingRuleSource } from "./domain/quoting-rule";

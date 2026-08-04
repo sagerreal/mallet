@@ -43,6 +43,11 @@ class FakeInvoiceRepository implements InvoiceRepository {
   async save(invoice: Invoice): Promise<void> {
     this.store.set(invoice.props.id, invoice);
   }
+  async insertNew(invoice: Invoice): Promise<boolean> {
+    if (this.store.has(invoice.props.id)) return false;
+    this.store.set(invoice.props.id, invoice);
+    return true;
+  }
   async insertForJob(invoice: Invoice): Promise<boolean> {
     this.store.set(invoice.props.id, invoice);
     return true;
@@ -56,6 +61,11 @@ class FakeInvoiceRepository implements InvoiceRepository {
   async findById(id: InvoiceId): Promise<Invoice | null> {
     return this.store.get(id) ?? null;
   }
+  async findByPublicToken(_token: string): Promise<Invoice | null> {
+    return null;
+  }
+
+  async listByScopeJob() { return []; }
   async findBySourceJob(_jobId: JobId): Promise<Invoice | null> {
     return null;
   }
@@ -196,5 +206,81 @@ describe("DraftInvoiceUseCase – branch coverage", () => {
     expect(isOk(result)).toBe(true);
     // seqIds mints the line id (…0001) then the invoice id (…0002); no client id was given.
     if (isOk(result)) expect(result.value.props.id).toBe("00000000-0000-0000-0000-000000000002");
+  });
+});
+
+/**
+ * The client-authored id is a convenience for the browser's optimistic row. It must never be a
+ * write primitive aimed at an invoice that already exists.
+ *
+ * Before this was hardened the draft path called `repo.save()` — an UPSERT — so naming an existing
+ * invoice's id REPLACED its header: status reset to draft, total rewritten to the new lines,
+ * `source_job_id` nulled (orphaning the real bill, in a codebase whose rule is soft-delete-only)
+ * and any recorded payments stranded against a total that no longer matched. That is a strictly
+ * worse capability than the `void` and `patchLines` endpoints deliberately withheld from techs.
+ */
+describe("DraftInvoiceUseCase — a client-authored id cannot overwrite an existing invoice", () => {
+  it("refuses a colliding id instead of replacing the row", async () => {
+    const bus = new InMemoryEventBus();
+    const repo = new FakeInvoiceRepository();
+    const useCase = new DraftInvoiceUseCase(
+      repo,
+      bus,
+      new FixedClock(new Date("2026-07-01T00:00:00Z")),
+      seqIds(),
+    );
+
+    const victimId = asInvoiceId("99999999-9999-4999-8999-999999999999");
+    const first = await useCase.exec({
+      orgId: ORG,
+      id: victimId,
+      leadId: LEAD,
+      title: "The real bill",
+      termsDays: 7,
+      lines: [{ description: "Water heater", quantity: 1, rateCents: 500_000, costCents: 0 }],
+    });
+    expect(isOk(first)).toBe(true);
+
+    const attack = await useCase.exec({
+      orgId: ORG,
+      id: victimId, // aimed at the invoice above
+      leadId: LEAD,
+      title: "Visit fee — service call",
+      termsDays: 0,
+      lines: [{ description: "Visit fee", quantity: 1, rateCents: 8_900, costCents: 0 }],
+    });
+
+    // Refused, and refused LOUDLY — a silent success would leave the caller believing it landed.
+    expect(isOk(attack)).toBe(false);
+
+    // And the victim is untouched: same title, same total, still $5,000.
+    const survivor = await repo.findById(victimId);
+    expect(survivor?.props.title).toBe("The real bill");
+    expect(survivor?.props.total).toBe(500_000);
+  });
+
+  it("emits no invoice.drafted event for the refused write", async () => {
+    const bus = new InMemoryEventBus();
+    const repo = new FakeInvoiceRepository();
+    const useCase = new DraftInvoiceUseCase(
+      repo,
+      bus,
+      new FixedClock(new Date("2026-07-01T00:00:00Z")),
+      seqIds(),
+    );
+    const id = asInvoiceId("99999999-9999-4999-8999-999999999999");
+    const cmd = {
+      orgId: ORG,
+      id,
+      leadId: LEAD,
+      title: "x",
+      termsDays: 7,
+      lines: [{ description: "x", quantity: 1, rateCents: 100, costCents: 0 }],
+    };
+    await useCase.exec(cmd);
+    await useCase.exec(cmd);
+
+    // One insert, one event. The second call must not announce a write it did not make.
+    expect(bus.recorded.filter((e) => e.name === "invoice.drafted")).toHaveLength(1);
   });
 });

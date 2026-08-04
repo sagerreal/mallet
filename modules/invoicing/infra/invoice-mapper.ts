@@ -1,4 +1,4 @@
-import { asInvoiceId, asOrgId, asLeadId, asJobId, money } from "@mallet/shared/types";
+import { asInvoiceId, asOrgId, asLeadId, asJobId, asUserId, money } from "@mallet/shared/types";
 import { invoices, invoiceLines, payments } from "@mallet/shared/db/schema";
 import { Invoice, isInvoiceStatus } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
@@ -32,6 +32,7 @@ const toPayment = (row: PaymentRow): Payment => {
     method: row.method,
     idempotencyKey: row.idempotencyKey,
     externalId: row.externalId,
+    recordedByUserId: row.recordedByUserId ? asUserId(row.recordedByUserId) : null,
     receivedAt: row.receivedAt,
   });
   if (!r.ok) throw new Error(`corrupt payment ${row.id}: ${r.error.message}`);
@@ -58,6 +59,7 @@ export const toDomain = (
     orgId: asOrgId(row.orgId),
     num: row.num,
     sourceJobId: row.sourceJobId ? asJobId(row.sourceJobId) : null,
+    scopeJobId: row.scopeJobId ? asJobId(row.scopeJobId) : null,
     leadId: asLeadId(row.leadId),
     title: row.title,
     status: row.status,
@@ -71,6 +73,8 @@ export const toDomain = (
     termsDays: row.termsDays,
     sentAt: row.sentAt,
     dueAt: row.dueAt,
+    poNumber: row.poNumber,
+    publicToken: row.publicToken,
     followUpOn: row.followUpOn,
     followUpStage: row.followUpStage,
     createdAt: row.createdAt,

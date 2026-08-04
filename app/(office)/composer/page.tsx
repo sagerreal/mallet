@@ -99,7 +99,16 @@ export default function ComposerPage() {
     const raw = searchParams.get("lead");
     const leadId = raw != null && raw !== "" ? raw : null;
     const desc = searchParams.get("desc")?.trim() ?? "";
-    return { ...INITIAL_STATE, leadId, desc };
+    // ?job= is the scope-visit job this quote prices (scoped card / Build-the-price). Held in
+    // composer state and sent as the draft's jobId, so accepting the quote converts THAT job
+    // into the sold work instead of minting a duplicate next to the walkthrough.
+    const jobParam = searchParams.get("job");
+    return {
+      ...INITIAL_STATE,
+      leadId,
+      desc,
+      jobId: jobParam != null && jobParam !== "" ? jobParam : null,
+    };
   });
 
   const [aiDraftError, setAiDraftError] = useState<string | null>(null);
@@ -145,7 +154,12 @@ export default function ComposerPage() {
     // ?job= wins over ?lead= when both are present: the leadId here overwrites whatever
     // ?lead= seeded into the initial state. Currently unreachable in practice (the
     // Build-the-price button only ever sets ?job=), but intentional if that ever changes.
-    setCs((prev) => applyMeasurementSeed(prev, built.leadId, seedLinesToComposerLines(built.seedLines)));
+    // jobId re-stamps alongside the seed so a same-route ?job=A → ?job=B change carries the
+    // NEW job onto the draft, not the one the composer mounted with.
+    setCs((prev) => ({
+      ...applyMeasurementSeed(prev, built.leadId, seedLinesToComposerLines(built.seedLines)),
+      jobId,
+    }));
     setMeasurementNotice({ gaps: built.gaps, unconfirmedRooms: built.unconfirmedRooms });
   }, [jobId, buildFromMeasurementsQuery.data]);
 
@@ -174,6 +188,10 @@ export default function ComposerPage() {
         depBps: dto.depBps,
         recommendedTier: dto.recommendedTier ?? null,
         tierNames: dto.tierNames ?? null,
+        // The walkthrough link survives a revision — without it, "Edit & resend" would send a
+        // quote whose accept mints a duplicate job. Server-side validation re-guards it on the
+        // revision's own draft (assertScopeVisitJob runs on every v1.quoting.draft).
+        jobId: dto.jobId ?? null,
         lines: dto.lines.map((l) => ({
           d: l.description,
           q: l.quantity,
@@ -508,6 +526,9 @@ export default function ComposerPage() {
         ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
         : {}),
       ...(cs.terms ? { termsSnapshot: cs.terms.text } : {}),
+      // The scope-visit job behind this quote survives a save-draft too — without it, a draft
+      // saved from the scoped card would accept into a DUPLICATE job later.
+      ...(cs.jobId ? { jobId: cs.jobId } : {}),
     });
     // Traces held on this quote persist onto the flow's job when one exists
     // (?job=/?change=) — fire-and-forget; the draft is already saved.
@@ -555,6 +576,9 @@ export default function ComposerPage() {
       // the signature it collects is what makes the extra authorised rather than a surprise on the
       // bill. ?change=<jobId> marks it; an ordinary quote sends nothing.
       ...(changeOrderJobId ? { changeOrderForJobId: changeOrderJobId } : {}),
+      // The scope-visit job this quote prices (?job=). Accept converts that job into the sold
+      // work — the walkthrough and the work stay ONE job. Server-validated (org + kind).
+      ...(cs.jobId ? { jobId: cs.jobId } : {}),
       // AI-originated quotes carry the AI's original lines so the server can
       // diff what the office changed (edit-delta mining → proposed rules).
       ...(() => {

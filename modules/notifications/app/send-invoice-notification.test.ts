@@ -53,6 +53,7 @@ const baseTarget = (overrides: Partial<ReminderTarget> = {}): ReminderTarget => 
   phone: "+15559876543",
   email: "customer@example.com",
   balanceCents: 50_000,
+  publicToken: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,
 });
@@ -88,7 +89,7 @@ describe("SendInvoiceNotificationUseCase", () => {
     it("returns a not-found error when the invoice does not exist in the reader", async () => {
       const reader = new FakeReader(null);
       const spy = new SpySendUseCase({ ok: false, error: { kind: "not_found", message: "invoice" } } as any);
-      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds());
+      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds(), null);
 
       const result = await uc.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
 
@@ -104,7 +105,7 @@ describe("SendInvoiceNotificationUseCase", () => {
     it("returns a not-found error when the reader has a target for a different invoiceId", async () => {
       const reader = new FakeReader(baseTarget({ id: "different-invoice-id" }));
       const spy = new SpySendUseCase({ ok: false, error: { kind: "not_found", message: "invoice" } } as any);
-      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds());
+      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds(), null);
 
       const result = await uc.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
 
@@ -119,7 +120,7 @@ describe("SendInvoiceNotificationUseCase", () => {
       const target = baseTarget({ phone: null });
       const reader = new FakeReader(target);
       const spy = new SpySendUseCase({ ok: true, value: stubNotification() });
-      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds());
+      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds(), null);
 
       const result = await uc.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
 
@@ -136,7 +137,7 @@ describe("SendInvoiceNotificationUseCase", () => {
       const target = baseTarget({ email: null });
       const reader = new FakeReader(target);
       const spy = new SpySendUseCase({ ok: true, value: stubNotification() });
-      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds());
+      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds(), null);
 
       const result = await uc.exec({ orgId: ORG, invoiceId: INV, channel: "email" });
 
@@ -155,7 +156,7 @@ describe("SendInvoiceNotificationUseCase", () => {
       const reader = new FakeReader(target);
       const notif = stubNotification();
       const spy = new SpySendUseCase({ ok: true, value: notif });
-      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds());
+      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds(), null);
 
       const result = await uc.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
 
@@ -182,7 +183,7 @@ describe("SendInvoiceNotificationUseCase", () => {
       const reader = new FakeReader(target);
       const notif = stubNotification();
       const spy = new SpySendUseCase({ ok: true, value: notif });
-      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds());
+      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds(), null);
 
       const result = await uc.exec({ orgId: ORG, invoiceId: INV, channel: "email" });
 
@@ -199,8 +200,8 @@ describe("SendInvoiceNotificationUseCase", () => {
       const ids: IdGenerator = { newId: () => `id-${(callCount += 1)}` };
       const spy1 = new SpySendUseCase({ ok: true, value: stubNotification() });
       const spy2 = new SpySendUseCase({ ok: true, value: stubNotification() });
-      const uc1 = new SendInvoiceNotificationUseCase(reader, spy1 as unknown as SendNotificationUseCase, ids);
-      const uc2 = new SendInvoiceNotificationUseCase(reader, spy2 as unknown as SendNotificationUseCase, ids);
+      const uc1 = new SendInvoiceNotificationUseCase(reader, spy1 as unknown as SendNotificationUseCase, ids, null);
+      const uc2 = new SendInvoiceNotificationUseCase(reader, spy2 as unknown as SendNotificationUseCase, ids, null);
 
       await uc1.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
       await uc2.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
@@ -208,12 +209,46 @@ describe("SendInvoiceNotificationUseCase", () => {
       expect(spy1.lastCmd!.idempotencyKey).not.toBe(spy2.lastCmd!.idempotencyKey);
     });
 
+    it("composes the pay link into the body exactly once when the origin and token exist", async () => {
+      const target = baseTarget({ publicToken: "a".repeat(64), balanceCents: 50_000 });
+      const reader = new FakeReader(target);
+      const spy = new SpySendUseCase({ ok: true, value: stubNotification() });
+      const uc = new SendInvoiceNotificationUseCase(
+        reader,
+        spy as unknown as SendNotificationUseCase,
+        fixedIds(),
+        "https://app.example.com",
+      );
+
+      await uc.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
+
+      const body = spy.lastCmd!.body;
+      expect(body).toBe(`Invoice INV-2000 for $500.00 is ready. View & pay: https://app.example.com/i/${"a".repeat(64)}`);
+      expect(body.match(/https?:\/\//g)).toHaveLength(1);
+    });
+
+    it("omits the link — never a half-built one — when the invoice has no token yet", async () => {
+      const target = baseTarget({ publicToken: null });
+      const reader = new FakeReader(target);
+      const spy = new SpySendUseCase({ ok: true, value: stubNotification() });
+      const uc = new SendInvoiceNotificationUseCase(
+        reader,
+        spy as unknown as SendNotificationUseCase,
+        fixedIds(),
+        "https://app.example.com",
+      );
+
+      await uc.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
+
+      expect(spy.lastCmd!.body).toBe("Invoice INV-2000 for $500.00 is ready. Reply or call to pay. Thank you.");
+    });
+
     it("propagates send.exec failure result to the caller unchanged", async () => {
       const target = baseTarget();
       const reader = new FakeReader(target);
       const sendError = { ok: false as const, error: { kind: "external_service" as const, service: "sms-gateway", message: "gateway down", retryable: true } };
       const spy = new SpySendUseCase(sendError);
-      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds());
+      const uc = new SendInvoiceNotificationUseCase(reader, spy as unknown as SendNotificationUseCase, fixedIds(), null);
 
       const result = await uc.exec({ orgId: ORG, invoiceId: INV, channel: "sms" });
 

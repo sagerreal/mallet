@@ -8,8 +8,9 @@
  * Sheet grammar: the SINGLE terminal action of each branch (charge on file /
  * take payment / send to the office) is rendered by the modal's sticky
  * .sheet-foot as the .sheet-pri — see doneFootAction below. This card carries
- * the status line and the QUIET peers only. A small Reopen affordance sits
- * above the card.
+ * the status line and the QUIET peers only. Reopen is NOT here: it writes a
+ * VISIT status, so it lives once, in the "Your visit(s)" section beside the visit
+ * it moves — the same single home the not-done VisitRow uses.
  */
 
 "use client";
@@ -17,17 +18,34 @@
 import { memo } from "react";
 import type { Invoice, Job, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
-import { invDue, jobTotal } from "./helpers";
+import { invDue, jobTotal, pricesHidden } from "./helpers";
 
 export interface DoneBlockProps {
   job: Job;
   lead: Lead | undefined;
   invoice: Invoice | undefined;
   onOpenCloseOut: () => void;
-  onOpenInvoice: (invoiceId: string) => void;
+  /**
+   * Opens the office invoice modal on the settled bill. OPTIONAL: that modal reads
+   * `v1.invoicing.get` — the unredacted office record, with line cost and the customer's
+   * pay-link token on it — so a field caller passes nothing and the receipt link is not drawn.
+   */
+  onOpenInvoice?: (invoiceId: string) => void;
   onChargeOnFile: () => void;
   onSendToOffice: () => void;
-  onReopen: () => void;
+  /**
+   * May hand the job to the office to bill — `job.invRequested` rides `v1.jobs.update`, which is
+   * ownerOrOffice with no field sibling. False hides the hand-off buttons rather than leaving a
+   * technician a control whose tap FORBIDDENs and silently rolls back. Defaults true: the office
+   * is this card's original and still most common caller.
+   */
+  canSendToOffice?: boolean;
+  /**
+   * May price the bill on site — the close-out's BillAsk commits through `v1.jobs.setLines` and
+   * `v1.invoicing.patchLines`, both ownerOrOffice and both bulk REPLACES, so neither was widened.
+   * False hides "Set a bill & take payment", which would otherwise open a sheet with no builder.
+   */
+  canSetBill?: boolean;
 }
 
 // DoneBlock uses a custom comparator — it only reads job.invRequested and job.lines
@@ -38,7 +56,8 @@ export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boole
     a.onOpenInvoice === b.onOpenInvoice &&
     a.onChargeOnFile === b.onChargeOnFile &&
     a.onSendToOffice === b.onSendToOffice &&
-    a.onReopen === b.onReopen &&
+    a.canSendToOffice === b.canSendToOffice &&
+    a.canSetBill === b.canSetBill &&
     a.lead === b.lead &&
     a.invoice === b.invoice &&
     a.job.invRequested === b.job.invRequested &&
@@ -53,6 +72,26 @@ export interface ScopeHandoffBlockProps {
   scoped: boolean;
   /** Switches the modal to the Quote tab, where scope is captured and read. */
   onOpenQuoteTab: () => void;
+  /**
+   * This viewer may charge the fee: the office, or a technician assigned to this job. The write
+   * itself (`v1.fieldInvoicing.raiseVisitFee`) is job-authorized server-side; this is only what
+   * decides whether to draw a control that would be refused.
+   */
+  canCollectFee: boolean;
+  /**
+   * The org's configured visit fee in dollars, when THIS device could read it — the office can
+   * (`v1.settings.get`), the field shell cannot (it is ownerOrOffice, and the field layout mounts
+   * no SettingsHydrator). `null` means "this device doesn't know the number", and the button says
+   * so by naming no amount; the server reads the real fee either way, which is exactly why the
+   * amount was never an input.
+   */
+  feeAmount: number | null;
+  /** A fee invoice already exists for this job — hides the button (never collect it twice). */
+  hasFeeInvoice: boolean;
+  /** Raises the fee invoice and opens the close-out sheet to collect it on site. */
+  onCollectFee: () => void;
+  /** Surfaced when the raise is refused (fee unset, visit not finished, connection). */
+  feeError?: string | null;
 }
 
 /**
@@ -60,14 +99,44 @@ export interface ScopeHandoffBlockProps {
  * on this job (see isUnpricedEstimate in helpers.ts), so the close-out is a
  * handoff, never a billing branch: the office builds the quote from the scope.
  * Rendered in DoneBlock's slot; the modal's foot stays a plain Done.
+ *
+ * A declined estimate still owes the org's visit/diagnostic fee — "Collect the visit fee" is
+ * a SECONDARY action beside the handoff (never replaces it): tapping it bills + collects the
+ * fee for THIS visit without asking the office to quote anything.
  */
-export function ScopeHandoffBlock({ scoped, onOpenQuoteTab }: ScopeHandoffBlockProps) {
+export function ScopeHandoffBlock({
+  scoped,
+  onOpenQuoteTab,
+  canCollectFee,
+  feeAmount,
+  hasFeeInvoice,
+  onCollectFee,
+  feeError,
+}: ScopeHandoffBlockProps) {
+  const showFeeButton = canCollectFee && !hasFeeInvoice;
+
+  const feeControls = (
+    <>
+      {showFeeButton ? (
+        <button className="tjpaid-btn2" onClick={onCollectFee}>
+          {feeAmount ? `Collect the visit fee — ${fmt$(feeAmount)}` : "Collect the visit fee →"}
+        </button>
+      ) : null}
+      {feeError ? (
+        <div className="tjpaid-sub" style={{ color: "var(--red)" }}>
+          {feeError}
+        </div>
+      ) : null}
+    </>
+  );
+
   if (scoped) {
     return (
       <div className="tjpaid ok">
         <div className="tjpaid-top">
           <b>✓ Scoped — the office builds the quote</b>
         </div>
+        {feeControls}
       </div>
     );
   }
@@ -82,26 +151,39 @@ export function ScopeHandoffBlock({ scoped, onOpenQuoteTab }: ScopeHandoffBlockP
       <button className="tjpaid-btn2" onClick={onOpenQuoteTab}>
         Open the Quote tab →
       </button>
+      {feeControls}
     </div>
   );
 }
 
 /**
- * Which terminal action the modal's sticky .sheet-foot carries for a done job
- * (office view). Mirrors the branch order of DoneBlockFn below — the two must
- * stay in lockstep. Null = the job is settled or already with the office; the
- * foot falls back to plain Done.
+ * Which terminal action the modal's sticky .sheet-foot carries for a done job.
+ * Mirrors the branch order of DoneBlockFn below — the two must stay in lockstep.
+ * Null = the job is settled, already with the office, or has nothing this viewer
+ * can do about it; the foot falls back to plain Done.
+ *
+ * `canSendToOffice` defaults true — the office is the original caller and every existing
+ * behaviour of theirs is unchanged.
  */
 export function doneFootAction(
   job: Job,
   lead: Lead | undefined,
   invoice: Invoice | undefined,
+  canSendToOffice = true,
 ): DoneFootKind | null {
   if (invoice && (invoice.total ?? 0) > 0 && invDue(invoice) <= 0) return null;
   if (job.invRequested) return null;
   const due = invoice ? invDue(invoice) : jobTotal(job);
   if (due > 0) return lead?.card ? "charge" : "collect";
-  return "sendoffice";
+  // Zero visible money, and the reason decides the answer. With no invoice loaded yet, a job whose
+  // rates this device may not see sums to zero without being free — the bill exists, the balance
+  // is on it, and the close-out reads the real figure off the invoice. Routing that to "Send to
+  // the office to bill" is the single most damaging way this screen can be wrong: it tells a
+  // technician standing at the door that there is nothing to collect.
+  if (!invoice && pricesHidden(job)) return "collect";
+  // Genuinely unpriced. The hand-off is an office write; a viewer without it has no terminal
+  // action here at all, and a plain Done is the honest foot.
+  return canSendToOffice ? "sendoffice" : null;
 }
 
 function DoneBlockFn({
@@ -111,116 +193,133 @@ function DoneBlockFn({
   onOpenCloseOut,
   onOpenInvoice,
   onSendToOffice,
-  onReopen,
+  canSendToOffice = true,
+  canSetBill = true,
 }: DoneBlockProps) {
   // a draft invoice may already exist (opened pay then backed out) — that must
   // NOT remove the send-to-office option; due is read off it when present.
   const due = invoice ? invDue(invoice) : jobTotal(job);
   const card = lead?.card ?? null;
 
-  const reopen = (
-    <div style={{ display: "flex", justifyContent: "flex-end", margin: "var(--space-4) 0 0" }}>
-      <button className="btn sm ghost" onClick={onReopen}>
-        ↩ Reopen
-      </button>
-    </div>
-  );
-
   // Paid — a priced invoice fully settled.
   if (invoice && (invoice.total ?? 0) > 0 && invDue(invoice) <= 0) {
     return (
-      <>
-        {reopen}
-        <div className="tjpaid ok">
-          <div className="tjpaid-top">
-            <b>✓ Paid · {fmt$(invoice.total ?? 0)}</b>
-          </div>
+      <div className="tjpaid ok">
+        <div className="tjpaid-top">
+          <b>✓ Paid · {fmt$(invoice.total ?? 0)}</b>
+        </div>
+        {onOpenInvoice ? (
           <div className="tjpaid-sub">
             <span className="linklike" onClick={() => onOpenInvoice(invoice.id)}>
               receipt &amp; invoice
             </span>
           </div>
-        </div>
-      </>
+        ) : null}
+      </div>
     );
   }
 
   // Handed to the office to bill.
   if (job.invRequested) {
     return (
-      <>
-        {reopen}
-        <div className="tjpaid ok">
-          <div className="tjpaid-top">
-            <b>✓ Sent to the office</b>
-          </div>
-          <div className="tjpaid-sub">
-            The office texts the customer a pay link ·{" "}
-            <span className="linklike" onClick={onOpenCloseOut}>
-              take payment instead
-            </span>
-          </div>
+      <div className="tjpaid ok">
+        <div className="tjpaid-top">
+          <b>✓ Sent to the office</b>
         </div>
-      </>
+        <div className="tjpaid-sub">
+          The office texts the customer a pay link ·{" "}
+          <span className="linklike" onClick={onOpenCloseOut}>
+            take payment instead
+          </span>
+        </div>
+      </div>
     );
   }
 
   // Due + card on file — the CHARGE lives in the sheet foot; quiet peers here.
+  //
+  // DEAD FOR A TECHNICIAN BY CONSTRUCTION, and deliberately so: the field customer DTO is
+  // {id, name, phone} only (modules/jobs/api/field-router.ts — "a technician has no business
+  // holding a customer's value"), so `lead.card` is never populated on that surface and this
+  // branch is unreachable there. Techs get QR checkout / cash / check / bank instead. Written down
+  // so nobody later "fixes" the gap by threading a card onto the field DTO.
   if (due > 0 && card) {
     return (
-      <>
-        {reopen}
-        <div className="tjpaid">
-          <div className="tjpaid-top">
-            <b>✓ Job done</b>
-            <span className="tjpaid-amt fig">{fmt$(due)}</span>
-          </div>
-          <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
-            Take payment another way →
-          </button>
+      <div className="tjpaid">
+        <div className="tjpaid-top">
+          <b>✓ Job done</b>
+          <span className="tjpaid-amt fig">{fmt$(due)}</span>
+        </div>
+        <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
+          Take payment another way →
+        </button>
+        {canSendToOffice ? (
           <button className="tjpaid-btn2" onClick={onSendToOffice}>
             Send to the office to bill
           </button>
-        </div>
-      </>
+        ) : null}
+      </div>
     );
   }
 
   // Due, no card — "Take payment" lives in the sheet foot; hand-off stays here.
   if (due > 0) {
     return (
-      <>
-        {reopen}
-        <div className="tjpaid">
-          <div className="tjpaid-top">
-            <b>✓ Job done</b>
-            <span className="tjpaid-amt fig">{fmt$(due)}</span>
-          </div>
-          <button className="tjpaid-btn2" onClick={onSendToOffice}>
-            Send to the office to bill
-          </button>
-        </div>
-      </>
-    );
-  }
-
-  // No price yet — "Send to the office" lives in the sheet foot; the set-a-bill
-  // alternative stays here (opening close-out can set a bill).
-  return (
-    <>
-      {reopen}
       <div className="tjpaid">
         <div className="tjpaid-top">
           <b>✓ Job done</b>
+          <span className="tjpaid-amt fig">{fmt$(due)}</span>
         </div>
-        <div className="tjpaid-sub" style={{ marginBottom: "var(--space-2)" }}>
-          No price set — the office invoices it.
-        </div>
-        <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
-          Set a bill &amp; take payment →
-        </button>
+        {canSendToOffice ? (
+          <button className="tjpaid-btn2" onClick={onSendToOffice}>
+            Send to the office to bill
+          </button>
+        ) : null}
       </div>
-    </>
+    );
+  }
+
+  // Nothing visible to collect — and WHY decides everything. See NoVisibleMoneyCard.
+  return (
+    <NoVisibleMoneyCard
+      hidden={!invoice && pricesHidden(job)}
+      canSetBill={canSetBill}
+      onOpenCloseOut={onOpenCloseOut}
+    />
+  );
+}
+
+/**
+ * The done card when this device sees no money on the job. Two reasons, two different sentences,
+ * and telling a technician the wrong one is how this screen lies: "No price set" on a job whose
+ * prices the shop hid from him is false, and it is the sentence that would send him away from a
+ * bill the customer is standing there to pay.
+ */
+function NoVisibleMoneyCard({
+  hidden,
+  canSetBill,
+  onOpenCloseOut,
+}: {
+  hidden: boolean;
+  canSetBill: boolean;
+  onOpenCloseOut: () => void;
+}) {
+  return (
+    <div className="tjpaid">
+      <div className="tjpaid-top">
+        <b>✓ Job done</b>
+      </div>
+      <div className="tjpaid-sub" style={{ marginBottom: "var(--space-2)" }}>
+        {hidden
+          ? "Prices are hidden on your device — open the bill to see what’s due."
+          : "No price set — the office invoices it."}
+      </div>
+      {hidden || canSetBill ? (
+        <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
+          {hidden ? "Open the bill & take payment →" : "Set a bill & take payment →"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 export const DoneBlock = memo(DoneBlockFn, doneBlockPropsEqual);

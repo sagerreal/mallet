@@ -114,6 +114,13 @@ export function matchServiceByName<T extends { id: string; name: string }>(
 
 export interface ComposerState {
   leadId: string | null;
+  /**
+   * The scope-visit job this quote prices — seeded once from ?job= (the pipeline's scoped
+   * card / a measured job's Build-the-price). Sent as the draft's jobId so accepting the
+   * quote CONVERTS that job into the sold work instead of minting a duplicate. null = the
+   * quote has no walkthrough behind it.
+   */
+  jobId: string | null;
   custQuery: string;
   /** Quote format — toggled in the quote-card header, both directions, any time. */
   format: QuoteFormat;
@@ -166,6 +173,7 @@ export function cloneLines(lines: ComposerLine[]): ComposerLine[] {
 
 export const INITIAL_STATE: ComposerState = {
   leadId: null, // overridden from ?lead= in ComposerPage; else the customer picker shows
+  jobId: null, // overridden from ?job= in ComposerPage (scoped card / Build-the-price)
   custQuery: "",
   format: "single",
   lines: [emptyLine()],
@@ -480,6 +488,13 @@ export interface ReviseSeed {
   lines: ReviseSeedLine[];
   recommendedTier: TierKey | null;
   tierNames: { good: string; better: string; best: string } | null;
+  /**
+   * The scope-visit job the ORIGINAL quote priced — carried onto the revision, or the edited
+   * quote would accept into a duplicate job (the exact defect convert-on-accept exists to fix,
+   * resurfacing through Edit / Edit & resend). null when the original had no walkthrough behind
+   * it — and the seed then CLEARS any stale ?job= state, it never merges.
+   */
+  jobId: string | null;
 }
 
 /**
@@ -503,7 +518,15 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
 
   if (!tiered) {
     const lines = seed.lines.length > 0 ? seed.lines.map(toLine) : [emptyLine()];
-    return { ...state, leadId: seed.leadId, desc: seed.title, pricing, format: "single", lines };
+    return {
+      ...state,
+      leadId: seed.leadId,
+      jobId: seed.jobId,
+      desc: seed.title,
+      pricing,
+      format: "single",
+      lines,
+    };
   }
 
   const tierLines = (k: TierKey): ComposerLine[] => {
@@ -522,7 +545,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       lines: tierLines(k),
     })),
   };
-  return { ...state, leadId: seed.leadId, desc: seed.title, pricing, format: "gbb", gbb };
+  return { ...state, leadId: seed.leadId, jobId: seed.jobId, desc: seed.title, pricing, format: "gbb", gbb };
 }
 
 export interface MeasurementGap {

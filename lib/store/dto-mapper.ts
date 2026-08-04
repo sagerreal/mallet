@@ -28,6 +28,17 @@ export type EstimateDTO = RouterOutputs["v1"]["quoting"]["draft"];
 export type InvoiceDTO = RouterOutputs["v1"]["invoicing"]["draft"];
 
 /**
+ * The invoice as it crosses to a TECHNICIAN's device — a separate, smaller shape, never a
+ * filtered copy of `InvoiceDTO` (see modules/invoicing/api/field-invoice-dto.ts).
+ *
+ * It always carries the money a person at the door must be able to read (total, balance, the
+ * payments already taken); it carries NO line `cost` at all, no `publicToken`/`publicUrl`, no
+ * signed-amount `authorization`, no follow-up policy. Line `rate` is null when the shop hides
+ * prices from techs.
+ */
+export type FieldInvoiceDTO = RouterOutputs["v1"]["fieldInvoicing"]["get"];
+
+/**
  * The LIST shapes — deliberately separate types, because they are deliberately smaller.
  *
  * A summary carries what a row needs; the full DTO carries lines, payments and tax. Passing a
@@ -165,6 +176,32 @@ function toStoreJobStatusInternal(s: string): string {
   if (s === BACKEND_JOB_STATUS.COMPLETE || s === BACKEND_JOB_STATUS.CANCELED) return "done";
   if (s === BACKEND_JOB_STATUS.SCHEDULED || s === BACKEND_JOB_STATUS.IN_PROGRESS) return "scheduled";
   return "unscheduled";
+}
+
+/** The one word the store uses for a job the backend has closed — both `complete` and
+ *  `canceled` map to it. */
+export const STORE_JOB_STATUS_DONE = "done";
+
+/**
+ * ONE rule with two entry points: **a terminal job's status always outranks the visit-placement
+ * recalc.** Whether the job's visits ever reached the Schedule board says nothing about whether
+ * the backend has closed it.
+ *
+ * Three places derive a job's status from its visits, and they must not disagree:
+ *   - `dtoJobToStoreJob` below and `toStoreJob` in features/jobs/jobs-hydrator.tsx read a DTO,
+ *     so they ask `isTerminalBackendJobStatus(dto.status)`;
+ *   - the optimistic leg in lib/store/slices/jobs-slice.ts has no DTO — only the record already
+ *     in the store — so it asks `isTerminalStoreJobStatus(job.status)`.
+ * Two predicates because the two vocabularies differ (`complete`/`canceled` on the wire collapse
+ * to `done` in the store), not two rules. Both callers short-circuit the WHOLE recalc.
+ */
+export function isTerminalBackendJobStatus(status: string): boolean {
+  return status === BACKEND_JOB_STATUS.COMPLETE || status === BACKEND_JOB_STATUS.CANCELED;
+}
+
+/** The store-vocabulary half of the rule above. */
+export function isTerminalStoreJobStatus(status: string): boolean {
+  return status === STORE_JOB_STATUS_DONE;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,16 +351,25 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     (v) => v.status !== BACKEND_VISIT_STATUS.CANCELED,
   );
   const visits = activeVisitDTOs.map(toStoreVisit);
-  // When there are active visits, recalc from their placement state.
-  // When there are no active visits AND the backend status is "scheduled", remap to
-  // "unscheduled" — a zero-visit job has not been slotted yet (this is the common state
-  // immediately after a quote is accepted and CreateJobFromEstimateUseCase runs).
-  // Only "in_progress", "complete", and "canceled" are preserved as-is via the fallback.
-  const status = visits.length > 0
-    ? recalcJobStatus(visits)
-    : dto.status === BACKEND_JOB_STATUS.SCHEDULED
-      ? "unscheduled"
-      : toStoreJobStatusInternal(dto.status);
+  const isTerminal = isTerminalBackendJobStatus(dto.status);
+  // A terminal backend status (complete/canceled) ALWAYS wins over the visit-placement
+  // recalc below. The backend already decided the job is done; whether its visit ever got
+  // dragged onto the Schedule board is irrelevant to that fact. Without this, a job
+  // completed straight from My Day — one visit, complete, never placed — would recalc from
+  // placement state alone (recalcJobStatus sees no placed visits and returns "unscheduled"),
+  // and a completed job with real revenue would vanish from Money's ready-to-bill list.
+  // Otherwise: when there are active visits, recalc from their placement state. When there
+  // are no active visits AND the backend status is "scheduled", remap to "unscheduled" — a
+  // zero-visit job has not been slotted yet (this is the common state immediately after a
+  // quote is accepted and CreateJobFromEstimateUseCase runs). "in_progress" is preserved
+  // as-is via the fallback.
+  const status = isTerminal
+    ? toStoreJobStatusInternal(dto.status)
+    : visits.length > 0
+      ? recalcJobStatus(visits)
+      : dto.status === BACKEND_JOB_STATUS.SCHEDULED
+        ? "unscheduled"
+        : toStoreJobStatusInternal(dto.status);
 
   return {
     id: dto.id,
@@ -368,6 +414,7 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
  *   taxBps  / 100     → pricing.tax
  *   depBps  / 100     → pricing.dep
  *   total.cents / 100 → cachedTotal     (dollars)
+ *   depositPaid.cents / 100 → depPaid   (dollars — collected, not the ask)
  *
  * @param dto - Full estimateDTO from the quoting router.
  * @param priorFu - Preserve the existing client-local follow-up state (fu is not persisted).
@@ -403,10 +450,13 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       dep: dto.depBps / 100,
     },
     cachedTotal: dto.total.cents / 100,   // cents → dollars
+    depPaid: dto.depositPaid.cents / 100, // cents → dollars (what was COLLECTED, not the ask)
     publicToken: dto.publicToken ?? undefined,  // null → undefined (absent when not yet set)
     publicUrl: dto.publicUrl ?? undefined,
     changeRequestedAt: dto.changeRequestedAt ?? undefined,
     changeRequest: dto.changeRequest ?? undefined,
+    // The scope-visit job this quote prices — accept converts it (see Estimate.jobId).
+    jobId: dto.jobId ?? undefined,
     // Good/Better/Best — tier fields ride the DTO as-is (no money units involved;
     // the DTO's total above already derives from the recommended/accepted tier).
     recommendedTier: dto.recommendedTier ?? undefined,
@@ -468,7 +518,9 @@ export function dtoInvoiceSummaryToStore(
   return {
     id: dto.id,
     num: dto.num,
-    jobId: null,
+    // The job this bill was raised from — on the summary DTO now, so the link survives a list
+    // refetch instead of being nulled on every one.
+    jobId: dto.sourceJobId,
     leadId: dto.leadId,
     cust: dto.customerName ?? priorInv.cust,
     phone: priorInv.phone,
@@ -479,6 +531,9 @@ export function dtoInvoiceSummaryToStore(
     depPaid: 0,
     // Everything already paid, deposit included — the server's figure, not a re-derivation.
     paidTotal: Math.max(0, total - due),
+    // And the balance itself, which invDue prefers while `partial` is set. Kept in step with
+    // the invoices hydrator's toStoreInvoice, the other mapper for this same DTO.
+    due,
     payments: [],
     lines: [],
     // A summary row — no lines/jobId/history; deciders must fetch the full record.
@@ -565,6 +620,73 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     age: daysSince(dto.createdAt),
     dueAt: dto.dueAt,
     fu: { on: dto.followUpOn, stage: dto.followUpStage },
+    // The public pay link, minted server-side on first send. Threaded so the office modal can
+    // hand the customer their link (Task 9's UI); absent until the invoice has been sent.
+    poNumber: dto.poNumber ?? undefined,
+    publicToken: dto.publicToken ?? undefined,
+    publicUrl: dto.publicUrl ?? undefined,
+    archived: dto.status === "void",
+    origin: "db",
+  };
+}
+
+/**
+ * A FIELD invoice DTO → a store Invoice. The technician's read path.
+ *
+ * Two things differ from dtoInvoiceToStore, and both are deliberate:
+ *
+ * 1. `lines` is EMPTIED when the shop hides prices from techs. The wire carries the descriptions
+ *    with `rate: null` — "hidden from you", explicitly not $0 — and the store's InvoiceLine has
+ *    no way to say that (`r` is a plain number). Writing a 0 there would put a fabricated price
+ *    in front of a customer, so the breakdown is dropped instead and the invoice's own `total` /
+ *    `due` — which the field DTO always sends, whatever the setting — carry the money. That is
+ *    what makes "Balance due $840 — collect" honest on a device that may not see line rates.
+ * 2. `publicToken`/`publicUrl`, `authorization`, `poNumber` and the follow-up state are absent
+ *    from the wire, so they are absent here. A prior record's copy is NOT carried forward: this
+ *    mapper's output must never appear to hold a pay-link the field response did not send.
+ *
+ * `due` + `paidTotal` are taken from the server rather than re-derived, and `partial` is NOT set:
+ * this is a full read of the record, just a narrower one.
+ *
+ * `priorInv` is OPTIONAL because the field surface has a genuine no-prior path: a technician's
+ * store holds no invoices at all (InvoicesHydrator is !isTech-gated and `invoicing.list` is
+ * office-only), so `fieldInvoicing.raiseVisitFee` adopts a record this device has never seen. It
+ * only ever supplies the three fields the wire does not carry — cust/phone/email — and the
+ * customer's name comes back on the DTO anyway.
+ */
+export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice): Invoice {
+  const total = dto.total.cents / 100;
+  const due = dto.due.cents / 100;
+  const pricesHidden = dto.lines.some((l) => l.rate === null);
+  return {
+    id: dto.id,
+    num: dto.num,
+    // The bill's own job. A visit-fee invoice is lead-tied and carries `scopeJobId` instead —
+    // deliberately NOT folded in here: it is the job that AUTHORIZES the fee, not the job whose
+    // bill this is, and the surfaces that look a job's invoice up by `jobId` must not find it.
+    jobId: dto.sourceJobId,
+    leadId: dto.leadId,
+    cust: dto.customerName ?? priorInv?.cust ?? "",
+    phone: priorInv?.phone ?? "",
+    email: priorInv?.email,
+    title: dto.title ?? "Invoice",
+    status: dto.status,
+    total,
+    tax: dto.tax.cents / 100,
+    depPaid: dto.depositPaid.cents / 100,
+    paidTotal: dto.amountPaid.cents / 100,
+    due,
+    payments: dto.payments.map((p) => ({
+      amt: p.amount.cents / 100,
+      when: new Date(p.receivedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      method: p.method,
+    })),
+    termsDays: dto.termsDays,
+    lines: pricesHidden
+      ? []
+      : dto.lines.map((l) => ({ d: l.description, q: l.quantity, r: (l.rate?.cents ?? 0) / 100 })),
+    age: daysSince(dto.createdAt),
+    dueAt: dto.dueAt,
     archived: dto.status === "void",
     origin: "db",
   };

@@ -5,6 +5,7 @@ import { withTenant } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import { asOrgId } from "@mallet/shared/types";
 import { toDomain, type EstimateLineRow } from "./estimate-mapper";
+import { DrizzleConnectTargetReader } from "./drizzle-connect-target-reader";
 import type { Estimate } from "../domain/estimate";
 
 // The shape returned to the public quote page — a full estimate aggregate plus the org display
@@ -13,6 +14,15 @@ export interface PublicQuoteView {
   readonly estimate: Estimate;
   readonly orgName: string;
   readonly customerFirstName: string;
+  /**
+   * Can this shop actually take a card right now (Connect onboarded + charges enabled)?
+   *
+   * The page needs it to decide whether the "Pay the deposit" primary may exist at all. Rendering
+   * a button whose only possible outcome is an error is a dead button, and the checkout use-case
+   * refuses for exactly this reason — so the answer is fetched here rather than discovered on tap.
+   * Same seam the invoice page's Pay button reads (settings' getConnectTarget).
+   */
+  readonly chargesEnabled: boolean;
 }
 
 // Privileged reader for the public customer quote page. Uses ownerDb (BYPASSRLS) because the
@@ -69,8 +79,10 @@ export class DrizzlePublicEstimateReader {
       );
 
     // Step 3: load the full estimate aggregate (header + lines) via withTenant so RLS scopes
-    // the query correctly and the domain object is fully reconstituted with derived totals.
-    const aggregate = await withTenant(orgId, async (tx) => {
+    // the query correctly and the domain object is fully reconstituted with derived totals. The
+    // Connect charge target rides along in the SAME tenant session — one round trip, and the page
+    // learns whether a deposit can be paid at the same moment it learns what is owed.
+    const loaded = await withTenant(orgId, async (tx) => {
       const rows = await tx
         .select({ estimate: estimates, line: estimateLines })
         .from(estimates)
@@ -87,18 +99,23 @@ export class DrizzlePublicEstimateReader {
       const estimateHeader = rows[0]?.estimate;
       if (!estimateHeader) return null;
       const lineRows = rows.map((r) => r.line).filter((l): l is EstimateLineRow => l !== null);
-      return toDomain(estimateHeader, lineRows);
+      const target = await new DrizzleConnectTargetReader(tx, orgId).read();
+      return {
+        estimate: toDomain(estimateHeader, lineRows),
+        chargesEnabled: Boolean(target.connectedAccountId && target.chargesEnabled),
+      };
     });
 
-    if (!aggregate) return null;
+    if (!loaded) return null;
 
     // Derive the customer's first name from the lead name (take everything up to the first space).
     const customerFirstName = header.leadName.split(" ")[0] ?? header.leadName;
 
     return {
-      estimate: aggregate,
+      estimate: loaded.estimate,
       orgName: header.orgName,
       customerFirstName,
+      chargesEnabled: loaded.chargesEnabled,
     };
   }
 

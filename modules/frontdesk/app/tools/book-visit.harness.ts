@@ -30,6 +30,7 @@ import { Task, type TaskProps } from "../../../tasks/domain/task";
 import type { TaskRepository, TaskFilter } from "../../../tasks/domain/task-repository";
 import { CreateTaskUseCase } from "../../../tasks/app/create-task";
 import { Job } from "../../../jobs/domain/job";
+import type { JobLine } from "../../../jobs/domain/job-execution";
 import type { JobRepository } from "../../../jobs/domain/job-repository";
 import { CreateManualJobUseCase } from "../../../jobs/app/create-manual-job";
 import { CreateVisitUseCase } from "../../../jobs/app/create-visit";
@@ -38,6 +39,7 @@ import { baseSettingsProps } from "../../../settings/domain/org-settings.fixture
 import type { SettingsReader } from "../../domain/assistant";
 import { recordingSendNotification, inertGeocoder, type RecordingSendNotification, type SendMode } from "./test-support";
 import type { Geocoder } from "../../domain/geocoder";
+import type { PricebookPriceReader } from "../../domain/pricebook-price-reader";
 import type { VoiceToolContext, VoiceToolDeps } from "./tool-result";
 
 // ---------------------------------------------------------------------------
@@ -179,6 +181,8 @@ export class FakeTaskRepository implements TaskRepository {
 // book_visit, so the store is cast to the port through a proxy that throws on any other method.
 export class FakeJobStore {
   readonly jobs = new Map<string, Job>();
+  // Priced lines a flat booking persisted (CreateManualJob's replaceLines call), keyed by job id.
+  readonly linesByJob = new Map<string, readonly JobLine[]>();
   private seq = 0;
 
   async nextNumber(): Promise<string> {
@@ -187,6 +191,9 @@ export class FakeJobStore {
   }
   async insertManual(job: Job): Promise<void> {
     this.jobs.set(job.props.id, job);
+  }
+  async replaceLines(jobId: JobId, lines: readonly JobLine[], _now: Date): Promise<void> {
+    this.linesByJob.set(jobId, lines);
   }
   async findById(id: JobId): Promise<Job | null> {
     return this.jobs.get(id) ?? null;
@@ -287,6 +294,9 @@ interface HarnessOverrides {
   // to true so every existing booking test (asserting the confirmation SMS actually sends) is
   // unaffected; the dedicated A2P-inactive test sets this to false to assert skip-not-throw.
   smsA2pActive?: boolean;
+  // Pricebook prices for playbook-LINKED services. Defaults to undefined (no reader) → the stored
+  // playbook price is used, exactly like a composition root that doesn't wire the reader.
+  pricebookPrices?: PricebookPriceReader;
 }
 
 // Assemble the VoiceToolDeps from the resolved fakes. Split from buildHarness so each function keeps
@@ -315,6 +325,7 @@ const buildDeps = (args: {
       over.sameDayLoadsThrows ?? false,
     ),
     geocoder: over.geocoder ?? inertGeocoder(),
+    pricebookPrices: over.pricebookPrices,
     sendNotification: sms.useCase,
     isSmsA2pActive: async () => over.smsA2pActive ?? true,
     bus,

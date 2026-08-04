@@ -58,6 +58,8 @@ import { Field } from "@/components/ui/input";
 import { SheetRow } from "./sheet-row";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
+// Single source for the Net-terms/due-date/PO face line (features/invoices).
+import { termsLine } from "@/features/invoices/terms-line";
 import { ModalLoading } from "./modal-loading";
 
 function StatusPill({ invoice }: { invoice: Invoice }) {
@@ -699,6 +701,12 @@ export function InvoiceModalContent() {
   const sent = invoice.status !== "draft";
   const due = invDue(invoice);
   const total = invoice.total ?? 0;
+  // The face line — "Net 30 · due Sep 2 · PO 4471" (features/invoices/terms-line.ts, the same
+  // helper the customer preview and public pay page use).
+  const face = termsLine({ termsDays: invoice.termsDays, dueAt: invoice.dueAt, poNumber: invoice.poNumber });
+  // PO stays editable on any open invoice — frozen only once paid/void, matching
+  // editMetadata's own gate (a settled invoice's terms are a closed record).
+  const poEditable = invoice.status !== "paid" && invoice.status !== "void";
 
   const custName = invCustName(invoice, leads);
   const phone = invPhone(invoice, leads);
@@ -725,11 +733,36 @@ export function InvoiceModalContent() {
     updateInvoice(invoice.id, patch);
   }
 
-  function send() {
+  // Finalize (draft → sent), then DELIVER: text the pay link if the customer has a phone,
+  // email otherwise. This office button is the ONLY send path that auto-delivers — the field
+  // close-out flow must not fire SMS a tech never saw. A delivery failure surfaces the server's
+  // sentence inline while the invoice STAYS sent (the send itself succeeded; only the message
+  // didn't go out). The modal stays open and re-renders to the sent state, where Charge /
+  // Record become available — no dead-end close.
+  async function send() {
     if (!invoice) return;
-    // Finalize (draft → sent). The modal stays open and re-renders to the sent state, where
-    // Charge / Record become available — no dead-end close.
-    sendInvoice(invoice.id);
+    setPayErr(null);
+    setBusy(true);
+    try {
+      const result = await sendInvoice(invoice.id);
+      if (!result.ok) {
+        setPayErr(result.error ?? "Couldn't send the invoice.");
+        return;
+      }
+      // "—" is this codebase's no-phone sentinel (see pickCust) — treat it as absent.
+      const hasPhone = Boolean(phone && phone !== "—");
+      try {
+        await trpcVanilla.v1.notifications.sendInvoiceReminder.mutate({
+          invoiceId: invoice.id,
+          channel: hasPhone ? "sms" : "email",
+        });
+      } catch (e) {
+        // Includes the no-phone-no-email precondition — the server names the actual problem.
+        setPayErr(e instanceof Error ? e.message : "The invoice is sent, but the message didn't go out.");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   function record(amt: number, method: RecordMethod) {
@@ -771,6 +804,7 @@ export function InvoiceModalContent() {
           <span>{invoice.num}</span>
           {invoice.title && invoice.title !== custName ? <span>{invoice.title}</span> : null}
           {phone ? <span>{phone}</span> : null}
+          {face ? <span>{face}</span> : null}
         </div>
       </div>
 
@@ -793,16 +827,39 @@ export function InvoiceModalContent() {
           body and the money actions on purpose: a warning shown after Send is a post-mortem. */}
       <InvoiceAuthorizationNote authorization={invoice.authorization} />
 
-      {/* Where this bill comes from — the one fact that explains why some invoices are
-          edited here and some are not. A job's invoice is built on the job (Build the
-          price); a hand-made one is built right here. The row is the way back. */}
-      {invoice.jobId != null ? (
+      {/* Where this bill comes from, and its PO number — ONE row list (one top-border
+          divider), same shape as job-modal.tsx's own multi-row .sheet-rows wrapper.
+          "From job" is the one fact that explains why some invoices are edited here and
+          some are not: a job's invoice is built on the job (Build the price); a hand-made
+          one is built right here. PO number is editable on any open invoice (frozen once
+          paid/void, same gate as editMetadata), whether the bill is hand-made or job-built. */}
+      {invoice.jobId != null || poEditable ? (
         <div className="sheet-rows" style={{ marginTop: "var(--space-3)" }}>
-          <SheetRow
-            label="From job"
-            value={job?.title ?? invoice.title}
-            onPress={() => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })}
-          />
+          {invoice.jobId != null ? (
+            <SheetRow
+              label="From job"
+              value={job?.title ?? invoice.title}
+              onPress={() => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })}
+            />
+          ) : null}
+          {poEditable ? (
+            <SheetRow
+              label="PO number"
+              value={invoice.poNumber || "Add"}
+              valueIsHint={!invoice.poNumber}
+              expandable
+            >
+              <Field label="PO number" style={{ margin: "0" }}>
+                <input
+                  type="text"
+                  defaultValue={invoice.poNumber || ""}
+                  placeholder="e.g. 4471"
+                  maxLength={64}
+                  onBlur={(e) => updateInvoice(invoice.id, { poNumber: e.target.value.trim() })}
+                />
+              </Field>
+            </SheetRow>
+          ) : null}
         </div>
       ) : null}
 
@@ -920,8 +977,8 @@ export function InvoiceModalContent() {
           ) : null}
         </div>
         {priKind === "send" ? (
-          <button className="sheet-pri" disabled={busy} onClick={send}>
-            Send invoice{due > 0 ? " — " + fmt$(due) : ""}
+          <button className="sheet-pri" disabled={busy} onClick={() => void send()}>
+            {busy ? "Sending…" : `Send invoice${due > 0 ? " — " + fmt$(due) : ""}`}
           </button>
         ) : priKind === "charge" ? (
           <button className="sheet-pri" disabled={busy} onClick={charge}>

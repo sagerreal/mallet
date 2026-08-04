@@ -13,7 +13,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 const push = vi.fn();
 const openModal = vi.fn();
-const addInvoice = vi.fn(() => ({ id: "inv-9" }));
+const addInvoice = vi.fn(() => ({ invoice: { id: "inv-9" }, persisted: Promise.resolve({ ok: true }) }));
 let role = "owner";
 
 vi.mock("next/navigation", () => ({

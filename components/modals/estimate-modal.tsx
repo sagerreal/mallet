@@ -418,9 +418,20 @@ export function EstimateModalContent() {
             {p.dep ? (
               <tr>
                 <td colSpan={4} style={{ textAlign: "right", paddingTop: "var(--space-2)" }}>
-                  <span className="pill green">
-                    Deposit due on acceptance: {fmt$(m.dep)} ({p.dep}%)
-                  </span>
+                  {/* Asked for vs COLLECTED. The office could previously see only the ask, so a
+                      deposit that had actually landed was invisible until the final invoice netted
+                      it out — which is how deposit bugs stayed unnoticed. Once money is in, the
+                      pill states that instead, and names any remainder still outstanding. */}
+                  {e.depPaid ? (
+                    <span className="pill green">
+                      Deposit paid: {fmt$(e.depPaid)}
+                      {e.depPaid < m.dep ? ` of ${fmt$(m.dep)}` : ""}
+                    </span>
+                  ) : (
+                    <span className="pill green">
+                      Deposit due on acceptance: {fmt$(m.dep)} ({p.dep}%)
+                    </span>
+                  )}
                 </td>
               </tr>
             ) : null}

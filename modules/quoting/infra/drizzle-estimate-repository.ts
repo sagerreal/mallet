@@ -62,6 +62,8 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         discBps: p.discBps,
         taxBps: p.taxBps,
         depBps: p.depBps,
+        // Seeded at insert only (always 0 for a new quote) and deliberately absent from the
+        // conflict set below — see the note there. Collected money is written by the ledger path.
         depPaidCents: p.depPaid,
         validDays: p.validDays,
         sentAt: p.sentAt,
@@ -72,6 +74,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         declineReason: p.declineReason,
         changeRequestedAt: p.changeRequestedAt,
         changeOrderForJobId: p.changeOrderForJobId,
+        jobId: p.jobId,
         changeRequest: p.changeRequest,
         publicToken: p.publicToken,
         recommendedTier: p.recommendedTier,
@@ -97,7 +100,13 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           discBps: p.discBps,
           taxBps: p.taxBps,
           depBps: p.depBps,
-          depPaidCents: p.depPaid,
+          // depPaidCents is NOT in the conflict set — same write-once rule as publicToken and
+          // origin, for a sharper reason: it is COLLECTED MONEY, and save() writes a whole
+          // in-memory aggregate. Any save() on an accepted estimate from a copy loaded before a
+          // deposit settled would silently reset it to that copy's value — usually 0. Live callers
+          // that do exactly that: setFollowUp (no status guard), clearChangeRequest, and
+          // resignOnSite. The only writer of this column is DrizzleEstimateDepositLedger, which
+          // DERIVES it as SUM(amount_cents) over estimate_deposits.
           validDays: p.validDays,
           sentAt: p.sentAt,
           followUpOn: p.followUpOn ?? false,
@@ -106,7 +115,8 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           declinedAt: p.declinedAt,
           declineReason: p.declineReason,
           changeRequestedAt: p.changeRequestedAt,
-        changeOrderForJobId: p.changeOrderForJobId,
+          changeOrderForJobId: p.changeOrderForJobId,
+          jobId: p.jobId,
           changeRequest: p.changeRequest,
           // publicToken is set once at draft time and never overwritten on subsequent saves.
           recommendedTier: p.recommendedTier,

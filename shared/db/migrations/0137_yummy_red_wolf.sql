@@ -1,0 +1,1 @@
+ALTER TABLE "payments" ADD COLUMN "recorded_by_user_id" uuid;

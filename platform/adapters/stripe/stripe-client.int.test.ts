@@ -11,7 +11,7 @@ const params = (idempotencyKey: string) => ({
   amountCents: 12_345,
   currency: "usd",
   orgId: "22222222-2222-2222-2222-222222222222",
-  invoiceId: "11111111-1111-1111-1111-111111111111",
+  subject: { kind: "payment" as const, invoiceId: "11111111-1111-1111-1111-111111111111" },
   description: "Mallet test invoice",
   idempotencyKey,
   successUrl: "https://example.test/pay/success",

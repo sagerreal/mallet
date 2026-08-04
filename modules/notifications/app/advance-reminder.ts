@@ -4,7 +4,7 @@ import type { Notification, RelatedType } from "../domain/notification";
 import type { NotificationRepository } from "../domain/notification-repository";
 import type { ReminderTargetReader } from "../domain/reminder-target-reader";
 import type { FollowUpPolicy } from "../domain/follow-up-policy";
-import { composeInvoiceReminder } from "../templates/invoice-reminder";
+import { composeInvoiceReminder, invoicePayUrl } from "../templates/invoice-reminder";
 import type { SendNotificationUseCase } from "./send-notification";
 
 export interface AdvanceReminderCommand {
@@ -23,6 +23,8 @@ export class AdvanceReminderUseCase {
     private readonly send: SendNotificationUseCase,
     private readonly policy: FollowUpPolicy,
     private readonly clock: Clock,
+    // resolvePublicAppOrigin(config) — reminders carry the same one pay link as the initial send.
+    private readonly publicOrigin: string | null,
   ) {}
 
   async exec(cmd: AdvanceReminderCommand): Promise<Result<Notification | null, AppError>> {
@@ -48,7 +50,7 @@ export class AdvanceReminderUseCase {
       channel,
       to,
       kind: "invoice_reminder",
-      body: composeInvoiceReminder(target, stage),
+      body: composeInvoiceReminder(target, stage, invoicePayUrl(this.publicOrigin, target.publicToken)),
       relatedType: cmd.relatedType,
       relatedId: cmd.relatedId,
       reminderStage: stage,

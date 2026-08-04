@@ -2,8 +2,10 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
+import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { getPublicQuote, acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
 import type { AcceptPublicQuoteResult, RequestChangeResult } from "@/modules/quoting/app/public-quote";
+import { createPublicDepositCheckout } from "@/modules/quoting/app/public-quote-deposit";
 import type { TierChoiceRejection } from "@/modules/quoting/app/public-accept-policy";
 import { QUOTE_TIERS } from "@/modules/quoting/domain/estimate";
 import type { Estimate, QuoteTier } from "@/modules/quoting/domain/estimate";
@@ -22,8 +24,17 @@ export const dynamic = "force-dynamic";
 // Token format: 64 hex characters (32 bytes, base16). Validates before hitting the DB.
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
 
+// Per-token throttle (per warm instance — damping, see FixedWindowLimiter's note). Same
+// mechanism as the public invoice route. POST is tighter: accept/decline write, and a signature
+// retry loop is a handful of attempts, never twenty a minute.
+const getLimiter = new FixedWindowLimiter({ limit: 60, windowMs: 60_000 });
+const actionLimiter = new FixedWindowLimiter({ limit: 20, windowMs: 60_000 });
+
+const throttled = (): NextResponse =>
+  NextResponse.json({ error: "too many requests — try again in a minute" }, { status: 429 });
+
 const postBodySchema = z.object({
-  action: z.enum(["accept", "decline", "request_change"]),
+  action: z.enum(["accept", "decline", "request_change", "create_deposit_checkout"]),
   reason: z.string().max(500).optional(),
   message: z.string().trim().min(1).max(2000).optional(),
   // Accept-time selection of OPTIONAL add-on line IDs. SECURITY: an ID subset only —
@@ -140,6 +151,7 @@ export async function GET(
   if (!TOKEN_RE.test(token)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (!getLimiter.allow(token)) return throttled();
 
   try {
     const view = await getPublicQuote(token);
@@ -217,6 +229,28 @@ async function handleAccept(
   return NextResponse.json({ estimate: estimateToJson(acceptResult.estimate) });
 }
 
+/**
+ * Start a Stripe-hosted checkout for the deposit still owed on this quote.
+ *
+ * No body beyond the action: the amount, the estimate and the org all come from stored data. The
+ * customer holding the link may not name a price. Rejections carry the use-case's own copy, which
+ * is already written for this reader (see CreateDepositCheckoutUseCase).
+ */
+async function handleDepositCheckout(token: string): Promise<NextResponse> {
+  const outcome = await createPublicDepositCheckout(token);
+  if (outcome.kind === "ok") return NextResponse.json({ url: outcome.url });
+  if (outcome.kind === "not_found") {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  if (outcome.kind === "unavailable") {
+    return NextResponse.json(
+      { error: "Card payment is temporarily unavailable — try again in a few minutes." },
+      { status: 503 },
+    );
+  }
+  return NextResponse.json({ error: outcome.message }, { status: 409 });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -226,6 +260,7 @@ export async function POST(
   if (!TOKEN_RE.test(token)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (!actionLimiter.allow(token)) return throttled();
 
   let body: unknown;
   try {
@@ -257,6 +292,10 @@ export async function POST(
             }
           : undefined;
       return await handleAccept(token, selectedLineIds, chosenTier, signature);
+    }
+
+    if (action === "create_deposit_checkout") {
+      return await handleDepositCheckout(token);
     }
 
     if (action === "decline") {

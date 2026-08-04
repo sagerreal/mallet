@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "invoices_org_scope_job_uidx" ON "invoices" USING btree ("org_id","scope_job_id") WHERE "invoices"."scope_job_id" is not null and "invoices"."deleted_at" is null and "invoices"."status" <> 'void';

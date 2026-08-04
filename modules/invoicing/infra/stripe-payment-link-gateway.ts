@@ -24,10 +24,12 @@ export class StripePaymentLinkGateway implements PaymentLinkGateway {
         amountCents: cmd.amountCents,
         currency: cmd.currency,
         orgId: cmd.orgId,
-        invoiceId: cmd.invoiceId,
+        subject: { kind: "payment", invoiceId: cmd.invoiceId },
         description: cmd.description,
         idempotencyKey: cmd.idempotencyKey,
-        successUrl: `${this.publicAppUrl}/pay/success?invoice=${cmd.invoiceId}`,
+        // {CHECKOUT_SESSION_ID} is a literal placeholder Stripe substitutes at redirect time — it
+        // lets the success page reconcile the session immediately instead of waiting on the webhook.
+        successUrl: `${this.publicAppUrl}/pay/success?invoice=${cmd.invoiceId}&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: `${this.publicAppUrl}/pay/cancel?invoice=${cmd.invoiceId}`,
         connectedAccountId: cmd.connectedAccountId,
         applicationFeeCents: cmd.applicationFeeCents,

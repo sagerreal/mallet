@@ -3,7 +3,7 @@ import { db } from "@mallet/shared/db/client";
 import { createAuthProvider, createApiKeyAuthenticator, createSupabaseTokenVerifier, SignupStore } from "@mallet/identity";
 import { StripePaymentLinkGateway } from "@mallet/invoicing";
 import { StripeConnectGateway } from "@mallet/settings";
-import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import {
   LoggingNotificationSender,
   ResendEmailSender,
@@ -148,9 +148,11 @@ let cached: AppDeps | null = null;
 export const getAppDeps = (): AppDeps => {
   if (cached) return cached;
   const config = loadConfig();
-  // One StripeClient (one process-wide circuit breaker) shared by the payment + connect gateways.
-  // Both self-disable unless the secret key and the public URL (for hosted redirects) are set.
-  const stripe = config.STRIPE_SECRET_KEY ? new StripeClient(config.STRIPE_SECRET_KEY) : null;
+  // ONE StripeClient (one process-wide circuit breaker) shared by the payment + connect gateways
+  // AND the plain routes (webhook, reconcile, public checkout) via getSharedStripeClient — the
+  // breaker only means something if every Stripe call in the process counts toward it.
+  // Both gateways self-disable unless the secret key and the public URL (for hosted redirects) are set.
+  const stripe = config.STRIPE_SECRET_KEY ? getSharedStripeClient(config.STRIPE_SECRET_KEY) : null;
   let paymentLinkGateway: PaymentLinkGateway | null = null;
   let connectGateway: ConnectGateway | null = null;
   if (stripe && config.PUBLIC_APP_URL) {

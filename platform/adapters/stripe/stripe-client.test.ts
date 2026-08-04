@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Stripe from "stripe";
 import { TimeoutError } from "@mallet/platform/resilience";
-import { isRetriableStripeError, StripeClient, type CreateCheckoutParams } from "./stripe-client";
+import { isRetriableStripeError, StripeClient, getSharedStripeClient, type CreateCheckoutParams } from "./stripe-client";
 
 // ---------------------------------------------------------------------------
 // isRetriableStripeError — pure function, no mocking needed
@@ -62,14 +62,14 @@ describe("isRetriableStripeError", () => {
 // ---------------------------------------------------------------------------
 
 type FakeStripeInstance = {
-  checkout: { sessions: { create: ReturnType<typeof vi.fn> } };
+  checkout: { sessions: { create: ReturnType<typeof vi.fn>; retrieve: ReturnType<typeof vi.fn> } };
   webhooks: { constructEvent: ReturnType<typeof vi.fn> };
 };
 
 /** Build a StripeClient that uses a fake Stripe SDK instance. */
 function makeClient(): { client: StripeClient; fake: FakeStripeInstance } {
   const fake: FakeStripeInstance = {
-    checkout: { sessions: { create: vi.fn() } },
+    checkout: { sessions: { create: vi.fn(), retrieve: vi.fn() } },
     webhooks: { constructEvent: vi.fn() },
   };
   // StripeClient stores `this.stripe` as a private property. We construct normally
@@ -85,7 +85,7 @@ const baseParams: CreateCheckoutParams = {
   amountCents: 9_999,
   currency: "usd",
   orgId: "org-aaa",
-  invoiceId: "inv-bbb",
+  subject: { kind: "payment", invoiceId: "inv-bbb" },
   description: "Roof repair — invoice #42",
   idempotencyKey: "idem-key-001",
   successUrl: "https://example.test/success",
@@ -178,24 +178,57 @@ describe("StripeClient.createCheckoutSession", () => {
     expect(lineItem.price_data.product_data.name).toBe("Plumbing");
   });
 
-  it("attaches orgId and invoiceId as metadata on both session and payment_intent", async () => {
+  it("attaches orgId, invoiceId and kind:'payment' as metadata on both session and payment_intent", async () => {
     const { client, fake } = makeClient();
     fake.checkout.sessions.create.mockResolvedValueOnce({
       url: "https://checkout.stripe.com/pay/cs_meta",
       id: "cs_meta",
     });
 
-    await client.createCheckoutSession({ ...baseParams, orgId: "org-x", invoiceId: "inv-y" });
+    await client.createCheckoutSession({
+      ...baseParams,
+      orgId: "org-x",
+      subject: { kind: "payment", invoiceId: "inv-y" },
+    });
 
     const [sessionParams] = fake.checkout.sessions.create.mock.calls[0] as [
       {
-        metadata: { orgId: string; invoiceId: string };
-        payment_intent_data: { metadata: { orgId: string; invoiceId: string } };
+        metadata: Record<string, string>;
+        payment_intent_data: { metadata: Record<string, string> };
       },
       unknown,
     ];
-    expect(sessionParams.metadata).toEqual({ orgId: "org-x", invoiceId: "inv-y" });
-    expect(sessionParams.payment_intent_data.metadata).toEqual({ orgId: "org-x", invoiceId: "inv-y" });
+    const expected = { orgId: "org-x", invoiceId: "inv-y", kind: "payment" };
+    expect(sessionParams.metadata).toEqual(expected);
+    expect(sessionParams.payment_intent_data.metadata).toEqual(expected);
+  });
+
+  // A quote deposit carries the ESTIMATE, not an invoice — that is what lets the webhook and the
+  // success-page reconcile send it to the deposit recorder instead of crediting some invoice.
+  it("attaches orgId, estimateId and kind:'deposit' for a deposit subject, on both objects", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.create.mockResolvedValueOnce({
+      url: "https://checkout.stripe.com/pay/cs_dep",
+      id: "cs_dep",
+    });
+
+    await client.createCheckoutSession({
+      ...baseParams,
+      orgId: "org-x",
+      subject: { kind: "deposit", estimateId: "est-z" },
+    });
+
+    const [sessionParams] = fake.checkout.sessions.create.mock.calls[0] as [
+      {
+        metadata: Record<string, string>;
+        payment_intent_data: { metadata: Record<string, string> };
+      },
+      unknown,
+    ];
+    const expected = { orgId: "org-x", estimateId: "est-z", kind: "deposit" };
+    expect(sessionParams.metadata).toEqual(expected);
+    expect(sessionParams.payment_intent_data.metadata).toEqual(expected);
+    expect(sessionParams.metadata.invoiceId).toBeUndefined();
   });
 
   it("passes success_url and cancel_url through to the Stripe SDK", async () => {
@@ -217,6 +250,79 @@ describe("StripeClient.createCheckoutSession", () => {
     ];
     expect(sessionParams.success_url).toBe("https://app.example.com/paid");
     expect(sessionParams.cancel_url).toBe("https://app.example.com/cancel");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getSharedStripeClient — one client (one breaker) per process
+// ---------------------------------------------------------------------------
+
+describe("getSharedStripeClient", () => {
+  it("returns the SAME instance across calls for the same key — the shared breaker contract", () => {
+    const a = getSharedStripeClient("sk_test_shared_key_one");
+    const b = getSharedStripeClient("sk_test_shared_key_one");
+    expect(a).toBe(b);
+  });
+
+  it("mints a fresh client when the secret key changes (rotation)", () => {
+    const a = getSharedStripeClient("sk_test_rotation_old");
+    const b = getSharedStripeClient("sk_test_rotation_new");
+    expect(a).not.toBe(b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StripeClient.retrieveCheckoutSession
+// ---------------------------------------------------------------------------
+
+describe("StripeClient.retrieveCheckoutSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the retrieved session", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve.mockResolvedValueOnce({ id: "cs_test_1", payment_status: "paid" });
+
+    const session = await client.retrieveCheckoutSession("cs_test_1");
+
+    expect(session.id).toBe("cs_test_1");
+    expect(fake.checkout.sessions.retrieve.mock.calls[0]?.[0]).toBe("cs_test_1");
+  });
+
+  it("retries a transient failure (5xx) through the resilience wrapper and succeeds", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve
+      .mockRejectedValueOnce(new Stripe.errors.StripeAPIError({ message: "internal server error" }))
+      .mockResolvedValueOnce({ id: "cs_test_2" });
+
+    const session = await client.retrieveCheckoutSession("cs_test_2");
+
+    expect(session.id).toBe("cs_test_2");
+    expect(fake.checkout.sessions.retrieve).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a deterministic client error — it fails identically and would count toward the shared breaker", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve.mockRejectedValue(
+      new Stripe.errors.StripeInvalidRequestError({ message: "no such session" }),
+    );
+
+    await expect(client.retrieveCheckoutSession("cs_missing")).rejects.toBeInstanceOf(
+      Stripe.errors.StripeInvalidRequestError,
+    );
+    expect(fake.checkout.sessions.retrieve).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the 10 000 ms timeout convention to the SDK call", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve.mockResolvedValueOnce({ id: "cs_test_3" });
+
+    await client.retrieveCheckoutSession("cs_test_3");
+
+    const call = fake.checkout.sessions.retrieve.mock.calls[0] as unknown[];
+    const options = call[call.length - 1] as { timeout: number };
+    expect(options.timeout).toBe(10_000);
   });
 });
 

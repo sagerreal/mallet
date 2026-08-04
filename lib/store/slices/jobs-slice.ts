@@ -74,7 +74,13 @@ import type { Job, Visit, Addon, VerifyAns, JobLine } from "../types";
 import { isVisitPlaced } from "../visit-placement";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { invalidateLists } from "@/lib/trpc/list-cache";
-import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, type JobDTO } from "@/lib/store/dto-mapper";
+import {
+  dtoJobToStoreJob,
+  dtoChecklistToStore,
+  hourToHHMM,
+  isTerminalStoreJobStatus,
+  type JobDTO,
+} from "@/lib/store/dto-mapper";
 import { persistVisitStatus, visitWriteName, type VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
@@ -262,8 +268,30 @@ function isPersistableLine(l: JobLine): boolean {
   return l.r != null && l.d.trim().length > 0;
 }
 
-/** Derive job status from its placed visits. */
-function recalcStatus(visits: Visit[]): string {
+/**
+ * Derive job status from its placed visits — the OPTIMISTIC copy of the rule the two DTO
+ * mappers apply on the way back from the server (dtoJobToStoreJob, jobs-hydrator's toStoreJob).
+ *
+ * A TERMINAL status short-circuits the whole recalc, exactly as it does in both mappers (see
+ * isTerminalBackendJobStatus's docstring in dto-mapper.ts — one rule, two vocabularies). This
+ * copy carried no guard at all, so a job completed straight from My Day — one complete visit
+ * that nobody dragged onto the Schedule board, so nothing counts as placed — was derived back to
+ * "unscheduled" by the next optimistic visit write: its revenue vanished from Money's
+ * ready-to-bill list and the field's done card swapped out from under the technician
+ * mid-close-out.
+ *
+ * Guarding only the no-placed-visit branch would have left the copies STILL disagreeing: a
+ * backend-canceled job with a placed pending visit (cancel-job.ts does not cascade to visits,
+ * and those jobs are still drawn on the board) would read "done" from either mapper and
+ * "scheduled" from here.
+ *
+ * The cost is that Reopen's JOB-level flip waits for the server instead of being optimistic —
+ * the visit itself still moves instantly, and set-visit-status.ts is what decides whether the
+ * job reopens with it. Predicting that here is guesswork; a stale-status-driven guess is what
+ * this function has been getting wrong.
+ */
+function recalcStatus(job: Job, visits: Visit[]): string {
+  if (isTerminalStoreJobStatus(job.status)) return job.status;
   const placed = visits.filter(isVisitPlaced);
   if (!placed.length) return "unscheduled";
   if (placed.every((v) => v.status === "done")) return "done";
@@ -271,7 +299,7 @@ function recalcStatus(visits: Visit[]): string {
 }
 
 function withVisits(job: Job, visits: Visit[]): Job {
-  return { ...job, visits, status: recalcStatus(visits) };
+  return { ...job, visits, status: recalcStatus(job, visits) };
 }
 
 /** Set one verify answer immutably. */

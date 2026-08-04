@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { Phone, isOk, toPage, type OrgId } from "@mallet/shared/types";
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { isSmsA2pActive } from "@mallet/a2p";
 import {
@@ -70,6 +71,15 @@ const toSummaryDTO = (n: Notification) => {
 };
 
 type NotificationRouterCtx = { tx: TenantTx; principal: { orgId: OrgId } };
+
+// The canonical origin for customer-facing pay links, memoized like the estimate router's
+// publicUrlFor: process-level configuration, and loadConfig re-parses the whole schema per call.
+// `undefined` = not resolved yet; a resolved `null` (unconfigured) is cached too.
+let cachedOrigin: string | null | undefined;
+const publicOrigin = (): string | null => {
+  if (cachedOrigin === undefined) cachedOrigin = resolvePublicAppOrigin(loadConfig());
+  return cachedOrigin;
+};
 
 const repoFor = (ctx: NotificationRouterCtx) => new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId);
 
@@ -181,6 +191,7 @@ export const createNotificationRouter = () =>
           new DrizzleReminderTargetReader(ctx.tx, ctx.principal.orgId),
           send,
           ctx.deps.ids,
+          publicOrigin(),
         );
         return toNotificationDTO(
           assertDelivered(
@@ -216,6 +227,7 @@ export const createNotificationRouter = () =>
           send,
           new FollowUpPolicy(),
           ctx.deps.clock,
+          publicOrigin(),
         );
         const result = orThrow(
           await useCase.exec({ orgId: ctx.principal.orgId, relatedType: input.relatedType, relatedId: input.relatedId }),

@@ -3,8 +3,9 @@ import { withTenant } from "@mallet/shared/db/tx";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { asOrgId, asInvoiceId } from "@mallet/shared/types";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
-import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleInvoiceRepository, RecordCardPaymentUseCase, processStripeEvent } from "@mallet/invoicing";
+import { recordEstimateDeposit } from "@mallet/quoting";
 import { getAppDeps } from "@/trpc/di";
 
 // Stripe webhook — a plain Next route (NOT tRPC). Reads the RAW body, verifies the signature, then
@@ -24,7 +25,9 @@ export async function POST(req: Request): Promise<Response> {
   const signature = req.headers.get("stripe-signature");
   if (!signature) return new Response("missing signature", { status: 400 });
 
-  const client = new StripeClient(config.STRIPE_SECRET_KEY);
+  // Shared process-wide client (one breaker for all Stripe traffic) — a per-request client
+  // carried a breaker that was discarded before it could ever trip.
+  const client = getSharedStripeClient(config.STRIPE_SECRET_KEY);
   let event;
   try {
     event = client.constructEvent(raw, signature, config.STRIPE_WEBHOOK_SECRET);
@@ -52,6 +55,15 @@ export async function POST(req: Request): Promise<Response> {
             });
             if (!r.ok) throw new Error(`record card payment failed: ${r.error.message}`);
           });
+        },
+        // A quote deposit settles on the ESTIMATE's own append-only ledger, not in the invoice
+        // payments table, so it takes its own recorder — the same one the /pay/success reconcile
+        // calls, keyed on the same payment_intent id, keeping the two deliveries of one deposit on
+        // a single idempotent path. Before this arm existed a deposit session failed the
+        // invoice-shaped metadata check and was dropped as a logged 200.
+        recordDeposit: async (orgId, estimateId, amountCents, paymentRef) => {
+          enrichRequestContext({ orgId });
+          return recordEstimateDeposit(orgId, estimateId, amountCents, paymentRef);
         },
         log: (message, ctx) => logger.warn(ctx ?? {}, message),
       });

@@ -29,6 +29,27 @@ export const invoices = pgTable(
       .references(() => orgs.id, { onDelete: "cascade" }),
     num: text("num").notNull(),
     sourceJobId: uuid("source_job_id"),
+    /**
+     * The job this bill is ABOUT, when it is not the job it was raised FROM.
+     *
+     * Distinct from `source_job_id`, and deliberately not a substitute for it. `source_job_id`
+     * says "this invoice IS the bill for that job" and carries `invoices_org_source_job_uidx` —
+     * one active invoice per job. The declined-estimate visit fee must NOT consume that slot: the
+     * customer may still accept a quote on the same job later, and its real bill needs the slot.
+     * So the fee invoice stays lead-tied (`source_job_id IS NULL`) and records the job it was
+     * collected on here instead.
+     *
+     * Its only job is authorization: it is what lets a technician standing at the door collect a
+     * trip fee on the job in front of them (see assertFieldInvoiceScope, which authorizes through
+     * `source_job_id` OR this).
+     *
+     * It IS unique per job while live (`invoices_org_scope_job_uidx`) — that index is what makes
+     * "raise the fee" genuinely idempotent under a double tap, which a read-then-write check
+     * cannot be. The difference from `source_job_id` was never uniqueness; it is which slot gets
+     * consumed. A fee here leaves the job's own `invoices_org_source_job_uidx` slot free, so the
+     * customer can still accept a quote on that job and `createFromJob` can still raise its bill.
+     */
+    scopeJobId: uuid("scope_job_id"),
     leadId: uuid("lead_id").notNull(),
     title: text("title"),
     status: text("status").notNull().default("draft"),
@@ -46,6 +67,11 @@ export const invoices = pgTable(
     termsDays: integer("terms_days").notNull().default(7),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     dueAt: timestamp("due_at", { withTimezone: true }),
+    // Customer-supplied purchase order number, free text. Null when the customer didn't issue one.
+    poNumber: text("po_number"),
+    // Unguessable URL-safe token for the customer-facing public invoice page (no login required).
+    // Generated at draft time; null only for invoices created before the migration (backfilled).
+    publicToken: text("public_token"),
     // Per-document follow-up: is the shop still chasing this one, and how many nudges in.
     // Was client-local, and the hydrator reset it to off on every refetch — so a toggle the user
     // switched ON read back OFF, disagreeing with whether reminders were actually being sent.
@@ -67,7 +93,27 @@ export const invoices = pgTable(
       columns: [t.orgId, t.sourceJobId],
       foreignColumns: [jobs.orgId, jobs.id],
     }),
+    // Composite, like every other child reference here: the scope link can only ever point at a
+    // job in the SAME org, enforced by the database rather than by the code that writes it.
+    foreignKey({
+      name: "invoices_scope_job_fk",
+      columns: [t.orgId, t.scopeJobId],
+      foreignColumns: [jobs.orgId, jobs.id],
+    }),
     index("invoices_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
+    // Lookup by scope link (listByScopeJob), across every status — kept alongside the unique index
+    // below, which is PARTIAL and so cannot serve a read that includes voided rows.
+    index("invoices_org_scope_job_idx").on(t.orgId, t.scopeJobId),
+    // ONE live scope-linked invoice per job. This is not decoration: RaiseVisitFeeUseCase checks
+    // for an existing fee before inserting, and under READ COMMITTED two concurrent taps both see
+    // nothing and both insert. Only the database can refuse the second one, and without it a
+    // double tap on a flaky connection mints two independently-sendable fee invoices.
+    //
+    // Voided rows are excluded on purpose: voiding a fee is the shop deciding not to charge it,
+    // and a genuine later attempt must be able to proceed. Soft-deleted rows likewise.
+    uniqueIndex("invoices_org_scope_job_uidx")
+      .on(t.orgId, t.scopeJobId)
+      .where(sql`${t.scopeJobId} is not null and ${t.deletedAt} is null and ${t.status} <> 'void'`),
     index("invoices_org_status_due_idx").on(t.orgId, t.status, t.dueAt),
     // Sort indexes for invoice-sorts.ts. due/oldestUnpaid share the due-date index; the existing
     // org_status_due_idx already covers the filtered collection queue.
@@ -80,6 +126,13 @@ export const invoices = pgTable(
     uniqueIndex("invoices_org_source_job_uidx")
       .on(t.orgId, t.sourceJobId)
       .where(sql`${t.sourceJobId} is not null and ${t.deletedAt} is null`),
+    // Partial unique index: public_token must be globally unique when present. NULL rows
+    // (pre-migration invoices without a token) are excluded — PostgreSQL nulls are always
+    // distinct in unique indexes, but the explicit WHERE makes the intent clear and keeps the
+    // index compact.
+    uniqueIndex("invoices_public_token_uidx")
+      .on(t.publicToken)
+      .where(sql`${t.publicToken} is not null`),
     check("invoices_status_check", sql`${t.status} in ('draft', 'sent', 'partial', 'paid', 'void')`),
     check("invoices_total_check", sql`${t.totalCents} >= 0`),
     check("invoices_tax_bps_check", sql`${t.taxBps} >= 0`),
@@ -139,6 +192,15 @@ export const payments = pgTable(
     method: text("method").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     externalId: text("external_id"),
+    // WHO took the money — the authenticated user who recorded this payment. Stamped from the
+    // request principal, never from client input. Write-once like every other column here.
+    //
+    // Nullable and never backfilled, deliberately: rows written before this column existed have no
+    // recorded actor, and a card payment settled by the customer online (Stripe webhook) has no
+    // in-app actor at all. Null means "nobody in the app took this", not "unknown staffer".
+    // No FK to users — same as jobs.assignee_user_id / job_signatures.signed_by_user_id: the ledger
+    // must survive a staffer being removed, and it records who acted, not who currently exists.
+    recordedByUserId: uuid("recorded_by_user_id"),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

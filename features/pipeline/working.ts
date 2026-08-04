@@ -10,7 +10,7 @@
 
 import { todayISO } from "@/lib/clock";
 import { isCooling, traceOf } from "./pipeline-lanes";
-import { scopedEstimateVisit, pendingEstimateVisit } from "./pipeline-utils";
+import { scopedEstimateVisitWithJob, pendingEstimateVisit } from "./pipeline-utils";
 import type { Estimate, Job, Lead } from "@/lib/store/types";
 
 export interface IntakeRow {
@@ -28,6 +28,12 @@ export interface GettingRow {
   stamp: string;
   /** Small verb label rendered after the stamp ("quote it ›", "finish ›"). */
   verb: string | null;
+  /**
+   * The scope-visit JOB behind a "scoped" row — "quote it ›" hands this to the composer
+   * (?job=) so the quote it drafts converts that job at accept instead of minting a twin.
+   * Null on the other kinds.
+   */
+  scopeVisitJobId: string | null;
 }
 
 function weekdayOf(iso: string): string {
@@ -74,7 +80,7 @@ export function deriveGetting(leads: Lead[], estimates: Estimate[], jobs: Job[])
     if (est.status !== "draft" || est.archived || est.trash) continue;
     const lead = leads.find((l) => l.id === est.leadId && !l.archived);
     if (!lead) continue;
-    rows.push({ lead, est, kind: "shop", stamp: "in the shop", verb: "finish ›" });
+    rows.push({ lead, est, kind: "shop", stamp: "in the shop", verb: "finish ›", scopeVisitJobId: null });
   }
 
   const hasPaper = (id: string) =>
@@ -83,14 +89,15 @@ export function deriveGetting(leads: Lead[], estimates: Estimate[], jobs: Job[])
   for (const lead of leads) {
     if (!alive(lead) || hasPaper(lead.id)) continue;
     const today = todayISO();
-    const scoped = scopedEstimateVisit(lead.id, jobs);
+    const scoped = scopedEstimateVisitWithJob(lead.id, jobs);
     if (scoped) {
       rows.push({
         lead,
         est: null,
         kind: "scoped",
-        stamp: scoped.date === today ? "scoped today" : "scoped",
+        stamp: scoped.visit.date === today ? "scoped today" : "scoped",
         verb: "quote it ›",
+        scopeVisitJobId: scoped.job.id,
       });
       continue;
     }
@@ -103,6 +110,7 @@ export function deriveGetting(leads: Lead[], estimates: Estimate[], jobs: Job[])
         stamp:
           pending.date === today ? "visit today" : `walkthrough ${weekdayOf(pending.date)}`,
         verb: null,
+        scopeVisitJobId: null,
       });
     }
   }

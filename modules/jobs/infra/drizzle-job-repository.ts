@@ -19,7 +19,8 @@ import {
 } from "@mallet/shared/types";
 import type { Job, JobChecklistProps } from "../domain/job";
 import type { JobSignature } from "../domain/job-signature";
-import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPairRow } from "../domain/job-repository";
+import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPairRow, AdoptEstimatePatch } from "../domain/job-repository";
+import { flipScopeVisitJob, appendPendingVisit } from "./job-convert";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
 import { lineToDomain, addonToDomain, verifyToDomain, photoToDomain, type JobLineRow, type JobAddonRow, type JobVerifyAnswerRow, type JobPhotoRow } from "./job-execution-mapper";
@@ -233,6 +234,27 @@ export class DrizzleJobRepository implements JobRepository {
       )
       .returning({ id: jobs.id });
     return rows.length;
+  }
+
+  /**
+   * Convert a scope-visit job into the sold work IN PLACE (see the port doc; the SQL and the
+   * guard rationale live in job-convert.ts). Flip, swap the lines, append ONE pending visit —
+   * all in the caller's tx, so any failure rolls the whole conversion back.
+   */
+  async adoptEstimateOnJob(
+    orgId: OrgId,
+    jobId: JobId,
+    patch: AdoptEstimatePatch,
+    lines: readonly JobLine[],
+    now: Date,
+  ): Promise<boolean> {
+    const flipped = await flipScopeVisitJob(this.tx, orgId, jobId, patch, now);
+    if (!flipped) return false;
+    // The sold scope replaces whatever the walkthrough carried — same swap the on-site pricing
+    // path uses, inside the same tx as the flip.
+    await this.replaceLines(jobId, lines, now);
+    await appendPendingVisit(this.tx, orgId, jobId, now);
+    return true;
   }
 
   async findById(id: JobId): Promise<Job | null> {

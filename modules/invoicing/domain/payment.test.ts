@@ -8,6 +8,7 @@ const props = (overrides: Partial<PaymentProps> = {}): PaymentProps => ({
   method: "cash",
   idempotencyKey: "idem-key-123",
   externalId: null,
+  recordedByUserId: null,
   receivedAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,
 });

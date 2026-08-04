@@ -131,6 +131,7 @@ const invoiceTarget = (overrides: Partial<ReminderTarget> = {}): ReminderTarget 
   phone: "+15551234567",
   email: "cust@example.com",
   balanceCents: 100_000,
+  publicToken: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,
 });
@@ -144,7 +145,7 @@ describe("AdvanceReminderUseCase — uncovered branches", () => {
     const bus = new InMemoryEventBus();
     const sender = new CountingSender(clock);
     const send = new SendNotificationUseCase(repo, sender, bus, clock, seqIds());
-    const advance = new AdvanceReminderUseCase(new FakeReader(null), repo, send, policy, clock);
+    const advance = new AdvanceReminderUseCase(new FakeReader(null), repo, send, policy, clock, null);
 
     const result = await advance.exec({ orgId: ORG, relatedType: "estimate", relatedId: INV });
 
@@ -168,7 +169,7 @@ describe("AdvanceReminderUseCase — uncovered branches", () => {
     // Target with neither phone nor email — channel resolves to null.
     const noContactTarget = invoiceTarget({ phone: null, email: null });
     const reader = new FakeReader(noContactTarget);
-    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock);
+    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock, null);
 
     const result = await advance.exec({ orgId: ORG, relatedType: "invoice", relatedId: INV });
 
@@ -191,7 +192,7 @@ describe("AdvanceReminderUseCase — uncovered branches", () => {
 
     const targetWithBoth = invoiceTarget({ phone: "+15559876543", email: "cust@example.com" });
     const reader = new FakeReader(targetWithBoth);
-    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock);
+    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock, null);
 
     const result = await advance.exec({ orgId: ORG, relatedType: "invoice", relatedId: INV });
 
@@ -211,7 +212,7 @@ describe("AdvanceReminderUseCase — uncovered branches", () => {
 
     const emailOnlyTarget = invoiceTarget({ phone: null, email: "email-only@example.com" });
     const reader = new FakeReader(emailOnlyTarget);
-    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock);
+    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock, null);
 
     const result = await advance.exec({ orgId: ORG, relatedType: "invoice", relatedId: INV });
 

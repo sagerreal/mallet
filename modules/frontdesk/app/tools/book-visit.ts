@@ -2,7 +2,7 @@ import { Phone, isOk } from "@mallet/shared/types";
 import type { LeadId, UserId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { JobKind } from "@mallet/jobs";
-import type { OrgSettings } from "@mallet/settings";
+import type { OrgSettings, BookingService } from "@mallet/settings";
 import { resolveServiceRequirement, meetsRequirement } from "@mallet/shared/dispatch/skill-gate";
 import { sendBookingConfirmation } from "./booking-confirmation";
 import {
@@ -18,6 +18,7 @@ import {
   confirmationSpeak,
   emergencyTaskText,
   fallbackTaskText,
+  flatPriceFrom,
   outOfAreaTaskText,
   slotPhrase,
 } from "./book-visit-speak";
@@ -25,6 +26,7 @@ import { decorateScope } from "../found-work";
 import { isInServiceArea } from "../service-area";
 import { chooseCrew } from "../dispatch";
 import type { GeoPoint } from "../../domain/geocoder";
+import { resolveBookingPrices } from "../../domain/pricebook-price-reader";
 import type { VoiceTool, VoiceToolContext, VoiceToolResult } from "./tool-result";
 
 // Re-export the boundary contract so existing importers (tests, the route, the barrel) keep pulling
@@ -179,6 +181,40 @@ const bookingFallback = async (
   return { speak: BOOK_VISIT_ERROR_SPEAK };
 };
 
+// The playbook services with pricebook-LINKED prices resolved to their CURRENT value — the ONE
+// list both the persisted job line and the spoken confirmation read their flat price from, so the
+// caller never hears a number different from what lands on the job. Reader absent → the stored
+// playbook prices (resolveBookingPrices' own fallback). A reader FAILURE also degrades to the
+// stored prices (logged, never thrown): a pricebook read hiccup must never block a booking.
+const resolvedServicesFor = async (
+  settings: OrgSettings,
+  ctx: VoiceToolContext,
+): Promise<readonly BookingService[]> => {
+  try {
+    return await resolveBookingPrices(settings.props.booking.services, ctx.deps.pricebookPrices);
+  } catch (error: unknown) {
+    logger.warn(
+      { orgId: ctx.orgId, tool: "book_visit", error: error instanceof Error ? error.message : "unknown" },
+      "frontdesk.book_visit.price_resolve_failed",
+    );
+    return settings.props.booking.services;
+  }
+};
+
+// The priced line a FLAT booking persists on the job: the caller was quoted this exact number, so
+// it lands as one quantity-1 line at the resolved price (DOLLARS in config → integer cents).
+// Estimate/repair lanes NEVER get lines — money arrives with the estimate, not the visit. A flat
+// name with no configured price also books priceless (the speak already falls back to the fee).
+const bookedLinesFor = (
+  input: BookVisitInput,
+  services: readonly BookingService[],
+): { description: string; quantity: number; rateCents: number }[] | undefined => {
+  if (normalizeBookLane(input.lane) !== "flat") return undefined;
+  const price = flatPriceFrom(input.service_name, services);
+  if (price === null) return undefined;
+  return [{ description: input.service_name, quantity: 1, rateCents: Math.round(price * 100) }];
+};
+
 // The org's geocoded service origin as a GeoPoint, or null when either coordinate is unset (the
 // shop never set an origin, or its geocode missed on save). Null → the service-area check degrades
 // to "unknown" (book normally), never a false out-of-area decline.
@@ -247,7 +283,12 @@ const bookConfirmed = async (
   // null = no requirement (service not in playbook, or playbook has no certs for it).
   const requiredCerts = resolveServiceRequirement(settings.props.booking.services, input.service_name);
 
+  // Resolve pricebook-linked prices ONCE; the persisted flat line (below) and the spoken
+  // confirmation (bottom of this function) both read from this list, so they always agree.
+  const services = await resolvedServicesFor(settings, ctx);
+
   // Create the manual job (kind by lane). addr/phone accepted for parity but not persisted.
+  // A FLAT booking carries its quoted price as a job line; every other lane books priceless.
   const job = await ctx.deps.createManualJob.exec({
     orgId: ctx.orgId,
     leadId,
@@ -259,6 +300,7 @@ const bookConfirmed = async (
     notes: input.problem,
     scope,
     requiredCerts,
+    lines: bookedLinesFor(input, services),
   });
   if (!isOk(job)) {
     logger.warn(
@@ -310,7 +352,7 @@ const bookConfirmed = async (
     "frontdesk.book_visit.booked",
   );
   return {
-    speak: confirmationSpeak(input, settings, slot),
+    speak: confirmationSpeak(input, settings, slot, services),
     data: { kind: kindForLane(input.lane), emergency },
   };
 };

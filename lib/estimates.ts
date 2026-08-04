@@ -65,18 +65,6 @@ export function pipeSum(contacts: Lead[], estimates: Estimate[], status: string)
 
 // ---- invoice money (same module so home + Finance audit to the same penny) ---
 
-import type { Invoice } from "@/lib/store/types";
-
-/** Sum of recorded payments. */
-export function invPaid(i: Invoice): number {
-  // A record built from a LIST row carries no payments — the endpoint does not send them — but the
-  // server already computed the balance, so paidTotal holds its answer. Preferring it is what
-  // keeps a ledger row from reading as fully unpaid.
-  if (i.paidTotal !== undefined) return i.paidTotal;
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-/** Balance still owed — total − deposit − payments, floored at 0. */
-export function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+/** Paid / still-owed: ONE definition, in lib/store/invoice-balance.ts. Re-exported here so home
+ *  and Finance keep auditing to the same penny through their existing imports. */
+export { invPaid, invDue } from "@/lib/store/invoice-balance";

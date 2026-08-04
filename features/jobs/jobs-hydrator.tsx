@@ -28,6 +28,7 @@ import {
   toStoreVisit,
   mapExecution,
   dtoChecklistToStore,
+  isTerminalBackendJobStatus,
 } from "@/lib/store/dto-mapper";
 
 // Re-export the pure time helpers so existing unit tests importing from here
@@ -66,23 +67,33 @@ function recalcStatus(visits: ReturnType<typeof toStoreVisit>[]): string {
 // DTO → store mapper for the summary list shape
 // ---------------------------------------------------------------------------
 
-function toStoreJob(dto: JobSummaryDTO): Job {
+export function toStoreJob(dto: JobSummaryDTO): Job {
   // Filter out canceled visits before mapping — they are not shown on the board.
   const activeVisitDTOs = dto.visits.filter(
     (v) => v.status !== BACKEND_VISIT_STATUS_CANCELED,
   );
   const visits = activeVisitDTOs.map(toStoreVisit);
 
-  // Prefer recalc when visits exist; fall back to the coarse backend status.
+  // The SHARED predicate — see its docstring in dto-mapper.ts. One rule, three call sites.
+  const isTerminal = isTerminalBackendJobStatus(dto.status);
+  // A terminal backend status (complete/canceled) ALWAYS wins over the visit-placement
+  // recalc below — mirrors dtoJobToStoreJob in dto-mapper.ts. Without this, a job
+  // completed straight from My Day (one visit, complete, never placed on the Schedule
+  // board) recalcs from placement state alone, reads back "unscheduled" on every list
+  // refetch, and its revenue silently vanishes from Money's ready-to-bill ledger even
+  // after the mutation-reconcile path (dto-mapper.ts) has been fixed.
+  // Otherwise: prefer recalc when visits exist; fall back to the coarse backend status.
   // When there are no active visits AND the backend status is "scheduled", remap to
   // "unscheduled" — a zero-visit job has not been slotted yet (e.g. freshly created
-  // from an accepted quote via CreateJobFromEstimateUseCase). Only "in_progress",
-  // "complete", and "canceled" are preserved via the coarse fallback.
-  const status = visits.length > 0
-    ? recalcStatus(visits)
-    : dto.status === BACKEND_JOB_STATUS.SCHEDULED
-      ? "unscheduled"
-      : toStoreStatus(dto.status);
+  // from an accepted quote via CreateJobFromEstimateUseCase). "in_progress" is preserved
+  // via the coarse fallback.
+  const status = isTerminal
+    ? toStoreStatus(dto.status)
+    : visits.length > 0
+      ? recalcStatus(visits)
+      : dto.status === BACKEND_JOB_STATUS.SCHEDULED
+        ? "unscheduled"
+        : toStoreStatus(dto.status);
 
   return {
     id: dto.id,

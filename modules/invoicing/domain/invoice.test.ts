@@ -18,6 +18,7 @@ const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
   taxBps: 0,
   tax: zeroMoney,
   sourceJobId: null,
+  scopeJobId: null,
   leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
   title: "Deck rebuild",
   status: "draft",
@@ -29,6 +30,8 @@ const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
   termsDays: 7,
   sentAt: null,
   dueAt: null,
+  poNumber: null,
+  publicToken: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,
@@ -47,6 +50,7 @@ const payment = (cents: number, key = "idem-key-123"): Payment => {
     method: "cash",
     idempotencyKey: key,
     externalId: null,
+    recordedByUserId: null,
     receivedAt: new Date("2026-06-05T00:00:00Z"),
   });
   if (!isOk(r)) throw new Error(r.error.message);
@@ -219,6 +223,53 @@ describe("Invoice.editMetadata", () => {
     const res = build("draft").editMetadata({ depositPaid: money(200_000) }, now);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.field).toBe("depositPaid");
+  });
+
+  it("sets a poNumber", () => {
+    const res = build("draft").editMetadata({ poNumber: "4471" }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("4471");
+  });
+
+  it("trims a poNumber", () => {
+    const res = build("draft").editMetadata({ poNumber: "  4471  " }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("4471");
+  });
+
+  it("trims a blank/whitespace-only poNumber to null (clears it)", () => {
+    const res = build("draft", { poNumber: "old-po" }).editMetadata({ poNumber: "   " }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBeNull();
+  });
+
+  it("clears a poNumber with explicit null", () => {
+    const res = build("draft", { poNumber: "old-po" }).editMetadata({ poNumber: null }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBeNull();
+  });
+
+  it("keeps the poNumber when undefined in the patch", () => {
+    const res = build("draft", { poNumber: "keep-me" }).editMetadata({ termsDays: 14 }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("keep-me");
+  });
+
+  it("allows setting a poNumber on a SENT invoice (not frozen until paid/void)", () => {
+    const res = build("sent").editMetadata({ poNumber: "4471" }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("4471");
+  });
+
+  it("rejects a poNumber over 64 characters", () => {
+    const res = build("draft").editMetadata({ poNumber: "x".repeat(65) }, now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("poNumber");
+  });
+
+  it("accepts a poNumber at exactly 64 characters", () => {
+    const res = build("draft").editMetadata({ poNumber: "x".repeat(64) }, now);
+    expect(res.ok).toBe(true);
   });
 });
 

@@ -26,6 +26,7 @@ const invoiceSummary = (over: Partial<InvoiceSummaryDTO> = {}): InvoiceSummaryDT
     id: "inv-1",
     num: "INV-2042",
     leadId: "lead-1",
+    sourceJobId: "job-1",
     customerName: "Zsofia Quennell",
     title: "Sewer camera",
     status: "sent",
@@ -69,6 +70,21 @@ describe("invoice list row → store", () => {
     const inv = dtoInvoiceSummaryToStore(invoiceSummary(), { cust: "—", phone: "", email: "" });
     expect(invDue(inv)).toBe(240);
     expect(invPaid(inv)).toBe(400); // 640 total − 240 still owed
+  });
+
+  // The job link used to be hard-coded null here too, so every list refetch broke the link the
+  // field surfaces use to find a job's bill.
+  it("keeps the job the bill was raised from", () => {
+    const inv = dtoInvoiceSummaryToStore(invoiceSummary(), { cust: "—", phone: "", email: "" });
+    expect(inv.jobId).toBe("job-1");
+  });
+
+  it("leaves the job link null for a lead-tied invoice", () => {
+    const inv = dtoInvoiceSummaryToStore(
+      invoiceSummary({ sourceJobId: null }),
+      { cust: "—", phone: "", email: "" },
+    );
+    expect(inv.jobId).toBeNull();
   });
 
   it("uses the server's customer name — the store's copy may not be loaded", () => {

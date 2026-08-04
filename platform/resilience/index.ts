@@ -8,3 +8,4 @@ export {
   type IdempotencyStore,
 } from "./idempotency";
 export { call, type CallOptions } from "./resilient-call";
+export { FixedWindowLimiter, type FixedWindowLimiterOptions } from "./fixed-window-limiter";

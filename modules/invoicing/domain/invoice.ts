@@ -31,6 +31,21 @@ export interface InvoiceProps {
   readonly orgId: OrgId;
   readonly num: string; // per-org "INV-<n>"
   readonly sourceJobId: JobId | null;
+  /**
+   * The job this bill is ABOUT, when it is not the job it was raised FROM. Null on almost every
+   * invoice.
+   *
+   * Set only where the two genuinely differ: the visit fee on a declined estimate is lead-tied
+   * (`sourceJobId: null`) so it does not consume the job's one `invoices_org_source_job_uidx`
+   * slot — the customer may still accept a quote on that job, and its real bill needs the slot —
+   * but a technician must still be able to collect it on the doorstep, which needs a job to
+   * authorize against. This is that job, and authorization is the only thing it is for.
+   *
+   * Never a fallback for `sourceJobId`. It is unique per job while live, but it does not mean
+   * "the bill for this job" and nothing may read it that way — `findBySourceJob`, and therefore
+   * `createFromJob`, deliberately does not see it.
+   */
+  readonly scopeJobId: JobId | null;
   readonly leadId: LeadId;
   readonly title: string | null;
   readonly status: InvoiceStatus;
@@ -52,6 +67,16 @@ export interface InvoiceProps {
   readonly termsDays: number;
   readonly sentAt: Date | null;
   readonly dueAt: Date | null;
+  /** Customer-supplied purchase order number, free text. Null when the customer didn't issue one. */
+  readonly poNumber: string | null;
+  /**
+   * The unguessable credential for the public pay page (/i/<token>), 64 hex chars.
+   *
+   * Minted on FIRST send and stable thereafter — a re-send must never rotate a link the customer
+   * already holds in a text thread. Null until the invoice has been sent (and on pre-migration
+   * rows, which mint one on their next send).
+   */
+  readonly publicToken: string | null;
   /** Is the shop still chasing this invoice, and how many nudges in. Same client-local fate as
    *  the quote's — the toggle disagreed with whether reminders were actually going out. */
   readonly followUpOn?: boolean;
@@ -65,7 +90,14 @@ export interface InvoiceMetadataPatch {
   readonly title?: string | null;
   readonly termsDays?: number;
   readonly depositPaid?: Money;
+  /**
+   * Customer-supplied purchase order number. Undefined = keep current; explicit null (or a
+   * blank/whitespace-only string) clears it. Trimmed before it reaches Invoice.create.
+   */
+  readonly poNumber?: string | null;
 }
+
+const PO_NUMBER_MAX_LEN = 64;
 
 // A bill for completed work. Aggregate root over its payment ledger + display lines. Money is
 // integer cents; the balance due is always derived (total − deposit − amountPaid, clamped ≥ 0).
@@ -74,9 +106,21 @@ export interface InvoiceMetadataPatch {
  * Input to Invoice.create. The tax split may be omitted: most invoices are drafted by hand and no
  * tax was ever computed for them, which is different from a computed split that happens to be zero.
  */
-export type InvoiceCreateProps = Omit<InvoiceProps, "taxBps" | "tax"> & {
+export type InvoiceCreateProps = Omit<
+  InvoiceProps,
+  "taxBps" | "tax" | "poNumber" | "publicToken" | "scopeJobId"
+> & {
   readonly taxBps?: number;
   readonly tax?: Money;
+  // Both optional with a null default: most construction sites (drafts, job invoices) have
+  // neither — the PO arrives from the customer later, the token is minted at send time.
+  readonly poNumber?: string | null;
+  readonly publicToken?: string | null;
+  /**
+   * Optional with a null default because almost nothing sets it: an ordinary bill is raised FROM
+   * its job (`sourceJobId`) and has no separate scope. Only the visit-fee path passes one.
+   */
+  readonly scopeJobId?: JobId | null;
 };
 
 export class Invoice {
@@ -104,7 +148,30 @@ export class Invoice {
     }
     if (props.amountPaid < 0) return err(validation("amount paid cannot be negative", "amountPaid"));
     if (props.termsDays < 0) return err(validation("terms days cannot be negative", "termsDays"));
-    return ok(new Invoice({ ...props, num, taxBps, tax }));
+    if (props.poNumber != null && props.poNumber.length > PO_NUMBER_MAX_LEN) {
+      return err(validation(`PO number cannot exceed ${PO_NUMBER_MAX_LEN} characters`, "poNumber"));
+    }
+    return ok(
+      new Invoice({
+        ...props,
+        num,
+        taxBps,
+        tax,
+        poNumber: props.poNumber ?? null,
+        publicToken: props.publicToken ?? null,
+        scopeJobId: props.scopeJobId ?? null,
+      }),
+    );
+  }
+
+  /**
+   * Stamp the public pay-link token. WRITE-ONCE: an invoice that already carries one keeps it —
+   * rotating the token would strand the link already texted to the customer. The repository
+   * enforces the same rule in SQL (COALESCE on save), so even a racing double-send cannot rotate.
+   */
+  withPublicToken(token: string): Invoice {
+    if (this.p.publicToken !== null) return this;
+    return new Invoice({ ...this.p, publicToken: token });
   }
 
   // Remaining balance, clamped at zero (an overpayment never shows negative).
@@ -174,12 +241,16 @@ export class Invoice {
     if (this.p.status === "paid" || this.p.status === "void") {
       return err(validation("a paid or void invoice cannot be edited", "status"));
     }
+    // Trim poNumber to null when blank — preserve null for "not set". Undefined keeps current.
+    const poNumber =
+      patch.poNumber === undefined ? this.p.poNumber : (patch.poNumber?.trim() || null);
     return Invoice.create({
       ...this.p,
       leadId: patch.leadId ?? this.p.leadId,
       title: patch.title === undefined ? this.p.title : patch.title,
       termsDays: patch.termsDays ?? this.p.termsDays,
       depositPaid: patch.depositPaid ?? this.p.depositPaid,
+      poNumber,
       updatedAt: now,
     });
   }

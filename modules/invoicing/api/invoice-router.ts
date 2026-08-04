@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asInvoiceId, asJobId, asLeadId, money, toPage } from "@mallet/shared/types";
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { OrgId } from "@mallet/shared/types";
 import { INVOICE_STATUSES, type Invoice, type InvoiceStatus } from "../domain/invoice";
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
@@ -14,6 +15,7 @@ import { DrizzleLeadRepository } from "@mallet/customers";
 import { INVOICE_SORTS } from "../infra/invoice-sorts";
 import { INVOICE_VIEWS } from "../infra/invoice-views";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
+import { DrizzleEstimateDepositReader } from "../infra/drizzle-estimate-deposit-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
@@ -94,6 +96,13 @@ const invoiceDTO = z.object({
   payments: z.array(paymentDTO),
   sentAt: z.string().nullable(),
   dueAt: z.string().nullable(),
+  // Customer-supplied purchase order number. Read-only surface here (the edit UI is Task 9).
+  poNumber: z.string().nullable(),
+  // The unguessable pay-link token, minted on first send; null until then. Office-only DTO —
+  // the customer receives the composed URL, never this raw credential out of context.
+  publicToken: z.string().nullable(),
+  // Absolute customer-facing pay URL, or null when no token / no canonical origin configured.
+  publicUrl: z.string().nullable(),
   // Is the shop still chasing this one, and how many nudges in.
   followUpOn: z.boolean(),
   followUpStage: z.number().int(),
@@ -103,6 +112,16 @@ const summaryDTO = z.object({
   id: z.string().uuid(),
   num: z.string(),
   leadId: z.string().uuid(),
+  /**
+   * The job this bill was raised from, or null for a lead-tied (manual) invoice.
+   *
+   * On the summary for the same reason `customerName` is: the browser stores the link as
+   * `invoice.jobId`, and the list is what re-hydrates that store. Omitting it here meant every
+   * refetch nulled the link a mutation had just stamped — the field close-out's done card
+   * oscillated between "ready to bill" and "take payment", and the payment sheet, which finds
+   * the job's invoice through this link, rendered an empty shell.
+   */
+  sourceJobId: z.string().uuid().nullable(),
   /**
    * The customer's name, resolved SERVER-side.
    *
@@ -155,6 +174,9 @@ const updateMetadataInput = z.object({
   title: z.string().max(500).nullable().optional(),
   termsDays: z.number().int().min(0).optional(),
   depositPaidCents: z.number().int().nonnegative().optional(),
+  // Customer-supplied PO number. Trimmed to null when blank (Invoice.editMetadata); undefined
+  // (the field simply absent) leaves the current value untouched.
+  poNumber: z.string().max(64).nullable().optional(),
 });
 const patchLinesInput = z.object({
   invoiceId: z.string().uuid(),
@@ -193,6 +215,21 @@ const cursorInput = z.object({
 
 const money$ = (cents: number) => ({ cents, currency: "USD" as const });
 const iso = (d: Date | null) => d?.toISOString() ?? null;
+
+/**
+ * The customer-facing pay link for an invoice, or null when the origin cannot be resolved.
+ * Composed from the CANONICAL configured origin — never from the request or the sender's browser.
+ * Memoized exactly like the estimate router's publicUrlFor: process-level configuration, and
+ * loadConfig re-parses the whole schema on each call. `undefined` = not resolved yet; a resolved
+ * `null` (no origin configured) is cached too.
+ */
+let cachedOrigin: string | null | undefined;
+const publicUrlFor = (token: string | null): string | null => {
+  if (!token) return null;
+  if (cachedOrigin === undefined) cachedOrigin = resolvePublicAppOrigin(loadConfig());
+  if (cachedOrigin === null) return null;
+  return `${cachedOrigin}/i/${token}`;
+};
 
 /**
  * The invoice DTO plus its resolved authorisation.
@@ -279,6 +316,9 @@ const toInvoiceDTO = (invoice: Invoice) => {
     })),
     sentAt: iso(p.sentAt),
     dueAt: iso(p.dueAt),
+    poNumber: p.poNumber,
+    publicToken: p.publicToken,
+    publicUrl: publicUrlFor(p.publicToken),
     followUpOn: p.followUpOn ?? false,
     followUpStage: p.followUpStage ?? 0,
     createdAt: p.createdAt.toISOString(),
@@ -295,6 +335,7 @@ const toSummaryDTO = (
     id: p.id,
     num: p.num,
     leadId: p.leadId,
+    sourceJobId: p.sourceJobId,
     customerName,
     customerPhone,
     title: p.title,
@@ -335,20 +376,30 @@ export const createInvoiceRouter = () =>
       }),
 
     createFromJob: ownerOrOffice
-      .input(z.object({ jobId: z.string().uuid() }))
+      // Client-authored id — preserved for the NEW row so the store's optimistic id matches the
+      // persisted row (same convention as draftInput). The idempotent path ignores it.
+      .input(z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional() }))
       .output(invoiceDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const jobs = new DrizzleJobReader(ctx.tx, ctx.principal.orgId);
+        const deposits = new DrizzleEstimateDepositReader(ctx.tx);
         const useCase = new CreateInvoiceFromJobUseCase(
           repo,
           jobs,
+          deposits,
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
         );
         return toInvoiceDTOWithAuth(
-          orThrow(await useCase.exec({ orgId: ctx.principal.orgId, jobId: asJobId(input.jobId) })),
+          orThrow(
+            await useCase.exec({
+              orgId: ctx.principal.orgId,
+              jobId: asJobId(input.jobId),
+              id: input.id ? asInvoiceId(input.id) : undefined,
+            }),
+          ),
           ctx.tx,
           ctx.principal.orgId,
         );
@@ -378,6 +429,9 @@ export const createInvoiceRouter = () =>
               amount: money(input.amountCents),
               method: input.method,
               idempotencyKey: input.idempotencyKey,
+              // From the principal, never from `input` — recordPaymentInput has no such field, and
+              // must not gain one, or a caller could sign the ledger with someone else's name.
+              recordedByUserId: ctx.principal.userId,
             }),
           ),
           ctx.tx,
@@ -408,6 +462,7 @@ export const createInvoiceRouter = () =>
               title: input.title,
               termsDays: input.termsDays,
               depositPaidCents: input.depositPaidCents,
+              poNumber: input.poNumber,
             }),
           ),
           ctx.tx,

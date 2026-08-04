@@ -153,6 +153,16 @@ export interface EstimateProps {
    * to the extra in the same manner they agreed to the original, so the invoice can prove it.
    */
   readonly changeOrderForJobId: string | null;
+  /**
+   * The scope-visit job this quote prices — the walkthrough that produced it. Null on a quote
+   * with no visit behind it.
+   *
+   * Set at draft time (the composer arrives from the pipeline's scoped card carrying the job).
+   * At accept, the job-creation path CONVERTS this job into the sold work instead of minting a
+   * second one — the walkthrough, the quote and the work stay one thread, not two jobs for one
+   * sale. Distinct from changeOrderForJobId, which points at RUNNING work the quote adds to.
+   */
+  readonly jobId: string | null;
   readonly changeRequest: string | null;
   // Unguessable URL-safe token for the public customer quote page (no login required).
   // Set at draft-time; never changes. Null only for estimates created before the backfill migration.
@@ -392,9 +402,11 @@ export class Estimate {
             .filter((line) => line.props.tier === chosenTier || line.props.tier === null)
             .map((line) => line.withoutTier())
         : this.p.lines;
-    // Two-step build: depPaid derives from the RESOLVED instance so the deposit reflects the
-    // chosen tier's committed lines, not the recommended tier's pre-accept subset.
-    const resolved = new Estimate({
+    // depPaid is deliberately NOT stamped here. Accepting a quote is an agreement, not a
+    // payment — the deposit ask stays the depositDue() derivation, and depPaid moves only when
+    // money actually lands (recorded by the payment path). Stamping it at accept faked a paid
+    // deposit onto every accepted quote and credited invoices with cash nobody had collected.
+    const priced = new Estimate({
       ...this.p,
       status: "accepted",
       acceptedAt: now,
@@ -402,7 +414,6 @@ export class Estimate {
       lines,
       updatedAt: now,
     });
-    const priced = new Estimate({ ...resolved.p, depPaid: resolved.depositDue() });
     if (!signature) return ok(priced);
 
     // The snapshot is built from `priced` — the FINAL resolved state, after the tier is committed
@@ -423,6 +434,39 @@ export class Estimate {
         signerUserAgent: built.value.signerUserAgent,
         signedAt: built.value.signedAt,
         signedSnapshot: built.value.snapshot,
+      }),
+    );
+  }
+
+  /**
+   * Carry the deposit total that has actually been COLLECTED on this quote.
+   *
+   * The counterpart to what accept() deliberately does not do: accepting is an agreement, this is
+   * money landing. Only an accepted quote can hold a deposit — crediting one against a draft or a
+   * declined quote would net money off a future invoice for a sale that was never made.
+   *
+   * `totalCents` is the SUM of the quote's deposit-ledger rows, not one payment: the ledger
+   * (estimate_deposits, keyed on the settling payment_intent id) is the record of what was paid,
+   * and `depPaid` is only its cached total. That is why this replaces rather than adds — adding a
+   * per-payment amount here would double-count the redelivery of a single payment, and replacing
+   * with a per-payment amount would erase the first of two real ones. Neither question can be
+   * answered without payment identity, and identity lives in the ledger.
+   *
+   * Not clamped to depositDue(): a customer who paid more than the ask has still paid it, and
+   * discarding the difference would put the shop's books out by the overpayment.
+   */
+  withDepositPaid(totalCents: number, now: Date): Result<Estimate, ValidationError> {
+    if (this.p.status !== "accepted") {
+      return err(validation("only an accepted estimate can take a deposit", "status"));
+    }
+    if (!Number.isFinite(totalCents) || totalCents <= 0) {
+      return err(validation("a deposit must be a positive amount", "totalCents"));
+    }
+    return ok(
+      new Estimate({
+        ...this.p,
+        depPaid: money(Math.round(totalCents)),
+        updatedAt: now,
       }),
     );
   }
@@ -517,6 +561,9 @@ export class Estimate {
       changeRequestedAt: null,
       changeRequest: null,
       changeOrderForJobId: null,
+      // The field-sign transport links job→estimate via jobs.source_estimate_id (setSourceEstimate);
+      // this read-side pointer stays null on field sales — there is no convert-at-accept to feed.
+      jobId: null,
       publicToken: args.publicToken,
       recommendedTier: null,
       acceptedTier: null,
@@ -555,18 +602,18 @@ export class Estimate {
 
   // Shared tail of the two on-site constructors: freeze the snapshot from the FINAL line set and
   // write the evidence in the same step that produced the instance (never a half-signed estimate).
+  // depPaid is NOT stamped (same rule as accept): signing authorises the work — it pays nothing.
   private withOnSiteSignature(
     signature: SignatureDraft,
     orgName: string,
     now: Date,
   ): Result<Estimate, ValidationError> {
-    const priced = new Estimate({ ...this.p, depPaid: this.depositDue() });
-    const snapshot = priced.toSignedSnapshot(orgName);
+    const snapshot = this.toSignedSnapshot(orgName);
     const built = createSignature({ ...signature, signedAt: now, snapshot });
     if (!built.ok) return built;
     return ok(
       new Estimate({
-        ...priced.p,
+        ...this.p,
         signerName: built.value.signerName,
         signatureSvg: built.value.signatureSvg,
         signerIp: built.value.signerIp,

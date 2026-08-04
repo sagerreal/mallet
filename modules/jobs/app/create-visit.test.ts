@@ -115,6 +115,8 @@ class FakeJobRepository implements JobRepository {
   async save(job: Job): Promise<void> {
     this.store.set(job.props.id, job);
   }
+  // Convert-on-accept (create-job-from-estimate) — not exercised by this suite.
+  async adoptEstimateOnJob(): Promise<boolean> { return false; }
   async insertForEstimate(job: Job): Promise<boolean> {
     this.store.set(job.props.id, job);
     return true;

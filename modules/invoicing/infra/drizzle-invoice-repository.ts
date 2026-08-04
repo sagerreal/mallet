@@ -24,8 +24,14 @@ import { toDomain } from "./invoice-mapper";
 
 const OPEN_STATUSES = ["sent", "partial"] as const;
 
-// Real persistence. Constructed with a tenant-scoped tx; RLS scopes every statement, so this class
-// never filters by org itself. orgId only stamps written rows and scopes the number sequence.
+// Real persistence. Constructed with a tenant-scoped tx, so RLS already scopes every statement —
+// and every read/update ALSO filters `org_id = this.orgId` explicitly, the same belt-and-braces the
+// jobs repository uses. Two independent lines of defense, because a single missing `withTenant`
+// (or a policy edited by hand on the live DB) would otherwise be the only thing standing between
+// one shop's money and another's. The explicit predicate also lets the org-leading indexes be used.
+//
+// It is NOT a substitute for RLS and RLS is not a substitute for it: keep both on every new query.
+// orgId additionally stamps written rows and scopes the number sequence.
 export class DrizzleInvoiceRepository implements InvoiceRepository {
   constructor(
     private readonly tx: TenantTx,
@@ -50,6 +56,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     return {
       num: p.num,
       sourceJobId: p.sourceJobId,
+      scopeJobId: p.scopeJobId,
       leadId: p.leadId,
       title: p.title,
       status: p.status,
@@ -61,6 +68,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       termsDays: p.termsDays,
       sentAt: p.sentAt,
       dueAt: p.dueAt,
+      poNumber: p.poNumber,
       followUpOn: p.followUpOn ?? false,
       followUpStage: p.followUpStage ?? 0,
       updatedAt: p.updatedAt,
@@ -75,9 +83,57 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     const { amountPaidCents: _ownedByApplyPayment, ...updatable } = columns;
     await this.tx
       .insert(invoices)
-      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...columns })
-      .onConflictDoUpdate({ target: invoices.id, set: updatable });
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, publicToken: p.publicToken, ...columns })
+      .onConflictDoUpdate({
+        target: invoices.id,
+        set: {
+          ...updatable,
+          // WRITE-ONCE, enforced in the database: an existing token survives every later save (a
+          // rotated token would strand the pay link already texted to the customer); only a NULL
+          // one adopts the mint. Send-invoice re-reads after save so a racing double-send returns
+          // the token the row actually kept.
+          publicToken: sql`coalesce(${invoices.publicToken}, excluded.public_token)`,
+        },
+      });
     await this.diffLines(invoice);
+  }
+
+  /**
+   * Insert a BRAND-NEW invoice. Cannot overwrite anything, ever.
+   *
+   * `save()` is an UPSERT, which is right for the paths that mutate an invoice they just loaded and
+   * wrong for the paths that mint one from a CLIENT-AUTHORED id. Used as an insert, `save()` made
+   * that id a write primitive: a caller who named an existing invoice's id had its header replaced
+   * — status reset, total rewritten, `source_job_id` nulled (orphaning the real bill in a codebase
+   * whose rule is soft-delete-only), and the recorded payments stranded against a total that no
+   * longer matches. That is strictly worse than the `void` and `patchLines` endpoints deliberately
+   * withheld from the field surface.
+   *
+   * ON CONFLICT DO NOTHING with NO target, so it swallows a collision on ANY unique constraint —
+   * the primary key and the partial unique scope index alike — without aborting the request
+   * transaction. Returns false when nothing was inserted; the caller decides whether that is a lost
+   * race to re-read or a refusal to surface. It must never be ignored.
+   */
+  async insertNew(invoice: Invoice): Promise<boolean> {
+    const p = invoice.props;
+    const inserted = await this.tx
+      .insert(invoices)
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, publicToken: p.publicToken, ...this.headerColumns(invoice) })
+      .onConflictDoNothing()
+      .returning({ id: invoices.id });
+    if (inserted.length === 0) return false;
+    await this.diffLines(invoice);
+    return true;
+  }
+
+  async findByPublicToken(token: string): Promise<Invoice | null> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.publicToken, token), isNull(invoices.deletedAt)))
+      .limit(1);
+    const header = rows[0];
+    return header ? this.hydrate(header) : null;
   }
 
   // Atomically apply a payment to the denormalized header: increment amount_paid_cents and
@@ -95,7 +151,8 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
             when total_cents - deposit_paid_cents - (amount_paid_cents + ${amountCents}) <= 0
             then 'paid' else 'partial' end,
           updated_at = now()
-      where id = ${invoiceId} and deleted_at is null and status in ('sent', 'partial')
+      where id = ${invoiceId} and org_id = ${this.orgId}
+        and deleted_at is null and status in ('sent', 'partial')
       returning id
     `)) as unknown as { id: string }[];
     return { applied: rows.length > 0, invoice: await this.findById(invoiceId) };
@@ -128,6 +185,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
         method: pp.method,
         idempotencyKey: pp.idempotencyKey,
         externalId: pp.externalId,
+        recordedByUserId: pp.recordedByUserId,
         receivedAt: pp.receivedAt,
       })
       .onConflictDoNothing({ target: [payments.orgId, payments.idempotencyKey] })
@@ -139,7 +197,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     const rows = await this.tx
       .select()
       .from(invoices)
-      .where(and(eq(invoices.id, id), isNull(invoices.deletedAt)))
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.id, id), isNull(invoices.deletedAt)))
       .limit(1);
     const header = rows[0];
     return header ? this.hydrate(header) : null;
@@ -149,15 +207,27 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     const rows = await this.tx
       .select()
       .from(invoices)
-      .where(and(eq(invoices.sourceJobId, jobId), isNull(invoices.deletedAt)))
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.sourceJobId, jobId), isNull(invoices.deletedAt)))
       .limit(1);
     const header = rows[0];
     return header ? this.hydrate(header) : null;
   }
 
+  // Scope-linked invoices for a job, newest first. NOT a findBySourceJob twin: scope_job_id has no
+  // unique index (several may exist), so this returns the collection and the caller decides — the
+  // visit-fee path narrows by title to answer "has this job's fee already been raised".
+  async listByScopeJob(jobId: JobId): Promise<Invoice[]> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.scopeJobId, jobId), isNull(invoices.deletedAt)))
+      .orderBy(desc(invoices.createdAt), desc(invoices.id));
+    return Promise.all(rows.map((header) => this.hydrate(header)));
+  }
+
   /** Predicates shared by list() and count(), so the two can never answer different questions. */
   private listConds(filter?: InvoiceFilter): SQL[] {
-    const conds: SQL[] = [isNull(invoices.deletedAt)];
+    const conds: SQL[] = [eq(invoices.orgId, this.orgId), isNull(invoices.deletedAt)];
     if (filter?.status) conds.push(eq(invoices.status, filter.status));
     // The LEDGER's status, which is not the same thing as the status column: "overdue" and "paid"
     // are facts about the balance and the due date. See invoice-views.ts.
@@ -205,7 +275,8 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
         overdueCents: sql<number>`coalesce(sum(${owed}) filter (where ${isOpen} and ${invoices.dueAt} is not null and ${invoices.dueAt} < now()), 0)::int`,
         openCount: sql<number>`count(*) filter (where ${isOpen})::int`,
       })
-      .from(invoices);
+      .from(invoices)
+      .where(eq(invoices.orgId, this.orgId));
     const r = rows[0];
     return {
       openCents: r?.openCents ?? 0,
@@ -232,12 +303,20 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
   }
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Invoice>> {
-    return this.loadHeaderPage([isNull(invoices.deletedAt), eq(invoices.leadId, leadId)], page);
+    return this.loadHeaderPage(
+      [eq(invoices.orgId, this.orgId), isNull(invoices.deletedAt), eq(invoices.leadId, leadId)],
+      page,
+    );
   }
 
   findOverdue(now: Date, page: CursorPage): Promise<Paginated<Invoice>> {
     return this.loadHeaderPage(
-      [isNull(invoices.deletedAt), inArray(invoices.status, [...OPEN_STATUSES]), lt(invoices.dueAt, now)],
+      [
+        eq(invoices.orgId, this.orgId),
+        isNull(invoices.deletedAt),
+        inArray(invoices.status, [...OPEN_STATUSES]),
+        lt(invoices.dueAt, now),
+      ],
       page,
     );
   }
@@ -249,8 +328,17 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       this.tx
         .select()
         .from(invoiceLines)
-        .where(and(eq(invoiceLines.invoiceId, header.id), isNull(invoiceLines.deletedAt))),
-      this.tx.select().from(payments).where(eq(payments.invoiceId, header.id)),
+        .where(
+          and(
+            eq(invoiceLines.orgId, this.orgId),
+            eq(invoiceLines.invoiceId, header.id),
+            isNull(invoiceLines.deletedAt),
+          ),
+        ),
+      this.tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.orgId, this.orgId), eq(payments.invoiceId, header.id))),
     ]);
     return toDomain(header, lineRows, paymentRows);
   }
@@ -261,7 +349,11 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     if (p.lines.length > 0) {
       await this.upsertLines(p.id, p.orgId, p.lines, p.updatedAt);
     }
-    const removeConds = [eq(invoiceLines.invoiceId, p.id), isNull(invoiceLines.deletedAt)];
+    const removeConds = [
+      eq(invoiceLines.orgId, this.orgId),
+      eq(invoiceLines.invoiceId, p.id),
+      isNull(invoiceLines.deletedAt),
+    ];
     if (keptIds.length > 0) removeConds.push(notInArray(invoiceLines.id, keptIds));
     await this.tx.update(invoiceLines).set({ deletedAt: p.updatedAt }).where(and(...removeConds));
   }

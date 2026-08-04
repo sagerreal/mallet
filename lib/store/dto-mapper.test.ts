@@ -9,10 +9,12 @@
  *   - Client-local fields preserved (fu, cust, phone, email)
  *   - origin: "db" stamped on reconciled invoices
  *   - void invoices → archived: true
+ *   - dtoFieldInvoiceToStore: the technician's read path — the balance always survives, the line
+ *     breakdown follows the shop's techSeesPrice, and cost never reaches the store at all
  */
 
 import { describe, it, expect } from "vitest";
-import { dtoEstimateToStore, dtoInvoiceToStore, dtoJobToStoreJob, mapExecution, toStoreVisit, storeStageToBackend, backendStageToStore, type EstimateDTO, type InvoiceDTO } from "./dto-mapper";
+import { dtoEstimateToStore, dtoFieldInvoiceToStore, dtoInvoiceToStore, dtoJobToStoreJob, mapExecution, toStoreVisit, storeStageToBackend, backendStageToStore, type EstimateDTO, type FieldInvoiceDTO, type InvoiceDTO } from "./dto-mapper";
 import type { Estimate, Invoice } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +38,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     taxBps: 800,     // 8%
     depBps: 2000,    // 20%
     validDays: 30,
+    jobId: null,
     lines: [
       {
         id: "line-1",
@@ -65,6 +68,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     tax: makeMoneyDTO(1520),
     total: makeMoneyDTO(20520),   // $205.20
     depositDue: makeMoneyDTO(4104),
+    depositPaid: makeMoneyDTO(0),
     sentAt: null,
     acceptedAt: null,
     declinedAt: null,
@@ -122,6 +126,9 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     ],
     sentAt: "2026-06-01T09:00:00.000Z",
     dueAt: "2026-06-15T00:00:00.000Z",
+    poNumber: null,
+    publicToken: null,
+    publicUrl: null,
     createdAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
   };
@@ -521,6 +528,60 @@ describe("dtoJobToStoreJob status remap (zero-visit fix)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// dtoJobToStoreJob — terminal backend status wins over visit placement
+// (money-on-the-floor fix: a complete job with an unplaced visit was reading
+// back as "unscheduled" and vanishing from Money's ready-to-bill list)
+// ---------------------------------------------------------------------------
+
+describe("dtoJobToStoreJob terminal status wins over visit-placement recalc", () => {
+  it("job 'complete' + one complete but UNPLACED visit → store 'done' (the regression)", () => {
+    const unplacedCompleteVisit = {
+      ...visitDTO,
+      status: "complete" as const,
+      scheduledDate: null,
+      scheduledStart: null,
+      scheduledEnd: null,
+    };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "complete",
+      visits: [unplacedCompleteVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("job 'complete' + one PLACED complete visit → store 'done' (unchanged)", () => {
+    const placedCompleteVisit = { ...visitDTO, status: "complete" as const };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "complete",
+      visits: [placedCompleteVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("job 'scheduled' + an unplaced visit → store 'unscheduled' (unchanged — placement derivation survives for non-terminal jobs)", () => {
+    const unplacedVisit = { ...visitDTO, scheduledDate: null, scheduledStart: null, scheduledEnd: null };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "scheduled",
+      visits: [unplacedVisit],
+    } as never);
+    expect(job.status).toBe("unscheduled");
+  });
+
+  it("job 'canceled' + an unplaced pending visit → store 'done' (terminal wins)", () => {
+    const unplacedVisit = { ...visitDTO, scheduledDate: null, scheduledStart: null, scheduledEnd: null };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "canceled",
+      visits: [unplacedVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // toStoreVisit — dur precedence (duration_minutes fix)
 // durationMinutes is authoritative; the start→end window is the legacy fallback.
 // ---------------------------------------------------------------------------
@@ -670,5 +731,167 @@ describe("dtoInvoiceToStore — the recorded tax split", () => {
     const inv = dtoInvoiceToStore(dto, makePriorInv());
     expect(inv.tax).toBe(0);
     expect(inv.pricing?.tax).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dtoFieldInvoiceToStore — the TECHNICIAN's read path.
+//
+// The owner's rule, in one sentence: a technician assigned to the job always reads the money they
+// are collecting (total, balance, the payments already taken), the per-line RATE still follows the
+// shop's techSeesPrice, and line COST is never theirs at any setting. These tests are the client
+// half of that rule; modules/invoicing/api/field-invoice-dto.test.ts is the wire half.
+// ---------------------------------------------------------------------------
+
+function makeFieldInvoiceDTO(overrides: Partial<FieldInvoiceDTO> = {}): FieldInvoiceDTO {
+  return {
+    id: "inv-333",
+    num: "INV-0810",
+    sourceJobId: "job-xyz",
+    scopeJobId: null,
+    leadId: "lead-abc",
+    customerName: "Sofia Hernandez",
+    title: "Water heater",
+    status: "sent",
+    total: makeMoneyDTO(84_000),      // $840.00
+    tax: makeMoneyDTO(0),
+    depositPaid: makeMoneyDTO(0),
+    amountPaid: makeMoneyDTO(0),
+    due: makeMoneyDTO(84_000),
+    termsDays: 0,
+    lines: [
+      { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(84_000), position: 0 },
+    ],
+    payments: [],
+    sentAt: "2026-08-01T09:00:00.000Z",
+    dueAt: null,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("dtoFieldInvoiceToStore — the money a technician may always read", () => {
+  it("carries the total, the balance and what has been paid", () => {
+    const inv = dtoFieldInvoiceToStore(
+      makeFieldInvoiceDTO({
+        depositPaid: makeMoneyDTO(10_000),
+        amountPaid: makeMoneyDTO(25_000),
+        due: makeMoneyDTO(59_000),
+      }),
+    );
+    expect(inv.total).toBe(840);
+    expect(inv.due).toBe(590);
+    expect(inv.depPaid).toBe(100);
+    expect(inv.paidTotal).toBe(250);
+  });
+
+  it("carries each payment's amount and method — the receipt a customer is owed at the door", () => {
+    const inv = dtoFieldInvoiceToStore(
+      makeFieldInvoiceDTO({
+        status: "paid",
+        amountPaid: makeMoneyDTO(84_000),
+        due: makeMoneyDTO(0),
+        payments: [
+          { id: "pay-1", amount: makeMoneyDTO(84_000), method: "cash", receivedAt: "2026-08-01T17:05:00.000Z" },
+        ],
+      }),
+    );
+    expect(inv.payments).toHaveLength(1);
+    expect(inv.payments[0]?.amt).toBe(840);
+    expect(inv.payments[0]?.method).toBe("cash");
+  });
+
+  it("stamps origin db and marks a void invoice archived, like its office twin", () => {
+    expect(dtoFieldInvoiceToStore(makeFieldInvoiceDTO()).origin).toBe("db");
+    expect(dtoFieldInvoiceToStore(makeFieldInvoiceDTO({ status: "void" })).archived).toBe(true);
+  });
+
+  // scopeJobId authorizes the fee; it is not the job whose bill this is. Folding it into the
+  // store's jobId would make every surface that looks a job's invoice up by jobId find the fee.
+  it("never lets the authorizing scope job masquerade as the bill's own job", () => {
+    const inv = dtoFieldInvoiceToStore(
+      makeFieldInvoiceDTO({ sourceJobId: null, scopeJobId: "job-xyz", title: "Visit fee — service call" }),
+    );
+    expect(inv.jobId).toBeNull();
+  });
+
+  // A technician's store holds no invoices (the hydrator is !isTech-gated), so the raise adopts a
+  // record this device has never seen. The mapper has to survive that.
+  it("maps with no prior record at all", () => {
+    const inv = dtoFieldInvoiceToStore(makeFieldInvoiceDTO());
+    expect(inv.cust).toBe("Sofia Hernandez");
+    expect(inv.phone).toBe("");
+    expect(inv.email).toBeUndefined();
+  });
+});
+
+describe("dtoFieldInvoiceToStore — cost is never a technician's business", () => {
+  // The wire shape has no `cost` key at all, so the only way one could reach the store is if this
+  // mapper invented it. Assert the absence of the key, not merely a falsy value: a `c: 0` would
+  // render as a real $0 cost in any surface that prints it.
+  it("puts no cost on any mapped line, prices visible", () => {
+    const inv = dtoFieldInvoiceToStore(makeFieldInvoiceDTO());
+    expect(inv.lines).toHaveLength(1);
+    for (const line of inv.lines) {
+      expect(Object.keys(line).sort()).toEqual(["d", "q", "r"]);
+      expect("c" in line).toBe(false);
+    }
+  });
+
+  it("carries no cost through from a prior office-shaped record either", () => {
+    const prior = makePriorInv({ lines: [{ d: "Water heater — 40 gal", q: 1, r: 840, c: 500 }] });
+    const inv = dtoFieldInvoiceToStore(makeFieldInvoiceDTO(), prior);
+    expect(inv.lines.every((l) => !("c" in l))).toBe(true);
+  });
+});
+
+describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
+  const hidden = () =>
+    makeFieldInvoiceDTO({
+      lines: [
+        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: null, position: 0 },
+        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, position: 1 },
+      ],
+    });
+
+  // The balance is the whole reason the technician is standing there. It is never redacted.
+  it("still carries the balance the technician has to collect", () => {
+    const inv = dtoFieldInvoiceToStore(hidden());
+    expect(inv.total).toBe(840);
+    expect(inv.due).toBe(840);
+  });
+
+  // A nulled rate has no honest home in the store's InvoiceLine (`r` is a plain number), and
+  // writing 0 would print a fabricated price on a customer-facing bill. Drop the breakdown.
+  it("drops the line breakdown rather than printing a nulled rate as $0", () => {
+    const inv = dtoFieldInvoiceToStore(hidden());
+    expect(inv.lines).toEqual([]);
+  });
+
+  it("drops the WHOLE breakdown when even one rate is hidden — never a partial bill", () => {
+    const dto = makeFieldInvoiceDTO({
+      lines: [
+        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(80_000), position: 0 },
+        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, position: 1 },
+      ],
+    });
+    expect(dtoFieldInvoiceToStore(dto).lines).toEqual([]);
+  });
+
+  // Hidden is not free: a real $0 line arrives as {cents: 0} and must survive as a $0 line.
+  it("keeps a genuine $0 line — {cents: 0} is not the redaction signal", () => {
+    const dto = makeFieldInvoiceDTO({
+      lines: [
+        { id: "linv-1", description: "Warranty callback", quantity: 1, rate: makeMoneyDTO(0), position: 0 },
+      ],
+    });
+    expect(dtoFieldInvoiceToStore(dto).lines).toEqual([{ d: "Warranty callback", q: 1, r: 0 }]);
+  });
+
+  // The prior record on this device may hold a fully-priced breakdown from before the setting was
+  // turned off. It must not be carried forward as if the server had just sent it.
+  it("does not fall back to a prior record's visible lines", () => {
+    const prior = makePriorInv({ lines: [{ d: "Water heater — 40 gal", q: 1, r: 840 }] });
+    expect(dtoFieldInvoiceToStore(hidden(), prior).lines).toEqual([]);
   });
 });

@@ -8,8 +8,8 @@ import { call, CircuitBreaker, TimeoutError } from "@mallet/platform/resilience"
 
 // Only TRANSIENT failures are worth retrying. A deterministic client error (bad request, auth,
 // declined card) fails identically on every attempt, so retrying it wastes round-trips AND — because
-// the breaker is shared process-wide (one StripeClient in the DI root) — counts N times toward the
-// circuit breaker, which could trip card payments for EVERY tenant. So those must throw on the first
+// the breaker is shared process-wide (ONE client via getSharedStripeClient below) — counts N times
+// toward the circuit breaker, which could trip card payments for EVERY tenant. So those must throw on the first
 // attempt; we retry only timeouts, dropped connections, 5xx (StripeAPIError), and 429 (rate limit).
 export const isRetriableStripeError = (error: unknown): boolean =>
   error instanceof TimeoutError ||
@@ -17,16 +17,30 @@ export const isRetriableStripeError = (error: unknown): boolean =>
   error instanceof Stripe.errors.StripeAPIError ||
   error instanceof Stripe.errors.StripeRateLimitError;
 
+/**
+ * WHAT the money is for. Stamped into the session metadata as `kind`, which is how the webhook and
+ * the success-page reconcile decide which recorder a settled session belongs to — an invoice
+ * payment goes to the payments ledger, a quote deposit goes to estimates.dep_paid_cents. A single
+ * untagged `invoiceId` could not express the second one, and a deposit session that fell through
+ * to the invoice recorder would credit an unrelated invoice.
+ *
+ * Sessions minted before `kind` existed carry only {orgId, invoiceId}; both readers still treat an
+ * absent kind as "payment", so in-flight ones settle correctly.
+ */
+export type CheckoutSubject =
+  | { readonly kind: "payment"; readonly invoiceId: string }
+  | { readonly kind: "deposit"; readonly estimateId: string };
+
 export interface CreateCheckoutParams {
   readonly amountCents: number;
   readonly currency: string; // "usd"
   readonly orgId: string;
-  readonly invoiceId: string;
+  readonly subject: CheckoutSubject;
   readonly description: string;
   readonly idempotencyKey: string;
   readonly successUrl: string;
   readonly cancelUrl: string;
-  // Reserved for the Connect migration (destination charges) — unused in the pilot platform charge.
+  // Connect destination charge: settle to the shop's connected account and skim the platform fee.
   readonly connectedAccountId?: string;
   readonly applicationFeeCents?: number;
 }
@@ -64,7 +78,12 @@ export class StripeClient {
   }
 
   async createCheckoutSession(params: CreateCheckoutParams): Promise<CheckoutResult> {
-    const metadata = { orgId: params.orgId, invoiceId: params.invoiceId };
+    // Stamped on BOTH the session and the payment intent: the webhook reads the session's copy,
+    // and the intent's copy survives on the charge for anyone auditing it in the Stripe dashboard.
+    const metadata: Record<string, string> =
+      params.subject.kind === "deposit"
+        ? { orgId: params.orgId, estimateId: params.subject.estimateId, kind: "deposit" }
+        : { orgId: params.orgId, invoiceId: params.subject.invoiceId, kind: "payment" };
     // Destination charge (Connect, PR2): settle the funds to the shop's connected account and skim
     // Mallet's application fee. on_behalf_of makes the charge present as the shop's; transfer_data
     // .destination routes the money. Attached only when a connected account is supplied so the
@@ -105,6 +124,15 @@ export class StripeClient {
     );
     if (!session.url) throw new Error("stripe returned a checkout session without a url");
     return { url: session.url, sessionId: session.id };
+  }
+
+  // Read back a Checkout Session (success-page reconcile). GET — safe to retry; no expansions
+  // needed (payment_intent arrives as its string id, which is all the recorder keys on).
+  async retrieveCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session> {
+    return call(
+      () => this.stripe.checkout.sessions.retrieve(sessionId, {}, { timeout: 10_000 }),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
   }
 
   // Create an Express connected account for a shop. Idempotency-keyed so a retry returns the SAME
@@ -164,3 +192,20 @@ export class StripeClient {
     return this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
   }
 }
+
+// ── process-wide shared instance ─────────────────────────────────────────────
+//
+// The circuit breaker lives ON the client, so a client constructed per request carries a breaker
+// that is thrown away before it can ever accumulate five failures — a breaker that cannot trip.
+// Every request-path caller (DI root, webhook, reconcile, public checkout) must take the client
+// from here so one breaker sees ALL Stripe traffic in the process. Keyed by the secret key so a
+// rotation (or a test with a different key) mints a fresh client instead of talking with a stale
+// credential. Same lazy-singleton shape as trpc/di.ts's getAppDeps cache.
+let sharedClient: { key: string; client: StripeClient } | null = null;
+
+export const getSharedStripeClient = (secretKey: string): StripeClient => {
+  if (!sharedClient || sharedClient.key !== secretKey) {
+    sharedClient = { key: secretKey, client: new StripeClient(secretKey) };
+  }
+  return sharedClient.client;
+};

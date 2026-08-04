@@ -15,6 +15,7 @@ import {
   type LeadId,
   type JobId,
   type InvoiceId,
+  type UserId,
 } from "@mallet/shared/types";
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
@@ -32,6 +33,7 @@ interface InvOpts {
   withLine?: boolean;
   num?: string;
   status?: InvoiceStatus;
+  publicToken?: string | null;
 }
 
 const buildInvoice = (orgId: OrgId, leadId: LeadId, o: InvOpts = {}): Invoice => {
@@ -70,6 +72,7 @@ const buildInvoice = (orgId: OrgId, leadId: LeadId, o: InvOpts = {}): Invoice =>
     termsDays: 7,
     sentAt: isSent ? now : null,
     dueAt: isSent ? new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) : null,
+    publicToken: o.publicToken ?? null,
     createdAt: now,
     updatedAt: now,
   });
@@ -77,13 +80,14 @@ const buildInvoice = (orgId: OrgId, leadId: LeadId, o: InvOpts = {}): Invoice =>
   return r.value;
 };
 
-const buildPayment = (key: string): Payment => {
+const buildPayment = (key: string, recordedByUserId: UserId | null = null): Payment => {
   const r = Payment.create({
     id: randomUUID(),
     amount: money(10_000),
     method: "cash",
     idempotencyKey: key,
     externalId: null,
+    recordedByUserId,
     receivedAt: new Date("2026-06-05T00:00:00Z"),
   });
   if (!isOk(r)) throw new Error(r.error.message);
@@ -178,6 +182,102 @@ suite("DrizzleInvoiceRepository against live Supabase RLS", () => {
     });
     expect(outcome.a).toBe(true);
     expect(outcome.b).toBe(false); // same key -> not applied twice
+  });
+
+  it("persists the public token, finds by it, and never rotates it (write-once in SQL)", async () => {
+    const orgA = asOrgId(orgAId);
+    const tokenA = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    const tokenB = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    const outcome = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      const inv = buildInvoice(orgA, asLeadId(leadAId), {
+        status: "sent",
+        total: 10_000,
+        publicToken: tokenA,
+        num: await repo.nextNumber(),
+      });
+      await repo.save(inv);
+      const found = await repo.findByPublicToken(tokenA);
+
+      // Save AGAIN with a different in-memory token — the COALESCE guard must keep the first.
+      const rotated = Invoice.create({ ...inv.props, publicToken: tokenB });
+      if (!isOk(rotated)) throw new Error(rotated.error.message);
+      await repo.save(rotated.value);
+      const afterRotate = await repo.findById(inv.props.id);
+      const byOldToken = await repo.findByPublicToken(tokenA);
+      const byNewToken = await repo.findByPublicToken(tokenB);
+      return {
+        foundId: found?.props.id,
+        keptToken: afterRotate?.props.publicToken,
+        oldStillResolves: byOldToken?.props.id,
+        newResolves: byNewToken,
+      };
+    });
+    expect(outcome.foundId).toBeTruthy();
+    expect(outcome.keptToken).toBe(tokenA); // write-once — the rotation attempt was ignored
+    expect(outcome.oldStillResolves).toBeTruthy();
+    expect(outcome.newResolves).toBeNull();
+  });
+
+  it("findByPublicToken respects soft-delete", async () => {
+    const orgA = asOrgId(orgAId);
+    const token = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    const invId = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      const inv = buildInvoice(orgA, asLeadId(leadAId), {
+        status: "sent",
+        publicToken: token,
+        num: await repo.nextNumber(),
+      });
+      await repo.save(inv);
+      return inv.props.id;
+    });
+    await admin`update invoices set deleted_at = now() where id = ${invId}`;
+    const found = await withTenant(orgA, async (tx) =>
+      new DrizzleInvoiceRepository(tx, orgA).findByPublicToken(token),
+    );
+    expect(found).toBeNull(); // a revoked/archived invoice's link goes dark
+  });
+
+  it("findByPublicToken is RLS-scoped — another org's tenant tx resolves nothing", async () => {
+    const orgA = asOrgId(orgAId);
+    const token = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      await repo.save(
+        buildInvoice(orgA, asLeadId(leadAId), { status: "sent", publicToken: token, num: await repo.nextNumber() }),
+      );
+    });
+    const orgB = asOrgId(orgBId);
+    const crossOrg = await withTenant(orgB, async (tx) =>
+      new DrizzleInvoiceRepository(tx, orgB).findByPublicToken(token),
+    );
+    expect(crossOrg).toBeNull();
+  });
+
+  it("public_token is globally unique when present (partial unique index)", async () => {
+    const orgA = asOrgId(orgAId);
+    const token = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
+    await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      await repo.save(
+        buildInvoice(orgA, asLeadId(leadAId), { status: "sent", publicToken: token, num: await repo.nextNumber() }),
+      );
+    });
+    // Drizzle wraps the pg error ("Failed query: …") and keeps the constraint violation in
+    // `cause` — assert on both so the test states WHICH index refused the row.
+    const thrown: unknown = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgA);
+      await repo.save(
+        buildInvoice(orgA, asLeadId(leadAId), { status: "sent", publicToken: token, num: await repo.nextNumber() }),
+      );
+    }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(thrown).not.toBeNull();
+    const text = `${String(thrown)} ${String((thrown as Error | null)?.cause ?? "")}`;
+    expect(text).toMatch(/invoices_public_token_uidx|duplicate key/);
   });
 
   it("cannot see another org's invoice — by id or in a list", async () => {

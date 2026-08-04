@@ -13,9 +13,10 @@
 "use client";
 
 import { useState } from "react";
-import { fmt$ } from "@/lib/format";
+import { fmt$, formatMoney } from "@/lib/format";
 import type { QuoteTier } from "@/modules/quoting/domain/estimate";
 import { authorizationText } from "@/modules/quoting/domain/authorization-text";
+import { payableDepositCents } from "@/modules/quoting/domain/deposit-payable";
 import { SignaturePad } from "@/components/shared/signature-pad";
 
 /** Interaction phase — owned by QuoteLines so the add-on toggles above the
@@ -34,6 +35,99 @@ export type QuotePhase =
 const DECLINE_REASONS = ["Price", "Timing", "Going with someone else"] as const;
 const MAX_CHANGE_MESSAGE = 2000;
 
+/**
+ * The deposit call-to-action on an approved quote.
+ *
+ * Rendered in two places for one reason: a customer reaches an approved quote either by approving
+ * it in this session (below, in the approved state) or by reopening the link later (QuoteLines'
+ * settled branch, where QuoteActions no longer exists). Both hand off to the same POST.
+ *
+ * It carries the amount because a primary must name what it charges — but it does NOT restate the
+ * "deposit due today · the rest when the job's done" sentence that the totals block directly above
+ * it already makes. One statement of the ask, one button to act on it.
+ *
+ * Only rendered when the deposit is genuinely payable (owed, and the shop can take a card); the
+ * caller decides that, so there is never a button here whose only outcome is an error.
+ */
+export function PayDepositButton({
+  token,
+  amountCents,
+}: {
+  readonly token: string;
+  readonly amountCents: number;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function payDeposit() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/public/quote/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create_deposit_checkout" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        // The server's copy is already written for this reader — don't paraphrase it.
+        setError(data.error ?? "Couldn't start the payment — try again.");
+        setBusy(false);
+        return;
+      }
+      // Leave `busy` on through the redirect so the button can't double-fire.
+      window.location.assign(data.url);
+    } catch {
+      setError("Couldn't reach the server. Check your connection and try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: "var(--red-bg)",
+            border: "1px solid var(--red)",
+            borderRadius: "var(--radius-sm)",
+            padding: "var(--space-2) var(--space-3)",
+            fontSize: "var(--type-base)",
+            color: "var(--red)",
+            marginTop: "var(--space-3)",
+          }}
+        >
+          {error}
+        </div>
+      )}
+      <button
+        className="btn primary"
+        style={{
+          width: "100%",
+          padding: "var(--space-3)",
+          fontSize: "var(--type-md)",
+          marginTop: "var(--space-3)",
+        }}
+        onClick={() => void payDeposit()}
+        disabled={busy}
+        aria-busy={busy}
+      >
+        {/* formatMoney, not the page's fmt$: fmt$ rounds to whole dollars, and a control that
+            STARTS a charge must name the exact amount it will take. Same choice, same reason, as
+            the public invoice page's Pay button. */}
+        {busy ? "Opening secure checkout…" : `Pay the deposit — ${formatMoney(amountCents)}`}
+      </button>
+      <p
+        className="muted"
+        style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-2)" }}
+      >
+        Card payment via Stripe &mdash; you&rsquo;ll be taken to a secure checkout.
+      </p>
+    </>
+  );
+}
+
 interface QuoteActionsProps {
   readonly token: string;
   readonly totalCents: number;
@@ -43,6 +137,9 @@ interface QuoteActionsProps {
    *  data — this one is display only and is never sent. */
   readonly orgName: string;
   readonly depositCents: number;
+  /** Can the shop take a card right now (Connect onboarded + charges enabled)? Gates the
+   *  pay-the-deposit primary shown after approval — see PayDepositButton. */
+  readonly cardPaymentAvailable?: boolean;
   /** If the customer already submitted a change request, show the received state immediately. */
   readonly changeAlreadyRequested?: boolean;
   /** Optional add-on line IDs the customer toggled ON — sent with the accept so the
@@ -63,6 +160,7 @@ export function QuoteActions({
   totalCents,
   orgName,
   depositCents,
+  cardPaymentAvailable = false,
   changeAlreadyRequested,
   selectedLineIds,
   chosenTier,
@@ -166,10 +264,27 @@ export function QuoteActions({
   }
 
   if (phase === "approved") {
+    // Just approved, so nothing can have been paid yet: the whole deposit is what's owed. The
+    // deposit is asked for the moment the agreement is made — sending them away to wait for an
+    // email is how a deposit stops getting collected.
+    //
+    // Same predicate as the server's mint guard and the page's return-visit branch. This used to
+    // be a hand-written `cardPaymentAvailable && depositCents > 0`, which was missing the card
+    // minimum the other two applied — so a sub-minimum deposit rendered a button the server would
+    // always refuse.
+    const payable = payableDepositCents({
+      accepted: true,
+      depositDueCents: depositCents,
+      depositPaidCents: 0,
+      cardPaymentAvailable,
+    });
     return (
-      <div className="deltabanner" style={{ textAlign: "center", marginTop: "var(--space-2)" }}>
-        Approved — thank you! We&rsquo;ll be in touch soon.
-      </div>
+      <>
+        <div className="deltabanner" style={{ textAlign: "center", marginTop: "var(--space-2)" }}>
+          Approved — thank you! We&rsquo;ll be in touch soon.
+        </div>
+        {payable > 0 && <PayDepositButton token={token} amountCents={payable} />}
+      </>
     );
   }
 

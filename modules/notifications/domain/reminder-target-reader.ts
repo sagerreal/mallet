@@ -13,6 +13,8 @@ export interface ReminderTarget {
   readonly phone: string | null; // lead contact
   readonly email: string | null;
   readonly balanceCents: number; // invoice balance due (0 for estimates)
+  /** The target's public-page token (invoices: /i/<token>). Null before first send / pre-migration. */
+  readonly publicToken: string | null;
   readonly createdAt: Date; // for keyset pagination
 }
 

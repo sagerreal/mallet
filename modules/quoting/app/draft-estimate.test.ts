@@ -308,4 +308,21 @@ describe("DraftEstimateUseCase — ai_draft snapshot persistence", () => {
     if (!isOk(r)) return;
     expect(await repo.getAiDraft(r.value.props.id)).toBeNull();
   });
+
+  // The scope-visit link: a quote drafted from the pipeline's scoped card carries the
+  // walkthrough job it prices, and accept converts that job instead of minting a twin.
+  it("carries the scope-visit jobId onto the estimate; absent means null", async () => {
+    const withJob = await draft.exec({
+      ...cmd([oneLine()]),
+      jobId: "99999999-9999-9999-9999-999999999999",
+    });
+    expect(isOk(withJob)).toBe(true);
+    if (isOk(withJob)) {
+      expect(withJob.value.props.jobId).toBe("99999999-9999-9999-9999-999999999999");
+    }
+
+    const without = await draft.exec(cmd([oneLine()]));
+    expect(isOk(without)).toBe(true);
+    if (isOk(without)) expect(without.value.props.jobId).toBeNull();
+  });
 });

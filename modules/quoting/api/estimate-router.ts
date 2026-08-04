@@ -3,7 +3,8 @@ import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { asEstimateId, asJobId, asLeadId, toPage } from "@mallet/shared/types";
+import { asEstimateId, asJobId, asLeadId, toPage, type OrgId } from "@mallet/shared/types";
+import type { TenantTx } from "@mallet/shared/db/tx";
 import { ESTIMATE_STATUSES, type Estimate, type EstimateStatus } from "../domain/estimate";
 import type { QuoteTier } from "../domain/estimate";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
@@ -71,6 +72,11 @@ const estimateDTO = z.object({
   tax: moneyDTO,
   total: moneyDTO,
   depositDue: moneyDTO,
+  // What has actually been COLLECTED, summed from the quote's deposit ledger. Distinct from
+  // depositDue (the ASK) and shipped alongside it because the office had no way to see a landed
+  // deposit at all — it only appeared once the final invoice netted it out, which is exactly what
+  // let a whole class of deposit bugs sit unnoticed.
+  depositPaid: moneyDTO,
   validDays: z.number().int().nullable(),
   sentAt: z.string().nullable(),
   // Is the shop still chasing this one, and how many nudges in.
@@ -81,6 +87,8 @@ const estimateDTO = z.object({
   declineReason: z.string().nullable(),
   changeRequestedAt: z.string().nullable(),
   changeRequest: z.string().nullable(),
+  /** The scope-visit job this quote prices, when it came from a walkthrough. Accept converts it. */
+  jobId: z.string().uuid().nullable(),
   // Good/Better/Best: non-null recommendedTier marks a tiered quote; acceptedTier records the
   // customer's (or office's) resolved choice; tierNames are the display labels; termsSnapshot
   // is the terms text frozen at draft time.
@@ -225,6 +233,13 @@ const draftInput = z
      * exactly as they agreed to the original, so the invoice can prove it.
      */
     changeOrderForJobId: z.string().uuid().optional(),
+    /**
+     * The scope-visit job this quote prices — the walkthrough the composer was opened from
+     * (?job= on the scoped pipeline card). Accept CONVERTS that job into the sold work instead
+     * of minting a duplicate. Client input: validated in the resolver against an org-scoped read
+     * (must exist in this org and still be kind='estimate') before it is stored.
+     */
+    jobId: z.string().uuid().optional(),
     // The AI drafter's ORIGINAL lines — sent only when this draft originated from the AI.
     // Persisted write-once to estimates.ai_draft; the send path diffs it against the lines
     // actually sent (edit-delta mining → proposed quoting_rules).
@@ -378,6 +393,7 @@ const toEstimateDTO = (estimate: Estimate) => {
     tax: money(estimate.taxAmount()),
     total: money(estimate.total()),
     depositDue: money(estimate.depositDue()),
+    depositPaid: money(p.depPaid),
     validDays: p.validDays,
     sentAt: p.sentAt?.toISOString() ?? null,
     followUpOn: p.followUpOn ?? false,
@@ -387,6 +403,7 @@ const toEstimateDTO = (estimate: Estimate) => {
     declineReason: p.declineReason,
     changeRequestedAt: p.changeRequestedAt?.toISOString() ?? null,
     changeRequest: p.changeRequest ?? null,
+    jobId: p.jobId,
     recommendedTier: p.recommendedTier,
     acceptedTier: p.acceptedTier,
     tierNames: p.tierNames,
@@ -484,6 +501,30 @@ const toSummaryDTO = (estimate: Estimate, customerName: string | null = null) =>
   };
 };
 
+/**
+ * A quote may only claim a scope-visit job the org actually owns, and only while that job is
+ * still a walkthrough. The job id is CLIENT input: the org-scoped read (explicit eq(orgId) + RLS
+ * on the tenant tx) refuses another tenant's id, and the kind gate refuses linking a quote to
+ * sold work — convert-at-accept must never grab a job that is already someone's work order.
+ * Refused loudly, not stored quietly.
+ */
+const assertScopeVisitJob = async (
+  tx: TenantTx,
+  orgId: OrgId,
+  jobId: string,
+): Promise<void> => {
+  const job = await new DrizzleJobRepository(tx, orgId).findById(asJobId(jobId));
+  if (!job) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "job not found for this quote" });
+  }
+  if (job.props.kind !== "estimate") {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "a quote can only be linked to an estimate visit, not existing work",
+    });
+  }
+};
+
 // Layer 5: thin transport. Build the org-scoped use-case from the request's tx + ports, delegate,
 // map the result. No business logic here.
 export const createEstimateRouter = () =>
@@ -495,6 +536,8 @@ export const createEstimateRouter = () =>
       .input(draftInput)
       .output(estimateDTO)
       .mutation(async ({ ctx, input }) => {
+        // Boundary guard on client input — see assertScopeVisitJob.
+        if (input.jobId) await assertScopeVisitJob(ctx.tx, ctx.principal.orgId, input.jobId);
         const repo = new DrizzleEstimateRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new DraftEstimateUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec({
@@ -519,6 +562,7 @@ export const createEstimateRouter = () =>
           tierNames: input.tierNames ?? null,
           termsSnapshot: input.termsSnapshot ?? null,
           changeOrderForJobId: input.changeOrderForJobId ?? null,
+          jobId: input.jobId ?? null,
           aiDraftLines:
             input.aiDraft?.lines.map((line) => ({
               description: line.description,

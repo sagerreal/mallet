@@ -207,6 +207,7 @@ const makeSentEstimate = (
     declineReason: null,
     changeRequestedAt: null,
     changeOrderForJobId: null,
+    jobId: null,
     changeRequest: null,
     publicToken: token,
     recommendedTier: null,
@@ -248,6 +249,7 @@ const makeDraftEstimate = (
     declineReason: null,
     changeRequestedAt: null,
     changeOrderForJobId: null,
+    jobId: null,
     changeRequest: null,
     publicToken: token,
     recommendedTier: null,
@@ -288,7 +290,9 @@ class FakePublicEstimateReader {
     if (!e) return null;
     this.viewedTokens.push(token);
     const customerFirstName = e.leadName.split(" ")[0] ?? e.leadName;
-    return { estimate: e.estimate, orgName: e.orgName, customerFirstName };
+    // chargesEnabled gates the page's pay-the-deposit primary; these cases are about
+    // accept/decline/change, so the fixture reports the shop as card-ready.
+    return { estimate: e.estimate, orgName: e.orgName, customerFirstName, chargesEnabled: true };
   }
 
   async resolveOrgByToken(token: string): Promise<{ estimateId: string; orgId: OrgId } | null> {
@@ -544,15 +548,17 @@ describe("acceptPublicQuote — optional add-on selection", () => {
     repoA.inject(est);
   });
 
-  it("valid subset → the selected add-on is committed: total and depPaid reflect the tuned lines", async () => {
+  it("valid subset → the selected add-on is committed: total and the deposit ask reflect the tuned lines", async () => {
     const result = await testAcceptPublicQuote(OPT_TOKEN, reader, repoByOrg, bus, clock, [OPT_LINE_ID]);
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") return;
     expect(result.estimate.props.status).toBe("accepted");
     // 100_000 fixed + 5_000 committed add-on
     expect(result.estimate.total()).toBe(105_000);
-    // depPaid is stamped from the COMMITTED lines (50% of the tuned total).
-    expect(result.estimate.props.depPaid).toBe(52_500);
+    // The deposit ASK derives from the committed lines; depPaid stays 0 — accepting a quote
+    // agrees to the work, it pays nothing (payments are recorded when money actually lands).
+    expect(result.estimate.depositDue()).toBe(52_500);
+    expect(result.estimate.props.depPaid).toBe(0);
     // Both lines are now non-optional.
     expect(result.estimate.props.lines).toHaveLength(2);
     expect(result.estimate.props.lines.every((l) => !l.props.isOptional)).toBe(true);
@@ -582,7 +588,8 @@ describe("acceptPublicQuote — optional add-on selection", () => {
     if (result.kind !== "ok") return;
     expect(result.estimate.props.status).toBe("accepted");
     expect(result.estimate.total()).toBe(100_000);
-    expect(result.estimate.props.depPaid).toBe(50_000);
+    expect(result.estimate.depositDue()).toBe(50_000);
+    expect(result.estimate.props.depPaid).toBe(0); // agreed, not paid
     // Original line set untouched — the add-on keeps its id and stays optional.
     const opt = result.estimate.props.lines.find((l) => l.props.isOptional);
     expect(opt?.props.id).toBe(OPT_LINE_ID);

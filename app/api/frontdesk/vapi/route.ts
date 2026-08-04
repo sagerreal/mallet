@@ -304,6 +304,9 @@ const buildVoiceToolDeps = (
     settings: new DrizzleSettingsReader(tx, orgId),
     availability: new DrizzleAvailabilityReader(tx, orgId),
     geocoder,
+    // The same reader construction the assistant-request and end-of-call paths use, so the price
+    // book_visit persists/speaks is resolved from the identical source as prompt + audit.
+    pricebookPrices: new DrizzlePricebookPriceReader(tx, orgId),
     sendNotification: new SendNotificationUseCase(
       new DrizzleNotificationRepository(tx, orgId),
       notificationSender,
