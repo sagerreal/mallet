@@ -117,6 +117,14 @@ export interface InvoicesSlice {
    */
   sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
   archiveInvoice: (id: string) => void;
+  /**
+   * Remove a store-local invoice that never reached the server (or whose sendInvoice failed
+   * and was rolled back to its pre-send "manual" snapshot — see sendInvoice's catch). Refuses
+   * to touch a "db"-origin invoice — that one has a real row, and the correct way to remove it
+   * is archiveInvoice/void, never a local delete. No-op if origin is already "db" or the id
+   * isn't found.
+   */
+  removeLocalInvoice: (id: string) => void;
 }
 
 export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSlice> = (set, get) => ({
@@ -406,6 +414,23 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         reportWriteError("sendInvoice", err);
         return { ok: false, error: err instanceof Error ? err.message : "Couldn't send the invoice." };
       });
+  },
+
+  // ---------------------------------------------------------------------------
+  // removeLocalInvoice — deletes a store-local-only invoice (an optimistic addInvoice whose
+  // sendInvoice never reached the server, or was rolled back to its pre-send snapshot). Guards
+  // on origin !== "db" so a caller can never accidentally delete a real, persisted invoice —
+  // that path is archiveInvoice/void.
+  //
+  // Callers: tech-job-modal.tsx's collectVisitFee, on a failed fee-invoice send — the failed
+  // optimistic draft must not linger (it would otherwise satisfy the "already collected" guard
+  // and permanently hide the retry button, and leak into any other surface reading s.invoices
+  // by lead/title, e.g. the Money ledger or the office job-modal's un-reconciled jobId match).
+  // ---------------------------------------------------------------------------
+  removeLocalInvoice: (id) => {
+    set((s) => ({
+      invoices: s.invoices.filter((i) => !(i.id === id && i.origin !== "db")),
+    }));
   },
 
   // ---------------------------------------------------------------------------

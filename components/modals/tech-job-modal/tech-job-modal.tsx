@@ -125,6 +125,7 @@ export function TechJobModalContent() {
   const addInvoice = useAppStore((s) => s.addInvoice);
   const updateInvoice = useAppStore((s) => s.updateInvoice);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
+  const removeLocalInvoice = useAppStore((s) => s.removeLocalInvoice);
   // Durable re-collection guard: any non-archived invoice for THIS LEAD titled VISIT_FEE_TITLE.
   // Title + leadId survive reload (both come through the invoices hydrator); jobId does not —
   // the server never stamps sourceJobId on a manual invoice, so it's checked only when the
@@ -245,11 +246,30 @@ export function TechJobModalContent() {
     const { ok, error } = await sendInvoice(inv.id);
     setFeeBusy(false);
     if (!ok) {
+      // The optimistic draft never reached the server (sendInvoice's own rollback reverts it
+      // to its pre-send "manual" snapshot on any failure, including one after a partially
+      // successful draft+send sequence — see sendInvoice's catch). Left in the store it would
+      // satisfy hasFeeInvoice's lead+title guard forever, permanently hiding this retry button
+      // until reload, while also leaking into the Money ledger and the office job-modal (which
+      // still matches it via the un-reconciled local jobId hint above).
+      removeLocalInvoice(inv.id);
       setFeeError(error || "Couldn't send the fee invoice — check your connection and try again.");
       return;
     }
     pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId: inv.id });
-  }, [job, jobId, lead, custName, orgServiceFee, feeBusy, addInvoice, updateInvoice, sendInvoice, pushModal]);
+  }, [
+    job,
+    jobId,
+    lead,
+    custName,
+    orgServiceFee,
+    feeBusy,
+    addInvoice,
+    updateInvoice,
+    sendInvoice,
+    removeLocalInvoice,
+    pushModal,
+  ]);
 
   const navigate = useCallback(() => {
     // maps deep-link — open the address in the device's maps app.

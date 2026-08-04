@@ -39,11 +39,26 @@ const mockOpenModal = vi.fn();
 const mockUpdateJob = vi.fn();
 const mockSetVisitStatus = vi.fn();
 const mockSetVisitNotes2 = vi.fn(() => Promise.resolve({ ok: true }));
-const mockAddInvoice = vi.fn(() => ({ id: "inv-fee-1", num: "INV-900" }));
-const mockUpdateInvoice = vi.fn();
+// Stateful — a real store optimistically inserts on addInvoice, so a mock that just returns
+// the shape without touching mockInvoices can't exercise hasFeeInvoice's guard reacting to a
+// tap, and specifically can't reproduce the orphaned-draft-on-failed-send bug (the guard reads
+// mockInvoices fresh on every render; these mutate it exactly like the real slice would).
+const mockAddInvoice = vi.fn((draft: Record<string, unknown>) => {
+  const inv = { ...draft, id: "inv-fee-1", num: "INV-900", origin: "manual" } as Invoice;
+  mockInvoices = [...mockInvoices, inv];
+  return inv;
+});
+const mockUpdateInvoice = vi.fn((id: string, patch: Record<string, unknown>) => {
+  mockInvoices = mockInvoices.map((i) => (i.id === id ? { ...i, ...patch } : i));
+});
 const mockSendInvoice = vi.fn(
   (): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
 );
+// The real removeLocalInvoice (lib/store/slices/invoices-slice.ts) — mirrors its origin guard
+// so a test can't accidentally assert away a real safety check the slice itself enforces.
+const mockRemoveLocalInvoice = vi.fn((id: string) => {
+  mockInvoices = mockInvoices.filter((i) => !(i.id === id && i.origin !== "db"));
+});
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
@@ -68,6 +83,7 @@ vi.mock("@/lib/store/app-store", () => ({
       addInvoice: mockAddInvoice,
       updateInvoice: mockUpdateInvoice,
       sendInvoice: mockSendInvoice,
+      removeLocalInvoice: mockRemoveLocalInvoice,
       // Quote tab (estimating part 3) selectors.
       services: [],
       laborRates: [],
@@ -151,6 +167,7 @@ beforeEach(() => {
   mockAddInvoice.mockClear();
   mockUpdateInvoice.mockClear();
   mockSendInvoice.mockClear();
+  mockRemoveLocalInvoice.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -754,7 +771,13 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
     });
   });
 
-  it("owner: surfaces an error and never opens close-out when the send fails", async () => {
+  // Reviewer finding (fix round 2): on a failed send, the optimistic draft used to stay in the
+  // store — it satisfies hasFeeInvoice's lead+title guard, so the button vanished right beside
+  // an error telling the tech to "try again," with no way to retry short of a reload. The
+  // orphan also leaked into the Money ledger and the office job-modal via the un-reconciled
+  // local jobId hint. This test needs the STATEFUL mockAddInvoice above (a mock that just
+  // returns a shape without inserting into mockInvoices can't reproduce any of this).
+  it("owner: a failed send removes the orphaned local draft, re-enables the button, and a retry succeeds", async () => {
     mockRole = "owner";
     mockOrgFee = 89;
     mockJobs = [doneEstimate()];
@@ -763,11 +786,28 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
 
     fireEvent.click(screen.getByText("Collect the visit fee — $89"));
 
+    // 1. Error shown.
     expect(await screen.findByText("network down")).toBeTruthy();
     expect(mockOpenModal).not.toHaveBeenCalledWith(
       MODAL.CLOSE_OUT,
       expect.objectContaining({ jobId: "job-1" }),
     );
+
+    // 2. Orphan gone from the store — never satisfies the "already collected" guard.
+    await vi.waitFor(() => {
+      expect(mockRemoveLocalInvoice).toHaveBeenCalledWith("inv-fee-1");
+    });
+    expect(mockInvoices.some((i) => i.id === "inv-fee-1")).toBe(false);
+
+    // 3. Button visible again (this assertion alone would have failed before the fix — the
+    //    orphan hid it).
+    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+
+    // 4. Second tap works — the default mockSendInvoice resolves { ok: true } this time.
+    fireEvent.click(screen.getByText("Collect the visit fee — $89"));
+    await vi.waitFor(() => {
+      expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", invoiceId: "inv-fee-1" });
+    });
   });
 
   it("owner: falls back to functional copy when the send fails without a server message", async () => {
@@ -782,6 +822,9 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
     expect(
       await screen.findByText("Couldn't send the fee invoice — check your connection and try again."),
     ).toBeTruthy();
+    await vi.waitFor(() => {
+      expect(mockRemoveLocalInvoice).toHaveBeenCalledWith("inv-fee-1");
+    });
   });
 });
 

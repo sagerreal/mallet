@@ -338,3 +338,49 @@ describe("sendInvoice — manual (lead-tied) invoice: exactly one server create,
     expect(createFromJobMutate).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// removeLocalInvoice — cleans up an orphaned optimistic draft after a failed sendInvoice (the
+// fee-collection flow's retry-in-session bug: left in place, the orphan satisfies every
+// "already collected" guard reading title/leadId forever, until reload).
+// ---------------------------------------------------------------------------
+
+describe("removeLocalInvoice", () => {
+  it("removes a manual-origin invoice", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "manual" })]);
+    s.state.removeLocalInvoice("inv-1");
+    expect(s.state.invoices.find((i) => i.id === "inv-1")).toBeUndefined();
+  });
+
+  it("removes an invoice with no origin stamp at all (never reached addInvoice's reconcile)", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: undefined })]);
+    s.state.removeLocalInvoice("inv-1");
+    expect(s.state.invoices.find((i) => i.id === "inv-1")).toBeUndefined();
+  });
+
+  it("refuses to remove a db-origin invoice — that one has a real row", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "db" })]);
+    s.state.removeLocalInvoice("inv-1");
+    expect(s.state.invoices.find((i) => i.id === "inv-1")).toBeTruthy();
+  });
+
+  it("leaves other invoices untouched", () => {
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({ id: "inv-1", origin: "manual" }),
+      makeInvoice({ id: "inv-2", origin: "manual" }),
+    ]);
+    s.state.removeLocalInvoice("inv-1");
+    expect(s.state.invoices.map((i) => i.id)).toEqual(["inv-2"]);
+  });
+
+  it("is a no-op for an id that doesn't exist", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "manual" })]);
+    s.state.removeLocalInvoice("nope");
+    expect(s.state.invoices).toHaveLength(1);
+  });
+});
