@@ -31,9 +31,6 @@ import { Field } from "@/components/ui/input";
 import { ListLoading } from "@/components/shared/list-loading";
 import { CardCheckoutStep } from "./close-out-card-step";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
-// ONE definition of the redaction signal, shared with the tech job modal that opens this sheet —
-// a second copy of a predicate this subtle is how "hidden" quietly becomes "$0" again.
-import { pricesHidden } from "./tech-job-modal/helpers";
 import { readInvoice, type InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { invalidateLists } from "@/lib/trpc/list-cache";
 import type {
@@ -57,8 +54,9 @@ function fmt$(n: number): string {
 /**
  * jobTotal — sum of the job's line amounts (prototype jobTotal / tech-job-modal).
  *
- * `?? 0` is only honest once `pricesHidden` has been ruled out: on a device the shop withholds
- * rates from, every line reduces to nothing and a $840 job sums to $0. Ask both.
+ * OFFICE-GRADE ONLY. `?? 0` swallows the server's redaction, so on a field device this returns 0
+ * for a fully-priced job; and even unredacted it is the raw line sum, with no deposit credited and
+ * no recorded tax. Never render it to a technician — see the surface gate in CloseOutModalContent.
  */
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
@@ -836,14 +834,21 @@ interface FoundWorkSettleProps {
 
 function FoundWorkSettle({ pending, onInclude, onSkip, canSettle }: FoundWorkSettleProps) {
   if (!pending.length) return null;
+  // `a.r === null` is the server's redaction, not a free add-on (money-redaction.ts nulls addon
+  // rates on a techSeesPrice-off device). Reducing it with `?? 0` prints "$0 in found work", which
+  // reads as "nothing extra was found" — the opposite of the warning this card exists to give. If
+  // even one rate is withheld the total is unknowable on this device, so name none. Same rule the
+  // job tab's FoundWorkSec already follows.
+  const anyHidden = pending.some((a) => a.r === null);
   const sum = pending.reduce((s, a) => s + (a.q ?? 1) * (a.r ?? 0), 0);
+  const what = anyHidden ? "Found work" : `${fmt$(sum)} in found work`;
 
   return (
     <div className="reqcard" style={{ marginBottom: "var(--space-3)" }}>
       <b>
         {canSettle
-          ? `⚠ ${fmt$(sum)} in found work awaiting the customer’s OK`
-          : `⚠ ${fmt$(sum)} in found work — not on this bill`}
+          ? `⚠ ${what} awaiting the customer’s OK`
+          : `⚠ ${what} — not on this bill`}
       </b>
       {canSettle ? null : (
         <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
@@ -855,7 +860,10 @@ function FoundWorkSettle({ pending, onInclude, onSkip, canSettle }: FoundWorkSet
           <div key={a.id} className="stage-row">
             <div style={{ flex: 1 }}>
               <b style={{ fontWeight: 600 }}>{a.d}</b>{" "}
-              <span className="muted">· {fmt$((a.q ?? 1) * (a.r ?? 0))}</span>
+              {/* Redacted rate: show nothing, never $0 (see anyHidden above). */}
+              {a.r != null ? (
+                <span className="muted">· {fmt$((a.q ?? 1) * a.r)}</span>
+              ) : null}
             </div>
             {canSettle ? (
               <>
@@ -1019,6 +1027,12 @@ export function CloseOutModalContent() {
   const me = useMe();
   const isOffice = me.data?.role === "owner" || me.data?.role === "office";
   const surface: InvoiceWriteSurface = isOffice ? "office" : "field";
+  // The layout seeds this query, so the role is normally on the very first render. `roleKnown`
+  // exists for the frame where it is not: `surface` fails closed to "field", and the mount effect
+  // below RAISES AN INVOICE — an owner who lost that race would land their office bill in the
+  // redacted field shape (no recorded tax, no pay-link) and never re-fetch it, because the effect
+  // short-circuits once an invoice exists. Nothing is written until identity is settled.
+  const roleKnown = !me.isLoading;
 
   // RAW arrays only — never a derived array inside a selector.
   const jobs = useAppStore((s) => s.jobs);
@@ -1033,7 +1047,6 @@ export function CloseOutModalContent() {
   const setJobLines = useAppStore((s) => s.setJobLines);
   const recordPayment = useAppStore((s) => s.recordPayment);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
-  const updateLead = useAppStore((s) => s.updateLead);
   const setAddonStatus = useAppStore((s) => s.setAddonStatus);
   const setAddonInvSkip = useAppStore((s) => s.setAddonInvSkip);
   const checkVerifyItem = useAppStore((s) => s.checkVerifyItem);
@@ -1075,6 +1088,8 @@ export function CloseOutModalContent() {
 
   useEffect(() => {
     if (!job || invoice) return;
+    // Never raise a bill against a role we have not resolved yet — see roleKnown.
+    if (!roleKnown) return;
     // The visit-fee flow already raised (or is still raising) this job's invoice — never race
     // it with createFromJob, which would CONFLICT outright on a genuinely unpriced estimate
     // and, even when it wouldn't, would mint a SECOND invoice fighting the lead-tied one.
@@ -1108,7 +1123,7 @@ export function CloseOutModalContent() {
       creatingRef.current = null;
       if (!ok) setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
     });
-  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface]);
+  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface, roleKnown]);
 
   const retryCreate = useCallback(() => {
     creatingRef.current = null;
@@ -1180,14 +1195,20 @@ export function CloseOutModalContent() {
     );
   }
 
-  // The optimistic row this sheet just drew carries `total: jobTotal(job)` — which on a device the
-  // shop withholds rates from is 0, not the real bill. Rendering it would put "Done" (nothing owed)
-  // in front of a technician who was sent to collect $840, for as long as the round-trip takes, and
-  // a tap during that window dismisses the sheet. The server's answer always carries the balance
-  // (see modules/invoicing/api/field-invoice-dto.ts), so wait for it and say what is happening.
-  // Office callers and any device that CAN see rates computed a correct optimistic total and are
-  // unaffected. A failed create rolls the row back, so this never outlives the error notice above.
-  if (invoice.origin !== "db" && pricesHidden(job)) {
+  // A TECHNICIAN NEVER RENDERS AN OPTIMISTIC TOTAL. This sheet raises the bill on mount and draws
+  // the row it just asked for, carrying `total: jobTotal(job)` — a figure the field device is in no
+  // position to compute. It is 0 when the shop withholds rates (`pricesHidden`), and even when the
+  // rates ARE visible it is the raw line sum: no deposit credited, no tax as recorded. On a $1,000
+  // job with a $200 deposit the sheet would say "Take payment — $1,000", pre-fill the amount box
+  // with 1000, and a tap inside the round-trip records $1,000 against an $880 invoice.
+  //
+  // The gate is the SURFACE, not `pricesHidden`: the deposit skew has nothing to do with redaction,
+  // and `pricesHidden` is false for a job with no lines at all, which is reachable. The server's
+  // answer always carries the balance (modules/invoicing/api/field-invoice-dto.ts), so wait for it
+  // and say what is happening. The office is untouched — its invoices are hydrated, so it rarely
+  // draws an optimistic row at all, and every existing expectation of its behaviour is unchanged.
+  // A failed create rolls the row back, so this state never outlives the error notice above.
+  if (invoice.origin !== "db" && surface === "field") {
     return (
       <>
         <div className="sheet-head">

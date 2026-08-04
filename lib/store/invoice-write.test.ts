@@ -171,4 +171,14 @@ describe("invoice-write — raiseVisitFee carries the jobId and nothing else", (
     expect(record.cust).toBe("Dana Alvarez");
     expect(record.phone).toBe("");
   });
+
+  // The prior is a LOOKUP, not a record: the raise is idempotent per job, so the caller cannot
+  // know which invoice it resolves until the answer lands. An OFFICE caller resuming a fee it
+  // already holds must not lose the customer's phone to the field shape, which does not carry one.
+  it("asks for the prior by the id the SERVER returned, not one the caller guessed", async () => {
+    const priorFor = vi.fn(() => ({ ...prior, id: "inv-2", phone: "+15550009999" }));
+    const record = await raiseVisitFee("job-1", priorFor);
+    expect(priorFor).toHaveBeenCalledWith("inv-2");
+    expect(record.phone).toBe("+15550009999");
+  });
 });

@@ -752,9 +752,10 @@ describe("CloseOutModalContent — a technician collects", () => {
     expect(screen.queryByText(/Log & send to office/)).toBeNull();
   });
 
-  // A hide-prices device cannot compute the job's total, so the optimistic row it draws while the
-  // create is in flight carries $0. Rendering that puts "Done" — nothing owed — in front of a
-  // technician sent to collect $840, and a tap during the round-trip dismisses the sheet.
+  // A field device cannot compute this job's total: `jobTotal` is 0 when the shop withholds rates,
+  // and even unredacted it is the raw line sum with no deposit credited and no recorded tax.
+  // Rendering the optimistic row would put a wrong figure on the Take-payment button and pre-fill
+  // the amount box with it, and a tap inside the round-trip records against the wrong balance.
   it("waits for the server's balance rather than drawing the redacted job's $0", () => {
     mockJobs = [{ ...cardJob, lines: [{ d: "Fix water heater", q: 1, r: null }] } as unknown as Job];
     // The optimistic row addInvoice just inserted: origin "manual", total 0.
@@ -766,6 +767,19 @@ describe("CloseOutModalContent — a technician collects", () => {
     expect(screen.queryByText("Done")).toBeNull();
   });
 
+  // The gate is the SURFACE, not the redaction: the deposit skew has nothing to do with hidden
+  // prices, and a job with no lines at all makes `pricesHidden` false while `jobTotal` is still 0.
+  it("waits on a deposit-credited job even when this device CAN see the rates", () => {
+    // $1,000 of lines, $200 already taken — the server says $800, the optimistic row says $1,000.
+    mockInvoices = [
+      { ...cardInvoice, total: 450, depPaid: 200, origin: "manual" } as unknown as Invoice,
+    ];
+    render(<CloseOutModalContent />);
+
+    expect(screen.getByText("Reading the balance…")).toBeTruthy();
+    expect(screen.queryByText(/Take payment/)).toBeNull();
+  });
+
   it("renders the sheet the moment the server's record lands", () => {
     mockJobs = [{ ...cardJob, lines: [{ d: "Fix water heater", q: 1, r: null }] } as unknown as Job];
     mockInvoices = [{ ...cardInvoice, lines: [], origin: "db" } as unknown as Invoice];
@@ -775,14 +789,20 @@ describe("CloseOutModalContent — a technician collects", () => {
     expect(screen.getByText("Take payment — $450")).toBeTruthy();
   });
 
-  // Prices visible: the optimistic total is correct, so nothing waits. This is the fence that stops
-  // the gate above from quietly becoming "every technician stares at a spinner".
-  it("does NOT wait when this device can see the job's rates", () => {
-    mockInvoices = [{ ...cardInvoice, origin: "manual" } as unknown as Invoice];
+  // A withheld add-on rate reduced with `?? 0` prints "$0 in found work", which reads as "nothing
+  // extra was found" — the exact opposite of the warning this card exists to give.
+  it("names no figure on found work whose rate this device may not see, never $0", () => {
+    mockJobs = [
+      {
+        ...cardJob,
+        addons: [{ id: 1, d: "Expansion tank", q: 1, r: null, status: "proposed" }],
+      } as unknown as Job,
+    ];
     render(<CloseOutModalContent />);
 
-    expect(screen.queryByText("Reading the balance…")).toBeNull();
-    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+    expect(screen.getByText("⚠ Found work — not on this bill")).toBeTruthy();
+    expect(screen.getByText("Expansion tank")).toBeTruthy();
+    expect(screen.queryByText(/\$0\b/)).toBeNull();
   });
 
   it("never shows the price BUILDER, even on a genuinely unpriced job", () => {
@@ -836,6 +856,17 @@ describe("CloseOutModalContent — the office keeps its own gates (regression fe
     expect(screen.getByText(/OK’d — include/)).toBeTruthy();
     const pay = screen.getByText("Take payment — $450").closest("button") as HTMLButtonElement;
     expect(pay.disabled).toBe(true);
+  });
+
+  // The fence on the field's wait-for-the-balance gate: the office must never see it, or the whole
+  // desk starts staring at a spinner on a sheet that used to render instantly.
+  it("never waits on an optimistic row — the desk renders it straight away", () => {
+    mockJobs = [cardJob];
+    mockInvoices = [{ ...cardInvoice, origin: "manual" } as unknown as Invoice];
+    render(<CloseOutModalContent />);
+
+    expect(screen.queryByText("Reading the balance…")).toBeNull();
+    expect(screen.getByText("Take payment — $450")).toBeTruthy();
   });
 
   it("still offers the what-was-done box, the hand-off, and the price builder", () => {

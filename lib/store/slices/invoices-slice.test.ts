@@ -922,4 +922,47 @@ describe("raiseVisitFee", () => {
 
     expect(s.state.invoices).toHaveLength(1);
   });
+
+  // The office half of the same idempotency. `raiseVisitFee` is the ONE anyRole money path, so a
+  // desk resuming a fee it already holds gets back the FIELD shape — no recorded tax split, no
+  // pay-link, no phone. Replacing the hydrated row with it blanks the invoice modal until the next
+  // refetch, so the adopt merges. On a technician's device there is no row and nothing survives.
+  it("MERGES into a row the desk already holds — the field shape never blanks the office record", async () => {
+    raiseVisitFeeMutate.mockResolvedValue(
+      fieldDto({ id: "inv-fee", sourceJobId: null, scopeJobId: "job-9", status: "sent" }),
+    );
+    const s = makeSlice();
+    s.seed([
+      {
+        ...makeInvoice({ status: "draft" }),
+        id: "inv-fee",
+        phone: "+15550009999",
+        pricing: { tax: 8.75 },
+        publicUrl: "https://pay.example/abc",
+      } as unknown as Invoice,
+    ]);
+
+    await s.state.raiseVisitFee("job-9");
+
+    const row = s.state.invoices[0]!;
+    expect(s.state.invoices).toHaveLength(1);
+    expect(row.status).toBe("sent"); // the server's fresh facts win…
+    expect(row.phone).toBe("+15550009999"); // …and everything the field wire omits survives
+    expect(row.pricing?.tax).toBe(8.75);
+    expect(row.publicUrl).toBe("https://pay.example/abc");
+  });
+
+  it("carries NOTHING forward on a device that held no row — the redaction stays as strict as the wire", async () => {
+    raiseVisitFeeMutate.mockResolvedValue(
+      fieldDto({ id: "inv-fee", sourceJobId: null, scopeJobId: "job-9" }),
+    );
+    const s = makeSlice();
+
+    await s.state.raiseVisitFee("job-9");
+
+    const row = s.state.invoices[0]!;
+    expect(row.publicUrl).toBeUndefined();
+    expect(row.pricing).toBeUndefined();
+    expect(row.phone).toBe("");
+  });
 });

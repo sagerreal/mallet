@@ -648,14 +648,24 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   // with it the orphan cleanup that used to be needed here.
   // ---------------------------------------------------------------------------
   raiseVisitFee: (jobId) =>
-    raiseVisitFeeOnServer(jobId, undefined).then(
+    raiseVisitFeeOnServer(jobId, (id) => get().invoices.find((i) => i.id === id)).then(
       (invoice) => {
         invalidateLists("invoices", "jobs");
-        set((s) => ({
-          invoices: s.invoices.some((i) => i.id === invoice.id)
-            ? reconcileInv(s.invoices, invoice)
-            : [invoice, ...s.invoices],
-        }));
+        set((s) => {
+          const held = s.invoices.find((i) => i.id === invoice.id);
+          // MERGE, never replace, when this device already held the row. The raise is idempotent
+          // per job, so an OFFICE caller resuming an existing fee gets back the FIELD shape — a
+          // deliberately smaller record with no recorded tax split, no pay-link token and no
+          // follow-up state. Overwriting the hydrated row with it would blank the desk's invoice
+          // modal (Tax $0 under a real total, a dead "copy pay link") until the next refetch. A
+          // technician holds no row at all, so nothing survives on their device and the redaction
+          // is exactly as strict as the wire — which is the property that must not soften.
+          return {
+            invoices: held
+              ? reconcileInv(s.invoices, { ...held, ...invoice })
+              : [invoice, ...s.invoices],
+          };
+        });
         return { ok: true, invoiceId: invoice.id };
       },
       (err: unknown) => {

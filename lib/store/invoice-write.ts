@@ -132,9 +132,17 @@ export function mintCheckoutSession(
  * fee on my own job, into *that* invoice"). No amount either: the server reads it from the shop's
  * settings, so the person holding the tablet cannot choose what the customer is charged. The
  * server mints the row and this adopts what it returns.
+ *
+ * `priorFor` is a LOOKUP rather than a record, because the caller cannot know which invoice this
+ * will be until the answer lands — the raise is idempotent per job, so it may resolve an invoice
+ * the office already holds. It returns undefined on a technician's device, which holds none, and
+ * that is the shape the mapper is written for.
  */
-export function raiseVisitFee(jobId: string, prior?: Invoice): Promise<Invoice> {
+export function raiseVisitFee(
+  jobId: string,
+  priorFor?: (invoiceId: string) => Invoice | undefined,
+): Promise<Invoice> {
   return trpcVanilla.v1.fieldInvoicing.raiseVisitFee
     .mutate({ jobId })
-    .then((dto) => dtoFieldInvoiceToStore(dto, prior));
+    .then((dto) => dtoFieldInvoiceToStore(dto, priorFor?.(dto.id)));
 }
