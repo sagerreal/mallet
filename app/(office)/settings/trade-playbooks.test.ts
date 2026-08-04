@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TRADE_PLAYBOOKS, playbookFor } from "./trade-playbooks";
+import { TRADE_PLAYBOOKS, TRADE_KEYS, playbookFor, isTradeKey } from "./trade-playbooks";
 
 describe("trade starter playbooks", () => {
   /**
@@ -15,6 +15,30 @@ describe("trade starter playbooks", () => {
       "roofing", "painting", "fencing", "concrete", "siding", "gutters",
       "other",
     ]);
+  });
+
+  /**
+   * TRADE_KEYS is now DECLARED, not derived from this list with a cast — that cast is what made a
+   * trade "some string" everywhere, so a KEY and a LABEL were interchangeable to the compiler and
+   * `setTrade(playbook.label)` compiled fine while matching nothing downstream. The two lists must
+   * therefore be kept in agreement, and that is this test's job.
+   */
+  it("TRADE_KEYS and the playbook list are the same set, in the same order", () => {
+    expect(TRADE_PLAYBOOKS.map((t) => t.key)).toEqual([...TRADE_KEYS]);
+  });
+
+  it("no trade's LABEL is also a valid key — a label can never resolve by accident", () => {
+    for (const t of TRADE_PLAYBOOKS) {
+      expect(isTradeKey(t.label), t.label).toBe(false);
+      expect(playbookFor(t.label), t.label).toBeUndefined();
+    }
+  });
+
+  it("isTradeKey accepts every key and rejects anything else", () => {
+    for (const key of TRADE_KEYS) expect(isTradeKey(key), key).toBe(true);
+    for (const junk of ["", "Plumbing", "PLUMBING", "nonesuch", "concrete & flatwork"]) {
+      expect(isTradeKey(junk), junk).toBe(false);
+    }
   });
 
   it("offers no trade the product was not built around", () => {

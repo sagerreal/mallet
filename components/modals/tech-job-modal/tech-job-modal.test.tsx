@@ -109,7 +109,8 @@ vi.mock("@/lib/store/app-store", () => ({
 }));
 
 // Keep native/scan + supabase out of jsdom (the Quote tab imports both modules).
-vi.mock("@/lib/native/room-scan", () => ({ useRoomScanAvailable: () => false }));
+// This suite is not about the scanner; a browser (no Capacitor bridge) is the honest default.
+vi.mock("@/lib/native/room-scan", () => ({ useRoomScanAvailability: () => ({ status: "no-native-app" }) }));
 vi.mock("@/lib/store/upload-field-photo", () => ({ uploadFieldPhoto: vi.fn() }));
 vi.mock("@/lib/images/downscale", () => ({ downscaleImage: vi.fn() }));
 

@@ -13,8 +13,42 @@
 
 import type { BookingService } from "@/lib/store/slices/settings-slice";
 
+/**
+ * The trades the app knows about, as a closed set — the SOURCE of the key vocabulary.
+ *
+ * WHY THIS IS A TUPLE AND NOT `TRADE_PLAYBOOKS.map(t => t.key)`. It used to be derived from the
+ * playbooks with a cast to `[string, ...string[]]`, so `trade` was "some string" everywhere and
+ * a KEY and a LABEL were interchangeable to the compiler. They are not interchangeable to the
+ * app: every consumer (`playbookFor`, `pricebookFor`, `tradeMeasures`) matches on the lowercase
+ * key, so a label silently matches nothing. `front-desk-pane` passed `playbook.label` to
+ * `setTrade`, `tradeMeasures("Plumbing")` returned false, and one tap on "Starter playbook"
+ * wrote `measurement_estimating = false` to the database for a real shop.
+ *
+ * Declared first and used as the type of `TradePlaybook.key`, it makes that a COMPILE error.
+ * `trade-playbooks.test.ts` asserts the playbook list covers exactly this tuple.
+ */
+export const TRADE_KEYS = [
+  "hvac",
+  "mechanical",
+  "electrical",
+  "plumbing",
+  "roofing",
+  "painting",
+  "fencing",
+  "concrete",
+  "siding",
+  "gutters",
+  "other",
+] as const;
+
+/**
+ * A trade KEY — one of `TRADE_KEYS`, never a display label. Anything that resolves a playbook,
+ * a pricebook or `tradeMeasures` takes this; the labels stay `string`.
+ */
+export type TradeKey = (typeof TRADE_KEYS)[number];
+
 export interface TradePlaybook {
-  key: string;
+  key: TradeKey;
   label: string;
   services: BookingService[];
 }
@@ -162,13 +196,16 @@ export const TRADE_PLAYBOOKS: readonly TradePlaybook[] = [
   },
 ] as const;
 
+/**
+ * The playbook for a trade key. Takes a plain `string` on purpose — callers hand it raw input
+ * (a `<select>` value, a DB column, a router argument) and the RETURN is what carries the typed
+ * `key` forward, so `playbookFor(x)?.key` is the sanctioned way to obtain a `TradeKey`.
+ */
 export function playbookFor(key: string): TradePlaybook | undefined {
   return TRADE_PLAYBOOKS.find((t) => t.key === key);
 }
 
-/**
- * The trade keys as a zod-ready tuple, so a router validates against the real list rather than
- * accepting free text. A trade nothing in the app knows about seeds no playbook and no pricebook,
- * which would look to the shop like the question did nothing.
- */
-export const TRADE_KEYS = TRADE_PLAYBOOKS.map((t) => t.key) as unknown as [string, ...string[]];
+/** Is this raw string one of the trades the app knows? Narrows to `TradeKey` at a boundary. */
+export function isTradeKey(value: string): value is TradeKey {
+  return (TRADE_KEYS as readonly string[]).includes(value);
+}

@@ -1,4 +1,5 @@
 import type { SeedServiceInput } from "@mallet/pricebook";
+import type { TradeKey } from "../trade-playbooks";
 
 /**
  * A starter pricebook for one trade.
@@ -16,8 +17,9 @@ import type { SeedServiceInput } from "@mallet/pricebook";
  * is priced per, and the figure is per THAT unit.
  */
 export interface TradePricebook {
-  /** Matches a TRADE_PLAYBOOKS key exactly — one vocabulary for the trade across the app. */
-  readonly key: string;
+  /** Matches a TRADE_PLAYBOOKS key exactly — one vocabulary for the trade across the app,
+   *  enforced by the shared `TradeKey` type rather than by a comment and a test. */
+  readonly key: TradeKey;
   readonly categories: readonly string[];
   readonly services: readonly SeedServiceInput[];
   /** Where the figures came from, so a future editor can re-check them rather than guess. */

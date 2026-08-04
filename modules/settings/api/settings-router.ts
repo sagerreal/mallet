@@ -4,11 +4,13 @@ import { TRPCError } from "@trpc/server";
 import { CensusGeocoder } from "@mallet/frontdesk";
 import { loadConfig } from "@mallet/shared/config";
 import { withTenant } from "@mallet/shared/db/tx";
-import { router, ownerOrOffice, ownerOrOfficeNoTx } from "@/trpc/init";
+import { router, anyRole, ownerOrOffice, ownerOrOfficeNoTx } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
+import { TRADE_KEYS } from "@/app/(office)/settings/trade-playbooks";
 import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository";
 import { OrgSettings } from "../domain/org-settings";
 import { GetSettingsUseCase } from "../app/get-settings";
+import { GetFieldTogglesUseCase } from "../app/get-field-toggles";
 import { UpdateConfigUseCase } from "../app/update-config";
 import { UpdateBrandUseCase } from "../app/update-brand";
 import { BeginConnectOnboardingUseCase, RefreshConnectStatusUseCase } from "../app/connect-onboarding";
@@ -19,6 +21,7 @@ import { CreateSourceUseCase, RemoveSourceUseCase } from "../app/sources";
 import {
   settingsDTO,
   orgSettingsDTO,
+  fieldTogglesDTO,
   pricebookItemDTO,
   laborRateDTO,
   jobTermDTO,
@@ -49,7 +52,12 @@ const okDTO = z.object({ ok: z.boolean() });
 // Validated patch fields — all optional so the client sends only what changed.
 // Bounds match the domain aggregate's clamping logic to fail fast at the boundary.
 const updateConfigInput = z.object({
-  trade: z.string().min(1).max(50).optional(),
+  // The closed key set, not free text ≤50 chars. A label ("Plumbing") or any other unknown
+  // string used to be ACCEPTED and stored, after which playbookFor/pricebookFor/tradeMeasures
+  // all matched nothing — which is how a client bug writing `playbook.label` here silently
+  // switched a real shop's measurement estimating off. An unknown trade is now a BAD_REQUEST at
+  // the boundary instead of a stored value nothing in the app can interpret.
+  trade: z.enum(TRADE_KEYS).optional(),
   // IANA name. The domain validates it against the runtime's own tz database (isValidTimeZone),
   // so an unknown zone is a BAD_REQUEST rather than a stored value nothing can interpret.
   timezone: z.string().min(1).max(64).optional(),
@@ -102,6 +110,23 @@ export const createSettingsRouter = () =>
         const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
         const result = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
         return toSettingsDTO(orThrow(result));
+      }),
+
+    /**
+     * The field surface's capability flags — `anyRole`, one boolean wide.
+     *
+     * `get` above is ownerOrOffice and always will be. But the tech Quote tab's "Scan a room" row
+     * is gated on the org's measurementEstimating flag, and the field layout can only mount the
+     * office SettingsHydrator for owner/office — so a technician's copy of that flag was stuck at
+     * its placeholder forever and the field scanner never rendered on the one surface built for
+     * it. This is the narrow read that fixes it without widening the office payload by a single
+     * field. See fieldTogglesDTO for what may and may not go in here.
+     */
+    fieldToggles: anyRole
+      .output(fieldTogglesDTO)
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        return orThrow(await new GetFieldTogglesUseCase(repo).exec(ctx.principal.orgId));
       }),
 
     // Patch org config scalars and/or the booking jsonb blob.

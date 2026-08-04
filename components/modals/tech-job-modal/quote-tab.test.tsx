@@ -4,22 +4,26 @@
  *
  * The Quote tab (estimating part 3): scope save wiring, the estimate-visit dual
  * exit and its DERIVED sent state (visit.scopeNotes IS the handoff — no status),
- * the embedded builder's visibility, and the scan-row gates
- * (measurementEstimating AND useRoomScanAvailable).
+ * the embedded builder's visibility, and the scan row's states — it renders on every device now
+ * (live / disabled-no-LiDAR / disabled-not-in-the-app / disabled-job-closed /
+ * disabled-settings-unknown), and the ONLY thing that hides it is a settings snapshot that
+ * arrived and said this shop does not measure.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QuoteTab } from "./quote-tab";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Visit } from "@/lib/store/types";
+import type { RoomScanAvailability } from "@/lib/native/room-scan";
+import type { MeasurementGate } from "@/lib/measurement-gate";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
 let mockJobs: Job[] = [];
-let mockMeasurementEstimating = false;
-let mockScanAvailable = false;
+let mockMeasurementEstimating: MeasurementGate = "unknown";
+let mockScan: RoomScanAvailability = { status: "no-native-app" };
 
 const noop = vi.fn();
 const mockPushModal = vi.fn();
@@ -45,7 +49,7 @@ vi.mock("@/lib/store/app-store", () => ({
 }));
 
 vi.mock("@/lib/native/room-scan", () => ({
-  useRoomScanAvailable: () => mockScanAvailable,
+  useRoomScanAvailability: () => mockScan,
 }));
 
 // Keep supabase/browser out of jsdom — the strip's upload path is exercised elsewhere.
@@ -83,8 +87,8 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 
 beforeEach(() => {
   mockJobs = [makeJob()];
-  mockMeasurementEstimating = false;
-  mockScanAvailable = false;
+  mockMeasurementEstimating = "off";
+  mockScan = { status: "no-native-app" };
   mockPushModal.mockClear();
   mockClose.mockClear();
   mockSetVisitNotes.mockReset();
@@ -219,32 +223,142 @@ describe("QuoteTab — estimate dual exit", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Scan a room — the two gates
+// Scan a room — three states. This row is the App Store 4.2 defense: it must be
+// VISIBLE on a base iPhone and in a browser, not hidden, so a reviewer who cannot
+// run the scanner can still see the app has one and read what it needs.
 // ---------------------------------------------------------------------------
 
 describe("QuoteTab — scan a room", () => {
-  it("hidden when the org doesn't measure OR the platform can't scan", () => {
+  function renderScanRow(scan: RoomScanAvailability) {
     const job = makeJob();
     mockJobs = [job];
-    mockMeasurementEstimating = true;
-    mockScanAvailable = false;
-    const { unmount } = render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
-    expect(screen.queryByText("Scan a room")).toBeNull();
-    unmount();
-    mockMeasurementEstimating = false;
-    mockScanAvailable = true;
+    mockMeasurementEstimating = "on";
+    mockScan = scan;
+    return render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+  }
+
+  it("state 1 — live on a LiDAR device, drilling into the room-card scan mode", () => {
+    renderScanRow({ status: "ready" });
+    const button = screen.getByRole("button", { name: "Scan a room" });
+
+    expect(button).toHaveProperty("disabled", false);
+    fireEvent.click(button);
+    expect(mockPushModal).toHaveBeenCalledWith(MODAL.ROOM_CARD, { jobId: "job-1", mode: "scan" });
+  });
+
+  it("state 2 — present but disabled on an iPhone without LiDAR, naming the device", () => {
+    renderScanRow({ status: "no-lidar" });
+    const button = screen.getByRole("button", { name: "Scan a room" });
+
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText(
+        "This device reports no LiDAR sensor — room scanning needs an iPhone Pro or iPad Pro.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("state 2 — the disabled row cannot be activated", () => {
+    renderScanRow({ status: "no-lidar" });
+    fireEvent.click(screen.getByRole("button", { name: "Scan a room" }));
+    expect(mockPushModal).not.toHaveBeenCalled();
+  });
+
+  it("state 3 — present but disabled in a browser, naming the app, not the device", () => {
+    renderScanRow({ status: "no-native-app" });
+    const button = screen.getByRole("button", { name: "Scan a room" });
+
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/iPhone Pro or iPad Pro/)).toBeNull();
+  });
+
+  it("state 3 — the browser row cannot be activated", () => {
+    renderScanRow({ status: "no-native-app" });
+    fireEvent.click(screen.getByRole("button", { name: "Scan a room" }));
+    expect(mockPushModal).not.toHaveBeenCalled();
+  });
+
+  it("every disabled state announces its reason with the control", () => {
+    for (const status of ["checking", "no-lidar", "no-native-app", "scanner-missing"] as const) {
+      const { unmount } = renderScanRow({ status });
+      const button = screen.getByRole("button", { name: "Scan a room" });
+      const reasonId = button.getAttribute("aria-describedby");
+      expect(reasonId, status).toBeTruthy();
+      expect(document.getElementById(reasonId as string)?.textContent, status).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it("hidden ONLY when settings arrived and said the org does not measure", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    mockMeasurementEstimating = "off";
+    mockScan = { status: "ready" };
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
     expect(screen.queryByText("Scan a room")).toBeNull();
   });
 
-  it("shows when both gates pass and drills into the room-card scan mode", () => {
+  /**
+   * A settings read can be in flight or fail like any other. The gate's third state exists so that
+   * does not silently delete the field scanner: unknown fails OPEN — into a VISIBLE row.
+   *
+   * Not into a LIVE one. Failing open the other way is the wrong trade: on a LiDAR iPhone, a shop
+   * that deliberately turned measuring off would get a tappable scanner during any settings
+   * outage, and the tap creates an estimate job server-side. Visible, disabled, and honest about
+   * why costs a reload; live costs rows in someone's database.
+   */
+  it("renders DISABLED with its reason when settings have NOT loaded — visible, never live", () => {
     const job = makeJob();
     mockJobs = [job];
-    mockMeasurementEstimating = true;
-    mockScanAvailable = true;
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "ready" };
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
-    fireEvent.click(screen.getByText("Scan a room"));
-    expect(mockPushModal).toHaveBeenCalledWith(MODAL.ROOM_CARD, { jobId: "job-1", mode: "scan" });
+
+    const button = screen.getByRole("button", { name: "Scan a room" });
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
+    ).toBeTruthy();
+    const reasonId = button.getAttribute("aria-describedby");
+    expect(document.getElementById(reasonId as string)?.textContent).toBe(
+      "Couldn't load this shop's settings — reload the page to scan a room.",
+    );
+  });
+
+  it("an unknown gate cannot open the room card — no estimate job is created", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "ready" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Scan a room" }));
+    expect(mockPushModal).not.toHaveBeenCalled();
+  });
+
+  it("the DEVICE still outranks an unknown gate — a browser is told to open the app", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "no-native-app" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    expect(
+      screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
+    ).toBeTruthy();
+  });
+
+  it("an unknown gate outranks a CLOSED job — reopening it would not make the scan work", () => {
+    const job = makeJob({ status: "done" });
+    mockJobs = [job];
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "ready" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} />);
+    expect(
+      screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
+    ).toBeTruthy();
+    expect(screen.queryByText("This job is closed — reopen it to scan a room.")).toBeNull();
   });
 });
 
@@ -256,14 +370,34 @@ describe("QuoteTab — closed job", () => {
   it("offers no write controls, only Done", () => {
     const job = makeJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
     mockJobs = [job];
-    mockMeasurementEstimating = true;
-    mockScanAvailable = true;
+    mockMeasurementEstimating = "on";
+    mockScan = { status: "ready" };
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} />);
     expect(screen.getByText("as found")).toBeTruthy();
     expect(screen.queryByText("Edit →")).toBeNull();
-    expect(screen.queryByText("Scan a room")).toBeNull();
     expect(screen.queryByText(/Add photo/)).toBeNull();
     expect(screen.queryByText("Present to customer →")).toBeNull();
     expect(screen.getByText("Done")).toBeTruthy();
+  });
+
+  /**
+   * This is the office job sheet too, and the demo shop seeds three COMPLETE jobs — so an owner
+   * opening one used to get Scope, photos, and a silently missing scanner. `!readOnly` was hiding
+   * it, which is exactly the unexplained absence this component exists to prevent. State the
+   * reason instead.
+   */
+  it("shows the scanner DISABLED with the job-closed reason, never absent", () => {
+    const job = makeJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
+    mockJobs = [job];
+    mockMeasurementEstimating = "on";
+    mockScan = { status: "ready" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} />);
+
+    const button = screen.getByRole("button", { name: "Scan a room" });
+    expect(button).toHaveProperty("disabled", true);
+    expect(screen.getByText("This job is closed — reopen it to scan a room.")).toBeTruthy();
+
+    fireEvent.click(button);
+    expect(mockPushModal).not.toHaveBeenCalled();
   });
 });

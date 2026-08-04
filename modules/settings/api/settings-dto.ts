@@ -77,6 +77,22 @@ export const bookingCfgDTO = z.object({
     }),
 });
 
+/**
+ * The FIELD surface's slice of org config — deliberately one field wide.
+ *
+ * `settingsDTO` is owner/office only and carries booking rules, hours, service area, branding,
+ * labor rates and Connect status; none of that belongs on a technician's phone. This is the
+ * org CAPABILITY flag the field surface cannot work without: `measurementEstimating` gates the
+ * tech Quote tab's "Scan a room" row, and `SettingsHydrator` (the only writer of store.toggles)
+ * is office-only, so without this read a tech could never see the field scanner at all.
+ *
+ * Anything added here becomes readable by every technician in the org. Keep it to capability
+ * flags that describe the SHOP's trade — never prices, credentials, or office configuration.
+ */
+export const fieldTogglesDTO = z.object({
+  measurementEstimating: z.boolean(),
+});
+
 // --- Org config DTO --------------------------------------------------------
 
 export const orgSettingsDTO = z.object({

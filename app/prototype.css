@@ -1362,6 +1362,35 @@
   .muted{color:var(--ink-3);font-size:var(--type-sm)}
   .linklike{color:var(--green-700);font-weight:700;cursor:pointer;font-size:var(--type-base)}
 
+  /* ---------- room scan: the disabled state that says why ---------- */
+  /* The scan control renders on every device now, disabled with its reason when it cannot run
+     (no LiDAR / not in the iPhone app), because hiding it hid the app's only native feature
+     from everyone who could not use it. A disabled button that looks identical to a live one
+     reads as a dead control, so it dims — same values as the .mh-acts precedent, scoped to this
+     control so no existing visual baseline moves. .scanwhy is the .muted treatment; the
+     flex-basis makes the reason span its own line when the control sits in a button group
+     (the composer's row, cf. .composer-actions>.muted) and is inert in a block parent. */
+  .scanbtn:disabled{opacity:.55;cursor:not-allowed}
+  .btn.scanbtn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
+  /* The room card's Re-scan is the `link` variant: a <button class="linklike scanbtn">.
+     `button.linklike` above is the chrome reset, and its own comment claims "identical visuals" —
+     it is not. At (0,1,1) it outranks the plain `.linklike` rule at (0,1,0), and `color:inherit` +
+     `font:inherit` between them override ALL THREE properties `.linklike` exists to set: the
+     control rendered at body ink, weight 400 and the inherited 15px instead of --green-700, 700
+     and --type-base. So it was body prose that happened to be clickable — and dimmed to .55 for
+     the disabled state, prose is all it read as. Restated here at element+2-class specificity so
+     it beats the reset for THIS control only; every other `button.linklike` in the app, and its
+     visual baselines, are untouched. */
+  button.linklike.scanbtn{color:var(--green-700);font-weight:700;font-size:var(--type-base)}
+  /* The composer's room-controls row. "+ Add a room" is disabled until a customer is picked, and
+     `disabled` alone is INVISIBLE on a .btn — there is deliberately no global .btn:disabled rule
+     (it would move every existing visual baseline), so each surface scopes its own, exactly as
+     .mh-acts and .md-acts do. Without this the row sat next to a correctly-dimmed "Scan room"
+     with a full-strength button beside it that did nothing: a dead control by look. */
+  .msp-rooms .btn:disabled{opacity:.55;cursor:not-allowed}
+  .msp-rooms .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
+  .scanwhy{flex:1 1 100%;color:var(--ink-3);font-size:var(--type-sm);margin:var(--space-2) 0 0}
+
   /* ---------- pipeline search (shown only above 20 active leads) ---------- */
   .board-tools{margin-bottom:var(--space-3)}
   .board-tools input{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--type-base);width:280px;font-family:inherit}
