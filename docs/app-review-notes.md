@@ -99,17 +99,29 @@ measurementSurfacesVisible(measurementGate)      // i.e. gate !== "off"
 
 That is the ONLY thing that hides it. Everything else that can stand in the way renders the
 control DISABLED with the reason attached — a closed job, a device without LiDAR, a browser, a
-composer with no customer picked yet.
+composer with no customer picked yet, or a settings read that never landed.
 
 | Condition | Source | True in the demo shop because |
 | --- | --- | --- |
-| gate is not `"off"` | `store.toggles.measurementEstimating`, a tri-state (`on`/`off`/`unknown`) written by `SettingsHydrator` (office) or `FieldTogglesHydrator` (tech) from `org_settings.measurement_estimating` | the seed sets that column to `true` — and a settings read that fails leaves `"unknown"`, which still shows the control |
+| gate is not `"off"` | a tri-state (`on`/`off`/`unknown`) resolved SERVER-SIDE by the office/field layouts (`lib/auth/server-measurement-gate.ts`) and read through `features/settings/measurement-gate-provider.tsx`, which prefers the client store once `SettingsHydrator` (office) or `FieldTogglesHydrator` (tech) has written a real answer | the seed sets `org_settings.measurement_estimating` to `true` — and a read that fails leaves `"unknown"`, which still shows the control |
 
 **The gate FAILS OPEN, and that is deliberate.** It used to be a boolean whose pre-hydration
 placeholder was `false`, with `SettingsHydrator` its only writer — so one 500 from
 `v1.settings.get` (which happened, on a malformed settings blob) removed the composer's entire
 Measure card and every scan control in the app, with no reason shown anywhere. A read that did not
 answer is not an answer. See `lib/measurement-gate.ts`.
+
+**Open means VISIBLE, not LIVE.** On `"unknown"` the control renders disabled with its own
+sentence — "Couldn't load this shop's settings — reload the page to scan a room." — rather than
+staying tappable. Tapping creates an estimate job server-side, so a live scanner during a settings
+outage would write rows into a shop that may have turned measuring off on purpose. The
+guideline-4.2 answer stays on screen either way; only the writing stops.
+
+**The gate is answered before the first paint.** It is resolved in the layout, beside the shell
+identity (`resolveMe`), so `/composer` and `/my-day` are server-rendered already knowing whether
+this shop measures. Previously the only writers were client hydrators, so every cold load painted
+the Measure card and then removed it a beat later for the non-measuring trades — plumbing, HVAC,
+electrical, i.e. most shops. `"unknown"` now means what it says: the read failed.
 
 **A technician reads a different, narrower endpoint.** `v1.settings.get` is `ownerOrOffice` and
 returns the whole office configuration, so the field layout can only mount `SettingsHydrator` for
@@ -147,6 +159,14 @@ room card's **Re-scan room** control behave identically — and the composer's r
 customer is picked (disabled, "Pick a customer first"), so the native affordance is on screen the
 moment `/composer` loads rather than appearing at step 4. The copy for every status lives in one
 place, `components/shared/scan-unavailable.tsx`.
+
+On that composer row the missing-customer sentence outranks the device one, which is the only
+place the device answer does not win. The row has TWO controls sharing ONE reason line, and
+"+ Add a room" needs no scanner at all — so "open the Mallet iPhone app" would be false of the
+button beside it, and it unblocks nothing in the office's browser, while picking a customer makes
+"+ Add a room" live immediately. A reviewer on a base iPhone still gets the LiDAR sentence: it
+appears on this same row the moment the customer is picked, which is the next step in the walk-
+through (checks **3a** and **3c**).
 
 **Two different "no"s, two different sentences.** `roomScanPlugin()` reads
 `window.Capacitor.Plugins.MalletRoomScan`, which only exists inside the native shell — Capacitor
