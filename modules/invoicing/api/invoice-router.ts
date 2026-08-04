@@ -336,7 +336,9 @@ export const createInvoiceRouter = () =>
       }),
 
     createFromJob: ownerOrOffice
-      .input(z.object({ jobId: z.string().uuid() }))
+      // Client-authored id — preserved for the NEW row so the store's optimistic id matches the
+      // persisted row (same convention as draftInput). The idempotent path ignores it.
+      .input(z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional() }))
       .output(invoiceDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
@@ -351,7 +353,13 @@ export const createInvoiceRouter = () =>
           ctx.deps.ids,
         );
         return toInvoiceDTOWithAuth(
-          orThrow(await useCase.exec({ orgId: ctx.principal.orgId, jobId: asJobId(input.jobId) })),
+          orThrow(
+            await useCase.exec({
+              orgId: ctx.principal.orgId,
+              jobId: asJobId(input.jobId),
+              id: input.id ? asInvoiceId(input.id) : undefined,
+            }),
+          ),
           ctx.tx,
           ctx.principal.orgId,
         );

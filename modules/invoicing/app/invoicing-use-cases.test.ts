@@ -259,6 +259,31 @@ describe("CreateInvoiceFromJobUseCase", () => {
     expect(bus.recorded.filter((e) => e.name === "invoice.created")).toHaveLength(1);
   });
 
+  // House convention: client-authored UUIDs are preserved by create endpoints where the store
+  // needs the id synchronously. Without this, the store's optimistic row and the server row had
+  // DIFFERENT ids, and every later mutation keyed on the store id (send, recordPayment,
+  // createPayment, get) was NOT_FOUND while the UI showed success.
+  it("honors a client-authored id for the NEW row (store id === server id)", async () => {
+    const CLIENT_ID = asInvoiceId("77777777-7777-7777-7777-777777777777");
+    const uc = useCase(new FakeJobReader(completeJob()));
+    const result = await uc.exec({ orgId: ORG, jobId: JOB, id: CLIENT_ID });
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) expect(result.value.props.id).toBe(CLIENT_ID);
+  });
+
+  it("IGNORES the client id when the job already has an invoice (idempotent path wins)", async () => {
+    const uc = useCase(new FakeJobReader(completeJob()));
+    const first = await uc.exec({ orgId: ORG, jobId: JOB });
+    const CLIENT_ID = asInvoiceId("77777777-7777-7777-7777-777777777777");
+    const second = await uc.exec({ orgId: ORG, jobId: JOB, id: CLIENT_ID });
+    expect(isOk(first) && isOk(second)).toBe(true);
+    if (!isOk(first) || !isOk(second)) return;
+    expect(second.value.props.id).toBe(first.value.props.id);
+    expect(second.value.props.id).not.toBe(CLIENT_ID);
+    // Still exactly one create event — the second call adopted, not minted.
+    expect(bus.recorded.filter((e) => e.name === "invoice.created")).toHaveLength(1);
+  });
+
   /**
    * The point of the whole change. The tax was ALREADY inside the total — it rode from the
    * estimate's rounding chain into the job and on to here — but nothing recorded how much of it

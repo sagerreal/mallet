@@ -34,6 +34,7 @@ let mockInvoices: Invoice[] = [];
 const noop = vi.fn();
 const mockAddInvoice = vi.fn(() => ({ id: "unexpected", num: "INV-999" }));
 const mockAdoptInvoice = vi.fn();
+const mockRecordPayment = vi.fn();
 const mockSendInvoice = vi.fn<(id: string) => Promise<{ ok: boolean; error?: string }>>(() =>
   Promise.resolve({ ok: true }),
 );
@@ -52,7 +53,7 @@ vi.mock("@/lib/store/app-store", () => ({
       setInvoiceLines: noop,
       updateJob: noop,
       setJobLines: noop,
-      recordPayment: noop,
+      recordPayment: mockRecordPayment,
       sendInvoice: mockSendInvoice,
       updateLead: noop,
       setAddonStatus: noop,
@@ -333,7 +334,10 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
     expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
   });
 
-  it("a DRAFT invoice is sent (awaited) BEFORE the session is minted", async () => {
+  // THE PRIMARY PATH: close-out auto-creates the invoice via createFromJob (a server
+  // DRAFT, reconciled origin "db"), the tech taps Card — send is awaited, THEN the
+  // session is minted with the SAME id, and the QR genuinely appears.
+  it("auto-created draft (db origin): send awaited BEFORE mint, same id end-to-end, QR renders", async () => {
     mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
     let resolveSend!: (v: { ok: boolean; error?: string }) => void;
     mockSendInvoice.mockImplementationOnce(() => new Promise((res) => (resolveSend = res)));
@@ -352,6 +356,10 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
       resolveSend({ ok: true });
     });
     expect(mockCreatePayment).toHaveBeenCalledTimes(1);
+    expect(mockCreatePayment).toHaveBeenCalledWith({ invoiceId: "inv-1" }); // ONE id end-to-end
+    await act(async () => {});
+    expect(screen.getByAltText("Payment QR code")).toBeTruthy();
+    expect(screen.getByText("Open payment page")).toBeTruthy();
   });
 
   it("createPayment PRECONDITION_FAILED shows the server sentence and the record fallback works", async () => {
@@ -373,5 +381,102 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
     // Fallback: the record step opens (method preselected) — never a dead end.
     fireEvent.click(screen.getByText("They paid another way — record it instead"));
     expect(screen.getByText(/Record cash — paid/)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix round 1 — approvePayment ordering + the paid-via-QR race.
+//
+// recordPayment refuses drafts server-side (record-payment.ts guards sent|partial),
+// so recording BEFORE sending silently failed on every fresh draft: the server
+// 404'd/refused, the slice rolled the optimistic payment back with a dev-only log,
+// and the tech saw "Approved". Order is now send (awaited ok) → record — the same
+// ordering the card step uses. And because the customer may complete the checkout
+// QR while the tech reaches for "record it instead", one fresh status read runs
+// first: an already-paid invoice jumps to done instead of double-recording.
+// ---------------------------------------------------------------------------
+
+describe("CloseOutModalContent — record ordering + paid race (fix round 1)", () => {
+  beforeEach(() => {
+    mockActiveParams = { jobId: "job-1" };
+    mockJobs = [cardJob];
+    mockLeads = [feeLead];
+    mockInvoices = [cardInvoice];
+    mockAddInvoice.mockClear();
+    mockAdoptInvoice.mockClear();
+    mockRecordPayment.mockClear();
+    mockSendInvoice.mockClear();
+    mockSendInvoice.mockImplementation(() => Promise.resolve({ ok: true }));
+    mockCreatePayment.mockReset();
+    mockGetInvoice.mockReset();
+  });
+
+  async function clickRecordCash() {
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Cash"));
+    fireEvent.click(screen.getByText(/Record cash — paid/));
+    await act(async () => {});
+  }
+
+  it("a DRAFT is sent (awaited ok) BEFORE recordPayment fires — order asserted", async () => {
+    mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
+    // Fresh pre-record read sees the draft — not paid, proceed.
+    mockGetInvoice.mockResolvedValue({ ...paidDto, status: "draft" });
+    let resolveSend!: (v: { ok: boolean; error?: string }) => void;
+    mockSendInvoice.mockImplementationOnce(() => new Promise((res) => (resolveSend = res)));
+
+    await clickRecordCash();
+
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1");
+    expect(mockRecordPayment).not.toHaveBeenCalled(); // send not resolved yet
+
+    await act(async () => {
+      resolveSend({ ok: true });
+    });
+    expect(mockRecordPayment).toHaveBeenCalledTimes(1);
+    expect(mockRecordPayment).toHaveBeenCalledWith(
+      "inv-1",
+      expect.objectContaining({ amt: 450, method: "cash" }),
+    );
+    expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
+  });
+
+  it("a failed send BLOCKS the record: error named in place, nothing recorded, no Approved", async () => {
+    mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
+    mockGetInvoice.mockResolvedValue({ ...paidDto, status: "draft" });
+    mockSendInvoice.mockImplementationOnce(() =>
+      Promise.resolve({ ok: false, error: "an invoice needs at least one line" }),
+    );
+
+    await clickRecordCash();
+
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+    expect(screen.getByText("an invoice needs at least one line")).toBeTruthy();
+    expect(screen.queryByText(/Approved/)).toBeNull();
+  });
+
+  it("paid-via-QR race: the fresh read sees paid → adopt + done, recordPayment NEVER fires", async () => {
+    mockGetInvoice.mockResolvedValue(paidDto); // customer finished the checkout already
+
+    await clickRecordCash();
+
+    expect(mockGetInvoice).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+    expect(mockSendInvoice).not.toHaveBeenCalled(); // already sent AND already paid
+    expect(mockAdoptInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "inv-1", status: "paid" }),
+    );
+    expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
+    expect(screen.getByText(/Stripe checkout/)).toBeTruthy(); // what ACTUALLY happened, not "Cash recorded"
+  });
+
+  it("an unreadable pre-record check does not strand the tech — the record proceeds", async () => {
+    mockGetInvoice.mockRejectedValue(new Error("offline"));
+
+    await clickRecordCash();
+
+    expect(mockRecordPayment).toHaveBeenCalledTimes(1); // server remains the final guard
+    expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
   });
 });

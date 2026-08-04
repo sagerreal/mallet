@@ -420,3 +420,74 @@ describe("removeLocalInvoice", () => {
     expect(s.state.invoices).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// addInvoice fromJob — ONE id end-to-end (the same-session id split).
+//
+// The reconcile used to clobber the server DTO's id with the client-minted one
+// (`{...reconciled, id}`), so every later mutation keyed on the store id (send,
+// recordPayment, createPayment, get) hit the server with an id it never issued —
+// NOT_FOUND, optimistic rollback, dev-only log, while the UI said "Approved".
+// Two-part fix: the client id rides the createFromJob input (a FRESH create
+// echoes it back — ids never split), and the reconcile adopts the SERVER id (an
+// EXISTING invoice returned by the idempotent path converges to server truth).
+// ---------------------------------------------------------------------------
+
+describe("addInvoice fromJob — one id end-to-end", () => {
+  beforeEach(() => {
+    createFromJobMutate.mockReset();
+  });
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  const fromJobDraft = () => {
+    const { id: _id, num: _num, ...rest } = makeInvoice({ jobId: "job-1", origin: undefined });
+    return rest;
+  };
+
+  it("passes the client-authored id to createFromJob; a fresh create echoes it and ONE row keeps it", async () => {
+    createFromJobMutate.mockImplementation((input: unknown) =>
+      Promise.resolve(
+        dbDto({ id: (input as { id: string }).id, sourceJobId: "job-1", status: "draft" }),
+      ),
+    );
+    const s = makeSlice();
+    s.seed([]);
+    const inv = s.state.addInvoice(fromJobDraft());
+
+    expect(createFromJobMutate).toHaveBeenCalledTimes(1);
+    expect(createFromJobMutate).toHaveBeenCalledWith({ jobId: "job-1", id: inv.id });
+
+    await flush();
+    expect(s.state.invoices).toHaveLength(1);
+    expect(s.state.invoices[0]?.id).toBe(inv.id); // ids never split on the fresh path
+    expect(s.state.invoices[0]?.origin).toBe("db");
+  });
+
+  it("adopts the SERVER id when the idempotent path returns an EXISTING invoice (local id vanishes)", async () => {
+    createFromJobMutate.mockResolvedValue(
+      dbDto({ id: "inv-server-9", num: "INV-777", sourceJobId: "job-1", status: "sent" }),
+    );
+    const s = makeSlice();
+    s.seed([]);
+    const inv = s.state.addInvoice(fromJobDraft());
+
+    await flush();
+    expect(s.state.invoices).toHaveLength(1);
+    expect(s.state.invoices[0]?.id).toBe("inv-server-9"); // server truth wins
+    expect(s.state.invoices[0]?.num).toBe("INV-777");
+    expect(s.state.invoices.some((i) => i.id === inv.id)).toBe(false); // dead local id gone
+  });
+
+  it("never leaves two rows with the server id when that row was already in the store", async () => {
+    createFromJobMutate.mockResolvedValue(
+      dbDto({ id: "inv-server-9", sourceJobId: "job-1", status: "sent" }),
+    );
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-server-9", jobId: null })]);
+    s.state.addInvoice(fromJobDraft());
+
+    await flush();
+    expect(s.state.invoices.filter((i) => i.id === "inv-server-9")).toHaveLength(1);
+  });
+});

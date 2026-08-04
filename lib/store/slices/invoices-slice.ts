@@ -172,16 +172,28 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     const prior = get().invoices.slice();
     set((s) => ({ invoices: [inv, ...s.invoices] }));
 
-    // 2. fromJob path: fire createFromJob when jobId is provided.
+    // 2. fromJob path: fire createFromJob when jobId is provided. The client id rides the
+    //    input (the use case preserves it for the NEW row), so a fresh create echoes it back
+    //    and the ids never split.
     if (draft.jobId && draft.leadId) {
       trpcVanilla.v1.invoicing.createFromJob
-        .mutate({ jobId: draft.jobId })
+        .mutate({ jobId: draft.jobId, id })
         .then((dto) => {
           invalidateLists("invoices", "jobs");
-          // Reconcile — keep local id stable; server row now has the canonical num.
+          // Reconcile — ADOPT the server id (dto.id). On a fresh create it IS the client id
+          // (passed through above). On the idempotent path — the job already had an invoice —
+          // the ids differ and the server id must win: every later mutation (send,
+          // recordPayment, createPayment, get) sends the store id to the server, and the old
+          // `{...reconciled, id}` clobber made all of them NOT_FOUND (rollback + dev-only log)
+          // while the UI showed success.
           const reconciled = dtoInvoiceToStore(dto, inv);
-          const merged: Invoice = { ...reconciled, id };
-          set((s) => ({ invoices: reconcileInv(s.invoices, merged) }));
+          set((s) => ({
+            invoices: s.invoices
+              // Drop any OTHER row already carrying the server id (keep the one being replaced)
+              // so adoption never leaves two rows with the same id.
+              .filter((i) => i.id !== reconciled.id || i.id === id)
+              .map((i) => (i.id === id ? reconciled : i)),
+          }));
         })
         .catch((err: unknown) => {
           set({ invoices: prior });

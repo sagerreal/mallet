@@ -1,4 +1,4 @@
-import type { OrgId, JobId, Money, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, JobId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
 import { asInvoiceId, money, zeroMoney, notFound, conflict, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
@@ -13,6 +13,10 @@ const BPS_DENOMINATOR = 10_000;
 export interface CreateInvoiceFromJobCommand {
   readonly orgId: OrgId;
   readonly jobId: JobId;
+  // Client-authored id (the store needs a stable id synchronously); preserved so the store's
+  // local id === the server row id — mirrors DraftInvoiceUseCase. Applies to the NEW row only:
+  // the idempotent path (job already invoiced) returns the existing row and ignores this.
+  readonly id?: InvoiceId;
 }
 
 // Bill a completed job. Idempotent: one invoice per job. When the job carries priced lines they
@@ -79,7 +83,7 @@ export class CreateInvoiceFromJobUseCase {
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
     const invoice = Invoice.create({
-      id: asInvoiceId(this.ids.newId()),
+      id: this.invoiceId(cmd),
       orgId: cmd.orgId,
       num,
       sourceJobId: cmd.jobId,
@@ -116,6 +120,11 @@ export class CreateInvoiceFromJobUseCase {
       occurredAt: now,
     });
     return ok(invoice.value);
+  }
+
+  // Client-authored id for the NEW row (store id === server id), else a fresh one.
+  private invoiceId(cmd: CreateInvoiceFromJobCommand) {
+    return cmd.id ?? asInvoiceId(this.ids.newId());
   }
 
   // Frozen copies of the job's priced lines, each pointing back at its source via

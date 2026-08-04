@@ -30,6 +30,7 @@ import { Field } from "@/components/ui/input";
 import { CardCheckoutStep } from "./close-out-card-step";
 import { dtoInvoiceToStore, type InvoiceDTO } from "@/lib/store/dto-mapper";
 import { invalidateLists } from "@/lib/trpc/list-cache";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type {
   Invoice,
   InvoiceLine,
@@ -497,11 +498,16 @@ interface PayState {
 interface PayBlockProps {
   invoice: Invoice;
   lead: Lead | undefined;
+  /**
+   * Record a payment taken outside the app. Resolves only once the record can genuinely
+   * proceed (draft sent first; fresh paid-check done) — `alreadyPaid` means the checkout
+   * QR beat the manual record and the money is ALREADY in: jump to done, record nothing.
+   */
   onApprove: (args: {
     amt: number;
     method: PayMethod;
     onFile: boolean;
-  }) => void;
+  }) => Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }>;
   /** The store's sendInvoice — the card step must SEND a draft before minting. */
   sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
   /** The card step's poll saw paid/partial — the parent adopts the fresh DTO. */
@@ -529,6 +535,9 @@ function PayBlock({
   const card = custCard(lead);
   const [p, setP] = useState<PayState>({ step: "method", amt: due });
   const [chk, setChk] = useState("");
+  // A record that could NOT proceed (draft send failed, server refused) — named in
+  // place on the step the tech is looking at, never a silent "Approved".
+  const [payErr, setPayErr] = useState<string | null>(null);
 
   const amtIn = (
     <>
@@ -550,18 +559,39 @@ function PayBlock({
     </>
   );
 
-  // ---- charge card on file → record immediately, jump to done (coPay 'onfile') ---
-  function chargeOnFile() {
+  // ---- charge card on file → record, jump to done (coPay 'onfile') -----------
+  async function chargeOnFile() {
     const amt = clampAmt(p.amt, due);
-    onApprove({ amt, method: "card", onFile: true });
+    setPayErr(null);
+    const res = await onApprove({ amt, method: "card", onFile: true });
+    if (!res.ok) {
+      setPayErr(res.error ?? "Couldn't record the payment — try again.");
+      return;
+    }
+    if (res.alreadyPaid) {
+      // The checkout QR (or an emailed link) already collected the balance.
+      setP({ step: "done", method: "card", amt: due });
+      return;
+    }
     setP({ step: "done", method: "card", amt, onFile: true });
   }
 
   // ---- record a payment taken outside the app (coPay 'approve') --------------
-  function approve() {
+  // Done only renders once onApprove genuinely succeeded — a refused record must
+  // never show "Approved" (the old fire-and-forget did exactly that).
+  async function approve() {
     const amt = clampAmt(p.amt, due);
     const method = p.method ?? "cash";
-    onApprove({ amt, method, onFile: false });
+    setPayErr(null);
+    const res = await onApprove({ amt, method, onFile: false });
+    if (!res.ok) {
+      setPayErr(res.error ?? "Couldn't record the payment — try again.");
+      return;
+    }
+    if (res.alreadyPaid) {
+      setP({ step: "done", method: "card", amt: due });
+      return;
+    }
     setP({ step: "done", method, amt });
   }
 
@@ -615,6 +645,20 @@ function PayBlock({
         >
           back
         </span>
+        {payErr ? (
+          <p
+            role="alert"
+            style={{
+              color: "var(--red)",
+              fontSize: "var(--type-sm)",
+              fontWeight: 600,
+              width: "100%",
+              margin: "var(--space-1) 0 0",
+            }}
+          >
+            {payErr}
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -683,12 +727,14 @@ function PayBlock({
             </span>
           </button>
         ) : null}
+        {/* The amount box above applies to RECORDED methods only — a checkout
+            session always charges the full balance, so the button says so. */}
         <button
           className={`btn ${card ? "" : "primary"} copay-tap`}
           onClick={() => setP((s) => ({ ...s, step: "card", method: "card" }))}
         >
           <b>Card</b>
-          <span>scan to pay · Stripe checkout</span>
+          <span>scan to pay · charges the full balance</span>
         </button>
         <button
           className="btn"
@@ -709,6 +755,19 @@ function PayBlock({
           Bank
         </button>
       </div>
+      {payErr ? (
+        <p
+          role="alert"
+          style={{
+            color: "var(--red)",
+            fontSize: "var(--type-sm)",
+            fontWeight: 600,
+            margin: "var(--space-2) 0 0",
+          }}
+        >
+          {payErr}
+        </p>
+      ) : null}
       <span
         className="linklike"
         onClick={onCancel}
@@ -972,7 +1031,16 @@ export function CloseOutModalContent() {
   }
 
   // ---- record a payment taken outside the app (coPay approve/onfile) --------
-  function approvePayment({
+  // ORDER MATTERS, twice over:
+  //  1. The customer may have JUST paid the checkout QR (or an emailed link)
+  //     while the tech reached for "record it instead" — one fresh read first;
+  //     an already-paid invoice jumps to done instead of recording a second
+  //     payment the server would refuse (and the slice would silently roll back).
+  //  2. recordPayment refuses drafts server-side (sent|partial only), so a draft
+  //     is SENT — awaited, genuinely ok — before recording, the same ordering the
+  //     card step uses. Recording first made every first-record on a fresh draft
+  //     fail behind an "Approved" screen.
+  async function approvePayment({
     amt,
     method,
     onFile,
@@ -980,20 +1048,41 @@ export function CloseOutModalContent() {
     amt: number;
     method: PayMethod;
     onFile: boolean;
-  }) {
-    if (!invoice) return;
+  }): Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }> {
+    if (!invoice) return { ok: false, error: "invoice not found" };
+    if (invoice.origin === "db") {
+      try {
+        const fresh = await trpcVanilla.v1.invoicing.get.query({ invoiceId: invoice.id });
+        if (fresh.status === "paid") {
+          adoptPaidInvoice(fresh);
+          return { ok: true, alreadyPaid: true };
+        }
+      } catch {
+        // Unreadable (offline blip) — proceed with the record; the server remains
+        // the final guard and the slice rolls back an optimistic write it refuses.
+      }
+    }
+    if (invoice.status === "draft") {
+      const sent = await sendInvoice(invoice.id);
+      if (!sent.ok) {
+        return {
+          ok: false,
+          error: sent.error ?? "Couldn't send the invoice — check your connection and try again.",
+        };
+      }
+    }
     recordPayment(invoice.id, { amt, when: "Just now", method, onFile });
     // A card on file is NOT recorded here. This used to write a hardcoded
     // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
     // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.
-    if (invoice.status === "draft") sendInvoice(invoice.id);
+    return { ok: true };
   }
 
-  // ---- card checkout paid (the card step's poll saw paid/partial) ------------
+  // ---- a checkout payment landed (card-step poll, or the pre-record check) ---
   // The Stripe webhook already RECORDED the payment server-side; adopting the
   // fresh DTO (local id kept stable, mirroring the slice's reconcile convention)
   // flips DueCard/status immediately — no recordPayment double-write.
-  function cardPaid(dto: InvoiceDTO) {
+  function adoptPaidInvoice(dto: InvoiceDTO) {
     if (!invoice) return;
     invalidateLists("invoices", "jobs");
     adoptInvoice({ ...dtoInvoiceToStore(dto, invoice), id: invoice.id });
@@ -1085,7 +1174,7 @@ export function CloseOutModalContent() {
             lead={lead}
             onApprove={approvePayment}
             sendInvoice={sendInvoice}
-            onCardPaid={cardPaid}
+            onCardPaid={adoptPaidInvoice}
             onFinish={() => {
               setPayOpen(false);
               close();
