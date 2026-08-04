@@ -61,6 +61,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       termsDays: p.termsDays,
       sentAt: p.sentAt,
       dueAt: p.dueAt,
+      poNumber: p.poNumber,
       followUpOn: p.followUpOn ?? false,
       followUpStage: p.followUpStage ?? 0,
       updatedAt: p.updatedAt,
@@ -75,9 +76,29 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     const { amountPaidCents: _ownedByApplyPayment, ...updatable } = columns;
     await this.tx
       .insert(invoices)
-      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...columns })
-      .onConflictDoUpdate({ target: invoices.id, set: updatable });
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, publicToken: p.publicToken, ...columns })
+      .onConflictDoUpdate({
+        target: invoices.id,
+        set: {
+          ...updatable,
+          // WRITE-ONCE, enforced in the database: an existing token survives every later save (a
+          // rotated token would strand the pay link already texted to the customer); only a NULL
+          // one adopts the mint. Send-invoice re-reads after save so a racing double-send returns
+          // the token the row actually kept.
+          publicToken: sql`coalesce(${invoices.publicToken}, excluded.public_token)`,
+        },
+      });
     await this.diffLines(invoice);
+  }
+
+  async findByPublicToken(token: string): Promise<Invoice | null> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.publicToken, token), isNull(invoices.deletedAt)))
+      .limit(1);
+    const header = rows[0];
+    return header ? this.hydrate(header) : null;
   }
 
   // Atomically apply a payment to the denormalized header: increment amount_paid_cents and

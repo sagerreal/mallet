@@ -29,6 +29,8 @@ const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
   termsDays: 7,
   sentAt: null,
   dueAt: null,
+  poNumber: null,
+  publicToken: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,

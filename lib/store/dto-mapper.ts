@@ -567,6 +567,11 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     age: daysSince(dto.createdAt),
     dueAt: dto.dueAt,
     fu: { on: dto.followUpOn, stage: dto.followUpStage },
+    // The public pay link, minted server-side on first send. Threaded so the office modal can
+    // hand the customer their link (Task 9's UI); absent until the invoice has been sent.
+    poNumber: dto.poNumber ?? undefined,
+    publicToken: dto.publicToken ?? undefined,
+    publicUrl: dto.publicUrl ?? undefined,
     archived: dto.status === "void",
     origin: "db",
   };

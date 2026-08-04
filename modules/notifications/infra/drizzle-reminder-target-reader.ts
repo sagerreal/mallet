@@ -54,6 +54,7 @@ export class DrizzleReminderTargetReader implements ReminderTargetReader {
       phone,
       email,
       balanceCents: Math.max(0, inv.totalCents - inv.depositPaidCents - inv.amountPaidCents),
+      publicToken: inv.publicToken,
       createdAt: inv.createdAt,
     };
   }
@@ -76,6 +77,7 @@ export class DrizzleReminderTargetReader implements ReminderTargetReader {
       phone: row.phone,
       email: row.email,
       balanceCents: 0,
+      publicToken: row.est.publicToken,
       createdAt: row.est.createdAt,
     };
   }

@@ -39,6 +39,13 @@ class FakeInvoiceRepository implements InvoiceRepository {
     this.store.set(invoice.props.id, invoice);
   }
 
+  async findByPublicToken(token: string): Promise<Invoice | null> {
+    for (const invoice of this.store.values()) {
+      if (invoice.props.publicToken === token) return invoice;
+    }
+    return null;
+  }
+
   // The rest are required by the interface but unused by SendInvoiceUseCase.
   async nextNumber(): Promise<string> { return "INV-1"; }
   async insertForJob(): Promise<boolean> { return true; }
@@ -68,7 +75,10 @@ class FakeInvoiceRepository implements InvoiceRepository {
 }
 
 // Factory: builds a valid Invoice with sensible defaults and an optional status override.
-const makeInvoice = (status: "draft" | "sent" | "paid" | "void" = "draft"): Invoice => {
+const makeInvoice = (
+  status: "draft" | "sent" | "paid" | "void" = "draft",
+  publicToken: string | null = null,
+): Invoice => {
   const now = new Date("2026-06-01T00:00:00Z");
   const r = Invoice.create({
     id: INV_ID,
@@ -86,6 +96,7 @@ const makeInvoice = (status: "draft" | "sent" | "paid" | "void" = "draft"): Invo
     termsDays: 7,
     sentAt: status === "sent" ? now : null,
     dueAt: status === "sent" ? new Date("2026-06-08T00:00:00Z") : null,
+    publicToken,
     createdAt: now,
     updatedAt: now,
   });
@@ -151,10 +162,11 @@ describe("SendInvoiceUseCase", () => {
     expect(event.occurredAt).toEqual(clock.now());
   });
 
-  it("idempotent no-op: already-sent invoice returns ok but does NOT save or emit", async () => {
+  it("idempotent no-op: already-sent invoice (with its token) returns ok but does NOT save or emit", async () => {
     // An already-sent invoice causes invoice.send() to return ok(this) — same object reference.
-    // The use-case detects `sent.value === invoice` and short-circuits.
-    const alreadySent = makeInvoice("sent");
+    // The use-case detects `sent.value === invoice` and short-circuits. It carries a token here —
+    // a sent-but-tokenless (pre-migration) invoice deliberately mints one instead, see below.
+    const alreadySent = makeInvoice("sent", "f".repeat(64));
     repo.seed(alreadySent);
 
     const eventsBefore = bus.recorded.length;
@@ -173,6 +185,51 @@ describe("SendInvoiceUseCase", () => {
 
     // bus.emit must NOT have been called
     expect(bus.recorded.length).toBe(eventsBefore);
+  });
+
+  it("mints a 64-hex public token on first send and persists it", async () => {
+    repo.seed(makeInvoice("draft"));
+
+    const result = await uc.exec({ invoiceId: INV_ID });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // 32 bytes of crypto randomness, hex-encoded — same shape as the estimates' public token.
+    expect(result.value.props.publicToken).toMatch(/^[0-9a-f]{64}$/);
+    // Persisted, not just returned: the pay link must survive a reload.
+    const stored = await repo.findById(INV_ID);
+    expect(stored?.props.publicToken).toBe(result.value.props.publicToken);
+  });
+
+  it("keeps the token stable on re-send — no rotation, no extra save", async () => {
+    repo.seed(makeInvoice("draft"));
+
+    const first = await uc.exec({ invoiceId: INV_ID });
+    if (!isOk(first)) throw new Error("first send failed");
+    const token = first.value.props.publicToken;
+    const savesAfterFirst = repo.saveCalls;
+
+    const second = await uc.exec({ invoiceId: INV_ID });
+
+    expect(isOk(second)).toBe(true);
+    if (!isOk(second)) return;
+    // A re-send must never rotate a link the customer already holds.
+    expect(second.value.props.publicToken).toBe(token);
+    expect(repo.saveCalls).toBe(savesAfterFirst); // fully idempotent — nothing rewritten
+  });
+
+  it("stamps a token on re-send of a legacy sent invoice that has none, without re-emitting invoice.sent", async () => {
+    // Pre-migration invoices were sent before public tokens existed. A re-send is the shop's
+    // way to mint one — but it must not fire a second invoice.sent event.
+    repo.seed(makeInvoice("sent"));
+
+    const result = await uc.exec({ invoiceId: INV_ID });
+
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.publicToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(repo.saveCalls).toBe(1); // the mint was persisted
+    expect(bus.recorded).toHaveLength(0); // already sent — no duplicate event
   });
 
   it("returns a validation error when send() is rejected (e.g. paid invoice) without saving or emitting", async () => {

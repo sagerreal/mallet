@@ -137,6 +137,7 @@ const invoiceTarget = (overrides: Partial<ReminderTarget> = {}): ReminderTarget 
   phone: "+15551234567",
   email: "cust@example.com",
   balanceCents: 100_000,
+  publicToken: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   ...overrides,
 });
@@ -270,7 +271,7 @@ describe("AdvanceReminderUseCase", () => {
     const sender = new CountingSender(clock);
     const send = new SendNotificationUseCase(repo, sender, bus, clock, seqIds());
     const reader = new FakeReader(invoiceTarget());
-    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock);
+    const advance = new AdvanceReminderUseCase(reader, repo, send, policy, clock, null);
 
     const first = await advance.exec({ orgId: ORG, relatedType: "invoice", relatedId: INV });
     expect(isOk(first) && first.value?.props.reminderStage).toBe(1);
@@ -288,7 +289,7 @@ describe("AdvanceReminderUseCase", () => {
     const bus = new InMemoryEventBus();
     const sender = new CountingSender(clock);
     const send = new SendNotificationUseCase(repo, sender, bus, clock, seqIds());
-    const advance = new AdvanceReminderUseCase(new FakeReader(null), repo, send, policy, clock);
+    const advance = new AdvanceReminderUseCase(new FakeReader(null), repo, send, policy, clock, null);
     const r = await advance.exec({ orgId: ORG, relatedType: "estimate", relatedId: INV });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("validation");
@@ -307,6 +308,7 @@ describe("AdvanceReminderUseCase", () => {
       send,
       policy,
       clock,
+      null,
     );
     const r = await advance.exec({ orgId: ORG, relatedType: "invoice", relatedId: INV });
     expect(isOk(r) && r.value).toBeNull();

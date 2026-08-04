@@ -97,6 +97,13 @@ class FakeInvoiceRepository implements InvoiceRepository {
   async findById(id: InvoiceId): Promise<Invoice | null> {
     return this.store.get(id) ?? null;
   }
+  async findByPublicToken(token: string): Promise<Invoice | null> {
+    for (const invoice of this.store.values()) {
+      if (invoice.props.publicToken === token) return invoice;
+    }
+    return null;
+  }
+
   async findBySourceJob(jobId: JobId): Promise<Invoice | null> {
     return [...this.store.values()].find((i) => i.props.sourceJobId === jobId) ?? null;
   }

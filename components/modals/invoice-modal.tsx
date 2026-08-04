@@ -725,11 +725,36 @@ export function InvoiceModalContent() {
     updateInvoice(invoice.id, patch);
   }
 
-  function send() {
+  // Finalize (draft → sent), then DELIVER: text the pay link if the customer has a phone,
+  // email otherwise. This office button is the ONLY send path that auto-delivers — the field
+  // close-out flow must not fire SMS a tech never saw. A delivery failure surfaces the server's
+  // sentence inline while the invoice STAYS sent (the send itself succeeded; only the message
+  // didn't go out). The modal stays open and re-renders to the sent state, where Charge /
+  // Record become available — no dead-end close.
+  async function send() {
     if (!invoice) return;
-    // Finalize (draft → sent). The modal stays open and re-renders to the sent state, where
-    // Charge / Record become available — no dead-end close.
-    sendInvoice(invoice.id);
+    setPayErr(null);
+    setBusy(true);
+    try {
+      const result = await sendInvoice(invoice.id);
+      if (!result.ok) {
+        setPayErr(result.error ?? "Couldn't send the invoice.");
+        return;
+      }
+      // "—" is this codebase's no-phone sentinel (see pickCust) — treat it as absent.
+      const hasPhone = Boolean(phone && phone !== "—");
+      try {
+        await trpcVanilla.v1.notifications.sendInvoiceReminder.mutate({
+          invoiceId: invoice.id,
+          channel: hasPhone ? "sms" : "email",
+        });
+      } catch (e) {
+        // Includes the no-phone-no-email precondition — the server names the actual problem.
+        setPayErr(e instanceof Error ? e.message : "The invoice is sent, but the message didn't go out.");
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   function record(amt: number, method: RecordMethod) {
@@ -920,8 +945,8 @@ export function InvoiceModalContent() {
           ) : null}
         </div>
         {priKind === "send" ? (
-          <button className="sheet-pri" disabled={busy} onClick={send}>
-            Send invoice{due > 0 ? " — " + fmt$(due) : ""}
+          <button className="sheet-pri" disabled={busy} onClick={() => void send()}>
+            {busy ? "Sending…" : `Send invoice${due > 0 ? " — " + fmt$(due) : ""}`}
           </button>
         ) : priKind === "charge" ? (
           <button className="sheet-pri" disabled={busy} onClick={charge}>

@@ -1,17 +1,24 @@
 /**
- * Shared confirmation screen for the two Stripe Checkout return routes (/pay/success, /pay/cancel).
- * The customer lands here after the hosted-Checkout redirect. Static + presentational; the actual
- * payment is recorded server-side by the Stripe webhook, so this screen only reports the outcome.
- * Functional copy — states what happened and what to do next, no chatty filler.
+ * Shared confirmation screen for the Stripe Checkout return routes (/pay/success, /pay/cancel).
+ * The customer lands here after the hosted-Checkout redirect. Presentational; the payment is
+ * recorded server-side (webhook primary, success-page reconcile secondary), so this screen only
+ * reports the outcome. Functional copy — states what happened and what to do next, no chatty
+ * filler. `confirmed` is the upgraded success state shown once the reconcile endpoint verified
+ * the session server-side and the money is in the ledger.
  */
 import type { ReactNode } from "react";
 
-type Variant = "success" | "cancel";
+type Variant = "success" | "confirmed" | "cancel";
 
 const COPY: Record<Variant, { title: string; body: ReactNode; mark: string }> = {
   success: {
     title: "Payment received",
     body: "Thank you — your payment went through. You can close this page.",
+    mark: "✓",
+  },
+  confirmed: {
+    title: "Payment confirmed",
+    body: "Thank you — your payment went through and the invoice has been updated. You can close this page.",
     mark: "✓",
   },
   cancel: {
@@ -23,11 +30,12 @@ const COPY: Record<Variant, { title: string; body: ReactNode; mark: string }> = 
 
 export function PayResult({ variant }: { variant: Variant }) {
   const { title, body, mark } = COPY[variant];
+  const badge = variant === "cancel" ? "cancel" : "success";
   return (
     <main className="payresult-wrap">
       <style>{PAYRESULT_CSS}</style>
       <div className="payresult-card">
-        <span className={`payresult-badge payresult-badge--${variant}`} aria-hidden="true">
+        <span className={`payresult-badge payresult-badge--${badge}`} aria-hidden="true">
           {mark}
         </span>
         <h1>{title}</h1>

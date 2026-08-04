@@ -30,6 +30,7 @@ class FakeInvoiceRepository implements InvoiceRepository {
   async applyPayment(_i: InvoiceId, _a: number): Promise<ApplyResult> { return { applied: false, invoice: null }; }
   async findById(id: InvoiceId) { return this.store.get(id) ?? null; }
   async findBySourceJob(_j: JobId) { return null; }
+  async findByPublicToken(_t: string) { return null; }
   async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
     return { openCents: 0, overdueCents: 0, openCount: 0 };
   }

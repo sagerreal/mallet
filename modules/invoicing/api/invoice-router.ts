@@ -6,6 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asInvoiceId, asJobId, asLeadId, money, toPage } from "@mallet/shared/types";
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { OrgId } from "@mallet/shared/types";
 import { INVOICE_STATUSES, type Invoice, type InvoiceStatus } from "../domain/invoice";
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
@@ -95,6 +96,13 @@ const invoiceDTO = z.object({
   payments: z.array(paymentDTO),
   sentAt: z.string().nullable(),
   dueAt: z.string().nullable(),
+  // Customer-supplied purchase order number. Read-only surface here (the edit UI is Task 9).
+  poNumber: z.string().nullable(),
+  // The unguessable pay-link token, minted on first send; null until then. Office-only DTO —
+  // the customer receives the composed URL, never this raw credential out of context.
+  publicToken: z.string().nullable(),
+  // Absolute customer-facing pay URL, or null when no token / no canonical origin configured.
+  publicUrl: z.string().nullable(),
   // Is the shop still chasing this one, and how many nudges in.
   followUpOn: z.boolean(),
   followUpStage: z.number().int(),
@@ -196,6 +204,21 @@ const money$ = (cents: number) => ({ cents, currency: "USD" as const });
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 
 /**
+ * The customer-facing pay link for an invoice, or null when the origin cannot be resolved.
+ * Composed from the CANONICAL configured origin — never from the request or the sender's browser.
+ * Memoized exactly like the estimate router's publicUrlFor: process-level configuration, and
+ * loadConfig re-parses the whole schema on each call. `undefined` = not resolved yet; a resolved
+ * `null` (no origin configured) is cached too.
+ */
+let cachedOrigin: string | null | undefined;
+const publicUrlFor = (token: string | null): string | null => {
+  if (!token) return null;
+  if (cachedOrigin === undefined) cachedOrigin = resolvePublicAppOrigin(loadConfig());
+  if (cachedOrigin === null) return null;
+  return `${cachedOrigin}/i/${token}`;
+};
+
+/**
  * The invoice DTO plus its resolved authorisation.
  *
  * Every path that returns a FULL invoice goes through here, not just `get`. If a mutation returned
@@ -280,6 +303,9 @@ const toInvoiceDTO = (invoice: Invoice) => {
     })),
     sentAt: iso(p.sentAt),
     dueAt: iso(p.dueAt),
+    poNumber: p.poNumber,
+    publicToken: p.publicToken,
+    publicUrl: publicUrlFor(p.publicToken),
     followUpOn: p.followUpOn ?? false,
     followUpStage: p.followUpStage ?? 0,
     createdAt: p.createdAt.toISOString(),

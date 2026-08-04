@@ -19,6 +19,9 @@ export { DrizzleJobReader } from "./infra/drizzle-job-reader";
 export { DrizzleEstimateDepositReader } from "./infra/drizzle-estimate-deposit-reader";
 export { RecordCardPaymentUseCase } from "./app/record-card-payment";
 export { processStripeEvent } from "./app/stripe-webhook";
+// Success-page reconcile — same recorder wiring as the webhook, exposed for its public route.
+export { reconcileCheckoutSession } from "./app/reconcile-checkout";
+export type { ReconcileCheckoutDeps, ReconcileOutcome } from "./app/reconcile-checkout";
 export { DraftInvoiceUseCase } from "./app/draft-invoice";
 export { CreateInvoiceFromJobUseCase } from "./app/create-invoice-from-job";
 export { CreatePaymentUseCase } from "./app/create-payment";

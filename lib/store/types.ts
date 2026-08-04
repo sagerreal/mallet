@@ -435,6 +435,12 @@ export interface Invoice {
   title: string;
   email?: string;
   termsDays?: number | null;
+  /** Customer-supplied purchase order number. Read-only in the store (edit UI is Task 9). */
+  poNumber?: string;
+  /** The public pay-link token, minted server-side on first send. */
+  publicToken?: string;
+  /** Absolute customer-facing pay URL (server-composed from the canonical origin). */
+  publicUrl?: string;
   lines: InvoiceLine[];
   pricing?: { disc: number; tax: number };
   /** Dollars, TAX-INCLUSIVE — the snapshot from the job, not a sum of `lines`. */

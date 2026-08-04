@@ -52,6 +52,16 @@ export interface InvoiceProps {
   readonly termsDays: number;
   readonly sentAt: Date | null;
   readonly dueAt: Date | null;
+  /** Customer-supplied purchase order number, free text. Null when the customer didn't issue one. */
+  readonly poNumber: string | null;
+  /**
+   * The unguessable credential for the public pay page (/i/<token>), 64 hex chars.
+   *
+   * Minted on FIRST send and stable thereafter — a re-send must never rotate a link the customer
+   * already holds in a text thread. Null until the invoice has been sent (and on pre-migration
+   * rows, which mint one on their next send).
+   */
+  readonly publicToken: string | null;
   /** Is the shop still chasing this invoice, and how many nudges in. Same client-local fate as
    *  the quote's — the toggle disagreed with whether reminders were actually going out. */
   readonly followUpOn?: boolean;
@@ -74,9 +84,13 @@ export interface InvoiceMetadataPatch {
  * Input to Invoice.create. The tax split may be omitted: most invoices are drafted by hand and no
  * tax was ever computed for them, which is different from a computed split that happens to be zero.
  */
-export type InvoiceCreateProps = Omit<InvoiceProps, "taxBps" | "tax"> & {
+export type InvoiceCreateProps = Omit<InvoiceProps, "taxBps" | "tax" | "poNumber" | "publicToken"> & {
   readonly taxBps?: number;
   readonly tax?: Money;
+  // Both optional with a null default: most construction sites (drafts, job invoices) have
+  // neither — the PO arrives from the customer later, the token is minted at send time.
+  readonly poNumber?: string | null;
+  readonly publicToken?: string | null;
 };
 
 export class Invoice {
@@ -104,7 +118,26 @@ export class Invoice {
     }
     if (props.amountPaid < 0) return err(validation("amount paid cannot be negative", "amountPaid"));
     if (props.termsDays < 0) return err(validation("terms days cannot be negative", "termsDays"));
-    return ok(new Invoice({ ...props, num, taxBps, tax }));
+    return ok(
+      new Invoice({
+        ...props,
+        num,
+        taxBps,
+        tax,
+        poNumber: props.poNumber ?? null,
+        publicToken: props.publicToken ?? null,
+      }),
+    );
+  }
+
+  /**
+   * Stamp the public pay-link token. WRITE-ONCE: an invoice that already carries one keeps it —
+   * rotating the token would strand the link already texted to the customer. The repository
+   * enforces the same rule in SQL (COALESCE on save), so even a racing double-send cannot rotate.
+   */
+  withPublicToken(token: string): Invoice {
+    if (this.p.publicToken !== null) return this;
+    return new Invoice({ ...this.p, publicToken: token });
   }
 
   // Remaining balance, clamped at zero (an overpayment never shows negative).

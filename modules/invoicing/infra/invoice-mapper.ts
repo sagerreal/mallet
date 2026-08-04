@@ -71,6 +71,8 @@ export const toDomain = (
     termsDays: row.termsDays,
     sentAt: row.sentAt,
     dueAt: row.dueAt,
+    poNumber: row.poNumber,
+    publicToken: row.publicToken,
     followUpOn: row.followUpOn,
     followUpStage: row.followUpStage,
     createdAt: row.createdAt,

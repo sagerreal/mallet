@@ -123,6 +123,9 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     ],
     sentAt: "2026-06-01T09:00:00.000Z",
     dueAt: "2026-06-15T00:00:00.000Z",
+    poNumber: null,
+    publicToken: null,
+    publicUrl: null,
     createdAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
   };

@@ -107,6 +107,15 @@ export class StripeClient {
     return { url: session.url, sessionId: session.id };
   }
 
+  // Read back a Checkout Session (success-page reconcile). GET — safe to retry; no expansions
+  // needed (payment_intent arrives as its string id, which is all the recorder keys on).
+  async retrieveCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session> {
+    return call(
+      () => this.stripe.checkout.sessions.retrieve(sessionId, {}, { timeout: 10_000 }),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+  }
+
   // Create an Express connected account for a shop. Idempotency-keyed so a retry returns the SAME
   // account rather than minting a duplicate. card_payments + transfers requested so the account can
   // later take destination charges (PR2); onboarding collects the rest via the hosted link.

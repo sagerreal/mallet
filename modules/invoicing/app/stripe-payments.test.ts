@@ -99,6 +99,9 @@ class FakeRepo implements InvoiceRepository {
   async insertForJob(): Promise<boolean> {
     return true;
   }
+  async findByPublicToken(): Promise<Invoice | null> {
+    return null;
+  }
   async findBySourceJob(): Promise<Invoice | null> {
     return null;
   }

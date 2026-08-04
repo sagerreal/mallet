@@ -51,6 +51,12 @@ export interface InvoiceRepository {
   // races a void/pay cannot resurrect the invoice. Returns whether it applied + the current invoice.
   applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<ApplyResult>;
   findById(id: InvoiceId): Promise<Invoice | null>;
+  /**
+   * Token lookup for the public pay page. Deliberately takes NO org id — the unguessable token IS
+   * the credential; the caller resolved the org from it before opening this tenant tx, and RLS
+   * still scopes the read so another org's token resolves to nothing here. Soft-delete filtered.
+   */
+  findByPublicToken(token: string): Promise<Invoice | null>;
   findBySourceJob(jobId: JobId): Promise<Invoice | null>;
   list(page: CursorPage, filter?: InvoiceFilter, sort?: InvoiceSort, sortDir?: "asc" | "desc"): Promise<Paginated<Invoice>>;
 

@@ -62,14 +62,14 @@ describe("isRetriableStripeError", () => {
 // ---------------------------------------------------------------------------
 
 type FakeStripeInstance = {
-  checkout: { sessions: { create: ReturnType<typeof vi.fn> } };
+  checkout: { sessions: { create: ReturnType<typeof vi.fn>; retrieve: ReturnType<typeof vi.fn> } };
   webhooks: { constructEvent: ReturnType<typeof vi.fn> };
 };
 
 /** Build a StripeClient that uses a fake Stripe SDK instance. */
 function makeClient(): { client: StripeClient; fake: FakeStripeInstance } {
   const fake: FakeStripeInstance = {
-    checkout: { sessions: { create: vi.fn() } },
+    checkout: { sessions: { create: vi.fn(), retrieve: vi.fn() } },
     webhooks: { constructEvent: vi.fn() },
   };
   // StripeClient stores `this.stripe` as a private property. We construct normally
@@ -217,6 +217,61 @@ describe("StripeClient.createCheckoutSession", () => {
     ];
     expect(sessionParams.success_url).toBe("https://app.example.com/paid");
     expect(sessionParams.cancel_url).toBe("https://app.example.com/cancel");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StripeClient.retrieveCheckoutSession
+// ---------------------------------------------------------------------------
+
+describe("StripeClient.retrieveCheckoutSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the retrieved session", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve.mockResolvedValueOnce({ id: "cs_test_1", payment_status: "paid" });
+
+    const session = await client.retrieveCheckoutSession("cs_test_1");
+
+    expect(session.id).toBe("cs_test_1");
+    expect(fake.checkout.sessions.retrieve.mock.calls[0]?.[0]).toBe("cs_test_1");
+  });
+
+  it("retries a transient failure (5xx) through the resilience wrapper and succeeds", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve
+      .mockRejectedValueOnce(new Stripe.errors.StripeAPIError({ message: "internal server error" }))
+      .mockResolvedValueOnce({ id: "cs_test_2" });
+
+    const session = await client.retrieveCheckoutSession("cs_test_2");
+
+    expect(session.id).toBe("cs_test_2");
+    expect(fake.checkout.sessions.retrieve).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a deterministic client error — it fails identically and would count toward the shared breaker", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve.mockRejectedValue(
+      new Stripe.errors.StripeInvalidRequestError({ message: "no such session" }),
+    );
+
+    await expect(client.retrieveCheckoutSession("cs_missing")).rejects.toBeInstanceOf(
+      Stripe.errors.StripeInvalidRequestError,
+    );
+    expect(fake.checkout.sessions.retrieve).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the 10 000 ms timeout convention to the SDK call", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.retrieve.mockResolvedValueOnce({ id: "cs_test_3" });
+
+    await client.retrieveCheckoutSession("cs_test_3");
+
+    const call = fake.checkout.sessions.retrieve.mock.calls[0] as unknown[];
+    const options = call[call.length - 1] as { timeout: number };
+    expect(options.timeout).toBe(10_000);
   });
 });
 

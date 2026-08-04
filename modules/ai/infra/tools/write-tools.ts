@@ -234,7 +234,7 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
     //
     // AdvanceReminder resolves the due stage, sends that stage's copy, and keys idempotency on
     // `reminder:<id>:<stage>` so the stage is recorded and cannot repeat.
-    const uc = new AdvanceReminderUseCase(reader, repo, sendUc, new FollowUpPolicy(), ctx.deps.clock);
+    const uc = new AdvanceReminderUseCase(reader, repo, sendUc, new FollowUpPolicy(), ctx.deps.clock, publicOrigin());
     const result = await uc.exec({ orgId: ctx.orgId, relatedType: "invoice", relatedId: parsed.data.invoiceId });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     // Null means the policy says nothing is due — a real answer, not a failure. Saying so stops the
