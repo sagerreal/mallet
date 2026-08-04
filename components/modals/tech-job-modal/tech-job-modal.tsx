@@ -38,6 +38,7 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { MODAL } from "@/lib/store/modal-ids";
 import { CopilotSection } from "@/features/field-copilot/copilot-section";
@@ -114,6 +115,12 @@ export function TechJobModalContent() {
   const overrideVerifyItem = useAppStore((s) => s.overrideVerifyItem);
   const uncheckVerifyItem = useAppStore((s) => s.uncheckVerifyItem);
   const addJobPhoto = useAppStore((s) => s.addJobPhoto);
+  // Visit-fee collection (Task 5): setJobLines prices the job FIRST — createFromJob refuses
+  // to bill a genuinely unpriced estimate outright (see CreateInvoiceFromJobUseCase) — then
+  // addInvoice + sendInvoice raise and send the fee invoice. Mirrors close-out's commitBill.
+  const setJobLines = useAppStore((s) => s.setJobLines);
+  const addInvoice = useAppStore((s) => s.addInvoice);
+  const sendInvoice = useAppStore((s) => s.sendInvoice);
 
   // Derived values computed after all hooks (never inside selectors to avoid
   // creating new object references on every store write).
@@ -124,6 +131,20 @@ export function TechJobModalContent() {
   // The tech only sees PLACED visits — never "Invalid Date" rows in the field.
   const placed = (job?.visits ?? []).filter(vPlaced);
   const curVisit = currentVisit(placed);
+  // Guarded, null-safe re-derivation of isUnpricedEstimate for use BEFORE the early return
+  // below (hooks must run unconditionally) — the fee-fetch effect needs to know whether a
+  // scoping visit's handoff will actually need the org's fee. `scoping` below (after the
+  // return) reuses this exact value; job is guaranteed non-null there.
+  const scopingCandidate = job ? isUnpricedEstimate(job) : false;
+
+  // The field shell never mounts SettingsHydrator (it only mounts in the office layout — see
+  // features/settings/use-org-service-fee.ts), so `booking.serviceFee` in the store is never
+  // hydrated on this surface. Fetch the real fee once, only when the fee button could actually
+  // render: a done, unpriced-estimate visit, viewed by office/owner (billing writes are
+  // ownerOrOffice-only server-side — a tech could never collect it anyway).
+  const orgServiceFee = useOrgServiceFee(done && isOffice && scopingCandidate);
+  const [feeBusy, setFeeBusy] = useState(false);
+  const [feeError, setFeeError] = useState<string | null>(null);
 
   // --- useCallback-stabilized handlers for memoized child components ---------
   // These are referentially stable across re-renders when their captured
@@ -172,6 +193,42 @@ export function TechJobModalContent() {
     if (curVisit) onVisitStatus(curVisit.id, "scheduled");
   }, [curVisit, onVisitStatus]);
 
+  // Collect the org's visit fee on a declined estimate visit (Task 5). The fee becomes a real
+  // priced line on THIS job first — that's what lets createFromJob raise an invoice from it at
+  // all (an unpriced estimate is refused outright) — then the invoice is raised + sent, and the
+  // close-out sheet takes over collection (DueCard/PayBlock already handle a sent invoice).
+  const collectVisitFee = useCallback(async () => {
+    if (!job || !jobId || feeBusy) return;
+    const fee = orgServiceFee ?? 0;
+    if (fee <= 0) return; // no $0 fee collection — mirrors the button's own render guard
+    setFeeError(null);
+    setFeeBusy(true);
+    const feeLine = { d: "Visit fee — service call", q: 1, r: fee };
+    const { ok } = await setJobLines(jobId, [...(job.lines ?? []), feeLine]);
+    if (!ok) {
+      setFeeError("Couldn't collect the fee — check your connection and try again.");
+      setFeeBusy(false);
+      return;
+    }
+    const inv = addInvoice({
+      jobId,
+      leadId: job.leadId,
+      cust: custName,
+      phone: job.phone || lead?.phone || "",
+      title: job.title,
+      lines: [feeLine],
+      total: fee,
+      depPaid: 0,
+      payments: [],
+      status: "draft",
+      age: 0,
+      archived: false,
+    });
+    sendInvoice(inv.id);
+    setFeeBusy(false);
+    pushModal(MODAL.CLOSE_OUT, { jobId });
+  }, [job, jobId, lead, custName, orgServiceFee, feeBusy, setJobLines, addInvoice, sendInvoice, pushModal]);
+
   const navigate = useCallback(() => {
     // maps deep-link — open the address in the device's maps app.
     if (addr) window.open(`https://maps.google.com/?q=${encodeURIComponent(addr)}`, "_blank");
@@ -183,7 +240,8 @@ export function TechJobModalContent() {
   // A done, unpriced ESTIMATE is a finished scoping visit — its close-out is a
   // scope handoff, never a billing branch. Signed-on-site estimates carry priced
   // lines, fall out of this predicate, and keep the payment close-out.
-  const scoping = isUnpricedEstimate(job);
+  // (scopingCandidate was computed off this exact job earlier in this render, pre-return.)
+  const scoping = scopingCandidate;
   const hasScope = placed.some((v) => Boolean(v.scopeNotes?.trim()));
 
   // --- The ONE foot primary (sheet grammar) ----------------------------------
@@ -306,7 +364,17 @@ export function TechJobModalContent() {
           own: the address above and the visit row below are what the technician needs on the
           doorstep, and they are already there. */}
       {done && scoping ? (
-        <ScopeHandoffBlock scoped={hasScope} onOpenQuoteTab={() => setTab("quote")} />
+        <ScopeHandoffBlock
+          scoped={hasScope}
+          onOpenQuoteTab={() => setTab("quote")}
+          // Office-only: billing writes (setJobLines/createFromJob/send) are ownerOrOffice
+          // server-side, so a tech would only get FORBIDDEN — feeAmount 0 hides the button for
+          // them, the same guard that hides it while the fee is unset/loading.
+          feeAmount={isOffice ? (orgServiceFee ?? 0) : 0}
+          hasFeeInvoice={Boolean(invoice)}
+          onCollectFee={collectVisitFee}
+          feeError={feeError}
+        />
       ) : done && isOffice ? (
         <DoneBlock
           job={job}

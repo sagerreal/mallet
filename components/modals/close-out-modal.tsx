@@ -25,6 +25,7 @@ import {
   useActiveModal,
   useCloseModal,
 } from "@/lib/store/app-store";
+import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
 import type {
   Invoice,
@@ -142,12 +143,19 @@ interface BillDraft {
   lines: BillLine[];
 }
 
-interface BillAskProps {
+export interface BillAskProps {
   job: Job;
   suggested: number;
   onCommit: (invoiceLines: InvoiceLine[]) => void | Promise<void>;
   /** Persist failure surfaced by the parent (setJobLines rejected). */
   error?: string | null;
+  /**
+   * The org's real visit/diagnostic fee, dollars — read outside the store on this surface
+   * (this modal's only entry, the tech job modal, lives in the field shell, which never
+   * hydrates settings; see features/settings/use-org-service-fee.ts). null/0 = not genuinely
+   * set yet, so presetFee falls back to 89, the ultimate fallback.
+   */
+  serviceFee?: number | null;
 }
 
 const NUM_INPUT: React.CSSProperties = {
@@ -159,7 +167,7 @@ const NUM_INPUT: React.CSSProperties = {
   fontWeight: 700,
 };
 
-function BillAsk({ job, suggested, onCommit, error }: BillAskProps) {
+export function BillAsk({ job, suggested, onCommit, error, serviceFee }: BillAskProps) {
   const [draft, setDraft] = useState<BillDraft>({ mode: "flat", lines: [] });
   const [flatAmt, setFlatAmt] = useState<number>(suggested);
   const [addDesc, setAddDesc] = useState("");
@@ -209,7 +217,8 @@ function BillAsk({ job, suggested, onCommit, error }: BillAskProps) {
 
   function presetFee() {
     setAddDesc("Service / diagnostic call");
-    if (!addAmt) setAddAmt("89");
+    // The org's real fee; 89 is the ultimate fallback only when it isn't genuinely set (0/null).
+    if (!addAmt) setAddAmt(String(serviceFee || 89));
   }
 
   function addFlatLine() {
@@ -927,6 +936,14 @@ export function CloseOutModalContent() {
     });
   }, [job, invoice, lead, addInvoice]);
 
+  // The org's real visit fee for BillAsk's "+ Service / diagnostic fee" preset — read outside
+  // the store (this modal's only entry, the tech job modal, lives in the field shell, which
+  // never hydrates settings; see features/settings/use-org-service-fee.ts). Only fetched when
+  // BillAsk will actually render (mirrors its own render condition below), so an already-priced
+  // close-out never fires the extra request.
+  const needsBillAsk = Boolean(job && invoice && (invoice.total ?? 0) <= 0 && jobTotal(job) <= 0);
+  const orgServiceFee = useOrgServiceFee(needsBillAsk);
+
   if (!job || !invoice) return null;
 
   const custName = custNameOf(job, lead);
@@ -1049,6 +1066,7 @@ export function CloseOutModalContent() {
           suggested={suggestBill(job, pricebook)}
           onCommit={commitBill}
           error={commitError}
+          serviceFee={orgServiceFee}
         />
       ) : null}
 

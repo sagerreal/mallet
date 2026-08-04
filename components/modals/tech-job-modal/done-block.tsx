@@ -53,6 +53,18 @@ export interface ScopeHandoffBlockProps {
   scoped: boolean;
   /** Switches the modal to the Quote tab, where scope is captured and read. */
   onOpenQuoteTab: () => void;
+  /**
+   * The org's configured visit fee, dollars — read outside the store on this surface (the
+   * field shell never hydrates settings; see features/settings/use-org-service-fee.ts).
+   * 0/unset hides the button below: never a $0 fee collection.
+   */
+  feeAmount: number;
+  /** A fee invoice already exists for this job — hides the button (never collect it twice). */
+  hasFeeInvoice: boolean;
+  /** Creates + sends the fee invoice and opens the close-out sheet to collect it on site. */
+  onCollectFee: () => void;
+  /** Surfaced when the fee-collect write fails (setJobLines/addInvoice rejected). */
+  feeError?: string | null;
 }
 
 /**
@@ -60,14 +72,43 @@ export interface ScopeHandoffBlockProps {
  * on this job (see isUnpricedEstimate in helpers.ts), so the close-out is a
  * handoff, never a billing branch: the office builds the quote from the scope.
  * Rendered in DoneBlock's slot; the modal's foot stays a plain Done.
+ *
+ * A declined estimate still owes the org's visit/diagnostic fee — "Collect the visit fee" is
+ * a SECONDARY action beside the handoff (never replaces it): tapping it bills + collects the
+ * fee for THIS visit without asking the office to quote anything.
  */
-export function ScopeHandoffBlock({ scoped, onOpenQuoteTab }: ScopeHandoffBlockProps) {
+export function ScopeHandoffBlock({
+  scoped,
+  onOpenQuoteTab,
+  feeAmount,
+  hasFeeInvoice,
+  onCollectFee,
+  feeError,
+}: ScopeHandoffBlockProps) {
+  const showFeeButton = feeAmount > 0 && !hasFeeInvoice;
+
+  const feeControls = (
+    <>
+      {showFeeButton ? (
+        <button className="tjpaid-btn2" onClick={onCollectFee}>
+          Collect the visit fee — {fmt$(feeAmount)}
+        </button>
+      ) : null}
+      {feeError ? (
+        <div className="tjpaid-sub" style={{ color: "var(--red)" }}>
+          {feeError}
+        </div>
+      ) : null}
+    </>
+  );
+
   if (scoped) {
     return (
       <div className="tjpaid ok">
         <div className="tjpaid-top">
           <b>✓ Scoped — the office builds the quote</b>
         </div>
+        {feeControls}
       </div>
     );
   }
@@ -82,6 +123,7 @@ export function ScopeHandoffBlock({ scoped, onOpenQuoteTab }: ScopeHandoffBlockP
       <button className="tjpaid-btn2" onClick={onOpenQuoteTab}>
         Open the Quote tab →
       </button>
+      {feeControls}
     </div>
   );
 }
