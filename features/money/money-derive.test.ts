@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { dPlus } from "@/lib/prototype-sample";
 import type { Invoice, Job, Lead } from "@/lib/store/types";
 import { mkJob, mkVisit, mkInvoice, mkLead } from "@/features/jobs/test-factories";
+import { dtoJobToStoreJob } from "@/lib/store/dto-mapper";
 import {
   invPaid,
   invDue,
@@ -62,6 +63,51 @@ describe("jobsReadyToInvoice", () => {
     ];
     const invoices = [inv({ id: "inv-1", jobId: "2" })];
     expect(jobsReadyToInvoice(jobs, invoices).map((j) => j.id)).toEqual(["1"]);
+  });
+
+  // Money-on-the-floor regression: a job completed straight from My Day — one visit,
+  // complete, its scheduled_date NEVER set because nobody dragged it onto the Schedule
+  // board — must still surface as ready to bill. Goes through the real dtoJobToStoreJob
+  // mapper (not mkJob) so this exercises the actual DTO→store status derivation, not just
+  // jobsReadyToInvoice's own (trivial) status check.
+  it("includes a complete job whose only visit was never placed on the Schedule board", () => {
+    const dto = {
+      id: "job-1015",
+      num: "JOB-1015",
+      leadId: "lead-1",
+      sourceEstimateId: null,
+      assigneeUserId: null,
+      title: "Drain cleaning",
+      status: "complete" as const,
+      scheduledStart: null,
+      scheduledEnd: null,
+      startedAt: null,
+      completedAt: "2026-07-30T00:00:00.000Z",
+      canceledAt: null,
+      cancelReason: null,
+      total: { cents: 19_500, currency: "USD" as const },
+      notes: "",
+      svc: "service",
+      createdAt: "2026-07-28T00:00:00.000Z",
+      visits: [
+        {
+          id: "visit-1",
+          assigneeUserId: "tech-1",
+          scheduledDate: null,
+          scheduledStart: null,
+          scheduledEnd: null,
+          durationMinutes: 30,
+          status: "complete" as const,
+          enrouteAt: null,
+          startedAt: "2026-07-30T00:00:00.000Z",
+          completedAt: "2026-07-30T00:15:00.000Z",
+          notes: null,
+          position: 0,
+        },
+      ],
+    };
+    const job = dtoJobToStoreJob(dto as never);
+    expect(jobsReadyToInvoice([job], [])).toEqual([job]);
   });
 });
 

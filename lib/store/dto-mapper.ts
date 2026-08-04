@@ -314,16 +314,26 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     (v) => v.status !== BACKEND_VISIT_STATUS.CANCELED,
   );
   const visits = activeVisitDTOs.map(toStoreVisit);
-  // When there are active visits, recalc from their placement state.
-  // When there are no active visits AND the backend status is "scheduled", remap to
-  // "unscheduled" — a zero-visit job has not been slotted yet (this is the common state
-  // immediately after a quote is accepted and CreateJobFromEstimateUseCase runs).
-  // Only "in_progress", "complete", and "canceled" are preserved as-is via the fallback.
-  const status = visits.length > 0
-    ? recalcJobStatus(visits)
-    : dto.status === BACKEND_JOB_STATUS.SCHEDULED
-      ? "unscheduled"
-      : toStoreJobStatusInternal(dto.status);
+  const isTerminal =
+    dto.status === BACKEND_JOB_STATUS.COMPLETE || dto.status === BACKEND_JOB_STATUS.CANCELED;
+  // A terminal backend status (complete/canceled) ALWAYS wins over the visit-placement
+  // recalc below. The backend already decided the job is done; whether its visit ever got
+  // dragged onto the Schedule board is irrelevant to that fact. Without this, a job
+  // completed straight from My Day — one visit, complete, never placed — would recalc from
+  // placement state alone (recalcJobStatus sees no placed visits and returns "unscheduled"),
+  // and a completed job with real revenue would vanish from Money's ready-to-bill list.
+  // Otherwise: when there are active visits, recalc from their placement state. When there
+  // are no active visits AND the backend status is "scheduled", remap to "unscheduled" — a
+  // zero-visit job has not been slotted yet (this is the common state immediately after a
+  // quote is accepted and CreateJobFromEstimateUseCase runs). "in_progress" is preserved
+  // as-is via the fallback.
+  const status = isTerminal
+    ? toStoreJobStatusInternal(dto.status)
+    : visits.length > 0
+      ? recalcJobStatus(visits)
+      : dto.status === BACKEND_JOB_STATUS.SCHEDULED
+        ? "unscheduled"
+        : toStoreJobStatusInternal(dto.status);
 
   return {
     id: dto.id,

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { hhmmToHour, hoursBetween } from "./jobs-hydrator";
+import { hhmmToHour, hoursBetween, toStoreJob } from "./jobs-hydrator";
 
 describe("hhmmToHour", () => {
   it("converts whole hours", () => {
@@ -56,5 +56,88 @@ describe("hoursBetween", () => {
   it("respects a custom defaultDur", () => {
     expect(hoursBetween(null, null, 3)).toBe(3);
     expect(hoursBetween("10:00", "09:00", 1)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toStoreJob — terminal status wins over visit-placement recalc
+// (money-on-the-floor fix, mirrored from lib/store/dto-mapper.test.ts: this
+// hydrator has its own copy of the same recalc — it backs v1.jobs.list, which
+// runs on every office page load/refetch, including Money's.)
+// ---------------------------------------------------------------------------
+
+const baseSummaryDto = {
+  id: "job-1",
+  leadId: "lead-1",
+  sourceEstimateId: null,
+  svc: "service",
+  kind: null,
+  title: "Job",
+  addr: "",
+  phone: "",
+  status: "scheduled" as const,
+  notes: "",
+  completion: undefined,
+  invRequested: false,
+  checklist: null,
+  requiredCerts: null,
+  visits: [] as unknown[],
+};
+
+const summaryVisit = {
+  id: "vis-1",
+  assigneeUserId: "tech-1",
+  scheduledDate: "2026-07-15",
+  scheduledStart: "09:00",
+  scheduledEnd: "11:00",
+  durationMinutes: null,
+  status: "pending" as const,
+  enrouteAt: null as string | null,
+  startedAt: null,
+  completedAt: null,
+  notes: null,
+  position: 0,
+};
+
+describe("toStoreJob terminal status wins over visit-placement recalc", () => {
+  it("job 'complete' + one complete but UNPLACED visit → store 'done' (the regression)", () => {
+    const unplacedCompleteVisit = {
+      ...summaryVisit,
+      status: "complete" as const,
+      scheduledDate: null,
+      scheduledStart: null,
+      scheduledEnd: null,
+    };
+    const job = toStoreJob({
+      ...baseSummaryDto,
+      status: "complete",
+      visits: [unplacedCompleteVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("job 'complete' + one PLACED complete visit → store 'done' (unchanged)", () => {
+    const placedCompleteVisit = { ...summaryVisit, status: "complete" as const };
+    const job = toStoreJob({
+      ...baseSummaryDto,
+      status: "complete",
+      visits: [placedCompleteVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("job 'scheduled' + an unplaced visit → store 'unscheduled' (unchanged)", () => {
+    const unplacedVisit = { ...summaryVisit, scheduledDate: null, scheduledStart: null, scheduledEnd: null };
+    const job = toStoreJob({
+      ...baseSummaryDto,
+      status: "scheduled",
+      visits: [unplacedVisit],
+    } as never);
+    expect(job.status).toBe("unscheduled");
+  });
+
+  it("job 'canceled' → store 'done' (terminal, zero visits — unchanged)", () => {
+    const job = toStoreJob({ ...baseSummaryDto, status: "canceled", visits: [] } as never);
+    expect(job.status).toBe("done");
   });
 });

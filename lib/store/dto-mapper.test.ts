@@ -526,6 +526,60 @@ describe("dtoJobToStoreJob status remap (zero-visit fix)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// dtoJobToStoreJob — terminal backend status wins over visit placement
+// (money-on-the-floor fix: a complete job with an unplaced visit was reading
+// back as "unscheduled" and vanishing from Money's ready-to-bill list)
+// ---------------------------------------------------------------------------
+
+describe("dtoJobToStoreJob terminal status wins over visit-placement recalc", () => {
+  it("job 'complete' + one complete but UNPLACED visit → store 'done' (the regression)", () => {
+    const unplacedCompleteVisit = {
+      ...visitDTO,
+      status: "complete" as const,
+      scheduledDate: null,
+      scheduledStart: null,
+      scheduledEnd: null,
+    };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "complete",
+      visits: [unplacedCompleteVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("job 'complete' + one PLACED complete visit → store 'done' (unchanged)", () => {
+    const placedCompleteVisit = { ...visitDTO, status: "complete" as const };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "complete",
+      visits: [placedCompleteVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+
+  it("job 'scheduled' + an unplaced visit → store 'unscheduled' (unchanged — placement derivation survives for non-terminal jobs)", () => {
+    const unplacedVisit = { ...visitDTO, scheduledDate: null, scheduledStart: null, scheduledEnd: null };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "scheduled",
+      visits: [unplacedVisit],
+    } as never);
+    expect(job.status).toBe("unscheduled");
+  });
+
+  it("job 'canceled' + an unplaced pending visit → store 'done' (terminal wins)", () => {
+    const unplacedVisit = { ...visitDTO, scheduledDate: null, scheduledStart: null, scheduledEnd: null };
+    const job = dtoJobToStoreJob({
+      ...baseJobDto,
+      status: "canceled",
+      visits: [unplacedVisit],
+    } as never);
+    expect(job.status).toBe("done");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // toStoreVisit — dur precedence (duration_minutes fix)
 // durationMinutes is authoritative; the start→end window is the legacy fallback.
 // ---------------------------------------------------------------------------
