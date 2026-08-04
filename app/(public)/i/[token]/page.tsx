@@ -20,7 +20,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicInvoice } from "@/modules/invoicing/app/public-invoice";
 import type { PublicInvoiceView } from "@/modules/invoicing/app/public-invoice";
-import { formatMoney, formatDate } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
+import { termsLine } from "@/features/invoices/terms-line";
 import { PayInvoiceButton } from "./PayInvoiceButton";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
@@ -141,6 +142,15 @@ export default async function PublicInvoicePage({
   const pill = STATUS_PILL[view.status];
   const subtotalCents = view.totalCents - view.taxCents; // total is tax-INCLUSIVE
   const dueAtIso = view.dueAt?.toISOString() ?? null;
+  // Net terms + due date + PO — ONE source of truth shared with the office sheet and the
+  // customer preview modal (features/invoices/terms-line.ts). Net/due are suppressed once
+  // settled (paid/void) — a due date is meaningless on a receipt — but the PO number is a
+  // permanent reference and stays on the line regardless of status.
+  const line = termsLine({
+    termsDays: isPaid || isVoid ? 0 : view.termsDays,
+    dueAt: isPaid || isVoid ? null : dueAtIso,
+    poNumber: view.poNumber,
+  });
 
   // The Pay button exists ONLY when there is money to take, the shop can take it, and the
   // invoice is open. Everything else renders as a statement/receipt.
@@ -215,14 +225,9 @@ export default async function PublicInvoicePage({
             }}
           >
             <span className={`pill ${pill.tone}`}>{pill.label}</span>
-            {dueAtIso && !isPaid && !isVoid && (
+            {line && (
               <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                Net {view.termsDays} &middot; due {formatDate(dueAtIso)}
-              </span>
-            )}
-            {view.poNumber && (
-              <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                PO {view.poNumber}
+                {line}
               </span>
             )}
           </div>

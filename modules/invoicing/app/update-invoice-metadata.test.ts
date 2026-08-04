@@ -114,4 +114,38 @@ describe("UpdateInvoiceMetadataUseCase", () => {
     expect(res.ok).toBe(false);
     if (!res.ok && res.error.kind === "validation") expect(res.error.field).toBe("termsDays");
   });
+
+  it("persists a poNumber", async () => {
+    seed(repo);
+    const res = await useCase.exec({ invoiceId: INV, poNumber: "4471" });
+    expect(isOk(res)).toBe(true);
+    if (isOk(res)) expect(res.value.props.poNumber).toBe("4471");
+    expect(repo.saveCallCount).toBe(1);
+  });
+
+  it("trims a blank poNumber to null (clears it)", async () => {
+    seed(repo);
+    const first = await useCase.exec({ invoiceId: INV, poNumber: "4471" });
+    if (!isOk(first)) throw new Error("setup failed");
+    const cleared = await useCase.exec({ invoiceId: INV, poNumber: "   " });
+    expect(isOk(cleared)).toBe(true);
+    if (isOk(cleared)) expect(cleared.value.props.poNumber).toBeNull();
+  });
+
+  it("leaves poNumber untouched when omitted from the command", async () => {
+    seed(repo);
+    const first = await useCase.exec({ invoiceId: INV, poNumber: "4471" });
+    if (!isOk(first)) throw new Error("setup failed");
+    const second = await useCase.exec({ invoiceId: INV, title: "Renamed" });
+    expect(isOk(second)).toBe(true);
+    if (isOk(second)) expect(second.value.props.poNumber).toBe("4471");
+  });
+
+  it("rejects a poNumber over 64 characters", async () => {
+    seed(repo);
+    const res = await useCase.exec({ invoiceId: INV, poNumber: "x".repeat(65) });
+    expect(res.ok).toBe(false);
+    if (!res.ok && res.error.kind === "validation") expect(res.error.field).toBe("poNumber");
+    expect(repo.saveCallCount).toBe(0);
+  });
 });

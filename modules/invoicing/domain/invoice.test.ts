@@ -222,6 +222,53 @@ describe("Invoice.editMetadata", () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.field).toBe("depositPaid");
   });
+
+  it("sets a poNumber", () => {
+    const res = build("draft").editMetadata({ poNumber: "4471" }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("4471");
+  });
+
+  it("trims a poNumber", () => {
+    const res = build("draft").editMetadata({ poNumber: "  4471  " }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("4471");
+  });
+
+  it("trims a blank/whitespace-only poNumber to null (clears it)", () => {
+    const res = build("draft", { poNumber: "old-po" }).editMetadata({ poNumber: "   " }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBeNull();
+  });
+
+  it("clears a poNumber with explicit null", () => {
+    const res = build("draft", { poNumber: "old-po" }).editMetadata({ poNumber: null }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBeNull();
+  });
+
+  it("keeps the poNumber when undefined in the patch", () => {
+    const res = build("draft", { poNumber: "keep-me" }).editMetadata({ termsDays: 14 }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("keep-me");
+  });
+
+  it("allows setting a poNumber on a SENT invoice (not frozen until paid/void)", () => {
+    const res = build("sent").editMetadata({ poNumber: "4471" }, now);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.props.poNumber).toBe("4471");
+  });
+
+  it("rejects a poNumber over 64 characters", () => {
+    const res = build("draft").editMetadata({ poNumber: "x".repeat(65) }, now);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.field).toBe("poNumber");
+  });
+
+  it("accepts a poNumber at exactly 64 characters", () => {
+    const res = build("draft").editMetadata({ poNumber: "x".repeat(64) }, now);
+    expect(res.ok).toBe(true);
+  });
 });
 
 describe("Invoice.editLines", () => {

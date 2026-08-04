@@ -164,6 +164,9 @@ const updateMetadataInput = z.object({
   title: z.string().max(500).nullable().optional(),
   termsDays: z.number().int().min(0).optional(),
   depositPaidCents: z.number().int().nonnegative().optional(),
+  // Customer-supplied PO number. Trimmed to null when blank (Invoice.editMetadata); undefined
+  // (the field simply absent) leaves the current value untouched.
+  poNumber: z.string().max(64).nullable().optional(),
 });
 const patchLinesInput = z.object({
   invoiceId: z.string().uuid(),
@@ -445,6 +448,7 @@ export const createInvoiceRouter = () =>
               title: input.title,
               termsDays: input.termsDays,
               depositPaidCents: input.depositPaidCents,
+              poNumber: input.poNumber,
             }),
           ),
           ctx.tx,

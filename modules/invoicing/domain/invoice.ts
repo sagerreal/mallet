@@ -75,7 +75,14 @@ export interface InvoiceMetadataPatch {
   readonly title?: string | null;
   readonly termsDays?: number;
   readonly depositPaid?: Money;
+  /**
+   * Customer-supplied purchase order number. Undefined = keep current; explicit null (or a
+   * blank/whitespace-only string) clears it. Trimmed before it reaches Invoice.create.
+   */
+  readonly poNumber?: string | null;
 }
+
+const PO_NUMBER_MAX_LEN = 64;
 
 // A bill for completed work. Aggregate root over its payment ledger + display lines. Money is
 // integer cents; the balance due is always derived (total − deposit − amountPaid, clamped ≥ 0).
@@ -118,6 +125,9 @@ export class Invoice {
     }
     if (props.amountPaid < 0) return err(validation("amount paid cannot be negative", "amountPaid"));
     if (props.termsDays < 0) return err(validation("terms days cannot be negative", "termsDays"));
+    if (props.poNumber != null && props.poNumber.length > PO_NUMBER_MAX_LEN) {
+      return err(validation(`PO number cannot exceed ${PO_NUMBER_MAX_LEN} characters`, "poNumber"));
+    }
     return ok(
       new Invoice({
         ...props,
@@ -207,12 +217,16 @@ export class Invoice {
     if (this.p.status === "paid" || this.p.status === "void") {
       return err(validation("a paid or void invoice cannot be edited", "status"));
     }
+    // Trim poNumber to null when blank — preserve null for "not set". Undefined keeps current.
+    const poNumber =
+      patch.poNumber === undefined ? this.p.poNumber : (patch.poNumber?.trim() || null);
     return Invoice.create({
       ...this.p,
       leadId: patch.leadId ?? this.p.leadId,
       title: patch.title === undefined ? this.p.title : patch.title,
       termsDays: patch.termsDays ?? this.p.termsDays,
       depositPaid: patch.depositPaid ?? this.p.depositPaid,
+      poNumber,
       updatedAt: now,
     });
   }

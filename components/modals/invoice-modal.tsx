@@ -58,6 +58,8 @@ import { Field } from "@/components/ui/input";
 import { SheetRow } from "./sheet-row";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
+// Single source for the Net-terms/due-date/PO face line (features/invoices).
+import { termsLine } from "@/features/invoices/terms-line";
 import { ModalLoading } from "./modal-loading";
 
 function StatusPill({ invoice }: { invoice: Invoice }) {
@@ -699,6 +701,12 @@ export function InvoiceModalContent() {
   const sent = invoice.status !== "draft";
   const due = invDue(invoice);
   const total = invoice.total ?? 0;
+  // The face line — "Net 30 · due Sep 2 · PO 4471" (features/invoices/terms-line.ts, the same
+  // helper the customer preview and public pay page use).
+  const face = termsLine({ termsDays: invoice.termsDays, dueAt: invoice.dueAt, poNumber: invoice.poNumber });
+  // PO stays editable on any open invoice — frozen only once paid/void, matching
+  // editMetadata's own gate (a settled invoice's terms are a closed record).
+  const poEditable = invoice.status !== "paid" && invoice.status !== "void";
 
   const custName = invCustName(invoice, leads);
   const phone = invPhone(invoice, leads);
@@ -796,6 +804,7 @@ export function InvoiceModalContent() {
           <span>{invoice.num}</span>
           {invoice.title && invoice.title !== custName ? <span>{invoice.title}</span> : null}
           {phone ? <span>{phone}</span> : null}
+          {face ? <span>{face}</span> : null}
         </div>
       </div>
 
@@ -828,6 +837,30 @@ export function InvoiceModalContent() {
             value={job?.title ?? invoice.title}
             onPress={() => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })}
           />
+        </div>
+      ) : null}
+
+      {/* PO number — customer-supplied, editable on any open invoice (frozen once paid/void,
+          same gate as editMetadata). Lives with the other quiet in-flow details rows, whether
+          the bill is hand-made or built on a job. */}
+      {poEditable ? (
+        <div className="sheet-rows" style={{ marginTop: "var(--space-2)" }}>
+          <SheetRow
+            label="PO number"
+            value={invoice.poNumber || "Add"}
+            valueIsHint={!invoice.poNumber}
+            expandable
+          >
+            <Field label="PO number" style={{ margin: "0" }}>
+              <input
+                type="text"
+                defaultValue={invoice.poNumber || ""}
+                placeholder="e.g. 4471"
+                maxLength={64}
+                onChange={(e) => updateInvoice(invoice.id, { poNumber: e.target.value })}
+              />
+            </Field>
+          </SheetRow>
         </div>
       ) : null}
 

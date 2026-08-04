@@ -11,6 +11,8 @@ export interface UpdateInvoiceMetadataCommand {
   readonly title?: string | null;
   readonly termsDays?: number;
   readonly depositPaidCents?: number;
+  /** Customer-supplied PO number. Undefined = keep current; null/blank clears it (see Invoice.editMetadata). */
+  readonly poNumber?: string | null;
 }
 
 // Edit header metadata on an open (draft|sent|partial) invoice. Frozen once paid/void
@@ -33,6 +35,7 @@ export class UpdateInvoiceMetadataUseCase {
         title: cmd.title,
         termsDays: cmd.termsDays,
         depositPaid: cmd.depositPaidCents === undefined ? undefined : money(cmd.depositPaidCents),
+        poNumber: cmd.poNumber,
       },
       now,
     );

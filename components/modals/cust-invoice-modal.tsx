@@ -31,6 +31,8 @@ import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import { useAppStore, useActiveModal } from "@/lib/store/app-store";
 import type { Brand, Invoice, Job, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+// Single source for the Net-terms/due-date/PO face line (features/invoices).
+import { termsLine } from "@/features/invoices/terms-line";
 import { ModalLoading } from "./modal-loading";
 
 // ---- money helpers (ported 1:1 from money/page.tsx + invoice-modal.tsx) -----
@@ -311,6 +313,9 @@ export function CustInvoiceModalContent() {
   const job: Job | undefined =
     invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
   const paid = invPaid(invoice);
+  // The face line — "Net 30 · due Sep 2 · PO 4471" (features/invoices/terms-line.ts, the same
+  // helper the office sheet and the public pay page use).
+  const face = termsLine({ termsDays: invoice.termsDays, dueAt: invoice.dueAt, poNumber: invoice.poNumber });
 
   // custPayNow (5656): record the payment, then optionally vault the card.
   // The store update re-renders this view; when due hits 0 the settled state shows.
@@ -341,6 +346,7 @@ export function CustInvoiceModalContent() {
         </p>
         <p className="muted" style={{ marginBottom: "var(--space-2)" }}>
           Invoice {invoice.num}
+          {face ? ` · ${face}` : ""}
         </p>
 
         {/* line rows */}

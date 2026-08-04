@@ -56,6 +56,7 @@ export interface InvoiceMetadataPayload {
   title?: string | null;
   termsDays?: number;
   depositPaidCents?: number;
+  poNumber?: string | null;
 }
 
 export function buildInvoiceMetadataPayload(
@@ -78,6 +79,11 @@ export function buildInvoiceMetadataPayload(
   }
   if ("depPaid" in patch && patch.depPaid != null) {
     payload.depositPaidCents = Math.round(patch.depPaid * 100); // dollars → cents
+    persistable = true;
+  }
+  if ("poNumber" in patch) {
+    // Trim to null when blank — preserve null for "not set" (mirrors the domain's editMetadata).
+    payload.poNumber = (patch.poNumber ?? "").trim() || null;
     persistable = true;
   }
   return persistable ? payload : null;

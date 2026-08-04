@@ -126,6 +126,21 @@ describe("buildInvoiceMetadataPayload", () => {
     expect(p?.termsDays).toBe(14);
     expect((p as unknown as Record<string, unknown>).cust).toBeUndefined();
   });
+
+  it("maps a poNumber", () => {
+    const p = buildInvoiceMetadataPayload("inv-1", { poNumber: "4471" });
+    expect(p?.poNumber).toBe("4471");
+  });
+
+  it("trims a poNumber", () => {
+    const p = buildInvoiceMetadataPayload("inv-1", { poNumber: "  4471  " });
+    expect(p?.poNumber).toBe("4471");
+  });
+
+  it("trims a blank poNumber to null (clears it)", () => {
+    const p = buildInvoiceMetadataPayload("inv-1", { poNumber: "   " });
+    expect(p?.poNumber).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -170,6 +185,36 @@ describe("updateInvoice persistence", () => {
     expect(s.state.invoices[0]?.termsDays).toBe(30);
     await Promise.resolve(); await Promise.resolve();
     expect(s.state.invoices[0]?.termsDays).toBe(7);
+  });
+
+  // PO number round-trip — Task 9's edit path. Same optimistic → trpcVanilla →
+  // reconcile → rollback convention as every other field on this action.
+  it("sets a poNumber optimistically and persists it via updateMetadata", () => {
+    updateMetadataMutate.mockResolvedValue(dbDto({ poNumber: "4471" }));
+    const s = makeSlice(); s.seed([makeInvoice()]);
+    s.state.updateInvoice("inv-1", { poNumber: "4471" });
+    expect(s.state.invoices[0]?.poNumber).toBe("4471"); // optimistic
+    expect(updateMetadataMutate).toHaveBeenCalledOnce();
+    const call = updateMetadataMutate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.invoiceId).toBe("inv-1");
+    expect(call.poNumber).toBe("4471");
+  });
+
+  it("reconciles the server-canonical poNumber after a successful save", async () => {
+    updateMetadataMutate.mockResolvedValue(dbDto({ poNumber: "4471" }));
+    const s = makeSlice(); s.seed([makeInvoice()]);
+    s.state.updateInvoice("inv-1", { poNumber: "4471" });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(s.state.invoices[0]?.poNumber).toBe("4471");
+  });
+
+  it("rolls back the poNumber on mutation error", async () => {
+    updateMetadataMutate.mockRejectedValue(new Error("boom"));
+    const s = makeSlice(); s.seed([makeInvoice({ poNumber: "old-po" })]);
+    s.state.updateInvoice("inv-1", { poNumber: "4471" });
+    expect(s.state.invoices[0]?.poNumber).toBe("4471"); // optimistic
+    await Promise.resolve(); await Promise.resolve();
+    expect(s.state.invoices[0]?.poNumber).toBe("old-po"); // reverted
   });
 });
 
