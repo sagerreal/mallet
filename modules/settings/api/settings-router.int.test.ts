@@ -7,6 +7,7 @@ import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { closeDb } from "@mallet/shared/db/client";
 import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
+import { TRADE_KEYS } from "@/app/(office)/settings/trade-playbooks";
 import type { Context } from "@/trpc/init";
 
 // Capstone: exercise the full settings stack via createCaller — auth gate, RBAC, org-scoped
@@ -262,7 +263,7 @@ suite("settings tRPC router (full stack, live RLS)", () => {
 
   // ── RBAC ──────────────────────────────────────────────────────────────────
 
-  it("a tech is forbidden from all settings procedures", async () => {
+  it("a tech is forbidden from all settings procedures EXCEPT the field toggles read", async () => {
     const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(callerTech.v1.settings.get()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
@@ -271,6 +272,74 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     await expect(
       callerTech.v1.settings.pricebook.create({ label: "Nope", unitPriceCents: 0, costCents: 0 }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  // ── v1.settings.fieldToggles ──────────────────────────────────────────────
+
+  /**
+   * The tech-readable capability flag. It exists because SettingsHydrator writes store.toggles and
+   * is ownerOrOffice, so a technician's measurementEstimating stayed unhydrated forever and the
+   * field Quote tab's "Scan a room" row — the field scanner's own surface — never rendered for the
+   * role it was built for. The office payload was NOT widened; this is one boolean.
+   */
+  it("a TECH can read fieldToggles, and it tracks the org's real setting", async () => {
+    const owner = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+
+    await owner.v1.settings.updateConfig({ measurementEstimating: true });
+    await expect(tech.v1.settings.fieldToggles()).resolves.toEqual({ measurementEstimating: true });
+
+    await owner.v1.settings.updateConfig({ measurementEstimating: false });
+    await expect(tech.v1.settings.fieldToggles()).resolves.toEqual({ measurementEstimating: false });
+  });
+
+  it("fieldToggles leaks NOTHING else — the payload is exactly one key", async () => {
+    const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    const toggles = await tech.v1.settings.fieldToggles();
+    // The output zod schema strips unknown keys, so this asserts the schema, not the mapper.
+    // Anything added to it becomes readable by every technician in the org.
+    expect(Object.keys(toggles)).toEqual(["measurementEstimating"]);
+  });
+
+  it("fieldToggles is org-scoped — org B never sees org A's flag", async () => {
+    await appRouter.createCaller(ctxFor(orgAId, "owner")).v1.settings.updateConfig({
+      measurementEstimating: true,
+    });
+    const techB = appRouter.createCaller(ctxFor(orgBId, "tech"));
+    await expect(techB.v1.settings.fieldToggles()).resolves.toEqual({
+      measurementEstimating: false,
+    });
+  });
+
+  // ── the trade boundary ────────────────────────────────────────────────────
+
+  /**
+   * The write that broke a real shop. `trade` was `z.string().min(1).max(50)`, so a display LABEL
+   * was accepted and stored — after which playbookFor / pricebookFor / tradeMeasures all matched
+   * nothing, and the client, deriving from that miss, sent measurementEstimating:false alongside
+   * it. The boundary now refuses anything that is not a known key.
+   */
+  it("updateConfig REJECTS a trade label or any unknown trade, and stores neither", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const before = await caller.v1.settings.get();
+
+    for (const bad of ["Plumbing", "Concrete & flatwork", "nonesuch", ""]) {
+      await expect(
+        caller.v1.settings.updateConfig({ trade: bad as "plumbing" }),
+        bad,
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    }
+
+    const after = await caller.v1.settings.get();
+    expect(after.config.trade).toBe(before.config.trade);
+  });
+
+  it("updateConfig accepts every real trade KEY", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    for (const key of TRADE_KEYS) {
+      const cfg = await caller.v1.settings.updateConfig({ trade: key });
+      expect(cfg.trade, key).toBe(key);
+    }
   });
 
   // ── updateBrand ──────────────────────────────────────────────────────────

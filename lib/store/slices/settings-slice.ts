@@ -22,6 +22,8 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { isDefaultSourceLabel } from "@/lib/store/default-sources";
 import { reportWriteError } from "../write-error";
 import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
+import type { TradeKey } from "@/app/(office)/settings/trade-playbooks";
+import type { MeasurementGate } from "@/lib/measurement-gate";
 
 // ---- shapes ----------------------------------------------------------------
 
@@ -111,9 +113,25 @@ export interface SettingsToggles {
   /** Money's "Auto-remind" switch. It was useState(true) in that header — a control promising
    *  reminder texts on a schedule and wired to nothing at all. */
   autoRemind: boolean;
-  /** Org-level gate for the job modal's Measurements section (measurement-priced trades only). */
-  measurementEstimating: boolean;
+  /**
+   * Org-level gate for the measurement surfaces (the composer's Measure card, the field Quote
+   * tab's "Scan a room" row, the pricebook editor's measured "Priced by" options).
+   *
+   * TRI-STATE, not a boolean: `"unknown"` means no settings snapshot has arrived, which is a
+   * different fact from `"off"` and must not fail the same way. See lib/measurement-gate.ts —
+   * readers go through `measurementSurfacesVisible` (fails OPEN) or `measurementConfirmed`
+   * (fails CLOSED) rather than testing this field for truthiness.
+   */
+  measurementEstimating: MeasurementGate;
 }
+
+/**
+ * The toggles that really are booleans — i.e. everything `setToggle` may write.
+ * `measurementEstimating` is excluded BY TYPE: its only writers are the settings hydrators
+ * (server truth) and `setTrade` (which may grant it, never revoke it), so no surface can flip
+ * it to a bare `false` by hand. There is no UI switch for it — the trade answers it.
+ */
+export type BooleanToggleKey = Exclude<keyof SettingsToggles, "measurementEstimating">;
 
 // ---- pre-hydration placeholders (NOT a source of truth) --------------------
 // SettingsHydrator (Task 8) calls setSettings() and overwrites these.
@@ -147,7 +165,10 @@ const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
   frontDesk: true,
   autoRemind: true,
-  measurementEstimating: false,
+  // "unknown", NOT false. This placeholder used to be `false`, which made a settings read that
+  // had not happened yet — or had failed — indistinguishable from a shop that does not measure,
+  // and every reader hid the scanner. See lib/measurement-gate.ts.
+  measurementEstimating: "unknown",
 };
 
 // ---- helpers ---------------------------------------------------------------
@@ -311,8 +332,16 @@ export interface SettingsSlice {
 
   // misc config
   setMarkup: (n: number) => void;
-  setTrade: (t: string) => void;
-  setToggle: (key: keyof SettingsToggles, value: boolean) => void;
+  /** Takes a trade KEY (`TradeKey`), never a display label — see the note on `setTrade`. */
+  setTrade: (t: TradeKey) => void;
+  setToggle: (key: BooleanToggleKey, value: boolean) => void;
+  /**
+   * Store-only write of the measurement gate from a settings read. Used by
+   * FieldTogglesHydrator, which reads `v1.settings.fieldToggles` for technicians (the office
+   * SettingsHydrator's `setSettings` covers owner/office). Persists nothing — it is a read
+   * landing, not an edit.
+   */
+  setMeasurementGate: (gate: MeasurementGate) => void;
 }
 
 // ---- slice -----------------------------------------------------------------
@@ -571,20 +600,38 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   },
 
   /**
-   * Changing the trade also changes whether this shop measures.
+   * Set the shop's trade. The trade may GRANT measurement estimating; it never revokes it.
    *
-   * measurementEstimating gates the job modal's Measurements section, and it used to be a switch
-   * the owner flipped by hand — in a card whose own copy read "a plumbing shop must never see it".
-   * The trade already answers that, so the answer follows the trade rather than being asked for
-   * twice. A shop that switches from plumbing to painting gets the Measurements section without
-   * having to discover a setting.
+   * `t` is a `TradeKey`, and that type is the fix for a real customer bug. This action resolves
+   * `tradeMeasures(t)`, which matches the lowercase pricebook key — so when the Front Desk's
+   * "Starter playbook" button passed a LABEL ("Plumbing", "Concrete & flatwork"), nothing
+   * matched, `measures` came back false, and `measurement_estimating: false` was written to the
+   * database. One tap on a button that is always on screen permanently removed the composer's
+   * Measure card, the field Quote tab's "Scan a room" row and the room card's Re-scan — for the
+   * whole shop, with no reason shown anywhere.
+   *
+   * WHY GRANT-ONLY, AND NOT "DERIVE BOTH WAYS". Owen's rule stands: the industry decides whether
+   * a shop measures and the shop should not be asked. But a derivation that can also switch the
+   * capability OFF is a silent destructive write triggered by an unrelated control, and it left
+   * the app's own state self-contradictory — the App Review demo org is `trade: "plumbing"` with
+   * `measurementEstimating: true` (the scanner is the whole answer to guideline 4.2), and
+   * `tradeMeasures("plumbing")` is false BY DESIGN, so any re-derivation switched the scanner off
+   * behind the reviewer. Monotone resolves that contradiction without lying about either fact:
+   *   - plumbing → painting turns measuring ON, which is the case the old comment was written for;
+   *   - painting → plumbing leaves it on. A Measure card a shop ignores costs one card. Deleting
+   *     a shop's measured rooms and their only native capability costs the product.
+   * `false` is now written by exactly one path — org creation, where it is a default, not a
+   * revocation (modules/identity/api/identity-router.ts).
    */
   setTrade: (t) => {
     const snapshot = { trade: get().trade, toggles: get().toggles };
-    const measures = tradeMeasures(t);
-    set((s) => ({ trade: t, toggles: { ...s.toggles, measurementEstimating: measures } }));
+    const grantsMeasuring = tradeMeasures(t);
+    set((s) => ({
+      trade: t,
+      toggles: grantsMeasuring ? { ...s.toggles, measurementEstimating: "on" } : s.toggles,
+    }));
     void trpcVanilla.v1.settings.updateConfig
-      .mutate({ trade: t, measurementEstimating: measures })
+      .mutate(grantsMeasuring ? { trade: t, measurementEstimating: true } : { trade: t })
       .catch((err: unknown) => { set(snapshot); reportWriteError("setTrade", err); });
   },
 
@@ -592,15 +639,19 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     const snapshot = { toggles: get().toggles };
     set((s) => ({ toggles: { ...s.toggles, [key]: value } }));
     // Explicit mapping: each toggle key → updateConfig field name (type-checked at compile time).
-    const toggleToField: Record<keyof SettingsToggles, string> = {
+    // measurementEstimating is absent by type (BooleanToggleKey) — it is not a hand switch.
+    const toggleToField: Record<BooleanToggleKey, string> = {
       techSeesPrice: "techSeesPrice",
       frontDesk: "frontDesk",
       autoRemind: "autoRemind",
-      measurementEstimating: "measurementEstimating",
     };
     const col = toggleToField[key];
     void trpcVanilla.v1.settings.updateConfig
       .mutate({ [col]: value })
       .catch((err: unknown) => { set(snapshot); reportWriteError("setToggle", err); });
+  },
+
+  setMeasurementGate: (gate) => {
+    set((s) => ({ toggles: { ...s.toggles, measurementEstimating: gate } }));
   },
 });

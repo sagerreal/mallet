@@ -17,6 +17,8 @@ import { useMe } from "@/features/identity/hooks";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { isFirstLoad, shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
+import { measurementConfirmed } from "@/lib/measurement-gate";
+import { useMeasurementGate } from "@/features/settings/measurement-gate-provider";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { ListLoading } from "@/components/shared/list-loading";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -43,7 +45,13 @@ export function PricebookPane() {
   const updateService = useAppStore((s) => s.updateService);
   const archiveService = useAppStore((s) => s.archiveService);
   const seedPricebook = useAppStore((s) => s.seedPricebook);
-  const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
+  // FAILS CLOSED, unlike the scan affordances. The Assemblies segment and the service editor's
+  // measured "Priced by" options write a `measuredBy` unit onto a saved service — a real edit to
+  // the shop's catalogue — so they need a CONFIRMED yes, not a guess made during a settings
+  // outage. See lib/measurement-gate.ts for why each reader picks its own fail direction.
+  // Reads through the provider, not the raw store: the raw value is `"unknown"` on the first paint
+  // of every cold load, so a painter's measured options were withheld for a beat and then appeared.
+  const measurementEstimating = measurementConfirmed(useMeasurementGate());
 
   // Cost/margin are sensitive — hidden from tech role (fail closed until role loads).
   const me = useMe();

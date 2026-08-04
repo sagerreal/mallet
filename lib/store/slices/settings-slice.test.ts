@@ -55,6 +55,8 @@ vi.mock("@/lib/trpc/vanilla", () => ({
 // Static imports — resolved AFTER the mock above is registered.
 import { createSettingsSlice, buildBookingPayload } from "./settings-slice";
 import type { SettingsSlice } from "./settings-slice";
+import { TRADE_KEYS, TRADE_PLAYBOOKS } from "@/app/(office)/settings/trade-playbooks";
+import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
 
 // ---------------------------------------------------------------------------
 // Minimal store factory (mirrors leads-slice.test.ts pattern)
@@ -290,7 +292,7 @@ describe("settings-slice persistence", () => {
       booking: store.get().booking,
       markup: 40,
       trade: "hvac",
-      toggles: { techSeesPrice: false, frontDesk: false, autoRemind: false, measurementEstimating: false },
+      toggles: { techSeesPrice: false, frontDesk: false, autoRemind: false, measurementEstimating: "off" as const },
     };
     store.get().setSettings(snap);
     expect(store.get().markup).toBe(40);
@@ -482,28 +484,77 @@ describe("settings-slice persistence", () => {
   // --- misc config -----------------------------------------------------------
 
   /**
-   * The trade decides whether the shop measures, so changing one changes both.
+   * The trade may GRANT measurement estimating. It must never revoke it.
    *
-   * measurementEstimating gates the job modal's Measurements section. It used to be a switch the
-   * owner flipped by hand, in a card whose own copy read "a plumbing shop must never see it" — the
-   * trade already answered that, and asking twice let the two disagree.
+   * The old behaviour derived the toggle both ways, and it was a one-tap destructive write: the
+   * Front Desk's "Starter playbook" button passed a display LABEL here, tradeMeasures() matched
+   * nothing, and `measurement_estimating: false` went to the database — silently removing the
+   * composer's Measure card, the field scan row and the room card's Re-scan for a real shop. It
+   * also made the app's own demo state self-contradictory (trade "plumbing" + measuring true, the
+   * configuration the App Store reviewer signs into). Grant-only fixes both.
    */
-  it("setTrade persists the trade AND whether that trade measures", async () => {
+  it("setTrade on a non-measuring trade persists the trade and touches nothing else", async () => {
     const store = makeStore();
     store.get().setTrade("hvac");
     expect(store.get().trade).toBe("hvac");
-    // HVAC prices per job, so the Measurements section stays hidden.
-    expect(store.get().toggles.measurementEstimating).toBe(false);
+    // HVAC prices per job. The gate is untouched — NOT written to "off".
+    expect(store.get().toggles.measurementEstimating).toBe("unknown");
     await Promise.resolve();
-    expect(mockUpdateConfig).toHaveBeenCalledWith({ trade: "hvac", measurementEstimating: false });
+    expect(mockUpdateConfig).toHaveBeenCalledWith({ trade: "hvac" });
   });
 
   it("switching to a measured trade turns measurement estimating on, unasked", async () => {
     const store = makeStore();
     store.get().setTrade("painting");
-    expect(store.get().toggles.measurementEstimating).toBe(true);
+    expect(store.get().toggles.measurementEstimating).toBe("on");
     await Promise.resolve();
     expect(mockUpdateConfig).toHaveBeenCalledWith({ trade: "painting", measurementEstimating: true });
+  });
+
+  it("NEVER writes measurementEstimating:false — not for any trade key", async () => {
+    for (const trade of TRADE_KEYS) {
+      mockUpdateConfig.mockClear();
+      const store = makeStore();
+      store.get().setTrade(trade);
+      await Promise.resolve();
+      const [payload] = mockUpdateConfig.mock.calls[0] as [Record<string, unknown>];
+      expect(payload.trade, trade).toBe(trade);
+      expect(payload.measurementEstimating, trade).not.toBe(false);
+      // …and when it IS sent it is a grant that agrees with the trade's own pricebook.
+      expect(payload.measurementEstimating === true, trade).toBe(tradeMeasures(trade));
+    }
+  });
+
+  it("a measuring shop that switches to a service trade KEEPS measuring", async () => {
+    const store = makeStore();
+    store.get().setTrade("painting");
+    expect(store.get().toggles.measurementEstimating).toBe("on");
+
+    store.get().setTrade("plumbing");
+    expect(store.get().trade).toBe("plumbing");
+    // The capability survives. Deleting a shop's access to its own measured rooms because it
+    // renamed its trade is not a derivation, it is data loss.
+    expect(store.get().toggles.measurementEstimating).toBe("on");
+  });
+
+  /**
+   * Seeding EACH starter playbook must leave the derived toggle correct. This is the regression
+   * test for the actual customer bug: front-desk-pane passed `playbook.label`, so this loop with
+   * `.label` in place of `.key` fails on every measured trade.
+   */
+  it("seeding every starter playbook's KEY leaves the gate correct for that trade", async () => {
+    for (const playbook of TRADE_PLAYBOOKS) {
+      const store = makeStore();
+      store.get().setTrade(playbook.key);
+      await Promise.resolve();
+      expect(store.get().trade, playbook.key).toBe(playbook.key);
+      expect(store.get().toggles.measurementEstimating, playbook.key).toBe(
+        tradeMeasures(playbook.key) ? "on" : "unknown",
+      );
+      // The label is not a key and never resolves — the type now forbids passing it, and this is
+      // what it was silently doing when it could.
+      expect(tradeMeasures(playbook.label), playbook.label).toBe(false);
+    }
   });
 
   it("setToggle persists via updateConfig with explicit field mapping", async () => {
@@ -522,13 +573,25 @@ describe("settings-slice persistence", () => {
     expect(mockUpdateConfig).toHaveBeenCalledWith({ techSeesPrice: false });
   });
 
-  it("measurementEstimating defaults off and setToggle maps it to the correct updateConfig field", async () => {
+  /**
+   * `measurementEstimating` starts UNKNOWN, not false, and is not a hand switch.
+   *
+   * Its placeholder used to be `false`, which made "no settings snapshot has arrived" and "this
+   * shop does not measure" the same value — so a single failed v1.settings.get removed every
+   * measurement surface in the app with no explanation. `setToggle` cannot reach it either
+   * (BooleanToggleKey excludes it): its only writers are the settings hydrators and setTrade.
+   */
+  it("measurementEstimating starts unknown and is written only by a settings read", () => {
     const store = makeStore();
-    expect(store.get().toggles.measurementEstimating).toBe(false);
-    store.get().setToggle("measurementEstimating", true);
-    expect(store.get().toggles.measurementEstimating).toBe(true);
-    await Promise.resolve();
-    expect(mockUpdateConfig).toHaveBeenCalledWith({ measurementEstimating: true });
+    expect(store.get().toggles.measurementEstimating).toBe("unknown");
+
+    store.get().setMeasurementGate("on");
+    expect(store.get().toggles.measurementEstimating).toBe("on");
+    // A read landing, not an edit — nothing is persisted back.
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+
+    store.get().setMeasurementGate("off");
+    expect(store.get().toggles.measurementEstimating).toBe("off");
   });
 
   // --- collections start empty -----------------------------------------------

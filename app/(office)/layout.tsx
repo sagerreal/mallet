@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { guardRole } from "@/lib/auth/guard";
 import { resolveMe } from "@/lib/auth/server-me";
+import { resolveMeasurementGate } from "@/lib/auth/server-measurement-gate";
+import { MeasurementGateProvider } from "@/features/settings/measurement-gate-provider";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileTabs } from "@/components/shell/mobile-tabs";
 import { SectionTabs } from "@/components/shell/section-tabs";
@@ -27,38 +29,47 @@ export const dynamic = "force-dynamic";
 
 export default async function OfficeLayout({ children }: { children: ReactNode }) {
   const principal = await guardRole(["owner", "office"]);
-  const initialMe = await resolveMe(principal);
+  // Both resolved on the principal the guard already produced. The measurement gate is seeded
+  // SERVER-SIDE for the same reason `me` is: it decides whether the composer's Measure card is on
+  // screen at all, and a client-only read paints the card first and deletes it a beat later for
+  // every non-measuring shop. See lib/auth/server-measurement-gate.ts.
+  const [initialMe, measurementGate] = await Promise.all([
+    resolveMe(principal),
+    resolveMeasurementGate(principal),
+  ]);
   return (
-    <div className="appshell">
-      <div className="layout">
-        <Sidebar initialMe={initialMe} />
-        <div className="appmain">
-          <Topbar />
-          <SectionTabs />
-          <div id="flashbar" />
-          <main id="main">
-            {children}
-          </main>
-          <WriteErrorToast />
+    <MeasurementGateProvider gate={measurementGate}>
+      <div className="appshell">
+        <div className="layout">
+          <Sidebar initialMe={initialMe} />
+          <div className="appmain">
+            <Topbar />
+            <SectionTabs />
+            <div id="flashbar" />
+            <main id="main">
+              {children}
+            </main>
+            <WriteErrorToast />
+          </div>
         </div>
+        <CommandBar />
+        <CallBar />
+        <MobileTabs initialMe={initialMe} />
+        <ModalHost />
+        <LeadsHydrator />
+        <JobsHydrator />
+        <TechsHydrator />
+        <EstimatesHydrator />
+        <InvoicesHydrator />
+        <TasksHydrator />
+        <CompaniesHydrator />
+        <ChecklistsHydrator />
+        <SettingsHydrator />
+        <PricebookHydrator />
+        <AssembliesHydrator />
+        <BrandHydrator />
+        <A2pHydrator />
       </div>
-      <CommandBar />
-      <CallBar />
-      <MobileTabs initialMe={initialMe} />
-      <ModalHost />
-      <LeadsHydrator />
-      <JobsHydrator />
-      <TechsHydrator />
-      <EstimatesHydrator />
-      <InvoicesHydrator />
-      <TasksHydrator />
-      <CompaniesHydrator />
-      <ChecklistsHydrator />
-      <SettingsHydrator />
-      <PricebookHydrator />
-      <AssembliesHydrator />
-      <BrandHydrator />
-      <A2pHydrator />
-    </div>
+    </MeasurementGateProvider>
   );
 }

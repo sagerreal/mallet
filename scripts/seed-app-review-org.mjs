@@ -191,10 +191,13 @@ const daysAgo = (n) => sql`(now() - make_interval(days => ${n}))`;
  *
  * This exists because of a real failure, not as ceremony. A `booking` blob with
  * `lane: "install"` and array-valued `triggers` wrote fine — the column is jsonb, so Postgres
- * accepted it — and then made `v1.settings.get` return 500 on OUTPUT validation. SettingsHydrator
- * is the only writer of `store.toggles`, so a dead settings read left `measurementEstimating`
- * at its `false` placeholder and removed the Measure card and the "Scan a room" row from the
- * entire app. The seed looked like it had worked; the 4.2 defense was simply gone.
+ * accepted it — and then made `v1.settings.get` return 500 on OUTPUT validation. A settings
+ * hydrator is the only writer of `store.toggles`, so a dead settings read left
+ * `measurementEstimating` at its `false` placeholder and removed the Measure card and the "Scan a
+ * room" row from the entire app. The seed looked like it had worked; the 4.2 defense was simply
+ * gone. That blast radius is now closed at the root — the gate is a tri-state and "not loaded"
+ * fails OPEN (lib/measurement-gate.ts) — but a 500 from settings.get still breaks the Settings
+ * screens, so these assertions stay.
  *
  * Kept as hand-written assertions rather than an import of the zod DTO because this is a plain
  * .mjs script and the DTO is TypeScript. Mirror any change to bookingServiceDTO here.

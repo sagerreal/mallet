@@ -21,6 +21,7 @@ import { useEffect } from "react";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { measurementGateFrom } from "@/lib/measurement-gate";
 
 type SettingsDTO = RouterOutputs["v1"]["settings"]["get"];
 
@@ -37,6 +38,11 @@ export function SettingsHydrator() {
         // eslint-disable-next-line no-console
         console.error("[hydrator:settings] load failed", error);
       }
+      // Nothing is written, on purpose, and that is now SAFE rather than destructive:
+      // toggles.measurementEstimating stays at its `"unknown"` placeholder (a failed read is not
+      // an answer), and the measurement surfaces fail OPEN on unknown — see
+      // lib/measurement-gate.ts. A refetch that fails after a good load keeps the good value,
+      // which is the same rule the list surfaces use (stale data beats an error screen).
       return;
     }
     if (!data) return;
@@ -94,7 +100,7 @@ export function SettingsHydrator() {
         techSeesPrice: dto.config.techSeesPrice,
         frontDesk: dto.config.frontDesk,
         autoRemind: dto.config.autoRemind,
-        measurementEstimating: dto.config.measurementEstimating,
+        measurementEstimating: measurementGateFrom(dto.config.measurementEstimating),
       },
     });
   }, [data, isError, error, setSettings]);
