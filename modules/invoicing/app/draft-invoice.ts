@@ -1,5 +1,5 @@
 import type { OrgId, LeadId, JobId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
-import { asInvoiceId, money, zeroMoney, addMoney, validation, ok, err, isOk } from "@mallet/shared/types";
+import { asInvoiceId, money, zeroMoney, addMoney, validation, conflict, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
@@ -88,7 +88,14 @@ export class DraftInvoiceUseCase {
     });
     if (!isOk(invoice)) return invoice;
 
-    await this.repo.save(invoice.value);
+    // insertNew, NOT save. `save` is an upsert, and this is the one path that mints an invoice from
+    // an id the CLIENT chose — so used here it made that id a write primitive aimed at any invoice
+    // in the org. A collision is refused loudly rather than silently overwriting or silently
+    // succeeding; the caller may re-read and decide (RaiseVisitFeeUseCase does exactly that).
+    const inserted = await this.repo.insertNew(invoice.value);
+    if (!inserted) {
+      return err(conflict("an invoice with that id already exists"));
+    }
     await this.bus.emit({
       name: "invoice.drafted",
       orgId: cmd.orgId,

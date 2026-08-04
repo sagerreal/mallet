@@ -48,6 +48,11 @@ class FakeInvoiceRepository implements InvoiceRepository {
 
   // The rest are required by the interface but unused by SendInvoiceUseCase.
   async nextNumber(): Promise<string> { return "INV-1"; }
+  async insertNew(invoice: Invoice): Promise<boolean> {
+    if (this.store.has(invoice.props.id)) return false;
+    this.store.set(invoice.props.id, invoice);
+    return true;
+  }
   async insertForJob(): Promise<boolean> { return true; }
   async listByScopeJob() { return []; }
   async findBySourceJob(): Promise<Invoice | null> { return null; }

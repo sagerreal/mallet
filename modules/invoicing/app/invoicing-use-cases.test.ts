@@ -73,6 +73,11 @@ class FakeInvoiceRepository implements InvoiceRepository {
   async save(invoice: Invoice): Promise<void> {
     this.store.set(invoice.props.id, invoice);
   }
+  async insertNew(invoice: Invoice): Promise<boolean> {
+    if (this.store.has(invoice.props.id)) return false;
+    this.store.set(invoice.props.id, invoice);
+    return true;
+  }
   async insertForJob(invoice: Invoice): Promise<boolean> {
     const src = invoice.props.sourceJobId;
     if (src && [...this.store.values()].some((i) => i.props.sourceJobId === src)) return false;

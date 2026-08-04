@@ -39,12 +39,39 @@ const jobIdInput = z.object({
   // (same convention as the office endpoints). The idempotent path ignores it.
   id: z.string().uuid().optional(),
 });
+/**
+ * Raising the visit fee takes the JOB and nothing else.
+ *
+ * No client-authored `id`, unlike every other create input in this module. The guard authorizes
+ * the job; it cannot say anything about an invoice id, so a caller-supplied one would be an
+ * unchecked write target — "raise a fee on my own job, into that other invoice". The server mints
+ * the id and the caller adopts the returned DTO, which is the house rule anyway.
+ */
+const raiseVisitFeeInput = z.object({ jobId: z.string().uuid() });
+
 const recordPaymentInput = z.object({
   invoiceId: z.string().uuid(),
   amountCents: z.number().int().positive(),
   method: methodEnum,
-  idempotencyKey: z.string().min(8),
+  idempotencyKey: z.string().min(8).max(200),
 });
+
+/**
+ * The ledger key this payment actually claims.
+ *
+ * The client's key is NAMESPACED, never used raw. `payments` dedupes on
+ * (org_id, idempotency_key) across the whole shop, so a raw caller-chosen key is a squattable
+ * global slot: record $1 on your own invoice under key "K", and the next legitimate payment that
+ * happens to use "K" — on any invoice, by anyone — is silently swallowed as a "retry" and real
+ * money vanishes from the ledger without an error.
+ *
+ * Binding the invoice and the acting user makes the namespace unforgeable from the client side: a
+ * caller can only ever collide with their own earlier payment on the same invoice, which is
+ * exactly what a retry IS. The `field:` prefix also keeps this surface's keys disjoint from the
+ * office router's raw ones, so neither can consume the other's.
+ */
+const ledgerKeyFor = (invoiceId: InvoiceId, principal: Principal, clientKey: string): string =>
+  `field:${invoiceId}:${principal.userId}:${clientKey}`;
 
 /**
  * The technician's own money surface — field-scoped SIBLINGS of the office invoice procedures,
@@ -115,7 +142,7 @@ export const createFieldInvoiceRouter = () =>
      * the person at the door cannot choose what the customer is charged.
      */
     raiseVisitFee: anyRole
-      .input(jobIdInput)
+      .input(raiseVisitFeeInput)
       .output(fieldInvoiceDTO)
       .mutation(async ({ ctx, input }) => {
         const jobId = asJobId(input.jobId);
@@ -128,11 +155,7 @@ export const createFieldInvoiceRouter = () =>
           new DraftInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids),
         );
         const invoice = orThrow(
-          await useCase.exec({
-            orgId: ctx.principal.orgId,
-            jobId,
-            id: input.id ? asInvoiceId(input.id) : undefined,
-          }),
+          await useCase.exec({ orgId: ctx.principal.orgId, jobId }),
         );
         return present(invoice, ctx);
       }),
@@ -181,6 +204,10 @@ export const createFieldInvoiceRouter = () =>
      * technician is holding this cash" to reconcile a drawer, and attribution is the only real
      * mitigation against pocketing (authorization cannot distinguish under-pricing from a
      * discount). `recordPaymentInput` has no such key and must never gain one.
+     *
+     * The caller's idempotency key is NAMESPACED before it reaches the ledger — see `ledgerKeyFor`.
+     * Used raw it is a shop-wide slot anyone can squat, which turns a later legitimate payment into
+     * a silent no-op "retry".
      */
     recordPayment: anyRole
       .input(recordPaymentInput)
@@ -202,7 +229,8 @@ export const createFieldInvoiceRouter = () =>
             invoiceId,
             amount: money(input.amountCents),
             method: input.method,
-            idempotencyKey: input.idempotencyKey,
+            // Namespaced server-side — see ledgerKeyFor. The raw client string is never the key.
+            idempotencyKey: ledgerKeyFor(invoiceId, ctx.principal, input.idempotencyKey),
             recordedByUserId: ctx.principal.userId,
           }),
         );

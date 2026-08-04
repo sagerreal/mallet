@@ -41,8 +41,9 @@ export interface InvoiceProps {
    * but a technician must still be able to collect it on the doorstep, which needs a job to
    * authorize against. This is that job, and authorization is the only thing it is for.
    *
-   * Never a fallback for `sourceJobId`: it carries no uniqueness, so nothing may infer "the bill
-   * for this job" from it.
+   * Never a fallback for `sourceJobId`. It is unique per job while live, but it does not mean
+   * "the bill for this job" and nothing may read it that way — `findBySourceJob`, and therefore
+   * `createFromJob`, deliberately does not see it.
    */
   readonly scopeJobId: JobId | null;
   readonly leadId: LeadId;

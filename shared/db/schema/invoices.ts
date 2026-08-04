@@ -41,8 +41,13 @@ export const invoices = pgTable(
      *
      * Its only job is authorization: it is what lets a technician standing at the door collect a
      * trip fee on the job in front of them (see assertFieldInvoiceScope, which authorizes through
-     * `source_job_id` OR this). NOT unique — several scope-linked invoices may point at one job,
-     * which is exactly why it cannot be folded into `source_job_id`.
+     * `source_job_id` OR this).
+     *
+     * It IS unique per job while live (`invoices_org_scope_job_uidx`) — that index is what makes
+     * "raise the fee" genuinely idempotent under a double tap, which a read-then-write check
+     * cannot be. The difference from `source_job_id` was never uniqueness; it is which slot gets
+     * consumed. A fee here leaves the job's own `invoices_org_source_job_uidx` slot free, so the
+     * customer can still accept a quote on that job and `createFromJob` can still raise its bill.
      */
     scopeJobId: uuid("scope_job_id"),
     leadId: uuid("lead_id").notNull(),
@@ -96,9 +101,19 @@ export const invoices = pgTable(
       foreignColumns: [jobs.orgId, jobs.id],
     }),
     index("invoices_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
-    // Deliberately a plain index, NOT unique: unlike source_job_id, several invoices may be scoped
-    // to one job. The field guard reads by (org, scope_job_id) to find a job's fee invoice.
+    // Lookup by scope link (listByScopeJob), across every status — kept alongside the unique index
+    // below, which is PARTIAL and so cannot serve a read that includes voided rows.
     index("invoices_org_scope_job_idx").on(t.orgId, t.scopeJobId),
+    // ONE live scope-linked invoice per job. This is not decoration: RaiseVisitFeeUseCase checks
+    // for an existing fee before inserting, and under READ COMMITTED two concurrent taps both see
+    // nothing and both insert. Only the database can refuse the second one, and without it a
+    // double tap on a flaky connection mints two independently-sendable fee invoices.
+    //
+    // Voided rows are excluded on purpose: voiding a fee is the shop deciding not to charge it,
+    // and a genuine later attempt must be able to proceed. Soft-deleted rows likewise.
+    uniqueIndex("invoices_org_scope_job_uidx")
+      .on(t.orgId, t.scopeJobId)
+      .where(sql`${t.scopeJobId} is not null and ${t.deletedAt} is null and ${t.status} <> 'void'`),
     index("invoices_org_status_due_idx").on(t.orgId, t.status, t.dueAt),
     // Sort indexes for invoice-sorts.ts. due/oldestUnpaid share the due-date index; the existing
     // org_status_due_idx already covers the filtered collection queue.

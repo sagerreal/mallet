@@ -72,6 +72,7 @@ class FakeInvoiceRepo implements InvoiceRepository {
   public stored: Invoice | null = null;
   async nextNumber(): Promise<string> { return "INV-1000"; }
   async save(invoice: Invoice): Promise<void> { this.stored = invoice; }
+  async insertNew(invoice: Invoice): Promise<boolean> { this.stored = invoice; return true; }
   async insertForJob(invoice: Invoice): Promise<boolean> { this.stored = invoice; return true; }
   async insertPayment(_o: OrgId, _i: InvoiceId, _p: Payment): Promise<boolean> { return true; }
   async applyPayment(): Promise<ApplyResult> { return { applied: false, invoice: this.stored }; }

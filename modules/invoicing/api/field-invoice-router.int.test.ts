@@ -396,6 +396,163 @@ suite("v1.fieldInvoicing — a tech collects on their own job (live RLS)", () =>
     });
   });
 
+  // ── the arbitrary-invoice-overwrite hole, and the squattable ledger key ───────────────────
+
+  it("raiseVisitFee cannot be aimed at another invoice — the input carries no id at all", async () => {
+    // The hole this closes: `raiseVisitFee({jobId: <mine>, id: <a colleague's paid invoice>})`.
+    // assertFieldJobScope validates the JOB and can say nothing about an id, so the write landed
+    // wherever the caller aimed it — resetting a $5,000 paid bill to an $89 draft, nulling its
+    // source_job_id, stranding its payments, and stamping the attacker's own job as scope_job_id,
+    // which MANUFACTURED authorization over the very invoice `get` had just refused them.
+    const victimJobId = await seedJob(techBId, "complete", { totalCents: 500_000 });
+    const owner = appRouter.createCaller(ctxFor(ownerAId, orgAId, "owner"));
+    const victim = await owner.v1.invoicing.createFromJob({ jobId: victimJobId });
+    await owner.v1.invoicing.send({ invoiceId: victim.id });
+    await owner.v1.invoicing.recordPayment({
+      invoiceId: victim.id,
+      amountCents: 500_000,
+      method: "cash",
+      idempotencyKey: `victim-${victim.id}`,
+    });
+
+    const attackerJobId = await seedJob(techAId, "complete", { totalCents: 0, kind: "estimate" });
+    const attacker = appRouter.createCaller(ctxFor(techAId, orgAId, "tech"));
+
+    // The attacker cannot read the victim invoice — that much was always true.
+    await expect(attacker.v1.fieldInvoicing.get({ invoiceId: victim.id })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+
+    // The id is no longer part of the contract. Zod strips the unknown key (the house convention),
+    // so the call still succeeds — but it is INERT: the fee lands on a fresh server-minted id and
+    // cannot address the invoice the caller named.
+    const fee = await (
+      attacker.v1.fieldInvoicing.raiseVisitFee as unknown as (a: {
+        jobId: string;
+        id: string;
+      }) => Promise<{ id: string; scopeJobId: string | null; total: { cents: number } }>
+    )({ jobId: attackerJobId, id: victim.id });
+
+    expect(fee.id).not.toBe(victim.id);
+    expect(fee.scopeJobId).toBe(attackerJobId);
+    expect(fee.total.cents).toBe(8_900);
+
+    // The victim is byte-for-byte intact: still paid, still $5,000, still tied to its own job.
+    const after = await owner.v1.invoicing.get({ invoiceId: victim.id });
+    expect(after.status).toBe("paid");
+    expect(after.total.cents).toBe(500_000);
+    expect(after.sourceJobId).toBe(victimJobId);
+    expect(after.amountPaid.cents).toBe(500_000);
+
+    // And no scope link was manufactured onto it.
+    const rows = await admin<{ scope_job_id: string | null }[]>`
+      select scope_job_id from invoices where id = ${victim.id}`;
+    expect(rows[0]!.scope_job_id).toBeNull();
+  });
+
+  it("the office draft path cannot overwrite an existing invoice either", async () => {
+    // Same shape, still owner/office-only, hardened at the REPOSITORY so both callers are covered:
+    // the draft path inserts non-destructively instead of upserting.
+    const jobId = await seedJob(techAId, "complete", { totalCents: 500_000 });
+    const owner = appRouter.createCaller(ctxFor(ownerAId, orgAId, "owner"));
+    const victim = await owner.v1.invoicing.createFromJob({ jobId });
+
+    await expect(
+      owner.v1.invoicing.draft({
+        id: victim.id, // aimed at the invoice above
+        leadId: leadAId,
+        title: "Overwrite attempt",
+        lines: [{ description: "x", quantity: 1, rateCents: 100 }],
+      }),
+    ).rejects.toBeTruthy();
+
+    const after = await owner.v1.invoicing.get({ invoiceId: victim.id });
+    expect(after.total.cents).toBe(500_000);
+    expect(after.sourceJobId).toBe(jobId);
+  });
+
+  it("two concurrent raises mint ONE fee invoice, not two", async () => {
+    // findExistingFee is a read-then-write: under READ COMMITTED both transactions see nothing and
+    // both insert. Only invoices_org_scope_job_uidx can refuse the second — and this is precisely
+    // the double-tap-on-a-flaky-connection case the use-case exists to make safe.
+    const jobId = await seedJob(techAId, "complete", { totalCents: 0, kind: "estimate" });
+    const a = appRouter.createCaller(ctxFor(techAId, orgAId, "tech"));
+    const b = appRouter.createCaller(ctxFor(techAId, orgAId, "tech"));
+
+    const results = await Promise.allSettled([
+      a.v1.fieldInvoicing.raiseVisitFee({ jobId }),
+      b.v1.fieldInvoicing.raiseVisitFee({ jobId }),
+    ]);
+    // Neither is allowed to fail: the loser re-reads and returns the winner.
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+
+    const rows = await admin<{ n: string }[]>`
+      select count(*) as n from invoices
+      where org_id = ${orgAId} and scope_job_id = ${jobId} and status <> 'void'`;
+    expect(Number(rows[0]!.n)).toBe(1);
+  });
+
+  it("a tech cannot squat an idempotency key another payment would use", async () => {
+    // payments dedupes on (org_id, idempotency_key) ACROSS THE SHOP, so a raw caller-chosen key is
+    // a global slot. Claim "K" on your own invoice and the next legitimate payment using "K" — any
+    // invoice, anyone — is silently swallowed as a retry and real money leaves no ledger row.
+    const squattedKey = "shared-key-0001";
+
+    const mineJobId = await seedJob(techAId, "complete", { totalCents: 5_000 });
+    const tech = appRouter.createCaller(ctxFor(techAId, orgAId, "tech"));
+    const mine = await tech.v1.fieldInvoicing.createFromJob({ jobId: mineJobId });
+    await tech.v1.fieldInvoicing.send({ invoiceId: mine.id });
+    await tech.v1.fieldInvoicing.recordPayment({
+      invoiceId: mine.id,
+      amountCents: 5_000,
+      method: "cash",
+      idempotencyKey: squattedKey,
+    });
+
+    // A different invoice, the same client key. It must land as a REAL payment.
+    const otherJobId = await seedJob(techAId, "complete", { totalCents: 70_000 });
+    const other = await tech.v1.fieldInvoicing.createFromJob({ jobId: otherJobId });
+    await tech.v1.fieldInvoicing.send({ invoiceId: other.id });
+    const paid = await tech.v1.fieldInvoicing.recordPayment({
+      invoiceId: other.id,
+      amountCents: 70_000,
+      method: "cash",
+      idempotencyKey: squattedKey,
+    });
+    expect(paid.status).toBe("paid");
+    expect(paid.amountPaid.cents).toBe(70_000);
+
+    // The office's own raw key is in a different namespace again, so it cannot be squatted either.
+    const officeJobId = await seedJob(techBId, "complete", { totalCents: 9_000 });
+    const owner = appRouter.createCaller(ctxFor(ownerAId, orgAId, "owner"));
+    const officeInv = await owner.v1.invoicing.createFromJob({ jobId: officeJobId });
+    await owner.v1.invoicing.send({ invoiceId: officeInv.id });
+    const officePaid = await owner.v1.invoicing.recordPayment({
+      invoiceId: officeInv.id,
+      amountCents: 9_000,
+      method: "cash",
+      idempotencyKey: squattedKey,
+    });
+    expect(officePaid.status).toBe("paid");
+  });
+
+  it("a genuine retry on the same invoice still dedupes", async () => {
+    // The namespacing must not break what idempotency keys are FOR.
+    const jobId = await seedJob(techAId, "complete", { totalCents: 30_000 });
+    const tech = appRouter.createCaller(ctxFor(techAId, orgAId, "tech"));
+    const invoice = await tech.v1.fieldInvoicing.createFromJob({ jobId });
+    await tech.v1.fieldInvoicing.send({ invoiceId: invoice.id });
+    const args = {
+      invoiceId: invoice.id,
+      amountCents: 30_000,
+      method: "cash" as const,
+      idempotencyKey: `retry-${invoice.id}`,
+    };
+    await tech.v1.fieldInvoicing.recordPayment(args);
+    const again = await tech.v1.fieldInvoicing.recordPayment(args);
+    expect(again.amountPaid.cents).toBe(30_000); // not 60_000
+  });
+
   // ── what crosses the wire, and what did not change ────────────────────────────────────────
 
   it("the field DTO carries the balance but never the pay-link or cost", async () => {

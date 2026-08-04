@@ -98,6 +98,34 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     await this.diffLines(invoice);
   }
 
+  /**
+   * Insert a BRAND-NEW invoice. Cannot overwrite anything, ever.
+   *
+   * `save()` is an UPSERT, which is right for the paths that mutate an invoice they just loaded and
+   * wrong for the paths that mint one from a CLIENT-AUTHORED id. Used as an insert, `save()` made
+   * that id a write primitive: a caller who named an existing invoice's id had its header replaced
+   * — status reset, total rewritten, `source_job_id` nulled (orphaning the real bill in a codebase
+   * whose rule is soft-delete-only), and the recorded payments stranded against a total that no
+   * longer matches. That is strictly worse than the `void` and `patchLines` endpoints deliberately
+   * withheld from the field surface.
+   *
+   * ON CONFLICT DO NOTHING with NO target, so it swallows a collision on ANY unique constraint —
+   * the primary key and the partial unique scope index alike — without aborting the request
+   * transaction. Returns false when nothing was inserted; the caller decides whether that is a lost
+   * race to re-read or a refusal to surface. It must never be ignored.
+   */
+  async insertNew(invoice: Invoice): Promise<boolean> {
+    const p = invoice.props;
+    const inserted = await this.tx
+      .insert(invoices)
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, publicToken: p.publicToken, ...this.headerColumns(invoice) })
+      .onConflictDoNothing()
+      .returning({ id: invoices.id });
+    if (inserted.length === 0) return false;
+    await this.diffLines(invoice);
+    return true;
+  }
+
   async findByPublicToken(token: string): Promise<Invoice | null> {
     const rows = await this.tx
       .select()

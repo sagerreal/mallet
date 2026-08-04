@@ -96,6 +96,7 @@ class FakeRepo implements InvoiceRepository {
     return "INV-1";
   }
   async save(): Promise<void> {}
+  async insertNew(): Promise<boolean> { return true; }
   async insertForJob(): Promise<boolean> {
     return true;
   }

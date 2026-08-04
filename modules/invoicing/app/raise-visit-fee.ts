@@ -1,5 +1,5 @@
-import type { OrgId, JobId, InvoiceId, Result, AppError } from "@mallet/shared/types";
-import { conflict, notFound, ok, err } from "@mallet/shared/types";
+import type { OrgId, JobId, Result, AppError } from "@mallet/shared/types";
+import { conflict, notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { Invoice } from "../domain/invoice";
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { JobReader } from "../domain/job-reader";
@@ -15,11 +15,17 @@ import { DraftInvoiceUseCase } from "./draft-invoice";
  */
 export const VISIT_FEE_TITLE = "Visit fee — service call";
 
+/**
+ * Note what is NOT here: a client-authored invoice id.
+ *
+ * Every other create path in this module accepts one so the browser's optimistic row keeps its id.
+ * This one must not. The guard authorizes the JOB; it has no way to say anything about an id, so a
+ * caller-supplied one is an unchecked write target — "raise a fee on my own job, into that
+ * invoice". The server mints the id and the caller adopts the returned DTO.
+ */
 export interface RaiseVisitFeeCommand {
   readonly orgId: OrgId;
   readonly jobId: JobId;
-  /** Client-authored id for the NEW row (store id === server id). The idempotent path ignores it. */
-  readonly id?: InvoiceId;
 }
 
 /**
@@ -29,14 +35,16 @@ export interface RaiseVisitFeeCommand {
  * (`sourceJobId: null`) on purpose. `invoices_org_source_job_uidx` allows one active invoice per
  * job, and the customer may still accept a quote on this same job next week — a job-tied fee
  * would claim that slot forever and `createFromJob` would hand back the $89 fee draft as the
- * job's bill for the rest of time. So the job is recorded as `scopeJobId` instead, which carries
- * no uniqueness and exists only so the technician standing at the door can be authorized to
- * collect it.
+ * job's bill for the rest of time. So the job is recorded as `scopeJobId` instead, which leaves
+ * the job's own invoice slot free and exists so the technician standing at the door can be
+ * authorized to collect.
  *
- * IDEMPOTENT ON THE JOB. The previous (client-side) fee flow had no server-side idempotency at
- * all: `draft` dedupes on nothing, so N flaky retries minted N independently-sendable "Visit fee"
- * drafts in the shop's ledger — a live duplicate-charge risk. Re-raising now returns the existing
- * fee invoice, whatever state it is in.
+ * IDEMPOTENT ON THE JOB, and enforced in the DATABASE. The previous (client-side) fee flow had no
+ * server-side idempotency at all: `draft` dedupes on nothing, so N flaky retries minted N
+ * independently-sendable "Visit fee" drafts in the shop's ledger. The read below is not enough on
+ * its own — under READ COMMITTED two simultaneous taps both see nothing and both insert — so
+ * `invoices_org_scope_job_uidx` is what actually holds the line and the loser re-reads the winner.
+ * The index excludes voided rows, so a shop that voided a fee can genuinely raise another.
  *
  * THE AMOUNT IS NEVER AN ARGUMENT. It comes from the shop's own configuration, so the person
  * holding the tablet cannot choose what the customer is charged.
@@ -68,15 +76,25 @@ export class RaiseVisitFeeUseCase {
       );
     }
 
-    return this.draft.exec({
+    const drafted = await this.draft.exec({
       orgId: cmd.orgId,
-      id: cmd.id,
       leadId: job.leadId,
       title: VISIT_FEE_TITLE,
       termsDays: 0, // collected at the door, not on terms
       scopeJobId: cmd.jobId,
       lines: [{ description: VISIT_FEE_TITLE, quantity: 1, rateCents: feeCents, costCents: 0 }],
     });
+    if (isOk(drafted)) return drafted;
+
+    // Lost a race. The findExistingFee read above cannot see a concurrent transaction's row under
+    // READ COMMITTED, so two simultaneous taps both got past it — the double-tap on a flaky
+    // connection this use-case exists to make safe. The partial unique index on
+    // (org_id, scope_job_id) is what actually stops the second insert; ON CONFLICT DO NOTHING means
+    // it did not abort the transaction, so re-read and hand back the winner. Same shape as
+    // CreateInvoiceFromJobUseCase's race handling.
+    const raced = await this.findExistingFee(cmd.jobId);
+    if (raced) return ok(raced);
+    return drafted;
   }
 
   /**
