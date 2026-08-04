@@ -827,40 +827,39 @@ export function InvoiceModalContent() {
           body and the money actions on purpose: a warning shown after Send is a post-mortem. */}
       <InvoiceAuthorizationNote authorization={invoice.authorization} />
 
-      {/* Where this bill comes from — the one fact that explains why some invoices are
-          edited here and some are not. A job's invoice is built on the job (Build the
-          price); a hand-made one is built right here. The row is the way back. */}
-      {invoice.jobId != null ? (
+      {/* Where this bill comes from, and its PO number — ONE row list (one top-border
+          divider), same shape as job-modal.tsx's own multi-row .sheet-rows wrapper.
+          "From job" is the one fact that explains why some invoices are edited here and
+          some are not: a job's invoice is built on the job (Build the price); a hand-made
+          one is built right here. PO number is editable on any open invoice (frozen once
+          paid/void, same gate as editMetadata), whether the bill is hand-made or job-built. */}
+      {invoice.jobId != null || poEditable ? (
         <div className="sheet-rows" style={{ marginTop: "var(--space-3)" }}>
-          <SheetRow
-            label="From job"
-            value={job?.title ?? invoice.title}
-            onPress={() => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })}
-          />
-        </div>
-      ) : null}
-
-      {/* PO number — customer-supplied, editable on any open invoice (frozen once paid/void,
-          same gate as editMetadata). Lives with the other quiet in-flow details rows, whether
-          the bill is hand-made or built on a job. */}
-      {poEditable ? (
-        <div className="sheet-rows" style={{ marginTop: "var(--space-2)" }}>
-          <SheetRow
-            label="PO number"
-            value={invoice.poNumber || "Add"}
-            valueIsHint={!invoice.poNumber}
-            expandable
-          >
-            <Field label="PO number" style={{ margin: "0" }}>
-              <input
-                type="text"
-                defaultValue={invoice.poNumber || ""}
-                placeholder="e.g. 4471"
-                maxLength={64}
-                onChange={(e) => updateInvoice(invoice.id, { poNumber: e.target.value })}
-              />
-            </Field>
-          </SheetRow>
+          {invoice.jobId != null ? (
+            <SheetRow
+              label="From job"
+              value={job?.title ?? invoice.title}
+              onPress={() => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })}
+            />
+          ) : null}
+          {poEditable ? (
+            <SheetRow
+              label="PO number"
+              value={invoice.poNumber || "Add"}
+              valueIsHint={!invoice.poNumber}
+              expandable
+            >
+              <Field label="PO number" style={{ margin: "0" }}>
+                <input
+                  type="text"
+                  defaultValue={invoice.poNumber || ""}
+                  placeholder="e.g. 4471"
+                  maxLength={64}
+                  onBlur={(e) => updateInvoice(invoice.id, { poNumber: e.target.value.trim() })}
+                />
+              </Field>
+            </SheetRow>
+          ) : null}
         </div>
       ) : null}
 

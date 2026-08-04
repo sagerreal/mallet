@@ -101,12 +101,27 @@ describe("InvoiceModalContent — Net terms + PO on the face", () => {
     expect(screen.getByRole("button", { name: /PO number.*4471/s })).toBeTruthy();
   });
 
-  it("editing the PO field calls updateInvoice with the typed value", () => {
+  // Blur-commit, matching every other SheetRow+Field+input editor in the app (job-modal.tsx's
+  // Customer phone, company-view-modal.tsx's fields, etc.) — never per-keystroke, which would
+  // fire a real tRPC mutation per character on a db-origin invoice.
+  it("typing alone fires no mutation — only blur commits", () => {
     mockInvoices = [inv({ poNumber: undefined })];
     render(<InvoiceModalContent />);
     fireEvent.click(screen.getByRole("button", { name: /PO number/ }));
     const input = screen.getByLabelText("PO number") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "9981" } });
+    expect(updateInvoice).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    expect(updateInvoice).toHaveBeenCalledWith("inv-1", { poNumber: "9981" });
+  });
+
+  it("trims the PO value on blur", () => {
+    mockInvoices = [inv({ poNumber: undefined })];
+    render(<InvoiceModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /PO number/ }));
+    const input = screen.getByLabelText("PO number") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "  9981  " } });
+    fireEvent.blur(input);
     expect(updateInvoice).toHaveBeenCalledWith("inv-1", { poNumber: "9981" });
   });
 
